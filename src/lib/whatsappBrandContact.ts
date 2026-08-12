@@ -1,6 +1,11 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
-import { waBrandBookingUrl, waBrandWebsiteUrl, waLabeledLink } from '@/lib/whatsappMessageFormat';
+import {
+  waBrandBookingUrl,
+  waBrandWebsiteUrl,
+  waLabeledLink,
+  waPlainLabelValue,
+} from '@/lib/whatsappMessageFormat';
 
 /**
  * Voice / website / review contacts for customer WhatsApp.
@@ -116,10 +121,7 @@ export function brandExistingCustomerBookLines(brand: DocumentBrand): string[] {
 
 /** Label on one line, value on the next — 24h freeform + Meta letter template bodies. */
 export function letterLabelValue(label: string, value: string): string {
-  const v = String(value || '').trim();
-  const l = String(label || '').trim();
-  if (!v) return `${l}:`;
-  return `${l}:\n${v}`;
+  return waPlainLabelValue(label, value);
 }
 
 /** Letter footer + optional Text us link (24h free-form; cold templates use Call us + Text us buttons). */

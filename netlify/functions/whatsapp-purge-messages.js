@@ -105,73 +105,109 @@ exports.handler = async (event) => {
   const db = getServiceSupabase();
   if (!db) return json(500, headers, { error: 'Database not configured' });
 
-  let query = db.from('whatsapp_messages').select('id, media_url');
-  if (phone) query = query.eq('phone_e164', phone);
-  if (olderThanDays > 0) {
-    const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
-    query = query.lt('created_at', cutoff);
+  function buildSelectQuery() {
+    let query = db.from('whatsapp_messages').select('id, media_url');
+    if (phone) query = query.eq('phone_e164', phone);
+    if (olderThanDays > 0) {
+      const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
+      query = query.lt('created_at', cutoff);
+    }
+    return query;
   }
 
-  const { data: rows, error } = await query.limit(5000);
-  if (error) return json(500, headers, { error: error.message });
-
-  const list = rows || [];
   if (dryRun) {
+    let total = 0;
+    let withMedia = 0;
+    const countAll = phone && !olderThanDays;
+    if (countAll) {
+      // Full-thread delete: count every row (not capped at 5000).
+      let offset = 0;
+      const pageSize = 5000;
+      for (;;) {
+        const { data: page, error: pageErr } = await buildSelectQuery()
+          .range(offset, offset + pageSize - 1);
+        if (pageErr) return json(500, headers, { error: pageErr.message });
+        const chunk = page || [];
+        if (!chunk.length) break;
+        total += chunk.length;
+        withMedia += chunk.filter((r) => r.media_url).length;
+        if (chunk.length < pageSize) break;
+        offset += pageSize;
+      }
+    } else {
+      const { data: rows, error } = await buildSelectQuery().limit(5000);
+      if (error) return json(500, headers, { error: error.message });
+      const list = rows || [];
+      total = list.length;
+      withMedia = list.filter((r) => r.media_url).length;
+    }
     return json(200, headers, {
       dryRun: true,
-      wouldDeleteRows: list.length,
-      withMedia: list.filter((r) => r.media_url).length,
+      wouldDeleteRows: total,
+      withMedia,
       keepMedia,
     });
   }
 
   let deletedMedia = 0;
   let failedMedia = 0;
-  const withMedia = list.filter((r) => r.media_url).length;
-  if (!keepMedia) {
-    for (const row of list) {
-      const media = row.media_url;
-      if (!media) continue;
-      if (isR2MediaRef(media) || parseR2ObjectKey(media)) {
-        const r = await deleteR2Object(media);
-        if (r.ok) deletedMedia += 1;
-        else if (!r.skipped) failedMedia += 1;
-        continue;
-      }
-      const publicId = cloudinaryPublicIdFromUrl(media);
-      if (publicId) {
-        const r = await destroyCloudinary(publicId);
-        if (r.ok) deletedMedia += 1;
-        else if (!r.skipped) failedMedia += 1;
-      }
-    }
-  }
-
-  const ids = list.map((r) => r.id).filter(Boolean);
   let deletedRows = 0;
-  // Delete in chunks
-  for (let i = 0; i < ids.length; i += 200) {
-    const chunk = ids.slice(i, i + 200);
-    const { error: delErr, count } = await db
-      .from('whatsapp_messages')
-      .delete({ count: 'exact' })
-      .in('id', chunk);
-    if (delErr) {
-      return json(500, headers, {
-        error: delErr.message,
-        deletedRows,
-        deletedMedia,
-        failedMedia,
-      });
+  let keptMedia = 0;
+  const fullThreadDelete = phone && !olderThanDays;
+
+  for (;;) {
+    const { data: rows, error } = await buildSelectQuery().limit(5000);
+    if (error) return json(500, headers, { error: error.message });
+    const list = rows || [];
+    if (!list.length) break;
+
+    if (!keepMedia) {
+      for (const row of list) {
+        const media = row.media_url;
+        if (!media) continue;
+        if (isR2MediaRef(media) || parseR2ObjectKey(media)) {
+          const r = await deleteR2Object(media);
+          if (r.ok) deletedMedia += 1;
+          else if (!r.skipped) failedMedia += 1;
+          continue;
+        }
+        const publicId = cloudinaryPublicIdFromUrl(media);
+        if (publicId) {
+          const r = await destroyCloudinary(publicId);
+          if (r.ok) deletedMedia += 1;
+          else if (!r.skipped) failedMedia += 1;
+        }
+      }
+    } else {
+      keptMedia += list.filter((r) => r.media_url).length;
     }
-    deletedRows += count ?? chunk.length;
+
+    const ids = list.map((r) => r.id).filter(Boolean);
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200);
+      const { error: delErr, count } = await db
+        .from('whatsapp_messages')
+        .delete({ count: 'exact' })
+        .in('id', chunk);
+      if (delErr) {
+        return json(500, headers, {
+          error: delErr.message,
+          deletedRows,
+          deletedMedia,
+          failedMedia,
+        });
+      }
+      deletedRows += count ?? chunk.length;
+    }
+
+    if (!fullThreadDelete) break;
   }
 
   return json(200, headers, {
     deletedRows,
     deletedMedia,
     failedMedia,
-    keptMedia: keepMedia ? withMedia : 0,
+    keptMedia: keepMedia ? keptMedia : 0,
     keepMedia,
     phone: phone || null,
     olderThanDays: olderThanDays || null,

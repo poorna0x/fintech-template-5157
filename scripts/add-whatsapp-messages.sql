@@ -70,7 +70,7 @@ GRANT SELECT, DELETE ON TABLE public.whatsapp_messages TO authenticated;
 GRANT ALL ON TABLE public.whatsapp_messages TO service_role;
 
 -- ---------------------------------------------------------------------------
--- Extend weekly purge to include whatsapp_messages (same retention default).
+-- Weekly purge: ops tables only — does NOT delete whatsapp_messages.
 -- ---------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.purge_ephemeral_data(
@@ -200,17 +200,7 @@ BEGIN
     v_remaining := v_remaining || jsonb_build_object('website_analytics_events', v_n);
   END IF;
 
-  IF to_regclass('public.whatsapp_messages') IS NOT NULL THEN
-    DELETE FROM public.whatsapp_messages
-    WHERE created_at < v_cutoff;
-    GET DIAGNOSTICS v_n = ROW_COUNT;
-    v_deleted := v_deleted || jsonb_build_object('whatsapp_messages', v_n);
-
-    SELECT count(*)::integer INTO v_n
-    FROM public.whatsapp_messages
-    WHERE created_at < v_cutoff;
-    v_remaining := v_remaining || jsonb_build_object('whatsapp_messages', v_n);
-  END IF;
+  -- whatsapp_messages: never auto-purged (manual CRM timeline delete only)
 
   SELECT coalesce(sum((value)::text::integer), 0)::integer
   INTO v_remaining_total
@@ -222,7 +212,8 @@ BEGIN
     'incoming_calls_cutoff', v_incoming_cutoff,
     'deleted', v_deleted,
     'remaining_stale', v_remaining,
-    'verified', v_remaining_total = 0
+    'verified', v_remaining_total = 0,
+    'whatsapp_messages', 'retained_manual_delete'
   );
 END;
 $$;

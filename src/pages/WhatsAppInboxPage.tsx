@@ -1381,19 +1381,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       Water Filter Service
                     </DropdownMenuItem>
                     <DropdownMenuSeparator className="bg-[#2a3942]" />
-                    <DropdownMenuLabel className="font-normal text-[#8696a0]">
-                      Delete older than — also removes photos &amp; PDFs from storage
-                    </DropdownMenuLabel>
-                    {[30, 90, 180, 365].map((days) => (
-                      <DropdownMenuItem
-                        key={days}
-                        className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]"
-                        onClick={() => void runPurge({ olderThanDays: days })}
-                      >
-                        {days} days
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator className="bg-[#2a3942]" />
                     <DropdownMenuItem
                       className="cursor-pointer text-red-400 focus:bg-[#2a3942] focus:text-red-400"
                       disabled={!selectedPhone}
@@ -1864,7 +1851,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   </div>
                 ) : threadMessages.length === 0 ? (
                   <p className="py-10 text-center text-sm text-[#8696a0]">
-                    No messages yet — say hello or send a template
+                    No messages in this chat
                   </p>
                 ) : (
                   <>

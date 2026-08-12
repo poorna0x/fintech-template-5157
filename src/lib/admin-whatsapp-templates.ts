@@ -19,6 +19,7 @@ import {
   waBrandWebsiteUrl,
   waLabeledLink,
   waLabeledValue,
+  waPlainLabelValue,
 } from '@/lib/whatsappMessageFormat';
 
 export interface AdminWhatsAppMessageResult {
@@ -62,11 +63,11 @@ function buildBookingWhatsApp(data: BookingConfirmationEmailData): AdminWhatsApp
   const address = data.serviceAddress.trim() || '—';
 
   const detailLines = [
-    `Service: ${serviceLine}`,
-    ...(deviceLine ? [`Device: ${deviceLine}`] : []),
-    `Date: ${serviceDate}`,
-    `Time: ${timeSlot}`,
-    `Address: ${address}`,
+    waPlainLabelValue('Service', serviceLine),
+    ...(deviceLine ? [waPlainLabelValue('Device', deviceLine)] : []),
+    waPlainLabelValue('Date', serviceDate),
+    waPlainLabelValue('Time', timeSlot),
+    waPlainLabelValue('Address', address),
   ];
 
   const text = [
@@ -140,14 +141,14 @@ function buildDocumentWhatsApp(
           : type === 'quotation'
             ? 'Quote no.'
             : 'Reference';
-    detailLines.push(`${refLabel}: ${data.documentRef.trim()}`);
+    detailLines.push(waPlainLabelValue(refLabel, data.documentRef.trim()));
   }
   if (meta.showAmount && data.amount.trim()) {
-    detailLines.push(`Amount: ${data.amount.trim()}`);
+    detailLines.push(waPlainLabelValue('Amount', data.amount.trim()));
   }
   if (meta.showDueDate && data.dueDate.trim()) {
     const dueLabel = type === 'service_reminder' ? 'Suggested date' : 'Valid / due date';
-    detailLines.push(`${dueLabel}: ${formatDisplayDate(data.dueDate.trim())}`);
+    detailLines.push(waPlainLabelValue(dueLabel, formatDisplayDate(data.dueDate.trim())));
   }
 
   const headline =

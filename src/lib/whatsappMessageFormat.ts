@@ -3,6 +3,14 @@
  * Links sit on the line under the label — same pattern as clear CTA broadcasts.
  */
 
+/** Plain `Label:\nvalue` — wa.me prefills and letter footers (no emoji/bold). */
+export function waPlainLabelValue(label: string, value: string): string {
+  const v = String(value || '').trim();
+  const l = String(label || '').trim();
+  if (!v) return `${l}:`;
+  return `${l}:\n${v}`;
+}
+
 /** `🌐 *Website*:\nhttps://…` — label + colon, URL on the next line. */
 export function waLabeledLink(emoji: string, label: string, url: string): string {
   const u = String(url || '').trim();

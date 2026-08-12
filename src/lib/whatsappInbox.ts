@@ -1,6 +1,7 @@
 /** WhatsApp inbox helpers — slim selects, 24h window, send via Cloud API function. */
 
 import { escapeForLike, normalizePhoneForSearch } from '@/lib/utils';
+import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
 
 export const WHATSAPP_INBOX_COLUMNS =
   'id, wa_message_id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
@@ -917,14 +918,14 @@ function formatBookingBotState(
     }
 
     const lines = [`Booking bot · ${stepLabel}`];
-    if (name) lines.push(`Name: ${name}`);
-    if (service) lines.push(`Service: ${service}`);
-    if (dateLabel) lines.push(`Date: ${dateLabel}`);
-    if (timeLabel) lines.push(`Time: ${timeLabel}`);
-    if (loc) lines.push(`Location: ${loc}`);
-    if (hasPhoto) lines.push('Photo: Received');
-    else if (model) lines.push(`Model: ${model}`);
-    if (state.editing) lines.push('Editing: yes');
+    if (name) lines.push(waPlainLabelValue('Name', name));
+    if (service) lines.push(waPlainLabelValue('Service', service));
+    if (dateLabel) lines.push(waPlainLabelValue('Date', dateLabel));
+    if (timeLabel) lines.push(waPlainLabelValue('Time', timeLabel));
+    if (loc) lines.push(waPlainLabelValue('Location', loc));
+    if (hasPhoto) lines.push(waPlainLabelValue('Photo', 'Received'));
+    else if (model) lines.push(waPlainLabelValue('Model', model));
+    if (state.editing) lines.push(waPlainLabelValue('Editing', 'yes'));
     return lines.join('\n');
   } catch {
     return opts?.compact ? 'Booking bot (state)' : 'Booking bot state (could not parse)';

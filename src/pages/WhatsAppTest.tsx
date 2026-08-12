@@ -300,7 +300,7 @@ export default function WhatsAppTest() {
 
         <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-slate-900">Stored messages (7 days)</h2>
+            <h2 className="text-base font-semibold text-slate-900">Stored messages</h2>
             <p className="text-xs text-slate-500">From Supabase · auto-refresh 3s</p>
           </div>
           <p className="text-sm text-slate-600">

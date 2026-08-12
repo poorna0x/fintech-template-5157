@@ -3,6 +3,7 @@ import { getJobCustomTimeLabel, getLeadSourceFromJob } from '@/lib/adminUtils';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 import { getJobAgreedCostLabel, getJobDescriptionText } from '@/lib/jobAssignMessageDetails';
 import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
+import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
 import { sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
 import { ensureJobWhatsAppNotifyPrefs } from '@/lib/jobAssignWhatsAppSettingsCache';
 import { isWhatsAppJobNotifyAllowed } from '@/lib/whatsappCrmSettings';
@@ -44,10 +45,12 @@ export function buildJobTechnicianWhatsAppMessage(opts: {
     : `New ${serviceSubType.toLowerCase()} assigned - ${customerName}${locationText ? ` - ${locationText}` : ''}${leadSourceText ? ` - ${leadSourceText}` : ''}`;
 
   const extraLines: string[] = [];
-  if (!isUnassign && customTimeText) extraLines.push(`Time : ${customTimeText}`);
-  if (!isUnassign && agreedCostText) extraLines.push(`Agreed cost : ${agreedCostText}`);
+  if (!isUnassign && customTimeText) extraLines.push(waPlainLabelValue('Time', customTimeText));
+  if (!isUnassign && agreedCostText) extraLines.push(waPlainLabelValue('Agreed cost', agreedCostText));
   if (descriptionText) {
-    extraLines.push(isUnassign ? descriptionText : `Description : ${descriptionText}`);
+    extraLines.push(
+      isUnassign ? descriptionText : waPlainLabelValue('Description', descriptionText)
+    );
   }
   return extraLines.length > 0 ? `${mainLine}\n\n${extraLines.join('\n')}` : mainLine;
 }

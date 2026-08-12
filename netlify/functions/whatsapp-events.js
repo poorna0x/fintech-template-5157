@@ -1,7 +1,7 @@
 /**
  * List recent WhatsApp activity for /whatsapp-test (POC).
  * Auth: WHATSAPP_POC_SECRET via ?secret= or x-wa-poc-secret, or admin JWT.
- * Returns in-memory webhook buffer + last 50 DB rows (7-day table).
+ * Returns in-memory webhook buffer + last 50 DB rows (long retention).
  */
 const { getCorsHeaders } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');

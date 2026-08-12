@@ -25,6 +25,7 @@ import {
   normalizePaymentPhone,
   resolveUpiPaySiteOrigin,
 } from '@/lib/upiPaymentAccounts';
+import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
 
 export const SHARE_QR_LINK_VALUE = 'share_qr_link';
 
@@ -67,11 +68,11 @@ export function buildTechSharePayMessage(input: {
   const phone = normalizePaymentPhone(input.phone || '');
   return [
     `Pay ${input.brandLabel} via UPI`,
-    amountLabel ? `Amount: ${amountLabel}` : null,
-    input.payeeName ? `Payee name: ${input.payeeName}` : null,
-    `UPI ID: ${input.upiId}`,
-    phone ? `Phone: ${phone}` : null,
-    `Pay link: ${input.payLink}`,
+    amountLabel ? waPlainLabelValue('Amount', amountLabel) : null,
+    input.payeeName ? waPlainLabelValue('Payee name', input.payeeName) : null,
+    waPlainLabelValue('UPI ID', input.upiId),
+    phone ? waPlainLabelValue('Phone', phone) : null,
+    waPlainLabelValue('Pay link', input.payLink),
   ]
     .filter(Boolean)
     .join('\n');

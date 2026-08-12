@@ -2,7 +2,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { isJobPendingPaymentOpen, parseJobPendingPayment } from '@/lib/jobPendingPayment';
 import { formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
-import { brandContactLines, brandLetterClosingLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import { waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
 import type { PendingPaymentWhatsAppUpiOptions } from '@/lib/pendingPaymentReminder';
 
@@ -98,7 +98,6 @@ export function buildJobCompletionMessage(input: JobCompletionMessageInput): str
   );
   const brandName = getDocumentBrandLabel(input.documentBrand);
   const paymentLines = buildJobCompletionPaymentPlainLines(input);
-  const contact = brandContactLines(input.documentBrand);
 
   return [
     completionLine,
@@ -107,9 +106,7 @@ export function buildJobCompletionMessage(input: JobCompletionMessageInput): str
     '',
     `Thank you for choosing ${brandName}. We appreciate your trust and hope you're satisfied with our work.`,
     '',
-    `Call: ${contact.voice.display}`,
-    `Website: ${contact.website}`,
-    `Review: ${contact.reviewUrl}`,
+    ...brandLetterFooterLines(input.documentBrand, { includeReview: true, skipChatHint: true }),
   ].join('\n');
 }
 

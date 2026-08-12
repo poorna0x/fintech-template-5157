@@ -81,6 +81,7 @@ module.exports = {
   normalizeWaBrand,
   brandContact,
   brandLetterFooterLines,
+  letterLabelValue,
   authenticityHost,
   authenticityLine,
   buildOriginalDocumentDeliveryBody,

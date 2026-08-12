@@ -30,6 +30,7 @@ const {
   handleElevenSupportButton,
 } = require('./whatsapp-eleven-support');
 const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
+const { letterLabelValue } = require('./whatsapp-brand-contact');
 
 const SUPPORT_PHONE_DISPLAY = ELEVEN_SUPPORT_DISPLAY;
 const LEAD_SOURCE = 'Direct call';
@@ -2952,20 +2953,19 @@ function buildAdminHandoffPrefill({ customer, state, phoneE164 }) {
   const lines = [
     'Hello Eleven RO team — customer needs help after WhatsApp booking.',
     '',
-    `Phone: ${phone10}`,
+    letterLabelValue('Phone', phone10),
   ];
-  if (name) lines.push(`Name: ${name}`);
-  if (state?.jobNumber) lines.push(`Job: ${state.jobNumber}`);
-  if (service && service !== 'Service') lines.push(`Service: ${service}`);
-  else if (state?.serviceSubType) lines.push(`Service: ${state.serviceSubType}`);
+  if (name) lines.push(letterLabelValue('Name', name));
+  if (state?.jobNumber) lines.push(letterLabelValue('Job', state.jobNumber));
+  if (service && service !== 'Service') lines.push(letterLabelValue('Service', service));
+  else if (state?.serviceSubType) lines.push(letterLabelValue('Service', state.serviceSubType));
   if (state?.dateIso) {
-    lines.push(
-      `Visit: ${formatDateIsoLabel(state.dateIso)}${timeLabelFromState(state) ? ` · ${timeLabelFromState(state)}` : ''}`
-    );
+    const visit = `${formatDateIsoLabel(state.dateIso)}${timeLabelFromState(state) ? ` · ${timeLabelFromState(state)}` : ''}`;
+    lines.push(letterLabelValue('Visit', visit));
   }
-  if (shortArea) lines.push(`Area: ${shortArea}`);
-  if (loc && loc !== shortArea) lines.push(`Location: ${loc}`);
-  else if (loc) lines.push(`Location: ${loc}`);
+  if (shortArea) lines.push(letterLabelValue('Area', shortArea));
+  if (loc && loc !== shortArea) lines.push(letterLabelValue('Location', loc));
+  else if (loc) lines.push(letterLabelValue('Location', loc));
   lines.push('', 'Please assist.');
   return lines.join('\n').slice(0, 900);
 }

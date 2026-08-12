@@ -201,7 +201,7 @@ export function WhatsAppInboxPhotoViewer({
         initialZoomLevel: (z) => containZoom(z),
         secondaryZoomLevel: (z) => containZoom(z) * 2.5,
         maxZoomLevel: (z) => Math.max(4, containZoom(z) * 4),
-        padding: { top: 56, bottom: 72, left: 0, right: 0 },
+        padding: { top: 56, bottom: 40, left: 0, right: 0 },
         preload: [1, 1],
         zoom: false,
         close: false,
@@ -394,27 +394,10 @@ export function WhatsAppInboxPhotoViewer({
         ) : null}
 
         {ready ? (
-          <p className="pointer-events-none absolute inset-x-0 bottom-[max(4.5rem,env(safe-area-inset-bottom))] text-center text-[11px] text-white/55">
+          <p className="pointer-events-none absolute inset-x-0 bottom-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-[11px] text-white/55">
             Pinch or double-tap to zoom
             {hasNav ? ' · Swipe for more' : ''}
           </p>
-        ) : null}
-
-        {ready && onDownload ? (
-          <div
-            className="pointer-events-none absolute inset-x-0 flex justify-center px-4"
-            style={{ bottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
-          >
-            <Button
-              type="button"
-              size="sm"
-              className="pointer-events-auto bg-[#00a884] text-white hover:bg-[#06cf9c]"
-              onClick={() => onDownload(index)}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Download
-            </Button>
-          </div>
         ) : null}
       </div>
     </>,

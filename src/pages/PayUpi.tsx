@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Check, Copy, Download, Droplets, Phone, Share2 } from 'lucide-react';
+import { buildTechSharePayMessage } from '@/components/job/ShareQrLinkPanel';
 import { getDocumentBrandLabel, normalizeDocumentBrand, type DocumentBrand } from '@/lib/service-brands';
 import {
   buildUpiPayDeepLink,
@@ -241,16 +242,16 @@ const PayUpi = () => {
     setActionBusy('share');
     try {
       const blob = await getQrPngBlob(qrInstanceRef.current);
-      const shareText = [
-        `Pay ${brandLabel} via UPI`,
-        amountLabel ? `Amount: ${amountLabel}` : null,
-        pn ? `Payee name: ${pn}` : null,
-        `UPI ID: ${pa}`,
-        ph ? `Phone: ${ph}` : null,
-        typeof window !== 'undefined' ? `Pay link: ${window.location.href}` : null,
-      ]
-        .filter(Boolean)
-        .join('\n');
+      const payLink =
+        typeof window !== 'undefined' ? window.location.href : '';
+      const shareText = buildTechSharePayMessage({
+        brandLabel,
+        amount: Number.isFinite(am) && am > 0 ? am : null,
+        payeeName: pn,
+        upiId: pa,
+        phone: ph,
+        payLink,
+      });
 
       if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
         if (blob) {
