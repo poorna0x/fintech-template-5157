@@ -15,6 +15,7 @@ const ADMIN_PUSH_CATEGORIES = [
   'day_summary',
   'new_booking',
   'parts_reminder',
+  'whatsapp_inbound',
 ];
 
 const TECH_PUSH_CATEGORIES = [

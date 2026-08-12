@@ -1,7 +1,15 @@
 import { toast } from 'sonner';
 
 // Notification types
-export type NotificationType = 'job_assigned' | 'job_completed' | 'job_cancelled' | 'technician_offline' | 'job_assignment_request' | 'job_assignment_accepted' | 'job_assignment_rejected';
+export type NotificationType =
+  | 'job_assigned'
+  | 'job_completed'
+  | 'job_cancelled'
+  | 'technician_offline'
+  | 'job_assignment_request'
+  | 'job_assignment_accepted'
+  | 'job_assignment_rejected'
+  | 'whatsapp_inbound';
 
 export interface NotificationData {
   type: NotificationType;
@@ -12,8 +20,15 @@ export interface NotificationData {
   customerName?: string;
   jobNumber?: string;
   requestId?: string; // For assignment requests
+  whatsappPhoneE164?: string;
   timestamp: Date;
 }
+
+export type BrowserNotificationOptions = NotificationOptions & {
+  /** SPA path to open when the notification is clicked (e.g. WhatsApp inbox deep link). */
+  navigateTo?: string;
+  onClick?: () => void;
+};
 
 // Request browser notification permission
 export const requestNotificationPermission = async (): Promise<NotificationPermission> => {
@@ -35,68 +50,70 @@ export const requestNotificationPermission = async (): Promise<NotificationPermi
 };
 
 // Show browser notification (works even when app is closed)
-export const showBrowserNotification = (data: NotificationData, options?: NotificationOptions): void => {
-  console.log('🔔 showBrowserNotification called with:', data);
-  
+export const showBrowserNotification = (
+  data: NotificationData,
+  options?: BrowserNotificationOptions
+): void => {
   if (!('Notification' in window)) {
-    console.warn('❌ Browser does not support notifications');
     return;
   }
 
   if (Notification.permission !== 'granted') {
-    console.warn('❌ Notification permission not granted. Current permission:', Notification.permission);
     return;
   }
 
-  console.log('✅ Permission granted, creating notification...');
-
   const notificationOptions: NotificationOptions = {
     body: options?.body || data.message,
-    icon: options?.icon || '/favicon.ico',
-    badge: options?.badge || '/favicon.ico',
-    tag: options?.tag || data.jobId || 'job-notification', // Prevent duplicate notifications
-    requireInteraction: data.type === 'job_assigned', // Keep notification visible for new jobs
+    icon:
+      options?.icon ||
+      (data.type === 'whatsapp_inbound' ? '/whatsapp.png' : '/favicon.ico'),
+    badge:
+      options?.badge ||
+      (data.type === 'whatsapp_inbound' ? '/whatsapp.png' : '/favicon.ico'),
+    tag: options?.tag || data.jobId || data.whatsappPhoneE164 || 'job-notification',
+    requireInteraction: data.type === 'job_assigned',
     silent: false,
     ...options,
   };
 
-  // Make it urgent/red for new job assignments
   if (data.type === 'job_assigned') {
-    notificationOptions.requireInteraction = true; // Keep it visible until user interacts
-    notificationOptions.vibrate = [200, 100, 200]; // Vibrate pattern (if supported)
-    // Note: urgency is not widely supported, but we'll include it
+    notificationOptions.requireInteraction = true;
+    notificationOptions.vibrate = [200, 100, 200];
     if ('urgency' in Notification.prototype) {
-      (notificationOptions as any).urgency = 'high';
+      (notificationOptions as NotificationOptions & { urgency?: string }).urgency = 'high';
     }
   }
 
-  console.log('📱 Creating notification with options:', notificationOptions);
-
   try {
     const notification = new Notification(data.title, notificationOptions);
-    console.log('✅ Notification created successfully!');
 
-    // Handle notification click - focus the window
     notification.onclick = () => {
-      console.log('🔔 Notification clicked!');
       window.focus();
       notification.close();
-      
-      // If jobId is provided, you could navigate to the job
+
+      if (options?.onClick) {
+        options.onClick();
+        return;
+      }
+
+      const navigateTo = options?.navigateTo;
+      if (navigateTo) {
+        window.location.assign(navigateTo);
+        return;
+      }
+
       if (data.jobId && window.location.pathname.includes('/technician')) {
-        // Already on technician page, just focus
-        // You could scroll to the job if needed
+        /* technician page — focus only */
       }
     };
 
-    // Auto-close after 10 seconds for non-critical notifications
     if (data.type !== 'job_assigned') {
       setTimeout(() => {
         notification.close();
-      }, 10000);
+      }, 10_000);
     }
   } catch (error) {
-    console.error('❌ Error creating notification:', error);
+    console.error('Error creating notification:', error);
   }
 };
 
@@ -144,6 +161,12 @@ export const showToastNotification = (data: NotificationData): void => {
         return {
           type: 'warning' as const,
           title: 'Job Assignment Rejected',
+          description: data.message
+        };
+      case 'whatsapp_inbound':
+        return {
+          type: 'info' as const,
+          title: data.title,
           description: data.message
         };
       default:

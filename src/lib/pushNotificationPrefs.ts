@@ -10,6 +10,7 @@ export const ADMIN_PUSH_CATEGORIES = [
   'day_summary',
   'new_booking',
   'parts_reminder',
+  'whatsapp_inbound',
 ] as const;
 
 export const TECH_PUSH_CATEGORIES = [
@@ -79,6 +80,10 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
   parts_reminder: {
     label: 'Parts entry reminder',
     description: 'Reminder to verify parts logged for completed jobs.',
+  },
+  whatsapp_inbound: {
+    label: 'WhatsApp inbox',
+    description: 'When a customer sends a message on WhatsApp (admin app, even when CRM is closed).',
   },
 };
 

@@ -612,6 +612,13 @@ const AdminDashboard = () => {
     void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) => {
       if (cancelled) return;
       setAdminPushDeepLinkHandler((payload) => {
+        if (payload.kind === 'settings' && payload.panel === 'whatsapp-inbox') {
+          const phone = payload.phone || payload.reminderId;
+          if (!phone) return;
+          navigate(settingsPanelPath('whatsapp-inbox', { id: phone }));
+          return;
+        }
+
         if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
           navigate(
             settingsPanelPath(payload.panel, {

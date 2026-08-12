@@ -92,6 +92,10 @@ import {
   type WhatsAppMessageRow,
   type WhatsAppThread,
 } from '@/lib/whatsappInbox';
+import {
+  dispatchWhatsAppUnreadChanged,
+  setWhatsAppInboxActivity,
+} from '@/lib/whatsappInboxActivity';
 import { WhatsAppPdfThumbnail } from '@/components/whatsapp/WhatsAppPdfThumbnail';
 import {
   WhatsAppInboxPhotoViewer,
@@ -291,6 +295,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('');
   const [templateParams, setTemplateParams] = useState<string[]>([]);
   const [readMap, setReadMap] = useState<Record<string, string>>(() => loadWhatsAppReadMap());
+
+  useEffect(() => {
+    setWhatsAppInboxActivity({ open: true, selectedPhone });
+    return () => setWhatsAppInboxActivity({ open: false, selectedPhone: null });
+  }, [selectedPhone]);
+
   const [attachFile, setAttachFile] = useState<File | null>(null);
   const [attachPreviewUrl, setAttachPreviewUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -998,11 +1008,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   );
 
   useEffect(() => {
-    try {
-      localStorage.setItem('wa_inbox_unread_count', String(unreadCount));
-    } catch {
-      /* ignore */
-    }
+    dispatchWhatsAppUnreadChanged(unreadCount);
   }, [unreadCount]);
 
   useEffect(() => {

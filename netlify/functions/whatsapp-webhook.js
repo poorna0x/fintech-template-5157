@@ -63,6 +63,20 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       created_at: tsToIso(msg.timestamp),
     });
 
+    const { pushWhatsAppInboundToAdmins } = require('./admin-whatsapp-inbound-push');
+    void pushWhatsAppInboundToAdmins(db, {
+      phoneE164: phone,
+      body,
+      msgType,
+      filename: media.filename || msg.document?.filename || null,
+      mediaUrl: media.media_url,
+      mediaMime: media.media_mime,
+      customerId,
+      waMessageId: msg.id || null,
+    }).catch((err) =>
+      console.warn('[whatsapp-webhook] admin inbound push failed', err?.message || err)
+    );
+
     summaries.push({
       from: phone,
       type: msgType,
