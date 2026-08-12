@@ -6,6 +6,7 @@ import {
   parseDbServiceType,
   readCustomerEquipmentSlot,
 } from '@/lib/equipment-suggestions';
+import { isLeadSourceRequiresOtp } from '@/lib/leadCatalog';
 
 /** Technician employee id used for zero-commission (office) completions. */
 export const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
@@ -879,60 +880,10 @@ export function normalizeLeadType(value: string): string {
 }
 
 export function isHomeTriangleLeadSource(leadSource: string | undefined | null): boolean {
-  const s = (leadSource || '').trim().toLowerCase();
-  if (!s) return false;
-  return s === 'home triangle' || s.startsWith('home triangle');
+  return isLeadSourceRequiresOtp(leadSource || '');
 }
 
-function resolveJobServiceSubTypeLabel(
-  serviceSubType: string | undefined | null,
-  customValue?: string | null,
-): string {
-  const base = (serviceSubType || '').trim();
-  if (base === 'Custom' || base === 'Other') {
-    return (customValue || '').trim() || base;
-  }
-  return base;
-}
-
-function isInstallationOrReinstallationServiceSubType(
-  serviceSubType: string | undefined | null,
-  customValue?: string | null,
-): boolean {
-  const label = resolveJobServiceSubTypeLabel(serviceSubType, customValue).toLowerCase();
-  return label === 'installation' || label === 'reinstallation';
-}
-
-/** Default lead cost (₹) by lead source; Home Triangle + Installation/Reinstallation → 116. */
-export function getDefaultLeadCost(
-  leadSource: string,
-  serviceSubType?: string,
-  serviceSubTypeCustom?: string,
-): string {
-  if (
-    isHomeTriangleLeadSource(leadSource) &&
-    isInstallationOrReinstallationServiceSubType(serviceSubType, serviceSubTypeCustom)
-  ) {
-    return '116';
-  }
-  switch (leadSource) {
-    case 'Home Triangle':
-    case 'Home Triangle-Srujan':
-    case 'Home Triangle-3':
-      return '231';
-    case 'Direct call':
-      return '0';
-    case 'RO care india':
-      return '400';
-    case 'Local Ramu':
-      return '500';
-    case 'Google-Leads':
-    case 'Website':
-      return '0';
-    default:
-      return '0';
-  }
-}
+export { getDefaultLeadCost } from '@/lib/leadCatalog';
 
 /** Technician row shape from admin dashboard / API (camelCase or snake_case). */
 export type CompletedJobTechnicianLike = {

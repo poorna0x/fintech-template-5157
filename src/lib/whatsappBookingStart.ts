@@ -1,4 +1,8 @@
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import {
+  getActiveLeadSourceOptions,
+  peekLeadCatalog,
+} from '@/lib/leadCatalog';
 
 export type WhatsAppBookingQuickAction =
   | 'book_service'
@@ -33,6 +37,13 @@ export const WHATSAPP_BOOKING_LEAD_SOURCES = [
   'Local Ramu',
   'Other',
 ] as const;
+
+/** Prefer cached catalog labels when available. */
+export function getWhatsAppBookingLeadSources(): readonly string[] {
+  const cat = peekLeadCatalog();
+  if (cat) return getActiveLeadSourceOptions(cat).map((s) => s.label);
+  return WHATSAPP_BOOKING_LEAD_SOURCES;
+}
 
 export async function startWhatsAppBookingQuickAction(opts: {
   phone: string;

@@ -182,7 +182,7 @@ export function invalidateInboundWindowCache(phoneE164?: string | null): void {
 
 /* —— Inbox list + open-chat message cache (session + memory; cut repeat egress) —— */
 
-const INBOX_LIST_CACHE_KEY = 'wa_inbox_threads_cache_v1';
+const INBOX_LIST_CACHE_KEY = 'wa_inbox_threads_cache_v2';
 const THREAD_MSGS_CACHE_KEY = 'wa_thread_msgs_cache_v1';
 /** Skip network if list fetched within this window (soft refresh still updates). */
 export const WHATSAPP_INBOX_LIST_CACHE_TTL_MS = 45_000;
@@ -190,8 +190,84 @@ export const WHATSAPP_INBOX_LIST_CACHE_TTL_MS = 45_000;
 export const WHATSAPP_THREAD_CACHE_TTL_MS = 90_000;
 const THREAD_CACHE_MAX_PHONES = 12;
 
+/** How far back the inbox thread list loads (sidebar). */
+export type WhatsAppInboxListRange = 'today' | '7d' | '30d' | 'all' | { custom: string };
+
+const INBOX_LIST_RANGE_STORAGE_KEY = 'wa_inbox_list_range_v1';
+
+export function inboxListRangeKey(range: WhatsAppInboxListRange): string {
+  if (typeof range === 'object') return `custom:${range.custom}`;
+  return range;
+}
+
+export function loadWhatsAppInboxListRange(): WhatsAppInboxListRange {
+  try {
+    const raw = localStorage.getItem(INBOX_LIST_RANGE_STORAGE_KEY);
+    if (!raw || raw === 'today') return 'today';
+    if (raw === '7d' || raw === '30d' || raw === 'all') return raw;
+    if (raw.startsWith('custom:')) {
+      const date = raw.slice(7);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return { custom: date };
+    }
+  } catch {
+    /* ignore */
+  }
+  return 'today';
+}
+
+export function saveWhatsAppInboxListRange(range: WhatsAppInboxListRange): void {
+  try {
+    localStorage.setItem(INBOX_LIST_RANGE_STORAGE_KEY, inboxListRangeKey(range));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function inboxListRangeLabel(range: WhatsAppInboxListRange): string {
+  if (range === 'today') return "Today's chats";
+  if (range === '7d') return 'Last 7 days';
+  if (range === '30d') return 'Last 30 days';
+  if (range === 'all') return 'All chats';
+  const d = new Date(`${range.custom}T12:00:00`);
+  if (!Number.isNaN(d.getTime())) {
+    return `Since ${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  }
+  return `Since ${range.custom}`;
+}
+
+export function sinceIsoForInboxListRange(range: WhatsAppInboxListRange): string | null {
+  const now = new Date();
+  if (range === 'all') return null;
+  if (range === 'today') return startOfLocalDayIso(now);
+  if (range === '7d') {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 7);
+    return startOfLocalDayIso(d);
+  }
+  if (range === '30d') {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 30);
+    return startOfLocalDayIso(d);
+  }
+  const [y, m, day] = range.custom.split('-').map(Number);
+  if (!y || !m || !day) return startOfLocalDayIso(now);
+  return new Date(y, m - 1, day, 0, 0, 0, 0).toISOString();
+}
+
+export function fetchOptsForInboxListRange(
+  range: WhatsAppInboxListRange
+): { since: string | null; todayOnly: boolean } {
+  if (range === 'today') {
+    return { since: startOfLocalDayIso(), todayOnly: true };
+  }
+  if (range === 'all') {
+    return { since: null, todayOnly: false };
+  }
+  return { since: sinceIsoForInboxListRange(range), todayOnly: false };
+}
+
 type InboxListCacheEntry = {
-  todayOnly: boolean;
+  rangeKey: string;
   threads: WhatsAppThread[];
   fetchedAt: number;
 };
@@ -224,16 +300,25 @@ function writeJsonSession(key: string, value: unknown): void {
 }
 
 export function peekWhatsAppInboxThreadsCache(opts?: {
+  rangeKey?: string;
+  /** @deprecated use rangeKey */
   todayOnly?: boolean;
 }): InboxListCacheEntry | null {
-  const todayOnly = opts?.todayOnly !== false;
-  if (inboxListCacheMem && inboxListCacheMem.todayOnly === todayOnly) {
+  const rangeKey =
+    opts?.rangeKey ?? (opts?.todayOnly === false ? 'all' : 'today');
+  if (inboxListCacheMem && inboxListCacheMem.rangeKey === rangeKey) {
     return inboxListCacheMem;
   }
-  const stored = readJsonSession<InboxListCacheEntry>(INBOX_LIST_CACHE_KEY);
-  if (stored && stored.todayOnly === todayOnly && Array.isArray(stored.threads)) {
-    inboxListCacheMem = stored;
-    return stored;
+  const stored = readJsonSession<InboxListCacheEntry & { todayOnly?: boolean }>(
+    INBOX_LIST_CACHE_KEY
+  );
+  if (stored && Array.isArray(stored.threads)) {
+    const storedKey =
+      stored.rangeKey ?? (stored.todayOnly === false ? 'all' : 'today');
+    if (storedKey === rangeKey) {
+      inboxListCacheMem = { ...stored, rangeKey: storedKey };
+      return inboxListCacheMem;
+    }
   }
   return null;
 }
@@ -248,10 +333,12 @@ export function isWhatsAppInboxListCacheFresh(
 
 export function writeWhatsAppInboxThreadsCache(
   threads: WhatsAppThread[],
-  opts?: { todayOnly?: boolean }
+  opts?: { rangeKey?: string; todayOnly?: boolean }
 ): void {
+  const rangeKey =
+    opts?.rangeKey ?? (opts?.todayOnly === false ? 'all' : 'today');
   const entry: InboxListCacheEntry = {
-    todayOnly: opts?.todayOnly !== false,
+    rangeKey,
     threads,
     fetchedAt: Date.now(),
   };
@@ -402,6 +489,7 @@ export function toWhatsAppPhoneDigits(value: string | null | undefined): string 
 type InboxThreadRow = {
   phone_e164: string;
   customer_id: string | null;
+  customer_name?: string | null;
   last_at: string;
   last_direction: string;
   last_msg_type: string;
@@ -419,60 +507,102 @@ type SupabaseInboxClient = {
   from: (t: string) => any;
 };
 
-async function mapInboxRowsToThreads(
+function inboxRowToThread(
+  r: InboxThreadRow,
+  nameByCustomerId: Map<string, string>,
+  nameByPhone: Map<string, string>
+): WhatsAppThread {
+  const phone = String(r.phone_e164 || '').replace(/\D/g, '');
+  const customerId = r.customer_id || null;
+  const customerName =
+    String(r.customer_name || '').trim() ||
+    (customerId ? nameByCustomerId.get(customerId) : null) ||
+    nameByPhone.get(phone) ||
+    nameByPhone.get(phone.slice(-10)) ||
+    null;
+  return {
+    phone_e164: phone,
+    customer_id: customerId,
+    customer_name: customerName,
+    last_body: formatAdminWhatsAppBody(r.last_body, { compact: true }) || r.last_body,
+    last_at: r.last_at,
+    last_direction: (r.last_direction === 'inbound' ? 'inbound' : 'outbound') as
+      | 'inbound'
+      | 'outbound',
+    last_msg_type: r.last_msg_type || 'text',
+    last_status: r.last_status,
+    last_error: r.last_error,
+    inbound_at: r.inbound_at,
+    has_failed: Boolean(r.has_failed),
+  };
+}
+
+/** Resolve display names only when the RPC did not already join customer_name. */
+async function resolveMissingInboxThreadNames(
   supabaseClient: SupabaseInboxClient,
   rows: InboxThreadRow[],
   nameHints?: Map<string, string>
-): Promise<WhatsAppThread[]> {
+): Promise<{ nameByCustomerId: Map<string, string>; nameByPhone: Map<string, string> }> {
   const nameByCustomerId = new Map<string, string>(nameHints || []);
-  const customerIdByPhone = new Map<string, string>();
+  const nameByPhone = new Map<string, string>();
 
-  const customerIds = [
-    ...new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
-  ].slice(0, 120);
+  for (const r of rows) {
+    const id = r.customer_id;
+    const fromRpc = String(r.customer_name || '').trim();
+    if (id && fromRpc) nameByCustomerId.set(id, fromRpc);
+  }
 
-  const phonesMissing = [
+  const allNamed = rows.every(
+    (r) => Boolean(String(r.customer_name || '').trim()) || !r.customer_id
+  );
+  const needPhoneLookup = rows.some(
+    (r) => !r.customer_id && !String(r.customer_name || '').trim()
+  );
+  if (allNamed && !needPhoneLookup) {
+    return { nameByCustomerId, nameByPhone };
+  }
+
+  const needIds = [
     ...new Set(
       rows
-        .filter((r) => !r.customer_id)
-        .map((r) => String(r.phone_e164 || '').replace(/\D/g, ''))
-        .filter((p) => p.length >= 10)
+        .filter((r) => r.customer_id && !nameByCustomerId.has(r.customer_id))
+        .map((r) => r.customer_id as string)
     ),
-  ].slice(0, 60);
+  ].slice(0, 120);
 
-  const ingestCustomer = (c: {
-    id?: string;
-    full_name?: string | null;
-    phone?: string | null;
-    alternate_phone?: string | null;
-  }) => {
-    if (!c?.id) return;
-    const label = String(c.full_name || '').trim() || 'Customer';
-    nameByCustomerId.set(c.id, label);
-    for (const raw of [c.phone, c.alternate_phone]) {
-      const digits = String(raw || '').replace(/\D/g, '');
-      if (digits.length < 10) continue;
-      customerIdByPhone.set(digits, c.id);
-      customerIdByPhone.set(digits.slice(-10), c.id);
-    }
-  };
+  const needPhones = [
+    ...new Set(
+      rows
+        .filter((r) => {
+          const phone = String(r.phone_e164 || '').replace(/\D/g, '');
+          if (!phone || phone.length < 10) return false;
+          if (r.customer_id && nameByCustomerId.has(r.customer_id)) return false;
+          if (String(r.customer_name || '').trim()) return false;
+          return true;
+        })
+        .map((r) => String(r.phone_e164 || '').replace(/\D/g, ''))
+    ),
+  ].slice(0, 40);
 
   const lookups: Promise<void>[] = [];
 
-  if (customerIds.length) {
+  if (needIds.length) {
     lookups.push(
       (async () => {
-        const { data: customers } = await supabaseClient
+        const { data } = await supabaseClient
           .from('customers')
-          .select('id, full_name, phone, alternate_phone')
-          .in('id', customerIds);
-        for (const c of customers || []) ingestCustomer(c);
+          .select('id, full_name')
+          .in('id', needIds);
+        for (const c of data || []) {
+          const label = String(c.full_name || '').trim();
+          if (c.id && label) nameByCustomerId.set(c.id, label);
+        }
       })()
     );
   }
 
-  if (phonesMissing.length) {
-    const last10s = [...new Set(phonesMissing.map((p) => p.slice(-10)))];
+  if (needPhones.length) {
+    const last10s = [...new Set(needPhones.map((p) => p.slice(-10)))];
     const orParts: string[] = [];
     for (const d of last10s) {
       orParts.push(
@@ -482,61 +612,92 @@ async function mapInboxRowsToThreads(
         `alternate_phone.eq.91${d}`
       );
     }
-    for (let i = 0; i < orParts.length; i += 40) {
-      const chunk = orParts.slice(i, i + 40);
-      lookups.push(
-        (async () => {
-          const { data: byPhone } = await supabaseClient
-            .from('customers')
-            .select('id, full_name, phone, alternate_phone')
-            .or(chunk.join(','))
-            .limit(80);
-          for (const c of byPhone || []) ingestCustomer(c);
-        })()
-      );
-    }
+    lookups.push(
+      (async () => {
+        const { data } = await supabaseClient
+          .from('customers')
+          .select('id, full_name, phone, alternate_phone')
+          .or(orParts.slice(0, 40).join(','))
+          .limit(40);
+        for (const c of data || []) {
+          const label = String(c.full_name || '').trim();
+          if (!c.id || !label) continue;
+          nameByCustomerId.set(c.id, label);
+          for (const raw of [c.phone, c.alternate_phone]) {
+            const digits = String(raw || '').replace(/\D/g, '');
+            if (digits.length >= 10) {
+              nameByPhone.set(digits, label);
+              nameByPhone.set(digits.slice(-10), label);
+            }
+          }
+        }
+      })()
+    );
   }
 
-  if (lookups.length) {
-    await Promise.all(lookups);
-  }
-
-  return rows.map((r) => {
-    const phone = String(r.phone_e164 || '').replace(/\D/g, '');
-    let customerId = r.customer_id || null;
-    if (!customerId && phone) {
-      customerId =
-        customerIdByPhone.get(phone) || customerIdByPhone.get(phone.slice(-10)) || null;
-    }
-    return {
-      phone_e164: phone,
-      customer_id: customerId,
-      customer_name: customerId ? nameByCustomerId.get(customerId) || null : null,
-      last_body: formatAdminWhatsAppBody(r.last_body, { compact: true }) || r.last_body,
-      last_at: r.last_at,
-      last_direction: (r.last_direction === 'inbound' ? 'inbound' : 'outbound') as
-        | 'inbound'
-        | 'outbound',
-      last_msg_type: r.last_msg_type || 'text',
-      last_status: r.last_status,
-      last_error: r.last_error,
-      inbound_at: r.inbound_at,
-      has_failed: Boolean(r.has_failed),
-    };
-  });
+  if (lookups.length) await Promise.all(lookups);
+  return { nameByCustomerId, nameByPhone };
 }
 
+async function mapInboxRowsToThreads(
+  supabaseClient: SupabaseInboxClient,
+  rows: InboxThreadRow[],
+  nameHints?: Map<string, string>
+): Promise<WhatsAppThread[]> {
+  if (!rows.length) return [];
+  const { nameByCustomerId, nameByPhone } = await resolveMissingInboxThreadNames(
+    supabaseClient,
+    rows,
+    nameHints
+  );
+  return rows.map((r) => inboxRowToThread(r, nameByCustomerId, nameByPhone));
+}
+
+async function fetchInboxLatestByPhonesRpc(
+  supabaseClient: SupabaseInboxClient,
+  phones: string[]
+): Promise<{ rows: InboxThreadRow[] | null; unsupported: boolean }> {
+  if (!phones.length) return { rows: [], unsupported: false };
+  const res = await supabaseClient.rpc('whatsapp_inbox_latest_by_phones', {
+    p_phones: phones,
+  });
+  if (res.error) {
+    const msg = String(res.error.message || '');
+    if (
+      /whatsapp_inbox_latest_by_phones|could not find the function|No function matches|does not exist/i.test(
+        msg
+      )
+    ) {
+      return { rows: null, unsupported: true };
+    }
+    throw new Error(msg || 'Search failed');
+  }
+  return { rows: (res.data || []) as InboxThreadRow[], unsupported: false };
+}
+
+/** People list only — one slim row per phone via RPC; full messages load when a chat opens. */
 export async function fetchWhatsAppInboxThreads(
   supabaseClient: SupabaseInboxClient,
-  opts?: { limit?: number; since?: string | null; todayOnly?: boolean }
+  opts?: {
+    limit?: number;
+    since?: string | null;
+    todayOnly?: boolean;
+    range?: WhatsAppInboxListRange;
+  }
 ): Promise<{ threads: WhatsAppThread[]; error?: string }> {
   const limit = opts?.limit ?? WHATSAPP_INBOX_LIST_LIMIT;
-  const since =
-    opts?.since !== undefined
-      ? opts.since
-      : opts?.todayOnly
-        ? startOfLocalDayIso()
-        : null;
+  let since = opts?.since;
+  let todayOnly = Boolean(opts?.todayOnly);
+
+  if (opts?.range) {
+    const derived = fetchOptsForInboxListRange(opts.range);
+    since = derived.since;
+    todayOnly = derived.todayOnly;
+  } else if (since === undefined) {
+    since = todayOnly ? startOfLocalDayIso() : null;
+  } else if (todayOnly && since === null) {
+    since = startOfLocalDayIso();
+  }
 
   let data: InboxThreadRow[] | null = null;
   let error: { message?: string } | null = null;
@@ -561,7 +722,14 @@ export async function fetchWhatsAppInboxThreads(
       data = retry.data;
       error = retry.error;
       if (!error && data) {
-        data = data.filter((r: InboxThreadRow) => isSameLocalDay(r.last_at));
+        const sinceMs = new Date(since).getTime();
+        data = data.filter((r: InboxThreadRow) => {
+          const t = new Date(r.last_at).getTime();
+          return Number.isFinite(t) && t >= sinceMs;
+        });
+        if (todayOnly) {
+          data = data.filter((r: InboxThreadRow) => isSameLocalDay(r.last_at));
+        }
       }
     }
   } else {
@@ -577,11 +745,14 @@ export async function fetchWhatsAppInboxThreads(
   }
 
   let rows = (data || []) as InboxThreadRow[];
-  if (opts?.todayOnly || since) {
+  if (todayOnly) {
     rows = rows.filter((r) => isSameLocalDay(r.last_at));
   }
 
-  const threads = await mapInboxRowsToThreads(supabaseClient, rows);
+  const threads =
+    rows.length > 0 && rows.every((r) => String(r.customer_name || '').trim())
+      ? rows.map((r) => inboxRowToThread(r, new Map(), new Map()))
+      : await mapInboxRowsToThreads(supabaseClient, rows);
   return { threads };
 }
 
@@ -628,7 +799,7 @@ export async function searchWhatsAppInboxThreads(
 
   const { data: customers, error: cErr } = await supabaseClient
     .from('customers')
-    .select('id, customer_id, full_name, phone, alternate_phone, email')
+    .select('id, full_name, phone, alternate_phone')
     .or(orParts.join(','))
     .order('updated_at', { ascending: false })
     .limit(limit);
@@ -675,44 +846,72 @@ export async function searchWhatsAppInboxThreads(
     return { threads: [] };
   }
 
-  const { data: msgs, error: mErr } = await supabaseClient
-    .from('whatsapp_messages')
-    .select(
-      'phone_e164, customer_id, direction, msg_type, body, filename, media_url, media_mime, status, error_message, created_at'
-    )
-    .in('phone_e164', phoneList)
-    .order('created_at', { ascending: false })
-    .limit(Math.min(phoneList.length * 4, 200));
+  let latestByPhone = new Map<string, InboxThreadRow>();
+  let usedLatestRpc = false;
 
-  if (mErr) {
-    return { threads: [], error: mErr.message };
+  try {
+    const rpc = await fetchInboxLatestByPhonesRpc(supabaseClient, phoneList);
+    if (rpc.rows) {
+      usedLatestRpc = true;
+      for (const row of rpc.rows) {
+        const phone = toWhatsAppPhoneDigits(row.phone_e164);
+        if (!phone) continue;
+        latestByPhone.set(phone, {
+          ...row,
+          phone_e164: phone,
+          customer_id: row.customer_id || phoneToCustomer.get(phone)?.id || null,
+        });
+      }
+    }
+  } catch (err) {
+    return { threads: [], error: err instanceof Error ? err.message : 'Search failed' };
   }
 
-  const latestByPhone = new Map<string, InboxThreadRow>();
-  const inboundByPhone = new Map<string, string>();
+  if (!usedLatestRpc) {
+    const { data: msgs, error: mErr } = await supabaseClient
+      .from('whatsapp_messages')
+      .select(
+        'phone_e164, customer_id, direction, msg_type, body, filename, status, error_message, created_at'
+      )
+      .in('phone_e164', phoneList)
+      .order('created_at', { ascending: false })
+      .limit(Math.min(phoneList.length * 3, 120));
 
-  for (const row of msgs || []) {
-    const phone = toWhatsAppPhoneDigits(row.phone_e164);
-    if (!phone) continue;
-    if (row.direction === 'inbound' && !inboundByPhone.has(phone)) {
-      inboundByPhone.set(phone, row.created_at);
+    if (mErr) {
+      return { threads: [], error: mErr.message };
     }
-    if (latestByPhone.has(phone)) continue;
-    const failed =
-      row.direction === 'outbound' &&
-      (isFailedDeliveryStatus(row.status) || Boolean(String(row.error_message || '').trim()));
-    latestByPhone.set(phone, {
-      phone_e164: phone,
-      customer_id: row.customer_id || phoneToCustomer.get(phone)?.id || null,
-      last_at: row.created_at,
-      last_direction: row.direction || 'outbound',
-      last_msg_type: row.msg_type || 'text',
-      last_status: row.status,
-      last_error: row.error_message,
-      last_body: previewMessageBody(row as WhatsAppMessageRow),
-      inbound_at: null,
-      has_failed: failed,
-    });
+
+    const inboundByPhone = new Map<string, string>();
+    for (const row of msgs || []) {
+      const phone = toWhatsAppPhoneDigits(row.phone_e164);
+      if (!phone) continue;
+      if (row.direction === 'inbound' && !inboundByPhone.has(phone)) {
+        inboundByPhone.set(phone, row.created_at);
+      }
+      if (latestByPhone.has(phone)) continue;
+      const failed =
+        row.direction === 'outbound' &&
+        (isFailedDeliveryStatus(row.status) || Boolean(String(row.error_message || '').trim()));
+      latestByPhone.set(phone, {
+        phone_e164: phone,
+        customer_id: row.customer_id || phoneToCustomer.get(phone)?.id || null,
+        last_at: row.created_at,
+        last_direction: row.direction || 'outbound',
+        last_msg_type: row.msg_type || 'text',
+        last_status: row.status,
+        last_error: row.error_message,
+        last_body:
+          row.body?.trim() ||
+          row.filename?.trim() ||
+          row.msg_type ||
+          'message',
+        inbound_at: null,
+        has_failed: failed,
+      });
+    }
+    for (const [phone, row] of latestByPhone) {
+      row.inbound_at = inboundByPhone.get(phone) || row.inbound_at;
+    }
   }
 
   // Customers matched but never WhatsApp'd — still list so admin can open/start chat
@@ -732,10 +931,6 @@ export async function searchWhatsAppInboxThreads(
       inbound_at: null,
       has_failed: false,
     });
-  }
-
-  for (const [phone, row] of latestByPhone) {
-    row.inbound_at = inboundByPhone.get(phone) || null;
   }
 
   const rows = [...latestByPhone.values()].sort((a, b) => {

@@ -59,6 +59,7 @@ import { isValidUpiId, normalizeUpiId, normalizePaymentPhone } from '@/lib/upiPa
 import CallingPage from '@/pages/CallingPage';
 import WhatsAppInboxPage from '@/pages/WhatsAppInboxPage';
 import WhatsAppSettingsPage from '@/pages/WhatsAppSettingsPage';
+import LeadCatalogSettingsPage from '@/pages/LeadCatalogSettingsPage';
 import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
@@ -486,6 +487,9 @@ const Settings = () => {
   const [showRecurringServicePage, setShowRecurringServicePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'recurring-service'
   );
+  const [showLeadCatalogPage, setShowLeadCatalogPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'lead-catalog'
+  );
 
   const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
   const [advancedSearchDialogOpen, setAdvancedSearchDialogOpen] = useState(false);
@@ -579,6 +583,7 @@ const Settings = () => {
     setShowPdfAuthenticityPage(panel === 'pdf-authenticity');
     setShowDbStoragePage(panel === 'db-storage');
     setShowRecurringServicePage(panel === 'recurring-service');
+    setShowLeadCatalogPage(panel === 'lead-catalog');
     setRemindersDialogOpen(panel === 'reminders');
     setAdvancedSearchDialogOpen(panel === 'advanced-search');
     setAddGeneralReminderOpen(panel === 'add-general-reminder');
@@ -1990,7 +1995,8 @@ const Settings = () => {
       showWhatsAppSettingsPage ||
       showPdfAuthenticityPage ||
       showDbStoragePage ||
-      showRecurringServicePage
+      showRecurringServicePage ||
+      showLeadCatalogPage
     ) {
       return;
     }
@@ -2033,6 +2039,7 @@ const Settings = () => {
     showPdfAuthenticityPage,
     showDbStoragePage,
     showRecurringServicePage,
+    showLeadCatalogPage,
   ]);
 
   // Deep-link / panel open: fetch only what that panel needs.
@@ -2434,7 +2441,16 @@ const Settings = () => {
     );
   }
 
-  // Dedicated recurring service worklist (Tools → Recurring Service)
+  if (showLeadCatalogPage) {
+    return (
+      <div className="admin-page min-h-screen bg-background">
+        <div className="container mx-auto px-3 py-4 sm:px-4 sm:py-6">
+          <LeadCatalogSettingsPage onBack={closeSettingsPanel} />
+        </div>
+      </div>
+    );
+  }
+
   if (showRecurringServicePage) {
     return (
       <div className="admin-page">
@@ -3075,6 +3091,24 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+
+          <SettingsActionCard
+            sectionId="lead-catalog"
+            title="Lead sources & costs"
+            description="Manage lead sources, sub-services, default costs, OTP rules — cached locally, not loaded every keystroke"
+            icon={<DollarSign className="w-5 h-5" />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('lead-catalog')}
+              >
+                <DollarSign className="w-4 h-4 shrink-0" />
+                Manage catalog
+              </Button>
+            }
+          />
 
           {/* Calling */}
           <SettingsActionCard

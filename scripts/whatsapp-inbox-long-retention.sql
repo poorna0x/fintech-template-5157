@@ -166,10 +166,14 @@ GRANT EXECUTE ON FUNCTION public.purge_ephemeral_data(integer) TO service_role;
 COMMENT ON TABLE public.whatsapp_messages IS
   'WhatsApp Cloud API thread rows; long retention. Media on private R2; purge via CRM timeline delete.';
 
--- Slim people list for inbox (one row per phone = latest message).
--- Optional p_since: only threads whose latest message is on/after that time (today list).
+-- Slim people list for inbox (one row per phone = latest message preview only).
+-- Optional p_since: only threads whose latest message is on/after that time.
+-- customer_name joined server-side — avoids extra CRM round-trips from the app.
 DROP FUNCTION IF EXISTS public.whatsapp_inbox_threads(integer);
 DROP FUNCTION IF EXISTS public.whatsapp_inbox_threads(integer, timestamptz);
+
+CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone_created_desc
+  ON public.whatsapp_messages (phone_e164, created_at DESC);
 
 CREATE OR REPLACE FUNCTION public.whatsapp_inbox_threads(
   p_limit integer DEFAULT 200,
@@ -178,6 +182,7 @@ CREATE OR REPLACE FUNCTION public.whatsapp_inbox_threads(
 RETURNS TABLE (
   phone_e164 text,
   customer_id uuid,
+  customer_name text,
   last_at timestamptz,
   last_direction text,
   last_msg_type text,
@@ -200,7 +205,7 @@ BEGIN
   END IF;
 
   RETURN QUERY
-  WITH ranked AS (
+  WITH filtered AS (
     SELECT
       m.phone_e164,
       m.customer_id,
@@ -213,14 +218,20 @@ BEGIN
         WHEN m.body IS NOT NULL AND length(trim(m.body)) > 0 THEN left(trim(m.body), 160)
         WHEN m.filename IS NOT NULL AND length(trim(m.filename)) > 0 THEN left(trim(m.filename), 80)
         ELSE coalesce(m.msg_type, 'message')
-      END AS preview,
-      row_number() OVER (PARTITION BY m.phone_e164 ORDER BY m.created_at DESC) AS rn
+      END AS preview
     FROM public.whatsapp_messages m
-    WHERE m.phone_e164 IS NOT NULL AND length(trim(m.phone_e164)) > 0
+    WHERE m.phone_e164 IS NOT NULL
+      AND length(trim(m.phone_e164)) > 0
+      AND (p_since IS NULL OR m.created_at >= p_since)
+  ),
+  ranked AS (
+    SELECT
+      f.*,
+      row_number() OVER (PARTITION BY f.phone_e164 ORDER BY f.created_at DESC) AS rn
+    FROM filtered f
   ),
   latest AS (
     SELECT * FROM ranked WHERE rn = 1
-      AND (p_since IS NULL OR created_at >= p_since)
     ORDER BY created_at DESC
     LIMIT v_limit
   ),
@@ -236,6 +247,7 @@ BEGIN
   SELECT
     l.phone_e164::text,
     l.customer_id,
+    nullif(trim(c.full_name), '')::text AS customer_name,
     l.created_at AS last_at,
     l.direction::text AS last_direction,
     l.msg_type::text AS last_msg_type,
@@ -252,6 +264,7 @@ BEGIN
     ) AS has_failed
   FROM latest l
   LEFT JOIN inbound i ON i.phone_e164 = l.phone_e164
+  LEFT JOIN public.customers c ON c.id = l.customer_id
   ORDER BY l.created_at DESC;
 END;
 $$;
@@ -259,3 +272,96 @@ $$;
 REVOKE ALL ON FUNCTION public.whatsapp_inbox_threads(integer, timestamptz) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.whatsapp_inbox_threads(integer, timestamptz) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.whatsapp_inbox_threads(integer, timestamptz) TO service_role;
+
+-- Search: latest preview row per phone (no media columns, no full thread dump).
+DROP FUNCTION IF EXISTS public.whatsapp_inbox_latest_by_phones(text[]);
+
+CREATE OR REPLACE FUNCTION public.whatsapp_inbox_latest_by_phones(p_phones text[])
+RETURNS TABLE (
+  phone_e164 text,
+  customer_id uuid,
+  customer_name text,
+  last_at timestamptz,
+  last_direction text,
+  last_msg_type text,
+  last_status text,
+  last_error text,
+  last_body text,
+  inbound_at timestamptz,
+  has_failed boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+BEGIN
+  IF NOT public.is_admin_user() THEN
+    RAISE EXCEPTION 'not authorized';
+  END IF;
+
+  IF p_phones IS NULL OR cardinality(p_phones) = 0 THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  WITH phones AS (
+    SELECT DISTINCT nullif(trim(p), '') AS phone
+    FROM unnest(p_phones) AS p
+    WHERE nullif(trim(p), '') IS NOT NULL
+  ),
+  latest AS (
+    SELECT DISTINCT ON (m.phone_e164)
+      m.phone_e164,
+      m.customer_id,
+      m.created_at,
+      m.direction,
+      m.msg_type,
+      m.status,
+      m.error_message,
+      CASE
+        WHEN m.body IS NOT NULL AND length(trim(m.body)) > 0 THEN left(trim(m.body), 160)
+        WHEN m.filename IS NOT NULL AND length(trim(m.filename)) > 0 THEN left(trim(m.filename), 80)
+        ELSE coalesce(m.msg_type, 'message')
+      END AS preview
+    FROM public.whatsapp_messages m
+    INNER JOIN phones p ON p.phone = m.phone_e164
+    ORDER BY m.phone_e164, m.created_at DESC
+  ),
+  inbound AS (
+    SELECT
+      m.phone_e164,
+      max(m.created_at) AS inbound_at
+    FROM public.whatsapp_messages m
+    INNER JOIN phones p ON p.phone = m.phone_e164
+    WHERE m.direction = 'inbound'
+    GROUP BY m.phone_e164
+  )
+  SELECT
+    l.phone_e164::text,
+    l.customer_id,
+    nullif(trim(c.full_name), '')::text AS customer_name,
+    l.created_at AS last_at,
+    l.direction::text AS last_direction,
+    l.msg_type::text AS last_msg_type,
+    l.status::text AS last_status,
+    l.error_message::text AS last_error,
+    l.preview::text AS last_body,
+    i.inbound_at,
+    (
+      l.direction = 'outbound'
+      AND (
+        lower(coalesce(l.status, '')) IN ('failed', 'undelivered', 'error')
+        OR (l.error_message IS NOT NULL AND length(trim(l.error_message)) > 0)
+      )
+    ) AS has_failed
+  FROM latest l
+  LEFT JOIN inbound i ON i.phone_e164 = l.phone_e164
+  LEFT JOIN public.customers c ON c.id = l.customer_id
+  ORDER BY l.created_at DESC NULLS LAST;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.whatsapp_inbox_latest_by_phones(text[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.whatsapp_inbox_latest_by_phones(text[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.whatsapp_inbox_latest_by_phones(text[]) TO service_role;

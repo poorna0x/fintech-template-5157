@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
+  Calendar,
+  Check,
   Copy,
   Download,
   FileText,
@@ -11,6 +13,7 @@ import {
   Paperclip,
   Search,
   Send,
+  Settings,
   Trash2,
   UserRound,
   X,
@@ -43,6 +46,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -65,6 +71,10 @@ import {
   countUnreadWhatsAppThreads,
   displayPhone,
   fetchWhatsAppInboxThreads,
+  inboxListRangeKey,
+  inboxListRangeLabel,
+  loadWhatsAppInboxListRange,
+  saveWhatsAppInboxListRange,
   searchWhatsAppInboxThreads,
   formatBubbleTime,
   formatThreadTime,
@@ -90,6 +100,7 @@ import {
   writeWhatsAppInboxThreadsCache,
   writeWhatsAppThreadMessagesCache,
   type WhatsAppMessageRow,
+  type WhatsAppInboxListRange,
   type WhatsAppThread,
 } from '@/lib/whatsappInbox';
 import {
@@ -295,6 +306,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('');
   const [templateParams, setTemplateParams] = useState<string[]>([]);
   const [readMap, setReadMap] = useState<Record<string, string>>(() => loadWhatsAppReadMap());
+  const [listRange, setListRange] = useState<WhatsAppInboxListRange>(() =>
+    loadWhatsAppInboxListRange()
+  );
+  const [customRangeOpen, setCustomRangeOpen] = useState(false);
+  const [customRangeDate, setCustomRangeDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const listRangeRef = useRef(listRange);
+  listRangeRef.current = listRange;
 
   useEffect(() => {
     setWhatsAppInboxActivity({ open: true, selectedPhone });
@@ -382,7 +404,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, [initialPhone]);
 
   const loadInbox = useCallback(async (opts?: { soft?: boolean; force?: boolean }) => {
-    const cached = peekWhatsAppInboxThreadsCache({ todayOnly: true });
+    const rangeKey = inboxListRangeKey(listRangeRef.current);
+    const cached = peekWhatsAppInboxThreadsCache({ rangeKey });
     const cacheFresh = isWhatsAppInboxListCacheFresh(cached);
     if (cached?.threads?.length && !opts?.force) {
       setThreads(cached.threads);
@@ -395,7 +418,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
     if (!opts?.soft && !(cached?.threads?.length)) setLoading(true);
     try {
-      const result = await fetchWhatsAppInboxThreads(supabase, { todayOnly: true });
+      const result = await fetchWhatsAppInboxThreads(supabase, {
+        range: listRangeRef.current,
+      });
       if (result.error) {
         if (!(cached?.threads?.length)) {
           toast.error(result.error || 'Failed to load WhatsApp threads');
@@ -403,11 +428,22 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         return;
       }
       setThreads(result.threads);
-      writeWhatsAppInboxThreadsCache(result.threads, { todayOnly: true });
+      writeWhatsAppInboxThreadsCache(result.threads, { rangeKey });
     } finally {
       if (!opts?.soft) setLoading(false);
     }
   }, []);
+
+  const applyListRange = useCallback(
+    (range: WhatsAppInboxListRange) => {
+      saveWhatsAppInboxListRange(range);
+      setListRange(range);
+      listRangeRef.current = range;
+      invalidateWhatsAppInboxThreadsCache();
+      void loadInbox({ force: true });
+    },
+    [loadInbox]
+  );
 
   const runSearch = useCallback(async () => {
     const q = query.trim();
@@ -834,7 +870,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const upsertMessageLocal = useCallback((row: WhatsAppMessageRow) => {
     setThreads((prev) => {
       const next = patchThreadFromMessage(prev, row);
-      writeWhatsAppInboxThreadsCache(next, { todayOnly: true });
+      writeWhatsAppInboxThreadsCache(next, {
+        rangeKey: inboxListRangeKey(listRangeRef.current),
+      });
       return next;
     });
     if (row.phone_e164 === selectedPhoneRef.current) {
@@ -1024,6 +1062,29 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, [threads, searchThreads, appliedSearch]);
 
   const listBusy = loading || searchLoading;
+  const listRangeSubtitle = inboxListRangeLabel(listRange);
+
+  const isListRangeActive = useCallback(
+    (candidate: WhatsAppInboxListRange): boolean => {
+      if (typeof candidate === 'object' && typeof listRange === 'object') {
+        return candidate.custom === listRange.custom;
+      }
+      return candidate === listRange;
+    },
+    [listRange]
+  );
+
+  const rangeMenuItem = (label: string, range: WhatsAppInboxListRange) => (
+    <DropdownMenuItem
+      className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]"
+      onClick={() => applyListRange(range)}
+    >
+      <span className="flex-1">{label}</span>
+      {isListRangeActive(range) ? (
+        <Check className="ml-2 h-4 w-4 shrink-0 text-[#00a884]" />
+      ) : null}
+    </DropdownMenuItem>
+  );
 
   const windowOpen = isWithinCustomerServiceWindow(activeThread?.inbound_at);
   windowOpenRef.current = Boolean(windowOpen);
@@ -1351,8 +1412,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   {appliedSearch
                     ? `Search · ${filteredThreads.length}`
                     : unreadCount > 0
-                      ? `${unreadCount > 99 ? '99+' : unreadCount} unread today`
-                      : 'Today’s conversations'}
+                      ? `${unreadCount > 99 ? '99+' : unreadCount} unread · ${listRangeSubtitle}`
+                      : listRangeSubtitle}
                 </p>
               </div>
               <div className="flex items-center gap-0.5">
@@ -1387,28 +1448,57 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       Water Filter Service
                     </DropdownMenuItem>
                     <DropdownMenuSeparator className="bg-[#2a3942]" />
-                    <DropdownMenuItem
-                      className="cursor-pointer text-red-400 focus:bg-[#2a3942] focus:text-red-400"
-                      disabled={!selectedPhone}
-                      onClick={() =>
-                        selectedPhone
-                          ? void runPurge({ phoneE164: selectedPhone, keepMedia: true })
-                          : undefined
-                      }
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete this chat (keep files)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="cursor-pointer text-red-400 focus:bg-[#2a3942] focus:text-red-400"
-                      disabled={!selectedPhone}
-                      onClick={() =>
-                        selectedPhone ? void runPurge({ phoneE164: selectedPhone }) : undefined
-                      }
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete chat and files
-                    </DropdownMenuItem>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]">
+                        <Calendar className="mr-2 h-4 w-4" />
+                        Show chats
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-56 border-[#2a3942] bg-[#233138] text-[#e9edef]">
+                        {rangeMenuItem("Today", 'today')}
+                        {rangeMenuItem('Last 7 days', '7d')}
+                        {rangeMenuItem('Last 30 days', '30d')}
+                        {rangeMenuItem('All chats', 'all')}
+                        <DropdownMenuItem
+                          className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]"
+                          onClick={() => setCustomRangeOpen(true)}
+                        >
+                          <span className="flex-1">Custom date…</span>
+                          {typeof listRange === 'object' ? (
+                            <Check className="ml-2 h-4 w-4 shrink-0 text-[#00a884]" />
+                          ) : null}
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]">
+                        <Settings className="mr-2 h-4 w-4" />
+                        Chat settings
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-56 border-[#2a3942] bg-[#233138] text-[#e9edef]">
+                        <DropdownMenuItem
+                          className="cursor-pointer text-red-400 focus:bg-[#2a3942] focus:text-red-400"
+                          disabled={!selectedPhone}
+                          onClick={() =>
+                            selectedPhone
+                              ? void runPurge({ phoneE164: selectedPhone, keepMedia: true })
+                              : undefined
+                          }
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete chat (keep files)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer text-red-400 focus:bg-[#2a3942] focus:text-red-400"
+                          disabled={!selectedPhone}
+                          onClick={() =>
+                            selectedPhone ? void runPurge({ phoneE164: selectedPhone }) : undefined
+                          }
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete chat and files
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -1465,7 +1555,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   className="cursor-pointer font-medium text-[#00a884] underline-offset-2 hover:underline"
                   onClick={clearSearch}
                 >
-                  Today’s chats
+                  {listRangeSubtitle}
                 </button>
               </p>
             ) : null}
@@ -1482,7 +1572,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 <p className="text-sm text-[#8696a0]">
                   {appliedSearch.trim()
                     ? 'No matching customers or chats'
-                    : 'No chats today — search by name, phone, email, or ID'}
+                    : listRange === 'today'
+                      ? 'No chats today — search by name, phone, email, or ID'
+                      : `No chats in ${listRangeSubtitle.toLowerCase()} — try a wider range or search`}
                 </p>
                 {!appliedSearch.trim() ? (
                   <Button
@@ -2277,6 +2369,43 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           )}
         </section>
       </div>
+
+      <Dialog open={customRangeOpen} onOpenChange={setCustomRangeOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Show chats since</DialogTitle>
+            <DialogDescription>
+              List conversations with activity on or after this date.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            type="date"
+            value={customRangeDate}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setCustomRangeDate(e.target.value)}
+            className="h-11"
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCustomRangeOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#00a884] text-white hover:bg-[#008f72]"
+              onClick={() => {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(customRangeDate)) {
+                  toast.error('Pick a valid date');
+                  return;
+                }
+                applyListRange({ custom: customRangeDate });
+                setCustomRangeOpen(false);
+              }}
+            >
+              Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={newChatOpen} onOpenChange={setNewChatOpen}>
         <DialogContent className="sm:max-w-md">

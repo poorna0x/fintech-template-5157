@@ -62,9 +62,9 @@ function inboxPathForPhone(phoneE164: string): string {
 }
 
 function bumpUnreadFromInbound(row: WhatsAppMessageRow): WhatsAppThreadNameHint {
-  const cached = peekWhatsAppInboxThreadsCache({ todayOnly: true });
+  const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
   const threads = patchThreadFromMessage(cached?.threads ?? [], row);
-  writeWhatsAppInboxThreadsCache(threads, { todayOnly: true });
+  writeWhatsAppInboxThreadsCache(threads, { rangeKey: 'today' });
   const readMap = loadWhatsAppReadMap();
   dispatchWhatsAppUnreadChanged(countUnreadWhatsAppThreads(threads, readMap));
   const phone = normalizePhone(row.phone_e164);
@@ -155,9 +155,9 @@ function handleInboundInsert(row: Partial<WhatsAppMessageRow> | null): void {
 
   const phone = normalizePhone(row.phone_e164);
   if (shouldSuppressAlert(phone)) {
-    const cached = peekWhatsAppInboxThreadsCache({ todayOnly: true });
+    const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
     const threads = patchThreadFromMessage(cached?.threads ?? [], row as WhatsAppMessageRow);
-    writeWhatsAppInboxThreadsCache(threads, { todayOnly: true });
+    writeWhatsAppInboxThreadsCache(threads, { rangeKey: 'today' });
     return;
   }
 

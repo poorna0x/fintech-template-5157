@@ -250,7 +250,13 @@ import {
   type AdminToolDialog,
   type LetterheadDocumentType,
 } from '@/lib/adminDashboardUrl';
-import { settingsPanelPath } from '@/lib/settingsUrl';
+import {
+  ensureLeadCatalogLoaded,
+  getLeadSourceOptionsForFilters,
+  getSubTypeOptionsForFilters,
+  peekLeadCatalog,
+  preloadLeadCatalog,
+} from '@/lib/leadCatalog';
 import WarrantyManagementDialog from './admin/WarrantyManagementDialog';
 import { CompleteJobDialog } from './admin/CompleteJobDialog';
 import { StatsCards } from './admin/StatsCards';
@@ -341,6 +347,7 @@ const AdminDashboard = () => {
   const location = useLocation();
   const { user, isAdmin, authInitializing, logout } = useAuth();
   const { isManager } = useAdminRole();
+  const [, setLeadCatalogTick] = useState(0);
   const managerRestrictedTitle = 'Restricted for Manager role';
   const savedUi = getModuleAdminUiState();
   const initialDashboardCache = readAdminDashboardCache();
@@ -604,6 +611,8 @@ const AdminDashboard = () => {
     void import('@/lib/adminPush').then(({ registerAdminPushToken }) =>
       registerAdminPushToken()
     );
+    preloadLeadCatalog();
+    void ensureLeadCatalogLoaded().then(() => setLeadCatalogTick((n) => n + 1));
   }, []);
 
   // Notification tap → Completed / Ongoing + highlight that job (no network wait).
@@ -5988,32 +5997,9 @@ const AdminDashboard = () => {
           completedRangeEndDate,
         });
       });
-  const MASTER_LEAD_TYPES = [
-    'Website',
-    'Direct call',
-    'Google-Leads',
-    'RO care india',
-    'Home Triangle',
-    'Home Triangle-Srujan',
-    'Home Triangle-3',
-    'Local Ramu',
-    'Other'
-  ];
-  const MASTER_SERVICE_SUB_TYPES = [
-    'Service',
-    'Installation',
-    'Reinstallation',
-    'Return Complaint',
-    'Return Service',
-    'AMC Service',
-    'New Purifier Installation',
-    'Un-Installation',
-    'Repair',
-    'Maintenance',
-    'Replacement',
-    'Inspection',
-    'Other'
-  ];
+  const leadCatalogSnapshot = peekLeadCatalog();
+  const MASTER_LEAD_TYPES = getLeadSourceOptionsForFilters(leadCatalogSnapshot);
+  const MASTER_SERVICE_SUB_TYPES = getSubTypeOptionsForFilters(leadCatalogSnapshot);
   const dataLeadTypeOptions = completedJobsInSelectedWindow
     .map((job) => normalizeLeadType(findLeadSource(parseJobRequirements((job as any).requirements || job.requirements || [])) || 'Direct call'))
     .filter(Boolean);

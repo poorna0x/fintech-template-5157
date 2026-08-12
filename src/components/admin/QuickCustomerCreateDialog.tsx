@@ -26,8 +26,8 @@ import {
 } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import {
+  getWhatsAppBookingLeadSources,
   startQuickCustomerCreateBooking,
-  WHATSAPP_BOOKING_LEAD_SOURCES,
 } from '@/lib/whatsappBookingStart';
 
 export type QuickCustomerServiceKind = 'Service' | 'Installation';
@@ -206,7 +206,7 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
                 <SelectValue placeholder="Lead source" />
               </SelectTrigger>
               <SelectContent className="!z-[120]">
-                {WHATSAPP_BOOKING_LEAD_SOURCES.map((src) => (
+                {getWhatsAppBookingLeadSources().map((src) => (
                   <SelectItem key={src} value={src}>
                     {src}
                   </SelectItem>

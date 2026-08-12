@@ -24,6 +24,7 @@ export const SETTINGS_PANELS = [
   'edit-product-qr',
   'add-todo',
   'add-tracker',
+  'lead-catalog',
 ] as const;
 
 export type SettingsPanelSlug = (typeof SETTINGS_PANELS)[number];
