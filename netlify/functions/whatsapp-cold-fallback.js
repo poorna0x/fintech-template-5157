@@ -17,7 +17,7 @@ function isTemplateMetaError(result) {
   );
   const code = String(result.data?.error?.code || '');
   return (
-    /template|not (found|exist)|approved|parameter|language|1320|131058/i.test(msg) ||
+    /template|not (found|exist)|doesn'?t exist|translation|approved|parameter|language|1320|131058/i.test(msg) ||
     ['132000', '132001', '132005', '132007', '132012', '132015', '132016', '131058'].includes(
       code
     )
@@ -92,6 +92,11 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
   }
 
   // DOCUMENT-header cold PDF — v3 letter → direct (any label) → v2 → svc_doc_pdf_v2
+  if (/^svc_doc_accept_preview_/i.test(primaryName)) {
+    const label = String(bodyParams?.[1] || '').trim() || 'document';
+    push(SMOKE, [name, label]);
+  }
+
   if (hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName)) {
     const labelMap = {
       bill: 'service bill',

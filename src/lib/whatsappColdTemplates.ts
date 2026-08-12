@@ -3,7 +3,7 @@
  *
  * Cold PDF (direct, no Accept): prefer svc_doc_{bill|…}_{ero|hro}_v3 letter+emoji →
  * svc_doc_direct_{ero|hro}_v1 (any label) → v2 → svc_doc_pdf_v2.
- * Accept-preview (separate): svc_doc_accept_preview_{ero|hro}_v4 — do not use for normal sends.
+ * Accept-preview (separate): svc_doc_accept_preview_{ero|hro}_v7 — do not use for normal sends.
  *
  * After the customer replies (24h opens), the booking bot continues with the same
  * interactive UI as in-session. Do not use svc_booking_menu (Meta → MARKETING).
@@ -117,10 +117,10 @@ export const WA_COLD = {
   /**
    * Preview PDF (DOCUMENT) + Accept URL → /c/{token}.
    * After terms accept, CRM sends the original PDF on WhatsApp.
-   * Meta: svc_doc_accept_preview_{ero|hro}_v4 (Call + Accept; reply on chat; light emojis)
+   * Meta: svc_doc_accept_preview_{ero|hro}_v7 (DOCUMENT + Call + I Accept quick reply)
    */
   document_accept_preview: {
-    name: 'svc_doc_accept_preview_hro_v4',
+    name: 'svc_doc_accept_preview_hro_v7',
     language: 'en',
     bodyParams: (customerName: string, documentLabel?: string) => [
       cleanName(customerName),
@@ -450,13 +450,16 @@ export function coldDocTemplateForKind(
   };
 }
 
-/** Preview PDF + Accept terms → original (svc_doc_accept_preview_{ero|hro}_v4). */
+/** Quick-reply label on cold accept-preview templates (Meta template button). */
+export const DOC_ACCEPT_QUICK_REPLY_TEXT = 'I Accept';
+
+/** Preview PDF + Accept terms → original (svc_doc_accept_preview_{ero|hro}_v7). */
 export function resolveDocAcceptPreviewTemplate(
   brand?: DocumentBrand | string | null
 ): { name: string; language: string } {
   const suffix = normalizeDocumentBrand(brand) === 'elevenro' ? 'ero' : 'hro';
   return {
-    name: `svc_doc_accept_preview_${suffix}_v4`,
+    name: `svc_doc_accept_preview_${suffix}_v7`,
     language: 'en',
   };
 }
@@ -470,13 +473,6 @@ export function docAcceptPreviewBodyParams(
     cleanName(customerName),
     String(documentLabel || 'service report').trim() || 'service report',
   ];
-}
-
-/** URL button param for Accept → /c/{token} (index 0 = first URL button). */
-export function docAcceptPreviewButtonUrlParams(token: string): Array<{ index: number; text: string }> {
-  const t = String(token || '').trim();
-  if (!t) return [];
-  return [{ index: 0, text: t }];
 }
 
 /** Job-done letter with no buttons: svc_job_done_letter_{ero|hro}_plain_v2 */
@@ -563,7 +559,7 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   warranty_ready: 'Warranty PDF (svc_doc_warranty_*_v3 → direct → v2)',
   receipt_ready: 'Receipt PDF (svc_doc_receipt_*_v3 → direct → v2)',
   document_accept_preview:
-    'Preview PDF + Accept (svc_doc_accept_preview_*_v4; reply on chat; light emojis)',
+    'Preview PDF + I Accept quick reply (svc_doc_accept_preview_*_v7 → original PDF)',
   document_direct: 'Direct PDF any label (svc_doc_direct_{ero|hro}_v1 — no Accept)',
   customer_followup: 'Follow-up → visit reminder',
   appointment_reminder: 'Appointment reminder (svc_visit_reminder)',

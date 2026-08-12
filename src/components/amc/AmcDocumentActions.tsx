@@ -11,6 +11,11 @@ import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import { downloadAmcAgreementPdf } from '@/lib/send-amc-agreement-email';
 import { generateAmcPdfBase64ForWhatsApp } from '@/lib/send-amc-whatsapp';
 import {
+  generateAmcAcceptPdfPair,
+  sendDocumentAcceptInvite,
+  showAcceptPreviewSentToast,
+} from '@/lib/documentAcceptPreview';
+import {
   resolveBillCustomerDisplayName,
   sendAdminWhatsAppDocumentWithColdFallback,
 } from '@/lib/sendAdminWhatsAppApi';
@@ -62,6 +67,7 @@ export default function AmcDocumentActions({
   const [emailOpen, setEmailOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
+  const [requireAccept, setRequireAccept] = useState(false);
 
   const defaultRecipients = useMemo(() => {
     const valid = getValidCustomerEmail(customerEmail);
@@ -123,6 +129,34 @@ export default function AmcDocumentActions({
         }
       }
       toast.loading('Generating PDF…', { id: toastId });
+      if (requireAccept) {
+        toast.loading('Generating preview + original…', { id: toastId });
+        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions);
+        toast.loading('Sending Accept preview on WhatsApp…', { id: toastId });
+        const invite = await sendDocumentAcceptInvite({
+          to: customerPhone,
+          brand,
+          docType: 'amc',
+          documentLabel: 'AMC agreement',
+          documentRef: bill.billNumber,
+          sourceKey: bill.billNumber,
+          customerId: bill.customer?.id || null,
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+          filename: pair.filename,
+          verifyCode: pair.verifyCode,
+          previewVerifyCode: pair.previewVerifyCode,
+          originalPdfBase64: pair.originalPdfBase64,
+          previewPdfBase64: pair.previewPdfBase64,
+        });
+        if (!invite.ok) {
+          toast.error(invite.error || 'Could not send Accept preview', { id: toastId });
+          return;
+        }
+        showAcceptPreviewSentToast(toastId);
+        invalidateInboundWindowCache(customerPhone);
+        onSent?.();
+        return;
+      }
       const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
       const inboundAt = await fetchLastInboundAt(customerPhone, supabase);
       const windowClosed = !isWithinCustomerServiceWindow(inboundAt);
@@ -175,6 +209,21 @@ export default function AmcDocumentActions({
 
   return (
     <>
+      {canWhatsApp ? (
+        <label className="mb-2 flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-emerald-700"
+            checked={requireAccept}
+            onChange={(e) => setRequireAccept(e.target.checked)}
+            disabled={sendingWhatsApp || downloading}
+          />
+          <span className="text-xs leading-snug text-foreground">
+            <span className="font-semibold">Require Accept</span> — preview on WhatsApp, then I Accept
+            for original AMC
+          </span>
+        </label>
+      ) : null}
       <div
         className={
           className ||
@@ -242,6 +291,12 @@ export default function AmcDocumentActions({
             : undefined)
         }
         onPersistAfterEmail={onPersistAfterEmail}
+        onPersistAfterWhatsApp={
+          onPersistBeforeAction
+            ? async () => onPersistBeforeAction()
+            : undefined
+        }
+        allowWhatsApp
         onSent={onSent}
       />
     </>

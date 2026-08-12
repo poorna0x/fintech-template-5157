@@ -808,13 +808,22 @@ export function previewMessageBody(
   const isImage =
     row.msg_type === 'image' || Boolean(row.media_mime?.startsWith('image/'));
 
-  // Prefer filename for media so thread list shows the PDF/photo name
+  if (row.body?.trim()) {
+    const formatted = formatAdminWhatsAppBody(row.body, { compact: true });
+    if (row.media_url && (isDoc || isImage)) {
+      const snippet =
+        formatted.length > 72 ? `${formatted.slice(0, 69).trim()}…` : formatted;
+      return isDoc ? `📄 ${snippet}` : `📷 ${snippet}`;
+    }
+    return formatted;
+  }
+
+  // Prefer filename for media without caption so thread list shows the PDF/photo name
   if (row.media_url && file && (isDoc || isImage)) {
     if (isImage) return `📷 ${file}`;
     return `📄 ${file}`;
   }
 
-  if (row.body?.trim()) return formatAdminWhatsAppBody(row.body, { compact: true });
   if (file) return isDoc ? `📄 ${file}` : isImage ? `📷 ${file}` : file;
   switch (row.msg_type) {
     case 'image':

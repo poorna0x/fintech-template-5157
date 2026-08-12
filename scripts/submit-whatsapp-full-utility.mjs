@@ -1359,9 +1359,8 @@ function buildDocPdfV3Templates() {
 const DOC_PDF_V3_TEMPLATES = buildDocPdfV3Templates();
 
 /**
- * Preview PDF → Accept terms → original PDF (DOCUMENT header).
- * Buttons: Call us + Accept only (no Text us / wa.me).
- * Light emojis for readability; keep UTILITY tone (no promo/celebration spam).
+ * Preview PDF → Accept → original PDF (DOCUMENT header).
+ * v6 rejected INCORRECT_CATEGORY (terms wall + URL + emojis). v7: short transactional UTILITY copy.
  */
 function buildDocAcceptPreviewTemplates() {
   const out = [];
@@ -1371,17 +1370,15 @@ function buildDocAcceptPreviewTemplates() {
     out.push({
       callPhone,
       websiteUrl: b.website,
-      acceptUrl: `${b.website}/c/{{1}}`,
-      name: `svc_doc_accept_preview_${suffix}_v4`,
+      name: `svc_doc_accept_preview_${suffix}_v7`,
       body: [
-        `Hi {{1}}, 👋`,
-        `📄 This is a PREVIEW of your {{2}} from ${b.label}.`,
+        `Hi {{1}},`,
         ``,
-        `⚠️ This file is for review only. It is not the final original document and is not valid for claims or official records.`,
+        `Your PREVIEW {{2}} from ${b.label} is attached. This file is for review only — not the final original document.`,
         ``,
-        `✅ Tap Accept below to review and accept the terms and conditions. After you accept, we will send the original document to this WhatsApp chat.`,
+        `Tap I Accept below to receive the original document on this WhatsApp chat.`,
         ``,
-        `💬 If you have any questions, reply on this chat.`,
+        `Reply on this chat if you need any help.`,
         ``,
         footer,
       ].join('\n'),
@@ -1746,15 +1743,12 @@ async function docPdfPayload(t, token = '') {
   return docPdfPayloadSync(t, headerHandle);
 }
 
-/** Preview PDF attached + Accept → /c/{token}. Call us only (no Text us / wa.me). */
+/** Preview PDF + I Accept quick reply → original PDF on same chat (no web Accept URL). */
 function docAcceptPreviewPayloadSync(t, headerHandle = SAMPLE_PDF) {
   const callPhone = t.callPhone || callPhoneForTemplate(t.name);
-  const acceptUrl =
-    t.acceptUrl ||
-    `${(t.websiteUrl || websiteUrlForTemplate(t.name) || 'https://hydrogenro.com').replace(/\/$/, '')}/c/{{1}}`;
   const buttons = [
     { type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone },
-    { type: 'URL', text: 'Accept', url: acceptUrl, example: ['Ab3xY9kLmN2pQ8rT'] },
+    { type: 'QUICK_REPLY', text: 'I Accept' },
   ];
   return {
     name: t.name,

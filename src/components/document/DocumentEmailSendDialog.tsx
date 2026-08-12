@@ -31,6 +31,11 @@ import {
 } from '@/lib/send-generator-document-email';
 import { forceLightThemeClass } from '@/lib/force-light-theme';
 import {
+  generateDocumentAcceptPdfPair,
+  sendDocumentAcceptInvite,
+  showAcceptPreviewSentToast,
+} from '@/lib/documentAcceptPreview';
+import {
   openWhatsAppMeDeepLink,
   resolveBillCustomerDisplayName,
   sendAdminWhatsAppDocumentWithColdFallback,
@@ -165,6 +170,8 @@ export default function DocumentEmailSendDialog({
   const [windowChecking, setWindowChecking] = useState(false);
   const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
+  /** Preview PDF + WhatsApp I Accept button → original PDF. */
+  const [requireAccept, setRequireAccept] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -172,6 +179,7 @@ export default function DocumentEmailSendDialog({
     setRecipientRows(seeded.length ? seeded : [emptyRow()]);
     const phone = String(bill?.customer?.phone || '').trim();
     setWhatsappPhone(phone);
+    setRequireAccept(false);
     const nextChannel = pickDefaultChannel({
       allowWhatsApp,
       hasEmail: seeded.length > 0,
@@ -363,6 +371,40 @@ export default function DocumentEmailSendDialog({
       }
 
       toast.loading('Generating PDF…', { id: toastId });
+
+      if (requireAccept) {
+        toast.loading('Generating preview + original…', { id: toastId });
+        const pair = await generateDocumentAcceptPdfPair(kind, bill);
+        toast.loading('Sending Accept preview on WhatsApp…', { id: toastId });
+        const invite = await sendDocumentAcceptInvite({
+          to: phone,
+          brand,
+          docType: kind,
+          documentLabel: meta.docLabel,
+          documentRef: bill.billNumber,
+          sourceKey: bill.billNumber,
+          customerId: bill.customer?.id,
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+          amountDisplay: bill.totalAmount,
+          filename: pair.filename,
+          verifyCode: pair.verifyCode,
+          previewVerifyCode: pair.previewVerifyCode,
+          originalPdfBase64: pair.originalPdfBase64,
+          previewPdfBase64: pair.previewPdfBase64,
+        });
+        if (!invite.ok) {
+          toast.error(invite.error || 'Could not send Accept preview', { id: toastId });
+          return { ok: false as const };
+        }
+        invalidateInboundWindowCache(phone);
+        if (!opts?.keepOpen) {
+          showAcceptPreviewSentToast(toastId);
+          onSent?.();
+          onOpenChange(false);
+        }
+        return { ok: true as const, toastId, via: 'accept_preview' as const };
+      }
+
       const pdf = await generateGeneratorDocumentPdfBase64(kind, bill);
       toast.loading('Sending on WhatsApp…', { id: toastId });
       const caption = (
@@ -634,6 +676,19 @@ export default function DocumentEmailSendDialog({
                   PDF sends when the customer has messaged this business number in the last 24h.
                 </p>
               )}
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-emerald-700"
+                  checked={requireAccept}
+                  onChange={(e) => setRequireAccept(e.target.checked)}
+                  disabled={sending}
+                />
+                <span className="text-xs leading-snug text-foreground">
+                  <span className="font-semibold">Require Accept</span> — preview PDF on WhatsApp, then
+                  customer taps <span className="font-semibold">I Accept</span> for the original.
+                </span>
+              </label>
             </div>
           ) : null}
 

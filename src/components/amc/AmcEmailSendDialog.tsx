@@ -38,6 +38,11 @@ import { forceLightThemeClass } from '@/lib/force-light-theme';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
 import { generateAmcPdfBase64ForWhatsApp } from '@/lib/send-amc-whatsapp';
 import {
+  generateAmcAcceptPdfPair,
+  sendDocumentAcceptInvite,
+  showAcceptPreviewSentToast,
+} from '@/lib/documentAcceptPreview';
+import {
   openWhatsAppMeDeepLink,
   resolveBillCustomerDisplayName,
   sendAdminWhatsAppDocumentWithColdFallback,
@@ -122,6 +127,7 @@ export default function AmcEmailSendDialog({
   const [windowChecking, setWindowChecking] = useState(false);
   const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
+  const [requireAccept, setRequireAccept] = useState(false);
 
   const coldTemplatePreview = useMemo(() => {
     if (!bill) return '';
@@ -140,6 +146,7 @@ export default function AmcEmailSendDialog({
       setRecipientRows(seeded.length ? seeded : [emptyRow()]);
     }
     setWhatsappPhone(String(bill?.customer?.phone || '').trim());
+    setRequireAccept(false);
     setMessage(getDefaultDocumentMessage('amc_document'));
     const phone = String(bill?.customer?.phone || '').trim();
     setChannel(
@@ -363,6 +370,50 @@ export default function AmcEmailSendDialog({
       }
 
       toast.loading('Generating PDF…', { id: toastId });
+
+      if (requireAccept) {
+        toast.loading('Generating preview + original…', { id: toastId });
+        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions);
+        toast.loading('Sending Accept preview on WhatsApp…', { id: toastId });
+        const invite = await sendDocumentAcceptInvite({
+          to: phone,
+          brand,
+          docType: 'amc',
+          documentLabel: 'AMC agreement',
+          documentRef: bill.billNumber,
+          sourceKey: bill.billNumber,
+          customerId: bill.customer?.id || null,
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+          filename: pair.filename,
+          verifyCode: pair.verifyCode,
+          previewVerifyCode: pair.previewVerifyCode,
+          originalPdfBase64: pair.originalPdfBase64,
+          previewPdfBase64: pair.previewPdfBase64,
+        });
+        if (!invite.ok) {
+          toast.error(invite.error || 'Could not send Accept preview', { id: toastId });
+          return;
+        }
+        if (onPersistAfterWhatsApp) {
+          toast.loading('Saving AMC to database…', { id: toastId });
+          const saved = await onPersistAfterWhatsApp();
+          if (!saved.ok) {
+            toast.warning('Accept preview sent, but AMC could not be saved', {
+              id: toastId,
+              description: saved.error,
+            });
+            onSent?.();
+            onOpenChange(false);
+            return;
+          }
+        }
+        invalidateInboundWindowCache(phone);
+        showAcceptPreviewSentToast(toastId);
+        onSent?.();
+        onOpenChange(false);
+        return;
+      }
+
       const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
       toast.loading(
         windowOpen === false ? '24h window closed — sending PDF via template…' : 'Sending on WhatsApp…',
@@ -527,6 +578,36 @@ export default function AmcEmailSendDialog({
 
       const phone = formatPhoneForWhatsApp(whatsappPhone);
       toast.loading('Sending WhatsApp…', { id: toastId });
+      if (requireAccept) {
+        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions);
+        const invite = await sendDocumentAcceptInvite({
+          to: phone,
+          brand,
+          docType: 'amc',
+          documentLabel: 'AMC agreement',
+          documentRef: bill.billNumber,
+          sourceKey: bill.billNumber,
+          customerId: bill.customer?.id || null,
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+          filename: pair.filename,
+          verifyCode: pair.verifyCode,
+          previewVerifyCode: pair.previewVerifyCode,
+          originalPdfBase64: pair.originalPdfBase64,
+          previewPdfBase64: pair.previewPdfBase64,
+        });
+        if (!invite.ok) {
+          toast.error(invite.error || 'Email sent, but Accept WhatsApp failed', { id: toastId });
+          return;
+        }
+        if (onPersistAfterWhatsApp) {
+          await onPersistAfterWhatsApp();
+        }
+        invalidateInboundWindowCache(phone);
+        showAcceptPreviewSentToast(toastId);
+        onSent?.();
+        onOpenChange(false);
+        return;
+      }
       const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
       const caption = (
         message.trim() ||
@@ -697,6 +778,19 @@ export default function AmcEmailSendDialog({
                   PDF sends when the customer has messaged this business number in the last 24h.
                 </p>
               )}
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-emerald-700"
+                  checked={requireAccept}
+                  onChange={(e) => setRequireAccept(e.target.checked)}
+                  disabled={sending}
+                />
+                <span className="text-xs leading-snug text-foreground">
+                  <span className="font-semibold">Require Accept</span> — preview on WhatsApp, then
+                  customer taps <span className="font-semibold">I Accept</span> for the original AMC.
+                </span>
+              </label>
             </div>
           ) : null}
 

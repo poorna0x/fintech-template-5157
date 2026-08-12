@@ -1859,6 +1859,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               if (
                                 m.media_url &&
                                 file &&
+                                !m.body?.trim() &&
                                 (preview === file ||
                                   preview === `📄 ${file}` ||
                                   preview === `📷 ${file}` ||

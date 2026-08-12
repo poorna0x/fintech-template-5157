@@ -66,6 +66,7 @@ const whatsappBookingStart = require('./whatsapp-booking-start');
 const dialCall = require('./dial-call');
 const pdfAuthenticityOtpVerify = require('./pdf-authenticity-otp-verify');
 const pdfAuthenticityCheck = require('./pdf-authenticity-check');
+const documentAcceptSend = require('./document-accept-send');
 
 const PORT = 8888;
 
@@ -164,6 +165,8 @@ const server = http.createServer((req, res) => {
     handler = pdfAuthenticityOtpVerify;
   } else if (req.url.startsWith('/.netlify/functions/pdf-authenticity-check')) {
     handler = pdfAuthenticityCheck;
+  } else if (req.url.startsWith('/.netlify/functions/document-accept-send')) {
+    handler = documentAcceptSend;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }
@@ -316,6 +319,9 @@ server.listen(PORT, '0.0.0.0', () => {
   );
   console.log(
     `🔑 Sync technician Auth: http://localhost:${PORT}/.netlify/functions/sync-technician-auth-user`
+  );
+  console.log(
+    `📄 Document Accept send: http://localhost:${PORT}/.netlify/functions/document-accept-send`
   );
   const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
   console.log(

@@ -48,7 +48,9 @@ function buildObjectKey(folder, filename) {
   const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
   const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   const safe = safeFilename(filename);
-  const prefix = folder === 'outbound' ? 'whatsapp/outbound' : 'whatsapp/inbound';
+  let prefix = 'whatsapp/inbound';
+  if (folder === 'outbound') prefix = 'whatsapp/outbound';
+  else if (folder === 'accept') prefix = 'whatsapp/accept';
   return `${prefix}/${yyyy}/${mm}/${id}-${safe}`;
 }
 
@@ -66,7 +68,7 @@ function parseR2ObjectKey(mediaUrlOrRef) {
     return key.startsWith('whatsapp/') ? key : null;
   }
   // Plain key stored without prefix
-  if (raw.startsWith('whatsapp/inbound/') || raw.startsWith('whatsapp/outbound/')) {
+  if (raw.startsWith('whatsapp/inbound/') || raw.startsWith('whatsapp/outbound/') || raw.startsWith('whatsapp/accept/')) {
     return raw;
   }
   return null;
@@ -111,6 +113,10 @@ async function uploadWhatsAppMediaToR2(buffer, mime, filename, folder = 'inbound
 
 async function uploadOutboundMediaToR2(buffer, mime, filename) {
   return uploadWhatsAppMediaToR2(buffer, mime, filename, 'outbound');
+}
+
+async function uploadAcceptOriginalToR2(buffer, mime, filename) {
+  return uploadWhatsAppMediaToR2(buffer, mime, filename, 'accept');
 }
 
 async function deleteR2Object(objectKeyOrRef) {
@@ -194,6 +200,7 @@ module.exports = {
   isR2MediaRef,
   uploadWhatsAppMediaToR2,
   uploadOutboundMediaToR2,
+  uploadAcceptOriginalToR2,
   deleteR2Object,
   createR2SignedGetUrl,
   getR2ObjectBytes,

@@ -18,6 +18,7 @@ const {
 const { handleBookingBotInbound } = require('./whatsapp-booking-bot');
 const { handleUnsolicitedInboundMedia } = require('./whatsapp-unsolicited-media');
 const { handlePdfAuthenticityOtpInbound } = require('./whatsapp-pdf-authenticity-otp');
+const { handleDocumentAcceptInbound } = require('./document-accept-inbound');
 
 function readRawBody(event) {
   if (!event.body) return '';
@@ -106,8 +107,24 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       }
     }
 
+    // Document Accept — WhatsApp I Accept button (before booking bot).
+    let documentAcceptHandled = false;
+    if (!authenticityOtpHandled && accessToken && phoneNumberId) {
+      try {
+        const acceptResult = await handleDocumentAcceptInbound({
+          db,
+          accessToken,
+          phoneNumberId,
+          msg,
+        });
+        documentAcceptHandled = Boolean(acceptResult?.handled);
+      } catch (err) {
+        console.warn('[whatsapp-webhook] document accept error', err?.message || err);
+      }
+    }
+
     // 24h-window booking bot (reply buttons). Failures must not break webhook ACK.
-    if (!authenticityOtpHandled && !skipBookingBot && accessToken && phoneNumberId) {
+    if (!authenticityOtpHandled && !documentAcceptHandled && !skipBookingBot && accessToken && phoneNumberId) {
       try {
         await handleBookingBotInbound({
           db,
