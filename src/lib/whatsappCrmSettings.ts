@@ -320,11 +320,59 @@ export async function isWhatsAppJobNotifyAllowed(
   return { ok: true };
 }
 
-export async function fetchWhatsAppCrmSettings(): Promise<{
+let settingsCacheMem: {
+  at: number;
+  ok: boolean;
+  settings: WhatsAppCrmSettings;
+  error?: string;
+} | null = null;
+
+const SETTINGS_CACHE_TTL_MS = 2 * 60 * 1000;
+const SETTINGS_CACHE_KEY = 'wa_crm_settings_cache_v1';
+
+export function invalidateWhatsAppCrmSettingsCache(): void {
+  settingsCacheMem = null;
+  try {
+    sessionStorage.removeItem(SETTINGS_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function fetchWhatsAppCrmSettings(opts?: {
+  force?: boolean;
+}): Promise<{
   ok: boolean;
   settings: WhatsAppCrmSettings;
   error?: string;
 }> {
+  const now = Date.now();
+  if (!opts?.force && settingsCacheMem && now - settingsCacheMem.at < SETTINGS_CACHE_TTL_MS) {
+    return {
+      ok: settingsCacheMem.ok,
+      settings: settingsCacheMem.settings,
+      error: settingsCacheMem.error,
+    };
+  }
+  if (!opts?.force) {
+    try {
+      const raw = sessionStorage.getItem(SETTINGS_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as typeof settingsCacheMem;
+        if (parsed && now - parsed.at < SETTINGS_CACHE_TTL_MS) {
+          settingsCacheMem = parsed;
+          return {
+            ok: parsed.ok,
+            settings: parsed.settings,
+            error: parsed.error,
+          };
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   const { data, error } = await supabase
     .from('whatsapp_crm_settings')
     .select(SETTINGS_COLUMNS)
@@ -345,13 +393,27 @@ export async function fetchWhatsAppCrmSettings(): Promise<{
           '@/lib/jobAssignWhatsAppSettingsCache'
         );
         syncJobWhatsAppNotifyCacheFromCrmSettings(settings);
+        const result = { ok: true as const, settings, at: now };
+        settingsCacheMem = result;
+        try {
+          sessionStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(result));
+        } catch {
+          /* ignore */
+        }
         return { ok: true, settings };
       }
     }
-    return {
-      ok: false,
+    const fail = {
+      ok: false as const,
       settings: { ...DEFAULT_WHATSAPP_CRM_SETTINGS },
       error: error.message,
+      at: now,
+    };
+    settingsCacheMem = fail;
+    return {
+      ok: false,
+      settings: fail.settings,
+      error: fail.error,
     };
   }
   const settings = normalizeWhatsAppCrmSettings(data as WhatsAppCrmSettings);
@@ -359,6 +421,13 @@ export async function fetchWhatsAppCrmSettings(): Promise<{
     '@/lib/jobAssignWhatsAppSettingsCache'
   );
   syncJobWhatsAppNotifyCacheFromCrmSettings(settings);
+  const result = { ok: true as const, settings, at: now };
+  settingsCacheMem = result;
+  try {
+    sessionStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(result));
+  } catch {
+    /* ignore */
+  }
   return { ok: true, settings };
 }
 
@@ -420,6 +489,13 @@ export async function saveWhatsAppCrmSettings(
     '@/lib/jobAssignWhatsAppSettingsCache'
   );
   syncJobWhatsAppNotifyCacheFromCrmSettings(settings);
+  const cached = { ok: true as const, settings, at: Date.now() };
+  settingsCacheMem = cached;
+  try {
+    sessionStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(cached));
+  } catch {
+    /* ignore */
+  }
   return { ok: true, settings };
 }
 

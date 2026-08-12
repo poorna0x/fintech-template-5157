@@ -179,6 +179,178 @@ export function invalidateInboundWindowCache(phoneE164?: string | null): void {
   }
 }
 
+/* —— Inbox list + open-chat message cache (session + memory; cut repeat egress) —— */
+
+const INBOX_LIST_CACHE_KEY = 'wa_inbox_threads_cache_v1';
+const THREAD_MSGS_CACHE_KEY = 'wa_thread_msgs_cache_v1';
+/** Skip network if list fetched within this window (soft refresh still updates). */
+export const WHATSAPP_INBOX_LIST_CACHE_TTL_MS = 45_000;
+/** Open chat: show cache instantly; background refresh if older than this. */
+export const WHATSAPP_THREAD_CACHE_TTL_MS = 90_000;
+const THREAD_CACHE_MAX_PHONES = 12;
+
+type InboxListCacheEntry = {
+  todayOnly: boolean;
+  threads: WhatsAppThread[];
+  fetchedAt: number;
+};
+
+type ThreadMsgsCacheEntry = {
+  messages: WhatsAppMessageRow[];
+  hasMoreOlder: boolean;
+  fetchedAt: number;
+};
+
+let inboxListCacheMem: InboxListCacheEntry | null = null;
+const threadMsgsCacheMem = new Map<string, ThreadMsgsCacheEntry>();
+
+function readJsonSession<T>(key: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeJsonSession(key: string, value: unknown): void {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* quota */
+  }
+}
+
+export function peekWhatsAppInboxThreadsCache(opts?: {
+  todayOnly?: boolean;
+}): InboxListCacheEntry | null {
+  const todayOnly = opts?.todayOnly !== false;
+  if (inboxListCacheMem && inboxListCacheMem.todayOnly === todayOnly) {
+    return inboxListCacheMem;
+  }
+  const stored = readJsonSession<InboxListCacheEntry>(INBOX_LIST_CACHE_KEY);
+  if (stored && stored.todayOnly === todayOnly && Array.isArray(stored.threads)) {
+    inboxListCacheMem = stored;
+    return stored;
+  }
+  return null;
+}
+
+export function isWhatsAppInboxListCacheFresh(
+  entry: InboxListCacheEntry | null | undefined,
+  ttlMs = WHATSAPP_INBOX_LIST_CACHE_TTL_MS
+): boolean {
+  if (!entry?.fetchedAt) return false;
+  return Date.now() - entry.fetchedAt < ttlMs;
+}
+
+export function writeWhatsAppInboxThreadsCache(
+  threads: WhatsAppThread[],
+  opts?: { todayOnly?: boolean }
+): void {
+  const entry: InboxListCacheEntry = {
+    todayOnly: opts?.todayOnly !== false,
+    threads,
+    fetchedAt: Date.now(),
+  };
+  inboxListCacheMem = entry;
+  writeJsonSession(INBOX_LIST_CACHE_KEY, entry);
+}
+
+export function invalidateWhatsAppInboxThreadsCache(): void {
+  inboxListCacheMem = null;
+  try {
+    sessionStorage.removeItem(INBOX_LIST_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function peekWhatsAppThreadMessagesCache(
+  phoneE164: string
+): ThreadMsgsCacheEntry | null {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone) return null;
+  const mem = threadMsgsCacheMem.get(phone);
+  if (mem) return mem;
+  const store = readJsonSession<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
+  const stored = store[phone];
+  if (stored && Array.isArray(stored.messages)) {
+    threadMsgsCacheMem.set(phone, stored);
+    return stored;
+  }
+  return null;
+}
+
+export function isWhatsAppThreadCacheFresh(
+  entry: ThreadMsgsCacheEntry | null | undefined,
+  ttlMs = WHATSAPP_THREAD_CACHE_TTL_MS
+): boolean {
+  if (!entry?.fetchedAt) return false;
+  return Date.now() - entry.fetchedAt < ttlMs;
+}
+
+export function writeWhatsAppThreadMessagesCache(
+  phoneE164: string,
+  messages: WhatsAppMessageRow[],
+  hasMoreOlder: boolean
+): void {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone) return;
+  const entry: ThreadMsgsCacheEntry = {
+    messages,
+    hasMoreOlder,
+    fetchedAt: Date.now(),
+  };
+  threadMsgsCacheMem.set(phone, entry);
+  const store = readJsonSession<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
+  store[phone] = entry;
+  const trimmed = Object.fromEntries(
+    Object.entries(store)
+      .sort((a, b) => (b[1].fetchedAt || 0) - (a[1].fetchedAt || 0))
+      .slice(0, THREAD_CACHE_MAX_PHONES)
+  );
+  writeJsonSession(THREAD_MSGS_CACHE_KEY, trimmed);
+}
+
+/** Patch one message into thread cache (realtime / send) without full reload. */
+export function upsertWhatsAppThreadMessageCache(
+  phoneE164: string,
+  row: WhatsAppMessageRow
+): void {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone || !row?.id) return;
+  const prev = peekWhatsAppThreadMessagesCache(phone);
+  if (!prev) return;
+  const without = prev.messages.filter((m) => m.id !== row.id);
+  const messages = [...without, row].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  const capped =
+    messages.length > WHATSAPP_THREAD_LIMIT
+      ? messages.slice(messages.length - WHATSAPP_THREAD_LIMIT)
+      : messages;
+  writeWhatsAppThreadMessagesCache(phone, capped, prev.hasMoreOlder);
+}
+
+export function invalidateWhatsAppThreadMessagesCache(phoneE164?: string | null): void {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (phone) {
+    threadMsgsCacheMem.delete(phone);
+    const store = readJsonSession<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
+    delete store[phone];
+    writeJsonSession(THREAD_MSGS_CACHE_KEY, store);
+    return;
+  }
+  threadMsgsCacheMem.clear();
+  try {
+    sessionStorage.removeItem(THREAD_MSGS_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 /** People list via RPC — not full message dump. */
 export const WHATSAPP_INBOX_LIST_LIMIT = 120;
 /** First paint for open chat (newest N, then “load older”). */
