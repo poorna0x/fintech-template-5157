@@ -224,12 +224,19 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [quickActionBusy, setQuickActionBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const loadOlderSentinelRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedPhoneRef = useRef(selectedPhone);
   selectedPhoneRef.current = selectedPhone;
+  const threadMessagesRef = useRef(threadMessages);
+  threadMessagesRef.current = threadMessages;
+  const threadLoadingOlderRef = useRef(threadLoadingOlder);
+  threadLoadingOlderRef.current = threadLoadingOlder;
+  const threadHasMoreOlderRef = useRef(threadHasMoreOlder);
+  threadHasMoreOlderRef.current = threadHasMoreOlder;
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const attachFileRef = useRef(attachFile);
@@ -370,10 +377,27 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         return;
       }
       const rows = ((data || []) as WhatsAppMessageRow[]).slice().reverse();
-      const hasMore = (data || []).length >= WHATSAPP_THREAD_PAGE_SIZE;
-      setThreadMessages(rows);
+      const pageHasMore = (data || []).length >= WHATSAPP_THREAD_PAGE_SIZE;
+      const prev = threadMessagesRef.current;
+      let next = rows;
+      if (opts?.soft && prev.length) {
+        const byId = new Map<string, WhatsAppMessageRow>();
+        for (const m of prev) byId.set(m.id, m);
+        for (const r of rows) byId.set(r.id, { ...byId.get(r.id), ...r });
+        next = [...byId.values()].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        if (next.length > WHATSAPP_THREAD_LIMIT) {
+          next = next.slice(next.length - WHATSAPP_THREAD_LIMIT);
+        }
+      }
+      const hasMore =
+        pageHasMore ||
+        (Boolean(opts?.soft) && threadHasMoreOlderRef.current && next.length > rows.length);
+      threadHasMoreOlderRef.current = hasMore;
+      setThreadMessages(next);
       setThreadHasMoreOlder(hasMore);
-      writeWhatsAppThreadMessagesCache(phone, rows, hasMore);
+      writeWhatsAppThreadMessagesCache(phone, next, hasMore);
     } finally {
       if (seq === loadThreadSeqRef.current && !opts?.soft) setThreadLoading(false);
     }
@@ -381,12 +405,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   const loadOlderMessages = useCallback(async () => {
     const phone = selectedPhoneRef.current;
-    if (!phone || threadLoadingOlder || !threadHasMoreOlder) return;
-    const oldest = threadMessages[0];
+    if (!phone || threadLoadingOlderRef.current || !threadHasMoreOlderRef.current) return;
+    const oldest = threadMessagesRef.current[0];
     if (!oldest?.created_at) return;
     const el = messagesScrollRef.current;
     const prevHeight = el?.scrollHeight ?? 0;
     const prevTop = el?.scrollTop ?? 0;
+    threadLoadingOlderRef.current = true;
     setThreadLoadingOlder(true);
     try {
       const { data, error } = await supabase
@@ -401,31 +426,44 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         return;
       }
       const older = ((data || []) as WhatsAppMessageRow[]).slice().reverse();
-      setThreadHasMoreOlder((data || []).length >= WHATSAPP_THREAD_PAGE_SIZE);
-      if (!older.length) return;
-      setThreadMessages((prev) => {
-        const seen = new Set(prev.map((m) => m.id));
-        const merged = [...older.filter((m) => !seen.has(m.id)), ...prev];
-        const next =
-          merged.length > WHATSAPP_THREAD_LIMIT
-            ? merged.slice(merged.length - WHATSAPP_THREAD_LIMIT)
-            : merged;
-        writeWhatsAppThreadMessagesCache(
-          phone,
-          next,
-          (data || []).length >= WHATSAPP_THREAD_PAGE_SIZE
-        );
-        return next;
-      });
+      if (!older.length) {
+        threadHasMoreOlderRef.current = false;
+        setThreadHasMoreOlder(false);
+        writeWhatsAppThreadMessagesCache(phone, threadMessagesRef.current, false);
+        return;
+      }
+      const pageHasMore = (data || []).length >= WHATSAPP_THREAD_PAGE_SIZE;
+      const prev = threadMessagesRef.current;
+      const seen = new Set(prev.map((m) => m.id));
+      const fresh = older.filter((m) => !seen.has(m.id));
+      if (!fresh.length) {
+        threadHasMoreOlderRef.current = false;
+        setThreadHasMoreOlder(false);
+        writeWhatsAppThreadMessagesCache(phone, prev, false);
+        return;
+      }
+      // Keep newly loaded older messages — if over cap, drop newest (below viewport).
+      let merged = [...fresh, ...prev];
+      if (merged.length > WHATSAPP_THREAD_LIMIT) {
+        merged = merged.slice(0, WHATSAPP_THREAD_LIMIT);
+      }
+      threadHasMoreOlderRef.current = pageHasMore;
+      setThreadHasMoreOlder(pageHasMore);
+      setThreadMessages(merged);
+      writeWhatsAppThreadMessagesCache(phone, merged, pageHasMore);
       requestAnimationFrame(() => {
         const box = messagesScrollRef.current;
         if (!box) return;
         box.scrollTop = box.scrollHeight - prevHeight + prevTop;
       });
     } finally {
+      threadLoadingOlderRef.current = false;
       setThreadLoadingOlder(false);
     }
-  }, [threadLoadingOlder, threadHasMoreOlder, threadMessages]);
+  }, []);
+
+  const loadOlderMessagesRef = useRef(loadOlderMessages);
+  loadOlderMessagesRef.current = loadOlderMessages;
 
   const resolveMediaHref = useCallback(async (row: WhatsAppMessageRow): Promise<string | null> => {
     const ref = row.media_url;
@@ -705,12 +743,34 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
   }, []);
 
+  // Prefetch older when top sentinel enters view (covers short threads + scroll).
+  useEffect(() => {
+    const root = messagesScrollRef.current;
+    const sentinel = loadOlderSentinelRef.current;
+    if (!root || !sentinel || !selectedPhone || !threadHasMoreOlder) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        if (threadLoadingOlderRef.current) return;
+        // Only when the list can scroll (or user already scrolled up).
+        if (root.scrollHeight <= root.clientHeight + 24 && stickToBottomRef.current) return;
+        void loadOlderMessagesRef.current();
+      },
+      { root, rootMargin: '120px 0px 0px 0px', threshold: 0 }
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [selectedPhone, threadHasMoreOlder, threadMessages.length, threadLoading]);
+
   const onMessagesScroll = useCallback(() => {
     const el = messagesScrollRef.current;
     if (!el) return;
     const near = isNearBottom(el);
     stickToBottomRef.current = near;
     setShowJumpToLatest(!near && el.scrollHeight > el.clientHeight + 40);
+    if (el.scrollTop < 96 && el.scrollHeight > el.clientHeight + 24) {
+      void loadOlderMessagesRef.current();
+    }
   }, [isNearBottom]);
 
   // Jump to latest when opening a chat / load finishes — only if stuck to bottom.
@@ -1634,23 +1694,20 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   </p>
                 ) : (
                   <>
-                    {threadHasMoreOlder ? (
-                      <div className="mb-2 flex justify-center">
-                        <button
-                          type="button"
-                          disabled={threadLoadingOlder}
-                          onClick={() => void loadOlderMessages()}
-                          className="cursor-pointer rounded-full bg-[#182229] px-3 py-1.5 text-[11px] font-semibold text-[#8696a0] shadow-sm ring-1 ring-white/5 transition hover:bg-[#233138] disabled:opacity-60"
-                        >
-                          {threadLoadingOlder ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                              Loading…
-                            </span>
-                          ) : (
-                            'Load older messages'
-                          )}
-                        </button>
+                    {(threadHasMoreOlder || threadLoadingOlder) ? (
+                      <div
+                        ref={loadOlderSentinelRef}
+                        className="mb-1 flex min-h-8 items-center justify-center py-1"
+                        aria-hidden={!threadLoadingOlder}
+                      >
+                        {threadLoadingOlder ? (
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#8696a0]">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Loading older…
+                          </span>
+                        ) : (
+                          <span className="h-1 w-1 rounded-full bg-transparent" />
+                        )}
                       </div>
                     ) : null}
                   {threadMessages.map((m, i) => {

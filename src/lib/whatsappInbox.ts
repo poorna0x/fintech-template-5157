@@ -355,8 +355,12 @@ export function invalidateWhatsAppThreadMessagesCache(phoneE164?: string | null)
 export const WHATSAPP_INBOX_LIST_LIMIT = 120;
 /** First paint for open chat (newest N, then “load older”). */
 export const WHATSAPP_THREAD_PAGE_SIZE = 40;
-/** Soft cap when appending older pages / realtime slice. */
-export const WHATSAPP_THREAD_LIMIT = 120;
+/**
+ * Max messages held in an open chat (after scroll-up history).
+ * Must be high enough that “load older” is not immediately discarded —
+ * trimming newest-only when over this while paging up.
+ */
+export const WHATSAPP_THREAD_LIMIT = 400;
 /** Max threads returned by on-demand inbox search. */
 export const WHATSAPP_INBOX_SEARCH_LIMIT = 40;
 

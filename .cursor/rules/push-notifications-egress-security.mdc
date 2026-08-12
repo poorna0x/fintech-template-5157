@@ -21,5 +21,31 @@ This project ships two Capacitor Android apps built from this repo plus push not
 - Scheduled functions (netlify.toml cron, IST times): daily-cash-check 9:00 PM, daily-expense-review 9:15 PM (tech + business expenses Yes/No → Payments), morning-cash-reminder 8:30 AM (techs admin marked unpaid), evening-summary 10:00 PM, parts-reminder 10:10 PM (techs who completed jobs + all admins), admin-reminders-push 9:00 AM.
 
 ## Standing requirements for ALL new work
-- **Minimize Supabase egress**: select only needed columns, avoid polling, reuse already-fetched data, prefer single upserts/RPCs, cache in localStorage where sensible.
-- **Security**: every new table gets RLS (`public.is_admin_user()` for admin access, `auth.uid()` for own rows); use SECURITY DEFINER RPCs only when RLS genuinely can't express the rule; service-role keys stay server-side (Netlify functions/scripts only); never expose secrets to the client.
+
+Keep these forever unless the user explicitly relaxes them:
+
+### Security
+- Every new table: **RLS** (`public.is_admin_user()` for admin, `auth.uid()` for own rows).
+- **SECURITY DEFINER** RPCs only when RLS cannot express the rule; lock `search_path` and validate inputs.
+- Service-role keys / Meta tokens / Firebase / R2 secrets: **server-side only** (Netlify functions / scripts). Never expose to the client.
+- Prefer signed short-lived URLs for private media (R2); no long-lived public buckets for chat media when avoidable.
+
+### Minimize Supabase egress
+- Select **only needed columns**; no `select('*')` on hot paths.
+- **No polling** in production CRM — Realtime, fetch-on-open, or user action.
+- Reuse already-fetched data; patch local state on send/realtime instead of full reloads.
+- Prefer one RPC / upsert over N round-trips.
+- Cache list/thread summaries in **memory + sessionStorage** (TTL) where safe; soft-refresh instead of hard reload.
+- Page messages (newest-first); load older on scroll; soft refresh must **merge**, never wipe scrolled history.
+- Heavy files live on **Cloudflare R2** (egress bandwidth free); don’t store PDF/image bytes in Supabase rows.
+
+### Minimize Netlify / server function invocations
+- Don’t call a function from the client on every keystroke, scroll tick, or mount if cache/Realtime can serve.
+- Batch or debounce outbound sends / signed-URL fetches; reuse resolved media URLs in-memory for the session.
+- Avoid “refresh everything” after tiny actions — update the one row/thread locally.
+- Cron/scheduled work: keep payloads slim; don’t re-fetch full tables when a targeted query works.
+
+### Prefer local memory over the network
+- Open inbox / reopen chat: show cache first, network only if stale or missing.
+- After user loads older pages, keep them in the open-chat state/cache until leave/cap — don’t discard via soft cap bugs.
+- Optional later (IndexedDB, APK local DB) is fine; until then session + memory cache is the default.
