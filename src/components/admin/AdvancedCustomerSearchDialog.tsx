@@ -1328,7 +1328,7 @@ const ResultRow: React.FC<ResultRowProps> = ({
             variant="outline"
             className="h-8 px-2"
             onClick={onPhotos}
-            title="Photos (opens in Admin)"
+            title="Gallery (opens in Admin)"
           >
             <ImageIcon className="w-3.5 h-3.5" />
           </Button>

@@ -1102,3 +1102,88 @@ export function displayPhone(phoneE164: string): string {
   if (d.length === 10) return d;
   return phoneE164 ? `+${d}` : '';
 }
+
+export type WhatsAppCustomerDocument = {
+  id: string;
+  filename: string | null;
+  media_url: string;
+  media_mime: string | null;
+  created_at: string;
+  direction: 'inbound' | 'outbound';
+  msg_type: string;
+};
+
+export function isWhatsAppDocumentMessage(row: {
+  msg_type?: string | null;
+  media_mime?: string | null;
+  filename?: string | null;
+  media_url?: string | null;
+}): boolean {
+  if (!row.media_url) return false;
+  const type = String(row.msg_type || '').toLowerCase();
+  const mime = String(row.media_mime || '').toLowerCase();
+  const file = String(row.filename || '').toLowerCase();
+  if (type === 'image' || mime.startsWith('image/')) return false;
+  return (
+    type === 'document' ||
+    type === 'pdf' ||
+    mime.includes('pdf') ||
+    mime.includes('application/') ||
+    file.endsWith('.pdf')
+  );
+}
+
+/** Outbound WhatsApp PDFs/docs for a customer (slim columns). */
+export async function listCustomerWhatsAppDocuments(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseClient: { from: (table: string) => any },
+  opts: {
+    customerId?: string | null;
+    phone?: string | null;
+    alternatePhone?: string | null;
+    limit?: number;
+  }
+): Promise<{ rows: WhatsAppCustomerDocument[]; error?: string }> {
+  const phones = [
+    ...new Set(
+      [toWhatsAppPhoneDigits(opts.phone), toWhatsAppPhoneDigits(opts.alternatePhone)].filter(
+        Boolean
+      )
+    ),
+  ];
+  const customerId = String(opts.customerId || '').trim();
+  const uuid = customerId.includes('-') ? customerId : '';
+  if (!uuid && phones.length === 0) return { rows: [] };
+
+  const orParts: string[] = [];
+  if (uuid) orParts.push(`customer_id.eq.${uuid}`);
+  for (const p of phones) orParts.push(`phone_e164.eq.${p}`);
+
+  const { data, error } = await supabaseClient
+    .from('whatsapp_messages')
+    .select('id, direction, msg_type, filename, media_url, media_mime, created_at')
+    .eq('direction', 'outbound')
+    .not('media_url', 'is', null)
+    .or(orParts.join(','))
+    .order('created_at', { ascending: false })
+    .limit(opts.limit ?? 80);
+
+  if (error) return { rows: [], error: error.message };
+
+  const seen = new Set<string>();
+  const rows: WhatsAppCustomerDocument[] = [];
+  for (const row of data || []) {
+    if (!isWhatsAppDocumentMessage(row) || seen.has(row.id)) continue;
+    seen.add(row.id);
+    rows.push({
+      id: row.id,
+      filename: row.filename || null,
+      media_url: row.media_url,
+      media_mime: row.media_mime || null,
+      created_at: row.created_at,
+      direction: row.direction === 'inbound' ? 'inbound' : 'outbound',
+      msg_type: row.msg_type || 'document',
+    });
+  }
+  return { rows };
+}
