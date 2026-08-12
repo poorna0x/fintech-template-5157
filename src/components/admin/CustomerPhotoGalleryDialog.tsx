@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Customer } from '@/types';
-import { Camera, Download, FileText, Image, Loader2, Upload, Trash2 } from 'lucide-react';
+import { Camera, Download, FileText, Image, Images, Loader2, Upload, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
 import { fetchWhatsAppR2SignedUrl } from '@/lib/sendAdminWhatsAppApi';
@@ -12,6 +12,7 @@ import {
   listCustomerWhatsAppDocuments,
   type WhatsAppCustomerDocument,
 } from '@/lib/whatsappInbox';
+import { cn } from '@/lib/utils';
 
 interface CustomerPhotoGalleryDialogProps {
   open: boolean;
@@ -91,10 +92,13 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
     setDocsLoadedFor(null);
     setDocs([]);
     setDocsError(null);
+    setTab('photos');
   }, [open, loadKey]);
 
+  // Prefetch WhatsApp docs on open (same whatsapp_messages.media_url — no second copy).
+  // Documents tab only appears when at least one doc exists.
   useEffect(() => {
-    if (!open || !customer || tab !== 'documents' || docsLoadedFor === loadKey) return;
+    if (!open || !customer || docsLoadedFor === loadKey) return;
     let cancelled = false;
     setDocsLoading(true);
     setDocsError(null);
@@ -110,17 +114,23 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
       if (result.error) {
         setDocsError(result.error);
         setDocs([]);
+        setDocsLoadedFor(loadKey);
+        setTab('photos');
+        toast.error('Could not load WhatsApp documents');
         return;
       }
       setDocs(result.rows);
       setDocsLoadedFor(loadKey);
+      if (result.rows.length === 0) setTab('photos');
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, tab, loadKey, customer, customerUuid, customerPhone, customerAlt, docsLoadedFor]);
+  }, [open, loadKey, customer, customerUuid, customerPhone, customerAlt, docsLoadedFor]);
 
   if (!customer) return null;
+
+  const showDocumentsTab = docs.length > 0;
 
   const resolveDocUrl = async (row: WhatsAppCustomerDocument): Promise<string | null> => {
     const direct = directHttpsUrl(row.media_url);
@@ -175,19 +185,56 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
             <span className="text-lg sm:text-xl font-semibold">Gallery</span>
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
-            Photos for this customer, plus documents sent on WhatsApp
+            {showDocumentsTab
+              ? 'Customer photos, plus WhatsApp PDFs (same links as the inbox — delete there and they leave here too).'
+              : 'Photos for this customer'}
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={setTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:inline-flex">
-            <TabsTrigger value="photos" className="min-h-[40px]">
-              Photos
-            </TabsTrigger>
-            <TabsTrigger value="documents" className="min-h-[40px]">
-              Documents
-            </TabsTrigger>
-          </TabsList>
+        <Tabs
+          value={showDocumentsTab ? tab : 'photos'}
+          onValueChange={setTab}
+          className="w-full"
+        >
+          {showDocumentsTab && (
+            <TabsList
+              className={cn(
+                'grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/60 p-1.5',
+                'sm:inline-flex sm:w-auto sm:min-w-[280px]'
+              )}
+            >
+              <TabsTrigger
+                value="photos"
+                className={cn(
+                  'group min-h-[44px] cursor-pointer gap-2 rounded-lg px-3 text-sm font-medium transition-colors duration-200',
+                  'data-[state=active]:bg-sky-700 data-[state=active]:text-white data-[state=active]:shadow-sm',
+                  'data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:bg-background/70 data-[state=inactive]:hover:text-foreground'
+                )}
+              >
+                <Images className="h-4 w-4 shrink-0" aria-hidden />
+                Photos
+                {(photos.length + uploadingCount) > 0 && (
+                  <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none group-data-[state=active]:bg-white/20">
+                    {photos.length + uploadingCount}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                value="documents"
+                className={cn(
+                  'group min-h-[44px] cursor-pointer gap-2 rounded-lg px-3 text-sm font-medium transition-colors duration-200',
+                  'data-[state=active]:bg-sky-700 data-[state=active]:text-white data-[state=active]:shadow-sm',
+                  'data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:bg-background/70 data-[state=inactive]:hover:text-foreground'
+                )}
+              >
+                <FileText className="h-4 w-4 shrink-0" aria-hidden />
+                Documents
+                <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none group-data-[state=active]:bg-white/20">
+                  {docs.length}
+                </span>
+              </TabsTrigger>
+            </TabsList>
+          )}
 
           <TabsContent value="photos" className="mt-4 space-y-4 sm:space-y-6">
           {/* Upload Area - Only show if no photos and no uploading thumbnails */}
@@ -419,6 +466,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
           )}
           </TabsContent>
 
+          {showDocumentsTab && (
           <TabsContent value="documents" className="mt-4">
             {docsLoading ? (
               <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
@@ -427,14 +475,13 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
               </div>
             ) : docsError ? (
               <p className="py-8 text-center text-sm text-red-600">{docsError}</p>
-            ) : docs.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No WhatsApp documents sent to this customer yet.
-              </p>
             ) : (
               <div className="space-y-2">
                 <p className="text-sm font-medium text-foreground">
-                  {docs.length} document{docs.length !== 1 ? 's' : ''} sent on WhatsApp
+                  {docs.length} document{docs.length !== 1 ? 's' : ''} from WhatsApp
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Opens the same stored link as the inbox. Deleting the chat message removes it here too.
                 </p>
                 <ul className="divide-y divide-border rounded-lg border border-border">
                   {docs.map((row) => (
@@ -464,7 +511,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="min-h-[40px]"
+                          className="min-h-[40px] cursor-pointer"
                           disabled={busyDocId === row.id}
                           onClick={() => void openDoc(row)}
                         >
@@ -478,7 +525,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-10 w-10"
+                          className="h-10 w-10 cursor-pointer"
                           disabled={busyDocId === row.id}
                           onClick={() => void downloadDoc(row)}
                           aria-label="Download"
@@ -492,6 +539,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
               </div>
             )}
           </TabsContent>
+          )}
         </Tabs>
       </DialogContent>
     </Dialog>

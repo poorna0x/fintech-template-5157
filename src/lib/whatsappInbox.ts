@@ -1170,15 +1170,20 @@ export async function listCustomerWhatsAppDocuments(
 
   if (error) return { rows: [], error: error.message };
 
-  const seen = new Set<string>();
+  // One gallery entry per stored media link (same WhatsApp row / R2 URL — no duplicate copies).
+  const seenIds = new Set<string>();
+  const seenUrls = new Set<string>();
   const rows: WhatsAppCustomerDocument[] = [];
   for (const row of data || []) {
-    if (!isWhatsAppDocumentMessage(row) || seen.has(row.id)) continue;
-    seen.add(row.id);
+    if (!isWhatsAppDocumentMessage(row) || seenIds.has(row.id)) continue;
+    const mediaUrl = String(row.media_url || '').trim();
+    if (!mediaUrl || seenUrls.has(mediaUrl)) continue;
+    seenIds.add(row.id);
+    seenUrls.add(mediaUrl);
     rows.push({
       id: row.id,
       filename: row.filename || null,
-      media_url: row.media_url,
+      media_url: mediaUrl,
       media_mime: row.media_mime || null,
       created_at: row.created_at,
       direction: row.direction === 'inbound' ? 'inbound' : 'outbound',
