@@ -1,9 +1,14 @@
 /**
  * In-session (24h) WhatsApp booking bot — reply buttons + lists + location.
  *
- * Hi → Service/Repair | Reinstallation | Chat with us
- * Service paths → identity (if known) → (alt phone + pin if different location / secondary site) →
- *   date · time · purifier photo → confirm → customer + PENDING job
+ * Fresh inbound (first message / idle reopen):
+ *   Known WA → AMC / recent-service (&lt;15d) context → Call us / Book / Chat
+ *   Unknown WA → First time | Different number | Call us
+ *     First time → Call us / Book step-by-step / Chat
+ *     Different number → strict mobile lookup → confirm name+last service → facing issue /
+ *       15-day problem path (explain + photo/video) → fast date/time book
+ *
+ * Legacy greeting buttons (Service/Repair | Reinstallation | Chat) still work mid-flow.
  * Chat with us / post-book free-form → Eleven RO main line 9880693311
  *
  * Customer messages stay simple (no lead source / CRM jargon).
@@ -186,7 +191,21 @@ const ACTIVE_BOOKING_STEPS = new Set([
   'await_custom_note',
   'await_confirm',
   'await_edit_menu',
+  // Identity gate (first message / reopen)
+  'await_identity_gate',
+  'await_other_phone',
+  'await_linked_identity_confirm',
+  'await_facing_issue',
+  'await_recent_problem',
+  'await_issue_text',
+  'await_issue_media',
+  'await_first_time_menu',
+  'await_known_menu',
+  'await_amc_checkin',
 ]);
+
+const OTHER_PHONE_LOOKUP_MAX = 3;
+const RECENT_SERVICE_DAYS = 15;
 
 const GREETING_RE =
   /^(hi+|hii+|hello|hey|hola|namaste|book|booking|service|start|menu|help)\b/i;
@@ -824,12 +843,391 @@ async function lookupCustomerFull(db, phoneE164) {
   const { data: customer } = await db
     .from('customers')
     .select(
-      'id,full_name,phone,alternate_phone,address,location,visible_address,alternate_address,alternate_location,alternate_visible_address,brand,model,service_type'
+      'id,full_name,phone,alternate_phone,address,location,visible_address,alternate_address,alternate_location,alternate_visible_address,brand,model,service_type,last_service_date'
     )
     .or(`phone.like.%${phone},alternate_phone.like.%${phone}`)
     .limit(1)
     .maybeSingle();
   return customer || null;
+}
+
+const CUSTOMER_BOOKING_SELECT =
+  'id,full_name,phone,alternate_phone,address,location,visible_address,alternate_address,alternate_location,alternate_visible_address,brand,model,service_type,last_service_date';
+
+async function lookupCustomerById(db, customerId) {
+  if (!db || !customerId) return null;
+  const { data } = await db
+    .from('customers')
+    .select(CUSTOMER_BOOKING_SELECT)
+    .eq('id', customerId)
+    .maybeSingle();
+  return data || null;
+}
+
+/** Prefer linked / existingCustomerId from bot state; else WA phone lookup. */
+async function resolveCustomerForState(db, waPhoneE164, state = {}) {
+  const linkedId = String(state?.linkedCustomerId || state?.existingCustomerId || '').trim();
+  if (linkedId) {
+    const byId = await lookupCustomerById(db, linkedId);
+    if (byId?.id) return byId;
+  }
+  return lookupCustomerFull(db, waPhoneE164);
+}
+
+/**
+ * Strict Indian mobile for other-number lookup.
+ * Accepts 10-digit / 91… / +91…; must match /^[6-9]\d{9}$/.
+ */
+function parseStrictIndianMobile(text) {
+  let digits = String(text || '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  if (digits.length > 10) digits = digits.slice(-10);
+  if (!/^[6-9]\d{9}$/.test(digits)) return null;
+  return digits;
+}
+
+function daysSinceIso(iso) {
+  if (!iso) return null;
+  const d = new Date(String(iso).slice(0, 10) + 'T12:00:00+05:30');
+  if (!Number.isFinite(d.getTime())) return null;
+  const now = getIstNow();
+  const today = new Date(`${now.dateIso}T12:00:00+05:30`);
+  const diff = Math.floor((today.getTime() - d.getTime()) / (24 * 60 * 60 * 1000));
+  return Number.isFinite(diff) ? diff : null;
+}
+
+function formatLastServiceLine(lastIso) {
+  if (!lastIso) return 'Last service: not on file';
+  const days = daysSinceIso(lastIso);
+  const label = formatDateIsoLabel(String(lastIso).slice(0, 10));
+  if (days == null) return `Last service: ${label}`;
+  if (days === 0) return `Last service: ${label} (today)`;
+  if (days === 1) return `Last service: ${label} (1 day ago)`;
+  if (days < 0) return `Last service: ${label}`;
+  return `Last service: ${label} (${days} days ago)`;
+}
+
+async function lookupActiveAmc(db, customerId) {
+  if (!db || !customerId) return null;
+  try {
+    const { data } = await db
+      .from('amc_contracts')
+      .select('id, status, end_date')
+      .eq('customer_id', customerId)
+      .eq('status', 'ACTIVE')
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.id ? data : null;
+  } catch (err) {
+    console.warn('[whatsapp-booking-bot] AMC lookup skipped:', err?.message || err);
+    return null;
+  }
+}
+
+async function lookupLastServiceInfo(db, customerId, customerRow = null) {
+  if (!db || !customerId) return { lastServiceDate: null, daysAgo: null };
+  let last = customerRow?.last_service_date
+    ? String(customerRow.last_service_date).slice(0, 10)
+    : null;
+  if (!last) {
+    try {
+      const { data } = await db
+        .from('jobs')
+        .select('completed_at, end_time, scheduled_date')
+        .eq('customer_id', customerId)
+        .eq('status', 'COMPLETED')
+        .order('completed_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      last =
+        (data?.completed_at && String(data.completed_at).slice(0, 10)) ||
+        (data?.end_time && String(data.end_time).slice(0, 10)) ||
+        (data?.scheduled_date && String(data.scheduled_date).slice(0, 10)) ||
+        null;
+    } catch (err) {
+      console.warn('[whatsapp-booking-bot] last service job lookup skipped:', err?.message || err);
+    }
+  }
+  return { lastServiceDate: last, daysAgo: daysSinceIso(last) };
+}
+
+async function sendCallUsHandoff(ctx, customer = null, state = {}) {
+  const prefill = buildAdminHandoffPrefill({
+    customer,
+    state,
+    phoneE164: ctx.to,
+  });
+  await setBookingState(ctx.db, ctx.to, {
+    step: 'booking_complete',
+    supportPrefill: prefill,
+    ...(state.linkedCustomerId ? { linkedCustomerId: state.linkedCustomerId } : {}),
+  });
+  await sendElevenSupportButtons({
+    ...ctx,
+    bodyText: [
+      `Call or chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+      '',
+      'Tap *Call 3311* to open the dialer, or *WhatsApp team* to message us.',
+    ].join('\n'),
+    footer: BRAND_LABEL,
+  });
+}
+
+async function sendChatHandoff(ctx, customer = null, state = {}) {
+  return sendCallUsHandoff(ctx, customer, state);
+}
+
+async function beginLinkedOrKnownBooking(ctx, state = {}) {
+  const customer = await resolveCustomerForState(ctx.db, ctx.to, state);
+  const existingId = String(
+    state.linkedCustomerId || state.existingCustomerId || customer?.id || ''
+  ).trim();
+  if (!existingId || !customer?.id) {
+    await beginServiceBooking(ctx, {
+      serviceSubType: state.serviceSubType || 'Repair',
+      serviceLabel: state.serviceLabel || 'Service / Repair',
+    });
+    return;
+  }
+  await beginExistingCustomerDateBooking(ctx, {
+    serviceSubType: state.serviceSubType || 'Repair',
+    serviceLabel: state.serviceLabel || 'Service / Repair',
+    existingCustomerId: existingId,
+    linkedCustomerId: state.linkedCustomerId || null,
+    linkedFromOtherNumber: Boolean(state.linkedFromOtherNumber),
+    name: state.name || customer.full_name,
+    issueNote: state.issueNote || null,
+    issueMediaUrl: state.issueMediaUrl || null,
+    photoUrl: state.issueMediaUrl || state.photoUrl || null,
+  });
+}
+
+async function askIssueExplain(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_issue_text' });
+  await sendText({
+    ...ctx,
+    text: 'Please briefly explain what the issue is (reply in this chat).',
+  });
+}
+
+async function askIssueMedia(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_issue_media' });
+  await sendText({
+    ...ctx,
+    text:
+      'Please send a *photo or short video* of the issue so we can help faster.\n\n' +
+      AWAITING_CUSTOMER_MEDIA_MARKER,
+  });
+}
+
+async function sendFacingIssuePrompt(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_facing_issue' });
+  return sendButtons({
+    ...ctx,
+    bodyText: 'Are you facing any issue with your purifier right now?',
+    footer: BRAND_LABEL,
+    buttons: [
+      { id: 'face_yes', title: 'Yes' },
+      { id: 'face_no', title: 'No' },
+      { id: 'id_call_us', title: 'Call us' },
+    ],
+  });
+}
+
+async function sendRecentProblemPrompt(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_recent_problem' });
+  const days = state.lastServiceDaysAgo;
+  const when =
+    days == null
+      ? 'recently'
+      : days <= 0
+        ? 'today'
+        : days === 1
+          ? 'yesterday'
+          : `${days} days ago`;
+  return sendButtons({
+    ...ctx,
+    bodyText: `We last served you *${when}*. Are you facing a problem again?`,
+    footer: BRAND_LABEL,
+    buttons: [
+      { id: 'recent_yes', title: 'Yes' },
+      { id: 'recent_no', title: 'No' },
+      { id: 'id_call_us', title: 'Call us' },
+    ],
+  });
+}
+
+async function sendKnownMenu(ctx, state = {}) {
+  const name = String(state.name || 'there').trim() || 'there';
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_known_menu' });
+  return sendButtons({
+    ...ctx,
+    bodyText: `Hi ${name}! How can we help you today?`,
+    footer: BRAND_LABEL,
+    buttons: [
+      { id: 'known_book', title: 'Book Service' },
+      { id: 'known_chat', title: 'Chat with us' },
+      { id: 'id_call_us', title: 'Call us' },
+    ],
+  });
+}
+
+async function sendAmcCheckin(ctx, state = {}) {
+  const name = String(state.name || 'there').trim() || 'there';
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_amc_checkin' });
+  return sendButtons({
+    ...ctx,
+    bodyText: [
+      `Hi ${name},`,
+      'You have *Annual Maintenance* with us.',
+      '',
+      'Are you facing a problem, or do you need a visit?',
+    ].join('\n'),
+    footer: BRAND_LABEL,
+    buttons: [
+      { id: 'amc_issue', title: 'Facing issue' },
+      { id: 'amc_book', title: 'Book visit' },
+      { id: 'id_call_us', title: 'Call us' },
+    ],
+  });
+}
+
+async function sendIdentityGate(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, {
+    ...state,
+    step: 'await_identity_gate',
+    otherPhoneAttempts: state.otherPhoneAttempts || 0,
+  });
+  return sendButtons({
+    ...ctx,
+    bodyText: [
+      `Hi! Welcome to ${BRAND_LABEL} 💧`,
+      '',
+      'Is this your *first time* booking with us, or have you booked before on a *different number*?',
+    ].join('\n'),
+    footer: BRAND_LABEL,
+    buttons: [
+      { id: 'id_first_time', title: 'First time' },
+      { id: 'id_other_number', title: 'Different number' },
+      { id: 'id_call_us', title: 'Call us' },
+    ],
+  });
+}
+
+async function sendFirstTimeMenu(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_first_time_menu' });
+  return sendButtons({
+    ...ctx,
+    bodyText: 'Great — how would you like to continue?',
+    footer: BRAND_LABEL,
+    buttons: [
+      { id: 'first_book', title: 'Book Service' },
+      { id: 'first_chat', title: 'Chat with us' },
+      { id: 'id_call_us', title: 'Call us' },
+    ],
+  });
+}
+
+async function askOtherPhone(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_other_phone' });
+  await sendText({
+    ...ctx,
+    text: 'Please reply with the *10-digit mobile number* you used before (e.g. 98XXXXXXXX).',
+  });
+}
+
+async function sendLinkedIdentityConfirm(ctx, state, customer, lastInfo) {
+  const name = String(customer?.full_name || 'Customer').trim() || 'Customer';
+  const next = {
+    ...state,
+    step: 'await_linked_identity_confirm',
+    pendingLinkCustomerId: customer.id,
+    pendingLinkName: name,
+    lastServiceDate: lastInfo?.lastServiceDate || null,
+    lastServiceDaysAgo: lastInfo?.daysAgo ?? null,
+  };
+  await setBookingState(ctx.db, ctx.to, next);
+  return sendButtons({
+    ...ctx,
+    bodyText: [
+      `We found *${name}* on that number.`,
+      formatLastServiceLine(lastInfo?.lastServiceDate),
+      '',
+      'Is this you?',
+    ].join('\n'),
+    footer: 'Confirm only',
+    buttons: [
+      { id: 'link_yes', title: 'Yes, this is me' },
+      { id: 'link_no', title: 'No' },
+      { id: 'id_call_us', title: 'Call us' },
+    ],
+  });
+}
+
+/**
+ * Customer-initiated idle / first message — identity gate + known-customer context.
+ */
+async function startInboundIdentityFlow(ctx) {
+  const customer = await lookupCustomerFull(ctx.db, ctx.to);
+  if (!customer?.id) {
+    await sendIdentityGate(ctx, {});
+    return { ok: true, known: false };
+  }
+
+  const name = String(customer.full_name || 'there').trim() || 'there';
+  const lastInfo = await lookupLastServiceInfo(ctx.db, customer.id, customer);
+  const amc = await lookupActiveAmc(ctx.db, customer.id);
+  const base = {
+    existingCustomerId: customer.id,
+    name,
+    lastServiceDate: lastInfo.lastServiceDate,
+    lastServiceDaysAgo: lastInfo.daysAgo,
+    hasAmc: Boolean(amc?.id),
+  };
+
+  if (amc?.id) {
+    await sendAmcCheckin(ctx, base);
+    return { ok: true, known: true, amc: true };
+  }
+
+  if (lastInfo.daysAgo != null && lastInfo.daysAgo >= 0 && lastInfo.daysAgo < RECENT_SERVICE_DAYS) {
+    await sendRecentProblemPrompt(ctx, base);
+    return { ok: true, known: true, recent: true };
+  }
+
+  await sendKnownMenu(ctx, base);
+  return { ok: true, known: true };
+}
+
+async function continueAfterLinkedConfirm(ctx, state = {}) {
+  const customer = await resolveCustomerForState(ctx.db, ctx.to, state);
+  const lastInfo = {
+    lastServiceDate: state.lastServiceDate || null,
+    daysAgo: state.lastServiceDaysAgo ?? null,
+  };
+  if (!lastInfo.lastServiceDate && customer?.id) {
+    const fresh = await lookupLastServiceInfo(ctx.db, customer.id, customer);
+    lastInfo.lastServiceDate = fresh.lastServiceDate;
+    lastInfo.daysAgo = fresh.daysAgo;
+  }
+  const amc = customer?.id ? await lookupActiveAmc(ctx.db, customer.id) : null;
+  const base = {
+    ...state,
+    existingCustomerId: state.linkedCustomerId || state.existingCustomerId,
+    name: state.name || customer?.full_name,
+    lastServiceDate: lastInfo.lastServiceDate,
+    lastServiceDaysAgo: lastInfo.daysAgo,
+    hasAmc: Boolean(amc?.id),
+  };
+
+  if (amc?.id) {
+    await sendAmcCheckin(ctx, base);
+    return;
+  }
+  await sendFacingIssuePrompt(ctx, base);
 }
 
 async function rememberSharedLocation(db, phone, loc) {
@@ -1213,7 +1611,10 @@ async function createAutoBookingJob(db, {
   leadCost,
   requireOtp,
 }) {
-  const phone10 = phone10FromE164(phoneE164);
+  const phone10 =
+    phone10FromE164(customer?.phone) ||
+    phone10FromE164(customer?.alternate_phone) ||
+    phone10FromE164(phoneE164);
   const known = TIME_SLOTS[slotKey];
   const timeMeta = known
     ? { slot: known.slot, label: customTimeLabel || known.label }
@@ -1247,6 +1648,9 @@ async function createAutoBookingJob(db, {
       service_site: site,
       ...(customNote ? { custom_note: String(customNote).slice(0, 200) } : {}),
       ...(cost != null ? { lead_cost: cost } : {}),
+      ...(phoneE164 && phone10FromE164(phoneE164) !== phone10
+        ? { whatsapp_phone: phone10FromE164(phoneE164) }
+        : {}),
     },
   ];
   if (needOtp && otpCode) {
@@ -1520,9 +1924,8 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
       leadSource: seed.leadSource,
     });
   }
-  // show_menu / unknown — identical interactive greeting as in-session Hi
-  const customer = await lookupCustomerFull(ctx.db, ctx.to);
-  await sendGreetingMenu(ctx, { isNew: !customer?.id });
+  // show_menu / unknown — identity gate / known context (same as in-session reopen)
+  await startInboundIdentityFlow(ctx);
   return { ok: true };
 }
 
@@ -1538,12 +1941,16 @@ function isExistingCustomerFastBook(state, customer) {
 }
 
 async function beginExistingCustomerDateBooking(ctx, state = {}) {
-  const customer = await lookupCustomerFull(ctx.db, ctx.to);
-  const existingId = String(state.existingCustomerId || customer?.id || '').trim();
+  const customer = await resolveCustomerForState(ctx.db, ctx.to, state);
+  const existingId = String(
+    state.existingCustomerId || state.linkedCustomerId || customer?.id || ''
+  ).trim();
   if (!existingId) {
     await continueAfterServiceType(ctx, state);
     return;
   }
+  const issueNote = String(state.issueNote || '').trim();
+  const issueMedia = String(state.issueMediaUrl || state.photoUrl || '').trim();
   const base = {
     serviceSubType: state.serviceSubType || 'Repair',
     serviceLabel: state.serviceLabel || 'Service / Repair',
@@ -1551,6 +1958,10 @@ async function beginExistingCustomerDateBooking(ctx, state = {}) {
     name: String(state.name || customer?.full_name || 'Customer').trim() || 'Customer',
     leadSource: resolveLeadSource(state.leadSource),
     existingFastBook: true,
+    ...(state.linkedCustomerId ? { linkedCustomerId: state.linkedCustomerId } : {}),
+    ...(state.linkedFromOtherNumber ? { linkedFromOtherNumber: true } : {}),
+    ...(issueNote ? { issueNote, customNote: issueNote } : {}),
+    ...(issueMedia ? { photoUrl: issueMedia, issueMediaUrl: issueMedia } : {}),
     ...(state.startedByAdmin ? { startedByAdmin: true } : {}),
     ...(state.serviceReminder ? { serviceReminder: true } : {}),
   };
@@ -2118,13 +2529,18 @@ function buildBookingSummaryLines(state, customer) {
 
 async function sendNewCustomerConfirm(ctx, state) {
   let customer = null;
-  if (state?.existingCustomerId) {
-    customer = await lookupCustomerFull(ctx.db, ctx.to);
+  if (state?.existingCustomerId || state?.linkedCustomerId) {
+    customer = await resolveCustomerForState(ctx.db, ctx.to, state);
   }
+  const lines = buildBookingSummaryLines(state, customer);
+  const issue = String(state.issueNote || '').trim();
+  const bodyText = issue
+    ? `${lines}\n*Issue:* ${issue.slice(0, 120)}${state.issueMediaUrl || state.photoUrl ? '\n*Media:* Received' : ''}`
+    : lines;
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_confirm', editing: false });
   return sendButtons({
     ...ctx,
-    bodyText: buildBookingSummaryLines(state, customer),
+    bodyText,
     footer: state?.existingCustomerId ? 'Add job only' : 'Almost done',
     buttons: [
       { id: 'confirm_new', title: 'Yes, book now' },
@@ -2542,6 +2958,30 @@ async function handleBookingBotInbound({
   const state = await getBookingState(db, to);
   const msgType = String(msg.type || '');
 
+  // Restart identity flow if they say Hi mid-gate
+  if (
+    msgType === 'text' &&
+    text &&
+    GREETING_RE.test(text) &&
+    state?.step &&
+    [
+      'await_identity_gate',
+      'await_other_phone',
+      'await_linked_identity_confirm',
+      'await_facing_issue',
+      'await_recent_problem',
+      'await_issue_text',
+      'await_issue_media',
+      'await_first_time_menu',
+      'await_known_menu',
+      'await_amc_checkin',
+    ].includes(state.step)
+  ) {
+    await clearBookingState(db, to);
+    await startInboundIdentityFlow(ctx);
+    return { handled: true };
+  }
+
   // Admin inbox / cold template seeded intent — resume with *session* interactive UX.
   if (state?.step === 'admin_pending' && state?.pendingAction) {
     const pending = String(state.pendingAction || '').trim();
@@ -2604,7 +3044,7 @@ async function handleBookingBotInbound({
             });
             return { handled: true };
           }
-          await sendGreetingMenu(ctx, { isNew: !customer?.id });
+          await startInboundIdentityFlow(ctx);
           return { handled: true };
         }
         if (REPAIR_INTENT_RE.test(text)) {
@@ -2627,6 +3067,172 @@ async function handleBookingBotInbound({
   }
 
   // —— Stateful text / photo steps ——
+  if (state?.step === 'await_other_phone' && msgType === 'text' && text && !GREETING_RE.test(text)) {
+    const attempts = Number(state.otherPhoneAttempts || 0);
+    if (attempts >= OTHER_PHONE_LOOKUP_MAX) {
+      await sendText({
+        ...ctx,
+        text: 'Too many tries. Please tap *First time* to book as new, or *Call us*.',
+      });
+      await sendIdentityGate(ctx, { otherPhoneAttempts: attempts });
+      return { handled: true };
+    }
+    const mobile = parseStrictIndianMobile(text);
+    if (!mobile) {
+      await setBookingState(db, to, {
+        ...state,
+        otherPhoneAttempts: attempts + 1,
+        step: 'await_other_phone',
+      });
+      await sendText({
+        ...ctx,
+        text: 'That doesn’t look like a valid Indian mobile. Reply with a *10-digit* number starting 6–9.',
+      });
+      return { handled: true };
+    }
+    // Block looking up the same WA number as “other”
+    if (mobile === phone10FromE164(to)) {
+      await sendText({
+        ...ctx,
+        text: 'That’s this WhatsApp number. If you’re new here, tap *First time*.',
+      });
+      await sendIdentityGate(ctx, { otherPhoneAttempts: attempts });
+      return { handled: true };
+    }
+    const found = await lookupCustomerFull(db, `91${mobile}`);
+    const nextAttempts = attempts + 1;
+    if (!found?.id) {
+      if (nextAttempts >= OTHER_PHONE_LOOKUP_MAX) {
+        await sendText({
+          ...ctx,
+          text: 'We couldn’t find that number after several tries. Tap *First time* to book as new, or *Call us*.',
+        });
+        await sendIdentityGate(ctx, { otherPhoneAttempts: nextAttempts });
+        return { handled: true };
+      }
+      await setBookingState(db, to, {
+        ...state,
+        otherPhoneAttempts: nextAttempts,
+        step: 'await_other_phone',
+      });
+      await sendText({
+        ...ctx,
+        text: `No customer found for *${mobile}*. Please check and reply again (${OTHER_PHONE_LOOKUP_MAX - nextAttempts} tries left), or go back and tap *First time*.`,
+      });
+      return { handled: true };
+    }
+    const lastInfo = await lookupLastServiceInfo(db, found.id, found);
+    await sendLinkedIdentityConfirm(
+      ctx,
+      { ...state, otherPhoneAttempts: nextAttempts, lookedUpPhone10: mobile },
+      found,
+      lastInfo
+    );
+    return { handled: true };
+  }
+
+  if (state?.step === 'await_issue_text' && msgType === 'text' && text && !GREETING_RE.test(text)) {
+    const note = text.trim().slice(0, 200);
+    if (note.length < 3) {
+      await sendText({
+        ...ctx,
+        text: 'Please describe the issue in a few words.',
+      });
+      return { handled: true };
+    }
+    await askIssueMedia(ctx, {
+      ...state,
+      issueNote: note,
+      customNote: note,
+    });
+    return { handled: true };
+  }
+
+  if (state?.step === 'await_issue_media') {
+    if (msgType === 'image' || msgType === 'video' || msgType === 'document') {
+      const rawUrl = inboundMedia?.media_url || null;
+      if (!rawUrl) {
+        await sendText({
+          ...ctx,
+          text: 'We couldn’t save that file. Please send the photo or video again.',
+        });
+        return { handled: true };
+      }
+      const mediaUrl =
+        (await ensurePublicCrmPhotoUrl(rawUrl, {
+          mime: inboundMedia?.media_mime,
+          filename:
+            inboundMedia?.filename ||
+            (msgType === 'video' ? 'issue.mp4' : 'issue.jpg'),
+        })) || rawUrl;
+      await sendText({ ...ctx, text: 'Thanks — we received your media.' });
+      await beginLinkedOrKnownBooking(ctx, {
+        ...state,
+        issueMediaUrl: mediaUrl,
+        photoUrl: mediaUrl,
+        serviceSubType: state.serviceSubType || 'Repair',
+        serviceLabel: state.serviceLabel || 'Service / Repair',
+      });
+      return { handled: true };
+    }
+    if (msgType === 'text' && text && !GREETING_RE.test(text)) {
+      if (/^(skip|no photo|later)$/i.test(text.trim())) {
+        await beginLinkedOrKnownBooking(ctx, {
+          ...state,
+          serviceSubType: state.serviceSubType || 'Repair',
+          serviceLabel: state.serviceLabel || 'Service / Repair',
+        });
+        return { handled: true };
+      }
+      await sendText({
+        ...ctx,
+        text: 'Please send a *photo or video* of the issue, or type *skip* to continue without media.',
+      });
+      return { handled: true };
+    }
+  }
+
+  // Re-prompt button menus if they type free text instead of tapping
+  if (
+    msgType === 'text' &&
+    text &&
+    !GREETING_RE.test(text) &&
+    !interactive &&
+    state?.step
+  ) {
+    if (state.step === 'await_identity_gate') {
+      await sendIdentityGate(ctx, state);
+      return { handled: true };
+    }
+    if (state.step === 'await_first_time_menu') {
+      await sendFirstTimeMenu(ctx, state);
+      return { handled: true };
+    }
+    if (state.step === 'await_known_menu') {
+      await sendKnownMenu(ctx, state);
+      return { handled: true };
+    }
+    if (state.step === 'await_amc_checkin') {
+      await sendAmcCheckin(ctx, state);
+      return { handled: true };
+    }
+    if (state.step === 'await_facing_issue') {
+      await sendFacingIssuePrompt(ctx, state);
+      return { handled: true };
+    }
+    if (state.step === 'await_recent_problem') {
+      await sendRecentProblemPrompt(ctx, state);
+      return { handled: true };
+    }
+    if (state.step === 'await_linked_identity_confirm') {
+      await sendText({
+        ...ctx,
+        text: 'Please tap *Yes, this is me* or *No* below.',
+      });
+      return { handled: true };
+    }
+  }
+
   if (state?.step === 'await_alt_phone' && msgType === 'text' && text && !GREETING_RE.test(text)) {
     const raw = text.trim();
     let next = { ...state, useSecondarySite: true };
@@ -2855,6 +3461,119 @@ async function handleBookingBotInbound({
       if (handled.handled) return { handled: true };
     }
 
+    // —— Identity gate / known-customer menus ——
+    if (id === 'id_call_us' || id === 'known_call' || id === 'first_call') {
+      const customer = await resolveCustomerForState(db, to, state || {});
+      await sendCallUsHandoff(ctx, customer, state || {});
+      return { handled: true };
+    }
+
+    if (id === 'id_first_time') {
+      await sendFirstTimeMenu(ctx, {});
+      return { handled: true };
+    }
+
+    if (id === 'id_other_number') {
+      await askOtherPhone(ctx, { otherPhoneAttempts: Number(state?.otherPhoneAttempts || 0) });
+      return { handled: true };
+    }
+
+    if (id === 'first_book') {
+      await clearBookingState(db, to);
+      await beginServiceBooking(ctx, {
+        serviceSubType: 'Repair',
+        serviceLabel: 'Service / Repair',
+      });
+      return { handled: true };
+    }
+
+    if (id === 'first_chat' || id === 'known_chat') {
+      const customer = await resolveCustomerForState(db, to, state || {});
+      await sendChatHandoff(ctx, customer, state || {});
+      return { handled: true };
+    }
+
+    if (id === 'known_book' || id === 'amc_book') {
+      await beginLinkedOrKnownBooking(ctx, {
+        ...(state || {}),
+        serviceSubType: 'Repair',
+        serviceLabel: 'Service / Repair',
+      });
+      return { handled: true };
+    }
+
+    if (id === 'amc_issue' || id === 'recent_yes') {
+      await askIssueExplain(ctx, {
+        ...(state || {}),
+        serviceSubType: 'Repair',
+        serviceLabel: 'Service / Repair',
+      });
+      return { handled: true };
+    }
+
+    if (id === 'recent_no') {
+      await sendKnownMenu(ctx, state || {});
+      return { handled: true };
+    }
+
+    if (id === 'face_yes') {
+      const days = state?.lastServiceDaysAgo;
+      const recent =
+        days != null && days >= 0 && days < RECENT_SERVICE_DAYS;
+      if (recent) {
+        await askIssueExplain(ctx, {
+          ...(state || {}),
+          serviceSubType: 'Repair',
+          serviceLabel: 'Service / Repair',
+        });
+        return { handled: true };
+      }
+      await beginLinkedOrKnownBooking(ctx, {
+        ...(state || {}),
+        serviceSubType: 'Repair',
+        serviceLabel: 'Service / Repair',
+      });
+      return { handled: true };
+    }
+
+    if (id === 'face_no') {
+      await beginLinkedOrKnownBooking(ctx, {
+        ...(state || {}),
+        serviceSubType: 'Repair',
+        serviceLabel: 'Service / Repair',
+      });
+      return { handled: true };
+    }
+
+    if (id === 'link_yes') {
+      const linkId = String(state?.pendingLinkCustomerId || '').trim();
+      if (!linkId) {
+        await sendIdentityGate(ctx, {});
+        return { handled: true };
+      }
+      await continueAfterLinkedConfirm(ctx, {
+        ...(state || {}),
+        linkedCustomerId: linkId,
+        existingCustomerId: linkId,
+        linkedFromOtherNumber: true,
+        name: state?.pendingLinkName || state?.name,
+        pendingLinkCustomerId: undefined,
+        pendingLinkName: undefined,
+      });
+      return { handled: true };
+    }
+
+    if (id === 'link_no') {
+      await sendText({
+        ...ctx,
+        text: 'No problem. You can try another number, or book as first time.',
+      });
+      await sendIdentityGate(ctx, {
+        otherPhoneAttempts: Number(state?.otherPhoneAttempts || 0),
+      });
+      return { handled: true };
+    }
+
     if (id === 'book_service') {
       await clearBookingState(db, to);
       await beginServiceBooking(ctx, {
@@ -3055,13 +3774,13 @@ async function handleBookingBotInbound({
 
     if (id === 'confirm_new') {
       const st = (await getBookingState(db, to)) || state;
-      const existingByPhone = await lookupCustomerFull(db, to);
-      const isExisting = Boolean(st?.existingCustomerId || existingByPhone?.id);
+      const existingByPhone = await resolveCustomerForState(db, to, st || {});
+      const isExisting = Boolean(st?.existingCustomerId || st?.linkedCustomerId || existingByPhone?.id);
 
       if ((!st?.name && !isExisting) || !st?.dateIso || !st?.slotKey) {
         await sendText({
           ...ctx,
-          text: 'Something is missing. Please tap *Service/Repair* to start again.',
+          text: 'Something is missing. Please tap *Book Service* to start again.',
         });
         await beginServiceBooking(ctx, {
           serviceSubType: st?.serviceSubType || 'Repair',
@@ -3086,11 +3805,11 @@ async function handleBookingBotInbound({
 
       // Phone already in CRM → confirm path already done; create *job only* (never a new customer).
       if (isExisting) {
-        customer = existingByPhone || (await lookupCustomerFull(db, to));
+        customer = existingByPhone || (await resolveCustomerForState(db, to, st || {}));
         if (!customer?.id) {
           await sendText({
             ...ctx,
-            text: 'We couldn’t load your account. Please tap *Service/Repair* to try again.',
+            text: 'We couldn’t load your account. Please tap *Book Service* to try again.',
           });
           return { handled: true };
         }
@@ -3203,10 +3922,10 @@ async function handleBookingBotInbound({
         dateIso: st.dateIso,
         slotKey: st.slotKey,
         locOverride,
-        photoUrl: st.photoUrl || null,
+        photoUrl: st.photoUrl || st.issueMediaUrl || null,
         modelOverride: st.model || null,
         serviceSubType: st.serviceSubType || 'Service',
-        customNote: st.customNote || null,
+        customNote: st.issueNote || st.customNote || null,
         customTimeLabel: st.customTimeLabel || null,
         periodSlot: st.periodSlot || null,
         serviceSite,
@@ -3437,7 +4156,7 @@ async function handleBookingBotInbound({
         await resumeAfterEdit(ctx, next);
         return { handled: true };
       }
-      await continueAfterTimeSelected(ctx, next, await lookupCustomerFull(db, to));
+      await continueAfterTimeSelected(ctx, next, await resolveCustomerForState(db, to, next));
       return { handled: true };
     }
 
@@ -3446,7 +4165,7 @@ async function handleBookingBotInbound({
       const date = parts[1] || '';
       const slotKey = parts[2] || '10-AM';
       const st = (await getBookingState(db, to)) || state || {};
-      const customerForConfirm = await lookupCustomerFull(db, to);
+      const customerForConfirm = await resolveCustomerForState(db, to, st);
       if (!st.photoUrl && !isExistingCustomerFastBook(st, customerForConfirm)) {
         await sendText({
           ...ctx,
@@ -3474,7 +4193,7 @@ async function handleBookingBotInbound({
       if (!customer?.id) {
         await sendText({
           ...ctx,
-          text: `Please use *Service/Repair* so we can collect your details first.`,
+          text: `Please use *Book Service* so we can collect your details first.`,
         });
         await beginServiceBooking(ctx, {
           serviceSubType: st.serviceSubType || 'Repair',
@@ -3489,10 +4208,10 @@ async function handleBookingBotInbound({
         dateIso: date,
         slotKey,
         locOverride,
-        photoUrl: st.photoUrl || null,
+        photoUrl: st.photoUrl || st.issueMediaUrl || null,
         modelOverride: st.model || null,
         serviceSubType: st.serviceSubType || 'Service',
-        customNote: st.customNote || null,
+        customNote: st.issueNote || st.customNote || null,
         customTimeLabel: st.customTimeLabel || null,
         periodSlot: st.periodSlot || null,
         serviceSite: st.useSecondarySite ? 'secondary' : 'primary',
@@ -3620,10 +4339,7 @@ async function handleBookingBotInbound({
 
     if (REPAIR_INTENT_RE.test(text) && !GREETING_RE.test(text)) {
       await clearBookingState(db, to);
-      await beginServiceBooking(ctx, {
-        serviceSubType: 'Repair',
-        serviceLabel: 'Service / Repair',
-      });
+      await startInboundIdentityFlow(ctx);
       return { handled: true };
     }
 
@@ -3638,9 +4354,9 @@ async function handleBookingBotInbound({
       return { handled: true };
     }
 
-    // Default: show the 3-button menu (Hi, "??", free text, etc.)
+    // Default: identity gate (unknown) or known-customer context menus
     await clearBookingState(db, to);
-    await sendGreetingMenu(ctx, { isNew: !customer?.id });
+    await startInboundIdentityFlow(ctx);
     return { handled: true };
   }
 
@@ -3654,6 +4370,10 @@ module.exports = {
   sendLocationRequest,
   sendCtaUrl,
   lookupCustomerFull,
+  lookupCustomerById,
+  resolveCustomerForState,
+  parseStrictIndianMobile,
+  startInboundIdentityFlow,
   createAutoBookingJob,
   startAdminQuickAction,
   seedAdminPendingAction,
@@ -3672,4 +4392,6 @@ module.exports = {
   resumeSessionStyleFromPending,
   WATER_FILTER_SERVICE_LABEL,
   DEFAULT_LEAD_SOURCES,
+  OTHER_PHONE_LOOKUP_MAX,
+  RECENT_SERVICE_DAYS,
 };
