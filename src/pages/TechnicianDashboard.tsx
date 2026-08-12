@@ -6214,30 +6214,40 @@ const TechnicianDashboard = () => {
     const dateStr = `${dayName}, ${dayOfMonth}${ordinalSuffix} ${monthName}`;
     
     // Always show time if custom time exists, regardless of time slot
-    if (customTime) {
+    if (customTime && /^\d{1,2}:\d{2}$/.test(String(customTime).trim())) {
       // Format custom time (HH:MM) to readable format (e.g., "2:44 AM")
-      const [hours, minutes] = customTime.split(':');
-      const hour24 = parseInt(hours);
-      const minute24 = parseInt(minutes || '0');
-      
-      // Round to nearest 10 minutes
-      const rounded = roundToNearest10(hour24, minute24);
-      const roundedHour24 = rounded.hours;
-      const roundedMinute = rounded.minutes;
-      
-      const hour12 = roundedHour24 > 12 ? roundedHour24 - 12 : (roundedHour24 === 0 ? 12 : roundedHour24);
-      const ampm = roundedHour24 >= 12 ? 'PM' : 'AM';
-      const formattedMinutes = String(roundedMinute).padStart(2, '0');
-      
-      return `${dateStr} ${hour12}:${formattedMinutes} ${ampm}`;
-    } else if (scheduledTimeSlot) {
+      const [hours, minutes] = String(customTime).trim().split(':');
+      const hour24 = parseInt(hours, 10);
+      const minute24 = parseInt(minutes || '0', 10);
+      if (!Number.isNaN(hour24)) {
+        // Round to nearest 10 minutes
+        const rounded = roundToNearest10(hour24, minute24);
+        const roundedHour24 = rounded.hours;
+        const roundedMinute = rounded.minutes;
+        
+        const hour12 = roundedHour24 > 12 ? roundedHour24 - 12 : (roundedHour24 === 0 ? 12 : roundedHour24);
+        const ampm = roundedHour24 >= 12 ? 'PM' : 'AM';
+        const formattedMinutes = String(roundedMinute).padStart(2, '0');
+        
+        return `${dateStr} ${hour12}:${formattedMinutes} ${ampm}`;
+      }
+    }
+    if (scheduledTimeSlot) {
       // For time slots, show date and time slot
       const timeSlotMap: {[key: string]: string} = {
         'MORNING': 'Morning (9 AM - 12 PM)',
-        'AFTERNOON': 'Afternoon (12 PM - 5 PM)',
-        'EVENING': 'Evening (5 PM - 8 PM)',
-        'CUSTOM': customTime || 'Custom Time'
+        'AFTERNOON': 'Afternoon (12 PM - 3 PM)',
+        'EVENING': 'Evening (3 PM - 6 PM)',
+        'CUSTOM': 'Custom Time'
       };
+      // Legacy period label in custom_time
+      if (
+        !timeSlotMap[scheduledTimeSlot] &&
+        customTime &&
+        /morning|afternoon|evening/i.test(String(customTime))
+      ) {
+        return `${dateStr} - ${customTime}`;
+      }
       return `${dateStr} - ${timeSlotMap[scheduledTimeSlot] || scheduledTimeSlot}`;
     }
     
@@ -7336,22 +7346,33 @@ const TechnicianDashboard = () => {
                             
                             // Format custom time if available
                             let timeDisplay = '';
-                            if (customTime) {
-                              const [hours, minutes] = customTime.split(':');
-                              const hour24 = parseInt(hours);
-                              const minute24 = parseInt(minutes || '0');
-                              const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
-                              const ampm = hour24 >= 12 ? 'PM' : 'AM';
-                              const formattedMinutes = String(minute24).padStart(2, '0');
-                              timeDisplay = `${hour12}:${formattedMinutes} ${ampm}`;
+                            if (customTime && /^\d{1,2}:\d{2}$/.test(String(customTime).trim())) {
+                              const [hours, minutes] = String(customTime).trim().split(':');
+                              const hour24 = parseInt(hours, 10);
+                              const minute24 = parseInt(minutes || '0', 10);
+                              if (!Number.isNaN(hour24)) {
+                                const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
+                                const ampm = hour24 >= 12 ? 'PM' : 'AM';
+                                const formattedMinutes = String(minute24).padStart(2, '0');
+                                timeDisplay = `${hour12}:${formattedMinutes} ${ampm}`;
+                              }
                             } else if (scheduledTimeSlot) {
                               const timeSlotMap: { [key: string]: string } = {
                                 'MORNING': 'Morning (9 AM - 12 PM)',
-                                'AFTERNOON': 'Afternoon (12 PM - 5 PM)',
-                                'EVENING': 'Evening (5 PM - 8 PM)',
+                                'AFTERNOON': 'Afternoon (12 PM - 3 PM)',
+                                'EVENING': 'Evening (3 PM - 6 PM)',
                                 'CUSTOM': 'Custom Time'
                               };
                               timeDisplay = timeSlotMap[scheduledTimeSlot] || scheduledTimeSlot;
+                              if (
+                                !timeSlotMap[scheduledTimeSlot] &&
+                                customTime &&
+                                /morning|afternoon|evening/i.test(String(customTime))
+                              ) {
+                                timeDisplay = String(customTime);
+                              }
+                            } else if (customTime) {
+                              timeDisplay = String(customTime);
                             }
                             
                             return (

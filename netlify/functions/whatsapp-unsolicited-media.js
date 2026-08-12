@@ -41,7 +41,7 @@ function buildUnsolicitedMediaReply() {
     '',
     'Please message our Eleven RO team on WhatsApp at *+91 98806 93311* for photos, bills, or support.',
     '',
-    'Tap *Call 3311* to call, or *WhatsApp team* to open chat with +91 98806 93311.',
+    'Tap *Call us* to call, or *WhatsApp team* to open chat with +91 98806 93311.',
   ].join('\n');
 }
 

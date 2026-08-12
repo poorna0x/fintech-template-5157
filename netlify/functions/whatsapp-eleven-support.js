@@ -17,6 +17,14 @@ const ELEVEN_SUPPORT_LABEL = 'Eleven RO';
 const BTN_CALL = 'support_call';
 const BTN_WHATSAPP = 'support_whatsapp';
 
+/** Dial target for Call us CTA. Prefer tel: (opens dialer). Never use ngrok. */
+function resolveCallDialUrl() {
+  const fromEnv = String(process.env.WHATSAPP_CALL_DIAL_URL || '').trim();
+  if (fromEnv && !/ngrok/i.test(fromEnv)) return fromEnv.replace(/\/$/, '');
+  // Direct dialer — no browser / ngrok interstitial
+  return `tel:${ELEVEN_SUPPORT_E164_PLUS}`;
+}
+
 function supportWaUrl(prefill) {
   const q = encodeURIComponent(String(prefill || '').trim());
   return q ? `${ELEVEN_SUPPORT_WA_ME}?text=${q}` : ELEVEN_SUPPORT_WA_ME;
@@ -66,7 +74,7 @@ async function sendElevenSupportButtons({
         buttons: [
           {
             type: 'reply',
-            reply: { id: BTN_CALL, title: 'Call 3311' },
+            reply: { id: BTN_CALL, title: 'Call us' },
           },
           {
             type: 'reply',
@@ -85,7 +93,7 @@ async function sendElevenSupportButtons({
     phone,
     waId,
     'interactive',
-    `${bodyText || ''} [Call 3311 | WhatsApp team]`,
+    `${bodyText || ''} [Call us | WhatsApp team]`,
     result
   );
   return { ok: result.ok, error: result.data?.error?.message };
@@ -182,6 +190,79 @@ async function sendElevenSupportWhatsAppCta({
   return { ok: result.ok };
 }
 
+/** CTA URL → HTTPS dial redirect → opens phone dialer. */
+async function sendElevenSupportDialCta({
+  phoneNumberId,
+  accessToken,
+  db,
+  to,
+  bodyText,
+}) {
+  const phone = normalizePhoneE164(to);
+  if (!phone || !phoneNumberId || !accessToken) return { ok: false };
+  const url = resolveCallDialUrl();
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: phone,
+    type: 'interactive',
+    interactive: {
+      type: 'cta_url',
+      body: {
+        text: String(
+          bodyText ||
+            `Call ${ELEVEN_SUPPORT_LABEL} on ${ELEVEN_SUPPORT_DISPLAY}.\n\nTap *Call us* below to open your phone dialer.`
+        ).slice(0, 1024),
+      },
+      action: {
+        name: 'cta_url',
+        parameters: {
+          display_text: 'Call us',
+          url,
+        },
+      },
+    },
+  };
+  const result = await callWhatsAppApi(phoneNumberId, accessToken, payload);
+  const waId =
+    result.data?.messages?.[0]?.id || result.data?.messages?.[0]?.message_id || null;
+  await persistOutbound(
+    db,
+    phone,
+    waId,
+    'interactive',
+    `[CTA Call us dialer] ${url}`,
+    result
+  );
+  if (!result.ok) {
+    // Meta rejected tel: or URL — fall back to contact card + number
+    console.warn(
+      '[whatsapp-eleven-support] dial CTA failed, falling back to contact',
+      result.data?.error?.message
+    );
+    await sendElevenSupportContactCard({ phoneNumberId, accessToken, db, to });
+    const text = [
+      `Call ${ELEVEN_SUPPORT_LABEL}:`,
+      ELEVEN_SUPPORT_E164_PLUS,
+      '',
+      'Tap the number above to open your phone dialer.',
+    ].join('\n');
+    const textPayload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'text',
+      text: { preview_url: false, body: text },
+    };
+    const textResult = await callWhatsAppApi(phoneNumberId, accessToken, textPayload);
+    const textId =
+      textResult.data?.messages?.[0]?.id || textResult.data?.messages?.[0]?.message_id || null;
+    await persistOutbound(db, phone, textId, 'text', text, textResult);
+    return { ok: textResult.ok, error: result.data?.error?.message };
+  }
+  return { ok: result.ok, error: result.data?.error?.message };
+}
+
 /**
  * Handle support_call / support_whatsapp button taps.
  * @returns {{ handled: boolean }}
@@ -195,26 +276,7 @@ async function handleElevenSupportButton({
   prefill,
 }) {
   if (id === BTN_CALL) {
-    await sendElevenSupportContactCard({ phoneNumberId, accessToken, db, to });
-    // Follow-up: also push a tappable number line (WhatsApp often linkifies +91…)
-    const phone = normalizePhoneE164(to);
-    const text = [
-      `Call ${ELEVEN_SUPPORT_LABEL}:`,
-      ELEVEN_SUPPORT_E164_PLUS,
-      '',
-      'Tap the contact card above (or the number) to open your phone dialer.',
-    ].join('\n');
-    const payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: phone,
-      type: 'text',
-      text: { preview_url: false, body: text },
-    };
-    const result = await callWhatsAppApi(phoneNumberId, accessToken, payload);
-    const waId =
-      result.data?.messages?.[0]?.id || result.data?.messages?.[0]?.message_id || null;
-    await persistOutbound(db, phone, waId, 'text', text, result);
+    await sendElevenSupportDialCta({ phoneNumberId, accessToken, db, to });
     return { handled: true };
   }
 
@@ -242,8 +304,10 @@ module.exports = {
   BTN_CALL,
   BTN_WHATSAPP,
   supportWaUrl,
+  resolveCallDialUrl,
   sendElevenSupportButtons,
   sendElevenSupportContactCard,
   sendElevenSupportWhatsAppCta,
+  sendElevenSupportDialCta,
   handleElevenSupportButton,
 };

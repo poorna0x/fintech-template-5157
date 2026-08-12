@@ -22,7 +22,11 @@ const {
 } = require('./whatsapp-helper');
 const {
   ELEVEN_SUPPORT_DISPLAY,
+  ELEVEN_SUPPORT_E164_PLUS,
   sendElevenSupportButtons,
+  sendElevenSupportContactCard,
+  sendElevenSupportWhatsAppCta,
+  sendElevenSupportDialCta,
   handleElevenSupportButton,
 } = require('./whatsapp-eleven-support');
 const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
@@ -140,6 +144,14 @@ const GREETING_MENU = {
 function resolveGreetingIntent({ id, title, text } = {}) {
   const blob = `${id || ''} ${title || ''} ${text || ''}`.toLowerCase().trim();
   if (!blob) return null;
+  // Confirm CTAs use title "Yes, book now" — must not restart Service/Repair.
+  if (
+    id === 'confirm_new' ||
+    String(id || '').startsWith('confirm__') ||
+    /^yes,?\s*book now$/i.test(String(title || '').trim())
+  ) {
+    return null;
+  }
   if (
     /\bshare_location\b/.test(blob) ||
     /\bshare location\b/.test(blob) ||
@@ -220,36 +232,52 @@ const CHAT_INTENT_RE =
   /\b(chat|talk|call\s*(me|back)?|speak|human|agent|support|help\s+me|customer\s*care)\b/i;
 
 const TIME_SLOTS = {
-  '9-AM': { slot: 'MORNING', label: '9:00 AM', period: 'morning' },
-  '10-AM': { slot: 'MORNING', label: '10:00 AM', period: 'morning' },
-  '11-AM': { slot: 'MORNING', label: '11:00 AM', period: 'morning' },
-  '12-PM': { slot: 'AFTERNOON', label: '12:00 PM', period: 'afternoon' },
-  '1-PM': { slot: 'AFTERNOON', label: '1:00 PM', period: 'afternoon' },
-  '2-PM': { slot: 'AFTERNOON', label: '2:00 PM', period: 'afternoon' },
-  '3-PM': { slot: 'EVENING', label: '3:00 PM', period: 'evening' },
-  '4-PM': { slot: 'EVENING', label: '4:00 PM', period: 'evening' },
-  '5-PM': { slot: 'EVENING', label: '5:00 PM', period: 'evening' },
+  // Period-only booking (9 AM – 6 PM) — job scheduled_time_slot = MORNING / AFTERNOON / EVENING
+  MORNING: {
+    slot: 'MORNING',
+    label: 'Morning (9:00 AM – 12:00 PM)',
+    period: 'morning',
+    endMinutes: 12 * 60,
+  },
+  AFTERNOON: {
+    slot: 'AFTERNOON',
+    label: 'Afternoon (12:00 PM – 3:00 PM)',
+    period: 'afternoon',
+    endMinutes: 15 * 60,
+  },
+  EVENING: {
+    slot: 'EVENING',
+    label: 'Evening (3:00 PM – 6:00 PM)',
+    period: 'evening',
+    endMinutes: 18 * 60,
+  },
 };
 
-/** First step after date: period with frame, or custom. */
+/** After date: pick one of 3 periods (no exact / custom time). */
 const TIME_PERIODS = {
   period_morning: {
     key: 'morning',
     label: 'Morning',
     frame: '9:00 AM – 12:00 PM',
     slot: 'MORNING',
+    slotKey: 'MORNING',
+    endMinutes: 12 * 60,
   },
   period_afternoon: {
     key: 'afternoon',
     label: 'Afternoon',
     frame: '12:00 PM – 3:00 PM',
     slot: 'AFTERNOON',
+    slotKey: 'AFTERNOON',
+    endMinutes: 15 * 60,
   },
   period_evening: {
     key: 'evening',
     label: 'Evening',
-    frame: '3:00 PM – 5:00 PM',
+    frame: '3:00 PM – 6:00 PM',
     slot: 'EVENING',
+    slotKey: 'EVENING',
+    endMinutes: 18 * 60,
   },
 };
 
@@ -263,6 +291,10 @@ const SERVICE_CHOICES = {
 function timeLabelFromState(state) {
   if (state?.customTimeLabel) return state.customTimeLabel;
   if (state?.slotKey && TIME_SLOTS[state.slotKey]) return TIME_SLOTS[state.slotKey].label;
+  const periodMeta = Object.values(TIME_PERIODS).find(
+    (p) => p.key === state?.periodKey || p.slot === state?.periodSlot
+  );
+  if (periodMeta) return `${periodMeta.label} (${periodMeta.frame})`;
   return state?.slotKey ? String(state.slotKey).replace(/-/g, ' ') : '';
 }
 
@@ -289,90 +321,39 @@ function getIstNow() {
   };
 }
 
-/** Slot key like 10-AM / 2-PM → minutes from midnight IST. */
-function slotStartMinutes(slotKey) {
-  const m = String(slotKey || '').match(/^(\d{1,2})-(AM|PM)$/i);
-  if (!m) return null;
-  let h = Number(m[1]);
-  const ap = m[2].toUpperCase();
-  if (ap === 'AM') {
-    if (h === 12) h = 0;
-  } else if (h !== 12) {
-    h += 12;
-  }
-  return h * 60;
-}
-
-/** True if this fixed slot is still bookable for dateIso (future days always OK). */
-function isSlotAvailableOnDate(dateIso, slotKey) {
-  if (!dateIso || !slotKey || slotKey === 'CUSTOM') return true;
+/** True if this period is still bookable for dateIso (future days always OK). */
+function isPeriodAvailableOnDate(dateIso, periodKeyOrMeta) {
+  if (!dateIso) return false;
+  const meta =
+    typeof periodKeyOrMeta === 'object' && periodKeyOrMeta
+      ? periodKeyOrMeta
+      : Object.values(TIME_PERIODS).find((p) => p.key === periodKeyOrMeta);
+  if (!meta) return false;
   const now = getIstNow();
   if (dateIso > now.dateIso) return true;
   if (dateIso < now.dateIso) return false;
-  const start = slotStartMinutes(slotKey);
-  if (start == null) return true;
-  return start > now.minutes;
+  // Period still open until its end (e.g. Morning until 12:00, Evening until 18:00)
+  return now.minutes < Number(meta.endMinutes || 0);
+}
+
+/** @deprecated hourly slots removed — keep name for older callers */
+function isSlotAvailableOnDate(dateIso, slotKey) {
+  const period = TIME_SLOTS[slotKey]?.period;
+  if (period) return isPeriodAvailableOnDate(dateIso, period);
+  return isPeriodAvailableOnDate(dateIso, 'evening');
 }
 
 function periodHasAvailableSlots(dateIso, periodKey) {
-  return Object.entries(TIME_SLOTS).some(
-    ([key, meta]) => meta.period === periodKey && isSlotAvailableOnDate(dateIso, key)
-  );
+  return isPeriodAvailableOnDate(dateIso, periodKey);
 }
 
-/** After 5 PM IST today there are no remaining fixed slots. */
+/** After 6 PM IST today there are no remaining periods — hide today. */
 function dateHasAnyAvailableSlot(dateIso) {
-  return Object.keys(TIME_SLOTS).some((key) => isSlotAvailableOnDate(dateIso, key));
+  return Object.values(TIME_PERIODS).some((meta) => isPeriodAvailableOnDate(dateIso, meta));
 }
 
-function isCustomTimeStillAllowed(dateIso) {
-  const now = getIstNow();
-  if (!dateIso || dateIso > now.dateIso) return true;
-  if (dateIso < now.dateIso) return false;
-  // Allow custom only while before end of window (5:00 PM).
-  return now.minutes < slotStartMinutes('5-PM');
-}
-
-/** Parse "10:30 AM" / "14:00" → minutes; null if unparseable. */
-function parseCustomTimeToMinutes(text) {
-  const t = String(text || '').trim();
-  let m = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
-  if (m) {
-    let h = Number(m[1]);
-    const min = Number(m[2] || 0);
-    const ap = m[3].toUpperCase();
-    if (ap === 'AM') {
-      if (h === 12) h = 0;
-    } else if (h !== 12) {
-      h += 12;
-    }
-    if (h > 23 || min > 59) return null;
-    return h * 60 + min;
-  }
-  m = t.match(/^(\d{1,2}):(\d{2})$/);
-  if (m) {
-    const h = Number(m[1]);
-    const min = Number(m[2]);
-    if (h > 23 || min > 59) return null;
-    return h * 60 + min;
-  }
-  return null;
-}
-
-function isCustomTimeAvailableOnDate(dateIso, text) {
-  const mins = parseCustomTimeToMinutes(text);
-  if (mins == null) return { ok: false, reason: 'format' };
-  const windowStart = slotStartMinutes('9-AM');
-  const windowEnd = slotStartMinutes('5-PM');
-  if (mins < windowStart || mins > windowEnd) {
-    return { ok: false, reason: 'window' };
-  }
-  const now = getIstNow();
-  if (dateIso < now.dateIso) return { ok: false, reason: 'past' };
-  if (dateIso === now.dateIso && mins <= now.minutes) {
-    return { ok: false, reason: 'past' };
-  }
-  return { ok: true, minutes: mins };
+function isCustomTimeStillAllowed() {
+  return false;
 }
 
 function phone10FromE164(e164) {
@@ -927,33 +908,33 @@ async function lookupActiveAmc(db, customerId) {
   }
 }
 
-async function lookupLastServiceInfo(db, customerId, customerRow = null) {
+/** Last service from COMPLETED jobs only (matches customer reports). Ignore customers.last_service_date. */
+async function lookupLastServiceInfo(db, customerId, _customerRow = null) {
   if (!db || !customerId) return { lastServiceDate: null, daysAgo: null };
-  let last = customerRow?.last_service_date
-    ? String(customerRow.last_service_date).slice(0, 10)
-    : null;
-  if (!last) {
-    try {
-      const { data } = await db
-        .from('jobs')
-        .select('completed_at, end_time, scheduled_date')
-        .eq('customer_id', customerId)
-        .eq('status', 'COMPLETED')
-        .order('completed_at', { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle();
-      last =
-        (data?.completed_at && String(data.completed_at).slice(0, 10)) ||
-        (data?.end_time && String(data.end_time).slice(0, 10)) ||
-        (data?.scheduled_date && String(data.scheduled_date).slice(0, 10)) ||
-        null;
-    } catch (err) {
-      console.warn('[whatsapp-booking-bot] last service job lookup skipped:', err?.message || err);
+  try {
+    const { data } = await db
+      .from('jobs')
+      .select('completed_at, end_time')
+      .eq('customer_id', customerId)
+      .eq('status', 'COMPLETED')
+      .order('completed_at', { ascending: false, nullsFirst: false })
+      .limit(10);
+    let best = null;
+    for (const row of data || []) {
+      const raw = row.completed_at || row.end_time;
+      if (!raw) continue;
+      const iso = String(raw).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+      if (!best || iso > best) best = iso;
     }
+    return { lastServiceDate: best, daysAgo: daysSinceIso(best) };
+  } catch (err) {
+    console.warn('[whatsapp-booking-bot] last service job lookup skipped:', err?.message || err);
+    return { lastServiceDate: null, daysAgo: null };
   }
-  return { lastServiceDate: last, daysAgo: daysSinceIso(last) };
 }
 
+/** Call us → CTA that opens dialer (HTTPS redirect → tel:). */
 async function sendCallUsHandoff(ctx, customer = null, state = {}) {
   const prefill = buildAdminHandoffPrefill({
     customer,
@@ -965,19 +946,43 @@ async function sendCallUsHandoff(ctx, customer = null, state = {}) {
     supportPrefill: prefill,
     ...(state.linkedCustomerId ? { linkedCustomerId: state.linkedCustomerId } : {}),
   });
-  await sendElevenSupportButtons({
-    ...ctx,
+  await sendElevenSupportDialCta({
+    phoneNumberId: ctx.phoneNumberId,
+    accessToken: ctx.accessToken,
+    db: ctx.db,
+    to: ctx.to,
     bodyText: [
-      `Call or chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+      `Call ${BRAND_LABEL} on *${SUPPORT_PHONE_DISPLAY}*.`,
       '',
-      'Tap *Call 3311* to open the dialer, or *WhatsApp team* to message us.',
+      'Tap *Call us* below to open your phone dialer.',
     ].join('\n'),
-    footer: BRAND_LABEL,
   });
 }
 
+/** Chat with us → WhatsApp team CTA (optional Call us dialer still available via support buttons elsewhere). */
 async function sendChatHandoff(ctx, customer = null, state = {}) {
-  return sendCallUsHandoff(ctx, customer, state);
+  const prefill = buildAdminHandoffPrefill({
+    customer,
+    state,
+    phoneE164: ctx.to,
+  });
+  await setBookingState(ctx.db, ctx.to, {
+    step: 'booking_complete',
+    supportPrefill: prefill,
+    ...(state.linkedCustomerId ? { linkedCustomerId: state.linkedCustomerId } : {}),
+  });
+  await sendElevenSupportWhatsAppCta({
+    phoneNumberId: ctx.phoneNumberId,
+    accessToken: ctx.accessToken,
+    db: ctx.db,
+    to: ctx.to,
+    bodyText: [
+      `Chat with us on WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+      '',
+      'Tap below to open the chat with our team.',
+    ].join('\n'),
+    prefill,
+  });
 }
 
 async function beginLinkedOrKnownBooking(ctx, state = {}) {
@@ -1015,11 +1020,25 @@ async function askIssueExplain(ctx, state = {}) {
 
 async function askIssueMedia(ctx, state = {}) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_issue_media' });
-  await sendText({
+  return sendButtons({
     ...ctx,
-    text:
+    bodyText:
       'Please send a *photo or short video* of the issue so we can help faster.\n\n' +
+      'Or tap *Skip* to continue without media.\n\n' +
       AWAITING_CUSTOMER_MEDIA_MARKER,
+    footer: BRAND_LABEL,
+    buttons: [
+      { id: 'skip_issue_media', title: 'Skip' },
+      { id: 'id_call_us', title: 'Call us' },
+    ],
+  });
+}
+
+async function continueAfterIssueMediaSkipped(ctx, state) {
+  await beginLinkedOrKnownBooking(ctx, {
+    ...state,
+    serviceSubType: state.serviceSubType || 'Repair',
+    serviceLabel: state.serviceLabel || 'Service / Repair',
   });
 }
 
@@ -1632,18 +1651,20 @@ async function createAutoBookingJob(db, {
     (modelOverride && String(modelOverride).trim()) ||
     customer.model ||
     'Not specified';
-  const noteBit = customNote ? ` · ${String(customNote).slice(0, 120)}` : '';
+  const noteBit = customNote ? String(customNote).slice(0, 200).trim() : '';
   const site = serviceSite === 'secondary' ? 'secondary' : 'primary';
   const lead = resolveLeadSource(leadSource);
   const cost =
     leadCost != null && Number.isFinite(Number(leadCost)) ? Math.max(0, Number(leadCost)) : null;
   const needOtp = requireOtp === true;
   const otpCode = needOtp ? String(Math.floor(1000 + Math.random() * 9000)) : null;
+  const isStandardPeriod = ['MORNING', 'AFTERNOON', 'EVENING'].includes(String(timeMeta.slot || ''));
 
   const requirements = [
     {
       lead_source: lead,
-      custom_time: timeMeta.label,
+      // CRM expects custom_time as HH:MM only — never store period labels here.
+      ...(!isStandardPeriod && timeMeta.label ? { custom_time: timeMeta.label } : {}),
       booking_channel: 'whatsapp_bot',
       service_site: site,
       ...(customNote ? { custom_note: String(customNote).slice(0, 200) } : {}),
@@ -1674,7 +1695,8 @@ async function createAutoBookingJob(db, {
     service_address,
     service_location,
     service_site: site,
-    description: `WhatsApp booking · ${subType} · ${timeMeta.label}${noteBit}`,
+    // Slot/service live on their own fields — description is issue note only (if any).
+    description: noteBit || '',
     requirements,
     estimated_cost: 0,
     payment_status: 'PENDING',
@@ -1906,7 +1928,7 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
       bodyText: [
         `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
         '',
-        'Tap *Call 3311* to open the dialer, or *WhatsApp team* to message us.',
+        'Tap *Call us* to open the dialer, or *WhatsApp team* to message us.',
       ].join('\n'),
       footer: BRAND_LABEL,
     });
@@ -2363,18 +2385,20 @@ async function sendDatePicker(ctx, state) {
   const customer = await lookupCustomerFull(ctx.db, ctx.to);
   const existingFast = isExistingCustomerFastBook(state, customer);
   const rows = [];
-  for (let i = 0; i < 7; i++) {
+  // Skip fully-past days (e.g. after 6 PM IST today) and still offer 7 bookable dates.
+  for (let i = 0, added = 0; added < 7 && i < 14; i++) {
     const id = dateId(i);
     const iso = parseDateId(id);
-    if (i === 0 && iso && !dateHasAnyAvailableSlot(iso) && !isCustomTimeStillAllowed(iso)) {
-      continue; // Today fully past — skip
-    }
+    if (iso && !dateHasAnyAvailableSlot(iso)) continue;
     const label = istDateLabel(i);
+    const isToday = i === 0;
+    const isTomorrow = i === 1;
     rows.push({
       id,
-      title: (i === 0 ? `Today · ${label.split(' ').slice(1).join(' ')}` : label).slice(0, 24),
-      description: i === 0 ? 'Earliest available' : i === 1 ? 'Tomorrow' : undefined,
+      title: (isToday ? `Today · ${label.split(' ').slice(1).join(' ')}` : label).slice(0, 24),
+      description: isToday ? 'Earliest available' : isTomorrow ? 'Tomorrow' : undefined,
     });
+    added += 1;
   }
   return sendList({
     ...ctx,
@@ -2402,13 +2426,6 @@ async function sendPeriodPicker(ctx, dateIso, state) {
       description: meta.frame,
     });
   }
-  if (isCustomTimeStillAllowed(dateIso)) {
-    rows.push({
-      id: `period_custom__${dateIso}`,
-      title: 'Custom time',
-      description: 'Type a time between 9 AM – 5 PM',
-    });
-  }
 
   if (!rows.length) {
     await sendText({
@@ -2421,7 +2438,7 @@ async function sendPeriodPicker(ctx, dateIso, state) {
 
   return sendList({
     ...ctx,
-    bodyText: `Step 3 of 5 · Date: *${formatDateIsoLabel(dateIso)}*\n\nChoose a time of day:`,
+    bodyText: `Step 3 of 5 · Date: *${formatDateIsoLabel(dateIso)}*\n\nChoose a time of day (9 AM – 6 PM):`,
     buttonText: 'Choose period',
     sectionTitle: 'Time of day',
     footer: 'Past times hidden',
@@ -2429,60 +2446,9 @@ async function sendPeriodPicker(ctx, dateIso, state) {
   });
 }
 
-async function sendTimePicker(ctx, dateIso, state, periodKey) {
-  const period = periodKey || state?.periodKey || 'morning';
-  const periodMeta =
-    Object.values(TIME_PERIODS).find((p) => p.key === period) || TIME_PERIODS.period_morning;
-  if (state) {
-    await setBookingState(ctx.db, ctx.to, {
-      ...state,
-      step: 'await_time',
-      dateIso,
-      periodKey: period,
-      periodSlot: periodMeta.slot,
-    });
-  }
-  const rows = Object.entries(TIME_SLOTS)
-    .filter(([, meta]) => meta.period === period)
-    .filter(([key]) => isSlotAvailableOnDate(dateIso, key))
-    .map(([key, meta]) => ({
-      id: `time__${key}__${dateIso}`,
-      title: meta.label,
-      description: periodMeta.frame,
-    }));
-  if (isCustomTimeStillAllowed(dateIso)) {
-    rows.push({
-      id: `time__CUSTOM__${dateIso}`,
-      title: 'Custom time',
-      description: 'Type your preferred time',
-    });
-  }
-
-  if (!rows.length) {
-    await sendText({
-      ...ctx,
-      text: `No *${periodMeta.label}* slots left for *${formatDateIsoLabel(dateIso)}*. Please choose another time of day.`,
-    });
-    await sendPeriodPicker(ctx, dateIso, state || { dateIso });
-    return { ok: false };
-  }
-
-  return sendList({
-    ...ctx,
-    bodyText: `Step 4 of 5 · Date: *${formatDateIsoLabel(dateIso)}*\n*${periodMeta.label}* (${periodMeta.frame})\n\nPick a time:`,
-    buttonText: 'Choose time',
-    sectionTitle: periodMeta.label,
-    footer: 'Past times hidden',
-    rows,
-  });
-}
-
-async function askCustomTime(ctx, state) {
-  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_custom_time' });
-  await sendText({
-    ...ctx,
-    text: 'Please reply with your preferred time between *9:00 AM and 5:00 PM* (e.g. 10:30 AM).',
-  });
+/** Legacy hourly picker removed — period selection is the final time step. */
+async function sendTimePicker(ctx, dateIso, state) {
+  return sendPeriodPicker(ctx, dateIso, state || { dateIso });
 }
 
 async function askPurifierPhoto(ctx, state) {
@@ -2607,25 +2573,36 @@ function customerBookedMessage({
   timeLabel,
   locationLine,
   hasPhoto,
+  jobNumber,
   updated,
 }) {
+  const who = String(name || 'there').trim() || 'there';
+  const ref = String(jobNumber || '').trim() || 'your booking';
+  const when = [dateIso ? formatDateIsoLabel(dateIso) : '', timeLabel || '']
+    .filter(Boolean)
+    .join(', ') || 'the scheduled time';
   const lines = [
+    `Hi ${who}, 👋`,
     updated
-      ? 'Your booking details have been updated.'
-      : 'Thank you — your service visit is confirmed.',
+      ? `Your ${BRAND_LABEL} booking details have been updated. ✅`
+      : `This is an update from ${BRAND_LABEL} regarding your service booking. ✅`,
     '',
+    `📋 Booking: ${ref}`,
+    `📅 Confirmed for: ${when}`,
   ];
-  if (name) lines.push(`*Name:* ${name}`);
-  if (serviceLabel) lines.push(`*Service:* ${serviceLabel}`);
-  if (dateIso) lines.push(`*Date:* ${formatDateIsoLabel(dateIso)}`);
-  if (timeLabel) lines.push(`*Time:* ${timeLabel}`);
-  if (locationLine) lines.push(`*Location:* ${locationLine}`);
-  if (hasPhoto) lines.push('*Photo:* Received');
-  lines.push('');
+  if (serviceLabel) lines.push(`🔧 Service: ${serviceLabel}`);
+  if (locationLine) lines.push(`📍 ${locationLine}`);
+  if (hasPhoto) lines.push('📷 Photo: Received');
   lines.push(
+    '',
+    `Thank you for choosing ${BRAND_LABEL}.`,
+    `Call:\n${SUPPORT_PHONE_DISPLAY}`,
+    'Email:\nmail@elevenro.com',
+    'Website:\nelevenro.com',
+    '',
     updated
-      ? 'Our team has been informed and will follow up on this chat if needed.'
-      : 'Our team will assign a technician and keep you updated on this chat.'
+      ? '💬 Reply on this chat if you need to change anything else.'
+      : '💬 Reply on this chat if you need to change the date or time.'
   );
   return lines.join('\n');
 }
@@ -2648,14 +2625,15 @@ async function sendBookedConfirmation(ctx, state, { updated } = {}) {
       timeLabel: timeLabelFromState(next) || next.timeLabel,
       locationLine,
       hasPhoto: Boolean(next.photoUrl),
+      jobNumber: next.jobNumber,
       updated: Boolean(updated),
     }),
   });
   return sendButtons({
     ...ctx,
     bodyText: updated
-      ? 'Please confirm your updated details:'
-      : 'Please confirm — is everything correct?',
+      ? 'Need to change anything else?'
+      : 'Need to change anything?',
     footer: BRAND_LABEL,
     buttons: [
       { id: 'all_correct', title: 'All correct' },
@@ -2752,10 +2730,10 @@ async function persistBookingEditsToCrm(db, state) {
         jobPatch.service_address = buildServiceAddress(null, locOverride);
       }
 
-      if (timeLabel || state.customNote || state.serviceSubType) {
-        jobPatch.description = `WhatsApp booking · ${state.serviceSubType || 'Service'} · ${timeLabel || ''}${
-          state.customNote ? ` · ${String(state.customNote).slice(0, 120)}` : ''
-        }`.trim();
+      if (state.customNote || state.issueNote) {
+        jobPatch.description = String(state.customNote || state.issueNote || '')
+          .slice(0, 200)
+          .trim();
       }
 
       if (Object.keys(jobPatch).length) {
@@ -2910,7 +2888,7 @@ async function sendPostBookingHumanRedirect(ctx, state = null) {
     'Your booking on this number is already in progress.',
     `Message our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
     '',
-    'Tap *Call 3311* to open the dialer, or *WhatsApp team* to chat (your details will be attached).',
+    'Tap *Call us* to open the dialer, or *WhatsApp team* to chat (your details will be attached).',
   ].join('\n');
 
   await sendElevenSupportButtons({
@@ -2958,24 +2936,11 @@ async function handleBookingBotInbound({
   const state = await getBookingState(db, to);
   const msgType = String(msg.type || '');
 
-  // Restart identity flow if they say Hi mid-gate
+  // Plain Hi / Hello / Menu → always restart identity gate (works inside open 24h window)
   if (
     msgType === 'text' &&
     text &&
-    GREETING_RE.test(text) &&
-    state?.step &&
-    [
-      'await_identity_gate',
-      'await_other_phone',
-      'await_linked_identity_confirm',
-      'await_facing_issue',
-      'await_recent_problem',
-      'await_issue_text',
-      'await_issue_media',
-      'await_first_time_menu',
-      'await_known_menu',
-      'await_amc_checkin',
-    ].includes(state.step)
+    /^(hi+|hii+|hello|hey|hola|namaste|menu|start|help)\s*$/i.test(text.trim())
   ) {
     await clearBookingState(db, to);
     await startInboundIdentityFlow(ctx);
@@ -3154,7 +3119,7 @@ async function handleBookingBotInbound({
       if (!rawUrl) {
         await sendText({
           ...ctx,
-          text: 'We couldn’t save that file. Please send the photo or video again.',
+          text: 'We couldn’t save that file. Please send the photo or video again, or tap *Skip*.',
         });
         return { handled: true };
       }
@@ -3176,17 +3141,13 @@ async function handleBookingBotInbound({
       return { handled: true };
     }
     if (msgType === 'text' && text && !GREETING_RE.test(text)) {
-      if (/^(skip|no photo|later)$/i.test(text.trim())) {
-        await beginLinkedOrKnownBooking(ctx, {
-          ...state,
-          serviceSubType: state.serviceSubType || 'Repair',
-          serviceLabel: state.serviceLabel || 'Service / Repair',
-        });
+      if (/^(skip|no photo|no video|later|skip media)$/i.test(text.trim())) {
+        await continueAfterIssueMediaSkipped(ctx, state);
         return { handled: true };
       }
       await sendText({
         ...ctx,
-        text: 'Please send a *photo or video* of the issue, or type *skip* to continue without media.',
+        text: 'Please send a *photo or video* of the issue, or tap *Skip* to continue without media.',
       });
       return { handled: true };
     }
@@ -3268,30 +3229,12 @@ async function handleBookingBotInbound({
     return { handled: true };
   }
 
-  if (state?.step === 'await_custom_time' && msgType === 'text' && text && !GREETING_RE.test(text)) {
-    const check = isCustomTimeAvailableOnDate(state.dateIso, text);
-    if (!check.ok) {
-      const msg =
-        check.reason === 'past'
-          ? 'That time has already passed today. Please choose a later time (before 5:00 PM).'
-          : check.reason === 'window'
-            ? 'Please choose a time between *9:00 AM and 5:00 PM*.'
-            : 'Please reply like *10:30 AM* (between 9:00 AM and 5:00 PM).';
-      await sendText({ ...ctx, text: msg });
-      return { handled: true };
-    }
-    const label = text.trim().slice(0, 40);
-    const next = {
-      ...state,
-      slotKey: 'CUSTOM',
-      customTimeLabel: label,
-      periodSlot: state.periodSlot || 'CUSTOM',
-    };
-    if (state.editing) {
-      await resumeAfterEdit(ctx, next);
-      return { handled: true };
-    }
-    await continueAfterTimeSelected(ctx, next, await lookupCustomerFull(db, to));
+  if (state?.step === 'await_custom_time') {
+    await sendText({
+      ...ctx,
+      text: 'Please pick a time of day from the list (Morning / Afternoon / Evening).',
+    });
+    await sendPeriodPicker(ctx, state.dateIso, state);
     return { handled: true };
   }
 
@@ -3442,9 +3385,14 @@ async function handleBookingBotInbound({
       title: interactive.title,
       text: '',
     });
-    if (menuIntentEarly === 'talk_team') id = 'talk_team';
-    if (menuIntentEarly === 'book_service') id = 'book_service';
-    if (menuIntentEarly === 'book_reinstall') id = 'book_reinstall';
+    // Only remap cold/greeting labels — never overwrite confirm / edit action ids.
+    const isConfirmAction =
+      id === 'confirm_new' || String(id || '').startsWith('confirm__') || id === 'all_correct';
+    if (!isConfirmAction) {
+      if (menuIntentEarly === 'talk_team') id = 'talk_team';
+      if (menuIntentEarly === 'book_service') id = 'book_service';
+      if (menuIntentEarly === 'book_reinstall') id = 'book_reinstall';
+    }
 
     // Eleven RO Call / WhatsApp buttons (dialer contact + wa.me)
     if (id === 'support_call' || id === 'support_whatsapp') {
@@ -3545,6 +3493,11 @@ async function handleBookingBotInbound({
       return { handled: true };
     }
 
+    if (id === 'skip_issue_media') {
+      await continueAfterIssueMediaSkipped(ctx, state || {});
+      return { handled: true };
+    }
+
     if (id === 'link_yes') {
       const linkId = String(state?.pendingLinkCustomerId || '').trim();
       if (!linkId) {
@@ -3602,7 +3555,7 @@ async function handleBookingBotInbound({
         bodyText: [
           `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
           '',
-          'Tap *Call 3311* to open the dialer, or *WhatsApp team* to message us.',
+          'Tap *Call us* to open the dialer, or *WhatsApp team* to message us.',
         ].join('\n'),
         footer: BRAND_LABEL,
       });
@@ -3674,7 +3627,7 @@ async function handleBookingBotInbound({
           'Your booking is confirmed. We’ll update you here once a technician is assigned.',
           '',
           `Need anything else? Message our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
-          'Tap *Call 3311* or *WhatsApp team* (details attached).',
+          'Tap *Call us* or *WhatsApp team* (details attached).',
         ].join('\n'),
         footer: BRAND_LABEL,
       });
@@ -3777,7 +3730,11 @@ async function handleBookingBotInbound({
       const existingByPhone = await resolveCustomerForState(db, to, st || {});
       const isExisting = Boolean(st?.existingCustomerId || st?.linkedCustomerId || existingByPhone?.id);
 
-      if ((!st?.name && !isExisting) || !st?.dateIso || !st?.slotKey) {
+      // Period-only flow may store periodSlot without slotKey on older sessions.
+      if (st && !st.slotKey && st.periodSlot && TIME_SLOTS[st.periodSlot]) {
+        st.slotKey = st.periodSlot;
+      }
+      if ((!st?.name && !isExisting) || !st?.dateIso || !(st?.slotKey || st?.periodSlot)) {
         await sendText({
           ...ctx,
           text: 'Something is missing. Please tap *Book Service* to start again.',
@@ -3920,14 +3877,14 @@ async function handleBookingBotInbound({
         phoneE164: to,
         customer,
         dateIso: st.dateIso,
-        slotKey: st.slotKey,
+        slotKey: st.slotKey || st.periodSlot,
         locOverride,
         photoUrl: st.photoUrl || st.issueMediaUrl || null,
         modelOverride: st.model || null,
         serviceSubType: st.serviceSubType || 'Service',
         customNote: st.issueNote || st.customNote || null,
         customTimeLabel: st.customTimeLabel || null,
-        periodSlot: st.periodSlot || null,
+        periodSlot: st.periodSlot || st.slotKey || null,
         serviceSite,
         leadSource: st.leadSource || LEAD_SOURCE,
         leadCost: st.leadCost != null ? st.leadCost : null,
@@ -4066,7 +4023,7 @@ async function handleBookingBotInbound({
         bodyText: [
           `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
           '',
-          `*Call 3311* opens your phone dialer.`,
+          `*Call us* opens your phone dialer.`,
           `*WhatsApp team* opens chat with details attached when available.`,
         ].join('\n'),
         footer: BRAND_LABEL,
@@ -4083,20 +4040,16 @@ async function handleBookingBotInbound({
 
     if (id.startsWith('period_')) {
       const parts = id.split('__');
-      const periodId = parts[0]; // period_morning | period_afternoon | period_evening | period_custom
+      const periodId = parts[0]; // period_morning | period_afternoon | period_evening
       const date = parts[1] || state?.dateIso || '';
       const st = { ...(state || {}), dateIso: date };
 
       if (periodId === 'period_custom') {
-        if (!isCustomTimeStillAllowed(date)) {
-          await sendText({
-            ...ctx,
-            text: `No time slots left for *${formatDateIsoLabel(date)}*. Please pick another date.`,
-          });
-          await sendDatePicker(ctx, st);
-          return { handled: true };
-        }
-        await askCustomTime(ctx, { ...st, periodSlot: 'CUSTOM' });
+        await sendText({
+          ...ctx,
+          text: 'Please choose *Morning*, *Afternoon*, or *Evening* (9 AM – 6 PM).',
+        });
+        await sendPeriodPicker(ctx, date, st);
         return { handled: true };
       }
 
@@ -4113,50 +4066,45 @@ async function handleBookingBotInbound({
         await sendPeriodPicker(ctx, date, st);
         return { handled: true };
       }
-      await sendTimePicker(ctx, date, st, meta.key);
-      return { handled: true };
-    }
 
-    if (id.startsWith('time__')) {
-      const parts = id.split('__');
-      const slotKey = parts[1] || '10-AM';
-      const date = parts[2] || state?.dateIso || 'soon';
-      const next = { ...(state || {}), dateIso: date, slotKey };
-
-      if (slotKey === 'CUSTOM') {
-        if (!isCustomTimeStillAllowed(date)) {
-          await sendText({
-            ...ctx,
-            text: `No time slots left for *${formatDateIsoLabel(date)}*. Please pick another date.`,
-          });
-          await sendDatePicker(ctx, next);
-          return { handled: true };
-        }
-        await askCustomTime(ctx, next);
-        return { handled: true };
-      }
-
-      if (!isSlotAvailableOnDate(date, slotKey)) {
-        await sendText({
-          ...ctx,
-          text: `*${TIME_SLOTS[slotKey]?.label || slotKey}* has already passed. Please choose a later time.`,
-        });
-        const period = TIME_SLOTS[slotKey]?.period || state?.periodKey || 'morning';
-        await sendTimePicker(ctx, date, next, period);
-        return { handled: true };
-      }
-
-      const known = TIME_SLOTS[slotKey];
-      if (known) {
-        next.periodKey = known.period;
-        next.periodSlot = known.slot;
-        next.customTimeLabel = known.label;
-      }
+      const next = {
+        ...st,
+        slotKey: meta.slotKey,
+        periodKey: meta.key,
+        periodSlot: meta.slot,
+        customTimeLabel: `${meta.label} (${meta.frame})`,
+      };
       if (state?.editing) {
         await resumeAfterEdit(ctx, next);
         return { handled: true };
       }
       await continueAfterTimeSelected(ctx, next, await resolveCustomerForState(db, to, next));
+      return { handled: true };
+    }
+
+    // Legacy hourly list ids — map to period or re-prompt
+    if (id.startsWith('time__')) {
+      const parts = id.split('__');
+      const slotKey = parts[1] || '';
+      const date = parts[2] || state?.dateIso || '';
+      const known = TIME_SLOTS[slotKey];
+      if (known && date && isPeriodAvailableOnDate(date, known.period)) {
+        const next = {
+          ...(state || {}),
+          dateIso: date,
+          slotKey: known.slot,
+          periodKey: known.period,
+          periodSlot: known.slot,
+          customTimeLabel: known.label,
+        };
+        if (state?.editing) {
+          await resumeAfterEdit(ctx, next);
+          return { handled: true };
+        }
+        await continueAfterTimeSelected(ctx, next, await resolveCustomerForState(db, to, next));
+        return { handled: true };
+      }
+      await sendPeriodPicker(ctx, date || state?.dateIso, { ...(state || {}), dateIso: date || state?.dateIso });
       return { handled: true };
     }
 
@@ -4330,7 +4278,7 @@ async function handleBookingBotInbound({
         bodyText: [
           `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
           '',
-          'Tap *Call 3311* to open the dialer, or *WhatsApp team* to message us.',
+          'Tap *Call us* to open the dialer, or *WhatsApp team* to message us.',
         ].join('\n'),
         footer: BRAND_LABEL,
       });
