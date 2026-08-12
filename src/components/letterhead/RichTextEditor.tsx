@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
+import DOMPurify from 'dompurify';
 import {
   Bold,
   Italic,
@@ -343,12 +344,27 @@ export default function RichTextEditor({
         onMouseUp={refreshActive}
         onFocus={refreshActive}
         onPaste={(event) => {
-          // Keep basic formatting from Word/Google Docs when available; fall back to plain text.
-          const html = event.clipboardData.getData('text/html');
-          const text = event.clipboardData.getData('text/plain');
           event.preventDefault();
-          if (html) {
-            document.execCommand('insertHTML', false, html);
+          const rawHtml = event.clipboardData.getData('text/html');
+          const text = event.clipboardData.getData('text/plain');
+          if (rawHtml) {
+            // Sanitize Word/Google Docs clipboard HTML — strips <html>/<body>/<meta>/
+            // <colgroup>/<col>/namespace tags while keeping tables, lists, headings etc.
+            const clean = DOMPurify.sanitize(rawHtml, {
+              ALLOWED_TAGS: [
+                'p', 'br', 'span', 'div', 'strong', 'em', 'u', 's', 'b', 'i',
+                'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'li', 'a', 'blockquote', 'hr',
+                'table', 'thead', 'tbody', 'tr', 'th', 'td',
+              ],
+              ALLOWED_ATTR: ['href', 'target', 'rel', 'style', 'class', 'colspan', 'rowspan'],
+              ALLOW_DATA_ATTR: false,
+            });
+            if (clean.trim()) {
+              document.execCommand('insertHTML', false, clean);
+            } else {
+              // Sanitizer stripped everything (pure namespace soup) — fall back to plain text
+              document.execCommand('insertText', false, text);
+            }
           } else {
             document.execCommand('insertText', false, text);
           }
