@@ -19,6 +19,11 @@ import {
   type AmcServicePeriodKind,
 } from '@/lib/amcAutoJobSchedule';
 import { getDefaultLeadCost } from '@/lib/adminUtils';
+import {
+  isLeadSourceAllowCustomText,
+  leadSourceValueForSave,
+} from '@/lib/leadCatalog';
+import { LeadSourceSelect } from '@/components/admin/LeadSourceSelect';
 import PendingPaymentFields from '@/components/job/PendingPaymentFields';
 import {
   type PaidTodayMode,
@@ -527,53 +532,29 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           )}
 
           {/* Lead Source */}
-          <div>
-            <Label htmlFor="edit-lead-source">Lead Source</Label>
-            <Select
-              value={editData.leadSource || 'Direct call'}
-              onValueChange={(value) => {
-                const selectedLeadSource = value === 'Other' ? 'Other' : value;
-                const jobServiceSubType =
-                  (job as any)?.service_sub_type || (job as any)?.serviceSubType || '';
-                const newLeadCost = selectedLeadSource === 'Other'
-                  ? (editData.leadCost ?? getDefaultLeadCost(selectedLeadSource, jobServiceSubType))
-                  : getDefaultLeadCost(selectedLeadSource, jobServiceSubType);
-                onEditDataChange({ 
-                  ...editData, 
-                  leadSource: selectedLeadSource,
-                  leadSourceCustom: value === 'Other' ? editData.leadSourceCustom : '',
-                  leadCost: newLeadCost
-                });
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Website">Website</SelectItem>
-                <SelectItem value="Direct call">Direct call</SelectItem>
-                <SelectItem value="Google-Leads">Google-Leads</SelectItem>
-                <SelectItem value="RO care india">RO care india</SelectItem>
-                <SelectItem value="Home Triangle">Home Triangle</SelectItem>
-                <SelectItem value="Home Triangle-Srujan">Home Triangle-Srujan</SelectItem>
-                <SelectItem value="Home Triangle-3">Home Triangle-3</SelectItem>
-                <SelectItem value="Local Ramu">Local Ramu</SelectItem>
-                <SelectItem value="Other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {editData.leadSource === 'Other' && (
-            <div>
-              <Label htmlFor="edit-lead-source-custom">Custom Lead Source</Label>
-              <Input
-                id="edit-lead-source-custom"
-                value={editData.leadSourceCustom || ''}
-                onChange={(e) => onEditDataChange({ ...editData, leadSourceCustom: e.target.value })}
-                placeholder="Enter custom lead source"
-              />
-            </div>
-          )}
+          <LeadSourceSelect
+            id="edit-lead-source"
+            value={editData.leadSource || 'Direct call'}
+            customValue={editData.leadSourceCustom || ''}
+            onChange={(value) => {
+              const jobServiceSubType =
+                (job as any)?.service_sub_type || (job as any)?.serviceSubType || '';
+              const newLeadCost = isLeadSourceAllowCustomText(value)
+                ? (editData.leadCost ?? getDefaultLeadCost(value, jobServiceSubType))
+                : getDefaultLeadCost(value, jobServiceSubType);
+              onEditDataChange({
+                ...editData,
+                leadSource: value,
+                leadSourceCustom: isLeadSourceAllowCustomText(value)
+                  ? editData.leadSourceCustom
+                  : '',
+                leadCost: newLeadCost,
+              });
+            }}
+            onCustomChange={(custom) =>
+              onEditDataChange({ ...editData, leadSourceCustom: custom })
+            }
+          />
 
           {/* Lead Cost - Always editable so it can be updated when needed */}
           <div>

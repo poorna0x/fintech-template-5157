@@ -22,13 +22,17 @@ import {
 } from '@/components/ui/select';
 import {
   getDefaultLeadCost,
-  isHomeTriangleLeadSource,
 } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import {
-  getWhatsAppBookingLeadSources,
   startQuickCustomerCreateBooking,
 } from '@/lib/whatsappBookingStart';
+import {
+  isLeadSourceAllowCustomText,
+  isLeadSourceRequiresOtp,
+  leadSourceValueForSave,
+} from '@/lib/leadCatalog';
+import { LeadSourceSelect } from '@/components/admin/LeadSourceSelect';
 
 export type QuickCustomerServiceKind = 'Service' | 'Installation';
 
@@ -49,8 +53,7 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
   const [requireOtp, setRequireOtp] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const resolvedLead =
-    leadSource === 'Other' ? leadCustom.trim() || 'Other' : leadSource.trim() || 'Direct call';
+  const resolvedLead = leadSourceValueForSave(leadSource, leadCustom) || 'Direct call';
 
   useEffect(() => {
     if (!open) return;
@@ -68,12 +71,12 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
   const applyLeadDefaults = (nextLead: string, nextService: QuickCustomerServiceKind) => {
     const subType = nextService === 'Installation' ? 'Installation' : 'Service';
     setLeadCost(getDefaultLeadCost(nextLead, subType));
-    setRequireOtp(isHomeTriangleLeadSource(nextLead));
+    setRequireOtp(isLeadSourceRequiresOtp(nextLead));
   };
 
   const handleLeadChange = (value: string) => {
     setLeadSource(value);
-    if (value !== 'Other') {
+    if (!isLeadSourceAllowCustomText(value)) {
       applyLeadDefaults(value, serviceKind);
       setLeadCustom('');
       if (showLeadOnWhatsApp) setWhatsappLeadLine(value);
@@ -86,7 +89,7 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
 
   const handleServiceChange = (value: QuickCustomerServiceKind) => {
     setServiceKind(value);
-    const leadForCost = leadSource === 'Other' ? 'Other' : leadSource;
+    const leadForCost = isLeadSourceAllowCustomText(leadSource) ? leadSource : leadSource;
     const subType = value === 'Installation' ? 'Installation' : 'Service';
     setLeadCost(getDefaultLeadCost(leadForCost, subType));
   };
@@ -102,7 +105,7 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
       toast.error('Enter a valid 10-digit phone');
       return;
     }
-    if (leadSource === 'Other' && !leadCustom.trim()) {
+    if (isLeadSourceAllowCustomText(leadSource) && !leadCustom.trim()) {
       toast.error('Enter custom lead source');
       return;
     }
@@ -199,35 +202,17 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
               placeholder="10-digit mobile"
             />
           </div>
-          <div className="space-y-1.5">
-            <Label>Lead source (CRM) *</Label>
-            <Select value={leadSource} onValueChange={handleLeadChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Lead source" />
-              </SelectTrigger>
-              <SelectContent className="!z-[120]">
-                {getWhatsAppBookingLeadSources().map((src) => (
-                  <SelectItem key={src} value={src}>
-                    {src}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {leadSource === 'Other' ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="qc-lead-custom">Custom lead source *</Label>
-              <Input
-                id="qc-lead-custom"
-                value={leadCustom}
-                onChange={(e) => {
-                  setLeadCustom(e.target.value);
-                  if (showLeadOnWhatsApp) setWhatsappLeadLine(e.target.value);
-                }}
-                placeholder="e.g. Facebook ad"
-              />
-            </div>
-          ) : null}
+          <LeadSourceSelect
+            id="qc-lead"
+            required
+            value={leadSource}
+            customValue={leadCustom}
+            onChange={handleLeadChange}
+            onCustomChange={(v) => {
+              setLeadCustom(v);
+              if (showLeadOnWhatsApp) setWhatsappLeadLine(v);
+            }}
+          />
           <div className="flex items-start gap-2 rounded-md border border-border/60 px-3 py-2">
             <Checkbox
               id="qc-wa-lead"

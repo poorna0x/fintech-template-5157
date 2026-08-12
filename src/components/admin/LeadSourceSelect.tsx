@@ -34,7 +34,13 @@ export function LeadSourceSelect({
         allow_custom_text: label === 'Other',
       }));
 
-  const selected = options.find((o) => o.label === value);
+  const optionLabels = new Set(options.map((o) => o.label));
+  const allOptions =
+    value && !optionLabels.has(value)
+      ? [...options, { id: '__current__', label: value, allow_custom_text: false }]
+      : options;
+
+  const selected = allOptions.find((o) => o.label === value);
   const showCustom = selected?.allow_custom_text || value === 'Other';
 
   return (
@@ -49,7 +55,7 @@ export function LeadSourceSelect({
         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
       >
         <option value="">Select lead source</option>
-        {options.map((o) => (
+        {allOptions.map((o) => (
           <option key={o.id || o.label} value={o.label}>
             {o.label}
           </option>

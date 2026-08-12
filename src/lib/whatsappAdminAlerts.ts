@@ -7,6 +7,7 @@ import {
 import {
   countUnreadWhatsAppThreads,
   displayPhone,
+  isWhatsAppThreadUnread,
   loadWhatsAppReadMap,
   patchThreadFromMessage,
   peekWhatsAppInboxThreadsCache,
@@ -17,6 +18,7 @@ import {
 import {
   dispatchWhatsAppUnreadChanged,
   getWhatsAppInboxActivity,
+  readWhatsAppUnreadCount,
 } from '@/lib/whatsappInboxActivity';
 import { playWhatsAppAlertSound } from '@/lib/whatsappAlertSound';
 import {
@@ -63,12 +65,26 @@ function inboxPathForPhone(phoneE164: string): string {
 
 function bumpUnreadFromInbound(row: WhatsAppMessageRow): WhatsAppThreadNameHint {
   const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
-  const threads = patchThreadFromMessage(cached?.threads ?? [], row);
-  writeWhatsAppInboxThreadsCache(threads, { rangeKey: 'today' });
-  const readMap = loadWhatsAppReadMap();
-  dispatchWhatsAppUnreadChanged(countUnreadWhatsAppThreads(threads, readMap));
+  const prevThreads = cached?.threads ?? [];
   const phone = normalizePhone(row.phone_e164);
+  const prevThread = prevThreads.find((t) => t.phone_e164 === phone);
+  const readMap = loadWhatsAppReadMap();
+  const wasUnreadBefore = prevThread ? isWhatsAppThreadUnread(prevThread, readMap) : false;
+
+  const threads = patchThreadFromMessage(prevThreads, row);
+  writeWhatsAppInboxThreadsCache(threads, { rangeKey: 'today' });
+
   const thread = threads.find((t) => t.phone_e164 === phone);
+  const isUnreadNow = thread ? isWhatsAppThreadUnread(thread, readMap) : false;
+
+  if (isUnreadNow && !wasUnreadBefore) {
+    dispatchWhatsAppUnreadChanged(readWhatsAppUnreadCount() + 1);
+  } else if (prevThreads.length > 0) {
+    dispatchWhatsAppUnreadChanged(countUnreadWhatsAppThreads(threads, readMap));
+  } else if (isUnreadNow) {
+    dispatchWhatsAppUnreadChanged(1);
+  }
+
   return { customerName: thread?.customer_name || null, phone };
 }
 

@@ -184,28 +184,30 @@ export async function ensureLeadCatalogLoaded(opts?: {
     });
     if (error) {
       if (/get_lead_catalog|could not find|does not exist/i.test(error.message || '')) {
+        const fallbackSources = LEGACY_LEAD_SOURCE_LABELS.map((label, i) => ({
+          id: `legacy-src-${i}`,
+          slug: label.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+          label,
+          sort_order: i * 10,
+          active: true,
+          requires_otp: label.toLowerCase().startsWith('home triangle'),
+          allow_custom_text: label === 'Other',
+          default_cost_inr: legacyDefaultCostOnly(label),
+          aliases: [] as string[],
+        }));
+        const fallbackSubTypes = LEGACY_SERVICE_SUB_TYPE_LABELS.map((label, i) => ({
+          id: `legacy-sub-${i}`,
+          slug: label.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+          label,
+          sort_order: i * 10,
+          active: true,
+          allow_custom_text: label === 'Other',
+          aliases: [] as string[],
+        }));
         const fallback: LeadCatalog = {
-          sources: LEGACY_LEAD_SOURCE_LABELS.map((label, i) => ({
-            id: `legacy-src-${i}`,
-            slug: label.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
-            label,
-            sort_order: i * 10,
-            active: true,
-            requires_otp: label.toLowerCase().startsWith('home triangle'),
-            allow_custom_text: label === 'Other',
-            default_cost_inr: legacyDefaultCostOnly(label),
-            aliases: [],
-          })),
-          subTypes: LEGACY_SERVICE_SUB_TYPE_LABELS.map((label, i) => ({
-            id: `legacy-sub-${i}`,
-            slug: label.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
-            label,
-            sort_order: i * 10,
-            active: true,
-            allow_custom_text: label === 'Other',
-            aliases: [],
-          })),
-          rules: buildLegacyRules(),
+          sources: fallbackSources,
+          subTypes: fallbackSubTypes,
+          rules: buildLegacyRules(fallbackSources, fallbackSubTypes),
         };
         catalogMem = { catalog: fallback, at: Date.now() };
         writeSessionCache(fallback);
@@ -234,15 +236,21 @@ function legacyDefaultCostOnly(leadSource: string): number {
   return 0;
 }
 
-function buildLegacyRules(): LeadCostRuleRow[] {
+function buildLegacyRules(sources: LeadSourceRow[], subTypes: ServiceSubTypeRow[]): LeadCostRuleRow[] {
   const rules: LeadCostRuleRow[] = [];
   let i = 0;
-  for (const src of ['home_triangle', 'home_triangle_srujan', 'home_triangle_3']) {
-    for (const sub of ['installation', 'reinstallation']) {
+  const srcSlugs = ['home_triangle', 'home_triangle_srujan', 'home_triangle_3'];
+  const subSlugs = ['installation', 'reinstallation'];
+  for (const srcSlug of srcSlugs) {
+    const source = sources.find((s) => s.slug === srcSlug);
+    if (!source) continue;
+    for (const subSlug of subSlugs) {
+      const subType = subTypes.find((st) => st.slug === subSlug);
+      if (!subType) continue;
       rules.push({
         id: `legacy-rule-${i++}`,
-        lead_source_id: src,
-        service_sub_type_id: sub,
+        lead_source_id: source.id,
+        service_sub_type_id: subType.id,
         cost_inr: 116,
         priority: 20,
       });
@@ -266,19 +274,32 @@ function resolveSubTypeLabel(
   return base;
 }
 
+function sourceMatchesText(s: LeadSourceRow, lower: string, compact: string): boolean {
+  if (s.label.toLowerCase() === lower) return true;
+  if (compactKey(s.label) === compact) return true;
+  if (s.slug === compact.replace(/[^a-z0-9_]/g, '_')) return true;
+  return s.aliases.some((a) => a.toLowerCase() === lower);
+}
+
 function findSource(catalog: LeadCatalog, leadSource: string): LeadSourceRow | null {
   const raw = (leadSource || '').trim();
   if (!raw) return null;
   const lower = raw.toLowerCase();
   const compact = compactKey(raw);
-  for (const s of catalog.sources) {
-    if (!s.active && !catalog.sources.some((x) => x.id === s.id)) continue;
-    if (s.label.toLowerCase() === lower) return s;
-    if (compactKey(s.label) === compact) return s;
-    if (s.slug === compact.replace(/[^a-z0-9_]/g, '_')) return s;
-    for (const a of s.aliases) {
-      if (a.toLowerCase() === lower) return s;
+
+  const pick = (sources: LeadSourceRow[]) => {
+    for (const s of sources) {
+      if (sourceMatchesText(s, lower, compact)) return s;
     }
+    return null;
+  };
+
+  const active = catalog.sources.filter((s) => s.active);
+  const matched = pick(active) ?? pick(catalog.sources.filter((s) => !s.active));
+  if (matched) return matched;
+
+  if (lower.startsWith('website (')) {
+    return catalog.sources.find((s) => s.slug === 'website') ?? null;
   }
   if (lower.startsWith('home triangle')) {
     return (
@@ -295,14 +316,18 @@ function findSubType(catalog: LeadCatalog, subLabel: string): ServiceSubTypeRow 
   if (!raw) return null;
   const lower = raw.toLowerCase();
   const compact = compactKey(raw);
-  for (const st of catalog.subTypes) {
-    if (st.label.toLowerCase() === lower) return st;
-    if (compactKey(st.label) === compact) return st;
-    for (const a of st.aliases) {
-      if (a.toLowerCase() === lower) return st;
+
+  const pick = (items: ServiceSubTypeRow[]) => {
+    for (const st of items) {
+      if (st.label.toLowerCase() === lower) return st;
+      if (compactKey(st.label) === compact) return st;
+      if (st.aliases.some((a) => a.toLowerCase() === lower)) return st;
     }
-  }
-  return null;
+    return null;
+  };
+
+  const active = catalog.subTypes.filter((st) => st.active);
+  return pick(active) ?? pick(catalog.subTypes.filter((st) => !st.active));
 }
 
 export function resolveDefaultLeadCostFromCatalog(
@@ -316,17 +341,16 @@ export function resolveDefaultLeadCostFromCatalog(
   const subType = subLabel ? findSubType(catalog, subLabel) : null;
 
   if (source) {
-    let best: LeadCostRuleRow | null = null;
-    for (const rule of catalog.rules) {
-      if (rule.lead_source_id !== source.id) continue;
-      if (subType && rule.service_sub_type_id === subType.id) {
-        best = rule;
-        break;
-      }
-      if (!rule.service_sub_type_id && !best) {
-        best = rule;
-      }
-    }
+    const forSource = catalog.rules.filter((r) => r.lead_source_id === source.id);
+    const ranked = [...forSource].sort((a, b) => {
+      const aSpecific =
+        subType && a.service_sub_type_id === subType.id ? 0 : a.service_sub_type_id ? 2 : 1;
+      const bSpecific =
+        subType && b.service_sub_type_id === subType.id ? 0 : b.service_sub_type_id ? 2 : 1;
+      if (aSpecific !== bSpecific) return aSpecific - bSpecific;
+      return b.priority - a.priority;
+    });
+    const best = ranked[0];
     if (best) return String(best.cost_inr);
     return String(source.default_cost_inr);
   }
@@ -405,6 +429,62 @@ export function isHomeTriangleLeadSource(leadSource: string | undefined | null):
 
 export function isLeadSourceRequiresOtp(leadSource: string | undefined | null): boolean {
   return isHomeTriangleLeadSource(leadSource);
+}
+
+export function isLeadSourceAllowCustomText(leadSource: string | undefined | null): boolean {
+  const catalog = peekLeadCatalog();
+  if (catalog) {
+    const source = findSource(catalog, leadSource || '');
+    if (source) return source.allow_custom_text;
+  }
+  return (leadSource || '').trim() === 'Other';
+}
+
+export function isServiceSubTypeAllowCustomText(subType: string | undefined | null): boolean {
+  const catalog = peekLeadCatalog();
+  if (catalog) {
+    const st = findSubType(catalog, subType || '');
+    if (st) return st.allow_custom_text;
+  }
+  const s = (subType || '').trim();
+  return s === 'Other' || s === 'Custom';
+}
+
+export function leadSourceValueForSave(label: string, custom?: string): string {
+  if (isLeadSourceAllowCustomText(label)) {
+    return (custom || '').trim() || label;
+  }
+  return label;
+}
+
+/** Map stored job lead_source text → form select label + optional custom. */
+export function resolveLeadSourceForForm(
+  storedSource: string,
+  storedCustom?: string
+): { label: string; custom: string } {
+  const raw = (storedSource || '').trim();
+  const custom = (storedCustom || '').trim();
+  if (!raw) return { label: '', custom };
+
+  const catalog = peekLeadCatalog();
+  if (catalog) {
+    const source = findSource(catalog, raw);
+    if (source) {
+      if (source.allow_custom_text) {
+        return {
+          label: source.label,
+          custom: custom || (raw.toLowerCase() !== source.label.toLowerCase() ? raw : ''),
+        };
+      }
+      return { label: source.label, custom: '' };
+    }
+  }
+
+  if (raw.toLowerCase().startsWith('website (')) {
+    return { label: 'Website', custom: '' };
+  }
+
+  return { label: raw, custom };
 }
 
 /** Preload on admin dashboard — one RPC per session. */

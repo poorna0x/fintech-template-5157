@@ -13,17 +13,11 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { LeadSourceSelect } from '@/components/admin/LeadSourceSelect';
 import {
   startWaterFilterServiceBooking,
-  WHATSAPP_BOOKING_LEAD_SOURCES,
 } from '@/lib/whatsappBookingStart';
+import { isLeadSourceAllowCustomText, leadSourceValueForSave } from '@/lib/leadCatalog';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 
 type Props = {
@@ -50,8 +44,7 @@ export default function WaterFilterServiceStartDialog({
   const [whatsappLeadLine, setWhatsappLeadLine] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const resolvedLead =
-    leadSource === 'Other' ? leadCustom.trim() || 'Other' : leadSource.trim() || 'Direct call';
+  const resolvedLead = leadSourceValueForSave(leadSource, leadCustom) || 'Direct call';
 
   const syncOpen = (next: boolean) => {
     if (next) {
@@ -77,7 +70,7 @@ export default function WaterFilterServiceStartDialog({
       toast.error('Enter a valid 10-digit phone');
       return;
     }
-    if (leadSource === 'Other' && !leadCustom.trim()) {
+    if (isLeadSourceAllowCustomText(leadSource) && !leadCustom.trim()) {
       toast.error('Enter custom lead source');
       return;
     }
@@ -149,44 +142,23 @@ export default function WaterFilterServiceStartDialog({
               placeholder="10-digit mobile"
             />
           </div>
-          <div className="space-y-1.5">
-            <Label>Lead source (CRM) *</Label>
-            <Select
-              value={leadSource}
-              onValueChange={(v) => {
-                setLeadSource(v);
-                if (v !== 'Other') {
-                  setLeadCustom('');
-                  if (showLeadOnWhatsApp) setWhatsappLeadLine(v);
-                }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Lead source" />
-              </SelectTrigger>
-              <SelectContent className="!z-[120]">
-                {WHATSAPP_BOOKING_LEAD_SOURCES.map((src) => (
-                  <SelectItem key={src} value={src}>
-                    {src}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {leadSource === 'Other' ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="wfs-lead-custom">Custom lead source *</Label>
-              <Input
-                id="wfs-lead-custom"
-                value={leadCustom}
-                onChange={(e) => {
-                  setLeadCustom(e.target.value);
-                  if (showLeadOnWhatsApp) setWhatsappLeadLine(e.target.value);
-                }}
-                placeholder="e.g. Facebook ad"
-              />
-            </div>
-          ) : null}
+          <LeadSourceSelect
+            id="wfs-lead"
+            required
+            value={leadSource}
+            customValue={leadCustom}
+            onChange={(v) => {
+              setLeadSource(v);
+              if (!isLeadSourceAllowCustomText(v)) {
+                setLeadCustom('');
+                if (showLeadOnWhatsApp) setWhatsappLeadLine(v);
+              }
+            }}
+            onCustomChange={(v) => {
+              setLeadCustom(v);
+              if (showLeadOnWhatsApp) setWhatsappLeadLine(v);
+            }}
+          />
           <div className="flex items-start gap-2 rounded-md border border-border/60 px-3 py-2">
             <Checkbox
               id="wfs-wa-lead"

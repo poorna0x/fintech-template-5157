@@ -133,6 +133,10 @@ AS $$
     AND (
       lower(trim(ls.label)) = lower(trim(coalesce(p_text, '')))
       OR lower(trim(p_text)) = ANY (SELECT lower(unnest(ls.aliases)))
+      OR (
+        ls.slug = 'website'
+        AND lower(trim(coalesce(p_text, ''))) LIKE 'website (%'
+      )
     )
   ORDER BY ls.sort_order
   LIMIT 1;

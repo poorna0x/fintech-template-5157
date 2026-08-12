@@ -13,7 +13,15 @@ import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { MapPin, Download, ExternalLink, Loader2, ChevronDown, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
+import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
+import {
+  isLeadSourceAllowCustomText,
+  isLeadSourceRequiresOtp,
+  isServiceSubTypeAllowCustomText,
+  leadSourceValueForSave,
+} from '@/lib/leadCatalog';
+import { LeadSourceSelect } from '@/components/admin/LeadSourceSelect';
+import { ServiceSubTypeSelect } from '@/components/admin/ServiceSubTypeSelect';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
@@ -985,7 +993,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       if (
         field === 'service_sub_type_custom' &&
         prev.lead_source &&
-        prev.lead_source !== 'Other'
+        !isLeadSourceAllowCustomText(prev.lead_source)
       ) {
         next.lead_cost = getDefaultLeadCost(
           prev.lead_source,
@@ -1015,7 +1023,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           return;
         }
 
-        if (step5JobData.service_sub_type === 'Custom' && (!step5JobData.service_sub_type_custom || step5JobData.service_sub_type_custom.trim() === '')) {
+        if (
+          isServiceSubTypeAllowCustomText(step5JobData.service_sub_type) &&
+          (!step5JobData.service_sub_type_custom || step5JobData.service_sub_type_custom.trim() === '')
+        ) {
           toast.error('Please enter a custom service sub type', TOAST_VALIDATION);
           return;
         }
@@ -1025,7 +1036,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           return;
         }
         
-        if (step5JobData.lead_source === 'Other' && (!step5JobData.lead_source_custom || step5JobData.lead_source_custom.trim() === '')) {
+        if (
+          isLeadSourceAllowCustomText(step5JobData.lead_source) &&
+          (!step5JobData.lead_source_custom || step5JobData.lead_source_custom.trim() === '')
+        ) {
           toast.error('Please enter a custom lead source', TOAST_VALIDATION);
           return;
         }
@@ -1232,7 +1246,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           }
 
           const requirements: any[] = [{ 
-            lead_source: step5JobData.lead_source === 'Other' ? (step5JobData.lead_source_custom || 'Other') : step5JobData.lead_source,
+            lead_source: leadSourceValueForSave(
+              step5JobData.lead_source,
+              step5JobData.lead_source_custom
+            ),
             cost_range: step5JobData.cost_agreed || '',
             custom_time: customTimeInRequirements,
             flexible_time: isFlexible
@@ -1257,7 +1274,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             job_number: jobNumber,
             customer_id: newCustomer.id,
             service_type: step5JobData.service_type,
-            service_sub_type: step5JobData.service_sub_type === 'Custom' ? step5JobData.service_sub_type_custom : step5JobData.service_sub_type,
+            service_sub_type: isServiceSubTypeAllowCustomText(step5JobData.service_sub_type)
+              ? step5JobData.service_sub_type_custom || step5JobData.service_sub_type
+              : step5JobData.service_sub_type,
             brand: newCustomer.brand || customerData.brand || '',
             model: newCustomer.model || customerData.model || '',
             scheduled_date: step5JobData.scheduled_date,
@@ -1418,10 +1437,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         step5JobData.assigned_technician_id &&
         onJobAssignedToTechnician
       ) {
-        const serviceSubType =
-          step5JobData.service_sub_type === 'Custom'
-            ? step5JobData.service_sub_type_custom
-            : step5JobData.service_sub_type;
+        const serviceSubType = isServiceSubTypeAllowCustomText(step5JobData.service_sub_type)
+          ? step5JobData.service_sub_type_custom || step5JobData.service_sub_type
+          : step5JobData.service_sub_type;
         onJobAssignedToTechnician({
           technicianId: step5JobData.assigned_technician_id,
           serviceSubType: serviceSubType || 'Service',
@@ -1432,10 +1450,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             'Customer',
           visibleAddress: formData.visible_address,
           address: customerData.address,
-          leadSource:
-            step5JobData.lead_source === 'Other'
-              ? step5JobData.lead_source_custom || 'Other'
-              : step5JobData.lead_source,
+          leadSource: leadSourceValueForSave(
+            step5JobData.lead_source,
+            step5JobData.lead_source_custom
+          ),
           customTime:
             step5JobData.scheduled_time_slot === 'CUSTOM' && step5JobData.scheduled_time_custom
               ? formatCustomTimeLabel(step5JobData.scheduled_time_custom) || undefined
@@ -2080,60 +2098,31 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       </Select>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="step5_service_sub_type">Service Sub Type *</Label>
-                      <Select
-                        value={step5JobData.service_sub_type || undefined}
-                        onValueChange={(value) => setStep5JobData(prev => {
+                    <ServiceSubTypeSelect
+                      id="step5_service_sub_type"
+                      value={step5JobData.service_sub_type || 'Service'}
+                      customValue={step5JobData.service_sub_type_custom}
+                      onChange={(value) =>
+                        setStep5JobData((prev) => {
                           const next = {
                             ...prev,
-                            service_sub_type: value === 'Custom' ? 'Custom' : value,
-                            service_sub_type_custom: value === 'Custom' ? prev.service_sub_type_custom : '',
+                            service_sub_type: value,
+                            service_sub_type_custom: isServiceSubTypeAllowCustomText(value)
+                              ? prev.service_sub_type_custom
+                              : '',
                           };
-                          if (prev.lead_source && prev.lead_source !== 'Other') {
+                          if (prev.lead_source && !isLeadSourceAllowCustomText(prev.lead_source)) {
                             next.lead_cost = getDefaultLeadCost(
                               prev.lead_source,
                               next.service_sub_type,
-                              next.service_sub_type_custom,
+                              next.service_sub_type_custom
                             );
                           }
                           return next;
-                        })}
-                        required
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select service sub type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Service">Service</SelectItem>
-                          <SelectItem value="Installation">Installation</SelectItem>
-                          <SelectItem value="Reinstallation">Reinstallation</SelectItem>
-                          <SelectItem value="Return Complaint">Return Complaint</SelectItem>
-                          <SelectItem value="Return Service">Return Service</SelectItem>
-                          <SelectItem value="AMC Service">AMC Service</SelectItem>
-                          <SelectItem value="New Purifier Installation">New Purifier Installation</SelectItem>
-                          <SelectItem value="Un-Installation">Un-Installation</SelectItem>
-                          <SelectItem value="Repair">Repair</SelectItem>
-                          <SelectItem value="Maintenance">Maintenance</SelectItem>
-                          <SelectItem value="Replacement">Replacement</SelectItem>
-                          <SelectItem value="Inspection">Inspection</SelectItem>
-                          <SelectItem value="Custom">Custom</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {step5JobData.service_sub_type === 'Custom' && (
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="step5_service_sub_type_custom">Custom Service Sub Type</Label>
-                        <Input
-                          id="step5_service_sub_type_custom"
-                          value={step5JobData.service_sub_type_custom}
-                          onChange={(e) => handleStep5TextChange('service_sub_type_custom', e.target.value)}
-                          autoCapitalize="sentences"
-                          placeholder="Enter custom service sub type"
-                        />
-                      </div>
-                    )}
+                        })
+                      }
+                      onCustomChange={(v) => handleStep5TextChange('service_sub_type_custom', v)}
+                    />
 
                     <div className="space-y-2">
                       <Label htmlFor="step5_scheduled_date">Scheduled Date</Label>
@@ -2177,47 +2166,28 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       </div>
                     )}
 
-                    <div className="space-y-2">
-                      <Label htmlFor="step5_lead_source">Lead Source *</Label>
-                      <Select
-                        value={step5JobData.lead_source || undefined}
-                        onValueChange={(value) => {
-                          const selectedLeadSource = value === 'Other' ? 'Other' : value;
-                          setStep5JobData(prev => {
-                            const updated = {
-                              ...prev,
-                              lead_source: selectedLeadSource,
-                              lead_source_custom: value === 'Other' ? prev.lead_source_custom : '',
-                              lead_cost: getDefaultLeadCost(
-                                selectedLeadSource,
-                                prev.service_sub_type,
-                                prev.service_sub_type_custom,
-                              ),
-                            };
-                            // OTP on for Home Triangle; off when switching away
-                            updated.require_otp =
-                              isHomeTriangleLeadSource(selectedLeadSource);
-                            return updated;
-                          });
-                        }}
-                        required
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select lead source" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Website">Website</SelectItem>
-                          <SelectItem value="Direct call">Direct call</SelectItem>
-                          <SelectItem value="Google-Leads">Google-Leads</SelectItem>
-                          <SelectItem value="RO care india">RO care india</SelectItem>
-                          <SelectItem value="Home Triangle">Home Triangle</SelectItem>
-                          <SelectItem value="Home Triangle-Srujan">Home Triangle-Srujan</SelectItem>
-                          <SelectItem value="Home Triangle-3">Home Triangle-3</SelectItem>
-                          <SelectItem value="Local Ramu">Local Ramu</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <LeadSourceSelect
+                      id="step5_lead_source"
+                      required
+                      value={step5JobData.lead_source || ''}
+                      customValue={step5JobData.lead_source_custom}
+                      onChange={(value) => {
+                        setStep5JobData((prev) => ({
+                          ...prev,
+                          lead_source: value,
+                          lead_source_custom: isLeadSourceAllowCustomText(value)
+                            ? prev.lead_source_custom
+                            : '',
+                          lead_cost: getDefaultLeadCost(
+                            value,
+                            prev.service_sub_type,
+                            prev.service_sub_type_custom
+                          ),
+                          require_otp: isLeadSourceRequiresOtp(value),
+                        }));
+                      }}
+                      onCustomChange={(v) => handleStep5TextChange('lead_source_custom', v)}
+                    />
 
                     <div className="space-y-2">
                       <Label htmlFor="step5_lead_cost">Lead Cost (₹) *</Label>
@@ -2255,19 +2225,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         </button>
                       )}
                     </div>
-
-                    {step5JobData.lead_source === 'Other' && (
-                      <div className="space-y-2">
-                        <Label htmlFor="step5_lead_source_custom">Custom Lead Source</Label>
-                        <Input
-                          id="step5_lead_source_custom"
-                          value={step5JobData.lead_source_custom}
-                          onChange={(e) => handleStep5TextChange('lead_source_custom', e.target.value)}
-                          autoCapitalize="sentences"
-                          placeholder="Enter custom lead source"
-                        />
-                      </div>
-                    )}
 
                     <div className="space-y-2">
                       <Label htmlFor="step5_cost_agreed">Cost Already Agreed (₹)</Label>
@@ -2372,7 +2329,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             ) : (
               <Button 
                 onClick={handleCreateCustomer}
-                disabled={isCreating || (shouldCreateJob && (!step5JobData.scheduled_date || !step5JobData.service_sub_type || (step5JobData.service_sub_type === 'Custom' && !step5JobData.service_sub_type_custom) || !step5JobData.lead_source || !step5JobData.lead_cost || (step5JobData.lead_source === 'Other' && !step5JobData.lead_source_custom) || (step5JobData.scheduled_time_slot === 'CUSTOM' && !step5JobData.scheduled_time_custom)))}
+                disabled={isCreating || (shouldCreateJob && (!step5JobData.scheduled_date || !step5JobData.service_sub_type || (isServiceSubTypeAllowCustomText(step5JobData.service_sub_type) && !step5JobData.service_sub_type_custom) || !step5JobData.lead_source || !step5JobData.lead_cost || (isLeadSourceAllowCustomText(step5JobData.lead_source) && !step5JobData.lead_source_custom) || (step5JobData.scheduled_time_slot === 'CUSTOM' && !step5JobData.scheduled_time_custom)))}
                 className="bg-green-600 hover:bg-green-700 w-full sm:w-auto text-sm"
               >
                 {isCreating ? (

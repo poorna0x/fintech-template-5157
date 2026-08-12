@@ -12,7 +12,13 @@ import { Customer } from '@/types';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
-import { generateJobNumber, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
+import { generateJobNumber, formatCustomTimeLabel, getDefaultLeadCost } from '@/lib/adminUtils';
+import {
+  isLeadSourceAllowCustomText,
+  isLeadSourceRequiresOtp,
+  isServiceSubTypeAllowCustomText,
+  leadSourceValueForSave,
+} from '@/lib/leadCatalog';
 import { LeadSourceSelect } from '@/components/admin/LeadSourceSelect';
 import { ServiceSubTypeSelect } from '@/components/admin/ServiceSubTypeSelect';
 import { db } from '@/lib/supabase';
@@ -189,7 +195,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     onOpenChange(false);
   };
 
-  const handleFormChange = (field: keyof NewJobFormData, value: string | number) => {
+  const handleFormChange = (field: keyof NewJobFormData, value: string | number | boolean) => {
     // If service_type changes, update brand/model defaults to match that service
     if (field === 'service_type' && customer) {
       const nextServiceType = String(value) as 'RO' | 'SOFTENER';
@@ -221,7 +227,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         field === 'service_sub_type' ||
         field === 'service_sub_type_custom' ||
         field === 'lead_source';
-      if (shouldRecalcLeadCost && next.lead_source && next.lead_source !== 'Other') {
+      if (shouldRecalcLeadCost && next.lead_source && !isLeadSourceAllowCustomText(next.lead_source)) {
         next.lead_cost = getDefaultLeadCost(
           next.lead_source,
           next.service_sub_type,
@@ -335,7 +341,10 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       return;
     }
     
-    if (newJobFormData.lead_source === 'Other' && (!newJobFormData.lead_source_custom || newJobFormData.lead_source_custom.trim() === '')) {
+    if (
+      isLeadSourceAllowCustomText(newJobFormData.lead_source) &&
+      (!newJobFormData.lead_source_custom || newJobFormData.lead_source_custom.trim() === '')
+    ) {
       toast.error('Please enter a custom lead source', TOAST_VALIDATION);
       return;
     }
@@ -388,7 +397,10 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       }
 
       const requirements: any[] = [{ 
-        lead_source: newJobFormData.lead_source === 'Other' ? (newJobFormData.lead_source_custom || 'Other') : newJobFormData.lead_source,
+        lead_source: leadSourceValueForSave(
+          newJobFormData.lead_source,
+          newJobFormData.lead_source_custom
+        ),
         cost_range: newJobFormData.cost_agreed || '',
         custom_time: customTimeInRequirements,
         flexible_time: isFlexible
@@ -429,7 +441,9 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         job_number: jobNumber,
         customer_id: customer.id,
         service_type: newJobFormData.service_type,
-        service_sub_type: newJobFormData.service_sub_type === 'Other' ? newJobFormData.service_sub_type_custom : newJobFormData.service_sub_type,
+        service_sub_type: isServiceSubTypeAllowCustomText(newJobFormData.service_sub_type)
+          ? newJobFormData.service_sub_type_custom || newJobFormData.service_sub_type
+          : newJobFormData.service_sub_type,
         brand: newJobFormData.brand === 'Not specified' ? '' : newJobFormData.brand,
         model: newJobFormData.model === 'Not specified' ? '' : newJobFormData.model,
         scheduled_date: newJobFormData.scheduled_date,
@@ -584,14 +598,13 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 
       // Capture values needed for the WhatsApp notify dialog BEFORE handleClose() resets the form.
       const assignedTechIdToNotify = newJobFormData.assigned_technician_id;
-      const subTypeToNotify =
-        newJobFormData.service_sub_type === 'Other'
-          ? newJobFormData.service_sub_type_custom
-          : newJobFormData.service_sub_type;
-      const leadSourceToNotify =
-        newJobFormData.lead_source === 'Other'
-          ? newJobFormData.lead_source_custom || 'Other'
-          : newJobFormData.lead_source;
+      const subTypeToNotify = isServiceSubTypeAllowCustomText(newJobFormData.service_sub_type)
+        ? newJobFormData.service_sub_type_custom || newJobFormData.service_sub_type
+        : newJobFormData.service_sub_type;
+      const leadSourceToNotify = leadSourceValueForSave(
+        newJobFormData.lead_source,
+        newJobFormData.lead_source_custom
+      );
       const customTimeToNotify =
         newJobFormData.scheduled_time_slot === 'CUSTOM' && newJobFormData.scheduled_time_custom
           ? formatCustomTimeLabel(newJobFormData.scheduled_time_custom) || undefined
@@ -969,7 +982,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     );
                     handleFormChange('lead_cost', defaultCost);
                   }
-                  handleFormChange('require_otp', isHomeTriangleLeadSource(selectedLeadSource));
+                  handleFormChange('require_otp', isLeadSourceRequiresOtp(selectedLeadSource));
                 }}
                 onCustomChange={(v) => handleFormChange('lead_source_custom', v)}
               />

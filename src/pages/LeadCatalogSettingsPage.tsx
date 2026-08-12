@@ -169,6 +169,9 @@ export default function LeadCatalogSettingsPage({ onBack }: Props) {
     if (!catalog) return;
     setSaving(true);
     try {
+      const sourceIdMap = new Map<string, string>();
+      const subTypeIdMap = new Map<string, string>();
+
       for (const s of catalog.sources) {
         const row = {
           slug: s.slug,
@@ -184,6 +187,7 @@ export default function LeadCatalogSettingsPage({ onBack }: Props) {
         if (s.id.startsWith('new-')) {
           const { data, error } = await supabase.from('lead_sources').insert(row).select('id').single();
           if (error) throw error;
+          sourceIdMap.set(s.id, data.id);
           s.id = data.id;
         } else {
           const { error } = await supabase.from('lead_sources').update(row).eq('id', s.id);
@@ -208,6 +212,7 @@ export default function LeadCatalogSettingsPage({ onBack }: Props) {
             .select('id')
             .single();
           if (error) throw error;
+          subTypeIdMap.set(st.id, data.id);
           st.id = data.id;
         } else {
           const { error } = await supabase.from('service_sub_types').update(row).eq('id', st.id);
@@ -217,10 +222,14 @@ export default function LeadCatalogSettingsPage({ onBack }: Props) {
 
       const sourceIds = new Set(catalog.sources.map((s) => s.id));
       for (const r of catalog.rules) {
-        if (!sourceIds.has(r.lead_source_id)) continue;
+        const leadSourceId = sourceIdMap.get(r.lead_source_id) ?? r.lead_source_id;
+        if (!sourceIds.has(leadSourceId)) continue;
+        const serviceSubTypeId = r.service_sub_type_id
+          ? subTypeIdMap.get(r.service_sub_type_id) ?? r.service_sub_type_id
+          : null;
         const row = {
-          lead_source_id: r.lead_source_id,
-          service_sub_type_id: r.service_sub_type_id,
+          lead_source_id: leadSourceId,
+          service_sub_type_id: serviceSubTypeId,
           cost_inr: r.cost_inr,
           priority: r.priority,
           updated_at: new Date().toISOString(),
@@ -372,7 +381,22 @@ export default function LeadCatalogSettingsPage({ onBack }: Props) {
                                 placeholder={String(src.default_cost_inr)}
                                 onChange={(e) => {
                                   const v = e.target.value;
-                                  if (v === '') return;
+                                  if (v === '') {
+                                    setCatalog((prev) => {
+                                      if (!prev) return prev;
+                                      return {
+                                        ...prev,
+                                        rules: prev.rules.filter(
+                                          (r) =>
+                                            !(
+                                              r.lead_source_id === src.id &&
+                                              r.service_sub_type_id === st.id
+                                            )
+                                        ),
+                                      };
+                                    });
+                                    return;
+                                  }
                                   setRuleCost(src.id, st.id, Number(v) || 0);
                                 }}
                               />

@@ -11,7 +11,15 @@ import { Job } from '@/types';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { db } from '@/lib/supabase';
-import { getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
+import { getDefaultLeadCost } from '@/lib/adminUtils';
+import {
+  isLeadSourceAllowCustomText,
+  isLeadSourceRequiresOtp,
+  isServiceSubTypeAllowCustomText,
+  resolveLeadSourceForForm,
+} from '@/lib/leadCatalog';
+import { LeadSourceSelect } from '@/components/admin/LeadSourceSelect';
+import { ServiceSubTypeSelect } from '@/components/admin/ServiceSubTypeSelect';
 import { notifyTechnicianAfterJobEdit } from '@/lib/notifyTechJobEdit';
 import { maybeNotifyCustomerJobReschedule } from '@/lib/jobRescheduleCustomerWhatsApp';
 
@@ -98,48 +106,9 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         leadCost = (job as any).lead_cost.toString();
       }
       
-      // Normalize lead source to match Select options exactly
-      const normalizeLeadSource = (source: string): string => {
-        if (!source) return '';
-        const sourceLower = source.toLowerCase().trim();
-        
-        // Map common variations to exact Select values
-        const leadSourceMap: { [key: string]: string } = {
-          'website': 'Website',
-          'direct call': 'Direct call',
-          'directcall': 'Direct call',
-          'google': 'Google-Leads',
-          'google-leads': 'Google-Leads',
-          'ro care india': 'RO care india',
-          'rocareindia': 'RO care india',
-          'home triangle': 'Home Triangle',
-          'hometriangle': 'Home Triangle',
-          'home triangle-srujan': 'Home Triangle-Srujan',
-          'hometriangle-srujan': 'Home Triangle-Srujan',
-          'hometrianglesrujan': 'Home Triangle-Srujan',
-          'home triangle-3': 'Home Triangle-3',
-          'hometriangle-3': 'Home Triangle-3',
-          'hometriangle3': 'Home Triangle-3',
-          'local ramu': 'Local Ramu',
-          'localramu': 'Local Ramu',
-          'other': 'Other'
-        };
-        
-        // Check for exact match first
-        if (leadSourceMap[sourceLower]) {
-          return leadSourceMap[sourceLower];
-        }
-        
-        // Check if it's already one of the valid options (case-insensitive)
-        const validOptions = ['Website', 'Direct call', 'Google-Leads', 'RO care india', 'Home Triangle', 'Home Triangle-Srujan', 'Home Triangle-3', 'Local Ramu', 'Other'];
-        const matchedOption = validOptions.find(opt => opt.toLowerCase() === sourceLower);
-        if (matchedOption) {
-          return matchedOption;
-        }
-        
-        // If not found, return as-is (might be a custom value)
-        return source;
-      };
+      // Normalize lead source to catalog option (or keep legacy label)
+      const normalizeLeadSource = (source: string, custom?: string) =>
+        resolveLeadSourceForForm(source, custom);
       
       try {
         const requirements = (job as any).requirements;
@@ -158,9 +127,9 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
             const req = reqs.find((r: any) => r && typeof r === 'object');
             if (req) {
               if (req.lead_source) {
-                const normalized = normalizeLeadSource(req.lead_source);
-                leadSource = normalized === 'Other' ? 'Other' : normalized;
-                leadSourceCustom = normalized === 'Other' ? (req.lead_source_custom || '') : '';
+                const resolved = normalizeLeadSource(req.lead_source, req.lead_source_custom);
+                leadSource = resolved.label;
+                leadSourceCustom = resolved.custom;
               }
               if (req.cost_range) {
                 costAgreed = req.cost_range;
@@ -172,9 +141,9 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
             }
 
             if (reqs.lead_source) {
-              const normalized = normalizeLeadSource(reqs.lead_source);
-              leadSource = normalized === 'Other' ? 'Other' : normalized;
-              leadSourceCustom = normalized === 'Other' ? (reqs.lead_source_custom || '') : '';
+              const resolved = normalizeLeadSource(reqs.lead_source, reqs.lead_source_custom);
+              leadSource = resolved.label;
+              leadSourceCustom = resolved.custom;
             }
             if (reqs.cost_range) {
               costAgreed = reqs.cost_range;
@@ -255,7 +224,10 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
       return;
     }
     
-    if (editJobFormData.lead_source === 'Other' && (!editJobFormData.lead_source_custom || editJobFormData.lead_source_custom.trim() === '')) {
+    if (
+      isLeadSourceAllowCustomText(editJobFormData.lead_source) &&
+      (!editJobFormData.lead_source_custom || editJobFormData.lead_source_custom.trim() === '')
+    ) {
       toast.error('Please enter a custom lead source', TOAST_VALIDATION);
       abortCloseAndStayOpen();
       return;
@@ -306,15 +278,18 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
       }
       
       // Update or add lead_source and custom_time on a non-OTP requirement object
-      const leadSourceValue = editJobFormData.lead_source === 'Other' 
-        ? (editJobFormData.lead_source_custom || 'Other')
+      const leadSourceValue = isLeadSourceAllowCustomText(editJobFormData.lead_source)
+        ? (editJobFormData.lead_source_custom || editJobFormData.lead_source)
         : editJobFormData.lead_source;
       
       // Find existing non-OTP requirement object or create new one
       const leadReqIndex = requirementsArr.findIndex((r: any) => r && typeof r === 'object' && !r.require_otp);
       const reqObj = leadReqIndex >= 0 ? { ...requirementsArr[leadReqIndex] } : {};
       reqObj.lead_source = leadSourceValue;
-      if (editJobFormData.lead_source === 'Other' && editJobFormData.lead_source_custom) {
+      if (
+        isLeadSourceAllowCustomText(editJobFormData.lead_source) &&
+        editJobFormData.lead_source_custom
+      ) {
         reqObj.lead_source_custom = editJobFormData.lead_source_custom;
       }
       if (customTimeInRequirements) {
@@ -360,7 +335,9 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
 
       const { data: updatedJob, error } = await db.jobs.update(job.id, {
         service_type: editJobFormData.serviceType,
-        service_sub_type: editJobFormData.serviceSubType === 'Custom' ? editJobFormData.serviceSubTypeCustom : editJobFormData.serviceSubType,
+        service_sub_type: isServiceSubTypeAllowCustomText(editJobFormData.serviceSubType)
+          ? editJobFormData.serviceSubTypeCustom || editJobFormData.serviceSubType
+          : editJobFormData.serviceSubType,
         description: editJobFormData.description.trim(),
         scheduled_date: editJobFormData.scheduledDate,
         scheduled_time_slot: timeSlotValue,
@@ -540,58 +517,39 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
               </Select>
             </div>
 
-            <div>
-              <Label htmlFor="edit-service-subtype">Service Sub Type</Label>
-              <Select 
-                value={editJobFormData.serviceSubType} 
-                onValueChange={(value) => setEditJobFormData(prev => {
-                  const next = { ...prev, serviceSubType: value };
-                  if (prev.lead_source && prev.lead_source !== 'Other') {
+            <ServiceSubTypeSelect
+              id="edit-service-subtype"
+              value={editJobFormData.serviceSubType}
+              customValue={editJobFormData.serviceSubTypeCustom}
+              onChange={(value) =>
+                setEditJobFormData((prev) => {
+                  const next = {
+                    ...prev,
+                    serviceSubType: value,
+                    serviceSubTypeCustom: isServiceSubTypeAllowCustomText(value)
+                      ? prev.serviceSubTypeCustom
+                      : '',
+                  };
+                  if (prev.lead_source && !isLeadSourceAllowCustomText(prev.lead_source)) {
                     next.lead_cost = getDefaultLeadCost(
                       prev.lead_source,
                       value,
-                      value === 'Custom' ? prev.serviceSubTypeCustom : '',
+                      next.serviceSubTypeCustom
                     );
                   }
                   return next;
-                })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select service sub type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Service">Service</SelectItem>
-                  <SelectItem value="Installation">Installation</SelectItem>
-                  <SelectItem value="Reinstallation">Reinstallation</SelectItem>
-                  <SelectItem value="Return Complaint">Return Complaint</SelectItem>
-                  <SelectItem value="Return Service">Return Service</SelectItem>
-                  <SelectItem value="AMC Service">AMC Service</SelectItem>
-                  <SelectItem value="New Purifier Installation">New Purifier Installation</SelectItem>
-                  <SelectItem value="Un-Installation">Un-Installation</SelectItem>
-                  <SelectItem value="Repair">Repair</SelectItem>
-                  <SelectItem value="Maintenance">Maintenance</SelectItem>
-                  <SelectItem value="Replacement">Replacement</SelectItem>
-                  <SelectItem value="Inspection">Inspection</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                  <SelectItem value="Custom">Custom</SelectItem>
-                </SelectContent>
-              </Select>
-              {editJobFormData.serviceSubType === 'Custom' && (
-                <Input
-                  className="mt-2"
-                  placeholder="Enter custom service sub type"
-                  value={editJobFormData.serviceSubTypeCustom}
-                  onChange={(e) => setEditJobFormData(prev => {
-                    const custom = e.target.value;
-                    const next = { ...prev, serviceSubTypeCustom: custom };
-                    if (prev.lead_source && prev.lead_source !== 'Other') {
-                      next.lead_cost = getDefaultLeadCost(prev.lead_source, 'Custom', custom);
-                    }
-                    return next;
-                  })}
-                />
-              )}
-            </div>
+                })
+              }
+              onCustomChange={(custom) =>
+                setEditJobFormData((prev) => {
+                  const next = { ...prev, serviceSubTypeCustom: custom };
+                  if (prev.lead_source && !isLeadSourceAllowCustomText(prev.lead_source)) {
+                    next.lead_cost = getDefaultLeadCost(prev.lead_source, prev.serviceSubType, custom);
+                  }
+                  return next;
+                })
+              }
+            />
 
             <div>
               <Label htmlFor="edit-scheduled-date">Scheduled Date</Label>
@@ -655,42 +613,28 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="edit-lead-source">Lead Source *</Label>
-              <Select 
-                value={editJobFormData.lead_source || ''} 
-                onValueChange={(value) => {
-                  const defaultCost = getDefaultLeadCost(
-                    value,
-                    editJobFormData.serviceSubType,
-                    editJobFormData.serviceSubTypeCustom,
-                  );
-                  setEditJobFormData(prev => ({ 
-                    ...prev, 
-                    lead_source: value,
-                    lead_cost: defaultCost,
-                    // OTP on for Home Triangle; off when switching away
-                    require_otp: isHomeTriangleLeadSource(value),
-                  }));
-                }}
-                required
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select lead source" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Website">Website</SelectItem>
-                  <SelectItem value="Direct call">Direct call</SelectItem>
-                  <SelectItem value="Google-Leads">Google-Leads</SelectItem>
-                  <SelectItem value="RO care india">RO care india</SelectItem>
-                  <SelectItem value="Home Triangle">Home Triangle</SelectItem>
-                  <SelectItem value="Home Triangle-Srujan">Home Triangle-Srujan</SelectItem>
-                  <SelectItem value="Home Triangle-3">Home Triangle-3</SelectItem>
-                  <SelectItem value="Local Ramu">Local Ramu</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <LeadSourceSelect
+              id="edit-lead-source"
+              required
+              value={editJobFormData.lead_source || ''}
+              customValue={editJobFormData.lead_source_custom}
+              onChange={(value) => {
+                const defaultCost = getDefaultLeadCost(
+                  value,
+                  editJobFormData.serviceSubType,
+                  editJobFormData.serviceSubTypeCustom,
+                );
+                setEditJobFormData((prev) => ({
+                  ...prev,
+                  lead_source: value,
+                  lead_cost: defaultCost,
+                  require_otp: isLeadSourceRequiresOtp(value),
+                }));
+              }}
+              onCustomChange={(custom) =>
+                setEditJobFormData((prev) => ({ ...prev, lead_source_custom: custom }))
+              }
+            />
             <div>
               <Label htmlFor="edit-lead-cost">Lead Cost (₹)</Label>
               <Input
@@ -704,17 +648,6 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
               />
               <p className="text-xs text-muted-foreground mt-1">Edit if you need to update lead cost for this job</p>
             </div>
-            {editJobFormData.lead_source === 'Other' && (
-              <div>
-                <Label htmlFor="edit-lead-source-custom">Custom Lead Source</Label>
-                <Input
-                  id="edit-lead-source-custom"
-                  value={editJobFormData.lead_source_custom}
-                  onChange={(e) => setEditJobFormData(prev => ({ ...prev, lead_source_custom: e.target.value }))}
-                  placeholder="Enter custom lead source"
-                />
-              </div>
-            )}
           </div>
 
           <div>
