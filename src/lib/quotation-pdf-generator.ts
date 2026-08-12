@@ -460,6 +460,29 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         border-left: 3px solid #d1d5db;
         color: #4b5563;
       }
+      .notes-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 8px 0;
+        table-layout: fixed;
+        font-size: inherit;
+      }
+      .notes-content th,
+      .notes-content td {
+        border: 1px solid #d1d5db;
+        padding: 6px 8px;
+        text-align: left;
+        vertical-align: top;
+        word-break: break-word;
+      }
+      .notes-content th {
+        background: #f3f4f6;
+        font-weight: 700;
+        color: #111827;
+      }
+      .notes-content tbody tr:nth-child(even) td {
+        background: #f9fafb;
+      }
       
       .bank-section {
         margin: 10px 10px 0 10px;
@@ -1406,6 +1429,29 @@ function getQuotationDocumentStyles(): string {
             padding-left: 10px;
             border-left: 3px solid #d1d5db;
             color: #4b5563;
+          }
+          .notes-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0;
+            table-layout: fixed;
+            font-size: inherit;
+          }
+          .notes-content th,
+          .notes-content td {
+            border: 1px solid #d1d5db;
+            padding: 6px 8px;
+            text-align: left;
+            vertical-align: top;
+            word-break: break-word;
+          }
+          .notes-content th {
+            background: #f3f4f6;
+            font-weight: 700;
+            color: #111827;
+          }
+          .notes-content tbody tr:nth-child(even) td {
+            background: #f9fafb;
           }
           
           .bank-section {

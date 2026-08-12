@@ -1880,7 +1880,7 @@ export default function TaxInvoiceGenerator({
               {isEditingNotes ? (
                 <div className="space-y-4">
                   <div className="text-sm text-blue-600">
-                    Same formatting as Custom Document (Bold, headings, lists, alignment, links).
+                    Same formatting as Custom Document (Bold, headings, lists, tables, alignment, links).
                   </div>
                   <div className="flex flex-col gap-2">
                     <RichTextEditor

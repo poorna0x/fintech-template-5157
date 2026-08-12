@@ -29,8 +29,14 @@ const RICH_TEXT_CONFIG = {
     'a',
     'blockquote',
     'hr',
+    'table',
+    'thead',
+    'tbody',
+    'tr',
+    'th',
+    'td',
   ],
-  ALLOWED_ATTR: ['href', 'target', 'rel', 'style', 'class'],
+  ALLOWED_ATTR: ['href', 'target', 'rel', 'style', 'class', 'colspan', 'rowspan'],
   ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
   ALLOW_DATA_ATTR: false,
 };
@@ -110,7 +116,7 @@ export function stripHtmlToText(html: string | null | undefined): string {
   if (!html) return '';
   return html
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6]|tr|th|td)>/gi, '\n')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
