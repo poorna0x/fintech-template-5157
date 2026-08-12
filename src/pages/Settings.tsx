@@ -39,7 +39,8 @@ import {
   GitMerge,
   Repeat,
   ShieldCheck,
-  CalendarPlus
+  CalendarPlus,
+  Database
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -97,6 +98,7 @@ import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
 import PdfAuthenticityVerifyPage from '@/pages/PdfAuthenticityVerifyPage';
+import DbStorageStatsPage from '@/pages/DbStorageStatsPage';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
@@ -237,6 +239,40 @@ const DATABASE_EXPORT_TABLES: {
     name: 'website_booking_intent_archive',
     orderBy: 'archived_at',
     label: 'Website Booking Intent Archive',
+    optional: true,
+  },
+  { name: 'app_secrets', orderBy: 'key', label: 'App Secrets (values redacted)', optional: true },
+  {
+    name: 'auth_login_attempts',
+    orderBy: 'last_attempt_at',
+    label: 'Auth Login Attempts',
+    optional: true,
+  },
+  {
+    name: 'document_accept_invites',
+    orderBy: 'created_at',
+    label: 'Document Accept Invites',
+    optional: true,
+  },
+  {
+    name: 'pdf_authenticity_otp',
+    orderBy: 'created_at',
+    label: 'PDF Authenticity OTP',
+    optional: true,
+  },
+  { name: 'push_crm_settings', orderBy: 'id', label: 'Push CRM Settings', optional: true },
+  {
+    name: 'whatsapp_booking_bot_state',
+    orderBy: 'updated_at',
+    label: 'WhatsApp Booking Bot State',
+    optional: true,
+  },
+  { name: 'whatsapp_crm_settings', orderBy: 'id', label: 'WhatsApp CRM Settings', optional: true },
+  { name: 'whatsapp_messages', orderBy: 'created_at', label: 'WhatsApp Messages', optional: true },
+  {
+    name: 'whatsapp_usage_monthly',
+    orderBy: 'month_key',
+    label: 'WhatsApp Usage Monthly',
     optional: true,
   },
 ];
@@ -444,6 +480,9 @@ const Settings = () => {
   const [showPdfAuthenticityPage, setShowPdfAuthenticityPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'pdf-authenticity'
   );
+  const [showDbStoragePage, setShowDbStoragePage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'db-storage'
+  );
   const [showRecurringServicePage, setShowRecurringServicePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'recurring-service'
   );
@@ -531,6 +570,7 @@ const Settings = () => {
     setShowWhatsAppInboxPage(panel === 'whatsapp-inbox');
     setShowWhatsAppSettingsPage(panel === 'whatsapp-settings');
     setShowPdfAuthenticityPage(panel === 'pdf-authenticity');
+    setShowDbStoragePage(panel === 'db-storage');
     setShowRecurringServicePage(panel === 'recurring-service');
     setRemindersDialogOpen(panel === 'reminders');
     setAdvancedSearchDialogOpen(panel === 'advanced-search');
@@ -1942,6 +1982,7 @@ const Settings = () => {
       showWhatsAppInboxPage ||
       showWhatsAppSettingsPage ||
       showPdfAuthenticityPage ||
+      showDbStoragePage ||
       showRecurringServicePage
     ) {
       return;
@@ -1983,6 +2024,7 @@ const Settings = () => {
     showWhatsAppInboxPage,
     showWhatsAppSettingsPage,
     showPdfAuthenticityPage,
+    showDbStoragePage,
     showRecurringServicePage,
   ]);
 
@@ -2137,7 +2179,12 @@ const Settings = () => {
                 const { pdf_base64: _omit, ...rest } = row;
                 return rest;
               })
-            : data;
+            : name === 'app_secrets'
+              ? (data || []).map((row: Record<string, unknown>) => ({
+                  ...row,
+                  value: row.value != null ? '[REDACTED]' : row.value,
+                }))
+              : data;
         tables.push({ name, data: rows });
       }
 
@@ -2224,6 +2271,44 @@ const Settings = () => {
             hideHeader={true}
             onBack={closeSettingsPanel}
           />
+        </div>
+      </div>
+    );
+  }
+
+  if (showDbStoragePage) {
+    return (
+      <div className="admin-page">
+        <div className="bg-card border-b border-border">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Database className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
+                    Database storage
+                  </h1>
+                  <p className="text-xs text-muted-foreground truncate sm:hidden">
+                    Table and column sizes
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeSettingsPanel}
+                className="text-muted-foreground hover:text-foreground -ml-2 self-start sm:self-auto cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-5 sm:py-8 pb-10 max-w-6xl">
+          <DbStorageStatsPage hideHeader onBack={closeSettingsPanel} />
         </div>
       </div>
     );
@@ -3638,13 +3723,30 @@ const Settings = () => {
                     ))}
                   </ul>
                 <p className="text-xs text-blue-700 dark:text-blue-400 mt-3">
-                  Up to {DATABASE_EXPORT_TABLES.length} tables as CSV in one ZIP. Optional tables (
-                  {DATABASE_EXPORT_TABLES.filter((t) => t.optional).map((t) => t.label).join(', ')}
-                  ) are skipped if not created in Supabase. Technician passwords are stored in Supabase Auth (not exported).
+                  Up to {DATABASE_EXPORT_TABLES.length} tables as CSV in one ZIP. Optional tables are
+                  skipped if not created in Supabase. App secret values are redacted. Technician
+                  passwords are stored in Supabase Auth (not exported).
                 </p>
               </div>
             </CardContent>
           </Card>
+
+          <SettingsActionCard
+            title="Database storage"
+            description="See which Postgres tables and columns use the most space (R2 media is separate)"
+            icon={<Database />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('db-storage')}
+              >
+                <Database className="w-4 h-4 shrink-0" />
+                View storage
+              </Button>
+            }
+          />
                 </div>
       </div>
 

@@ -820,11 +820,14 @@ export async function purgeWhatsAppMessages(opts: {
   olderThanDays?: number;
   phoneE164?: string;
   dryRun?: boolean;
+  /** When true, delete inbox rows only — photos/PDFs stay on R2 / Cloudinary. */
+  keepMedia?: boolean;
 }): Promise<{
   ok: boolean;
   error?: string;
   deletedRows?: number;
   deletedMedia?: number;
+  keptMedia?: number;
   wouldDeleteRows?: number;
   withMedia?: number;
 }> {
@@ -847,6 +850,7 @@ export async function purgeWhatsAppMessages(opts: {
       ok: true,
       deletedRows: data.deletedRows,
       deletedMedia: data.deletedMedia,
+      keptMedia: data.keptMedia,
       wouldDeleteRows: data.wouldDeleteRows,
       withMedia: data.withMedia,
     };

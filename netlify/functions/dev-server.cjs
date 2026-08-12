@@ -67,6 +67,7 @@ const dialCall = require('./dial-call');
 const pdfAuthenticityOtpVerify = require('./pdf-authenticity-otp-verify');
 const pdfAuthenticityCheck = require('./pdf-authenticity-check');
 const documentAcceptSend = require('./document-accept-send');
+const dbStorageStats = require('./db-storage-stats');
 
 const PORT = 8888;
 
@@ -167,6 +168,8 @@ const server = http.createServer((req, res) => {
     handler = pdfAuthenticityCheck;
   } else if (req.url.startsWith('/.netlify/functions/document-accept-send')) {
     handler = documentAcceptSend;
+  } else if (req.url.startsWith('/.netlify/functions/db-storage-stats')) {
+    handler = dbStorageStats;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }

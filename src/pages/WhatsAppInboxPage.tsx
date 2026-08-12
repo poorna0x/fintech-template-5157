@@ -93,6 +93,10 @@ import {
   type WhatsAppThread,
 } from '@/lib/whatsappInbox';
 import { WhatsAppPdfThumbnail } from '@/components/whatsapp/WhatsAppPdfThumbnail';
+import {
+  WhatsAppInboxPhotoViewer,
+  type InboxPhotoSlide,
+} from '@/components/whatsapp/WhatsAppInboxPhotoViewer';
 import { WhatsAppAvatar, WhatsAppTicks } from '@/components/whatsapp/WhatsAppTicks';
 import {
   fetchApprovedWhatsAppTemplates,
@@ -182,6 +186,81 @@ const QUICK_ACTION_LABELS: Record<WhatsAppBookingQuickAction, string> = {
   book_location_photo: 'Book · location + photo',
 };
 
+function InboxChatPhoto({
+  row,
+  cachedSrc,
+  onOpen,
+  onResolve,
+}: {
+  row: WhatsAppMessageRow;
+  cachedSrc: string | null;
+  onOpen: () => void;
+  onResolve: (row: WhatsAppMessageRow) => Promise<string | null>;
+}) {
+  const [src, setSrc] = useState<string | null>(cachedSrc);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (cachedSrc) {
+      setSrc(cachedSrc);
+      setFailed(false);
+      return;
+    }
+    let cancelled = false;
+    void onResolve(row).then((url) => {
+      if (cancelled) return;
+      if (url) {
+        setSrc(url);
+        setFailed(false);
+      } else {
+        setFailed(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cachedSrc, onResolve, row]);
+
+  return (
+    <button
+      type="button"
+      className="block w-full cursor-pointer touch-manipulation text-left"
+      onClick={onOpen}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt={row.filename || 'Photo'}
+          className="max-h-72 w-full min-w-[180px] rounded-md object-contain bg-black/10"
+          loading="lazy"
+        />
+      ) : failed ? (
+        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#8696a0]">
+          Could not load photo
+        </span>
+      ) : (
+        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#8696a0]">
+          <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+          Loading photo…
+        </span>
+      )}
+    </button>
+  );
+}
+
+function isImageMessage(row: WhatsAppMessageRow): boolean {
+  return Boolean(
+    row.media_url &&
+      (row.msg_type === 'image' || String(row.media_mime || '').startsWith('image/'))
+  );
+}
+
+function directInboxMediaUrl(ref: string | null | undefined): string | null {
+  const raw = String(ref || '').trim();
+  if (!raw || isR2MediaRef(raw) || raw.startsWith('whatsapp-media:')) return null;
+  return /^https:\/\//i.test(raw) ? raw : null;
+}
+
 export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: Props) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -216,6 +295,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [attachPreviewUrl, setAttachPreviewUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [mediaUrlCache, setMediaUrlCache] = useState<Record<string, string>>({});
+  const [inboxPhotoViewer, setInboxPhotoViewer] = useState<{
+    slides: InboxPhotoSlide[];
+    startIndex: number;
+    rows: WhatsAppMessageRow[];
+  } | null>(null);
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newChatPhone, setNewChatPhone] = useState('');
   const [waterFilterOpen, setWaterFilterOpen] = useState(false);
@@ -487,9 +571,53 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     return signed.url;
   }, []);
 
+  const openImageViewer = useCallback(
+    async (row: WhatsAppMessageRow) => {
+      if (!row.media_url) return;
+
+      const imageRows = threadMessagesRef.current.filter(isImageMessage);
+      const slides: InboxPhotoSlide[] = [];
+      const rows: WhatsAppMessageRow[] = [];
+
+      for (const m of imageRows) {
+        const ref = m.media_url!;
+        const url =
+          mediaUrlCacheRef.current[m.id] || directInboxMediaUrl(ref);
+        if (!url) continue;
+        slides.push({
+          src: url,
+          alt: (m.filename || '').trim() || 'Photo',
+        });
+        rows.push(m);
+      }
+
+      let startIndex = rows.findIndex((m) => m.id === row.id);
+      if (startIndex < 0) {
+        const resolved = await resolveMediaHref(row);
+        if (!resolved) {
+          toast.error('Could not load photo');
+          return;
+        }
+        slides.push({
+          src: resolved,
+          alt: (row.filename || '').trim() || 'Photo',
+        });
+        rows.push(row);
+        startIndex = slides.length - 1;
+      }
+
+      setInboxPhotoViewer({ slides, startIndex, rows });
+    },
+    [resolveMediaHref]
+  );
+
   const openMedia = useCallback(
     async (row: WhatsAppMessageRow) => {
       if (!row.media_url) return;
+      if (isImageMessage(row)) {
+        await openImageViewer(row);
+        return;
+      }
       // Prefer already-resolved / public URL — no loading toast
       const ready =
         mediaUrlCacheRef.current[row.id] ||
@@ -523,7 +651,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         });
       }
     },
-    [resolveMediaHref]
+    [resolveMediaHref, openImageViewer]
   );
 
   const downloadMedia = useCallback(
@@ -577,12 +705,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     let cancelled = false;
     const run = async () => {
       const candidates: WhatsAppMessageRow[] = [];
-      for (let i = threadMessages.length - 1; i >= 0 && candidates.length < 4; i--) {
+      for (let i = threadMessages.length - 1; i >= 0 && candidates.length < 10; i--) {
         const m = threadMessages[i];
         if (!m.media_url) continue;
         const isImage = m.msg_type === 'image' || m.media_mime?.startsWith('image/');
-        if (!isImage || !isR2MediaRef(m.media_url)) continue;
+        if (!isImage) continue;
         if (mediaUrlCacheRef.current[m.id]) continue;
+        const ref = m.media_url;
+        if (/^https:\/\//i.test(ref) && !isR2MediaRef(ref)) {
+          mediaUrlCacheRef.current[m.id] = ref;
+          continue;
+        }
         candidates.push(m);
       }
       if (!candidates.length) return;
@@ -602,6 +735,15 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         mediaUrlCacheRef.current[r.id] = r.url;
         patch[r.id] = r.url;
       }
+      for (let i = threadMessages.length - 1; i >= 0; i--) {
+        const m = threadMessages[i];
+        const ref = m.media_url;
+        if (!ref || mediaUrlCacheRef.current[m.id]) continue;
+        if (/^https:\/\//i.test(ref) && !isR2MediaRef(ref)) {
+          patch[m.id] = ref;
+          mediaUrlCacheRef.current[m.id] = ref;
+        }
+      }
       if (Object.keys(patch).length) {
         setMediaUrlCache((prev) => ({ ...prev, ...patch }));
       }
@@ -613,13 +755,20 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, [threadMessages]);
 
   const runPurge = useCallback(
-    async (opts: { olderThanDays?: number; phoneE164?: string }) => {
+    async (opts: { olderThanDays?: number; phoneE164?: string; keepMedia?: boolean }) => {
+      const keepMedia = Boolean(opts.keepMedia);
       const label = opts.phoneE164
-        ? `Delete entire chat with ${displayPhone(opts.phoneE164)}?\n\nThis removes all messages plus photos/PDFs from storage (frees space).`
-        : `Delete messages older than ${opts.olderThanDays} days?\n\nThis removes text plus photos/PDFs from storage (frees space).`;
+        ? keepMedia
+          ? `Delete chat timeline with ${displayPhone(opts.phoneE164)}?\n\nMessages are removed from the inbox only. Photos and PDFs stay on storage (R2).`
+          : `Delete entire chat with ${displayPhone(opts.phoneE164)}?\n\nThis removes all messages plus photos/PDFs from storage (frees space).`
+        : keepMedia
+          ? `Delete messages older than ${opts.olderThanDays} days from the inbox only?\n\nFiles on storage are kept.`
+          : `Delete messages older than ${opts.olderThanDays} days?\n\nThis removes text plus photos/PDFs from storage (frees space).`;
       if (!window.confirm(label)) return;
       setPurging(true);
-      const toastId = toast.loading('Deleting messages and files…');
+      const toastId = toast.loading(
+        keepMedia ? 'Deleting messages…' : 'Deleting messages and files…'
+      );
       try {
         const dry = await purgeWhatsAppMessages({ ...opts, dryRun: true });
         if (!dry.ok) {
@@ -634,9 +783,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         }
         if (
           !window.confirm(
-            `Permanently delete ${n} message(s)` +
-              (mediaN > 0 ? ` and about ${mediaN} file(s)` : '') +
-              `?\n\nThis cannot be undone.`
+            keepMedia
+              ? `Permanently delete ${n} message(s) from the inbox?\n\nAbout ${mediaN} linked file(s) will stay on storage.`
+              : `Permanently delete ${n} message(s)` +
+                  (mediaN > 0 ? ` and about ${mediaN} file(s)` : '') +
+                  `?\n\nThis cannot be undone.`
           )
         ) {
           toast.dismiss(toastId);
@@ -648,9 +799,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           return;
         }
         const files = result.deletedMedia ?? 0;
+        const kept = result.keptMedia ?? 0;
         toast.success(
-          `Deleted ${result.deletedRows ?? 0} messages` +
-            (files > 0 ? ` · ${files} files removed from storage` : ' · no media files'),
+          keepMedia
+            ? `Deleted ${result.deletedRows ?? 0} messages · ${kept > 0 ? `${kept} file(s) kept on storage` : 'no media linked'}`
+            : `Deleted ${result.deletedRows ?? 0} messages` +
+                (files > 0 ? ` · ${files} files removed from storage` : ' · no media files'),
           { id: toastId }
         );
         if (opts.phoneE164 && opts.phoneE164 === selectedPhoneRef.current) {
@@ -1244,11 +1398,23 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       className="cursor-pointer text-red-400 focus:bg-[#2a3942] focus:text-red-400"
                       disabled={!selectedPhone}
                       onClick={() =>
+                        selectedPhone
+                          ? void runPurge({ phoneE164: selectedPhone, keepMedia: true })
+                          : undefined
+                      }
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete this chat (keep files)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer text-red-400 focus:bg-[#2a3942] focus:text-red-400"
+                      disabled={!selectedPhone}
+                      onClick={() =>
                         selectedPhone ? void runPurge({ phoneE164: selectedPhone }) : undefined
                       }
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Delete this chat (+ files)
+                      Delete chat and files
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -1666,10 +1832,18 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     <DropdownMenuItem
                       className="cursor-pointer text-red-700 focus:text-red-700"
                       disabled={purging}
+                      onClick={() => void runPurge({ phoneE164: selectedPhone, keepMedia: true })}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete chat (keep files)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer text-red-700 focus:text-red-700"
+                      disabled={purging}
                       onClick={() => void runPurge({ phoneE164: selectedPhone })}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Delete chat (+ files)
+                      Delete chat and files
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -1782,28 +1956,20 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                             {m.media_url ? (
                               m.msg_type === 'image' || m.media_mime?.startsWith('image/') ? (
                                 <div className="group relative mb-1 overflow-hidden rounded-md">
+                                  <InboxChatPhoto
+                                    row={m}
+                                    cachedSrc={imageSrc}
+                                    onOpen={() => void openImageViewer(m)}
+                                    onResolve={resolveMediaHref}
+                                  />
                                   <button
                                     type="button"
-                                    className="block w-full cursor-pointer text-left"
-                                    onClick={() => void openMedia(m)}
-                                  >
-                                    {imageSrc ? (
-                                      <img
-                                        src={imageSrc}
-                                        alt={m.filename || 'Photo'}
-                                        className="max-h-64 w-full min-w-[180px] rounded-md object-cover"
-                                        loading="lazy"
-                                      />
-                                    ) : (
-                                      <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#8696a0]">
-                                        Loading photo…
-                                      </span>
-                                    )}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void downloadMedia(m)}
-                                    className="absolute right-2 top-2 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-black/50 text-white opacity-90 shadow"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void downloadMedia(m);
+                                    }}
+                                    className="absolute right-2 top-2 z-10 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white shadow-md active:bg-black/75"
                                     title="Download"
                                     aria-label="Download photo"
                                   >
@@ -2229,6 +2395,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           }}
         />
       ) : null}
+
+      <WhatsAppInboxPhotoViewer
+        open={Boolean(inboxPhotoViewer)}
+        slides={inboxPhotoViewer?.slides ?? []}
+        startIndex={inboxPhotoViewer?.startIndex ?? 0}
+        onClose={() => setInboxPhotoViewer(null)}
+        onDownload={(photoIndex) => {
+          const r = inboxPhotoViewer?.rows[photoIndex];
+          if (r) void downloadMedia(r);
+        }}
+      />
     </div>
   );
 }

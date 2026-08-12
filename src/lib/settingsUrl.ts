@@ -12,6 +12,7 @@ export const SETTINGS_PANELS = [
   'merge-customers',
   'warranty',
   'pdf-authenticity',
+  'db-storage',
   'direct-sale',
   'add-technician',
   'edit-technician',

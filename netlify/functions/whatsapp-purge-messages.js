@@ -4,6 +4,7 @@
  *   { olderThanDays: 30|90|180|365 }
  *   { phoneE164: "...", olderThanDays?: number }  // omit days = delete whole thread
  *   { dryRun: true } — count only
+ *   { keepMedia: true } — delete DB rows only; leave R2 / Cloudinary files
  */
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
@@ -87,6 +88,7 @@ exports.handler = async (event) => {
   }
 
   const dryRun = body.dryRun === true;
+  const keepMedia = body.keepMedia === true || body.deleteMedia === false;
   const phoneRaw = digitsOnly(body.phoneE164 || body.phone || '');
   const phone = phoneRaw ? normalizePhoneE164(phoneRaw) : '';
   const olderThanDays = body.olderThanDays != null ? Number(body.olderThanDays) : null;
@@ -119,25 +121,29 @@ exports.handler = async (event) => {
       dryRun: true,
       wouldDeleteRows: list.length,
       withMedia: list.filter((r) => r.media_url).length,
+      keepMedia,
     });
   }
 
   let deletedMedia = 0;
   let failedMedia = 0;
-  for (const row of list) {
-    const media = row.media_url;
-    if (!media) continue;
-    if (isR2MediaRef(media) || parseR2ObjectKey(media)) {
-      const r = await deleteR2Object(media);
-      if (r.ok) deletedMedia += 1;
-      else if (!r.skipped) failedMedia += 1;
-      continue;
-    }
-    const publicId = cloudinaryPublicIdFromUrl(media);
-    if (publicId) {
-      const r = await destroyCloudinary(publicId);
-      if (r.ok) deletedMedia += 1;
-      else if (!r.skipped) failedMedia += 1;
+  const withMedia = list.filter((r) => r.media_url).length;
+  if (!keepMedia) {
+    for (const row of list) {
+      const media = row.media_url;
+      if (!media) continue;
+      if (isR2MediaRef(media) || parseR2ObjectKey(media)) {
+        const r = await deleteR2Object(media);
+        if (r.ok) deletedMedia += 1;
+        else if (!r.skipped) failedMedia += 1;
+        continue;
+      }
+      const publicId = cloudinaryPublicIdFromUrl(media);
+      if (publicId) {
+        const r = await destroyCloudinary(publicId);
+        if (r.ok) deletedMedia += 1;
+        else if (!r.skipped) failedMedia += 1;
+      }
     }
   }
 
@@ -165,6 +171,8 @@ exports.handler = async (event) => {
     deletedRows,
     deletedMedia,
     failedMedia,
+    keptMedia: keepMedia ? withMedia : 0,
+    keepMedia,
     phone: phone || null,
     olderThanDays: olderThanDays || null,
   });
