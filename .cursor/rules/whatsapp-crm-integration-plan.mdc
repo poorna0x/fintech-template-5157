@@ -1,5 +1,5 @@
 ---
-description: WhatsApp Cloud API CRM integration — phased plan (security, 7-day store, chat UI)
+description: WhatsApp Cloud API CRM integration — phased plan (security, long inbox retention, chat UI)
 alwaysApply: true
 ---
 
@@ -13,7 +13,7 @@ Official Meta WhatsApp Cloud API → HydrogenRO CRM. Implement **one phase at a 
 - New tables: **RLS + `public.is_admin_user()`**; webhook/send writes via **service role only**.
 - Store **metadata + text** (and media URLs), not full Meta JSON forever.
 - Media: short-lived object storage (Cloudinary/R2), not DB blobs.
-- **7-day retention** via `purge_ephemeral_data` / `ephemeral-data-cleanup` cron.
+- **Long inbox retention** for `whatsapp_messages` (manual CRM timeline delete). Weekly `purge_ephemeral_data` cleans ops tables only; booking-bot session state in `whatsapp_booking_bot_state` (~48h).
 - **No 3s polling** in production CRM — Realtime or fetch-on-open.
 - Chat UI **mobile-first**, WhatsApp-like.
 - Cold outbound (no open 24h window) needs **approved templates** (Phase 6). Free-form OK inside 24h after customer messages.
@@ -30,7 +30,7 @@ Official Meta WhatsApp Cloud API → HydrogenRO CRM. Implement **one phase at a 
 
 | Phase | Scope | Status |
 |-------|--------|--------|
-| **1. Foundation** | `whatsapp_messages` + RLS, 7-day purge, `whatsapp-helper` + `app_secrets`, harden `whatsapp-send` (admin auth + persist outbound) | Done (local) |
+| **1. Foundation** | `whatsapp_messages` + RLS, long inbox retention, `whatsapp-helper` + `app_secrets`, harden `whatsapp-send` (admin auth + persist outbound) | Done (local) |
 | **2. Inbound webhook** | Persist inbound + statuses; media → storage URL; local verify via ngrok (no site deploy) | Done (local) |
 | **3. Chat UI** | Admin Tools → WhatsApp inbox (thread list + chat), mobile responsive, reply in 24h window | Done (local) |
 | **4. Wire CRM sends** | Composer / customer flows: API send (keep wa.me as fallback if useful) | Done (local) |
@@ -82,7 +82,7 @@ Usage RPC `whatsapp_usage_stats` → expected bill from last 7 days + monthly pr
 ## Data (Phase 1+)
 
 Table `whatsapp_messages`: `wa_message_id`, `direction` (in/out), `phone_e164`, `customer_id?`, `type`, `body`, `media_url?`, `media_mime?`, `filename?`, `status`, `template_name?`, `sent_by_user_id?`, `created_at`.  
-Index `(phone_e164, created_at DESC)`. Purge rows older than **7 days**.
+Index `(phone_e164, created_at DESC)`. **Not** auto-purged — delete from CRM inbox timeline when needed. Bot session JSON lives in `whatsapp_booking_bot_state` (not inbox rows). Store **slim** `body` labels for bot outbound (full text only on WhatsApp).
 
 ## Hook points
 

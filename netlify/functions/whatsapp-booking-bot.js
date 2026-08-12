@@ -599,6 +599,12 @@ function extractInteractiveReply(msg) {
   return null;
 }
 
+function slimInboxBody(text, max = 220) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
+}
+
 async function persistOutbound(db, phone, waId, msgType, body, result) {
   await insertWhatsAppMessage(db, {
     wa_message_id: waId,
@@ -610,6 +616,46 @@ async function persistOutbound(db, phone, waId, msgType, body, result) {
     error_message: result.ok ? null : result.data?.error?.message || 'send failed',
     sent_by_user_id: null,
   });
+}
+
+function stateAwaitingMedia(state) {
+  const step = String(state?.step || '').trim();
+  return (
+    step === 'await_model_or_photo' ||
+    step === 'await_issue_media' ||
+    Boolean(state?.awaitingMedia)
+  );
+}
+
+async function upsertBookingBotRow(db, phone, patch) {
+  if (!db || !phone) return;
+  const phoneE164 = normalizePhoneE164(phone);
+  if (!phoneE164) return;
+  try {
+    const { data: existing } = await db
+      .from('whatsapp_booking_bot_state')
+      .select('state, remembered_location, awaiting_media')
+      .eq('phone_e164', phoneE164)
+      .maybeSingle();
+    const row = {
+      phone_e164: phoneE164,
+      updated_at: new Date().toISOString(),
+    };
+    if (patch.state !== undefined) row.state = patch.state;
+    if (patch.remembered_location !== undefined) row.remembered_location = patch.remembered_location;
+    if (patch.awaiting_media !== undefined) row.awaiting_media = patch.awaiting_media;
+    if (!existing?.phone_e164) {
+      await db.from('whatsapp_booking_bot_state').insert({
+        ...row,
+        state: row.state || {},
+        awaiting_media: row.awaiting_media ?? false,
+      });
+      return;
+    }
+    await db.from('whatsapp_booking_bot_state').update(row).eq('phone_e164', phoneE164);
+  } catch (err) {
+    console.warn('[whatsapp-booking-bot] bot state upsert failed', err?.message || err);
+  }
 }
 
 async function sendButtons({ phoneNumberId, accessToken, db, to, bodyText, buttons, footer }) {
@@ -640,7 +686,9 @@ async function sendButtons({ phoneNumberId, accessToken, db, to, bodyText, butto
   const result = await callWhatsAppApi(phoneNumberId, accessToken, payload);
   const waId =
     result.data?.messages?.[0]?.id || result.data?.messages?.[0]?.message_id || null;
-  const label = `${bodyText} [${rows.map((r) => r.reply.title).join(' | ')}]`;
+  const label = slimInboxBody(
+    `[Booking bot] ${String(bodyText || '').trim()} [${rows.map((r) => r.reply.title).join(' | ')}]`
+  );
   await persistOutbound(db, phone, waId, 'interactive', label, result);
   return { ok: result.ok, error: result.data?.error?.message };
 }
@@ -690,7 +738,9 @@ async function sendList({
   const result = await callWhatsAppApi(phoneNumberId, accessToken, payload);
   const waId =
     result.data?.messages?.[0]?.id || result.data?.messages?.[0]?.message_id || null;
-  const label = `${bodyText} [list: ${listRows.map((r) => r.title).join(' | ')}]`;
+  const label = slimInboxBody(
+    `[Booking bot] ${String(bodyText || '').trim()} [list: ${listRows.map((r) => r.title).join(' | ')}]`
+  );
   await persistOutbound(db, phone, waId, 'interactive', label, result);
   return { ok: result.ok, error: result.data?.error?.message };
 }
@@ -762,10 +812,10 @@ async function sendCtaUrl({ phoneNumberId, accessToken, db, to, bodyText, displa
   return { ok: result.ok, error: result.data?.error?.message };
 }
 
-async function sendText({ phoneNumberId, accessToken, db, to, text }) {
+async function sendText({ phoneNumberId, accessToken, db, to, text, inboxLabel }) {
   const phone = normalizePhoneE164(to);
   if (!phone || !text) return { ok: false };
-  // Keep media-await marker in DB for unsolicited-media guard; strip from customer WA body.
+  // Strip internal marker from customer WA body; marker lives on bot state row when needed.
   const raw = String(text);
   const forCustomer = raw
     .replace(AWAITING_CUSTOMER_MEDIA_MARKER, '')
@@ -781,7 +831,10 @@ async function sendText({ phoneNumberId, accessToken, db, to, text }) {
   const result = await callWhatsAppApi(phoneNumberId, accessToken, payload);
   const waId =
     result.data?.messages?.[0]?.id || result.data?.messages?.[0]?.message_id || null;
-  await persistOutbound(db, phone, waId, 'text', raw, result);
+  const storedBody = inboxLabel
+    ? slimInboxBody(inboxLabel)
+    : slimInboxBody(raw.replace(AWAITING_CUSTOMER_MEDIA_MARKER, '').trim() || raw);
+  await persistOutbound(db, phone, waId, 'text', storedBody, result);
   return { ok: result.ok };
 }
 
@@ -1249,30 +1302,45 @@ async function continueAfterLinkedConfirm(ctx, state = {}) {
   await sendFacingIssuePrompt(ctx, base);
 }
 
+function packRememberedLocation(loc) {
+  return {
+    lat: loc.latitude,
+    lng: loc.longitude,
+    name: loc.name || null,
+    address: loc.address || null,
+    shortLocation: loc.shortLocation || null,
+    formattedAddress: loc.formattedAddress || loc.address || null,
+  };
+}
+
 async function rememberSharedLocation(db, phone, loc) {
-  await insertWhatsAppMessage(db, {
-    direction: 'outbound',
-    phone_e164: phone,
-    msg_type: 'text',
-    body: `[Booking bot loc]${JSON.stringify({
-      lat: loc.latitude,
-      lng: loc.longitude,
-      name: loc.name || null,
-      address: loc.address || null,
-      shortLocation: loc.shortLocation || null,
-      formattedAddress: loc.formattedAddress || loc.address || null,
-    })}`,
-    status: 'sent',
+  if (!db || !phone || !loc) return;
+  await upsertBookingBotRow(db, phone, {
+    remembered_location: packRememberedLocation(loc),
   });
 }
 
 async function getRememberedLocation(db, phone) {
   if (!db || !phone) return null;
   try {
+    const phoneE164 = normalizePhoneE164(phone);
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await db
+      .from('whatsapp_booking_bot_state')
+      .select('remembered_location, updated_at')
+      .eq('phone_e164', phoneE164)
+      .gte('updated_at', since)
+      .maybeSingle();
+    const parsed = data?.remembered_location;
+    if (parsed?.lat != null && parsed?.lng != null) return parsed;
+  } catch {
+    /* fall through */
+  }
+  try {
     const { data } = await db
       .from('whatsapp_messages')
       .select('body, created_at')
-      .eq('phone_e164', phone)
+      .eq('phone_e164', normalizePhoneE164(phone))
       .eq('direction', 'outbound')
       .like('body', '[Booking bot loc]%')
       .order('created_at', { ascending: false })
@@ -1281,9 +1349,9 @@ async function getRememberedLocation(db, phone) {
     const raw = String(data?.body || '');
     const m = raw.match(/^\[Booking bot loc\](.+)$/s);
     if (!m) return null;
-    const parsed = JSON.parse(m[1]);
-    if (parsed?.lat == null || parsed?.lng == null) return null;
-    return parsed;
+    const legacy = JSON.parse(m[1]);
+    if (legacy?.lat == null || legacy?.lng == null) return null;
+    return legacy;
   } catch {
     return null;
   }
@@ -1291,23 +1359,32 @@ async function getRememberedLocation(db, phone) {
 
 async function setBookingState(db, phone, state) {
   if (!db || !phone || !state) return;
-  await insertWhatsAppMessage(db, {
-    direction: 'outbound',
-    phone_e164: phone,
-    msg_type: 'text',
-    body: `${STATE_PREFIX}${JSON.stringify(state)}`,
-    status: 'sent',
+  await upsertBookingBotRow(db, phone, {
+    state,
+    awaiting_media: stateAwaitingMedia(state),
   });
 }
 
 async function getBookingState(db, phone) {
   if (!db || !phone) return null;
+  const phoneE164 = normalizePhoneE164(phone);
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await db
+      .from('whatsapp_booking_bot_state')
+      .select('state, updated_at')
+      .eq('phone_e164', phoneE164)
+      .gte('updated_at', since)
+      .maybeSingle();
+    if (data?.state && typeof data.state === 'object') return data.state;
+  } catch {
+    /* fall through */
+  }
+  try {
     const { data } = await db
       .from('whatsapp_messages')
       .select('body, created_at')
-      .eq('phone_e164', phone)
+      .eq('phone_e164', phoneE164)
       .eq('direction', 'outbound')
       .like('body', `${STATE_PREFIX}%`)
       .gte('created_at', since)
@@ -2616,6 +2693,10 @@ async function sendBookedConfirmation(ctx, state, { updated } = {}) {
   };
   await setBookingState(ctx.db, ctx.to, next);
   const locationLine = formatServiceLocationLine(next);
+  const when = [next.dateIso ? formatDateIsoLabel(next.dateIso) : '', timeLabelFromState(next) || next.timeLabel || '']
+    .filter(Boolean)
+    .join(', ');
+  const ref = String(next.jobNumber || '').trim() || 'booking';
   await sendText({
     ...ctx,
     text: customerBookedMessage({
@@ -2628,6 +2709,7 @@ async function sendBookedConfirmation(ctx, state, { updated } = {}) {
       jobNumber: next.jobNumber,
       updated: Boolean(updated),
     }),
+    inboxLabel: `[Booking bot] ${updated ? 'Updated' : 'Confirmed'} · ${ref}${when ? ` · ${when}` : ''}`,
   });
   return sendButtons({
     ...ctx,
@@ -2678,7 +2760,9 @@ async function resumeAfterEdit(ctx, state) {
       direction: 'outbound',
       phone_e164: ctx.to,
       msg_type: 'text',
-      body: `[Booking bot] Customer edited booking${state.jobNumber ? ` ${state.jobNumber}` : ''}: ${serviceLabelFromState(next)} · ${next.dateIso || ''} ${timeLabelFromState(next)} · ${formatServiceLocationLine(next)}${next.photoUrl ? ' · photo updated' : ''}${persisted.ok ? '' : ` · CRM sync: ${persisted.error || 'failed'}`}`,
+      body: slimInboxBody(
+        `[Booking bot] Edited · ${state.jobNumber || 'booking'} · ${serviceLabelFromState(next)} · ${next.dateIso || ''} ${timeLabelFromState(next)}`
+      ),
       status: 'sent',
       customer_id: next.customerId || null,
     });
@@ -2823,6 +2907,19 @@ async function recentlyCompletedBotBooking(db, phoneE164) {
   if (!db || !phoneE164) return false;
   try {
     const since = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: botRow } = await db
+      .from('whatsapp_booking_bot_state')
+      .select('state, updated_at')
+      .eq('phone_e164', phoneE164)
+      .gte('updated_at', since)
+      .maybeSingle();
+    const st = botRow?.state;
+    if (st && typeof st === 'object') {
+      if (st.jobNumber) return true;
+      if (String(st.step || '') === 'booking_complete' || String(st.step || '') === 'await_post_book') {
+        return true;
+      }
+    }
     const { data } = await db
       .from('whatsapp_messages')
       .select('body')
@@ -2833,7 +2930,7 @@ async function recentlyCompletedBotBooking(db, phoneE164) {
       .limit(25);
     for (const row of data || []) {
       const body = String(row.body || '');
-      if (body.startsWith('[Booking bot] Job:')) return true;
+      if (body.includes('[Booking bot] Job:') || body.includes('[Booking bot] Confirmed')) return true;
       if (body.startsWith(STATE_PREFIX) && body.includes('"booking_complete"')) return true;
     }
   } catch (err) {
@@ -2906,7 +3003,7 @@ async function sendPostBookingHumanRedirect(ctx, state = null) {
     direction: 'outbound',
     phone_e164: ctx.to,
     msg_type: 'text',
-    body: `${POST_BOOKING_REDIRECT_MARKER}\n${bodyText}`,
+    body: slimInboxBody(`${POST_BOOKING_REDIRECT_MARKER} Handoff to team`),
     status: 'sent',
     customer_id: customer?.id || st.customerId || null,
   });
@@ -3932,7 +4029,9 @@ async function handleBookingBotInbound({
         direction: 'outbound',
         phone_e164: to,
         msg_type: 'text',
-        body: `[Booking bot] Job: ${created.jobNumber} · ${st.dateIso} ${created.timeLabel} · ${st.serviceSubType || 'Service'} · ${LEAD_SOURCE} · ${isExisting ? 'existing_customer' : 'new_customer'} · loc: ${formatServiceLocationLine(bookedState, customer, locOverride)}`,
+        body: slimInboxBody(
+          `[Booking bot] Job ${created.jobNumber} · ${st.dateIso} ${created.timeLabel} · ${st.serviceSubType || 'Service'}`
+        ),
         status: 'sent',
         customer_id: customer.id,
       });
@@ -4217,7 +4316,9 @@ async function handleBookingBotInbound({
         direction: 'outbound',
         phone_e164: to,
         msg_type: 'text',
-        body: `[Booking bot] Job: ${created.jobNumber} · ${date} ${created.timeLabel} · ${st.serviceSubType || 'Service'} · ${LEAD_SOURCE} · loc: ${formatServiceLocationLine(bookedState, customer, locOverride)}`,
+        body: slimInboxBody(
+          `[Booking bot] Job ${created.jobNumber} · ${date} ${created.timeLabel} · ${st.serviceSubType || 'Service'}`
+        ),
         status: 'sent',
         customer_id: customer.id,
       });

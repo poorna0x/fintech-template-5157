@@ -49,6 +49,13 @@ async function recentlyAskedForMedia(db, phoneE164) {
   if (!db || !phoneE164) return false;
   try {
     const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+    const { data: botRow } = await db
+      .from('whatsapp_booking_bot_state')
+      .select('awaiting_media, updated_at')
+      .eq('phone_e164', phoneE164)
+      .gte('updated_at', since)
+      .maybeSingle();
+    if (botRow?.awaiting_media) return true;
     const { data } = await db
       .from('whatsapp_messages')
       .select('body, created_at')
