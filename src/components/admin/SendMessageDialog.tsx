@@ -16,9 +16,7 @@ import {
 import {
   sendAdminWhatsAppText,
 } from '@/lib/sendAdminWhatsAppApi';
-import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
-import { formatJobCompletionColdTemplatePreview } from '@/lib/job-completion-message';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 
 type DeliveryMode = 'api' | 'wa_me';
@@ -52,7 +50,6 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 }) => {
   const [brandConfirmed, setBrandConfirmed] = useState(false);
   const [sending, setSending] = useState(false);
-  const [autoSendEnabled, setAutoSendEnabled] = useState(false);
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('api');
 
   useEffect(() => {
@@ -60,15 +57,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       setBrandConfirmed(false);
       setSending(false);
       setDeliveryMode('api');
-      return;
     }
-    void fetchWhatsAppCrmSettings().then(({ settings }) => {
-      setAutoSendEnabled(
-        settings.enabled &&
-          settings.allow_job_completion_whatsapp !== false &&
-          settings.auto_send_job_completion_whatsapp === true
-      );
-    });
   }, [open]);
 
   if (!job) return null;
@@ -91,15 +80,6 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
   const completion = buildJobCompletionMessageFromJob(jobRec);
   const whatsappMessage = completion.whatsappMessage;
-  const coldTemplatePreview = formatJobCompletionColdTemplatePreview({
-    customerName: completion.customerName,
-    serviceType: completion.serviceType,
-    serviceSubType: completion.serviceSubType,
-    amountCollected: completion.amountCollected,
-    amountPending: completion.amountPendingValue,
-    pendingDueDate: completion.pendingDueDate || null,
-    documentBrand: completion.documentBrand,
-  });
   const brandLabel = getDocumentBrandLabel(completion.documentBrand);
   const brandContact =
     completion.documentBrand === 'elevenro'
@@ -186,231 +166,218 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     }
   };
 
+  const sendPrimaryLabel =
+    deliveryMode === 'wa_me'
+      ? alreadySent
+        ? 'Open phone WhatsApp again'
+        : 'Open phone WhatsApp'
+      : alreadySent
+        ? 'Send again via Cloud API'
+        : 'Send via Cloud API';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Send Completion Confirmation Message</DialogTitle>
-          <DialogDescription>
+      <DialogContent
+        className={
+          'flex max-h-[min(92dvh,920px)] w-[calc(100vw-1.25rem)] max-w-xl flex-col gap-0 ' +
+          'overflow-hidden p-0 sm:w-full'
+        }
+      >
+        <DialogHeader className="shrink-0 space-y-1.5 border-b px-4 pb-3 pt-5 pr-12 text-left sm:px-6">
+          <DialogTitle className="text-base leading-snug sm:text-lg">
+            Send Completion Confirmation Message
+          </DialogTitle>
+          <DialogDescription className="text-xs sm:text-sm">
             Send confirmation message to customer for completed job
           </DialogDescription>
         </DialogHeader>
 
-        {!brandConfirmed ? (
-          <div className="space-y-3 py-2">
-            <div className="rounded-lg border border-border bg-muted/40 p-4 text-center">
-              <div className="text-xs sm:text-sm text-muted-foreground mb-1.5">
-                You are about to send this message as
-              </div>
-              <div className="text-xl sm:text-2xl font-bold text-foreground">
-                {brandContact.label}
-              </div>
-              <div className="text-xs text-muted-foreground mt-1.5">
-                Phone: {brandContact.phone} | Email: {brandContact.email}
-              </div>
-            </div>
-
-            {alreadySent ? (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 flex items-start gap-2">
-                <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600" />
-                <div>
-                  <p className="font-medium">Already marked Message Sent</p>
-                  <p className="text-xs text-emerald-800 mt-0.5">
-                    {messageSentAt
-                      ? `Last sent ${formatSentAt(String(messageSentAt))}. You can send again — status will update.`
-                      : 'You can send again — status will update.'}
-                  </p>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-6">
+          {!brandConfirmed ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border bg-muted/40 p-3 text-center sm:p-4">
+                <div className="mb-1.5 text-xs text-muted-foreground sm:text-sm">
+                  You are about to send this message as
+                </div>
+                <div className="text-xl font-bold text-foreground sm:text-2xl">
+                  {brandContact.label}
+                </div>
+                <div className="mt-1.5 text-xs text-muted-foreground break-words">
+                  Phone: {brandContact.phone} | Email: {brandContact.email}
                 </div>
               </div>
-            ) : null}
 
-            {dontSend ? (
-              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                Technician marked “Don’t send” on this job. Sending manually will still message the
-                customer and mark Message Sent.
-              </p>
-            ) : null}
+              {alreadySent ? (
+                <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                  <div>
+                    <p className="font-medium">Already marked Message Sent</p>
+                    <p className="mt-0.5 text-xs text-emerald-800">
+                      {messageSentAt
+                        ? `Last sent ${formatSentAt(String(messageSentAt))}. You can send again — status will update.`
+                        : 'You can send again — status will update.'}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
 
-            {autoSendEnabled ? (
-              <p className="text-xs text-muted-foreground text-center leading-snug">
-                Auto-send is ON — new completions try Cloud API automatically (admin or technician
-                complete). This dialog is for manual send / retry — pick Cloud API or phone WhatsApp
-                next.
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground text-center leading-snug">
-                Tip: turn on <span className="font-medium">Auto-send completion message</span> in
-                Settings → WhatsApp to send after each job (skips tech AMC info &amp; “don’t send”).
-              </p>
-            )}
-            <div className="flex flex-col sm:flex-row sm:justify-end gap-2">
+              {dontSend ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Technician marked “Don’t send” on this job. Sending manually will still message the
+                  customer and mark Message Sent.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-lg bg-muted/40 p-3 sm:p-4">
+                <div className="mb-2 text-sm text-muted-foreground">
+                  Sending as: <span className="font-medium text-foreground">{brandContact.label}</span>
+                </div>
+                <div className="mb-2 text-sm text-muted-foreground">
+                  Customer: <span className="font-medium text-foreground break-words">{customerName}</span>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Phone: <span className="font-medium text-foreground">{customerPhone}</span>
+                </div>
+                {hasAlternate && (
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    Alternate: <span className="font-medium text-foreground">{alternatePhone}</span>
+                  </div>
+                )}
+                {alreadySent && (
+                  <div className="mt-2 text-sm font-medium text-emerald-700">
+                    ✓ Already sent
+                    {messageSentAt ? ` · ${formatSentAt(String(messageSentAt))}` : ''}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>How to send</Label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    className={
+                      deliveryMode === 'api'
+                        ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
+                        : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
+                    }
+                    onClick={() => setDeliveryMode('api')}
+                  >
+                    <span className="block">Cloud API</span>
+                    <span className="block text-[11px] font-normal opacity-80">
+                      Business line · inbox log
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      deliveryMode === 'wa_me'
+                        ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
+                        : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
+                    }
+                    onClick={() => setDeliveryMode('wa_me')}
+                  >
+                    <span className="block">Phone WhatsApp</span>
+                    <span className="block text-[11px] font-normal opacity-80">
+                      Opens wa.me on this device
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <Label>Message preview</Label>
+                <div className="mt-2 max-h-52 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm text-foreground/90 sm:max-h-60">
+                  {whatsappMessage}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="shrink-0 flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:justify-end sm:px-6">
+          {!brandConfirmed ? (
+            <>
               <Button
-                className="w-full bg-black hover:bg-gray-800 text-white"
+                variant="outline"
+                className="w-full sm:w-auto"
+                disabled={sending}
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
                 onClick={() => setBrandConfirmed(true)}
               >
                 Confirm and Continue
               </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4 py-4">
-            <div className="bg-muted/40 p-4 rounded-lg">
-              <div className="text-sm text-muted-foreground mb-2">
-                Sending as: <span className="font-medium">{brandContact.label}</span>
-              </div>
-              <div className="text-sm text-muted-foreground mb-2">
-                Customer: <span className="font-medium">{customerName}</span>
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Phone: <span className="font-medium">{customerPhone}</span>
-              </div>
-              {hasAlternate && (
-                <div className="text-sm text-muted-foreground mt-1">
-                  Alternate: <span className="font-medium">{alternatePhone}</span>
-                </div>
-              )}
-              {alreadySent && (
-                <div className="text-sm text-emerald-700 mt-2 font-medium">
-                  ✓ Already sent
-                  {messageSentAt ? ` · ${formatSentAt(String(messageSentAt))}` : ''}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>How to send</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  className={
-                    deliveryMode === 'api'
-                      ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-950'
-                      : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
-                  }
-                  onClick={() => setDeliveryMode('api')}
-                >
-                  <span className="block">Cloud API</span>
-                  <span className="block text-[11px] font-normal opacity-80">
-                    Business line · inbox log
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className={
-                    deliveryMode === 'wa_me'
-                      ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-950'
-                      : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
-                  }
-                  onClick={() => setDeliveryMode('wa_me')}
-                >
-                  <span className="block">Phone WhatsApp</span>
-                  <span className="block text-[11px] font-normal opacity-80">
-                    Opens wa.me on this device
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <Label>Message preview (24h window open)</Label>
-                <div className="mt-2 p-3 bg-muted/40 rounded-md text-sm text-foreground/90 whitespace-pre-wrap max-h-40 overflow-y-auto">
-                  {whatsappMessage}
-                </div>
-              </div>
-              <div>
-                <Label>Cold send preview (window closed)</Label>
-                <p className="text-[11px] text-muted-foreground mt-0.5 mb-1.5">
-                  Prefers letter template{' '}
-                  <span className="font-medium">
-                    svc_job_done_letter_{completion.documentBrand === 'elevenro' ? 'ero' : 'hro'}_v3
-                  </span>
-                  , then v2 / v1 / short <span className="font-medium">svc_job_done</span>.
-                  Cold template buttons: Call us · Text us.
-                </p>
-                <div className="p-3 rounded-md border border-amber-200/80 bg-amber-50/60 text-sm text-amber-950 whitespace-pre-wrap">
-                  {coldTemplatePreview}
-                  {'\n\n'}📞 Call us · 💬 Text us
-                </div>
-              </div>
-
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                disabled={sending}
+                onClick={() => setBrandConfirmed(false)}
+              >
+                Back
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                disabled={sending}
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
+              </Button>
               {hasAlternate ? (
-                <div className="space-y-2">
-                  <Label>Send to which number?</Label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <Button
-                      variant="default"
-                      className="bg-black hover:bg-gray-800 text-white"
-                      disabled={sending}
-                      onClick={() => void sendToPhone(customerPhone)}
-                    >
-                      {sending ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <WhatsAppIcon className="w-4 h-4 mr-2" />
-                      )}
-                      {deliveryMode === 'wa_me' ? 'Open' : 'API'} · Primary
-                    </Button>
-                    <Button
-                      variant="default"
-                      className="bg-black hover:bg-gray-800 text-white"
-                      disabled={sending}
-                      onClick={() => void sendToPhone(alternatePhone)}
-                    >
-                      {sending ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <WhatsAppIcon className="w-4 h-4 mr-2" />
-                      )}
-                      {deliveryMode === 'wa_me' ? 'Open' : 'API'} · Alt
-                    </Button>
-                  </div>
-                </div>
+                <>
+                  <Button
+                    variant="default"
+                    className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
+                    disabled={sending}
+                    onClick={() => void sendToPhone(customerPhone)}
+                  >
+                    {sending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <WhatsAppIcon className="mr-2 h-4 w-4" />
+                    )}
+                    {deliveryMode === 'wa_me' ? 'Open' : 'API'} · Primary
+                  </Button>
+                  <Button
+                    variant="default"
+                    className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
+                    disabled={sending}
+                    onClick={() => void sendToPhone(alternatePhone)}
+                  >
+                    {sending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <WhatsAppIcon className="mr-2 h-4 w-4" />
+                    )}
+                    {deliveryMode === 'wa_me' ? 'Open' : 'API'} · Alt
+                  </Button>
+                </>
               ) : (
                 <Button
                   variant="default"
-                  className="w-full bg-black hover:bg-gray-800 text-white"
+                  className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
                   disabled={sending}
                   onClick={() => void sendToPhone(customerPhone)}
                 >
                   {sending ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
-                    <WhatsAppIcon className="w-4 h-4 mr-2" />
+                    <WhatsAppIcon className="mr-2 h-4 w-4" />
                   )}
-                  {deliveryMode === 'wa_me'
-                    ? alreadySent
-                      ? 'Open phone WhatsApp again'
-                      : 'Open phone WhatsApp'
-                    : alreadySent
-                      ? 'Send again via Cloud API'
-                      : 'Send via Cloud API'}
+                  {sendPrimaryLabel}
                 </Button>
               )}
-            </div>
-          </div>
-        )}
-
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          {brandConfirmed && (
-            <Button
-              variant="outline"
-              className="w-full sm:w-auto"
-              disabled={sending}
-              onClick={() => setBrandConfirmed(false)}
-            >
-              Back
-            </Button>
-          )}
-          {brandConfirmed && (
-            <Button
-              variant="outline"
-              className="w-full sm:w-auto"
-              disabled={sending}
-              onClick={() => onOpenChange(false)}
-            >
-              Cancel
-            </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>
