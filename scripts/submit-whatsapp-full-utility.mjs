@@ -1360,7 +1360,8 @@ const DOC_PDF_V3_TEMPLATES = buildDocPdfV3Templates();
 
 /**
  * Preview PDF → Accept → original PDF (DOCUMENT header).
- * v6 rejected INCORRECT_CATEGORY (terms wall + URL + emojis). v7: short transactional UTILITY copy.
+ * v6 rejected INCORRECT_CATEGORY (long legal block + URL + emojis).
+ * v7 pending — no explicit terms. v8: one transactional terms sentence (UTILITY).
  */
 function buildDocAcceptPreviewTemplates() {
   const out = [];
@@ -1370,13 +1371,13 @@ function buildDocAcceptPreviewTemplates() {
     out.push({
       callPhone,
       websiteUrl: b.website,
-      name: `svc_doc_accept_preview_${suffix}_v7`,
+      name: `svc_doc_accept_preview_${suffix}_v8`,
       body: [
         `Hi {{1}},`,
         ``,
         `Your PREVIEW {{2}} from ${b.label} is attached. This file is for review only — not the final original document.`,
         ``,
-        `Tap I Accept below to receive the original document on this WhatsApp chat.`,
+        `By tapping I Accept you confirm you have read and agree to the terms and conditions in this PDF, and you request ${b.label} to send the original {{2}} on this WhatsApp chat.`,
         ``,
         `Reply on this chat if you need any help.`,
         ``,

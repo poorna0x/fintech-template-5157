@@ -148,7 +148,7 @@ async function isColdTemplatesAllowed(db) {
 
 function resolveAcceptPreviewColdTemplateName(brand) {
   const suffix = normalizeBrand(brand) === 'elevenro' ? 'ero' : 'hro';
-  return `svc_doc_accept_preview_${suffix}_v7`;
+  return `svc_doc_accept_preview_${suffix}_v8`;
 }
 
 async function sendAcceptPreviewColdTemplate(
@@ -428,7 +428,7 @@ async function createAndSendAcceptInvite(opts) {
         cold.data?.error?.error_user_msg ||
         'Cold accept-preview template send failed';
       const hint = /template|not exist|translation|approved/i.test(coldErr)
-        ? ' Submit svc_doc_accept_preview_*_v7 in Meta (node scripts/submit-whatsapp-full-utility.mjs --submit --only-doc-accept).'
+        ? ' Submit svc_doc_accept_preview_*_v8 in Meta (node scripts/submit-whatsapp-full-utility.mjs --submit --only-doc-accept).'
         : '';
       await db
         .from('document_accept_invites')

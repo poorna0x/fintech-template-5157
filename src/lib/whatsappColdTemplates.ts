@@ -3,7 +3,7 @@
  *
  * Cold PDF (direct, no Accept): prefer svc_doc_{bill|…}_{ero|hro}_v3 letter+emoji →
  * svc_doc_direct_{ero|hro}_v1 (any label) → v2 → svc_doc_pdf_v2.
- * Accept-preview (separate): svc_doc_accept_preview_{ero|hro}_v7 — do not use for normal sends.
+ * Accept-preview (separate): svc_doc_accept_preview_{ero|hro}_v8 — do not use for normal sends.
  *
  * After the customer replies (24h opens), the booking bot continues with the same
  * interactive UI as in-session. Do not use svc_booking_menu (Meta → MARKETING).
@@ -117,10 +117,10 @@ export const WA_COLD = {
   /**
    * Preview PDF (DOCUMENT) + Accept URL → /c/{token}.
    * After terms accept, CRM sends the original PDF on WhatsApp.
-   * Meta: svc_doc_accept_preview_{ero|hro}_v7 (DOCUMENT + Call + I Accept quick reply)
+   * Meta: svc_doc_accept_preview_{ero|hro}_v8 (DOCUMENT + Call + I Accept + terms line)
    */
   document_accept_preview: {
-    name: 'svc_doc_accept_preview_hro_v7',
+    name: 'svc_doc_accept_preview_hro_v8',
     language: 'en',
     bodyParams: (customerName: string, documentLabel?: string) => [
       cleanName(customerName),
@@ -453,13 +453,13 @@ export function coldDocTemplateForKind(
 /** Quick-reply label on cold accept-preview templates (Meta template button). */
 export const DOC_ACCEPT_QUICK_REPLY_TEXT = 'I Accept';
 
-/** Preview PDF + Accept terms → original (svc_doc_accept_preview_{ero|hro}_v7). */
+/** Preview PDF + Accept terms → original (svc_doc_accept_preview_{ero|hro}_v8). */
 export function resolveDocAcceptPreviewTemplate(
   brand?: DocumentBrand | string | null
 ): { name: string; language: string } {
   const suffix = normalizeDocumentBrand(brand) === 'elevenro' ? 'ero' : 'hro';
   return {
-    name: `svc_doc_accept_preview_${suffix}_v7`,
+    name: `svc_doc_accept_preview_${suffix}_v8`,
     language: 'en',
   };
 }
@@ -559,7 +559,7 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   warranty_ready: 'Warranty PDF (svc_doc_warranty_*_v3 → direct → v2)',
   receipt_ready: 'Receipt PDF (svc_doc_receipt_*_v3 → direct → v2)',
   document_accept_preview:
-    'Preview PDF + I Accept quick reply (svc_doc_accept_preview_*_v7 → original PDF)',
+    'Preview PDF + I Accept + terms (svc_doc_accept_preview_*_v8 → original PDF)',
   document_direct: 'Direct PDF any label (svc_doc_direct_{ero|hro}_v1 — no Accept)',
   customer_followup: 'Follow-up → visit reminder',
   appointment_reminder: 'Appointment reminder (svc_visit_reminder)',

@@ -47,8 +47,8 @@ Separate from Accept. Letter + light emojis; DOCUMENT header; Call us + Website.
 
 | Brand | Name |
 |-------|------|
-| Eleven | `svc_doc_accept_preview_ero_v7` |
-| Hydrogen | `svc_doc_accept_preview_hro_v7` |
+| Eleven | `svc_doc_accept_preview_ero_v8` |
+| Hydrogen | `svc_doc_accept_preview_hro_v8` |
 
 - DOCUMENT header (preview PDF) + body (name + doc label) + **Call us** + **I Accept** quick reply.
 - Customer taps I Accept → original PDF on same chat (webhook `document-accept-inbound`).
