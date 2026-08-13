@@ -209,9 +209,42 @@ exports.handler = async (event) => {
     consumeLoginToken(altcha.tokenCheck.consumeKey, altcha.tokenCheck.exp);
   }
 
-  // Booking succeeded — notify the owner (HydrogenRO / ElevenRO) out-of-band so
-  // the slow SMTP send never delays the customer's confirmation. Fully
-  // fault-tolerant: any failure here can never break the booking.
+  // Customer WhatsApp confirmation — soft-fail, independent of owner email /
+  // background notify (so a 202 background path can never skip WA).
+  try {
+    let customerName = '';
+    const customerId =
+      (data && (data.customer_id || data.customerId)) || row.customer_id || null;
+    if (customerId) {
+      try {
+        const { data: cust } = await client.admin
+          .from('customers')
+          .select('full_name')
+          .eq('id', customerId)
+          .maybeSingle();
+        customerName = (cust && cust.full_name) || '';
+      } catch {
+        /* best-effort */
+      }
+    }
+    const requirements = Array.isArray(row.requirements) ? row.requirements[0] : null;
+    await maybeSendOnlineBookingConfirmationWhatsApp(client.admin, {
+      phone: phoneNorm,
+      customerName,
+      customerId,
+      jobNumber: (data && (data.job_number || data.jobNumber)) || row.job_number,
+      scheduledDate: row.scheduled_date,
+      scheduledTimeSlot: row.scheduled_time_slot,
+      customTime: requirements ? requirements.custom_time : null,
+      bookingSource: row.booking_source,
+      bookingDomain: row.booking_domain,
+    });
+  } catch (err) {
+    console.error('[booking-job-create] customer WA confirm failed:', err && err.message);
+  }
+
+  // Booking succeeded — notify the owner out-of-band so the slow SMTP send never
+  // delays the customer's confirmation. Fully fault-tolerant.
   await triggerOwnerNotification(event, client, row, phoneNorm, data);
 
   return jsonResponse(200, corsHeaders, { data });

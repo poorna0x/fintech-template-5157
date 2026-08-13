@@ -74,6 +74,8 @@ async function maybeSendOnlineBookingConfirmationWhatsApp(db, opts) {
     const jobNumber = String(opts.jobNumber || '').trim();
     if (!jobNumber) return { sent: false, reason: 'no_job_number' };
 
+    // Dedupe per job only — same phone can book HRO then ERO (or two jobs)
+    // within 30m and must still get each confirmation.
     const sinceIso = new Date(Date.now() - DEDUPE_MINUTES * 60_000).toISOString();
     const { data: recent } = await db
       .from('whatsapp_messages')
@@ -81,6 +83,7 @@ async function maybeSendOnlineBookingConfirmationWhatsApp(db, opts) {
       .eq('phone_e164', phone)
       .eq('direction', 'outbound')
       .ilike('template_name', 'svc_booking_confirmed%')
+      .ilike('body', `%${jobNumber}%`)
       .gte('created_at', sinceIso)
       .limit(1)
       .maybeSingle();
