@@ -1587,6 +1587,21 @@ export function previewMessageBody(
     /\.pdf$/i.test(file);
   const isImage =
     row.msg_type === 'image' || Boolean(row.media_mime?.startsWith('image/'));
+  const bodyRaw = String(row.body || '');
+  const isLocationType = String(row.msg_type || '').toLowerCase() === 'location';
+  const isMapsShare =
+    /maps\.app\.goo\.gl|goo\.gl\/maps/i.test(bodyRaw) ||
+    /^\s*https?:\/\/\S*(?:google\.[^\s]+\/maps|maps\.google\.)\S*\s*$/i.test(bodyRaw);
+  const isLocation = isLocationType || isMapsShare;
+
+  if (isLocation) {
+    const formatted = formatAdminWhatsAppBody(row.body, { compact: true });
+    const withoutCoords = formatted
+      .replace(/-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?/g, '')
+      .replace(/https?:\/\/\S+/gi, '')
+      .trim();
+    return withoutCoords ? `📍 ${withoutCoords}` : '📍 Location';
+  }
 
   if (row.body?.trim()) {
     const formatted = formatAdminWhatsAppBody(row.body, { compact: true });
@@ -1978,7 +1993,19 @@ export function isWhatsAppDocumentMessage(row: {
   );
 }
 
-/** Outbound WhatsApp PDFs/docs for a customer (slim columns). */
+export function isWhatsAppOutboundImageMessage(row: {
+  msg_type?: string | null;
+  media_mime?: string | null;
+  media_url?: string | null;
+}): boolean {
+  if (!row.media_url) return false;
+  return (
+    String(row.msg_type || '').toLowerCase() === 'image' ||
+    String(row.media_mime || '').toLowerCase().startsWith('image/')
+  );
+}
+
+/** Outbound WhatsApp PDFs + photos sent to the customer (slim columns). */
 export async function listCustomerWhatsAppDocuments(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabaseClient: { from: (table: string) => any },
@@ -2020,7 +2047,11 @@ export async function listCustomerWhatsAppDocuments(
   const seenUrls = new Set<string>();
   const rows: WhatsAppCustomerDocument[] = [];
   for (const row of data || []) {
-    if (!isWhatsAppDocumentMessage(row) || seenIds.has(row.id)) continue;
+    if (
+      (!isWhatsAppDocumentMessage(row) && !isWhatsAppOutboundImageMessage(row)) ||
+      seenIds.has(row.id)
+    )
+      continue;
     const mediaUrl = String(row.media_url || '').trim();
     if (!mediaUrl || seenUrls.has(mediaUrl)) continue;
     seenIds.add(row.id);

@@ -6,9 +6,10 @@ import { Customer } from '@/types';
 import { Camera, Download, FileText, Image, Images, Loader2, Upload, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabaseClient';
-import { fetchWhatsAppR2SignedUrl } from '@/lib/sendAdminWhatsAppApi';
+import { fetchWhatsAppR2SignedUrl, purgeWhatsAppMessages } from '@/lib/sendAdminWhatsAppApi';
 import {
   isR2MediaRef,
+  isWhatsAppOutboundImageMessage,
   listCustomerWhatsAppDocuments,
   type WhatsAppCustomerDocument,
 } from '@/lib/whatsappInbox';
@@ -42,6 +43,7 @@ function directHttpsUrl(ref: string | null | undefined): string | null {
 function documentLabel(row: WhatsAppCustomerDocument): string {
   const name = String(row.filename || '').trim();
   if (name) return name;
+  if (isWhatsAppOutboundImageMessage(row)) return 'WhatsApp photo';
   if (String(row.media_mime || '').includes('pdf') || row.msg_type === 'pdf') return 'PDF';
   return 'WhatsApp document';
 }
@@ -177,6 +179,42 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
     }
   };
 
+  const deleteDoc = async (row: WhatsAppCustomerDocument) => {
+    const label = documentLabel(row);
+    if (
+      !window.confirm(
+        `Delete “${label}” from this customer and Cloudflare?\n\nIt will also be removed from the WhatsApp inbox.`
+      )
+    ) {
+      return;
+    }
+    setBusyDocId(row.id);
+    try {
+      const result = await purgeWhatsAppMessages({
+        messageId: row.id,
+        messageIds: [row.id],
+      });
+      if (!result.ok) {
+        const staleFn = /olderThanDays|phoneE164/i.test(String(result.error || ''));
+        if (!staleFn) {
+          toast.error(result.error || 'Could not delete file');
+          return;
+        }
+        const { error } = await supabase.from('whatsapp_messages').delete().eq('id', row.id);
+        if (error) {
+          toast.error(error.message || 'Could not delete file');
+          return;
+        }
+      }
+      const next = docs.filter((d) => d.id !== row.id);
+      setDocs(next);
+      if (next.length === 0) setTab('photos');
+      toast.success('Deleted');
+    } finally {
+      setBusyDocId(null);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[85vw] lg:max-w-7xl max-h-[95vh] overflow-y-auto p-4 sm:p-6">
@@ -186,7 +224,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
             {showDocumentsTab
-              ? 'Customer photos, plus WhatsApp PDFs (same links as the inbox — delete there and they leave here too).'
+              ? 'Customer photos, plus WhatsApp PDFs and photos you sent (same Cloudflare files as the inbox).'
               : 'Photos for this customer'}
           </DialogDescription>
         </DialogHeader>
@@ -471,26 +509,40 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
             {docsLoading ? (
               <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading WhatsApp documents…
+                Loading WhatsApp files…
               </div>
             ) : docsError ? (
               <p className="py-8 text-center text-sm text-red-600">{docsError}</p>
             ) : (
               <div className="space-y-2">
                 <p className="text-sm font-medium text-foreground">
-                  {docs.length} document{docs.length !== 1 ? 's' : ''} from WhatsApp
+                  {docs.length} file{docs.length !== 1 ? 's' : ''} sent on WhatsApp
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Opens the same stored link as the inbox. Deleting the chat message removes it here too.
+                  Photos and PDFs stored on Cloudflare. Same as the inbox — delete the chat
+                  message and it leaves here too.
                 </p>
                 <ul className="divide-y divide-border rounded-lg border border-border">
-                  {docs.map((row) => (
+                  {docs.map((row) => {
+                    const isImage = isWhatsAppOutboundImageMessage(row);
+                    return (
                     <li
                       key={row.id}
                       className="flex items-center gap-3 px-3 py-3"
                     >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-red-500/10 text-red-600">
-                        <FileText className="h-5 w-5" />
+                      <span
+                        className={cn(
+                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-md',
+                          isImage
+                            ? 'bg-sky-500/10 text-sky-700'
+                            : 'bg-red-500/10 text-red-600'
+                        )}
+                      >
+                        {isImage ? (
+                          <Image className="h-5 w-5" />
+                        ) : (
+                          <FileText className="h-5 w-5" />
+                        )}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">
@@ -532,9 +584,21 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                         >
                           <Download className="h-4 w-4" />
                         </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-10 w-10 cursor-pointer text-destructive hover:text-destructive"
+                          disabled={busyDocId === row.id}
+                          onClick={() => void deleteDoc(row)}
+                          aria-label="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               </div>
             )}

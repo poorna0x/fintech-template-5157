@@ -59,6 +59,41 @@ async function destroyCloudinary(publicId) {
   }
 }
 
+function collectMessageIds(body) {
+  const raw = [];
+  if (body.messageId) raw.push(body.messageId);
+  if (Array.isArray(body.messageIds)) raw.push(...body.messageIds);
+  const uuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return [...new Set(raw.map((id) => String(id || '').trim()).filter((id) => uuid.test(id)))];
+}
+
+async function deleteMediaForRows(rows, keepMedia) {
+  let deletedMedia = 0;
+  let failedMedia = 0;
+  let keptMedia = 0;
+  if (keepMedia) {
+    return { deletedMedia, failedMedia, keptMedia: rows.filter((r) => r.media_url).length };
+  }
+  for (const row of rows) {
+    const media = row.media_url;
+    if (!media) continue;
+    if (isR2MediaRef(media) || parseR2ObjectKey(media)) {
+      const r = await deleteR2Object(media);
+      if (r.ok) deletedMedia += 1;
+      else if (!r.skipped) failedMedia += 1;
+      continue;
+    }
+    const publicId = cloudinaryPublicIdFromUrl(media);
+    if (publicId) {
+      const r = await destroyCloudinary(publicId);
+      if (r.ok) deletedMedia += 1;
+      else if (!r.skipped) failedMedia += 1;
+    }
+  }
+  return { deletedMedia, failedMedia, keptMedia };
+}
+
 exports.handler = async (event) => {
   const headers = {
     ...getCorsHeaders(event.headers?.origin || event.headers?.Origin),
@@ -92,10 +127,11 @@ exports.handler = async (event) => {
   const phoneRaw = digitsOnly(body.phoneE164 || body.phone || '');
   const phone = phoneRaw ? normalizePhoneE164(phoneRaw) : '';
   const olderThanDays = body.olderThanDays != null ? Number(body.olderThanDays) : null;
+  const messageIds = collectMessageIds(body);
 
-  if (!phone && !(olderThanDays > 0)) {
+  if (!phone && !(olderThanDays > 0) && messageIds.length === 0) {
     return json(400, headers, {
-      error: 'Provide olderThanDays and/or phoneE164',
+      error: 'Provide olderThanDays, phoneE164, or messageId',
     });
   }
   if (olderThanDays != null && ![7, 30, 90, 180, 365].includes(olderThanDays)) {
@@ -104,6 +140,40 @@ exports.handler = async (event) => {
 
   const db = getServiceSupabase();
   if (!db) return json(500, headers, { error: 'Database not configured' });
+
+  if (messageIds.length > 0) {
+    const { data: rows, error } = await db
+      .from('whatsapp_messages')
+      .select('id, media_url')
+      .in('id', messageIds);
+    if (error) return json(500, headers, { error: error.message });
+    const list = rows || [];
+    if (dryRun) {
+      return json(200, headers, {
+        dryRun: true,
+        wouldDeleteRows: list.length,
+        withMedia: list.filter((r) => r.media_url).length,
+        keepMedia,
+      });
+    }
+    const mediaStats = await deleteMediaForRows(list, keepMedia);
+    const ids = list.map((r) => r.id).filter(Boolean);
+    let deletedRows = 0;
+    if (ids.length) {
+      const { error: delErr, count } = await db
+        .from('whatsapp_messages')
+        .delete({ count: 'exact' })
+        .in('id', ids);
+      if (delErr) return json(500, headers, { error: delErr.message, ...mediaStats });
+      deletedRows = count ?? ids.length;
+    }
+    return json(200, headers, {
+      deletedRows,
+      ...mediaStats,
+      keepMedia,
+      messageIds: ids,
+    });
+  }
 
   function buildSelectQuery() {
     let query = db.from('whatsapp_messages').select('id, media_url');
@@ -162,22 +232,9 @@ exports.handler = async (event) => {
     if (!list.length) break;
 
     if (!keepMedia) {
-      for (const row of list) {
-        const media = row.media_url;
-        if (!media) continue;
-        if (isR2MediaRef(media) || parseR2ObjectKey(media)) {
-          const r = await deleteR2Object(media);
-          if (r.ok) deletedMedia += 1;
-          else if (!r.skipped) failedMedia += 1;
-          continue;
-        }
-        const publicId = cloudinaryPublicIdFromUrl(media);
-        if (publicId) {
-          const r = await destroyCloudinary(publicId);
-          if (r.ok) deletedMedia += 1;
-          else if (!r.skipped) failedMedia += 1;
-        }
-      }
+      const mediaStats = await deleteMediaForRows(list, false);
+      deletedMedia += mediaStats.deletedMedia;
+      failedMedia += mediaStats.failedMedia;
     } else {
       keptMedia += list.filter((r) => r.media_url).length;
     }

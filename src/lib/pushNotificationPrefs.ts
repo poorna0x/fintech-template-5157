@@ -79,8 +79,8 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
     description: 'Jobs completed, collections, and open jobs count.',
   },
   new_booking: {
-    label: 'New website booking',
-    description: 'Instant alert when someone books on the website.',
+    label: 'New booking',
+    description: 'Instant alert when someone books on the website or WhatsApp.',
   },
   parts_reminder: {
     label: 'Parts entry reminder',

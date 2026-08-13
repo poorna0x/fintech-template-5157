@@ -1147,6 +1147,8 @@ export async function fetchWhatsAppR2MediaBytes(opts: {
 export async function purgeWhatsAppMessages(opts: {
   olderThanDays?: number;
   phoneE164?: string;
+  messageId?: string;
+  messageIds?: string[];
   dryRun?: boolean;
   /** When true, delete inbox rows only — photos/PDFs stay on R2 / Cloudinary. */
   keepMedia?: boolean;

@@ -16,48 +16,8 @@
 //     Local may omit the secret for easier testing.
 const { isLocalDev } = require('./cors-helper');
 const { getServiceClient } = require('./booking-guard');
-const { sendBookingAdminNotification } = require('./booking-notify');
-const { getMessaging, getAdminFcmTokens, pruneAdminFcmTokens, isStaleTokenError } = require('./fcm-helper');
+const { sendBookingAdminNotification, pushBookingToAdmins } = require('./booking-notify');
 const { maybeSendOnlineBookingConfirmationWhatsApp } = require('./booking-confirmation-whatsapp-helper');
-
-/** Instant push to all admin phones (HRO Admin app) — best-effort. */
-async function pushBookingToAdmins(db, details) {
-  const tokens = await getAdminFcmTokens(db, 'new_booking');
-  if (tokens.length === 0) return;
-
-  const service = [details.serviceType, details.serviceSubType]
-    .map((s) => String(s || '').trim())
-    .filter(Boolean)
-    .join(' ');
-  const when = [details.scheduledDate, details.customTime || details.scheduledTimeSlot]
-    .map((s) => String(s || '').trim())
-    .filter(Boolean)
-    .join(', ');
-  const lines = [
-    `${service || 'Service'} — ${details.customerName || details.phone || 'customer'}`,
-    ...(details.phone ? [`Phone: ${details.phone}`] : []),
-    ...(when ? [`When: ${when}`] : []),
-  ];
-
-  const messaging = await getMessaging(db);
-  const res = await messaging.sendEachForMulticast({
-    tokens,
-    notification: { title: 'New website booking', body: lines.join('\n') },
-    data: { type: 'new_booking' },
-    android: {
-      priority: 'high',
-      notification: { channelId: 'job_alerts_v2', defaultSound: true, color: '#7C3AED' },
-    },
-  });
-
-  const stale = [];
-  res.responses.forEach((r, i) => {
-    if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
-  });
-  if (stale.length > 0) {
-    await pruneAdminFcmTokens(db, stale);
-  }
-}
 
 async function lookupCustomerName(client, customerId) {
   if (!customerId) return '';

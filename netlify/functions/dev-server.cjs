@@ -68,6 +68,7 @@ const pdfAuthenticityOtpVerify = require('./pdf-authenticity-otp-verify');
 const pdfAuthenticityCheck = require('./pdf-authenticity-check');
 const documentAcceptSend = require('./document-accept-send');
 const whatsappTrayClearPush = require('./whatsapp-tray-clear-push');
+const whatsappInboxApplyToCustomer = require('./whatsapp-inbox-apply-to-customer');
 const dbStorageStats = require('./db-storage-stats');
 const salarySlipMonthEnd = require('./salary-slip-month-end');
 
@@ -172,6 +173,8 @@ const server = http.createServer((req, res) => {
     handler = documentAcceptSend;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-tray-clear-push')) {
     handler = whatsappTrayClearPush;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-inbox-apply-to-customer')) {
+    handler = whatsappInboxApplyToCustomer;
   } else if (req.url.startsWith('/.netlify/functions/db-storage-stats')) {
     handler = dbStorageStats;
   } else if (req.url.startsWith('/.netlify/functions/salary-slip-month-end')) {

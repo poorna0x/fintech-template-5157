@@ -53,6 +53,10 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/whatsapp-inbox-apply-to-customer': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/pdf-authenticity-otp-verify': {
         target: 'http://localhost:8888',
         changeOrigin: true,

@@ -634,12 +634,16 @@ function extractInboundBody(msg) {
     const reply = msg.interactive?.button_reply || msg.interactive?.list_reply;
     return reply?.title || reply?.id || null;
   }
+  if (type === 'location' && msg.location) {
+    const { latitude, longitude, name, address } = msg.location;
+    const coords =
+      latitude != null && longitude != null ? `${latitude},${longitude}` : '';
+    const label = String(name || address || '').trim();
+    if (coords && label) return `${coords} ${label}`;
+    return coords || label || null;
+  }
   const media = msg[type];
   if (media?.caption) return media.caption;
-  if (type === 'location' && msg.location) {
-    const { latitude, longitude, name } = msg.location;
-    return name || `${latitude},${longitude}`;
-  }
   if (type === 'contacts' && Array.isArray(msg.contacts)) {
     return (
       msg.contacts

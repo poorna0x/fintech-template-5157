@@ -385,6 +385,99 @@ async function resolveMapsUrl(inputUrl) {
   return { expandedUrl, coords, stillShort, placeName };
 }
 
+function extractMapsUrlFromText(text) {
+  const trimmed = sanitizeUrl(text);
+  if (!trimmed) return null;
+  const MAPS_URL_REGEX =
+    /(?:https?:\/\/)?(?:www\.)?(?:google\.[^/\s]+\/maps\S*|maps\.google\.[^/\s]+\S*|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+)/i;
+  const match = trimmed.match(MAPS_URL_REGEX);
+  if (!match) return null;
+  let url = match[0].replace(/[)>\].,;'"]+$/g, '');
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  return url;
+}
+
+function extractPlaceHintFromShareText(text) {
+  const cleaned = sanitizeUrl(text);
+  if (!cleaned) return null;
+  const url = extractMapsUrlFromText(cleaned);
+  const withoutUrl = url ? cleaned.replace(url, '').trim() : cleaned;
+  const lines = withoutUrl
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 2 && !line.startsWith('http'));
+  const candidates = lines.filter(
+    (line) =>
+      !/^[\d\s\-+()]+$/.test(line) &&
+      !/^maps\.app\.goo\.gl/i.test(line) &&
+      line.length <= 200
+  );
+  if (candidates.length === 0) return null;
+  const hint = candidates.slice(0, 2).join(', ');
+  if (/bengaluru|bangalore|karnataka/i.test(hint)) return hint;
+  return `${hint}, Bengaluru, Karnataka`;
+}
+
+/**
+ * Resolve a pasted Maps URL or WhatsApp share (place name + short link) to lat/lng.
+ * Used by CRM fetch-location, booking bot, and inbox apply-to-customer.
+ */
+async function resolveMapsShareToCoords(text) {
+  const shareText = String(text || '');
+  const inputUrl = extractMapsUrlFromText(shareText);
+  if (!inputUrl) {
+    return { ok: false, error: 'No Google Maps link found' };
+  }
+  if (!isAllowedMapsUrl(inputUrl)) {
+    return { ok: false, error: 'Invalid Google Maps URL' };
+  }
+
+  const shareHint = extractPlaceHintFromShareText(shareText);
+  let expandedUrl = inputUrl;
+  let coords = extractCoordinatesFromUrl(inputUrl);
+  let stillShort = isShortMapsUrl(inputUrl);
+  let placeName = extractPlaceNameFromUrl(inputUrl) || shareHint || null;
+
+  if (!coords || stillShort) {
+    try {
+      const resolved = await resolveMapsUrl(inputUrl);
+      expandedUrl = resolved.expandedUrl || expandedUrl;
+      coords = resolved.coords || coords;
+      stillShort = resolved.stillShort;
+      placeName = resolved.placeName || placeName;
+    } catch (err) {
+      console.warn('[resolve-maps-link] follow error', err?.message || err);
+    }
+  }
+
+  if (!coords && placeName) {
+    coords = await geocodePlaceNameWithGoogle(placeName);
+  }
+  if (!coords && shareHint && shareHint !== placeName) {
+    coords = await geocodePlaceNameWithGoogle(shareHint);
+  }
+
+  if (!coords) {
+    return {
+      ok: false,
+      error:
+        'Could not read this Maps link. Paste the full Google Maps share (place name + link), or send a location pin.',
+      expandedUrl,
+      originalUrl: inputUrl,
+      placeName: placeName || undefined,
+    };
+  }
+
+  return {
+    ok: true,
+    latitude: coords.latitude,
+    longitude: coords.longitude,
+    expandedUrl,
+    originalUrl: inputUrl,
+    placeName: placeName || null,
+  };
+}
+
 exports.handler = async (event) => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
   const corsHeaders = getCorsHeaders(requestOrigin);
@@ -496,4 +589,6 @@ exports.handler = async (event) => {
 };
 
 exports.extractCoordinatesFromUrl = extractCoordinatesFromUrl;
+exports.extractMapsUrlFromText = extractMapsUrlFromText;
 exports.followRedirects = followRedirects;
+exports.resolveMapsShareToCoords = resolveMapsShareToCoords;

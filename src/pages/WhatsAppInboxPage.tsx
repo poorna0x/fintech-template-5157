@@ -59,6 +59,9 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import WaterFilterServiceStartDialog from '@/components/whatsapp/WaterFilterServiceStartDialog';
+import { WhatsAppMessageBubbleMenu } from '@/components/whatsapp/WhatsAppMessageBubbleMenu';
+import { WhatsAppInboxLocationCard } from '@/components/whatsapp/WhatsAppInboxLocationCard';
+import { isWhatsAppLocationMessage } from '@/lib/whatsappInboxApplyToCustomer';
 import type { Customer, Technician } from '@/types';
 import {
   startWhatsAppBookingQuickAction,
@@ -2609,6 +2612,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       /^https:\/\//i.test(m.media_url || '')
                         ? m.media_url
                         : null);
+                    const showLocationMenu = !m.media_url && isWhatsAppLocationMessage(m);
 
                     if (botState) {
                       return (
@@ -2673,19 +2677,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                     onOpen={() => void openImageViewer(m)}
                                     onResolve={resolveMediaHref}
                                   />
-                                  <button
-                                    type="button"
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      void downloadMedia(m);
-                                    }}
-                                    className="absolute right-2 top-2 z-10 flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white shadow-md active:bg-black/75"
-                                    title="Download"
-                                    aria-label="Download photo"
-                                  >
-                                    <Download className="h-4 w-4" />
-                                  </button>
+                                  <WhatsAppMessageBubbleMenu
+                                    message={m}
+                                    customerId={activeThread?.customer_id}
+                                    onDownload={() => void downloadMedia(m)}
+                                  />
                                 </div>
                               ) : m.media_mime?.includes('pdf') ||
                                 /\.pdf$/i.test(m.filename || '') ||
@@ -2729,7 +2725,16 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                 </div>
                               )
                             ) : null}
-                            {(() => {
+                            {showLocationMenu ? (
+                              <>
+                                <WhatsAppInboxLocationCard body={m.body} />
+                                <WhatsAppMessageBubbleMenu
+                                  message={m}
+                                  customerId={activeThread?.customer_id}
+                                />
+                              </>
+                            ) : (
+                            (() => {
                               const text = formatAdminWhatsAppBody(m.body, { compact: false });
                               const preview = previewMessageBody(m);
                               const file = (m.filename || '').trim();
@@ -2759,7 +2764,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                   {text}
                                 </p>
                               );
-                            })()}
+                            })()
+                            )}
                             <div className="mt-0.5 flex items-center justify-end gap-1 px-1">
                               <span className="text-[11px] leading-none text-[#667781]">
                                 {formatBubbleTime(m.created_at)}

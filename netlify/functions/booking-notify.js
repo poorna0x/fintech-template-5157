@@ -13,6 +13,7 @@
 
 const nodemailer = require('nodemailer');
 const { getFixedFromAddress } = require('./email-guard');
+const { getMessaging, getAdminFcmTokens, pruneAdminFcmTokens, isStaleTokenError } = require('./fcm-helper');
 
 // Default owner inbox; override per-environment with BOOKING_NOTIFY_EMAIL
 // (single address or comma-separated list).
@@ -85,6 +86,66 @@ function withTimeout(promise, ms) {
       }
     );
   });
+}
+
+/**
+ * Instant FCM to admin phones (same `new_booking` toggle as website bookings).
+ * Best-effort: never throws.
+ */
+async function pushBookingToAdmins(db, details = {}) {
+  try {
+    if (!db) return { sent: 0, reason: 'no_db' };
+    const tokens = await getAdminFcmTokens(db, 'new_booking');
+    if (tokens.length === 0) return { sent: 0, reason: 'no_tokens' };
+
+    const sourceBlob = `${details.source || ''} ${details.brandSource || ''} ${details.bookingDomain || ''}`.toLowerCase();
+    const isWhatsApp = sourceBlob.includes('whatsapp');
+    const service = [details.serviceType, details.serviceSubType]
+      .map((s) => String(s || '').trim())
+      .filter(Boolean)
+      .join(' ');
+    const when = [details.scheduledDate, details.customTime || details.scheduledTimeSlot]
+      .map((s) => String(s || '').trim())
+      .filter(Boolean)
+      .join(', ');
+    const lines = [
+      `${service || 'Service'} — ${details.customerName || details.phone || 'customer'}`,
+      ...(details.phone ? [`Phone: ${details.phone}`] : []),
+      ...(when ? [`When: ${when}`] : []),
+      ...(details.jobNumber ? [`Job #${details.jobNumber}`] : []),
+    ];
+
+    const messaging = await getMessaging(db);
+    const res = await messaging.sendEachForMulticast({
+      tokens,
+      notification: {
+        title: isWhatsApp ? 'New WhatsApp booking' : 'New website booking',
+        body: lines.join('\n'),
+      },
+      data: {
+        type: 'new_booking',
+        source: isWhatsApp ? 'whatsapp' : 'website',
+        ...(details.jobNumber ? { jobNumber: String(details.jobNumber) } : {}),
+        ...(details.phone ? { phone: String(details.phone) } : {}),
+      },
+      android: {
+        priority: 'high',
+        notification: { channelId: 'job_alerts_v2', defaultSound: true, color: '#7C3AED' },
+      },
+    });
+
+    const stale = [];
+    res.responses.forEach((r, i) => {
+      if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
+    });
+    if (stale.length > 0) {
+      await pruneAdminFcmTokens(db, stale);
+    }
+    return { sent: res.successCount || 0 };
+  } catch (err) {
+    console.error('[booking-notify] admin push failed:', err && err.message);
+    return { sent: 0, reason: 'push_failed' };
+  }
 }
 
 /**
@@ -206,6 +267,7 @@ async function sendBookingAdminNotification(details = {}) {
 
 module.exports = {
   sendBookingAdminNotification,
+  pushBookingToAdmins,
   // exported for potential reuse/testing
   brandLabel,
   formatTimeSlot,

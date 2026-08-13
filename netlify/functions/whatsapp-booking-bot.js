@@ -32,6 +32,10 @@ const {
   handleElevenSupportButton,
 } = require('./whatsapp-eleven-support');
 const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
+const {
+  extractMapsUrlFromText,
+  resolveMapsShareToCoords,
+} = require('./resolve-maps-link');
 const { letterLabelValue } = require('./whatsapp-brand-contact');
 
 const SUPPORT_PHONE_DISPLAY = ELEVEN_SUPPORT_DISPLAY;
@@ -155,6 +159,9 @@ function resolveGreetingIntent({ id, title, text } = {}) {
     /\bchat_with_us\b/.test(blob)
   ) {
     return 'talk_team';
+  }
+  if (id === 'end_flow' || /^end flow$/i.test(String(title || '').trim())) {
+    return 'end_flow';
   }
   if (
     /\bbook_service\b/.test(blob) ||
@@ -762,9 +769,12 @@ async function sendList({
 async function sendLocationRequest({ phoneNumberId, accessToken, db, to, bodyText }) {
   const phone = normalizePhoneE164(to);
   if (!phone || !phoneNumberId || !accessToken) return { ok: false };
-  const text =
+  let text =
     bodyText ||
     'Please share your location so our technician can find you easily.\n\nTap *Send location* below.';
+  if (!/google maps link/i.test(text)) {
+    text = `${String(text).trim()}\n\nYou can also paste a Google Maps link here.`;
+  }
   const payload = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -788,6 +798,37 @@ async function sendLocationRequest({ phoneNumberId, accessToken, db, to, bodyTex
     result
   );
   return { ok: result.ok, error: result.data?.error?.message };
+}
+
+async function sendEndFlowOption(ctx) {
+  return sendButtons({
+    ...ctx,
+    bodyText: 'Need to stop? Tap *End flow* — you can start again anytime.',
+    footer: BRAND_LABEL,
+    buttons: [{ id: 'end_flow', title: 'End flow' }],
+  });
+}
+
+/** Text prompt that still needs a typed reply, plus an End flow button. */
+async function sendPromptWithEndFlow(ctx, bodyText) {
+  return sendButtons({
+    ...ctx,
+    bodyText,
+    footer: BRAND_LABEL,
+    buttons: [{ id: 'end_flow', title: 'End flow' }],
+  });
+}
+
+async function endBookingFlow(ctx) {
+  await clearBookingState(ctx.db, ctx.to);
+  await sendText({
+    ...ctx,
+    text: 'Okay — this booking chat is closed. Reply anytime if you need help.',
+  });
+}
+
+function isEndFlowTyped(text) {
+  return /^(end|cancel|stop|end flow)\s*$/i.test(String(text || '').trim());
 }
 
 /** CTA URL button (e.g. Book online) — in-session. */
@@ -1168,10 +1209,10 @@ async function beginLinkedOrKnownBooking(ctx, state = {}) {
 
 async function askIssueExplain(ctx, state = {}) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_issue_text' });
-  await sendText({
-    ...ctx,
-    text: 'Please briefly explain what the issue is (reply in this chat).',
-  });
+  await sendPromptWithEndFlow(
+    ctx,
+    'Please briefly explain what the issue is (reply in this chat).'
+  );
 }
 
 async function askIssueMedia(ctx, state = {}) {
@@ -1186,6 +1227,7 @@ async function askIssueMedia(ctx, state = {}) {
     buttons: [
       { id: 'skip_issue_media', title: 'Skip' },
       { id: 'id_call_us', title: 'Call us' },
+      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -1308,10 +1350,10 @@ async function sendFirstTimeMenu(ctx, state = {}) {
 
 async function askOtherPhone(ctx, state = {}) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_other_phone' });
-  await sendText({
-    ...ctx,
-    text: 'Please reply with the *10-digit mobile number* you used before (e.g. 98XXXXXXXX).',
-  });
+  await sendPromptWithEndFlow(
+    ctx,
+    'Please reply with the *10-digit mobile number* you used before (e.g. 98XXXXXXXX).'
+  );
 }
 
 async function sendLinkedIdentityConfirm(ctx, state, customer, lastInfo) {
@@ -1421,6 +1463,85 @@ async function rememberSharedLocation(db, phone, loc) {
   await upsertBookingBotRow(db, phone, {
     remembered_location: packRememberedLocation(loc),
   });
+}
+
+function parseLatLngFromText(text) {
+  const m = String(text || '').match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+async function acceptSharedLocation(ctx, state, enriched) {
+  await rememberSharedLocation(ctx.db, ctx.to, {
+    latitude: enriched.lat,
+    longitude: enriched.lng,
+    name: enriched.name,
+    address: enriched.address,
+    shortLocation: enriched.shortLocation,
+    formattedAddress: enriched.formattedAddress,
+  });
+
+  if (state?.step === 'await_location' || state?.step === 'await_loc_confirm') {
+    const next = {
+      ...state,
+      step: 'await_loc_confirm',
+      loc: {
+        lat: enriched.lat,
+        lng: enriched.lng,
+        name: enriched.name,
+        address: enriched.address,
+        shortLocation: enriched.shortLocation,
+        formattedAddress: enriched.formattedAddress,
+      },
+    };
+    await askLocConfirm(ctx, next, null);
+    return;
+  }
+
+  const locSummary = [
+    enriched.shortLocation,
+    enriched.name,
+    enriched.address || enriched.formattedAddress,
+    `https://maps.google.com/?q=${enriched.lat},${enriched.lng}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  await afterLocationSharedLegacy(ctx, locSummary);
+}
+
+async function tryAcceptLocationFromText(ctx, state, text) {
+  if (extractMapsUrlFromText(text)) {
+    const resolved = await resolveMapsShareToCoords(text);
+    if (!resolved?.ok) {
+      await sendText({
+        ...ctx,
+        text:
+          'We couldn’t read that Maps link. Please tap *Send location*, or paste the full Google Maps share (place name + link).',
+      });
+      return { handled: true };
+    }
+    const enriched = await enrichWhatsAppLocation({
+      latitude: resolved.latitude,
+      longitude: resolved.longitude,
+      name: resolved.placeName,
+    });
+    await acceptSharedLocation(ctx, state, enriched);
+    return { handled: true };
+  }
+
+  const pair = parseLatLngFromText(text);
+  if (!pair) return { handled: false };
+
+  const enriched = await enrichWhatsAppLocation({
+    latitude: pair.lat,
+    longitude: pair.lng,
+  });
+  await acceptSharedLocation(ctx, state, enriched);
+  return { handled: true };
 }
 
 async function getRememberedLocation(db, phone) {
@@ -1598,6 +1719,7 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
       ...ctx,
       bodyText: locBody,
     });
+    await sendEndFlowOption(ctx);
     return { ok: Boolean(loc?.ok), started: 'request_location', error: loc?.error };
   }
 
@@ -1697,6 +1819,7 @@ async function startBookLocationPhoto(ctx, opts = {}) {
       'Tap *Send location* below — next we’ll pick a date & time.',
     ].join('\n'),
   });
+  await sendEndFlowOption(ctx);
   return { ok: true, started: 'book_location_photo', mode: 'location_then_photo' };
 }
 
@@ -1709,6 +1832,7 @@ async function askLocationForWaterFilterService(ctx, state = {}) {
       ? 'Tap *Send location* below.'
       : buildLocationRequestBodyText(persist),
   });
+  await sendEndFlowOption(ctx);
 }
 
 /** Seed pending action for cold-template reopen; resumed on next inbound. */
@@ -1965,21 +2089,24 @@ async function saveSecondarySiteForBooking(db, customerId, phoneE164, loc, altPh
   return { ok: true, customer: patched };
 }
 
-async function notifyOwnerBestEffort(customer, phoneE164, dateIso, timeLabel, jobNumber, serviceSubType) {
+async function notifyOwnerBestEffort(db, customer, phoneE164, dateIso, timeLabel, jobNumber, serviceSubType) {
   try {
-    const { sendBookingAdminNotification } = require('./booking-notify');
-    await sendBookingAdminNotification({
+    const { sendBookingAdminNotification, pushBookingToAdmins } = require('./booking-notify');
+    const details = {
       customerName: customer?.full_name || '',
       phone: phone10FromE164(phoneE164),
       brandSource: 'elevenro',
       bookingDomain: 'whatsapp',
+      source: 'whatsapp',
       serviceType: customer?.service_type || 'RO',
       serviceSubType: serviceSubType || 'Service',
       scheduledDate: dateIso,
       scheduledTimeSlot: timeLabel,
       customTime: timeLabel,
       jobNumber,
-    });
+    };
+    await pushBookingToAdmins(db, details);
+    await sendBookingAdminNotification(details);
   } catch (err) {
     console.warn('[whatsapp-booking-bot] owner notify skipped:', err?.message || err);
   }
@@ -2277,10 +2404,7 @@ async function startNewCustomerBooking(ctx, state = {}) {
     return;
   }
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_name' });
-  await sendText({
-    ...ctx,
-    text: `Please reply with your *full name*.`,
-  });
+  await sendPromptWithEndFlow(ctx, 'Please reply with your *full name*.');
 }
 
 async function askAltPhone(ctx, state = {}) {
@@ -2289,14 +2413,14 @@ async function askAltPhone(ctx, state = {}) {
     useSecondarySite: true,
     step: 'await_alt_phone',
   });
-  await sendText({
-    ...ctx,
-    text: [
+  await sendPromptWithEndFlow(
+    ctx,
+    [
       'This visit will be saved as a *second site* on your account (your main address stays unchanged).',
       '',
       'Please reply with an *alternate mobile* for this site, or type *skip*.',
-    ].join('\n'),
-  });
+    ].join('\n')
+  );
 }
 
 async function askSecondaryLocation(ctx, state = {}) {
@@ -2310,6 +2434,7 @@ async function askSecondaryLocation(ctx, state = {}) {
     bodyText:
       'Please share the *location for this visit* (secondary site).\n\nTap *Send location* below.',
   });
+  await sendEndFlowOption(ctx);
 }
 
 /** Reinstallation: always collect a pin and overwrite the saved (primary) address. */
@@ -2336,6 +2461,7 @@ async function askReinstallLocationUpdate(ctx, state = {}) {
       .filter(Boolean)
       .join('\n'),
   });
+  await sendEndFlowOption(ctx);
 }
 
 async function continueAfterServiceType(ctx, state) {
@@ -2386,6 +2512,7 @@ async function askLocationForNew(ctx, state) {
     bodyText:
       'Thanks! Please share your *service location*.\n\nTap *Send location* below.',
   });
+  await sendEndFlowOption(ctx);
 }
 
 async function askLocConfirm(ctx, state, locSummary) {
@@ -2432,7 +2559,7 @@ async function askLocConfirm(ctx, state, locSummary) {
     buttons: [
       { id: 'loc_yes', title: 'Yes, correct' },
       { id: 'loc_no', title: 'No, resend' },
-      { id: 'talk_team', title: 'Chat with us' },
+      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -2457,6 +2584,7 @@ async function askBuildingFlat(ctx, state = {}) {
     buttons: [
       { id: 'skip_building', title: 'Skip' },
       { id: 'talk_team', title: 'Chat with us' },
+      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -2470,14 +2598,14 @@ async function askCustomerName(ctx, state = {}) {
     askNameOnly: true,
     startedByAdmin: true,
   });
-  await sendText({
-    ...ctx,
-    text: [
+  await sendPromptWithEndFlow(
+    ctx,
+    [
       `This is ${who}. 👋`,
       '',
       'Please share your full name on this chat so we can continue your water purifier service request.',
-    ].join('\n'),
-  });
+    ].join('\n')
+  );
 }
 
 async function finishAdminNameOnly(ctx, state) {
@@ -2620,6 +2748,11 @@ async function sendDatePicker(ctx, state) {
     });
     added += 1;
   }
+  rows.push({
+    id: 'end_flow',
+    title: 'End flow',
+    description: 'Stop this booking',
+  });
   return sendList({
     ...ctx,
     bodyText: existingFast
@@ -2656,6 +2789,12 @@ async function sendPeriodPicker(ctx, dateIso, state) {
     return { ok: false };
   }
 
+  rows.push({
+    id: 'end_flow',
+    title: 'End flow',
+    description: 'Stop this booking',
+  });
+
   return sendList({
     ...ctx,
     bodyText: `Date: *${formatDateIsoLabel(dateIso)}*\n\nChoose a time of day (9 AM – 6 PM):`,
@@ -2673,12 +2812,14 @@ async function sendTimePicker(ctx, dateIso, state) {
 
 async function askPurifierPhoto(ctx, state) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_model_or_photo' });
-  await sendText({
+  await sendButtons({
     ...ctx,
-    text:
+    bodyText:
       'Please *send a photo of your purifier* to continue.\n\n' +
       'Clear photo of the purifier label / unit.\n\n(Saved to your customer profile.)\n\n' +
       AWAITING_CUSTOMER_MEDIA_MARKER,
+    footer: BRAND_LABEL,
+    buttons: [{ id: 'end_flow', title: 'End flow' }],
   });
 }
 
@@ -2700,6 +2841,7 @@ async function askOptionalPurifierPhoto(ctx, state) {
     buttons: [
       { id: 'skip_optional_photo', title: 'Skip' },
       { id: 'talk_team', title: 'Chat with us' },
+      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -2750,7 +2892,7 @@ async function sendNewCustomerConfirm(ctx, state) {
     buttons: [
       { id: 'confirm_new', title: 'Yes, book now' },
       { id: 'edit_details', title: 'Edit details' },
-      { id: 'talk_team', title: 'Chat with us' },
+      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -2770,7 +2912,7 @@ async function sendIdentityConfirm(ctx, customer) {
     buttons: [
       { id: 'identity_yes', title: "Yes, that's me" },
       { id: 'identity_no', title: 'Different location' },
-      { id: 'talk_team', title: 'Chat with us' },
+      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -2784,7 +2926,7 @@ async function sendConfirm(ctx, dateIso, slotKey, customer, state = {}) {
     buttons: [
       { id: `confirm__${dateIso}__${slotKey}`.slice(0, 256), title: 'Yes, book now' },
       { id: 'edit_details', title: 'Edit details' },
-      { id: 'talk_team', title: 'Chat with us' },
+      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -2801,6 +2943,7 @@ async function afterLocationSharedLegacy(ctx, locSummary) {
     buttons: [
       { id: 'pick_date', title: 'Pick date & time' },
       { id: 'talk_team', title: 'Chat with us' },
+      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -2914,6 +3057,7 @@ async function sendEditMenu(ctx, state) {
       { id: 'edit_datetime', title: 'Date & time', description: 'Reschedule the visit' },
       { id: 'edit_photo', title: 'Purifier photo', description: 'Send a new photo' },
       { id: 'edit_service', title: 'Service type', description: 'Repair, reinstall, custom' },
+      { id: 'end_flow', title: 'End flow', description: 'Stop this booking' },
     ],
   });
 }
@@ -3185,6 +3329,17 @@ async function handleBookingBotInbound({
   ) {
     await clearBookingState(db, to);
     await startInboundIdentityFlow(ctx);
+    return { handled: true };
+  }
+
+  if (
+    msgType === 'text' &&
+    text &&
+    state?.step &&
+    ACTIVE_BOOKING_STEPS.has(state.step) &&
+    isEndFlowTyped(text)
+  ) {
+    await endBookingFlow(ctx);
     return { handled: true };
   }
 
@@ -3635,51 +3790,38 @@ async function handleBookingBotInbound({
     }
   }
 
-  // Customer shared a location pin
-  if (msgType === 'location' && msg.location) {
-    const { latitude, longitude, name, address } = msg.location;
-    const enriched = await enrichWhatsAppLocation({
-      latitude,
-      longitude,
-      name,
-      address,
+  if (
+    (state?.step === 'await_location' || state?.step === 'await_loc_confirm') &&
+    msgType === 'text' &&
+    text &&
+    !GREETING_RE.test(text) &&
+    !EDIT_RE.test(text) &&
+    !isEndFlowTyped(text)
+  ) {
+    const fromText = await tryAcceptLocationFromText(ctx, state, text);
+    if (fromText.handled) return { handled: true };
+    await sendText({
+      ...ctx,
+      text: 'Please tap *Send location* below, or paste a Google Maps link in this chat.',
     });
-    await rememberSharedLocation(db, to, {
-      latitude: enriched.lat,
-      longitude: enriched.lng,
-      name: enriched.name,
-      address: enriched.address,
-      shortLocation: enriched.shortLocation,
-      formattedAddress: enriched.formattedAddress,
-    });
+    return { handled: true };
+  }
 
+  // Customer shared a location pin — only consume it while we asked for location.
+  if (msgType === 'location' && msg.location) {
     if (state?.step === 'await_location' || state?.step === 'await_loc_confirm') {
-      const next = {
-        ...state,
-        step: 'await_loc_confirm',
-        loc: {
-          lat: enriched.lat,
-          lng: enriched.lng,
-          name: enriched.name,
-          address: enriched.address,
-          shortLocation: enriched.shortLocation,
-          formattedAddress: enriched.formattedAddress,
-        },
-      };
-      await askLocConfirm(ctx, next, null);
+      const { latitude, longitude, name, address } = msg.location;
+      const enriched = await enrichWhatsAppLocation({
+        latitude,
+        longitude,
+        name,
+        address,
+      });
+      await acceptSharedLocation(ctx, state, enriched);
       return { handled: true };
     }
-
-    const locSummary = [
-      enriched.shortLocation,
-      enriched.name,
-      enriched.address || enriched.formattedAddress,
-      `https://maps.google.com/?q=${enriched.lat},${enriched.lng}`,
-    ]
-      .filter(Boolean)
-      .join('\n');
-    await afterLocationSharedLegacy(ctx, locSummary);
-    return { handled: true };
+    // Idle / other steps: keep the pin in the inbox for admin (do not start a booking).
+    return { handled: false };
   }
 
   if (interactive?.id || interactive?.title) {
@@ -3694,6 +3836,7 @@ async function handleBookingBotInbound({
       id === 'confirm_new' || String(id || '').startsWith('confirm__') || id === 'all_correct';
     if (!isConfirmAction) {
       if (menuIntentEarly === 'talk_team') id = 'talk_team';
+      if (menuIntentEarly === 'end_flow') id = 'end_flow';
       if (menuIntentEarly === 'book_service') id = 'book_service';
       if (menuIntentEarly === 'book_reinstall') id = 'book_reinstall';
     }
@@ -3711,6 +3854,11 @@ async function handleBookingBotInbound({
         prefill,
       });
       if (handled.handled) return { handled: true };
+    }
+
+    if (id === 'end_flow') {
+      await endBookingFlow(ctx);
+      return { handled: true };
     }
 
     // —— Identity gate / known-customer menus ——
@@ -3874,10 +4022,10 @@ async function handleBookingBotInbound({
           serviceSubType: choice.subType,
           serviceLabel: choice.label,
         });
-        await sendText({
-          ...ctx,
-          text: 'Please briefly describe what you need (e.g. filter change, relocation, inspection).',
-        });
+        await sendPromptWithEndFlow(
+          ctx,
+          'Please briefly describe what you need (e.g. filter change, relocation, inspection).'
+        );
         return { handled: true };
       }
       const next = {
@@ -3948,7 +4096,7 @@ async function handleBookingBotInbound({
         editing: true,
         editReturn: state?.editReturn || (state?.jobNumber ? 'post_book' : 'confirm'),
       });
-      await sendText({ ...ctx, text: 'Please reply with the updated *full name*.' });
+      await sendPromptWithEndFlow(ctx, 'Please reply with the updated *full name*.');
       return { handled: true };
     }
 
@@ -3963,6 +4111,7 @@ async function handleBookingBotInbound({
         ...ctx,
         bodyText: 'Please share the updated *service location*.',
       });
+      await sendEndFlowOption(ctx);
       return { handled: true };
     }
 
@@ -4290,6 +4439,7 @@ async function handleBookingBotInbound({
         customer_id: customer.id,
       });
       void notifyOwnerBestEffort(
+        db,
         customer,
         to,
         st.dateIso,
@@ -4597,6 +4747,7 @@ async function handleBookingBotInbound({
         customer_id: customer.id,
       });
       void notifyOwnerBestEffort(
+        db,
         customer,
         to,
         date,

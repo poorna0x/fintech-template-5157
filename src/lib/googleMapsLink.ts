@@ -35,10 +35,12 @@ export function extractMapsUrlFromText(text: string): string | null {
   const trimmed = sanitizeGoogleMapsInput(text);
   if (!trimmed) return null;
   const MAPS_URL_REGEX =
-    /https?:\/\/(?:www\.)?(?:google\.[^/\s]+\/maps\S*|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+)/i;
+    /(?:https?:\/\/)?(?:www\.)?(?:google\.[^/\s]+\/maps\S*|maps\.google\.[^/\s]+\S*|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+)/i;
   const match = trimmed.match(MAPS_URL_REGEX);
-  if (match) return match[0].replace(/[)>\].,;'"]+$/g, '');
-  return null;
+  if (!match) return null;
+  let url = match[0].replace(/[)>\].,;'"]+$/g, '');
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  return url;
 }
 
 /**
