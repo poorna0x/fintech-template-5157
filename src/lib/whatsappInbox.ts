@@ -73,15 +73,25 @@ export function markWhatsAppThreadRead(phoneE164: string, lastAt: string): void 
   }
 }
 
+/** Last customer inbound time — unread must ignore booking-bot / CRM outbound replies. */
+export function threadLastInboundAt(
+  thread: Pick<WhatsAppThread, 'last_at' | 'last_direction' | 'inbound_at'>
+): string | null {
+  if (thread.inbound_at) return thread.inbound_at;
+  if (thread.last_direction === 'inbound') return thread.last_at || null;
+  return null;
+}
+
 export function isWhatsAppThreadUnread(
-  thread: Pick<WhatsAppThread, 'phone_e164' | 'last_at' | 'last_direction'>,
+  thread: Pick<WhatsAppThread, 'phone_e164' | 'last_at' | 'last_direction' | 'inbound_at'>,
   readMap: Record<string, string>
 ): boolean {
-  if (thread.last_direction !== 'inbound') return false;
+  const inboundAt = threadLastInboundAt(thread);
+  if (!inboundAt) return false;
   const phone = String(thread.phone_e164 || '').replace(/\D/g, '');
   const readAt = readMap[phone];
   if (!readAt) return true;
-  return new Date(thread.last_at).getTime() > new Date(readAt).getTime();
+  return new Date(inboundAt).getTime() > new Date(readAt).getTime();
 }
 
 export function countUnreadWhatsAppThreads(
@@ -143,7 +153,7 @@ export function countInboundUnreadInMessages(
 }
 
 export function unreadMessageCountForThread(
-  thread: Pick<WhatsAppThread, 'phone_e164' | 'last_at' | 'last_direction'>,
+  thread: Pick<WhatsAppThread, 'phone_e164' | 'last_at' | 'last_direction' | 'inbound_at'>,
   readMap: Record<string, string>,
   counts: Record<string, number>
 ): number {

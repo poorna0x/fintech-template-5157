@@ -100,6 +100,7 @@ import {
   previewMessageBody,
   formatAdminWhatsAppBody,
   isBookingBotStateMessage,
+  threadLastInboundAt,
   threadNeedsHumanReply,
   toWhatsAppPhoneDigits,
   unreadMessageCountForThread,
@@ -1358,9 +1359,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   useEffect(() => {
     if (!selectedPhone || !activeThread) return;
-    if (activeThread.last_direction !== 'inbound') return;
+    const watermark = threadLastInboundAt(activeThread);
+    if (!watermark) return;
     const phone = toWhatsAppPhoneDigits(selectedPhone);
-    markWhatsAppThreadRead(selectedPhone, activeThread.last_at);
+    markWhatsAppThreadRead(selectedPhone, watermark);
     setReadMap(loadWhatsAppReadMap());
     if (phone) {
       setUnreadCounts((prev) => {
@@ -1371,7 +1373,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         return next;
       });
     }
-  }, [selectedPhone, activeThread?.last_at, activeThread?.last_direction]);
+  }, [selectedPhone, activeThread?.inbound_at, activeThread?.last_at, activeThread?.last_direction]);
 
   const filteredThreads = useMemo(() => {
     if (appliedSearch.trim()) return searchThreads;
