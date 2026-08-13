@@ -115,12 +115,34 @@ export function resolvePendingPaymentLetterImageTemplateName(brand: DocumentBran
   return `svc_balance_due_letter_${suffix}_img_v2`;
 }
 
+export function resolvePendingPaymentLetterImageTemplateFallbackName(brand: DocumentBrand): string {
+  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
+  return `svc_balance_due_letter_${suffix}_img_v1`;
+}
+
 export function resolvePendingPaymentLetterTemplateFallbackName(brand: DocumentBrand): string {
   return resolveBrandLetterTemplateName('balance_due', brand, 'v5');
 }
 
 export function resolvePendingPaymentLetterTemplateLegacyName(brand: DocumentBrand): string {
   return resolveBrandLetterTemplateName('balance_due', brand, 'v1');
+}
+
+/** Approved-name candidates for inbox quick-reply filter (image → letter → short). */
+export function pendingPaymentTemplateFallbackNames(brand?: DocumentBrand | string | null): string[] {
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  const suffix = resolved === 'elevenro' ? 'ero' : 'hro';
+  return [
+    `svc_balance_due_letter_${suffix}_img_v2`,
+    `svc_balance_due_letter_${suffix}_img_v1`,
+    `svc_balance_due_letter_${suffix}_v6`,
+    `svc_balance_due_letter_${suffix}_v5`,
+    `svc_balance_due_letter_${suffix}_v4`,
+    `svc_balance_due_letter_${suffix}_v3`,
+    `svc_balance_due_letter_${suffix}_v2`,
+    `svc_balance_due_letter_${suffix}`,
+    'svc_balance_due',
+  ];
 }
 
 /** Letter cold params: name, amount, due date, invoice/job. */

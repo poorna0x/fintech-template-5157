@@ -554,9 +554,7 @@ const Settings = () => {
     );
     return () => {
       cancelled = true;
-      void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) =>
-        setAdminPushDeepLinkHandler(null)
-      );
+      // Do not clear handler — AdminPortal keeps a WhatsApp fallback during remounts.
     };
   }, [navigate]);
 
@@ -2408,14 +2406,17 @@ const Settings = () => {
   }
 
   if (showWhatsAppInboxPage) {
+    const exitWhatsAppInboxToHome = () => {
+      navigate('/admin', { replace: true });
+    };
     return (
-      <div className="admin-page flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#f0f2f5]">
-        <div className="flex shrink-0 items-center gap-2 border-b border-[#d1d7db] bg-[#f0f2f5] px-3 py-2 sm:px-4">
+      <div className="admin-page flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#121a1f]">
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#253038] bg-[#1a242c] px-3 py-2.5 sm:px-4">
           <Button
             variant="ghost"
             size="sm"
-            onClick={closeSettingsPanel}
-            className="h-9 shrink-0 cursor-pointer text-[#54656f] hover:bg-black/5 hover:text-[#111b21]"
+            onClick={exitWhatsAppInboxToHome}
+            className="h-9 shrink-0 cursor-pointer text-[#9aaeb8] hover:bg-white/5 hover:text-[#e4eaec]"
           >
             <ArrowLeft className="mr-1 h-4 w-4" />
             Back
@@ -2424,16 +2425,16 @@ const Settings = () => {
           <img
             src="/whatsapp.png"
             alt=""
-            className="h-6 w-6 rounded object-contain"
+            className="h-6 w-6 rounded-md object-contain opacity-90"
             width={24}
             height={24}
           />
-          <span className="text-sm font-semibold text-[#111b21]">WhatsApp</span>
+          <span className="text-sm font-semibold tracking-tight text-[#e4eaec]">WhatsApp</span>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           <WhatsAppInboxPage
             hideHeader
-            onBack={closeSettingsPanel}
+            onBack={exitWhatsAppInboxToHome}
             initialPhone={parseSettingsUrl(location.search).panelId}
           />
         </div>

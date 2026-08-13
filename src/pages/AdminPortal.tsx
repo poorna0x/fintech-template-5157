@@ -76,6 +76,15 @@ export default function AdminPortal() {
     }
   }, [user, isAdmin]);
 
+  // Register FCM early on portal (not only AdminDashboard) so taps work from Settings
+  // and cold-start WhatsApp inbound deep-links are delivered.
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+    void import('@/lib/adminPush').then(({ registerAdminPushToken }) =>
+      registerAdminPushToken()
+    );
+  }, [user, isAdmin]);
+
   // Keep caller lookup alive on Settings too — AdminDashboard unmounts there, so
   // without this a ring while in Settings never stashes/searches on return.
   useEffect(() => {

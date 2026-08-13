@@ -55,6 +55,17 @@ function collapseSettingsDeepLink(): boolean {
   return true;
 }
 
+/** WhatsApp inbox always exits to dashboard home (never Settings list). */
+function collapseWhatsAppInboxToHome(): boolean {
+  const { pathname, search } = window.location;
+  if (!pathname.startsWith('/settings')) return false;
+  const panel = new URLSearchParams(search).get('panel');
+  if (panel !== 'whatsapp-inbox') return false;
+  window.history.pushState({}, '', '/admin');
+  notifyReactRouter();
+  return true;
+}
+
 let started = false;
 
 export async function startNativeBackButtonHandler(): Promise<void> {
@@ -64,6 +75,8 @@ export async function startNativeBackButtonHandler(): Promise<void> {
   started = true;
 
   await App.addListener('backButton', ({ canGoBack }) => {
+    // Inbox Back = home (skip Settings even when history can go back).
+    if (collapseWhatsAppInboxToHome()) return;
     if (canGoBack) {
       window.history.back();
       return;

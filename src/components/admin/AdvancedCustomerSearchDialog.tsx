@@ -184,6 +184,8 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   open,
   onOpenChange,
 }) => {
+  const navigate = useNavigate();
+  const [filters, setFilters] = useState<AdvancedSearchFilters>(EMPTY_FILTERS);
   const { sources, subTypes } = useLeadCatalog();
   const leadSourceOptions = useMemo(() => {
     const labels = sources.length
@@ -203,7 +205,6 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     }
     return labels;
   }, [subTypes, filters.serviceSubType]);
-  const [filters, setFilters] = useState<AdvancedSearchFilters>(EMPTY_FILTERS);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [results, setResults] = useState<AdvancedSearchRow[]>([]);
