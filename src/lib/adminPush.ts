@@ -188,10 +188,9 @@ export async function registerAdminPushToken(): Promise<void> {
           const act = getWhatsAppInboxActivity();
           const inbound = String(data.phone || data.phone_e164 || '').replace(/\D/g, '');
           const open = String(act.selectedPhone || '').replace(/\D/g, '');
-          if (act.open && inbound && inbound === open) {
-            dismissWhatsAppTrayForPhone(inbound);
-            return;
-          }
+          // App is in the foreground — on-screen toast is enough; drop tray.
+          if (inbound) dismissWhatsAppTrayForPhone(inbound);
+          if (act.open && inbound && inbound === open) return;
         }
         if (
           type === 'tech_call' ||

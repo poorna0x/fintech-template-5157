@@ -1,8 +1,11 @@
 package com.hydrogenro.admin;
 
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.service.notification.StatusBarNotification;
 import androidx.core.app.NotificationManagerCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -57,24 +60,65 @@ public class DevicePrefsPlugin extends Plugin {
         return "wa_inbound_" + digits;
     }
 
-    /** India numbers may be stored as 10 digits or 91XXXXXXXXXX — cancel every likely tag. */
+    private static java.util.LinkedHashSet<String> phoneVariants(String digits) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (digits == null || digits.isEmpty()) return out;
+        out.add(digits);
+        if (digits.length() == 10) {
+            out.add("91" + digits);
+        }
+        if (digits.length() >= 12 && digits.startsWith("91")) {
+            out.add(digits.substring(digits.length() - 10));
+        }
+        return out;
+    }
+
+    private static boolean phoneTagMatches(String tagDigits, java.util.LinkedHashSet<String> variants) {
+        if (tagDigits == null || tagDigits.isEmpty()) return false;
+        for (String v : variants) {
+            if (tagDigits.equals(v)) return true;
+            if (v.length() >= 10 && tagDigits.length() >= 10
+                && tagDigits.endsWith(v.substring(v.length() - 10))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** India numbers may be 10 digits or 91XXXXXXXXXX — cancel every matching tray entry. */
     static void clearWhatsAppTrayNotification(Context context, String phoneDigits) {
         String digits = phoneDigits == null ? "" : phoneDigits.replaceAll("\\D", "");
         if (digits.isEmpty()) return;
-        java.util.LinkedHashSet<String> tags = new java.util.LinkedHashSet<>();
-        tags.add(whatsAppTrayTag(digits));
-        if (digits.length() == 10) {
-            tags.add(whatsAppTrayTag("91" + digits));
-        }
-        if (digits.length() >= 12 && digits.startsWith("91")) {
-            tags.add(whatsAppTrayTag(digits.substring(digits.length() - 10)));
-        }
+        java.util.LinkedHashSet<String> variants = phoneVariants(digits);
         try {
             NotificationManagerCompat nm = NotificationManagerCompat.from(context);
-            for (String tag : tags) {
+            for (String v : variants) {
+                String tag = whatsAppTrayTag(v);
                 nm.cancel(tag, 0);
-                // Some FCM / OEM paths use hashCode as the notification id.
                 nm.cancel(tag, Math.abs(tag.hashCode()));
+            }
+            // FCM / OEM may use a different id — scan active shade and cancel by tag.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                NotificationManager sys = context.getSystemService(NotificationManager.class);
+                if (sys != null) {
+                    StatusBarNotification[] active = sys.getActiveNotifications();
+                    if (active != null) {
+                        for (StatusBarNotification sbn : active) {
+                            String tag = sbn.getTag();
+                            if (tag == null) continue;
+                            if (!tag.startsWith("wa_inbound_") && !"whatsapp_inbound".equals(tag)) {
+                                continue;
+                            }
+                            String tagDigits = tag.startsWith("wa_inbound_")
+                                ? tag.substring("wa_inbound_".length()).replaceAll("\\D", "")
+                                : "";
+                            if ("whatsapp_inbound".equals(tag)
+                                || phoneTagMatches(tagDigits, variants)) {
+                                nm.cancel(tag, sbn.getId());
+                            }
+                        }
+                    }
+                }
             }
         } catch (Throwable ignored) {
             /* notifications disabled */
@@ -86,7 +130,13 @@ public class DevicePrefsPlugin extends Plugin {
         String viewing = viewingWhatsAppPhone(context);
         if (viewing == null || viewing.isEmpty()) return false;
         String inbound = inboundPhone == null ? "" : inboundPhone.replaceAll("\\D", "");
-        return !inbound.isEmpty() && viewing.equals(inbound);
+        if (inbound.isEmpty()) return false;
+        if (viewing.equals(inbound)) return true;
+        if (viewing.length() >= 10 && inbound.length() >= 10) {
+            return viewing.endsWith(inbound.substring(inbound.length() - 10))
+                || inbound.endsWith(viewing.substring(viewing.length() - 10));
+        }
+        return false;
     }
 
     static String buildDeviceLabel() {

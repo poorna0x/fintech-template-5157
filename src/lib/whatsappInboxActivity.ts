@@ -2,13 +2,12 @@ import { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/lib/supabaseClient';
 import {
-  clearNativeWhatsAppTrayNotification,
   setNativeViewingWhatsAppPhone,
 } from '@/lib/devicePrefs';
 import {
+  dismissWhatsAppTrayForPhone,
   dismissWhatsAppTraysFromReadMap,
   fetchWhatsAppInboxReadMap,
-  loadWhatsAppReadMap,
   mergeWhatsAppReadMap,
 } from '@/lib/whatsappInbox';
 
@@ -64,7 +63,7 @@ export function setWhatsAppInboxActivity(patch: Partial<WhatsAppInboxActivity>):
   activity = { ...activity, ...patch };
   const viewing = viewingPhoneFromActivity();
   if (viewing) {
-    void clearNativeWhatsAppTrayNotification(viewing);
+    dismissWhatsAppTrayForPhone(viewing);
   }
   void syncViewingWhatsAppPresence(viewing);
 }
@@ -88,9 +87,8 @@ export function startWhatsAppViewingPresence(): () => void {
           return;
         }
         void syncViewingWhatsAppPresence(viewingPhoneFromActivity());
-        // Local first (no network), then slim catch-up for reads missed while backgrounded.
-        dismissWhatsAppTraysFromReadMap(loadWhatsAppReadMap());
-        void fetchWhatsAppInboxReadMap(supabase, { sinceHours: 6, force: true }).then((remote) => {
+        // Catch-up: reads missed while backgrounded — always try tray clear per phone.
+        void fetchWhatsAppInboxReadMap(supabase, { sinceHours: 24, force: true }).then((remote) => {
           if (!Object.keys(remote).length) return;
           const map = mergeWhatsAppReadMap(remote);
           dismissWhatsAppTraysFromReadMap(map);

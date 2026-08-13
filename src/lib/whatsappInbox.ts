@@ -146,14 +146,22 @@ export function mergeWhatsAppReadMap(incoming: Record<string, string>): Record<s
   if (changed) {
     saveWhatsAppReadMap(map);
     emitWhatsAppReadSync();
-    for (const [rawPhone, at] of Object.entries(incoming)) {
-      const phone = String(rawPhone || '').replace(/\D/g, '');
-      if (!phone || !at) continue;
-      // Explicit read upsert from another device — always clear that customer's tray.
-      // (Bulk resume still uses shouldDismiss via dismissWhatsAppTraysFromReadMap.)
-      dismissWhatsAppTrayForPhone(phone);
-    }
   }
+  return map;
+}
+
+/**
+ * Team read sync: merge watermark + always clear that customer's tray on this device.
+ * Call on Realtime read, open chat, and resume catch-up (tray must vanish even if map unchanged).
+ */
+export function applyWhatsAppTeamRead(
+  phoneE164: string,
+  readAt: string
+): Record<string, string> {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone || !readAt) return loadWhatsAppReadMap();
+  const map = mergeWhatsAppReadMap({ [phone]: readAt });
+  dismissWhatsAppTrayForPhone(phone);
   return map;
 }
 
@@ -239,6 +247,7 @@ export async function persistWhatsAppThreadRead(
 ): Promise<void> {
   const phone = String(phoneE164 || '').replace(/\D/g, '');
   if (!phone || !readAt) return;
+  dismissWhatsAppTrayForPhone(phone);
   markWhatsAppThreadRead(phone, readAt);
   clearWhatsAppUnreadCountForPhone(phone);
   if (lastPersistedRead.get(phone) === readAt) return;

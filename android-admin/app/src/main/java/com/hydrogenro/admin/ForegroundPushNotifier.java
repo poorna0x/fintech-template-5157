@@ -84,6 +84,10 @@ public final class ForegroundPushNotifier {
         }
 
         if (isWhatsApp) {
+            if (MainActivity.isInForeground()) {
+                Log.i(TAG, "Skip WhatsApp tray — app open, on-screen toast only");
+                return;
+            }
             if (DevicePrefsPlugin.isViewingWhatsAppPhone(context, inboundPhone)) {
                 Log.i(TAG, "Skip WhatsApp tray — already in that chat");
                 return;

@@ -94,6 +94,7 @@ import {
   invalidateWhatsAppThreadMessagesCache,
   loadWhatsAppReadMap,
   mergeWhatsAppReadMap,
+  applyWhatsAppTeamRead,
   persistWhatsAppThreadRead,
   fetchWhatsAppInboxReadMap,
   patchThreadFromMessage,
@@ -1369,7 +1370,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           const phone = String(row?.phone_e164 || '').replace(/\D/g, '');
           const readAt = String(row?.read_at || '');
           if (!phone || !readAt) return;
-          const map = mergeWhatsAppReadMap({ [phone]: readAt });
+          const map = applyWhatsAppTeamRead(phone, readAt);
           setReadMap(map);
           clearWhatsAppUnreadCountForPhone(phone);
           setUnreadCounts((prev) => {
@@ -1427,7 +1428,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     const prevMarked = lastMarkedReadRef.current[phone];
     if (prevMarked === watermark) return;
     lastMarkedReadRef.current[phone] = watermark;
-    setReadMap(mergeWhatsAppReadMap({ [phone]: watermark }));
+    setReadMap(applyWhatsAppTeamRead(phone, watermark));
     setUnreadCounts((prev) => {
       if (!prev[phone]) return prev;
       const next = { ...prev };

@@ -5,6 +5,7 @@ import {
   showWhatsAppInboundToast,
 } from '@/lib/showWhatsAppAdminToast';
 import {
+  applyWhatsAppTeamRead,
   bumpWhatsAppUnreadCountForPhone,
   clearWhatsAppUnreadCountForPhone,
   dismissWhatsAppTrayForPhone,
@@ -12,7 +13,6 @@ import {
   isBotFlowAdminAlertSkip,
   isWhatsAppThreadUnread,
   loadWhatsAppReadMap,
-  mergeWhatsAppReadMap,
   patchThreadFromMessage,
   peekWhatsAppInboxThreadsCache,
   previewMessageBody,
@@ -214,7 +214,7 @@ export function startWhatsAppAdminAlerts(): () => void {
         const phone = normalizePhone(row?.phone_e164);
         const readAt = String(row?.read_at || '');
         if (!phone || !readAt) return;
-        const map = mergeWhatsAppReadMap({ [phone]: readAt });
+        const map = applyWhatsAppTeamRead(phone, readAt);
         clearWhatsAppUnreadCountForPhone(phone);
         // Keep Tools / header badge aligned with inbox (message counts, not stale +1/-1).
         dispatchWhatsAppUnreadChanged(resolveWhatsAppHeaderUnreadCount(null, map));

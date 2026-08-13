@@ -28,6 +28,11 @@ public class MainActivity extends BridgeActivity {
     private final AtomicBoolean pageReady = new AtomicBoolean(false);
     private final AtomicBoolean watchingReady = new AtomicBoolean(false);
     private final AtomicBoolean bootUiReady = new AtomicBoolean(false);
+    private static volatile boolean inForeground = false;
+
+    static boolean isInForeground() {
+        return inForeground;
+    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -72,7 +77,14 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    public void onResume() {
+        inForeground = true;
+        super.onResume();
+    }
+
+    @Override
     public void onPause() {
+        inForeground = false;
         DevicePrefsPlugin.clearViewingWhatsAppPhone(this);
         super.onPause();
     }
