@@ -731,7 +731,7 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_balance_due',
     label: 'Balance due',
     group: 'payment',
-    templateName: 'svc_balance_due_letter_hro_v8',
+    templateName: 'svc_balance_due_letter_hro_v9',
     language: 'en',
     resolveTemplateName: (ctx) =>
       resolvePendingPaymentLetterTemplateName(ctx.brand || 'hydrogenro', { withPayButton: true }),

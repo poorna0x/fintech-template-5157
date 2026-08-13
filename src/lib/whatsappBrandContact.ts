@@ -85,14 +85,15 @@ const LETTER_TEMPLATE_BASE: Record<BrandLetterTemplateKind, string> = {
   booking_cancelled: 'svc_booking_cancelled_letter',
 };
 
-/** Meta letter cold template — v8 = Call-only Pay now; v7 = lean + contact. */
+/** Meta letter cold template — v9 = Pay now, no contact footer; v8 = Call-only. */
 export function resolveBrandLetterTemplateName(
   kind: BrandLetterTemplateKind,
   brand: DocumentBrand,
-  version: 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2' | 'v1' = 'v3'
+  version: 'v9' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2' | 'v1' = 'v3'
 ): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
   const base = LETTER_TEMPLATE_BASE[kind];
+  if (version === 'v9') return `${base}_${suffix}_v9`;
   if (version === 'v8') return `${base}_${suffix}_v8`;
   if (version === 'v7') return `${base}_${suffix}_v7`;
   if (version === 'v6') return `${base}_${suffix}_v6`;
@@ -134,6 +135,7 @@ export function brandLetterClosingLines(
     includeTextUs?: boolean;
     skipChatHint?: boolean;
     skipThankYou?: boolean;
+    skipCall?: boolean;
     skipEmail?: boolean;
     skipWebsite?: boolean;
   }
@@ -142,6 +144,7 @@ export function brandLetterClosingLines(
     includeReview: opts?.includeReview,
     skipChatHint: opts?.skipChatHint ?? true,
     skipThankYou: opts?.skipThankYou,
+    skipCall: opts?.skipCall,
     skipEmail: opts?.skipEmail,
     skipWebsite: opts?.skipWebsite,
   });
@@ -158,6 +161,7 @@ export function brandLetterFooterLines(
     includeReview?: boolean;
     skipChatHint?: boolean;
     skipThankYou?: boolean;
+    skipCall?: boolean;
     skipEmail?: boolean;
     skipWebsite?: boolean;
   }
@@ -167,7 +171,9 @@ export function brandLetterFooterLines(
   if (!opts?.skipThankYou) {
     lines.push(`Thank you for choosing ${c.brandLabel}.`);
   }
-  lines.push(letterLabelValue('Call', c.voice.display));
+  if (!opts?.skipCall) {
+    lines.push(letterLabelValue('Call', c.voice.display));
+  }
   if (!opts?.skipEmail) {
     lines.push(letterLabelValue('Email', c.email));
   }

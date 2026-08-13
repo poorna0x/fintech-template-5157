@@ -1,7 +1,7 @@
 import { addMonths, format } from 'date-fns';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
-import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { brandContactLines, brandLetterClosingLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import { extractUpiPayShortCode } from '@/lib/upiPaymentAccounts';
 
@@ -98,30 +98,30 @@ function cleanAmountDigits(amount: number | string): string {
   );
 }
 
-/** Letter cold template name — v8 = Pay now, Call only; fallback v7 → v6. */
+/** Letter cold template name — v9 = Pay now, no contact footer; fallback v8 → v7. */
 export function resolvePendingPaymentLetterTemplateName(
   brand: DocumentBrand,
   opts?: { withPayButton?: boolean }
 ): string {
   if (opts?.withPayButton) {
-    return resolveBrandLetterTemplateName('balance_due', brand, 'v8');
+    return resolveBrandLetterTemplateName('balance_due', brand, 'v9');
   }
   return resolveBrandLetterTemplateName('balance_due', brand, 'v3');
 }
 
-/** IMAGE header lean QR — Call only, no email/website. */
+/** IMAGE header lean QR — no Call/Email/Website in body. */
 export function resolvePendingPaymentLetterImageTemplateName(brand: DocumentBrand): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
-  return `svc_balance_due_letter_${suffix}_img_v4`;
+  return `svc_balance_due_letter_${suffix}_img_v5`;
 }
 
 export function resolvePendingPaymentLetterImageTemplateFallbackName(brand: DocumentBrand): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
-  return `svc_balance_due_letter_${suffix}_img_v3`;
+  return `svc_balance_due_letter_${suffix}_img_v4`;
 }
 
 export function resolvePendingPaymentLetterTemplateFallbackName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('balance_due', brand, 'v7');
+  return resolveBrandLetterTemplateName('balance_due', brand, 'v8');
 }
 
 export function resolvePendingPaymentLetterTemplateLegacyName(brand: DocumentBrand): string {
@@ -133,10 +133,12 @@ export function pendingPaymentTemplateFallbackNames(brand?: DocumentBrand | stri
   const resolved = resolvePendingPaymentMessageBrand(brand);
   const suffix = resolved === 'elevenro' ? 'ero' : 'hro';
   return [
+    `svc_balance_due_letter_${suffix}_img_v5`,
     `svc_balance_due_letter_${suffix}_img_v4`,
     `svc_balance_due_letter_${suffix}_img_v3`,
     `svc_balance_due_letter_${suffix}_img_v2`,
     `svc_balance_due_letter_${suffix}_img_v1`,
+    `svc_balance_due_letter_${suffix}_v9`,
     `svc_balance_due_letter_${suffix}_v8`,
     `svc_balance_due_letter_${suffix}_v7`,
     `svc_balance_due_letter_${suffix}_v6`,
@@ -209,16 +211,6 @@ export function buildPendingPaymentWhatsAppMessage(
     lines.push(waLabeledLink('💳', 'Pay now', payLink));
   }
 
-  lines.push('');
-  lines.push(
-    ...brandLetterClosingLines(resolved, {
-      skipChatHint: true,
-      includeTextUs: false,
-      skipThankYou: true,
-      skipEmail: true,
-      skipWebsite: true,
-    })
-  );
   lines.push('');
   if (ctaButton && (withQr || payLink)) {
     lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');

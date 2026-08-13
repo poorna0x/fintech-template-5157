@@ -142,8 +142,6 @@ function buildPendingPaymentWhatsAppMessage({
   }
 
   lines.push('');
-  lines.push(`Call:\n${contact.phone}`);
-  lines.push('');
   if (link) {
     lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');
   } else {
