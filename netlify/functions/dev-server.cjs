@@ -152,7 +152,11 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/submit-admin-message-reply')) {
     handler = submitAdminMessageReply;
   } else if (req.url.startsWith('/.netlify/functions/notify-admins')) {
-    handler = notifyAdmins;
+    delete require.cache[require.resolve('./notify-admins')];
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./fcm-helper')];
+    delete require.cache[require.resolve('./push-prefs-helper')];
+    handler = require('./notify-admins');
   } else if (req.url.startsWith('/.netlify/functions/send-location-ping')) {
     handler = sendLocationPing;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-send')) {

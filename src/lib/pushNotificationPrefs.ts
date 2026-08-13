@@ -41,7 +41,8 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
   },
   job_status: {
     label: 'Job status updates',
-    description: 'On the way, completed, OTP entered, bill missing, tech-created jobs.',
+    description:
+      'On the way, completed, OTP entered, bill missing, late bill/payment photos, tech-created jobs.',
   },
   customer_calls: {
     label: 'Customer call alerts (incl. missed)',

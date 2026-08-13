@@ -678,7 +678,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   return (
-    <div className={`space-y-3 sm:space-y-4 ${className}`}>
+    <div className={`${compact ? 'space-y-2' : 'space-y-3 sm:space-y-4'} ${className}`}>
       {(title || description) && (
         <div>
           {title ? <h4 className="font-medium text-foreground mb-1">{title}</h4> : null}
@@ -686,7 +686,63 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         </div>
       )}
 
-      {/* Drag and Drop Zone */}
+      {/* Compact: small thumbs first so the dialog does not grow tall after upload */}
+      {compact && uploadedImages.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {uploadedImages.map((image) => (
+            <div
+              key={image.id}
+              className="relative h-28 w-28 shrink-0 overflow-hidden rounded-md border bg-muted"
+            >
+              <img
+                src={getOptimizedImageUrl(image.url, 280)}
+                alt={image.name}
+                className="h-full w-full object-contain"
+                loading="lazy"
+              />
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="absolute right-0.5 top-0.5 h-6 w-6 p-0 opacity-100 shadow"
+                onClick={() => handleRemoveImage(image.id)}
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Drag and Drop Zone — compact + photos: only slim “Add another” row */}
+      {compact && uploadedImages.length > 0 ? (
+        uploadedImages.length < maxImages ? (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              disabled={isUploading}
+              onClick={openFileDialog}
+            >
+              <Upload className="w-4 h-4 mr-1.5" />
+              {isUploading ? 'Uploading…' : 'Add another'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              disabled={isUploading}
+              onClick={openCameraDialog}
+            >
+              <Camera className="w-4 h-4 mr-1.5" />
+              Camera
+            </Button>
+          </div>
+        ) : null
+      ) : (
       <div
         ref={dropZoneRef}
         onDragOver={handleDragOver}
@@ -700,7 +756,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         }}
         className={`
           relative border-2 border-dashed rounded-lg text-center transition-all duration-200
-          ${compact ? 'p-3 sm:p-5' : 'p-4 sm:p-8'}
+          ${compact ? 'p-3' : 'p-4 sm:p-8'}
           ${isDragOver 
             ? 'border-primary bg-primary/5 ring-2 ring-primary/30' 
             : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
@@ -772,6 +828,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Hidden File Inputs */}
       <input
@@ -796,9 +853,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         multiple={false}
       />
 
-      {/* Uploaded Images Grid */}
-      {uploadedImages.length > 0 && (
-        <div className={`grid gap-3 ${compact ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4'}`}>
+      {/* Non-compact uploaded images grid */}
+      {!compact && uploadedImages.length > 0 && (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
           {uploadedImages.map((image) => (
             <Card key={image.id} className="relative group overflow-hidden">
               <CardContent className="p-2">

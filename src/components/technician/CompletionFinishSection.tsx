@@ -129,6 +129,8 @@ interface CompletionPhotoStepProps {
   maxWidth?: number;
   quality?: number;
   useSecondaryAccount?: boolean;
+  /** Skip card chrome when parent dialog already has a title (keeps missing-photo dialog short). */
+  dense?: boolean;
 }
 
 export const CompletionPhotoStep: React.FC<CompletionPhotoStepProps> = ({
@@ -144,17 +146,26 @@ export const CompletionPhotoStep: React.FC<CompletionPhotoStepProps> = ({
   maxWidth = 1024,
   quality = 0.5,
   useSecondaryAccount = false,
+  dense = false,
 }) => (
-  <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
-    <div className="flex items-start gap-3 mb-3">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-        <Camera className="h-5 w-5 text-gray-600" />
-      </span>
-      <div className="min-w-0 pt-0.5">
-        <Label className="text-sm font-semibold text-gray-900">{label}</Label>
-        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{hint}</p>
+  <div
+    className={
+      dense
+        ? 'space-y-2'
+        : 'rounded-xl border border-gray-200 bg-white shadow-sm p-4'
+    }
+  >
+    {!dense && (
+      <div className="flex items-start gap-3 mb-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100">
+          <Camera className="h-5 w-5 text-gray-600" />
+        </span>
+        <div className="min-w-0 pt-0.5">
+          <Label className="text-sm font-semibold text-gray-900">{label}</Label>
+          <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{hint}</p>
+        </div>
       </div>
-    </div>
+    )}
     <ImageUpload
       compact
       onImagesChange={onImagesChange}

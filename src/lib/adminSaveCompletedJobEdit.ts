@@ -225,20 +225,34 @@ try {
     ? completedJobEditData.paymentScreenshots.filter((u: any) => typeof u === 'string' && (u as string).trim()).map((u: any) => (u as string).trim())
     : [];
   const firstPaymentScreenshot = paymentScreenshotsList.length > 0 ? paymentScreenshotsList[0] : null;
-  if (
-    completedJobEditData.paymentMethod !== 'CASH' &&
-    (completedJobEditData.paymentMethod !== 'PENDING_PAYMENT' || pendingNeedsQrName)
-  ) {
+
+  // Always sync qr_photos.payment_screenshot (including clear when deleted). Techs often
+  // store payment here for CASH and ONLINE — skipping CASH left deleted photos visible.
+  {
     const qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
-    if (qrIndex >= 0) {
-      requirements[qrIndex].qr_photos = {
-        ...requirements[qrIndex].qr_photos,
-        payment_screenshot: firstPaymentScreenshot || undefined
-      };
-    } else if (firstPaymentScreenshot) {
-      requirements.push({ qr_photos: { payment_screenshot: firstPaymentScreenshot } });
+    if (firstPaymentScreenshot) {
+      if (qrIndex >= 0) {
+        requirements[qrIndex] = {
+          ...requirements[qrIndex],
+          qr_photos: {
+            ...(requirements[qrIndex].qr_photos || {}),
+            payment_screenshot: firstPaymentScreenshot,
+          },
+        };
+      } else {
+        requirements.push({ qr_photos: { payment_screenshot: firstPaymentScreenshot } });
+      }
+    } else if (qrIndex >= 0) {
+      const prevQr = { ...(requirements[qrIndex].qr_photos || {}) };
+      delete prevQr.payment_screenshot;
+      if (Object.keys(prevQr).length > 0) {
+        requirements[qrIndex] = { ...requirements[qrIndex], qr_photos: prevQr };
+      } else {
+        requirements.splice(qrIndex, 1);
+      }
     }
   }
+
   // Always set payment_photos to full list (for CASH and for report to show multiple payment screenshots)
   const payIdx = requirements.findIndex((r: any) => r?.payment_photos);
   if (paymentScreenshotsList.length > 0) {
@@ -436,8 +450,15 @@ try {
   const paymentScreenshotsUrls = Array.isArray(completedJobEditData.paymentScreenshots)
     ? completedJobEditData.paymentScreenshots.filter((u: any) => typeof u === 'string' && u.trim())
     : [];
-  const billPhotosList = Array.isArray(completedJobEditData.billPhotos) ? completedJobEditData.billPhotos : [];
-  if (paymentScreenshotsUrls.length > 0 || billPhotosList.length > 0) {
+  const billPhotosList = Array.isArray(completedJobEditData.billPhotos)
+    ? completedJobEditData.billPhotos
+    : [];
+  // Always rewrite after_photos from the edit lists — otherwise deleting the last
+  // payment screenshot left the old URL in after_photos and the UI still showed it.
+  if (
+    Array.isArray(completedJobEditData.paymentScreenshots) ||
+    Array.isArray(completedJobEditData.billPhotos)
+  ) {
     updateData.after_photos = [...paymentScreenshotsUrls, ...billPhotosList].filter(Boolean);
   }
   

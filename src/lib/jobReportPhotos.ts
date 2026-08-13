@@ -138,6 +138,116 @@ export function resolveJobBillAndPaymentPhotos(job: {
   return { billPhotos, paymentScreenshot, allPhotos };
 }
 
+/** What’s still missing on a completed job (for tech ⋮ / action buttons). */
+export function getCompletedJobMissingMedia(job: {
+  requirements?: unknown;
+  after_photos?: unknown;
+  afterPhotos?: unknown;
+  payment_amount?: number | null;
+  actual_cost?: number | null;
+  payment_method?: string | null;
+  paymentMethod?: string | null;
+}): {
+  missingBill: boolean;
+  missingPayment: boolean;
+  /** Short label for a primary action button, or null when nothing missing. */
+  actionLabel: string | null;
+} {
+  const { billPhotos, paymentScreenshot } = resolveJobBillAndPaymentPhotos(job);
+  const amount = Number(
+    (job as { payment_amount?: unknown }).payment_amount ??
+      (job as { actual_cost?: unknown }).actual_cost ??
+      0
+  );
+  const missingBill = billPhotos.length === 0;
+  // Zero-amount jobs never required a payment screenshot at complete time.
+  const missingPayment = Number.isFinite(amount) && amount > 0 && !paymentScreenshot;
+
+  let actionLabel: string | null = null;
+  if (missingBill && missingPayment) actionLabel = 'Add bill & payment';
+  else if (missingBill) actionLabel = 'Add bill photo';
+  else if (missingPayment) actionLabel = 'Add payment screenshot';
+
+  return { missingBill, missingPayment, actionLabel };
+}
+
+/** Merge bill / payment photo URLs into a completed job's requirements + after_photos. */
+export function mergeCompletedJobMissingPhotos(
+  job: {
+    requirements?: unknown;
+    after_photos?: unknown;
+    afterPhotos?: unknown;
+  },
+  opts: {
+    billPhotos?: string[];
+    paymentScreenshots?: string[];
+  }
+): { requirements: any[]; after_photos: string[] } {
+  const requirements = parseJobRequirements(job.requirements);
+  const billUrls = (opts.billPhotos || [])
+    .map((u) => String(u || '').trim())
+    .filter((u) => /^https?:\/\//i.test(u));
+  const payUrls = (opts.paymentScreenshots || [])
+    .map((u) => String(u || '').trim())
+    .filter((u) => /^https?:\/\//i.test(u));
+
+  if (billUrls.length > 0) {
+    const billIdx = requirements.findIndex((r: any) => r?.bill_photos);
+    const existing = extractPhotoUrls(
+      billIdx >= 0 ? requirements[billIdx].bill_photos : []
+    );
+    const merged = [...existing];
+    for (const url of billUrls) {
+      if (!merged.some((u) => normalizeUrlForCompare(u) === normalizeUrlForCompare(url))) {
+        merged.push(url);
+      }
+    }
+    if (billIdx >= 0) requirements[billIdx] = { bill_photos: merged };
+    else requirements.push({ bill_photos: merged });
+  }
+
+  if (payUrls.length > 0) {
+    const first = payUrls[0];
+    const qrIdx = requirements.findIndex((r: any) => r?.qr_photos);
+    if (qrIdx >= 0) {
+      requirements[qrIdx] = {
+        ...requirements[qrIdx],
+        qr_photos: {
+          ...(requirements[qrIdx].qr_photos || {}),
+          payment_screenshot: first,
+        },
+      };
+    } else {
+      requirements.push({ qr_photos: { payment_screenshot: first } });
+    }
+
+    const payIdx = requirements.findIndex((r: any) => r?.payment_photos);
+    const existingPay = extractPhotoUrls(
+      payIdx >= 0 ? requirements[payIdx].payment_photos : []
+    );
+    const mergedPay = [...existingPay];
+    for (const url of payUrls) {
+      if (!mergedPay.some((u) => normalizeUrlForCompare(u) === normalizeUrlForCompare(url))) {
+        mergedPay.push(url);
+      }
+    }
+    if (payIdx >= 0) requirements[payIdx] = { payment_photos: mergedPay };
+    else requirements.push({ payment_photos: mergedPay });
+  }
+
+  const afterRaw =
+    (job as { after_photos?: unknown; afterPhotos?: unknown }).after_photos ??
+    (job as { afterPhotos?: unknown }).afterPhotos;
+  const after = extractPhotoUrls(Array.isArray(afterRaw) ? afterRaw : []);
+  for (const url of [...billUrls, ...payUrls]) {
+    if (!after.some((u) => normalizeUrlForCompare(u) === normalizeUrlForCompare(url))) {
+      after.push(url);
+    }
+  }
+
+  return { requirements, after_photos: after };
+}
+
 /** Resolve DB UUID for job/customer queries (admin uses customer.id; embed may only have C123). */
 export async function resolveCustomerUuidForQueries(
   customer:

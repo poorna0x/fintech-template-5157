@@ -157,6 +157,8 @@ import {
   enrichJobsWithAfterPhotosIfNeeded,
   resolveCustomerUuidForQueries,
   resolveJobBillAndPaymentPhotos,
+  mergeCompletedJobMissingPhotos,
+  getCompletedJobMissingMedia,
 } from '@/lib/jobReportPhotos';
 import {
   clearTechnicianCompleteJobDraft,
@@ -574,6 +576,14 @@ const TechnicianDashboard = () => {
   // Options dialog state for 3-dot menu
   const [optionsDialogOpen, setOptionsDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [selectedJobForOptions, setSelectedJobForOptions] = useState<Job | null>(null);
+  /** Post-complete: add missing bill photo or payment screenshot via 3-dot menu. */
+  const [missingPhotoDialog, setMissingPhotoDialog] = useState<{
+    job: Job;
+    kind: 'bill' | 'payment';
+  } | null>(null);
+  const [missingPhotoUrls, setMissingPhotoUrls] = useState<string[]>([]);
+  const [missingPhotoUploading, setMissingPhotoUploading] = useState(false);
+  const [missingPhotoSaving, setMissingPhotoSaving] = useState(false);
   // Customer search (Options menu) + technician job creation
   const [customerSearchDialogOpen, setCustomerSearchDialogOpen] = useState(false);
   const [techNewJobCustomer, setTechNewJobCustomer] = useState<Record<string, unknown> | null>(null);
@@ -4757,6 +4767,67 @@ const TechnicianDashboard = () => {
   const hasPendingLocalOrUploadingPhoto = (u: unknown) =>
     typeof u === 'string' && u.trim() !== '' && !isUploadedMediaUrl(u);
 
+  const saveCompletedJobMissingPhotos = useCallback(async () => {
+    if (!missingPhotoDialog || missingPhotoSaving) return;
+    const uploaded = missingPhotoUrls.filter(isUploadedMediaUrl);
+    if (uploaded.length === 0) {
+      toast.error('Wait for the photo to finish uploading');
+      return;
+    }
+    if (missingPhotoUrls.some(hasPendingLocalOrUploadingPhoto)) {
+      toast.error('Wait for the photo to finish uploading');
+      return;
+    }
+    setMissingPhotoSaving(true);
+    try {
+      const job = missingPhotoDialog.job;
+      const merged = mergeCompletedJobMissingPhotos(job as any, {
+        billPhotos: missingPhotoDialog.kind === 'bill' ? uploaded : undefined,
+        paymentScreenshots:
+          missingPhotoDialog.kind === 'payment' ? uploaded : undefined,
+      });
+      const { error } = await db.jobs.update(job.id, {
+        requirements: merged.requirements,
+        after_photos: merged.after_photos,
+      } as any);
+      if (error) {
+        toast.error(error.message || 'Could not save photo');
+        return;
+      }
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.id === job.id
+            ? ({
+                ...j,
+                requirements: merged.requirements,
+                after_photos: merged.after_photos,
+              } as Job)
+            : j
+        )
+      );
+      toast.success(
+        missingPhotoDialog.kind === 'bill'
+          ? 'Bill photo saved'
+          : 'Payment screenshot saved'
+      );
+      void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
+        notifyAdminsJobEvent(
+          job.id,
+          missingPhotoDialog.kind === 'bill'
+            ? 'bill_photo_added'
+            : 'payment_screenshot_added'
+        )
+      );
+      setMissingPhotoDialog(null);
+      setMissingPhotoUrls([]);
+      setMissingPhotoUploading(false);
+    } finally {
+      setMissingPhotoSaving(false);
+    }
+    // isUploadedMediaUrl / hasPendingLocalOrUploadingPhoto are stable inline helpers in this render scope
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missingPhotoDialog, missingPhotoSaving, missingPhotoUrls]);
+
   const hasPendingBillPhotosInState = () => billPhotos.some(hasPendingLocalOrUploadingPhoto);
   const hasPendingOptionalCompletionPhotos = () => optionalCompletionPhotos.some(hasPendingLocalOrUploadingPhoto);
   const hasPendingExtraStep6Photos = () => extraPhotosStep6.some(hasPendingLocalOrUploadingPhoto);
@@ -6378,6 +6449,39 @@ const TechnicianDashboard = () => {
             </Button>
           </>
         );
+      case 'COMPLETED': {
+        const { missingBill, missingPayment, actionLabel } = getCompletedJobMissingMedia(job as any);
+        if (!actionLabel) return null;
+        const openJobOptions = () => {
+          markJobAsSeen(job.id);
+          setSelectedJobForOptions(job);
+          setOptionsDialogOpen((prev) => ({ ...prev, [job.id]: true }));
+        };
+        const openMissingPhoto = (kind: 'bill' | 'payment') => {
+          markJobAsSeen(job.id);
+          setMissingPhotoUrls([]);
+          setMissingPhotoDialog({ job, kind });
+        };
+        return (
+          <Button
+            size="default"
+            variant="outline"
+            className="h-10 w-full border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+            onClick={() => {
+              if (missingBill && missingPayment) {
+                // Both missing — open chooser with both labeled options.
+                openJobOptions();
+                return;
+              }
+              if (missingBill) openMissingPhoto('bill');
+              else if (missingPayment) openMissingPhoto('payment');
+            }}
+          >
+            <Camera className="w-4 h-4 mr-2 shrink-0" />
+            <span className="truncate">{actionLabel}</span>
+          </Button>
+        );
+      }
       default:
         return null;
     }
@@ -10481,7 +10585,8 @@ const TechnicianDashboard = () => {
                   AMC Info
                 </Button>
               )}
-              {/* Reports Button - Show for all jobs */}
+              {/* Reports — not on completed (that menu is only for missing bill/payment). */}
+              {normalizeJobStatus(selectedJobForOptions.status) !== 'COMPLETED' && (
               <Button
                 variant="outline"
                 className="w-full justify-start"
@@ -10514,6 +10619,7 @@ const TechnicianDashboard = () => {
                 <FileText className="w-4 h-4 mr-2" />
                 Reports
               </Button>
+              )}
               {(normalizeJobStatus(selectedJobForOptions.status) === 'ASSIGNED' ||
                 normalizeJobStatus(selectedJobForOptions.status) === 'EN_ROUTE' ||
                 normalizeJobStatus(selectedJobForOptions.status) === 'IN_PROGRESS') && (
@@ -10531,20 +10637,61 @@ const TechnicianDashboard = () => {
                   Update customer details
                 </Button>
               )}
-              {(normalizeJobStatus(selectedJobForOptions.status) === 'ASSIGNED' || normalizeJobStatus(selectedJobForOptions.status) === 'EN_ROUTE' || normalizeJobStatus(selectedJobForOptions.status) === 'IN_PROGRESS') && (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => {
-                    setOptionsDialogOpen(prev => ({ ...prev, [selectedJobForOptions.id]: false }));
-                    handleScheduleFollowUp(selectedJobForOptions);
-                    setSelectedJobForOptions(null);
-                  }}
-                >
-                  <CalendarPlus className="w-4 h-4 mr-2" />
-                  Schedule Follow-up
-                </Button>
-              )}
+              {normalizeJobStatus(selectedJobForOptions.status) === 'COMPLETED' && (() => {
+                const { missingBill, missingPayment } = getCompletedJobMissingMedia(
+                  selectedJobForOptions as any
+                );
+                if (!missingBill && !missingPayment) return null;
+                return (
+                  <>
+                    {missingBill && missingPayment ? (
+                      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        Missing: bill photo and payment screenshot
+                      </p>
+                    ) : missingBill ? (
+                      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        Missing: bill photo
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        Missing: payment screenshot
+                      </p>
+                    )}
+                    {missingBill ? (
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start"
+                        onClick={() => {
+                          const job = selectedJobForOptions;
+                          setOptionsDialogOpen((prev) => ({ ...prev, [job.id]: false }));
+                          setSelectedJobForOptions(null);
+                          setMissingPhotoUrls([]);
+                          setMissingPhotoDialog({ job, kind: 'bill' });
+                        }}
+                      >
+                        <Receipt className="w-4 h-4 mr-2" />
+                        Add bill photo
+                      </Button>
+                    ) : null}
+                    {missingPayment ? (
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start"
+                        onClick={() => {
+                          const job = selectedJobForOptions;
+                          setOptionsDialogOpen((prev) => ({ ...prev, [job.id]: false }));
+                          setSelectedJobForOptions(null);
+                          setMissingPhotoUrls([]);
+                          setMissingPhotoDialog({ job, kind: 'payment' });
+                        }}
+                      >
+                        <Camera className="w-4 h-4 mr-2" />
+                        Add payment screenshot
+                      </Button>
+                    ) : null}
+                  </>
+                );
+              })()}
               {(normalizeJobStatus(selectedJobForOptions.status) === 'ASSIGNED' || normalizeJobStatus(selectedJobForOptions.status) === 'EN_ROUTE') && (
                 <Button
                   variant="outline"
@@ -10574,6 +10721,82 @@ const TechnicianDashboard = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Add missing bill / payment photo on a completed job */}
+      <Dialog
+        open={Boolean(missingPhotoDialog)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMissingPhotoDialog(null);
+            setMissingPhotoUrls([]);
+            setMissingPhotoUploading(false);
+            setMissingPhotoSaving(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md max-h-[min(92dvh,720px)] flex flex-col gap-3 overflow-hidden p-4 sm:p-6">
+          <DialogHeader className="shrink-0 pr-8">
+            <DialogTitle>
+              {missingPhotoDialog?.kind === 'bill' ? 'Add bill photo' : 'Add payment screenshot'}
+            </DialogTitle>
+            <DialogDescription>
+              {missingPhotoDialog?.kind === 'bill'
+                ? 'Upload the bill photo, then tap Save.'
+                : 'Upload the payment screenshot, then tap Save.'}
+            </DialogDescription>
+          </DialogHeader>
+          {missingPhotoDialog ? (
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1">
+              <CompletionPhotoStep
+                dense
+                label={missingPhotoDialog.kind === 'bill' ? 'Bill photo' : 'Payment screenshot'}
+                hint={
+                  missingPhotoDialog.kind === 'bill'
+                    ? 'Photo of the signed bill or handwritten invoice.'
+                    : 'Screenshot of the UPI / online payment.'
+                }
+                images={missingPhotoUrls}
+                onImagesChange={setMissingPhotoUrls}
+                onUploadStateChange={setMissingPhotoUploading}
+                maxImages={missingPhotoDialog.kind === 'bill' ? 5 : 3}
+                folder={missingPhotoDialog.kind === 'bill' ? 'bills' : 'payments'}
+                jobId={missingPhotoDialog.job.id}
+                photoType={missingPhotoDialog.kind === 'bill' ? 'bill' : 'payment'}
+              />
+            </div>
+          ) : null}
+          <DialogFooter className="shrink-0 gap-2 border-t pt-3 sm:gap-0">
+            <Button
+              variant="ghost"
+              disabled={missingPhotoSaving}
+              onClick={() => {
+                setMissingPhotoDialog(null);
+                setMissingPhotoUrls([]);
+                setMissingPhotoUploading(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                missingPhotoSaving ||
+                missingPhotoUploading ||
+                missingPhotoUrls.filter(isUploadedMediaUrl).length === 0 ||
+                missingPhotoUrls.some(hasPendingLocalOrUploadingPhoto)
+              }
+              onClick={() => {
+                void saveCompletedJobMissingPhotos();
+              }}
+            >
+              {missingPhotoSaving
+                ? 'Saving…'
+                : missingPhotoUploading
+                  ? 'Uploading…'
+                  : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* AMC Info Dialog */}
       <Dialog open={amcInfoDialogOpen} onOpenChange={setAmcInfoDialogOpen}>

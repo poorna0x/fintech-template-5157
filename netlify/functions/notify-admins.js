@@ -205,7 +205,7 @@ exports.handler = async (event) => {
   const jobId = String(body.jobId || '').trim();
   const evt = String(body.event || '').trim();
   const otp = String(body.otp || '').trim();
-  if (!jobId || !['en_route', 'completed', 'otp_entered', 'job_created'].includes(evt)) {
+  if (!jobId || !['en_route', 'completed', 'otp_entered', 'job_created', 'bill_photo_added', 'payment_screenshot_added'].includes(evt)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'jobId and event required' }) };
   }
   if (evt === 'otp_entered' && !/^\d{4}$/.test(otp)) {
@@ -226,7 +226,7 @@ exports.handler = async (event) => {
   const { data: job, error: jobErr } = await db
     .from('jobs')
     .select(
-      'id,job_number,service_sub_type,assigned_technician_id,assigned_by,payment_amount,actual_cost,payment_method,lead_source,requirements,customer:customers(full_name)'
+      'id,job_number,service_sub_type,assigned_technician_id,assigned_by,completed_by,payment_amount,actual_cost,payment_method,lead_source,requirements,customer:customers(full_name)'
     )
     .eq('id', jobId)
     .maybeSingle();
@@ -236,10 +236,15 @@ exports.handler = async (event) => {
   if (auth.role === 'technician') {
     // job_created: tech-created jobs are usually PENDING (unassigned) —
     // authorize via assigned_by (set to auth.uid() in technician_create_job).
+    // Late bill/payment photo: allow assigned tech or the tech who completed it.
     const allowed =
       evt === 'job_created'
         ? job.assigned_by === auth.userId
-        : job.assigned_technician_id === auth.userId;
+        : evt === 'bill_photo_added' || evt === 'payment_screenshot_added'
+          ? job.assigned_technician_id === auth.userId ||
+            job.completed_by === auth.userId ||
+            job.assigned_by === auth.userId
+          : job.assigned_technician_id === auth.userId || job.completed_by === auth.userId;
     if (!allowed) {
       return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
     }
@@ -258,7 +263,7 @@ exports.handler = async (event) => {
   const technicianId =
     evt === 'job_created'
       ? job.assigned_by || auth.userId
-      : job.assigned_technician_id || auth.userId;
+      : job.assigned_technician_id || job.completed_by || auth.userId;
   const { data: tech } = await db
     .from('technicians')
     .select('full_name')
@@ -277,6 +282,7 @@ exports.handler = async (event) => {
   const billMissing = evt === 'completed' && !jobHasBillPhotos(job);
 
   const COLOR_JOB_CREATED = '#0369A1'; // sky — tech created a job for admin to assign
+  const COLOR_PHOTO_ADDED = '#0D9488'; // teal — late bill / payment photo upload
   let title;
   let message;
   let color;
@@ -292,6 +298,18 @@ exports.handler = async (event) => {
     title = `${techName} is on the way`;
     message = `${service} — ${customerName}`;
     color = COLOR_EN_ROUTE;
+  } else if (evt === 'bill_photo_added') {
+    title = `${techName} added bill photo`;
+    const lines = [`${service} — ${customerName}`];
+    if (job.job_number) lines.push(`Job #${job.job_number}`);
+    message = lines.join('\n');
+    color = COLOR_PHOTO_ADDED;
+  } else if (evt === 'payment_screenshot_added') {
+    title = `${techName} added payment screenshot`;
+    const lines = [`${service} — ${customerName}`];
+    if (job.job_number) lines.push(`Job #${job.job_number}`);
+    message = lines.join('\n');
+    color = COLOR_PHOTO_ADDED;
   } else {
     const billing = buildCompletedBillingLines(job);
     title = billMissing
@@ -361,7 +379,11 @@ exports.handler = async (event) => {
       type: 'job_event',
       event: evt,
       jobId: String(jobId),
-      ...(evt === 'completed' ? { completedDate: formatIstDateYmd() } : {}),
+      ...(evt === 'completed' ||
+      evt === 'bill_photo_added' ||
+      evt === 'payment_screenshot_added'
+        ? { completedDate: formatIstDateYmd() }
+        : {}),
     };
     const res = await messaging.sendEachForMulticast({
       tokens,
