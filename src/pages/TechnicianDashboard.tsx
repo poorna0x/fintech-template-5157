@@ -4232,7 +4232,8 @@ const TechnicianDashboard = () => {
     await openCompleteJobWizardFresh(jobWithCustomer);
   };
 
-  // Opens the wizard fresh with auto-prefills (customer's last brand, prefilter, TDS).
+  // Opens the wizard fresh with auto-prefills (customer's last brand, prefilter).
+  // Raw water TDS is never prefilled — technician must enter it every visit.
   // Only called when there is no saved draft to resume.
   const openCompleteJobWizardFresh = async (jobWithCustomer: Job) => {
     const customerId =
@@ -4318,8 +4319,7 @@ const TechnicianDashboard = () => {
       : null;
     setCustomerHasPrefilter(customerPrefilter);
 
-    const existingTds = (jobWithCustomer.customer as any)?.raw_water_tds;
-    setRawWaterTds(existingTds != null && Number(existingTds) > 0 ? String(existingTds) : '');
+    setRawWaterTds('');
 
     setCompleteDialogOpen(true);
   };

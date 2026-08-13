@@ -94,8 +94,9 @@ function draftKey(jobId: string): string {
 
 /**
  * A draft is "meaningful" only when the technician has actually entered or uploaded something.
- * Auto-prefilled values (last service brand from customer, default AMC date, customer prefilter/TDS, etc.)
+ * Auto-prefilled values (last service brand from customer, default AMC date, customer prefilter, etc.)
  * are NOT considered meaningful — opening the dialog and closing it without doing anything must NOT save a draft.
+ * Raw water TDS is never auto-prefilled; a typed TDS value is meaningful.
  */
 export function isCompleteJobDraftMeaningful(draft: TechnicianCompleteJobDraft | null): boolean {
   if (!draft) return false;

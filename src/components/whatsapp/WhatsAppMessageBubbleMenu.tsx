@@ -1,17 +1,22 @@
 import { useState } from 'react';
-import { ChevronDown, Download, Images } from 'lucide-react';
+import { ChevronDown, Download, Images, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
   addWhatsAppPhotoToCustomerGallery,
   isWhatsAppImageMessage,
 } from '@/lib/whatsappInboxApplyToCustomer';
-import type { WhatsAppMessageRow } from '@/lib/whatsappInbox';
+import { purgeWhatsAppMessages } from '@/lib/sendAdminWhatsAppApi';
+import {
+  removeWhatsAppThreadMessageCache,
+  type WhatsAppMessageRow,
+} from '@/lib/whatsappInbox';
 
 type Props = {
   message: WhatsAppMessageRow;
@@ -37,6 +42,32 @@ export function WhatsAppMessageBubbleMenu({
         return;
       }
       toast.success(result.address ? `${okMsg}: ${result.address}` : okMsg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteMessage = async () => {
+    if (
+      !window.confirm(
+        'Delete this photo from the inbox?\n\nIt will also be removed from storage.'
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    const toastId = toast.loading('Deleting…');
+    try {
+      const result = await purgeWhatsAppMessages({
+        messageId: message.id,
+        messageIds: [message.id],
+      });
+      if (!result.ok) {
+        toast.error(result.error || 'Could not delete', { id: toastId });
+        return;
+      }
+      removeWhatsAppThreadMessageCache(message.id, message.phone_e164);
+      toast.success('Deleted', { id: toastId });
     } finally {
       setBusy(false);
     }
@@ -78,12 +109,22 @@ export function WhatsAppMessageBubbleMenu({
         {onDownload ? (
           <DropdownMenuItem
             className="cursor-pointer"
+            disabled={busy}
             onSelect={() => onDownload()}
           >
             <Download className="mr-2 h-4 w-4" />
             Download
           </DropdownMenuItem>
         ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="cursor-pointer text-red-600 focus:text-red-600"
+          disabled={busy}
+          onSelect={() => void deleteMessage()}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Delete
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
