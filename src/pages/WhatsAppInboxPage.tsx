@@ -100,6 +100,7 @@ import {
   previewMessageBody,
   formatAdminWhatsAppBody,
   isBookingBotStateMessage,
+  threadNeedsHumanReply,
   toWhatsAppPhoneDigits,
   unreadMessageCountForThread,
   upsertWhatsAppThreadMessageCache,
@@ -2095,6 +2096,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   const active = t.phone_e164 === selectedPhone;
                   const open = isWithinCustomerServiceWindow(t.inbound_at);
                   const unread = isWhatsAppThreadUnread(t, readMap);
+                  const needsHuman = threadNeedsHumanReply(t.last_body);
                   const failed =
                     t.has_failed ||
                     isFailedDeliveryStatus(t.last_status) ||
@@ -2162,6 +2164,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               <WhatsAppUnreadBadge
                                 count={unreadMessageCountForThread(t, readMap, unreadCounts)}
                               />
+                            ) : null}
+                            {needsHuman ? (
+                              <span
+                                className="shrink-0 rounded-md bg-[#3b2f1a] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#f0c27a]"
+                                title="Customer asked for a human reply on this chat"
+                              >
+                                Needs reply
+                              </span>
                             ) : null}
                             {!open && !failed ? (
                               <span

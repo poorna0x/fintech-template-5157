@@ -1358,6 +1358,15 @@ export function previewMessageBody(
 const BOOKING_BOT_STATE_PREFIX = '[Booking bot state]';
 const AWAITING_MEDIA_MARKER = '[Awaiting customer media]';
 const POST_BOOKING_REDIRECT_MARKER = '[Post-booking human redirect]';
+export const NEEDS_HUMAN_MARKER = '[Needs human reply]';
+
+/** Thread preview / last_body indicates admin should reply on this chat. */
+export function threadNeedsHumanReply(body: string | null | undefined): boolean {
+  const raw = String(body || '');
+  if (!raw.trim()) return false;
+  if (raw.includes(NEEDS_HUMAN_MARKER)) return true;
+  return /needs human reply/i.test(raw);
+}
 
 const BOOKING_STEP_LABELS: Record<string, string> = {
   idle: 'Idle',
@@ -1457,6 +1466,7 @@ export function formatAdminWhatsAppBody(
   text = text
     .replace(AWAITING_MEDIA_MARKER, '')
     .replace(POST_BOOKING_REDIRECT_MARKER, '')
+    .replace(NEEDS_HUMAN_MARKER, 'Needs human reply —')
     .trim();
 
   // WhatsApp interactive button footer: [Yes | No | …]
