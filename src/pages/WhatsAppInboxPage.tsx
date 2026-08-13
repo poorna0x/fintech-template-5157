@@ -392,6 +392,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       }
       if (selectedPhone) {
         setSelectedPhone(null);
+        // Drop keyboard focus so Esc does not leave a white focus ring on a chat row.
+        queueMicrotask(() => {
+          const el = document.activeElement;
+          if (el instanceof HTMLElement) el.blur();
+        });
         return true;
       }
       return false;
@@ -412,6 +417,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       if (tryNativeBackHandlers()) {
         e.preventDefault();
+        const el = document.activeElement;
+        if (el instanceof HTMLElement) el.blur();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -1884,7 +1891,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         type="button"
                         onClick={() => setSelectedPhone(t.phone_e164)}
                         className={cn(
-                          'group relative flex w-full cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors',
+                          'group relative flex w-full cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0',
                           active ? 'bg-[#202c33]' : 'hover:bg-[#202c33]'
                         )}
                       >
