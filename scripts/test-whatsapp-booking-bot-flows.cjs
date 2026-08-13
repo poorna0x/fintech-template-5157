@@ -182,11 +182,75 @@ async function testActiveStepsCoverTypedFlows() {
   console.log('ok ACTIVE_BOOKING_STEPS covers typed flows');
 }
 
+async function testEveryEmittedButtonHasHandler() {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(
+    path.join(__dirname, '../netlify/functions/whatsapp-booking-bot.js'),
+    'utf8'
+  );
+  const emitted = new Set(
+    [...src.matchAll(/\bid:\s*'([^']+)'/g)].map((m) => m[1]).filter((id) => !id.includes('${'))
+  );
+  const handledExact = new Set([...src.matchAll(/id\s*===\s*'([^']+)'/g)].map((m) => m[1]));
+  const hasPrefix = (p) => src.includes(`id.startsWith('${p}')`) || src.includes(`startsWith('${p}')`);
+  const missing = [];
+  for (const id of [...emitted].sort()) {
+    if (id === 'confirm__' || id.startsWith('confirm__')) continue;
+    if (handledExact.has(id)) continue;
+    if (id.startsWith('date_') && src.includes('parseDateId(id)')) continue;
+    if (id.startsWith('period_') && hasPrefix('period_')) continue;
+    if (id.startsWith('time__') && hasPrefix('time__')) continue;
+    missing.push(id);
+  }
+  assert.deepStrictEqual(missing, [], `Unhandled button ids: ${missing.join(', ')}`);
+
+  // Core identity / known-customer configs must exist
+  for (const id of [
+    'id_first_time',
+    'id_other_number',
+    'id_call_us',
+    'first_book',
+    'first_chat',
+    'link_yes',
+    'link_no',
+    'known_book',
+    'known_chat',
+    'amc_issue',
+    'amc_book',
+    'face_yes',
+    'face_no',
+    'recent_yes',
+    'recent_no',
+    'svc_repair',
+    'svc_reinstall',
+    'svc_custom',
+    'loc_yes',
+    'loc_no',
+    'confirm_new',
+    'identity_yes',
+    'identity_no',
+    'pick_date',
+    'talk_team',
+    'end_flow',
+    'skip_issue_media',
+    'skip_optional_photo',
+    'skip_building',
+    'edit_details',
+    'all_correct',
+  ]) {
+    assert.ok(emitted.has(id) || handledExact.has(id), `missing core id wiring: ${id}`);
+    assert.ok(handledExact.has(id), `missing handler for ${id}`);
+  }
+  console.log(`ok button wiring (${emitted.size} emitted ids checked)`);
+}
+
 async function main() {
   await testParseMobile();
   await testUpsertAdvancesSteps();
   await testLegacyBugWouldFail();
   await testActiveStepsCoverTypedFlows();
+  await testEveryEmittedButtonHasHandler();
   console.log('\nAll booking-bot flow regressions passed.');
 }
 
