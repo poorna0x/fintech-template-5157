@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
-  RefreshCw,
-  Save,
   Settings2,
   ShieldOff,
   IndianRupee,
@@ -16,6 +16,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
   DEFAULT_WHATSAPP_CRM_SETTINGS,
@@ -24,11 +31,12 @@ import {
   fetchWhatsAppCrmSettings,
   fetchWhatsAppUsageForMonth,
   fetchWhatsAppUsageMonthlyHistory,
+  formatMonthLabel,
   maybeAutoRefreshWhatsAppUsageMonth,
   parseMonthKey,
-  refreshWhatsAppUsageMonth,
   formatInr,
   saveWhatsAppCrmSettings,
+  shiftMonthKey,
   type WhatsAppCrmSettings,
   type WhatsAppUsageMonthlySnapshot,
   type WhatsAppUsageStats,
@@ -43,12 +51,10 @@ import WhatsAppTemplatesManageCard from '@/components/admin/WhatsAppTemplatesMan
 type Props = {
   hideHeader?: boolean;
   onBack?: () => void;
-  onOpenInbox?: () => void;
 };
 
-export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }: Props) {
+export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<WhatsAppCrmSettings>({
     ...DEFAULT_WHATSAPP_CRM_SETTINGS,
   });
@@ -57,45 +63,52 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
   const [usageMonth, setUsageMonth] = useState(currentMonthKey);
   const [monthlyHistory, setMonthlyHistory] = useState<WhatsAppUsageMonthlySnapshot[]>([]);
   const [usageRefreshing, setUsageRefreshing] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const skipAutoSaveRef = useRef(true);
+  const saveTimerRef = useRef<number | null>(null);
 
   const loadUsage = useCallback(async (monthKey: string) => {
     setStatsError(null);
+    setUsageRefreshing(true);
     const parsed = parseMonthKey(monthKey);
     if (!parsed) {
       setStatsError('Invalid month');
       setStats(null);
+      setUsageRefreshing(false);
       return;
     }
-    const [u, history] = await Promise.all([
-      fetchWhatsAppUsageForMonth(parsed.year, parsed.month),
-      fetchWhatsAppUsageMonthlyHistory(12),
-    ]);
-    if (!u.ok) {
-      setStatsError(u.error || 'Could not load usage');
-      setStats(null);
-    } else {
-      setStats(u.stats);
+    try {
+      const [u, history] = await Promise.all([
+        fetchWhatsAppUsageForMonth(parsed.year, parsed.month),
+        fetchWhatsAppUsageMonthlyHistory(12),
+      ]);
+      if (!u.ok) {
+        setStatsError(u.error || 'Could not load usage');
+        setStats(null);
+      } else {
+        setStats(u.stats);
+      }
+      let rows = history.ok ? history.rows : [];
+      const existing = rows.find((r) => r.month_key === monthKey) || null;
+      const autoSaved = await maybeAutoRefreshWhatsAppUsageMonth(monthKey, existing);
+      if (autoSaved) {
+        const again = await fetchWhatsAppUsageMonthlyHistory(12);
+        if (again.ok) rows = again.rows;
+      }
+      setMonthlyHistory(rows);
+    } finally {
+      setUsageRefreshing(false);
     }
-    let rows = history.ok ? history.rows : [];
-    const existing = rows.find((r) => r.month_key === monthKey) || null;
-    const autoSaved = await maybeAutoRefreshWhatsAppUsageMonth(monthKey, existing);
-    if (autoSaved) {
-      const again = await fetchWhatsAppUsageMonthlyHistory(12);
-      if (again.ok) rows = again.rows;
-    }
-    setMonthlyHistory(rows);
   }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
+    skipAutoSaveRef.current = true;
     try {
-      const s = await fetchWhatsAppCrmSettings();
+      const s = await fetchWhatsAppCrmSettings({ force: true });
       if (!s.ok) {
         toast.error(s.error || 'Could not load WhatsApp settings');
       }
       setSettings(s.settings);
-      setDirty(false);
     } finally {
       setLoading(false);
     }
@@ -110,25 +123,30 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
     void loadUsage(usageMonth);
   }, [usageMonth, loadUsage, loading]);
 
-  const handleSaveMonthSnapshot = async () => {
-    setUsageRefreshing(true);
-    try {
-      const result = await refreshWhatsAppUsageMonth(usageMonth);
-      if (!result.ok) {
-        toast.error(result.error || 'Could not save month snapshot');
-        return;
-      }
-      const history = await fetchWhatsAppUsageMonthlyHistory(12);
-      if (history.ok) setMonthlyHistory(history.rows);
-      toast.success(`Saved ${usageMonth} usage snapshot`);
-    } finally {
-      setUsageRefreshing(false);
+  const persistSettings = useCallback(async (next: WhatsAppCrmSettings) => {
+    const result = await saveWhatsAppCrmSettings(next);
+    if (!result.ok) {
+      toast.error(result.error || 'Could not save WhatsApp settings');
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    if (skipAutoSaveRef.current) {
+      skipAutoSaveRef.current = false;
+      return;
+    }
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      void persistSettings(settings);
+    }, 450);
+    return () => {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    };
+  }, [settings, loading, persistSettings]);
 
   const patch = <K extends keyof WhatsAppCrmSettings>(key: K, value: WhatsAppCrmSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
-    setDirty(true);
   };
 
   const bill = useMemo(() => {
@@ -141,21 +159,19 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
     [monthlyHistory, usageMonth]
   );
 
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const result = await saveWhatsAppCrmSettings(settings);
-      if (!result.ok) {
-        toast.error(result.error || 'Save failed');
-        return;
-      }
-      if (result.settings) setSettings(result.settings);
-      setDirty(false);
-      toast.success('WhatsApp settings saved');
-    } finally {
-      setSaving(false);
+  const canGoNextMonth = usageMonth < currentMonthKey();
+
+  const monthOptions = useMemo(() => {
+    const keys = new Set<string>();
+    let cursor = currentMonthKey();
+    for (let i = 0; i < 36; i += 1) {
+      keys.add(cursor);
+      cursor = shiftMonthKey(cursor, -1);
     }
-  };
+    for (const row of monthlyHistory) keys.add(row.month_key);
+    keys.add(usageMonth);
+    return Array.from(keys).sort((a, b) => b.localeCompare(a));
+  }, [monthlyHistory, usageMonth]);
 
   if (loading) {
     return (
@@ -185,40 +201,6 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
           </div>
         </div>
       ) : null}
-
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-9"
-          onClick={() => void load()}
-          disabled={saving}
-        >
-          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-          Refresh
-        </Button>
-        {onOpenInbox ? (
-          <Button type="button" variant="outline" size="sm" className="h-9" onClick={onOpenInbox}>
-            <img src="/whatsapp.png" alt="" className="mr-1.5 h-3.5 w-3.5 object-contain" />
-            Open inbox
-          </Button>
-        ) : null}
-        <Button
-          type="button"
-          size="sm"
-          className="h-9 ml-auto bg-emerald-700 hover:bg-emerald-800"
-          disabled={!dirty || saving}
-          onClick={() => void handleSave()}
-        >
-          {saving ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Save className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          Save
-        </Button>
-      </div>
 
       {/* Master toggle */}
       <Card
@@ -398,6 +380,20 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
             onCheckedChange={(v) => patch('auto_send_job_completion_whatsapp', v)}
           />
           <ToggleRow
+            label="Salary slip → technician"
+            description="Allow month-end salary-slip PDFs on WhatsApp. Same control on phone and laptop."
+            checked={settings.allow_salary_slip_whatsapp}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_salary_slip_whatsapp', v)}
+          />
+          <ToggleRow
+            label="Auto-send salary slip"
+            description="Last calendar day ~9:00 PM IST. Sends to active technicians who are opted in on Edit technician. Turn this off to stop all salary-slip WhatsApp."
+            checked={settings.auto_send_salary_slip_whatsapp}
+            disabled={!settings.enabled || !settings.allow_salary_slip_whatsapp}
+            onCheckedChange={(v) => patch('auto_send_salary_slip_whatsapp', v)}
+          />
+          <ToggleRow
             label="Auto-send on assign (instant)"
             description="When Dashboard job WhatsApp is ON: send via Cloud API immediately after assign (no dialog). OFF = open manual wa.me dialog."
             checked={settings.auto_send_job_assign_whatsapp}
@@ -560,35 +556,53 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
             <div>
               <CardTitle className="text-base">Usage & expected bill</CardTitle>
               <CardDescription>
-                Calendar month (IST). Current month saves automatically (daily cron + when you
-                open this page if older than 4h). Cold (Meta tpl) = billable template sends.
+                Calendar month (IST). Snapshots save automatically. Tap the month name to jump to
+                any past month, or use ‹ › for one step.
               </CardDescription>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                type="month"
-                value={usageMonth}
-                onChange={(e) => setUsageMonth(e.target.value)}
-                className="h-9 w-[9.5rem] text-sm"
-              />
+            <div className="flex h-10 w-full items-center rounded-lg border border-input bg-background sm:w-auto">
               <Button
                 type="button"
-                variant="outline"
-                size="sm"
-                disabled={usageRefreshing}
-                onClick={() => void loadUsage(usageMonth)}
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 shrink-0 rounded-r-none"
+                aria-label="Previous month"
+                onClick={() => setUsageMonth(shiftMonthKey(usageMonth, -1))}
               >
-                <RefreshCw className={cn('mr-1 h-3.5 w-3.5', usageRefreshing && 'animate-spin')} />
-                Refresh
+                <ChevronLeft className="h-4 w-4" />
               </Button>
+              <Select value={usageMonth} onValueChange={setUsageMonth}>
+                <SelectTrigger
+                  aria-label="Select month"
+                  className="h-10 min-w-[10.5rem] flex-1 rounded-none border-0 bg-transparent px-2 shadow-none focus:ring-0 focus:ring-offset-0 [&>svg]:opacity-60"
+                >
+                  <SelectValue>
+                    <span className="inline-flex items-center gap-1.5 font-medium tabular-nums">
+                      {usageRefreshing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      ) : null}
+                      {formatMonthLabel(usageMonth)}
+                    </span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {monthOptions.map((key) => (
+                    <SelectItem key={key} value={key}>
+                      {formatMonthLabel(key)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 type="button"
-                variant="secondary"
-                size="sm"
-                disabled={usageRefreshing}
-                onClick={() => void handleSaveMonthSnapshot()}
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 shrink-0 rounded-l-none"
+                aria-label="Next month"
+                disabled={!canGoNextMonth}
+                onClick={() => setUsageMonth(shiftMonthKey(usageMonth, 1))}
               >
-                Update snapshot
+                <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -635,8 +649,8 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
                   </ul>
                   {savedSnapshot ? (
                     <p className="text-[11px] text-muted-foreground border-t pt-2">
-                      Saved snapshot: {savedSnapshot.cold_utility} cold ·{' '}
-                      {formatInr(Number(savedSnapshot.estimated_total_inr))} · updated{' '}
+                      Snapshot {savedSnapshot.cold_utility} cold ·{' '}
+                      {formatInr(Number(savedSnapshot.estimated_total_inr))} · auto-saved{' '}
                       {new Date(savedSnapshot.updated_at).toLocaleString('en-IN', {
                         dateStyle: 'medium',
                         timeStyle: 'short',
@@ -644,8 +658,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
                     </p>
                   ) : (
                     <p className="text-[11px] text-muted-foreground border-t pt-2">
-                      Snapshot will auto-save for the current month (nightly + when you open this
-                      page).
+                      Snapshot will auto-save for this month (nightly + when you open this page).
                     </p>
                   )}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm">
@@ -676,10 +689,15 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
                       >
                         <button
                           type="button"
-                          className="font-medium text-foreground hover:underline"
+                          className={cn(
+                            'rounded-md px-2 py-1 text-xs font-medium',
+                            row.month_key === usageMonth
+                              ? 'bg-emerald-100 text-emerald-900'
+                              : 'text-foreground hover:bg-muted'
+                          )}
                           onClick={() => setUsageMonth(row.month_key)}
                         >
-                          {row.month_key}
+                          {formatMonthLabel(row.month_key)}
                         </button>
                         <span className="text-muted-foreground">
                           {row.cold_utility} cold · {row.session_messages} session
@@ -732,8 +750,8 @@ function ToggleRow(props: {
   onCheckedChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-border/60 pb-3 last:border-0 last:pb-0">
-      <div className="min-w-0">
+    <div className="flex min-h-11 items-start justify-between gap-3 border-b border-border/60 py-3 last:border-0 last:pb-0">
+      <div className="min-w-0 pt-0.5">
         <p className="text-sm font-medium text-foreground">{props.label}</p>
         <p className="text-xs text-muted-foreground">{props.description}</p>
       </div>
@@ -741,6 +759,7 @@ function ToggleRow(props: {
         checked={props.checked}
         disabled={props.disabled}
         onCheckedChange={props.onCheckedChange}
+        className="mt-0.5 shrink-0"
       />
     </div>
   );

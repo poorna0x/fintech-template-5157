@@ -55,6 +55,10 @@ export type WhatsAppCrmSettings = {
   allow_job_completion_whatsapp: boolean;
   /** Auto-send brand completion message after job complete (24h window). */
   auto_send_job_completion_whatsapp: boolean;
+  /** Allow month-end salary-slip WhatsApp to technicians. */
+  allow_salary_slip_whatsapp: boolean;
+  /** Auto-send salary-slip PDFs on last calendar day (~9 PM IST). Per-tech opt-in still applies. */
+  auto_send_salary_slip_whatsapp: boolean;
   /**
    * After missed customer call alert (admin/tech APK): auto-send
    * svc_missed_call (requires allow_calling).
@@ -148,6 +152,8 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
   allow_tech_unassigned: true,
   allow_job_completion_whatsapp: true,
   auto_send_job_completion_whatsapp: false,
+  allow_salary_slip_whatsapp: true,
+  auto_send_salary_slip_whatsapp: true,
   auto_send_missed_call_whatsapp: false,
   allow_online_booking_whatsapp: true,
   auto_send_online_booking_whatsapp: true,
@@ -162,7 +168,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
 };
 
 const SETTINGS_COLUMNS =
-  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, auto_send_missed_call_whatsapp, allow_online_booking_whatsapp, auto_send_online_booking_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
+  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, allow_salary_slip_whatsapp, auto_send_salary_slip_whatsapp, auto_send_missed_call_whatsapp, allow_online_booking_whatsapp, auto_send_online_booking_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
 
 function num(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v);
@@ -201,6 +207,8 @@ export function normalizeWhatsAppCrmSettings(
     allow_tech_unassigned: bool(row.allow_tech_unassigned, true),
     allow_job_completion_whatsapp: bool(row.allow_job_completion_whatsapp, true),
     auto_send_job_completion_whatsapp: row.auto_send_job_completion_whatsapp === true,
+    allow_salary_slip_whatsapp: bool(row.allow_salary_slip_whatsapp, true),
+    auto_send_salary_slip_whatsapp: row.auto_send_salary_slip_whatsapp !== false,
     auto_send_missed_call_whatsapp: row.auto_send_missed_call_whatsapp === true,
     allow_online_booking_whatsapp: bool(row.allow_online_booking_whatsapp, true),
     auto_send_online_booking_whatsapp: bool(row.auto_send_online_booking_whatsapp, true),
@@ -379,7 +387,7 @@ export async function fetchWhatsAppCrmSettings(opts?: {
     .eq('id', 1)
     .maybeSingle();
   if (error) {
-    if (/allow_job_assign|auto_send_job|auto_send_missed|allow_tech_unassigned|allow_job_completion|tech_push_whatsapp|column/i.test(error.message)) {
+    if (/allow_job_assign|auto_send_job|auto_send_missed|allow_tech_unassigned|allow_job_completion|allow_salary_slip|auto_send_salary_slip|tech_push_whatsapp|column/i.test(error.message)) {
       const legacy = await supabase
         .from('whatsapp_crm_settings')
         .select(
@@ -454,6 +462,8 @@ export async function saveWhatsAppCrmSettings(
     allow_tech_unassigned: bool(patch.allow_tech_unassigned, true),
     allow_job_completion_whatsapp: bool(patch.allow_job_completion_whatsapp, true),
     auto_send_job_completion_whatsapp: patch.auto_send_job_completion_whatsapp === true,
+    allow_salary_slip_whatsapp: bool(patch.allow_salary_slip_whatsapp, true),
+    auto_send_salary_slip_whatsapp: patch.auto_send_salary_slip_whatsapp !== false,
     auto_send_missed_call_whatsapp: patch.auto_send_missed_call_whatsapp === true,
     allow_online_booking_whatsapp: bool(patch.allow_online_booking_whatsapp, true),
     auto_send_online_booking_whatsapp: bool(patch.auto_send_online_booking_whatsapp, true),
@@ -483,7 +493,38 @@ export async function saveWhatsAppCrmSettings(
     .select(SETTINGS_COLUMNS)
     .single();
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    if (/allow_salary_slip|auto_send_salary_slip/i.test(error.message)) {
+      const {
+        allow_salary_slip_whatsapp: _a,
+        auto_send_salary_slip_whatsapp: _b,
+        ...legacyPayload
+      } = payload;
+      const retry = await supabase
+        .from('whatsapp_crm_settings')
+        .update(legacyPayload)
+        .eq('id', 1)
+        .select(
+          'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, auto_send_missed_call_whatsapp, allow_online_booking_whatsapp, auto_send_online_booking_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at'
+        )
+        .single();
+      if (retry.error) return { ok: false, error: retry.error.message };
+      const settings = normalizeWhatsAppCrmSettings(retry.data as WhatsAppCrmSettings);
+      const { syncJobWhatsAppNotifyCacheFromCrmSettings } = await import(
+        '@/lib/jobAssignWhatsAppSettingsCache'
+      );
+      syncJobWhatsAppNotifyCacheFromCrmSettings(settings);
+      const cached = { ok: true as const, settings, at: Date.now() };
+      settingsCacheMem = cached;
+      try {
+        sessionStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(cached));
+      } catch {
+        /* ignore */
+      }
+      return { ok: true, settings };
+    }
+    return { ok: false, error: error.message };
+  }
   const settings = normalizeWhatsAppCrmSettings(data as WhatsAppCrmSettings);
   const { syncJobWhatsAppNotifyCacheFromCrmSettings } = await import(
     '@/lib/jobAssignWhatsAppSettingsCache'
@@ -633,13 +674,38 @@ export function currentMonthKey(): string {
   return `${y}-${m}`;
 }
 
-/** Auto-save current month snapshot when stale (default 4h). Returns true if refreshed. */
+export function shiftMonthKey(monthKey: string, delta: number): string {
+  const parsed = parseMonthKey(monthKey);
+  if (!parsed) return currentMonthKey();
+  const d = new Date(parsed.year, parsed.month - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function formatMonthLabel(monthKey: string): string {
+  const parsed = parseMonthKey(monthKey);
+  if (!parsed) return monthKey;
+  return new Date(parsed.year, parsed.month - 1, 1).toLocaleDateString('en-IN', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Auto-save a monthly snapshot for history.
+ * Current month: refresh when missing or older than 4h.
+ * Past months: save once if no snapshot exists yet.
+ */
 export async function maybeAutoRefreshWhatsAppUsageMonth(
   monthKey: string,
   existing: WhatsAppUsageMonthlySnapshot | null,
   maxAgeMs = 4 * 60 * 60 * 1000
 ): Promise<boolean> {
-  if (monthKey !== currentMonthKey()) return false;
+  const isCurrent = monthKey === currentMonthKey();
+  if (!isCurrent) {
+    if (existing) return false;
+    const result = await refreshWhatsAppUsageMonth(monthKey);
+    return result.ok;
+  }
   const updatedAt = existing?.updated_at ? new Date(existing.updated_at).getTime() : 0;
   const stale = !existing || !Number.isFinite(updatedAt) || Date.now() - updatedAt > maxAgeMs;
   if (!stale) return false;

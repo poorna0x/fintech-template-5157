@@ -234,6 +234,25 @@ exports.handler = async (event) => {
     return json(500, { ok: false, error: 'Supabase service role not configured' });
   }
 
+  const { data: waCrm, error: waCrmErr } = await db
+    .from('whatsapp_crm_settings')
+    .select('enabled, allow_salary_slip_whatsapp, auto_send_salary_slip_whatsapp')
+    .eq('id', 1)
+    .maybeSingle();
+
+  if (waCrmErr && !/allow_salary_slip|auto_send_salary_slip|column/i.test(waCrmErr.message || '')) {
+    return json(500, { ok: false, error: waCrmErr.message });
+  }
+  if (waCrm && waCrm.enabled === false) {
+    return json(200, { ok: true, skipped: true, reason: 'whatsapp_disabled' });
+  }
+  if (waCrm && waCrm.allow_salary_slip_whatsapp === false) {
+    return json(200, { ok: true, skipped: true, reason: 'salary_slip_whatsapp_off' });
+  }
+  if (waCrm && waCrm.auto_send_salary_slip_whatsapp === false) {
+    return json(200, { ok: true, skipped: true, reason: 'salary_slip_auto_send_off' });
+  }
+
   const { data: settings, error: settingsErr } = await db
     .from('salary_slip_auto_settings')
     .select('id, last_sent_month')

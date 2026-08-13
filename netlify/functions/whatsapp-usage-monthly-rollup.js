@@ -1,18 +1,42 @@
 // Nightly: refresh current IST month WhatsApp usage snapshot (cold + session + estimate).
+// On the 1st–3rd, also freeze the previous month so history stays complete.
 // Schedule: 10:35 PM IST = 17:05 UTC (see netlify.toml).
 
 const { createClient } = require('@supabase/supabase-js');
 const { assertScheduledInvoke } = require('./schedule-guard');
 
-function currentIstMonthKey() {
+function istParts() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
     year: 'numeric',
     month: '2-digit',
+    day: '2-digit',
   }).formatToParts(new Date());
-  const y = parts.find((p) => p.type === 'year')?.value || '1970';
-  const m = parts.find((p) => p.type === 'month')?.value || '01';
-  return `${y}-${m}`;
+  const y = Number(parts.find((p) => p.type === 'year')?.value || '1970');
+  const m = Number(parts.find((p) => p.type === 'month')?.value || '01');
+  const d = Number(parts.find((p) => p.type === 'day')?.value || '01');
+  return { year: y, month: m, day: d };
+}
+
+function monthKeyFromParts(year, month) {
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function previousMonthKey(year, month) {
+  if (month <= 1) return monthKeyFromParts(year - 1, 12);
+  return monthKeyFromParts(year, month - 1);
+}
+
+async function refreshMonth(db, monthKey) {
+  const { data, error } = await db.rpc('whatsapp_usage_monthly_refresh', {
+    p_month_key: monthKey,
+  });
+  if (error) {
+    console.error('[whatsapp-usage-monthly-rollup] RPC failed', monthKey, error.message);
+    return { ok: false, month_key: monthKey, error: error.message };
+  }
+  console.log('[whatsapp-usage-monthly-rollup] saved', monthKey, JSON.stringify(data));
+  return { ok: true, month_key: monthKey, snapshot: data };
 }
 
 exports.handler = async (event) => {
@@ -28,23 +52,24 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: 'Server misconfigured' };
   }
 
-  const monthKey = currentIstMonthKey();
+  const { year, month, day } = istParts();
+  const monthKey = monthKeyFromParts(year, month);
   const db = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data, error } = await db.rpc('whatsapp_usage_monthly_refresh', {
-    p_month_key: monthKey,
-  });
-
-  if (error) {
-    console.error('[whatsapp-usage-monthly-rollup] RPC failed', error.message);
-    return { statusCode: 500, body: JSON.stringify({ ok: false, error: error.message }) };
+  const current = await refreshMonth(db, monthKey);
+  if (!current.ok) {
+    return { statusCode: 500, body: JSON.stringify(current) };
   }
 
-  console.log('[whatsapp-usage-monthly-rollup] saved', monthKey, JSON.stringify(data));
+  const snapshots = [current];
+  if (day <= 3) {
+    snapshots.push(await refreshMonth(db, previousMonthKey(year, month)));
+  }
+
   return {
     statusCode: 200,
-    body: JSON.stringify({ ok: true, month_key: monthKey, snapshot: data }),
+    body: JSON.stringify({ ok: true, snapshots }),
   };
 };

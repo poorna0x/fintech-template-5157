@@ -4,7 +4,6 @@ import {
   FileText,
   Loader2,
   Plus,
-  RefreshCw,
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -203,26 +202,28 @@ export default function WhatsAppTemplatesManageCard() {
             <div className="min-w-0 flex-1">
               <CardTitle className="text-base">Meta templates</CardTitle>
               <CardDescription className="mt-0.5">
-                Browse, preview, add, or delete WhatsApp Business templates. Loads only when you ask —
-                not on every Settings open.
+                Browse, preview, add, or delete WhatsApp Business templates. Loads only when you tap
+                Load templates — not on every Settings open.
               </CardDescription>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              className="h-9 rounded-lg bg-slate-900 px-3.5 text-white hover:bg-slate-800"
-              onClick={() => void load()}
-              disabled={loading || busy}
-            >
-              {loading ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-1.5 h-4 w-4" />
-              )}
-              {loadedOnce ? 'Refresh list' : 'Load templates'}
-            </Button>
+            {!loadedOnce ? (
+              <Button
+                type="button"
+                className="h-9 rounded-lg bg-slate-900 px-3.5 text-white hover:bg-slate-800"
+                onClick={() => void load()}
+                disabled={loading || busy}
+              >
+                {loading ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="mr-1.5 h-4 w-4" />
+                )}
+                Load templates
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -242,7 +243,7 @@ export default function WhatsAppTemplatesManageCard() {
               <p className="text-sm font-medium text-slate-800">Templates not loaded</p>
               <p className="mt-1 text-xs text-slate-500">
                 Tap <span className="font-medium text-slate-700">Load templates</span> to fetch from
-                Meta. IMAGE / DOCUMENT headers still use the submit script.
+                Meta when you need them.
               </p>
             </div>
           ) : null}
@@ -253,6 +254,8 @@ export default function WhatsAppTemplatesManageCard() {
               Loading from Meta…
             </div>
           ) : null}
+
+          {error && !loadedOnce ? <p className="text-sm text-destructive">{error}</p> : null}
 
           {loadedOnce ? (
             <>

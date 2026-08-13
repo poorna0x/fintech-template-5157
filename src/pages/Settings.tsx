@@ -2407,7 +2407,6 @@ const Settings = () => {
           <WhatsAppSettingsPage
             hideHeader
             onBack={closeSettingsPanel}
-            onOpenInbox={() => openSettingsPanel('whatsapp-inbox')}
           />
         </div>
       </div>
@@ -3716,8 +3715,9 @@ const Settings = () => {
                     Job assign / unassign WhatsApp
                   </h3>
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
-                    Universal for all admins. OFF = no WhatsApp popup when assigning or unassigning.
-                    ON = show manual wa.me dialog (or auto-send if enabled in WhatsApp Settings).
+                    Same setting as WhatsApp Settings (phone and laptop). OFF = no WhatsApp popup
+                    when assigning or unassigning. ON = show manual wa.me dialog (or auto-send if
+                    enabled in WhatsApp Settings).
                   </p>
                 </div>
                 <Switch
@@ -3964,8 +3964,8 @@ const Settings = () => {
                       Auto-send salary slip (WhatsApp)
                     </Label>
                     <p className="text-xs text-muted-foreground leading-snug">
-                      Last calendar day of each month at about 9:00 PM IST, WhatsApp this technician
-                      the salary-slip PDF for that full month.
+                      Include this technician when WhatsApp Settings → Auto-send salary slip is ON.
+                      Last calendar day ~9:00 PM IST, salary-slip PDF for that full month.
                     </p>
                   </div>
                   <Switch
