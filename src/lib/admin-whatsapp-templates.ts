@@ -185,6 +185,16 @@ function buildDocumentWhatsApp(
     };
   }
 
+  // True free-form — send exactly what the admin typed (caption when attaching).
+  if (type === 'general') {
+    return {
+      text: message,
+      previewTitle: message
+        ? `Free-form · ${brandName}`
+        : `Attachment · ${brandName}`,
+    };
+  }
+
   const text = [
     `Hi ${customerName},`,
     '',
