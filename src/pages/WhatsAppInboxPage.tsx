@@ -2456,7 +2456,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       >
                         <Paperclip className="h-5 w-5 rotate-45" />
                       </button>
-                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] border border-transparent bg-[#2c3840] px-3 py-1.5 shadow-sm transition-[border-color,box-shadow] duration-150 focus-within:border-[#2d9f78]/50 focus-within:shadow-[0_0_0_2px_rgba(45,159,120,0.18)]">
+                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] border border-white/[0.04] bg-[#2c3840] px-3 py-1.5 shadow-sm transition-[border-color,background-color,box-shadow] duration-150 focus-within:border-white/18 focus-within:bg-[#33434d] focus-within:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
                         <Textarea
                           ref={composerRef}
                           value={draft}
