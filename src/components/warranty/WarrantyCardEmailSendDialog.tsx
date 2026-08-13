@@ -42,7 +42,6 @@ import {
   resolveBillCustomerDisplayName,
   sendAdminWhatsAppDocumentWithColdFallback,
 } from '@/lib/sendAdminWhatsAppApi';
-import { formatColdDocTemplatePreview } from '@/lib/whatsappColdTemplates';
 import { formatPhoneForWhatsApp, cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabaseClient';
 import {
@@ -101,14 +100,6 @@ export default function WarrantyCardEmailSendDialog({
   const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
   const [requireAccept, setRequireAccept] = useState(false);
-
-  const coldTemplatePreview = useMemo(() => {
-    if (!pdfData?.customer) return '';
-    return formatColdDocTemplatePreview('warranty', {
-      customerName: resolveBillCustomerDisplayName(pdfData.customer),
-      brand,
-    });
-  }, [pdfData?.customer]);
 
   useEffect(() => {
     if (!open) {
@@ -588,18 +579,9 @@ export default function WarrantyCardEmailSendDialog({
                   {windowHoursLeft != null ? ` · ~${windowHoursLeft}h left to send PDF` : ''}
                 </p>
               ) : windowOpen === false ? (
-                <div className="space-y-1.5">
-                  <p className="text-xs text-amber-800">
-                    Window closed — sends Meta template{' '}
-                    <span className="font-medium">svc_doc_warranty_*_v2</span> with the warranty PDF
-                    attached (Call + Text us).
-                  </p>
-                  {coldTemplatePreview ? (
-                    <p className="rounded-md border border-amber-200/80 bg-amber-50/60 px-2.5 py-2 text-xs text-amber-950">
-                      Customer will see: &ldquo;{coldTemplatePreview}&rdquo; (+ PDF + Call us)
-                    </p>
-                  ) : null}
-                </div>
+                <p className="text-xs text-amber-800">
+                  Window closed — warranty PDF will send via approved WhatsApp document template.
+                </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   PDF sends when the customer has messaged this business number in the last 24h.
