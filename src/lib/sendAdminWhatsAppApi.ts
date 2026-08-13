@@ -691,9 +691,15 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
       return tpl;
     }
 
-    // Last resort: approved svc_smoke_update (1 param) so staff aren't blocked while Meta reviews specific templates.
+    // Last resort: approved svc_smoke_update (1 param) so staff aren't blocked while Meta reviews
+    // specific templates — but never for pending-payment / docs (wrong random reopen copy).
+    const source = String(options.source || '').trim();
+    const skipSmokeLastResort =
+      source === 'pending_payment' ||
+      source === 'documents' ||
+      /balance_due|payment_overdue|pending_payment/i.test(coldName);
     const smokeName = resolveWaTemplateName('svc_smoke_update');
-    if (coldName !== smokeName) {
+    if (!skipSmokeLastResort && coldName !== smokeName) {
       const customerLabel =
         String(options.coldTemplate?.bodyParams?.[0] || '').trim() || 'there';
       const smoke = await sendAdminWhatsAppTemplate({

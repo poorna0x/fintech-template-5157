@@ -1223,8 +1223,8 @@ async function recentlySentCrmDocOrPay(db, phoneE164, withinMs = CRM_MEDIA_QUIET
       }
       if (type === 'document' || type === 'image') return true;
       if (/^AMC_/i.test(file) || /amc/i.test(file)) return true;
-      if (/doc_amc|amc_document|balance_due|pending_payment/i.test(tpl)) return true;
-      if (/AMC agreement|upi qr|pending payment/i.test(body)) return true;
+      if (/doc_amc|amc_document|balance_due|pending_payment|payment_overdue/i.test(tpl)) return true;
+      if (/AMC agreement|upi qr|pending payment|overdue payment|still unpaid/i.test(body)) return true;
       return false;
     });
   } catch {
