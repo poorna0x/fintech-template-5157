@@ -1,4 +1,5 @@
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
+import { MANAGER_BLOCKED_ADMIN_TOOLS as MANAGER_BLOCKED_ADMIN_TOOLS_SET } from '@/lib/managerAccess';
 
 /** Job list tabs on /admin (dashboard home). */
 export const ADMIN_JOB_TAB_SLUGS = ['ongoing', 'followup', 'denied', 'completed'] as const;
@@ -299,7 +300,8 @@ export const ADMIN_TOOL_DIALOGS = [
 ] as const;
 export type AdminToolDialog = (typeof ADMIN_TOOL_DIALOGS)[number];
 
-export const MANAGER_BLOCKED_ADMIN_TOOLS = new Set<AdminToolDialog>(['direct-sale', 'amount-trackers']);
+/** Re-export for existing AdminDashboard imports (typed as AdminToolDialog). */
+export const MANAGER_BLOCKED_ADMIN_TOOLS = MANAGER_BLOCKED_ADMIN_TOOLS_SET as Set<AdminToolDialog>;
 
 export function isAdminToolParam(tool: string | null): tool is AdminToolDialog {
   return Boolean(tool && (ADMIN_TOOL_DIALOGS as readonly string[]).includes(tool));

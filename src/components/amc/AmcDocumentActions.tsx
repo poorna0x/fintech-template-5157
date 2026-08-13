@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import AmcEmailSendDialog, { type AmcPersistResult } from '@/components/amc/AmcEmailSendDialog';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import type { Bill } from '@/types';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getValidCustomerEmail } from '@/lib/customer-email';
@@ -71,6 +72,7 @@ export default function AmcDocumentActions({
   onSent,
   className,
 }: AmcDocumentActionsProps) {
+  const { cloudApiOn } = useWhatsAppCloudApiGate('documents');
   const [emailOpen, setEmailOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
@@ -93,7 +95,7 @@ export default function AmcDocumentActions({
     () => uniqueWhatsAppPhones([compact ? waPhone : customerPhone, extraWaPhone]),
     [compact, waPhone, customerPhone, extraWaPhone]
   );
-  const canWhatsApp = canAct && compactPhones.length > 0;
+  const canWhatsApp = canAct && compactPhones.length > 0 && cloudApiOn;
 
   const handleDownload = async () => {
     if (!bill) return;
@@ -308,7 +310,7 @@ export default function AmcDocumentActions({
           </div>
         </div>
       ) : null}
-      {compact ? (
+      {compact && cloudApiOn ? (
         <div className="space-y-2.5">
           <div>
             <Label htmlFor="amc-wa-phone" className="text-sm">
@@ -369,6 +371,7 @@ export default function AmcDocumentActions({
             Download AMC PDF
           </Button>
         )}
+        {cloudApiOn ? (
         <Button
           type="button"
           variant="outline"
@@ -398,6 +401,7 @@ export default function AmcDocumentActions({
             ? `WhatsApp AMC PDF (${compactPhones.length})`
             : 'WhatsApp AMC PDF'}
         </Button>
+        ) : null}
         {compact ? null : (
           <Button
             type="button"
@@ -436,7 +440,7 @@ export default function AmcDocumentActions({
             ? async () => onPersistBeforeAction()
             : undefined
         }
-        allowWhatsApp
+        allowWhatsApp={cloudApiOn}
         onSent={onSent}
       />
       )}

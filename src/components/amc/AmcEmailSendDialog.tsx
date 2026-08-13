@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
 import { buildDocumentPdfWhatsAppCaption } from '@/lib/document-pdf-whatsapp-caption';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
@@ -124,6 +125,8 @@ export default function AmcEmailSendDialog({
   allowWhatsApp = true,
   onSent,
 }: AmcEmailSendDialogProps) {
+  const { cloudApiOn } = useWhatsAppCloudApiGate('documents');
+  const waEnabled = allowWhatsApp && cloudApiOn;
   const [channel, setChannel] = useState<AmcSendChannel>('email');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [recipientRows, setRecipientRows] = useState<string[]>([emptyRow()]);
@@ -151,17 +154,17 @@ export default function AmcEmailSendDialog({
     const phone = String(bill?.customer?.phone || '').trim();
     setChannel(
       pickDefaultAmcChannel({
-        allowWhatsApp,
+        allowWhatsApp: waEnabled,
         hasEmail: seeded.length > 0,
         hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
       })
     );
     setWindowOpen(null);
     setWindowHoursLeft(null);
-  }, [open, defaultRecipients, singleRecipient, bill?.customer?.phone, allowWhatsApp]);
+  }, [open, defaultRecipients, singleRecipient, bill?.customer?.phone, waEnabled]);
 
   useEffect(() => {
-    if (!open || !allowWhatsApp) return;
+    if (!open || !waEnabled) return;
     if (channel !== 'whatsapp' && channel !== 'both') return;
     const phone = formatPhoneForWhatsApp(whatsappPhone);
     if (!phone || phone.length < 10) {
@@ -192,7 +195,7 @@ export default function AmcEmailSendDialog({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, channel, allowWhatsApp, whatsappPhone]);
+  }, [open, channel, waEnabled, whatsappPhone]);
 
   const normalizedRecipients = useMemo(() => {
     if (singleRecipient) {
@@ -554,7 +557,7 @@ export default function AmcEmailSendDialog({
   const canSend =
     channel === 'whatsapp' ? canSendWhatsApp : channel === 'both' ? canSendBoth : canSendEmail;
   const showEmailFields = channel === 'email' || channel === 'both';
-  const showWhatsAppFields = (channel === 'whatsapp' || channel === 'both') && allowWhatsApp;
+  const showWhatsAppFields = (channel === 'whatsapp' || channel === 'both') && waEnabled;
 
   const handleSendBoth = async () => {
     if (!canSendEmail) {
@@ -780,7 +783,7 @@ export default function AmcEmailSendDialog({
             </div>
           ) : null}
 
-          {allowWhatsApp ? (
+          {waEnabled ? (
             <div className="space-y-2">
               <Label className="text-sm font-medium">Send via</Label>
               <ToggleGroup

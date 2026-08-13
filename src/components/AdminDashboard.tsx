@@ -256,6 +256,10 @@ import {
   type LetterheadDocumentType,
 } from '@/lib/adminDashboardUrl';
 import {
+  isManagerBlockedAdminView,
+  MANAGER_RESTRICTED_TITLE,
+} from '@/lib/managerAccess';
+import {
   ensureLeadCatalogLoaded,
   getLeadSourceOptionsForFilters,
   getSubTypeOptionsForFilters,
@@ -353,7 +357,7 @@ const AdminDashboard = () => {
   const { user, isAdmin, authInitializing, logout } = useAuth();
   const { isManager } = useAdminRole();
   const [, setLeadCatalogTick] = useState(0);
-  const managerRestrictedTitle = 'Restricted for Manager role';
+  const managerRestrictedTitle = MANAGER_RESTRICTED_TITLE;
   const savedUi = getModuleAdminUiState();
   const initialDashboardCache = readAdminDashboardCache();
   const initialOngoingJobs = initialDashboardCache
@@ -479,8 +483,7 @@ const AdminDashboard = () => {
     window.setTimeout(restore, 200);
   }, []);
   const handleViewChange = (view: AdminDashboardView) => {
-    if (isManager && view !== 'dashboard') {
-      // Manager role cannot enter payments / billing / analytics / inventory.
+    if (isManager && isManagerBlockedAdminView(view)) {
       return;
     }
     hapticSwitch();
@@ -782,10 +785,15 @@ const AdminDashboard = () => {
     const viewParam = parsed.view;
     const overlay = readAdminOverlayFromSearch(location.search);
 
-    setShowGSTInvoicesPage(overlay.gst);
+    setShowGSTInvoicesPage(overlay.gst && !isManager);
     setShowAMCViewPage(overlay.amc);
     setShowLetterheadDocsPage(overlay.letterhead);
     setLetterheadInitialType(overlay.letterheadType);
+
+    if (isManager && viewParam === 'gst-invoices') {
+      navigate('/admin', { replace: true });
+      return;
+    }
 
     if (isAdminOverlayViewParam(viewParam)) {
       return;
@@ -795,11 +803,9 @@ const AdminDashboard = () => {
       setCurrentView('dashboard');
       return;
     }
-    if (isManager) {
+    if (isManager && isManagerBlockedAdminView(viewParam)) {
       setCurrentView('dashboard');
-      if (isAdminTabViewParam(viewParam)) {
-        navigate('/admin', { replace: true });
-      }
+      navigate('/admin', { replace: true });
       return;
     }
     setCurrentView(viewParam);
@@ -6157,7 +6163,6 @@ const AdminDashboard = () => {
           onOpenAdminTool={openAdminTool}
           onShowAmcView={handleShowAMCView}
           isManager={isManager}
-          managerRestrictedTitle={managerRestrictedTitle}
           currentView={currentView}
           onViewChange={handleViewChange}
           onAddCustomer={handleAddCustomer}

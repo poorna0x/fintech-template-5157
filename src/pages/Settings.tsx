@@ -35,7 +35,6 @@ import {
   RefreshCw,
   DollarSign,
   Bell,
-  Lock,
   GitMerge,
   Repeat,
   ShieldCheck,
@@ -45,6 +44,10 @@ import {
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
 import { useAdminRole } from '@/lib/useAdminRole';
+import {
+  isManagerBlockedSettingsPanel,
+  MANAGER_RESTRICTED_TITLE,
+} from '@/lib/managerAccess';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { deleteTechnicianCompletely } from '@/lib/deleteTechnician';
 import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technicianSalaryForPeriod';
@@ -289,7 +292,7 @@ const DATABASE_EXPORT_TABLES: {
 const Settings = () => {
   const { user, isAdmin, logout, authInitializing } = useAuth();
   const { isManager } = useAdminRole();
-  const managerRestrictedTitle = 'Restricted for Manager role';
+  const managerRestrictedTitle = MANAGER_RESTRICTED_TITLE;
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -311,6 +314,10 @@ const Settings = () => {
       panel: SettingsPanelSlug,
       options?: { id?: string; action?: string }
     ) => {
+      if (isManager && isManagerBlockedSettingsPanel(panel)) {
+        toast.error(managerRestrictedTitle);
+        return;
+      }
       panelReturnScrollYRef.current = readSettingsScrollY();
       navigate(
         settingsLocation(
@@ -326,7 +333,7 @@ const Settings = () => {
         )
       );
     },
-    [navigate, location.search]
+    [navigate, location.search, isManager, managerRestrictedTitle]
   );
 
   const onSettingsPanelOpenChange = useCallback(
@@ -567,6 +574,18 @@ const Settings = () => {
     };
   }, [navigate]);
 
+  // Managers cannot open sensitive settings panels (deep links / bookmarks).
+  useEffect(() => {
+    if (!isManager) return;
+    const panel = parseSettingsUrl(location.search).panel;
+    if (!isManagerBlockedSettingsPanel(panel)) return;
+    toast.error(managerRestrictedTitle);
+    navigate(
+      settingsLocation(buildSettingsSearch({ clearPanel: true, section: null }, '')),
+      { replace: true }
+    );
+  }, [isManager, location.search, navigate, managerRestrictedTitle]);
+
   // Sync settings panels (?panel=) for mobile swipe-back.
   useEffect(() => {
     const parsed = parseSettingsUrl(location.search);
@@ -586,28 +605,28 @@ const Settings = () => {
 
     setShowCallingPage(panel === 'calling');
     setShowWhatsAppInboxPage(panel === 'whatsapp-inbox');
-    setShowWhatsAppSettingsPage(panel === 'whatsapp-settings');
-    setShowPdfAuthenticityPage(panel === 'pdf-authenticity');
-    setShowDbStoragePage(panel === 'db-storage');
+    setShowWhatsAppSettingsPage(panel === 'whatsapp-settings' && !isManager);
+    setShowPdfAuthenticityPage(panel === 'pdf-authenticity' && !isManager);
+    setShowDbStoragePage(panel === 'db-storage' && !isManager);
     setShowRecurringServicePage(panel === 'recurring-service');
-    setShowLeadCatalogPage(panel === 'lead-catalog');
+    setShowLeadCatalogPage(panel === 'lead-catalog' && !isManager);
     setRemindersDialogOpen(panel === 'reminders');
     setAdvancedSearchDialogOpen(panel === 'advanced-search');
     setAddGeneralReminderOpen(panel === 'add-general-reminder');
     setAddCustomerReminderOpen(panel === 'add-customer-reminder');
-    setMergeCustomersOpen(panel === 'merge-customers');
+    setMergeCustomersOpen(panel === 'merge-customers' && !isManager);
     setWarrantyDialogOpen(panel === 'warranty');
-    setDirectSaleOpen(panel === 'direct-sale');
-    setAddTechnicianDialogOpen(panel === 'add-technician');
-    setEditTechnicianDialogOpen(panel === 'edit-technician' && !!parsed.panelId);
-    setAddQrCodeDialogOpen(panel === 'add-payment-qr');
-    setEditQrCodeDialogOpen(panel === 'edit-payment-qr' && !!parsed.panelId);
-    setAddTechnicianCommonQrDialogOpen(panel === 'add-tech-qr');
-    setEditTechnicianCommonQrDialogOpen(panel === 'edit-tech-qr' && !!parsed.panelId);
-    setAddProductQrCodeDialogOpen(panel === 'add-product-qr');
-    setEditProductQrCodeDialogOpen(panel === 'edit-product-qr' && !!parsed.panelId);
+    setDirectSaleOpen(panel === 'direct-sale' && !isManager);
+    setAddTechnicianDialogOpen(panel === 'add-technician' && !isManager);
+    setEditTechnicianDialogOpen(panel === 'edit-technician' && !!parsed.panelId && !isManager);
+    setAddQrCodeDialogOpen(panel === 'add-payment-qr' && !isManager);
+    setEditQrCodeDialogOpen(panel === 'edit-payment-qr' && !!parsed.panelId && !isManager);
+    setAddTechnicianCommonQrDialogOpen(panel === 'add-tech-qr' && !isManager);
+    setEditTechnicianCommonQrDialogOpen(panel === 'edit-tech-qr' && !!parsed.panelId && !isManager);
+    setAddProductQrCodeDialogOpen(panel === 'add-product-qr' && !isManager);
+    setEditProductQrCodeDialogOpen(panel === 'edit-product-qr' && !!parsed.panelId && !isManager);
     setAddTodoDialogOpen(panel === 'add-todo');
-    setAddTrackerDialogOpen(panel === 'add-tracker');
+    setAddTrackerDialogOpen(panel === 'add-tracker' && !isManager);
     setPendingPaymentsDialogOpen(panel === 'pending-payments');
     if (panel === 'pending-payments') {
       setPendingPaymentsInitialReminderId(parsed.panelId);
@@ -2522,11 +2541,6 @@ const Settings = () => {
                 Push off
               </Badge>
             ) : null}
-            {technician.salary_slip_auto_send === true ? (
-              <Badge variant="outline" className="text-[10px] text-emerald-800 border-emerald-300">
-                Salary slip WA
-              </Badge>
-            ) : null}
           </div>
         </div>
 
@@ -2551,21 +2565,17 @@ const Settings = () => {
           <TechnicianIdCardLinks technicianId={technician.id} />
         </div>
 
+        {!isManager ? (
         <Button
           variant="outline"
           size="sm"
           onClick={() => handleEditTechnician(technician)}
-          disabled={isManager}
-          title={isManager ? managerRestrictedTitle : undefined}
           className="w-full text-xs sm:text-sm"
         >
-          {isManager ? (
-            <Lock className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-          ) : (
-            <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-          )}
-          {isManager ? 'Restricted' : 'Edit'}
+          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+          Edit
         </Button>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -2753,6 +2763,7 @@ const Settings = () => {
           </Card>
 
           {/* Amount Trackers */}
+          {!isManager ? (
           <Card id="section-amount-trackers" className="scroll-mt-24" ref={trackersSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -2855,12 +2866,13 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+          ) : null}
 
-          <AdminAppLockSettings />
+          {!isManager ? <AdminAppLockSettings /> : null}
 
-          <DeviceTrackerSettings />
+          {!isManager ? <DeviceTrackerSettings /> : null}
 
-          <AppCrashReports />
+          {!isManager ? <AppCrashReports /> : null}
 
           {/* Advanced customer search */}
           <SettingsActionCard
@@ -2995,7 +3007,7 @@ const Settings = () => {
             initialReminderId={pendingPaymentsInitialReminderId}
           />
 
-          {/* GST Invoices */}
+          {!isManager ? (
           <SettingsActionCard
             title="GST Invoices"
             description="View and manage GST invoices"
@@ -3012,6 +3024,7 @@ const Settings = () => {
               </Button>
             }
           />
+          ) : null}
 
           {/* AMC View */}
           <SettingsActionCard
@@ -3031,7 +3044,7 @@ const Settings = () => {
             }
           />
 
-          {/* PDF authenticity (AMC + documents) */}
+          {!isManager ? (
           <SettingsActionCard
             title="Verify PDF authenticity"
             description="Check AMC, bill, quotation, invoice, or warranty PDFs against stored fingerprints"
@@ -3048,6 +3061,7 @@ const Settings = () => {
               </Button>
             }
           />
+          ) : null}
 
           {/* Letterhead Documents / Service Reports */}
           <Card>
@@ -3111,6 +3125,7 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {!isManager ? (
           <SettingsActionCard
             sectionId="lead-catalog"
             title="Lead sources & costs"
@@ -3128,6 +3143,7 @@ const Settings = () => {
               </Button>
             }
           />
+          ) : null}
 
           {/* Calling */}
           <SettingsActionCard
@@ -3165,6 +3181,7 @@ const Settings = () => {
                   <img src="/whatsapp.png" alt="" className="w-4 h-4 object-contain" width={16} height={16} />
                   Open inbox
                 </Button>
+                {!isManager ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -3173,11 +3190,13 @@ const Settings = () => {
                 >
                   Settings
                 </Button>
+                ) : null}
               </div>
             }
           />
 
           {/* Merge duplicate customers */}
+          {!isManager ? (
           <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -3192,22 +3211,17 @@ const Settings = () => {
                 </div>
                 <Button
                   onClick={() => openSettingsPanel('merge-customers')}
-                  disabled={isManager}
-                  title={isManager ? managerRestrictedTitle : undefined}
                   variant="outline"
-                  className="w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto"
                   size="sm"
                 >
-                  {isManager ? (
-                    <Lock className="w-4 h-4 mr-2" />
-                  ) : (
-                    <GitMerge className="w-4 h-4 mr-2" />
-                  )}
-                  {isManager ? 'Restricted' : 'Merge duplicate customers'}
+                  <GitMerge className="w-4 h-4 mr-2" />
+                  Merge duplicate customers
                 </Button>
               </div>
             </CardHeader>
           </Card>
+          ) : null}
 
           {/* Warranty Management */}
           <Card>
@@ -3235,7 +3249,7 @@ const Settings = () => {
             </CardHeader>
           </Card>
 
-          {/* Direct / Office Sales */}
+          {!isManager ? (
           <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -3250,23 +3264,19 @@ const Settings = () => {
                 </div>
                 <Button
                   onClick={() => openSettingsPanel('direct-sale')}
-                  disabled={isManager}
-                  title={isManager ? managerRestrictedTitle : undefined}
-                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
                   size="sm"
                 >
-                  {isManager ? (
-                    <Lock className="w-4 h-4 mr-2" />
-                  ) : (
-                    <DollarSign className="w-4 h-4 mr-2" />
-                  )}
-                  {isManager ? 'Restricted' : 'Record direct sale'}
+                  <DollarSign className="w-4 h-4 mr-2" />
+                  Record direct sale
                 </Button>
               </div>
             </CardHeader>
           </Card>
+          ) : null}
 
-          {/* Styled QR Image Generator */}
+          {/* Styled QR Image Generator — managers: hide (UPI/payment-adjacent) */}
+          {!isManager ? (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
@@ -3314,8 +3324,11 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+          ) : null}
 
           {/* Common QR Codes Management */}
+          {!isManager ? (
+          <>
           <Card ref={commonQrSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -3602,6 +3615,8 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+          </>
+          ) : null}
 
           {/* Technician Management */}
             <Card id="section-technician-management" className="scroll-mt-24">
@@ -3616,20 +3631,16 @@ const Settings = () => {
                       Use Edit → account status to deactivate. Inactive staff stay in the database but are hidden from assignments, maps, Technician Payments, and salary totals.
                     </CardDescription>
                   </div>
+                {!isManager ? (
                 <Button 
                   onClick={handleAddTechnician}
-                  disabled={isManager}
-                  title={isManager ? managerRestrictedTitle : undefined}
-                  className=" w-full sm:w-auto disabled:opacity-50"
+                  className=" w-full sm:w-auto"
                   size="sm"
                 >
-                    {isManager ? (
-                      <Lock className="w-4 h-4 mr-2" />
-                    ) : (
-                      <Plus className="w-4 h-4 mr-2" />
-                    )}
-                    {isManager ? 'Restricted' : 'Add Technician'}
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Technician
                   </Button>
+                ) : null}
                 </div>
               </CardHeader>
             <CardContent className="p-4 sm:p-6 space-y-8">
@@ -3656,7 +3667,7 @@ const Settings = () => {
             </CardContent>
             </Card>
 
-          {/* Location Tracking Setting */}
+          {!isManager ? (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
@@ -3686,6 +3697,7 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+          ) : null}
 
           <Card id="section-dashboard">
             <CardHeader>
@@ -3715,6 +3727,7 @@ const Settings = () => {
                 />
               </div>
 
+              {!isManager ? (
               <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
                 <div className="flex-1">
                   <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
@@ -3733,14 +3746,15 @@ const Settings = () => {
                   className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>
+              ) : null}
             </CardContent>
           </Card>
 
-          <EmailTrackingSettings />
+          {!isManager ? <EmailTrackingSettings /> : null}
 
-          <BookingIntentArchiveSettings />
+          {!isManager ? <BookingIntentArchiveSettings /> : null}
 
-          {/* Data Export Section - At Bottom */}
+{!isManager ? (
           <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -3755,21 +3769,12 @@ const Settings = () => {
                 </div>
                 <Button 
                   onClick={handleDownloadAllData}
-                  disabled={isDownloading || isManager}
-                  title={isManager ? managerRestrictedTitle : undefined}
-                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isDownloading}
+                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
                   size="sm"
                 >
-                  {isManager ? (
-                    <Lock className="w-4 h-4 mr-2" />
-                  ) : (
-                    <Download className="w-4 h-4 mr-2" />
-                  )}
-                  {isManager
-                    ? 'Restricted'
-                    : isDownloading
-                      ? 'Downloading...'
-                      : 'Download All Data'}
+                  <Download className="w-4 h-4 mr-2" />
+                  {isDownloading ? 'Downloading...' : 'Download All Data'}
                 </Button>
               </div>
             </CardHeader>
@@ -3791,7 +3796,9 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+) : null}
 
+          {!isManager ? (
           <SettingsActionCard
             title="Database storage"
             description="See which Postgres tables and columns use the most space (R2 media is separate)"
@@ -3808,6 +3815,7 @@ const Settings = () => {
               </Button>
             }
           />
+          ) : null}
                 </div>
       </div>
 
@@ -4414,7 +4422,7 @@ const Settings = () => {
             )}
           </div>
 
-          {editTechnicianDialogOpen && selectedTechnician && (
+          {editTechnicianDialogOpen && selectedTechnician && !isManager ? (
             <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/80 dark:bg-red-950/20 p-4 space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-red-900 dark:text-red-200">Delete technician</h3>
@@ -4428,19 +4436,13 @@ const Settings = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => handleStartDeleteTechnician(selectedTechnician)}
-                disabled={isManager}
-                title={isManager ? managerRestrictedTitle : undefined}
-                className="w-full sm:w-auto text-red-600 border-red-300 hover:bg-red-100 hover:text-red-700 dark:border-red-800 dark:hover:bg-red-950 disabled:opacity-50"
+                className="w-full sm:w-auto text-red-600 border-red-300 hover:bg-red-100 hover:text-red-700 dark:border-red-800 dark:hover:bg-red-950"
               >
-                {isManager ? (
-                  <Lock className="w-4 h-4 mr-2" />
-                ) : (
-                  <Trash2 className="w-4 h-4 mr-2" />
-                )}
-                {isManager ? 'Restricted' : 'Delete technician…'}
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete technician…
               </Button>
             </div>
-          )}
+          ) : null}
 
           <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <Button

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import EmailSourcePicker from '@/components/admin/EmailSourcePicker';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import type { EmailSourceMode } from '@/lib/admin-email-sources';
 import { applyEmailSourceForCustomer, resolveCustomerSendBrand } from '@/lib/admin-email-sources';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -88,6 +89,7 @@ export function AdminWhatsAppComposerPanel({
   initialTemplate = 'general',
   onClose,
 }: AdminWhatsAppComposerPanelProps) {
+  const { cloudApiOn } = useWhatsAppCloudApiGate('composer');
   const loadedCustomerRef = useRef<string | null>(null);
   const confirmSectionRef = useRef<HTMLDivElement>(null);
   const [customerLoading, setCustomerLoading] = useState(Boolean(initialCustomerId));
@@ -1398,6 +1400,23 @@ export function AdminWhatsAppComposerPanel({
       <div className="hidden xl:block">{renderSendCard()}</div>
     </div>
   );
+
+  if (!cloudApiOn) {
+    return (
+      <div className="flex flex-col h-full min-h-0 items-center justify-center bg-slate-100 p-6 text-center">
+        <WhatsAppIcon className="mb-3 h-8 w-8 text-slate-400" />
+        <h2 className="text-lg font-semibold text-slate-900">WhatsApp Cloud API is off</h2>
+        <p className="mt-1 max-w-sm text-sm text-slate-500">
+          Enable it in Settings → WhatsApp to send from the CRM composer.
+        </p>
+        {onClose ? (
+          <Button type="button" variant="outline" className="mt-4" onClick={onClose}>
+            Close
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-slate-100">

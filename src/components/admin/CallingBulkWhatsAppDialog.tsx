@@ -3,6 +3,7 @@ import { Loader2, Pause, Play, Send, Square } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -63,6 +64,7 @@ export default function CallingBulkWhatsAppDialog({
   customers,
   onRecordSent,
 }: Props) {
+  const { cloudApiOn } = useWhatsAppCloudApiGate('calling');
   const [template, setTemplate] = useState<CallingWhatsAppTemplate>('service_due');
   const [brandMode, setBrandMode] = useState<CallingBulkBrandMode>('auto');
   const [draft, setDraft] = useState('');
@@ -269,6 +271,26 @@ export default function CallingBulkWhatsAppDialog({
   };
 
   const busy = phase === 'running' || phase === 'paused';
+
+  if (!cloudApiOn) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bulk WhatsApp</DialogTitle>
+            <DialogDescription>
+              WhatsApp Cloud API is disabled in Settings. Turn it on under Settings → WhatsApp to send.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog

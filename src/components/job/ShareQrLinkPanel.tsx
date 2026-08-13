@@ -22,6 +22,7 @@ import {
 import { normalizePaymentPhone } from '@/lib/upiPaymentAccounts';
 import { sendPayQrWhatsApp } from '@/lib/whatsappPayQrShare';
 import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 
 export const SHARE_QR_LINK_VALUE = 'share_qr_link';
 
@@ -95,12 +96,15 @@ export default function ShareQrLinkPanel({
   customerId,
   jobRef,
 }: ShareQrLinkPanelProps) {
+  const { cloudApiOn } = useWhatsAppCloudApiGate('pending_payment');
   const [sharing, setSharing] = useState(false);
   const [waPhone, setWaPhone] = useState(() => String(customerPhone || '').trim());
 
   useEffect(() => {
     setWaPhone(String(customerPhone || '').trim());
   }, [customerPhone]);
+
+  if (!cloudApiOn) return null;
 
   const dynamicOptions = useMemo((): ShareUpiOption[] => {
     const fromCommon: ShareUpiOption[] = commonQrCodes

@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/select';
 import { Loader2, ShoppingBag, Search, Check, X, Plus, ListOrdered, Wallet } from 'lucide-react';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { filterInventoryByApproxSearch } from '@/lib/inventorySearch';
@@ -215,6 +216,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const [emailBrand, setEmailBrand] = useState<DocumentBrand | null>(null);
   const [whatsappExtraLines, setWhatsappExtraLines] = useState('');
   const [sharingUpiLink, setSharingUpiLink] = useState(false);
+  const { cloudApiOn } = useWhatsAppCloudApiGate('pending_payment');
   const [resumeDraftOpen, setResumeDraftOpen] = useState(false);
   const [draftToResume, setDraftToResume] = useState<DirectSaleDraft | null>(null);
   const proceedToSendRef = React.useRef(false);
@@ -574,7 +576,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const onlineAmountForQr =
     paymentMode === 'PARTIAL' ? parseFloat(partialOnlineAmount) || 0 : amountNum || 0;
   const canShareUpiLink = Boolean(
-    needsQr &&
+    cloudApiOn &&
+      needsQr &&
       selectedQr?.upiId &&
       selectedQr.dynamicUpiEnabled &&
       onlineAmountForQr > 0 &&
@@ -937,7 +940,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   };
 
   const showPostSaleUpiShare = Boolean(
-    pendingBill?.upiId &&
+    cloudApiOn &&
+      pendingBill?.upiId &&
       pendingBill.onlineAmount &&
       pendingBill.onlineAmount > 0 &&
       digitsPhone(pendingBill.customerPhone).length === 10 &&
@@ -1579,7 +1583,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                     )}
                     {sharingUpiLink ? 'Sending pay QR…' : 'Send pay QR on WhatsApp'}
                   </Button>
-                ) : needsQr && selectedQr?.dynamicUpiEnabled ? (
+                ) : cloudApiOn && needsQr && selectedQr?.dynamicUpiEnabled ? (
                   <p className="text-[11px] leading-relaxed text-muted-foreground">
                     Add customer phone (10 digits) to send the pay QR on WhatsApp.
                   </p>

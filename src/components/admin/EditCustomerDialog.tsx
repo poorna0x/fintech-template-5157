@@ -9,8 +9,9 @@ import { Customer } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { customerNameClassName } from '@/lib/customerDisplay';
-import { MapPin, Download, ExternalLink, Trash2, Lock } from 'lucide-react';
+import { MapPin, Download, ExternalLink, Trash2 } from 'lucide-react';
 import { useAdminRole } from '@/lib/useAdminRole';
+import { MANAGER_RESTRICTED_TITLE } from '@/lib/managerAccess';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
@@ -158,7 +159,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   onCustomerDeleted
 }) => {
   const { isManager } = useAdminRole();
-  const managerRestrictedTitle = 'Restricted for Manager role';
+  const managerRestrictedTitle = MANAGER_RESTRICTED_TITLE;
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -2108,22 +2109,21 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         </div>
 
         <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:justify-between">
+          {!isManager ? (
           <Button 
             variant="destructive" 
             onClick={() => {
-              if (isManager) {
-                toast.error(managerRestrictedTitle);
-                return;
-              }
               setDeleteDialogOpen(true);
             }}
-            disabled={isUpdating || isDeleting || isManager}
-            title={isManager ? managerRestrictedTitle : undefined}
+            disabled={isUpdating || isDeleting}
             className="w-full sm:w-auto"
           >
-            {isManager ? <Lock className="w-4 h-4 mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
-            {isManager ? 'Restricted' : 'Delete Customer'}
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete Customer
           </Button>
+          ) : (
+            <span className="hidden sm:block" />
+          )}
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <Button 
               variant="outline" 

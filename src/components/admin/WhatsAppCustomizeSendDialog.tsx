@@ -44,6 +44,7 @@ import {
   type WhatsAppPhoneTarget,
 } from '@/lib/whatsappPhoneTarget';
 import type { WhatsAppSendSource } from '@/lib/whatsappCrmSettings';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { WhatsAppQuickRepliesBar } from '@/components/whatsapp/WhatsAppQuickRepliesBar';
 
 export type WhatsAppCustomizeSendDialogProps = {
@@ -88,6 +89,7 @@ export function WhatsAppCustomizeSendDialog({
   showWhenLabelField = false,
   onSent,
 }: WhatsAppCustomizeSendDialogProps) {
+  const { cloudApiOn } = useWhatsAppCloudApiGate(source);
   const [brand, setBrand] = useState<DocumentBrand>(defaultBrand);
   const [lastServiceBrand, setLastServiceBrand] = useState<DocumentBrand | null>(null);
   const [brandLoading, setBrandLoading] = useState(false);
@@ -230,6 +232,26 @@ export function WhatsAppCustomizeSendDialog({
       setSending(false);
     }
   };
+
+  if (!cloudApiOn) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>
+              WhatsApp Cloud API is disabled in Settings. Turn it on under Settings → WhatsApp to send.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

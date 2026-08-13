@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { ExternalLink, PenLine } from 'lucide-react';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 
 interface WhatsAppActionDialogProps {
   open: boolean;
@@ -31,6 +32,7 @@ const WhatsAppActionDialog: React.FC<WhatsAppActionDialogProps> = ({
   onOpenNativeWhatsApp,
   onOpenTemplate,
 }) => {
+  const { cloudApiOn } = useWhatsAppCloudApiGate();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-[425px] w-full overflow-hidden">
@@ -41,12 +43,17 @@ const WhatsAppActionDialog: React.FC<WhatsAppActionDialogProps> = ({
           </DialogTitle>
           <DialogDescription className="text-left break-words">
             {customerName
-              ? `Choose how to contact ${customerName}`
-              : 'Open inbox, phone WhatsApp, or compose a template'}
+              ? cloudApiOn
+                ? `Choose how to contact ${customerName}`
+                : `Open phone WhatsApp for ${customerName} (Cloud API is off in Settings)`
+              : cloudApiOn
+                ? 'Open inbox, phone WhatsApp, or compose a template'
+                : 'Phone WhatsApp only — Cloud API is off in Settings'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-2 py-2 min-w-0">
+          {cloudApiOn ? (
           <Button
             type="button"
             className="w-full max-w-full bg-black hover:bg-gray-800 text-white justify-start items-start h-auto py-3 px-4 whitespace-normal text-left"
@@ -63,6 +70,7 @@ const WhatsAppActionDialog: React.FC<WhatsAppActionDialogProps> = ({
               </span>
             </span>
           </Button>
+          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -80,6 +88,7 @@ const WhatsAppActionDialog: React.FC<WhatsAppActionDialogProps> = ({
               </span>
             </span>
           </Button>
+          {cloudApiOn ? (
           <Button
             type="button"
             variant="outline"
@@ -97,6 +106,7 @@ const WhatsAppActionDialog: React.FC<WhatsAppActionDialogProps> = ({
               </span>
             </span>
           </Button>
+          ) : null}
         </div>
 
         <DialogFooter>

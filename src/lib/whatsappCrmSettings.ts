@@ -258,6 +258,30 @@ export function settingsKeyForSendSource(
   }
 }
 
+/** Master Cloud API kill switch (Settings → WhatsApp → Enable WhatsApp Cloud API). */
+export function isWhatsAppCloudApiMasterEnabled(
+  settings: Pick<WhatsAppCrmSettings, 'enabled'> | null | undefined
+): boolean {
+  return settings?.enabled !== false;
+}
+
+/**
+ * Whether CRM UI should show Cloud API send controls for a surface.
+ * Master off → hide everywhere. Optional `source` also checks that surface's allow_* flag.
+ */
+export function canShowWhatsAppCloudSendUi(
+  settings: WhatsAppCrmSettings | null | undefined,
+  source?: WhatsAppSendSource | string | null
+): boolean {
+  if (!isWhatsAppCloudApiMasterEnabled(settings)) return false;
+  if (!settings) return false;
+  if (!source) return true;
+  const key = settingsKeyForSendSource(source);
+  if (!key) return true;
+  const v = settings[key];
+  return v !== false;
+}
+
 const GLOBAL_KEY_FOR_TECH_WA: Partial<
   Record<TechWhatsAppCategory, keyof WhatsAppCrmSettings>
 > = {
@@ -338,10 +362,30 @@ let settingsCacheMem: {
 const SETTINGS_CACHE_TTL_MS = 2 * 60 * 1000;
 const SETTINGS_CACHE_KEY = 'wa_crm_settings_cache_v1';
 
+/** Sync peek of cached settings (memory / sessionStorage). Null if cache cold. */
+export function peekWhatsAppCrmSettingsCache(): WhatsAppCrmSettings | null {
+  if (settingsCacheMem?.settings) return settingsCacheMem.settings;
+  try {
+    const raw = sessionStorage.getItem(SETTINGS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { settings?: WhatsAppCrmSettings };
+    return parsed?.settings ? normalizeWhatsAppCrmSettings(parsed.settings) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function invalidateWhatsAppCrmSettingsCache(): void {
   settingsCacheMem = null;
   try {
     sessionStorage.removeItem(SETTINGS_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('wa-crm-settings-changed'));
+    }
   } catch {
     /* ignore */
   }
@@ -521,6 +565,13 @@ export async function saveWhatsAppCrmSettings(
       } catch {
         /* ignore */
       }
+      try {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('wa-crm-settings-changed'));
+        }
+      } catch {
+        /* ignore */
+      }
       return { ok: true, settings };
     }
     return { ok: false, error: error.message };
@@ -534,6 +585,13 @@ export async function saveWhatsAppCrmSettings(
   settingsCacheMem = cached;
   try {
     sessionStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(cached));
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('wa-crm-settings-changed'));
+    }
   } catch {
     /* ignore */
   }

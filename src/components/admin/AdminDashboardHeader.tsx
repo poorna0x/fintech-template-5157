@@ -12,7 +12,6 @@ import {
   BarChart3,
   Clock,
   DollarSign,
-  Lock,
   Mail,
   ListOrdered,
   MapPin,
@@ -61,7 +60,6 @@ type AdminDashboardHeaderProps = {
   onOpenAdminTool: (tool: AdminToolDialog) => void;
   onShowAmcView: () => void;
   isManager: boolean;
-  managerRestrictedTitle: string;
   currentView: AdminDashboardView;
   onViewChange: (view: AdminDashboardView) => void;
   onAddCustomer: () => void;
@@ -117,7 +115,6 @@ export function AdminDashboardHeader({
   onOpenAdminTool,
   onShowAmcView,
   isManager,
-  managerRestrictedTitle,
   currentView,
   onViewChange,
   onAddCustomer,
@@ -276,26 +273,26 @@ export function AdminDashboardHeader({
                     <Star className="w-4 h-4 mr-2" />
                     View AMC
                   </DropdownMenuItem>
+                  {!isManager ? (
                   <DropdownMenuItem
-                    disabled={isManager}
                     onClick={() => {
-                      if (isManager) return;
                       onOpenAdminTool('direct-sale');
                     }}
                   >
-                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <ShoppingCart className="w-4 h-4 mr-2" />}
+                    <ShoppingCart className="w-4 h-4 mr-2" />
                     Direct / Office Sales
                   </DropdownMenuItem>
+                  ) : null}
+                  {!isManager ? (
                   <DropdownMenuItem
-                    disabled={isManager}
                     onClick={() => {
-                      if (isManager) return;
                       onOpenAdminTool('amount-trackers');
                     }}
                   >
-                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <DollarSign className="w-4 h-4 mr-2" />}
+                    <DollarSign className="w-4 h-4 mr-2" />
                     Amount Trackers
                   </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem onClick={() => onOpenAdminTool('sent-email-log')}>
                     <Mail className="w-4 h-4 mr-2" />
                     Sent email log
@@ -320,60 +317,64 @@ export function AdminDashboardHeader({
                     <MessageSquare className="w-4 h-4 mr-2" />
                     Message technician
                   </DropdownMenuItem>
+                  {!isManager ? (
                   <DropdownMenuItem
-                    disabled={isManager}
                     onClick={() => {
-                      if (isManager) return;
                       onToolsMenuOpenChange(false);
                       hapticTap();
                       navigate(settingsPath('technician-management'));
                     }}
                   >
-                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <UserPlus className="w-4 h-4 mr-2" />}
+                    <UserPlus className="w-4 h-4 mr-2" />
                     Edit Technician
                   </DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
+              {!isManager ? (
               <Button
                 variant={currentView === 'payments' ? 'default' : 'outline'}
                 onClick={() => onViewChange('payments')}
-                disabled={isManager}
                 className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                title={isManager ? managerRestrictedTitle : 'Payments'}
+                title="Payments"
               >
-                {isManager ? <Lock className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
+                <DollarSign className="w-4 h-4" />
                 <span className="hidden sm:inline">Payments</span>
               </Button>
+              ) : null}
+              {!isManager ? (
               <Button
                 variant={currentView === 'billing' ? 'default' : 'outline'}
                 onClick={() => onViewChange('billing')}
-                disabled={isManager}
                 className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                title={isManager ? managerRestrictedTitle : 'Billing'}
+                title="Billing"
               >
-                {isManager ? <Lock className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
+                <Receipt className="w-4 h-4" />
                 <span className="hidden sm:inline">Billing</span>
               </Button>
+              ) : null}
+              {!isManager ? (
               <Button
                 variant={currentView === 'analytics' ? 'default' : 'outline'}
                 onClick={() => onViewChange('analytics')}
-                disabled={isManager}
                 className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                title={isManager ? managerRestrictedTitle : 'Analytics'}
+                title="Analytics"
               >
-                {isManager ? <Lock className="w-4 h-4" /> : <BarChart3 className="w-4 h-4" />}
+                <BarChart3 className="w-4 h-4" />
                 <span className="hidden sm:inline">Analytics</span>
               </Button>
+              ) : null}
+              {!isManager ? (
               <Button
                 variant={currentView === 'inventory' ? 'default' : 'outline'}
                 onClick={() => onViewChange('inventory')}
-                disabled={isManager}
                 className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                title={isManager ? managerRestrictedTitle : 'Inventory'}
+                title="Inventory"
               >
-                {isManager ? <Lock className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
+                <ShoppingCart className="w-4 h-4" />
                 <span className="hidden sm:inline">Inventory</span>
               </Button>
+              ) : null}
             </div>
 
             <Button variant="brand" onClick={onAddCustomer} className="w-full sm:w-auto px-4 py-2 text-sm sm:text-base">

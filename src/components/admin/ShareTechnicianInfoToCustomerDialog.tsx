@@ -9,6 +9,7 @@ import { Job } from '@/types';
 import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { isWhatsAppJobNotifyAllowed } from '@/lib/whatsappCrmSettings';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 
 export interface ShareTechnicianInfoToCustomerDialogProps {
   open: boolean;
@@ -41,6 +42,7 @@ const ShareTechnicianInfoToCustomerDialog: React.FC<ShareTechnicianInfoToCustome
   technicians,
   getEta,
 }) => {
+  const { cloudApiOn } = useWhatsAppCloudApiGate('tech_assigned');
   const [etaResult, setEtaResult] = useState<{ durationText?: string; estimatedArrival?: string } | null>(null);
   const [etaLoading, setEtaLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -100,6 +102,27 @@ We'll reach you soon. For any queries, contact the technician directly.`;
   }, [open, job?.id, assignedTechnicianId, getEta]);
 
   if (!job || !customer) return null;
+
+  if (!cloudApiOn) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Share technician</DialogTitle>
+            <DialogDescription>
+              WhatsApp Cloud API is disabled in Settings. Turn it on under Settings → WhatsApp to
+              send.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const customerPhone = customer.phone || '';
   const alternatePhone = customer.alternate_phone || customer.alternatePhone || '';

@@ -1,0 +1,14 @@
+---
+description: Keep feature-branch commits pushed so main merge is easy later
+alwaysApply: true
+---
+
+# Feature branch WIP → keep remote updated
+
+When changing code on a feature branch (not `main`):
+
+- After meaningful edits, **commit + push that branch** to origin.
+- Goal: remote branch always has latest WIP so merging / pushing to **main** later is one clean step.
+- Do **not** push or merge **main** unless the user explicitly asks.
+
+Active WhatsApp-era preference still applies where relevant: prefer the agreed feature branch for related work; see `whatsapp-crm-feature-branch.mdc`.

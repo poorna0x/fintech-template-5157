@@ -104,6 +104,7 @@ import {
 } from '@/lib/qrCodeManager';
 import DynamicUpiQrDisplay from '@/components/DynamicUpiQrDisplay';
 import ShareQrLinkPanel, { SHARE_QR_LINK_VALUE } from '@/components/job/ShareQrLinkPanel';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import ImageUpload from '@/components/ImageUpload';
@@ -445,6 +446,7 @@ const TechnicianCustomerSearchDialog = React.lazy(
 const TechnicianNewJobDialog = React.lazy(() => import('@/components/admin/NewJobDialog'));
 
 const TechnicianDashboard = () => {
+  const { cloudApiOn: whatsappCloudApiOn } = useWhatsAppCloudApiGate('pending_payment');
   const { user, logout, isTechnician, authInitializing } = useAuth();
   const [authGraceExpired, setAuthGraceExpired] = useState(false);
   const navigate = useNavigate();
@@ -9585,9 +9587,11 @@ const TechnicianDashboard = () => {
                                       {tech.fullName}'s QR Code
                             </SelectItem>
                                   ))}
+                                {whatsappCloudApiOn ? (
                                 <SelectItem value={SHARE_QR_LINK_VALUE}>
                                   Send pay QR on WhatsApp (customer not on site)
                                 </SelectItem>
+                                ) : null}
                               </>
                             )}
                           </SelectContent>

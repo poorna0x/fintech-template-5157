@@ -221,7 +221,9 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
                 WhatsApp Cloud API
               </CardTitle>
               <CardDescription className="mt-1">
-                Universal kill switch for CRM sends (inbox, AMC, composer, pending payments).
+                Master switch for CRM Cloud API. When off, send options are hidden everywhere
+                (inbox composer, Direct Sale, pending payments, PDF WhatsApp, tech pay QR, Calling,
+                etc.). Phone wa.me shortcuts stay available where they are personal WhatsApp.
               </CardDescription>
             </div>
             <Switch
@@ -233,7 +235,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
         </CardHeader>
         <CardContent>
           <Badge variant={settings.enabled ? 'default' : 'secondary'}>
-            {settings.enabled ? 'Enabled' : 'Disabled — sends blocked'}
+            {settings.enabled ? 'Enabled' : 'Disabled — Cloud API send UI hidden'}
           </Badge>
         </CardContent>
       </Card>

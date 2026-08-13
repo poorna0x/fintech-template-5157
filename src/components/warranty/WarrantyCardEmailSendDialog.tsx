@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
 import { buildDocumentPdfWhatsAppCaption } from '@/lib/document-pdf-whatsapp-caption';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
@@ -98,6 +99,8 @@ export default function WarrantyCardEmailSendDialog({
   onSaveCustomerEmail,
   onSent,
 }: WarrantyCardEmailSendDialogProps) {
+  const { cloudApiOn } = useWhatsAppCloudApiGate('documents');
+  const waEnabled = allowWhatsApp && cloudApiOn;
   const [channel, setChannel] = useState<SendChannel>('email');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [whatsappPhone, setWhatsappPhone] = useState('');
@@ -123,17 +126,17 @@ export default function WarrantyCardEmailSendDialog({
     setMessage(getDefaultDocumentMessage('warranty_document'));
     setChannel(
       pickDefaultWarrantyChannel({
-        allowWhatsApp,
+        allowWhatsApp: waEnabled,
         hasEmail: Boolean(seeded),
         hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
       })
     );
     setWindowOpen(null);
     setWindowHoursLeft(null);
-  }, [open, customerEmailOnFile, defaultPhone, pdfData?.customer?.phone, allowWhatsApp]);
+  }, [open, customerEmailOnFile, defaultPhone, pdfData?.customer?.phone, waEnabled]);
 
   useEffect(() => {
-    if (!open || !allowWhatsApp) return;
+    if (!open || !waEnabled) return;
     if (channel !== 'whatsapp' && channel !== 'both') return;
     const phone = formatPhoneForWhatsApp(whatsappPhone);
     if (!phone || phone.length < 10) {
@@ -164,7 +167,7 @@ export default function WarrantyCardEmailSendDialog({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, channel, allowWhatsApp, whatsappPhone]);
+  }, [open, channel, waEnabled, whatsappPhone]);
 
   const brandLabel = brand ? getDocumentBrandLabel(brand) : '';
   const customerEmailOnRecord = getValidCustomerEmail(customerEmailOnFile);
@@ -186,7 +189,7 @@ export default function WarrantyCardEmailSendDialog({
   const canSend =
     channel === 'whatsapp' ? canSendWhatsApp : channel === 'both' ? canSendBoth : canSendEmail;
   const showEmailFields = channel === 'email' || channel === 'both';
-  const showWhatsAppFields = (channel === 'whatsapp' || channel === 'both') && allowWhatsApp;
+  const showWhatsAppFields = (channel === 'whatsapp' || channel === 'both') && waEnabled;
 
   const handleSendEmail = async () => {
     if (!pdfData || !brand) {
@@ -600,7 +603,7 @@ export default function WarrantyCardEmailSendDialog({
             </div>
           ) : null}
 
-          {allowWhatsApp ? (
+          {waEnabled ? (
             <div className="space-y-2">
               <Label className="text-sm font-medium">Send via</Label>
               <ToggleGroup

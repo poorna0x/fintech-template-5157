@@ -41,6 +41,7 @@ import {
   sendAdminWhatsAppDocumentWithColdFallback,
 } from '@/lib/sendAdminWhatsAppApi';
 import { formatPhoneForWhatsApp, cn } from '@/lib/utils';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { supabase } from '@/lib/supabaseClient';
 import {
   fetchLastInboundAt,
@@ -167,6 +168,8 @@ export default function DocumentEmailSendDialog({
   whatsappExtraLines = '',
   onSent,
 }: DocumentEmailSendDialogProps) {
+  const { cloudApiOn } = useWhatsAppCloudApiGate('documents');
+  const waEnabled = allowWhatsApp && cloudApiOn;
   const meta = KIND_META[kind];
   const [channel, setChannel] = useState<SendChannel>('email');
   const [recipientRows, setRecipientRows] = useState<string[]>([emptyRow()]);
@@ -189,7 +192,7 @@ export default function DocumentEmailSendDialog({
     setExtraWhatsappPhone('');
     setRequireAccept(false);
     const nextChannel = pickDefaultChannel({
-      allowWhatsApp,
+      allowWhatsApp: waEnabled,
       hasEmail: seeded.length > 0,
       hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
     });
@@ -218,12 +221,12 @@ export default function DocumentEmailSendDialog({
     brand,
     dueDateIso,
     kind,
-    allowWhatsApp,
+    waEnabled,
     whatsappExtraLines,
   ]);
 
   useEffect(() => {
-    if (!open || !allowWhatsApp) return;
+    if (!open || !waEnabled) return;
     if (channel !== 'whatsapp' && channel !== 'both') return;
     const phone = formatPhoneForWhatsApp(whatsappPhone);
     if (!phone || phone.length < 10) {
@@ -254,7 +257,7 @@ export default function DocumentEmailSendDialog({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, channel, allowWhatsApp, whatsappPhone]);
+  }, [open, channel, waEnabled, whatsappPhone]);
 
   const normalizedRecipients = useMemo(
     () => normalizeRecipientList(recipientRows),
@@ -629,7 +632,7 @@ export default function DocumentEmailSendDialog({
             </div>
           ) : null}
 
-          {allowWhatsApp ? (
+          {waEnabled ? (
             <div className="space-y-2">
               <Label className="text-sm font-medium">Send via</Label>
               <ToggleGroup
@@ -685,7 +688,7 @@ export default function DocumentEmailSendDialog({
             </div>
           ) : null}
 
-          {showWhatsAppFields && allowWhatsApp ? (
+          {showWhatsAppFields && waEnabled ? (
             <div className="space-y-2">
               <Label htmlFor="doc-wa-phone" className="text-sm font-medium">
                 Customer WhatsApp

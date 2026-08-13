@@ -16,6 +16,7 @@ import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download, Users as UsersIcon, Filter, Loader2 } from 'lucide-react';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { sendSalarySlipWhatsApp } from '@/lib/sendSalarySlipWhatsApp';
 import { supabase } from '@/lib/supabase';
@@ -207,6 +208,7 @@ const shouldBlockTechCardSwipe = (target: EventTarget | null): boolean => {
 };
 
 const TechnicianPayments = () => {
+  const { cloudApiOn } = useWhatsAppCloudApiGate('composer');
   const location = useLocation();
   const navigate = useNavigate();
   const [technicians, setTechnicians] = useState<any[]>([]);
@@ -3924,6 +3926,7 @@ const TechnicianPayments = () => {
               <Download className="w-4 h-4 mr-2" />
               Download
             </Button>
+            {cloudApiOn ? (
             <Button
               variant="outline"
               disabled={salarySlipSending}
@@ -3937,6 +3940,7 @@ const TechnicianPayments = () => {
               )}
               WhatsApp
             </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3983,6 +3987,7 @@ const TechnicianPayments = () => {
           });
         }}
         extraFooter={
+          cloudApiOn ? (
           <Button
             type="button"
             variant="outline"
@@ -3997,6 +4002,7 @@ const TechnicianPayments = () => {
             )}
             Send WhatsApp
           </Button>
+          ) : null
         }
       />
 

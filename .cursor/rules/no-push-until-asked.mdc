@@ -1,11 +1,22 @@
 ---
-description: Do not git push until the user explicitly asks
+description: Push feature-branch WIP; never push/merge main unless asked
 alwaysApply: true
 ---
 
-# No Push Until Asked
+# Git push policy
 
-- **Never run `git push`** (or push to remote in any form) unless the user explicitly asks in that conversation (e.g. "push", "push to main").
-- Committing is still governed by the user's commit rule — only commit when explicitly asked.
-- After making changes, stop at commit-ready state or report what changed locally; do not push proactively, even for bug fixes or urgent regressions.
-- If the user says "save" or "don't push until I say", treat that as an ongoing preference until they explicitly request a push.
+## Feature branch (default while iterating)
+
+After a **meaningful chunk** of work on the current non-`main` branch:
+
+1. **Commit** on that branch (clear message; no secrets).
+2. **Push that branch only** (`git push -u origin HEAD`) so remote WIP stays current.
+
+Do this without waiting for an explicit “push” / “commit” each time — keeps later merge-to-main easy.
+
+If the user says “don’t push until I say” / “save only”, pause proactive push until they lift it.
+
+## Main (hard gate)
+
+- **Never** merge into `main`, `git push origin main`, or create a main-bound release unless the user clearly asks (e.g. “merge to main”, “push to main”).
+- When they say “push” without naming main → push **only** the current feature branch.

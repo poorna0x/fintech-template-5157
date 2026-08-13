@@ -1,3 +1,4 @@
+import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -371,6 +372,7 @@ function directInboxMediaUrl(ref: string | null | undefined): string | null {
 }
 
 export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: Props) {
+  const { cloudApiOn } = useWhatsAppCloudApiGate('inbox');
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [threads, setThreads] = useState<WhatsAppThread[]>([]);
@@ -2424,6 +2426,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 >
                   <Copy className="h-4 w-4" />
                 </button>
+                {cloudApiOn ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -2527,6 +2530,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                ) : null}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -2843,7 +2847,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 ) : null}
               </div>
 
-              {windowOpen ? (
+              {!cloudApiOn ? (
+              <div className="shrink-0 border-t border-[#2a3942] bg-[#111b21] px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-xs text-[#8696a0]">
+                WhatsApp Cloud API is disabled in Settings. You can still read this thread.
+              </div>
+              ) : windowOpen ? (
               <div className="shrink-0 border-t border-[#2a3942] bg-[#111b21] px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-3">
                   <div className="space-y-2">
                     {attachFile ? (
