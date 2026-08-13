@@ -188,8 +188,8 @@ export function WhatsAppQuickRepliesBar({
   };
 
   const handleChip = (item: WhatsAppQuickTextReply) => {
-    if (windowOpen && item.id === 'wfs_collect' && onStartWaterFilterService) {
-      void onStartWaterFilterService();
+    if (windowOpen && item.id === 'wfs_collect' && onRequestLocation) {
+      void onRequestLocation();
       return;
     }
     if (
@@ -243,8 +243,8 @@ export function WhatsAppQuickRepliesBar({
 
   const handleTemplate = async (reply: WhatsAppQuickTemplateReply) => {
     if (disabled) return;
-    if (windowOpen && reply.id === 'tpl_wfs_collect' && onStartWaterFilterService) {
-      await onStartWaterFilterService();
+    if (windowOpen && reply.id === 'tpl_wfs_collect' && onRequestLocation) {
+      await onRequestLocation();
       return;
     }
     if (
@@ -506,22 +506,6 @@ export function WhatsAppQuickRepliesBar({
         <>
           <ChipRow label="Ask">
             {askReplies.map(renderTextChip)}
-            {onStartBookLocationPhoto ? (
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
-                disabled={disabled}
-                title="Start bot: location → flat → photo → book"
-                className={cn(
-                  chipClass(disabled),
-                  'border-[#008069] bg-[#008069] text-white hover:bg-[#006e5a] hover:text-white'
-                )}
-                onClick={() => void onStartBookLocationPhoto()}
-              >
-                Book · loc+photo
-              </Button>
-            ) : null}
           </ChipRow>
 
           <ChipRow label="Quick">{otherReplies.map(renderTextChip)}</ChipRow>

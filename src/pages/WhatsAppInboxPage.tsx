@@ -126,7 +126,11 @@ import {
   WHATSAPP_ATTACH_ACCEPT,
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
-import { quickReplyBookingUrl } from '@/lib/whatsappQuickMessages';
+import {
+  buildQuickHelloTemplate,
+  quickReplyBookingUrl,
+  waterFilterServiceFromLabel,
+} from '@/lib/whatsappQuickMessages';
 import {
   clearWhatsAppLocalDeviceData,
   buildWhatsAppLocalBackup,
@@ -216,13 +220,59 @@ type Props = {
 
 const QUICK_ACTION_LABELS: Record<WhatsAppBookingQuickAction, string> = {
   book_service: 'Book service',
-  request_location: 'Request location',
-  request_photo: 'Request photo',
+  request_location: 'Ask location',
+  request_photo: 'Ask photo',
   request_building_flat: 'Ask flat / building',
   request_name: 'Ask name',
   water_filter_service: 'Water Filter Service',
   book_location_photo: 'Book · location + photo',
 };
+
+const BOOK_FLOW_ACTIONS = new Set<WhatsAppBookingQuickAction>([
+  'book_service',
+  'book_location_photo',
+  'water_filter_service',
+]);
+
+type InboxQuickMessageAction = 'send_hello' | 'call_shortly' | 'thanks_reply';
+
+const QUICK_MESSAGE_LABELS: Record<InboxQuickMessageAction, string> = {
+  send_hello: 'Send hello',
+  call_shortly: 'We’ll call you shortly',
+  thanks_reply: 'Thanks — noted',
+};
+
+function quickActionConfirmCopy(
+  action: WhatsAppBookingQuickAction,
+  windowIsOpen: boolean
+): { title: string; description: string; confirm: string } {
+  const title = QUICK_ACTION_LABELS[action];
+  if (action === 'book_service') {
+    return {
+      title,
+      description: windowIsOpen
+        ? 'Starts the booking flow on WhatsApp (date / time / details). Customer replies in this chat.'
+        : '24h window closed — sends a cold book template; booking continues when they reply.',
+      confirm: windowIsOpen ? 'Start booking' : 'Send book template',
+    };
+  }
+  if (BOOK_FLOW_ACTIONS.has(action)) {
+    return {
+      title,
+      description: windowIsOpen
+        ? 'Starts a guided WhatsApp flow for this customer.'
+        : '24h window closed — sends a cold template and continues when they reply.',
+      confirm: windowIsOpen ? 'Start on WhatsApp' : 'Send template & wait',
+    };
+  }
+  return {
+    title,
+    description: windowIsOpen
+      ? 'Asks the customer for this info only — does not start booking. Use Book service to book.'
+      : '24h window closed — sends an ask template only (no booking). Continues when they reply.',
+    confirm: windowIsOpen ? 'Send ask' : 'Send template',
+  };
+}
 
 function InboxChatPhoto({
   row,
@@ -358,8 +408,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newChatPhone, setNewChatPhone] = useState('');
   const [waterFilterOpen, setWaterFilterOpen] = useState(false);
-  const [quickActionConfirm, setQuickActionConfirm] =
-    useState<WhatsAppBookingQuickAction | null>(null);
+  const [quickActionConfirm, setQuickActionConfirm] = useState<
+    WhatsAppBookingQuickAction | InboxQuickMessageAction | null
+  >(null);
   const [quickActionBusy, setQuickActionBusy] = useState(false);
 
   /** Android back / header Back: close overlay → leave chat → exit inbox. */
@@ -1477,7 +1528,83 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
   };
 
-  const runQuickAction = async (action: WhatsAppBookingQuickAction) => {
+  const runQuickMessage = async (action: InboxQuickMessageAction) => {
+    if (!selectedPhone || quickActionBusy) return;
+    setQuickActionBusy(true);
+    try {
+      const name = String(activeThread?.customer_name || 'there').trim() || 'there';
+      const who = waterFilterServiceFromLabel({
+        customerName: name,
+        brand: threadBrand,
+      });
+      const bodies: Record<InboxQuickMessageAction, string> = {
+        send_hello: `Hi ${name}, this is ${who}. Please reply on this chat if you need help with your water purifier.`,
+        call_shortly: `Hi ${name}, thanks for reaching out. We’ll call you shortly.`,
+        thanks_reply: `Hi ${name}, thanks — we’ve noted your message. We’ll update you here.`,
+      };
+
+      if (!windowOpen && action === 'send_hello') {
+        const payload = buildQuickHelloTemplate(quickReplyContext);
+        const result = await sendAdminWhatsAppTemplate({
+          to: selectedPhone,
+          templateName: payload.templateName,
+          languageCode: payload.language || 'en',
+          bodyParams: payload.bodyParams,
+          customerId: activeThread?.customer_id,
+          source: 'inbox',
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Could not send hello');
+          return;
+        }
+        toast.success('Hello template sent');
+        setQuickActionConfirm(null);
+        bumpThreadAfterOutbound({
+          phone: selectedPhone,
+          body: payload.templateName,
+          msgType: 'template',
+          templateName: payload.templateName,
+          customerId: activeThread?.customer_id,
+        });
+        void loadThread(selectedPhone, { soft: true, force: true });
+        return;
+      }
+
+      if (!windowOpen) {
+        toast.error('24h window closed — open with Hello / Book service, or wait for a customer reply.');
+        return;
+      }
+
+      const text = bodies[action];
+      const result = await sendAdminWhatsAppText({
+        to: selectedPhone,
+        text,
+        customerId: activeThread?.customer_id,
+        source: 'inbox',
+      });
+      if (!result.ok) {
+        toast.error(result.error || 'Could not send message');
+        return;
+      }
+      toast.success(`${QUICK_MESSAGE_LABELS[action]} sent`);
+      setQuickActionConfirm(null);
+      bumpThreadAfterOutbound({
+        phone: selectedPhone,
+        body: text,
+        msgType: 'text',
+        customerId: activeThread?.customer_id,
+      });
+      void loadThread(selectedPhone, { soft: true, force: true });
+    } finally {
+      setQuickActionBusy(false);
+    }
+  };
+
+  const runQuickAction = async (action: WhatsAppBookingQuickAction | InboxQuickMessageAction) => {
+    if (action === 'send_hello' || action === 'call_shortly' || action === 'thanks_reply') {
+      await runQuickMessage(action);
+      return;
+    }
     if (!selectedPhone || quickActionBusy) return;
     setQuickActionBusy(true);
     try {
@@ -1486,17 +1613,25 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         action,
         customerId: activeThread?.customer_id,
         customerName: activeThread?.customer_name,
+        brand: threadBrand === 'elevenro' ? 'elevenro' : 'hydrogenro',
       });
       if (!result.ok) {
         toast.error(result.error || 'Quick action failed');
         return;
       }
+      const isBook = action === 'book_service';
       if (result.via === 'template') {
         toast.success(
-          `Cold template sent${result.templateName ? ` (${result.templateName})` : ''}. Bot continues when they reply.`
+          isBook
+            ? `Book template sent${result.templateName ? ` (${result.templateName})` : ''}. Booking continues when they reply.`
+            : `Ask template sent${result.templateName ? ` (${result.templateName})` : ''} — not a booking.`
         );
       } else {
-        toast.success(`${QUICK_ACTION_LABELS[action]} started on WhatsApp`);
+        toast.success(
+          isBook
+            ? 'Booking started on WhatsApp'
+            : `${QUICK_ACTION_LABELS[action]} sent — booking not started`
+        );
       }
       setQuickActionConfirm(null);
       bumpThreadAfterOutbound({
@@ -2088,16 +2223,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       )}
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuContent align="end" className="w-56">
                     <DropdownMenuLabel>Quick actions</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="cursor-pointer"
-                      disabled={quickActionBusy}
-                      onClick={() => setWaterFilterOpen(true)}
-                    >
-                      Water Filter Service
-                    </DropdownMenuItem>
+                    <DropdownMenuLabel className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                      Booking
+                    </DropdownMenuLabel>
                     <DropdownMenuItem
                       className="cursor-pointer"
                       disabled={quickActionBusy}
@@ -2105,19 +2236,16 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     >
                       Book service
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                      Ask only
+                    </DropdownMenuLabel>
                     <DropdownMenuItem
                       className="cursor-pointer"
                       disabled={quickActionBusy}
-                      onClick={() => setQuickActionConfirm('request_location')}
+                      onClick={() => setWaterFilterOpen(true)}
                     >
-                      Request location
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="cursor-pointer"
-                      disabled={quickActionBusy}
-                      onClick={() => setQuickActionConfirm('request_photo')}
-                    >
-                      Request photo
+                      WFS · ask location
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="cursor-pointer"
@@ -2125,6 +2253,52 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       onClick={() => setQuickActionConfirm('request_name')}
                     >
                       Ask name
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('request_location')}
+                    >
+                      Ask location
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('request_building_flat')}
+                    >
+                      Ask flat / building
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('request_photo')}
+                    >
+                      Ask photo
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                      Messages
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('send_hello')}
+                    >
+                      Send hello
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('call_shortly')}
+                    >
+                      We’ll call you shortly
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('thanks_reply')}
+                    >
+                      Thanks — noted
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -2733,6 +2907,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         onOpenChange={setWaterFilterOpen}
         defaultPhone={selectedPhone || ''}
         defaultName={activeThread?.customer_name || ''}
+        brand={threadBrand}
         onStarted={(phoneE164) => {
           setSelectedPhone(phoneE164);
           void loadInbox({ soft: true });
@@ -2750,13 +2925,24 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           <DialogHeader>
             <DialogTitle>
               {quickActionConfirm
-                ? QUICK_ACTION_LABELS[quickActionConfirm]
+                ? quickActionConfirm in QUICK_MESSAGE_LABELS
+                  ? QUICK_MESSAGE_LABELS[quickActionConfirm as InboxQuickMessageAction]
+                  : QUICK_ACTION_LABELS[quickActionConfirm as WhatsAppBookingQuickAction]
                 : 'Quick action'}
             </DialogTitle>
             <DialogDescription>
-              {windowOpen
-                ? 'Starts the booking bot on WhatsApp (step-by-step). Customer replies in this chat.'
-                : '24h window is closed — sends an approved cold template and resumes the bot when they reply.'}
+              {quickActionConfirm && quickActionConfirm in QUICK_MESSAGE_LABELS
+                ? windowOpen
+                  ? 'Sends a short message in this chat. Does not start booking.'
+                  : quickActionConfirm === 'send_hello'
+                    ? '24h window closed — sends a Hello cold template only.'
+                    : '24h window is closed — open with Hello / Book service first, or wait for a reply.'
+                : quickActionConfirm
+                  ? quickActionConfirmCopy(
+                      quickActionConfirm as WhatsAppBookingQuickAction,
+                      Boolean(windowOpen)
+                    ).description
+                  : ''}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -2779,12 +2965,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               {quickActionBusy ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Starting…
+                  Sending…
                 </>
-              ) : windowOpen ? (
-                'Start on WhatsApp'
+              ) : quickActionConfirm && quickActionConfirm in QUICK_MESSAGE_LABELS ? (
+                'Send'
+              ) : quickActionConfirm ? (
+                quickActionConfirmCopy(
+                  quickActionConfirm as WhatsAppBookingQuickAction,
+                  Boolean(windowOpen)
+                ).confirm
               ) : (
-                'Send template & wait'
+                'Send'
               )}
             </Button>
           </DialogFooter>
