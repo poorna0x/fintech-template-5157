@@ -115,10 +115,10 @@ import {
 import { WhatsAppAvatar, WhatsAppTicks } from '@/components/whatsapp/WhatsAppTicks';
 import {
   fetchApprovedWhatsAppTemplates,
-  fetchWhatsAppR2MediaBytes,
-  fetchWhatsAppR2SignedUrl,
+  getWhatsAppMediaBytesCached,
   purgeWhatsAppMessages,
   readFileAsBase64,
+  resolveWhatsAppMediaDisplayUrl,
   sendAdminWhatsAppMedia,
   sendAdminWhatsAppTemplate,
   sendAdminWhatsAppText,
@@ -127,6 +127,7 @@ import {
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
 import { quickReplyBookingUrl } from '@/lib/whatsappQuickMessages';
+import { registerNativeBackHandler, tryNativeBackHandlers } from '@/lib/nativeBackButton';
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -338,6 +339,56 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [quickActionConfirm, setQuickActionConfirm] =
     useState<WhatsAppBookingQuickAction | null>(null);
   const [quickActionBusy, setQuickActionBusy] = useState(false);
+
+  /** Android back / header Back: close overlay → leave chat → exit inbox. */
+  useEffect(() => {
+    return registerNativeBackHandler(() => {
+      if (inboxPhotoViewer) {
+        setInboxPhotoViewer(null);
+        return true;
+      }
+      if (reportOpen) {
+        setReportOpen(false);
+        setReportCustomer(null);
+        return true;
+      }
+      if (quickActionConfirm) {
+        setQuickActionConfirm(null);
+        return true;
+      }
+      if (newChatOpen) {
+        setNewChatOpen(false);
+        return true;
+      }
+      if (waterFilterOpen) {
+        setWaterFilterOpen(false);
+        return true;
+      }
+      if (customRangeOpen) {
+        setCustomRangeOpen(false);
+        return true;
+      }
+      if (selectedPhone) {
+        setSelectedPhone(null);
+        return true;
+      }
+      return false;
+    });
+  }, [
+    inboxPhotoViewer,
+    reportOpen,
+    quickActionConfirm,
+    newChatOpen,
+    waterFilterOpen,
+    customRangeOpen,
+    selectedPhone,
+  ]);
+
+  const handleChromeBack = useCallback(() => {
+    if (tryNativeBackHandlers()) return;
+    onBack?.();
+  }, [onBack]);
+
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const loadOlderSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -407,11 +458,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     const rangeKey = inboxListRangeKey(listRangeRef.current);
     const cached = peekWhatsAppInboxThreadsCache({ rangeKey });
     const cacheFresh = isWhatsAppInboxListCacheFresh(cached);
-    if (cached?.threads?.length && !opts?.force) {
+    // Soft refresh must NOT paint stale cache over live/optimistic patches.
+    if (cached?.threads?.length && !opts?.force && !opts?.soft) {
       setThreads(cached.threads);
-      if (!opts?.soft) setLoading(false);
+      setLoading(false);
     }
-    // Fresh cache + not forced → skip network (realtime / soft still refresh periodically)
+    // Fresh cache + not forced → skip network (realtime / soft still refresh)
     if (cacheFresh && !opts?.force && !opts?.soft) {
       setLoading(false);
       return;
@@ -482,10 +534,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     const seq = ++loadThreadSeqRef.current;
     const cached = peekWhatsAppThreadMessagesCache(phone);
     const cacheFresh = isWhatsAppThreadCacheFresh(cached);
-    if (cached?.messages?.length && !opts?.force) {
+    // Soft refresh must not wipe newer optimistic/realtime messages with stale cache.
+    if (cached?.messages?.length && !opts?.force && !opts?.soft) {
       setThreadMessages(cached.messages);
       setThreadHasMoreOlder(Boolean(cached.hasMoreOlder));
-      if (!opts?.soft) setThreadLoading(false);
+      setThreadLoading(false);
     }
     if (cacheFresh && !opts?.force && !opts?.soft) {
       setThreadLoading(false);
@@ -598,23 +651,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const resolveMediaHref = useCallback(async (row: WhatsAppMessageRow): Promise<string | null> => {
     const ref = row.media_url;
     if (!ref) return null;
-    if (
-      !isR2MediaRef(ref) &&
-      !ref.startsWith('whatsapp-media:') &&
-      /^https:\/\//i.test(ref)
-    ) {
-      return ref;
-    }
     const cached = mediaUrlCacheRef.current[row.id];
     if (cached) return cached;
-    const signed = await fetchWhatsAppR2SignedUrl({
+    const resolved = await resolveWhatsAppMediaDisplayUrl({
       mediaUrl: ref,
       messageId: row.id,
+      mimeHint: row.media_mime,
     });
-    if (!signed.ok || !signed.url) return null;
-    mediaUrlCacheRef.current[row.id] = signed.url;
-    setMediaUrlCache((prev) => (prev[row.id] ? prev : { ...prev, [row.id]: signed.url! }));
-    return signed.url;
+    if (!resolved.ok || !resolved.url) return null;
+    mediaUrlCacheRef.current[row.id] = resolved.url;
+    setMediaUrlCache((prev) => (prev[row.id] ? prev : { ...prev, [row.id]: resolved.url! }));
+    return resolved.url;
   }, []);
 
   const openImageViewer = useCallback(
@@ -712,9 +759,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       try {
         const ref = row.media_url;
         if (isR2MediaRef(ref) || ref.startsWith('whatsapp-media:')) {
-          const fetched = await fetchWhatsAppR2MediaBytes({
+          const fetched = await getWhatsAppMediaBytesCached({
             mediaUrl: ref,
             messageId: row.id,
+            mimeHint: row.media_mime,
           });
           if (fetched.ok && fetched.bytes) {
             const mime =
@@ -767,11 +815,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       if (!candidates.length) return;
       const results = await Promise.all(
         candidates.map(async (m) => {
-          const signed = await fetchWhatsAppR2SignedUrl({
+          const resolved = await resolveWhatsAppMediaDisplayUrl({
             mediaUrl: m.media_url!,
             messageId: m.id,
+            mimeHint: m.media_mime,
           });
-          return signed.ok && signed.url ? { id: m.id, url: signed.url } : null;
+          return resolved.ok && resolved.url ? { id: m.id, url: resolved.url } : null;
         })
       );
       if (cancelled) return;
@@ -900,6 +949,58 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       upsertWhatsAppThreadMessageCache(row.phone_e164, row);
     }
   }, []);
+
+  /** Instantly update chat-list preview after an outbound send (don't wait for refresh). */
+  const bumpThreadAfterOutbound = useCallback(
+    (opts: {
+      phone: string;
+      body?: string | null;
+      msgType?: string;
+      filename?: string | null;
+      mimeType?: string | null;
+      messageId?: string | null;
+      customerId?: string | null;
+      templateName?: string | null;
+    }) => {
+      const phone = String(opts.phone || '').replace(/\D/g, '');
+      if (!phone) return;
+      const now = new Date().toISOString();
+      const mime = opts.mimeType || null;
+      const filename = opts.filename || null;
+      let msgType = opts.msgType || 'text';
+      if (!opts.msgType && mime) {
+        if (mime.startsWith('image/')) msgType = 'image';
+        else if (mime.includes('pdf') || /\.pdf$/i.test(filename || '')) msgType = 'document';
+        else msgType = 'document';
+      }
+      if (opts.templateName && !opts.body) msgType = 'template';
+      const row: WhatsAppMessageRow = {
+        id: opts.messageId || `local-${Date.now()}`,
+        wa_message_id: null,
+        direction: 'outbound',
+        phone_e164: phone,
+        customer_id: opts.customerId || null,
+        msg_type: msgType,
+        body:
+          opts.body?.trim() ||
+          (opts.templateName ? String(opts.templateName) : null) ||
+          null,
+        media_url: filename || mime ? `local:${filename || 'file'}` : null,
+        media_mime: mime,
+        filename,
+        status: 'sent',
+        template_name: opts.templateName || null,
+        error_message: null,
+        created_at: now,
+      };
+      upsertMessageLocal(row);
+      void loadInbox({ soft: true, force: true });
+      if (phone === selectedPhoneRef.current) {
+        void loadThread(phone, { soft: true });
+      }
+    },
+    [upsertMessageLocal, loadInbox, loadThread]
+  );
 
   useEffect(() => {
     void loadInbox();
@@ -1192,7 +1293,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         setDraft('');
         clearAttach();
         toast.success(parsed.mimeType.startsWith('image/') ? 'Image sent' : 'File sent');
-        void loadInbox({ soft: true });
+        bumpThreadAfterOutbound({
+          phone,
+          body: text || null,
+          filename: parsed.filename,
+          mimeType: parsed.mimeType,
+          messageId: result.messageId,
+          customerId: activeThread?.customer_id,
+        });
         return;
       }
 
@@ -1209,11 +1317,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       }
       setDraft('');
       toast.success('Sent');
-      void loadInbox({ soft: true });
+      bumpThreadAfterOutbound({
+        phone,
+        body: text,
+        msgType: 'text',
+        messageId: result.messageId,
+        customerId: activeThread?.customer_id,
+      });
     } finally {
       setSending(false);
     }
-  }, [activeThread?.customer_id, loadInbox]);
+  }, [activeThread?.customer_id, bumpThreadAfterOutbound]);
 
   const copyBookLink = useCallback(async () => {
     const url = quickReplyBookingUrl(quickReplyContext);
@@ -1249,7 +1363,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       toast.success('Template sent');
       setSelectedTemplateKey('');
       setTemplateParams([]);
-      void loadInbox({ soft: true });
+      bumpThreadAfterOutbound({
+        phone: selectedPhone,
+        body: selectedTemplate.name,
+        msgType: 'template',
+        templateName: selectedTemplate.name,
+        messageId: result.messageId,
+        customerId: activeThread?.customer_id,
+      });
     } finally {
       setSending(false);
     }
@@ -1277,9 +1398,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         toast.success(`${QUICK_ACTION_LABELS[action]} started on WhatsApp`);
       }
       setQuickActionConfirm(null);
-      void loadInbox({ soft: true });
-      // Soft refresh thread so bot steps appear even if realtime is slow
-      void loadThread(selectedPhone, { soft: true });
+      bumpThreadAfterOutbound({
+        phone: selectedPhone,
+        body: result.templateName || QUICK_ACTION_LABELS[action],
+        msgType: result.via === 'template' ? 'template' : 'interactive',
+        templateName: result.templateName || null,
+        customerId: activeThread?.customer_id,
+      });
+      void loadThread(selectedPhone, { soft: true, force: true });
     } finally {
       setQuickActionBusy(false);
     }
@@ -1370,7 +1496,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           {onBack ? (
             <button
               type="button"
-              onClick={onBack}
+              onClick={handleChromeBack}
               className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-[#9aaeb8] transition hover:bg-white/5"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -2330,7 +2456,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       >
                         <Paperclip className="h-5 w-5 rotate-45" />
                       </button>
-                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] bg-[#2c3840] px-3 py-1.5 shadow-sm">
+                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] border border-white/[0.04] bg-[#2c3840] px-3 py-1.5 shadow-sm transition-[border-color,background-color,box-shadow] duration-150 focus-within:border-white/18 focus-within:bg-[#33434d] focus-within:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
                         <Textarea
                           ref={composerRef}
                           value={draft}
@@ -2338,7 +2464,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           placeholder={attachFile ? 'Add a caption (Enter to send)' : 'Message'}
                           disabled={sending}
                           rows={1}
-                          className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#e4eaec] shadow-none placeholder:text-[#7d8f99] focus-visible:ring-0"
+                          className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#e4eaec] shadow-none outline-none ring-0 ring-offset-0 placeholder:text-[#7d8f99] focus:border-0 focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
                           onKeyDown={(e) => {
                             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                             if (e.key === 'Enter' && !e.shiftKey) {

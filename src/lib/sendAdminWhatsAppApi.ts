@@ -14,6 +14,13 @@ import {
 } from '@/lib/whatsappColdTemplates';
 import { resolveWaTemplateName } from '@/lib/whatsappTemplateResolve';
 import type { WhatsAppSendSource } from '@/lib/whatsappCrmSettings';
+import {
+  getCachedMediaBytes,
+  getCachedMediaObjectUrl,
+  peekCachedMediaObjectUrl,
+  putCachedMediaBlob,
+  whatsappMediaCacheKey,
+} from '@/lib/whatsappMediaCache';
 
 export type AdminWhatsAppSendVia = 'api' | 'wa_me';
 
@@ -21,6 +28,8 @@ export type AdminWhatsAppSendResult = {
   ok: boolean;
   via?: AdminWhatsAppSendVia;
   error?: string;
+  /** DB row id when Cloud API persist succeeded. */
+  messageId?: string | null;
   /** True when API failed because Meta requires an open session / template. */
   needsWindowOrTemplate?: boolean;
   /** True when Settings → WhatsApp toggled this surface off. */
@@ -110,7 +119,11 @@ export async function sendAdminWhatsAppText(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      return { ok: true, via: 'api' };
+      return {
+        ok: true,
+        via: 'api',
+        messageId: data?.messageId ? String(data.messageId) : null,
+      };
     }
 
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
@@ -188,7 +201,11 @@ export async function sendAdminWhatsAppDocument(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      return { ok: true, via: 'api' };
+      return {
+        ok: true,
+        via: 'api',
+        messageId: data?.messageId ? String(data.messageId) : null,
+      };
     }
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
     if (isFeatureDisabledResponse(data)) {
@@ -256,7 +273,11 @@ export async function sendAdminWhatsAppMedia(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      return { ok: true, via: 'api' };
+      return {
+        ok: true,
+        via: 'api',
+        messageId: data?.messageId ? String(data.messageId) : null,
+      };
     }
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
     if (isFeatureDisabledResponse(data)) {
@@ -407,7 +428,11 @@ export async function sendAdminWhatsAppTemplate(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      return { ok: true, via: 'api' };
+      return {
+        ok: true,
+        via: 'api',
+        messageId: data?.messageId ? String(data.messageId) : null,
+      };
     }
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
     if (isFeatureDisabledResponse(data)) {
@@ -741,6 +766,143 @@ export async function sendAdminWhatsAppDocumentWithColdFallback(
   }
 
   return result;
+}
+
+/**
+ * Display URL for inbox media: IndexedDB blob URL when cached (survives APK reopen),
+ * else download once via proxy / signed URL and store on device.
+ */
+export async function resolveWhatsAppMediaDisplayUrl(opts: {
+  mediaUrl?: string | null;
+  messageId?: string | null;
+  mimeHint?: string | null;
+}): Promise<{ ok: boolean; url?: string; error?: string; fromCache?: boolean }> {
+  const mediaUrl = String(opts.mediaUrl || '').trim();
+  if (!mediaUrl) return { ok: false, error: 'No media' };
+
+  const cacheKey = whatsappMediaCacheKey(mediaUrl, opts.messageId);
+  if (cacheKey) {
+    const mem = peekCachedMediaObjectUrl(cacheKey);
+    if (mem) return { ok: true, url: mem, fromCache: true };
+    const disk = await getCachedMediaObjectUrl(cacheKey);
+    if (disk) return { ok: true, url: disk, fromCache: true };
+  }
+
+  // Public https (non-r2) — cache by URL after first fetch when possible
+  const isPrivateRef =
+    mediaUrl.startsWith('r2:') ||
+    mediaUrl.startsWith('whatsapp-media:') ||
+    mediaUrl.startsWith('whatsapp/inbound/') ||
+    mediaUrl.startsWith('whatsapp/outbound/') ||
+    mediaUrl.startsWith('whatsapp/accept/');
+
+  if (!isPrivateRef && /^https:\/\//i.test(mediaUrl)) {
+    if (!cacheKey) return { ok: true, url: mediaUrl };
+    try {
+      const res = await fetch(mediaUrl);
+      if (!res.ok) return { ok: true, url: mediaUrl };
+      const blob = await res.blob();
+      const url = await putCachedMediaBlob(cacheKey, blob, blob.type || opts.mimeHint || undefined);
+      return { ok: true, url, fromCache: false };
+    } catch {
+      return { ok: true, url: mediaUrl };
+    }
+  }
+
+  const fetched = await fetchWhatsAppR2MediaBytes({
+    mediaUrl,
+    messageId: opts.messageId,
+  });
+  if (!fetched.ok) {
+    // Fall back to signed URL (may not persist on device)
+    const signed = await fetchWhatsAppR2SignedUrl({
+      mediaUrl,
+      messageId: opts.messageId,
+    });
+    if (signed.ok && signed.url) return { ok: true, url: signed.url, fromCache: false };
+    return { ok: false, error: fetched.error || signed.error || 'Media failed' };
+  }
+
+  if (fetched.bytes && cacheKey) {
+    const mime =
+      opts.mimeHint ||
+      (/\.pdf$/i.test(mediaUrl) ? 'application/pdf' : 'application/octet-stream');
+    const blob = new Blob([fetched.bytes], { type: mime });
+    const url = await putCachedMediaBlob(cacheKey, blob, mime);
+    return { ok: true, url, fromCache: false };
+  }
+
+  if (fetched.url && cacheKey) {
+    try {
+      const res = await fetch(fetched.url);
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = await putCachedMediaBlob(
+          cacheKey,
+          blob,
+          blob.type || opts.mimeHint || undefined
+        );
+        return { ok: true, url, fromCache: false };
+      }
+    } catch {
+      /* use remote URL */
+    }
+    return { ok: true, url: fetched.url, fromCache: false };
+  }
+
+  if (fetched.url) return { ok: true, url: fetched.url, fromCache: false };
+  return { ok: false, error: 'No media bytes' };
+}
+
+/** PDF thumbnails / download — prefer device cache, else network + store. */
+export async function getWhatsAppMediaBytesCached(opts: {
+  mediaUrl?: string | null;
+  messageId?: string | null;
+  mimeHint?: string | null;
+}): Promise<{ ok: boolean; bytes?: ArrayBuffer; url?: string; error?: string; fromCache?: boolean }> {
+  const mediaUrl = String(opts.mediaUrl || '').trim();
+  if (!mediaUrl) return { ok: false, error: 'No media' };
+  const cacheKey = whatsappMediaCacheKey(mediaUrl, opts.messageId);
+  if (cacheKey) {
+    const hit = await getCachedMediaBytes(cacheKey);
+    if (hit) return { ok: true, bytes: hit.bytes, fromCache: true };
+  }
+
+  const fetched = await fetchWhatsAppR2MediaBytes({
+    mediaUrl,
+    messageId: opts.messageId,
+  });
+  if (!fetched.ok) return { ok: false, error: fetched.error || 'Media failed' };
+
+  if (fetched.bytes && cacheKey) {
+    const mime =
+      opts.mimeHint ||
+      (/\.pdf$/i.test(mediaUrl) ? 'application/pdf' : 'application/octet-stream');
+    void putCachedMediaBlob(cacheKey, new Blob([fetched.bytes], { type: mime }), mime);
+    return { ok: true, bytes: fetched.bytes, fromCache: false };
+  }
+
+  if (fetched.url && cacheKey) {
+    try {
+      const res = await fetch(fetched.url);
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        const mime =
+          res.headers.get('content-type') ||
+          opts.mimeHint ||
+          'application/octet-stream';
+        void putCachedMediaBlob(cacheKey, new Blob([buf], { type: mime }), mime);
+        return { ok: true, bytes: buf, fromCache: false };
+      }
+    } catch {
+      /* fall through */
+    }
+    return { ok: true, url: fetched.url, fromCache: false };
+  }
+
+  if (fetched.bytes) return { ok: true, bytes: fetched.bytes, fromCache: false };
+  if (fetched.url) return { ok: true, url: fetched.url, fromCache: false };
+  return { ok: false, error: 'No media bytes' };
 }
 
 export async function fetchWhatsAppR2SignedUrl(opts: {

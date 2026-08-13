@@ -60,6 +60,7 @@ import CallingPage from '@/pages/CallingPage';
 import WhatsAppInboxPage from '@/pages/WhatsAppInboxPage';
 import WhatsAppSettingsPage from '@/pages/WhatsAppSettingsPage';
 import LeadCatalogSettingsPage from '@/pages/LeadCatalogSettingsPage';
+import { tryNativeBackHandlers } from '@/lib/nativeBackButton';
 import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
@@ -2409,13 +2410,17 @@ const Settings = () => {
     const exitWhatsAppInboxToHome = () => {
       navigate('/admin', { replace: true });
     };
+    const handleWhatsAppChromeBack = () => {
+      if (tryNativeBackHandlers()) return;
+      exitWhatsAppInboxToHome();
+    };
     return (
       <div className="admin-page flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#121a1f]">
         <div className="flex shrink-0 items-center gap-2 border-b border-[#253038] bg-[#1a242c] px-3 py-2.5 sm:px-4">
           <Button
             variant="ghost"
             size="sm"
-            onClick={exitWhatsAppInboxToHome}
+            onClick={handleWhatsAppChromeBack}
             className="h-9 shrink-0 cursor-pointer text-[#9aaeb8] hover:bg-white/5 hover:text-[#e4eaec]"
           >
             <ArrowLeft className="mr-1 h-4 w-4" />
