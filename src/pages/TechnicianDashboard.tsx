@@ -4118,8 +4118,13 @@ const TechnicianDashboard = () => {
     setAmcIncludesPrefilter(draft.amcIncludesPrefilter);
     setAmcAdditionalInfo(draft.amcAdditionalInfo);
     setAmcAmount(draft.amcAmount);
-    setAmcServicePeriodKind(draft.amcServicePeriodKind);
-    setAmcServicePeriodCustomMonths(draft.amcServicePeriodCustomMonths);
+    if (draft.amcServicePeriodKind === '4') {
+      setAmcServicePeriodKind('custom');
+      setAmcServicePeriodCustomMonths(4);
+    } else {
+      setAmcServicePeriodKind(draft.amcServicePeriodKind);
+      setAmcServicePeriodCustomMonths(draft.amcServicePeriodCustomMonths);
+    }
     setHasAMC(draft.hasAMC);
     setPaymentMode(draft.paymentMode);
     setPartialCashAmount(draft.partialCashAmount);
@@ -9185,7 +9190,6 @@ const TechnicianDashboard = () => {
                           <SelectValue placeholder="Select period" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="4">Every 4 months</SelectItem>
                           <SelectItem value="6">Every 6 months</SelectItem>
                           <SelectItem value="custom">Custom (months)</SelectItem>
                           <SelectItem value="no_auto">No auto</SelectItem>

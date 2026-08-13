@@ -10,7 +10,7 @@ const {
   normalizePhoneE164,
   uploadOutboundFileToWhatsAppMedia,
 } = require('./whatsapp-helper');
-const { getR2ObjectBytes } = require('./r2-helper');
+const { createR2SignedGetUrl, getR2ObjectBytes } = require('./r2-helper');
 
 const WATCH_MINUTES = 30;
 const CATEGORY = 'pay_qr_screenshot';
@@ -19,6 +19,15 @@ const TECH_PHOTO_TEMPLATE = 'svc_tech_customer_photo_v1';
 
 function isHttps(url) {
   return /^https:\/\//i.test(String(url || '').trim());
+}
+
+/** FCM can only fetch public HTTPS. Inbound WhatsApp media is private R2 (`r2:…`). */
+async function httpsUrlForPush(mediaUrl) {
+  const raw = String(mediaUrl || '').trim();
+  if (!raw) return null;
+  if (isHttps(raw)) return raw;
+  const signed = await createR2SignedGetUrl(raw, 3600);
+  return signed?.url || null;
 }
 
 function isUuid(value) {
@@ -114,14 +123,18 @@ async function findActivePayQrWatch(db, phoneE164) {
 }
 
 async function hasInboundWindow(db, phoneE164) {
+  if (!db) return false;
+  const { digitsOnly } = require('./whatsapp-helper');
   const phone = normalizePhoneE164(phoneE164);
-  if (!db || !phone) return false;
+  const last10 = digitsOnly(phoneE164).slice(-10);
+  const candidates = [...new Set([phone, last10, last10 ? `91${last10}` : ''].filter(Boolean))];
+  if (candidates.length === 0) return false;
   try {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data } = await db
       .from('whatsapp_messages')
       .select('id')
-      .eq('phone_e164', phone)
+      .in('phone_e164', candidates)
       .eq('direction', 'inbound')
       .gte('created_at', since)
       .order('created_at', { ascending: false })
@@ -221,41 +234,41 @@ async function sendImageToTechnicianWhatsApp({
     );
     if (!uploaded?.id) return { sent: false };
 
-    const windowOpen = await hasInboundWindow(db, to);
-    if (windowOpen) {
-      const session = await callWhatsAppApi(phoneNumberId, accessToken, {
-        messaging_product: 'whatsapp',
+    // Unknown / open window: try free-form first (same as pay-QR). Skip the extra
+    // lookup only when we already know there is no inbound in 24h — still try anyway
+    // because a missed phone-format match used to skip a real open window.
+    const session = await callWhatsAppApi(phoneNumberId, accessToken, {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'image',
+      image: {
+        id: uploaded.id,
+        caption,
+      },
+    });
+    const sessionWaId = session?.data?.messages?.[0]?.id || null;
+    if (session.ok) {
+      await persistTechImageSend(db, {
         to,
-        type: 'image',
-        image: {
-          id: uploaded.id,
-          caption,
-        },
+        waId: sessionWaId,
+        caption,
+        mediaUrl,
+        mime: media.mime,
+        ok: true,
       });
-      const waId = session?.data?.messages?.[0]?.id || null;
-      if (session.ok) {
-        await persistTechImageSend(db, {
-          to,
-          waId,
-          caption,
-          mediaUrl,
-          mime: media.mime,
-          ok: true,
-        });
-        return { sent: true, via: 'session', waId };
-      }
-      if (!isClosedWindowError(session)) {
-        await persistTechImageSend(db, {
-          to,
-          waId,
-          caption,
-          mediaUrl,
-          mime: media.mime,
-          ok: false,
-          error: JSON.stringify(session.data?.error || {}),
-        });
-        return { sent: false };
-      }
+      return { sent: true, via: 'session', waId: sessionWaId };
+    }
+    if (!isClosedWindowError(session) && (await hasInboundWindow(db, to))) {
+      await persistTechImageSend(db, {
+        to,
+        waId: sessionWaId,
+        caption,
+        mediaUrl,
+        mime: media.mime,
+        ok: false,
+        error: JSON.stringify(session.data?.error || {}),
+      });
+      return { sent: false };
     }
 
     const cold = await callWhatsAppApi(phoneNumberId, accessToken, {
@@ -312,6 +325,7 @@ async function notifyTechnicianPayQrPhoto({
   const title = 'Payment screenshot';
   const body = `Image shared by ${customerName}.`;
   const technicianId = watch.technician_id;
+  const pushImageUrl = await httpsUrlForPush(mediaUrl);
 
   try {
     const messaging = await getMessaging(db);
@@ -325,20 +339,20 @@ async function notifyTechnicianPayQrPhoto({
           notification: {
             title,
             body,
-            ...(isHttps(mediaUrl) ? { image: mediaUrl } : {}),
+            ...(pushImageUrl ? { image: pushImageUrl } : {}),
           },
           data: {
             type: CATEGORY,
             phone,
             jobId: String(watch.job_id || ''),
-            imageUrl: String(mediaUrl || ''),
+            imageUrl: String(pushImageUrl || mediaUrl || ''),
           },
           android: {
             priority: 'high',
             notification: {
               channelId: 'job_alerts_v2',
               sound: 'tech_alert',
-              ...(isHttps(mediaUrl) ? { imageUrl: mediaUrl } : {}),
+              ...(pushImageUrl ? { imageUrl: pushImageUrl } : {}),
             },
           },
         }),
@@ -392,16 +406,18 @@ async function handlePayQrWatchInbound({ db, accessToken, phoneNumberId, msg, me
   if (!watch?.technician_id) return { handled: false };
 
   const mediaUrl = media?.media_url || null;
-  void notifyTechnicianPayQrPhoto({
-    db,
-    accessToken,
-    phoneNumberId,
-    watch,
-    phone,
-    mediaUrl,
-  }).catch((err) => {
+  try {
+    await notifyTechnicianPayQrPhoto({
+      db,
+      accessToken,
+      phoneNumberId,
+      watch,
+      phone,
+      mediaUrl,
+    });
+  } catch (err) {
     console.warn('[pay-qr-watch] notify failed', err?.message || err);
-  });
+  }
 
   return { handled: true, technicianId: watch.technician_id };
 }
