@@ -24,8 +24,8 @@ const FALLBACK_W = 1080;
 const FALLBACK_H = 1920;
 
 const PSWP_CSS = `
-.pswp.pswp-inbox { --pswp-bg: #0b141a; z-index: 9999 !important; }
-.pswp-inbox .pswp__bg { background: #0b141a !important; }
+.pswp.pswp-inbox { --pswp-bg: #14181c; z-index: 9999 !important; }
+.pswp-inbox .pswp__bg { background: #14181c !important; }
 .pswp-inbox .pswp__img,
 .pswp-inbox .pswp__zoom-wrap {
   will-change: transform;
@@ -328,7 +328,7 @@ export function WhatsAppInboxPhotoViewer({
         style={{ touchAction: 'none' }}
       >
         <header
-          className="pointer-events-auto flex shrink-0 items-center gap-2 border-b border-white/10 bg-[#111b21] px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))]"
+          className="pointer-events-auto flex shrink-0 items-center gap-2 border-b border-white/10 bg-[#1c2228] px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))]"
         >
           <Button
             type="button"
@@ -345,7 +345,7 @@ export function WhatsAppInboxPhotoViewer({
               {current?.alt || 'Photo'}
             </p>
             {hasNav ? (
-              <p className="text-xs text-[#8696a0]">
+              <p className="text-xs text-[#857f78]">
                 {index + 1} / {slides.length}
               </p>
             ) : null}
@@ -365,8 +365,8 @@ export function WhatsAppInboxPhotoViewer({
         </header>
 
         {!ready ? (
-          <div className="pointer-events-none flex flex-1 items-center justify-center bg-[#0b141a]">
-            <Loader2 className="h-8 w-8 animate-spin text-[#8696a0]" />
+          <div className="pointer-events-none flex flex-1 items-center justify-center bg-[#14181c]">
+            <Loader2 className="h-8 w-8 animate-spin text-[#857f78]" />
           </div>
         ) : null}
 

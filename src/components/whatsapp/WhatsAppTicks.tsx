@@ -17,15 +17,15 @@ export function WhatsAppTicks({
     return <AlertCircle className={cn('h-3.5 w-3.5 text-red-500', className)} aria-label="Failed" />;
   }
   if (s === 'read') {
-    return <CheckCheck className={cn('h-3.5 w-3.5 text-[#53bdeb]', className)} aria-label="Read" />;
+    return <CheckCheck className={cn('h-3.5 w-3.5 text-[#8fa4b8]', className)} aria-label="Read" />;
   }
   if (s === 'delivered') {
-    return <CheckCheck className={cn('h-3.5 w-3.5 text-[#667781]', className)} aria-label="Delivered" />;
+    return <CheckCheck className={cn('h-3.5 w-3.5 text-[#857f78]', className)} aria-label="Delivered" />;
   }
   if (s === 'sent' || s === 'accepted') {
-    return <Check className={cn('h-3.5 w-3.5 text-[#667781]', className)} aria-label="Sent" />;
+    return <Check className={cn('h-3.5 w-3.5 text-[#857f78]', className)} aria-label="Sent" />;
   }
-  return <Clock className={cn('h-3 w-3 text-[#667781]', className)} aria-label="Pending" />;
+  return <Clock className={cn('h-3 w-3 text-[#857f78]', className)} aria-label="Pending" />;
 }
 
 function isPhoneLike(value: string): boolean {
@@ -72,14 +72,14 @@ export function WhatsAppAvatar({
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-full bg-[#dfe5e7] font-semibold text-[#54656f]',
+        'flex shrink-0 items-center justify-center rounded-full bg-[#2e353d] font-semibold text-[#b0aaa2]',
         dim,
         initials ? text : null,
         className
       )}
       aria-hidden
     >
-      {initials ? initials : <User className={cn(icon, 'text-[#8696a0]')} strokeWidth={1.75} />}
+      {initials ? initials : <User className={cn(icon, 'text-[#857f78]')} strokeWidth={1.75} />}
     </div>
   );
 }
