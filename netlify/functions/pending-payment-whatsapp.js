@@ -143,11 +143,6 @@ function buildPendingPaymentWhatsAppMessage({
 
   lines.push('');
   lines.push(`Call:\n${contact.phone}`);
-  lines.push(`Email:\n${contact.email}`);
-  const webHost = String(contact.website || '')
-    .replace(/^https?:\/\//i, '')
-    .replace(/\/$/, '');
-  lines.push(`Website:\n${webHost}`);
   lines.push('');
   if (link) {
     lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');

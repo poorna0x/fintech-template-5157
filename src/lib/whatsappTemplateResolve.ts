@@ -23,9 +23,9 @@ const WA_TEMPLATE_ALIASES: Record<string, string> = {
   warranty_ready: 'svc_doc_pdf_v2',
   general_notice: 'svc_smoke_update',
   crm_notice: 'svc_visit_reminder',
-  pending_payment: 'svc_balance_due_letter_hro_v7',
-  pending_payment_hro: 'svc_balance_due_letter_hro_v7',
-  pending_payment_ero: 'svc_balance_due_letter_ero_v7',
+  pending_payment: 'svc_balance_due_letter_hro_v8',
+  pending_payment_hro: 'svc_balance_due_letter_hro_v8',
+  pending_payment_ero: 'svc_balance_due_letter_ero_v8',
   // Old booking CTA names → UTILITY replacements
   book_existing_customer_cta: 'existing_service_schedule_ero_cta_v2',
   book_existing_customer_ero_cta: 'existing_service_schedule_ero_cta_v2',

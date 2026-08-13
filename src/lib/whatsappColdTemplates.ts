@@ -21,7 +21,7 @@ export const WA_COLD = {
   },
   pending_payment: {
     /** Prefer resolvePendingPaymentLetterTemplateName / Image — HRO v7 is default alias target. */
-    name: 'svc_balance_due_letter_hro_v7',
+    name: 'svc_balance_due_letter_hro_v8',
     language: 'en',
     /** {{1}}=name, {{2}}=amount, {{3}}=due, {{4}}=invoice/job */
     bodyParams: (
@@ -554,7 +554,7 @@ function cleanAmount(amount: number | string): string {
 export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   booking_menu: 'Service request (svc_smoke_update — booking menu deprecated)',
   pending_payment:
-    'Balance due (svc_balance_due_letter_*_img_v3 lean QR → img_v2 → *_v7 → v6 → svc_balance_due)',
+    'Balance due (svc_balance_due_letter_*_img_v4 Call-only QR → img_v3 → *_v8 → v7 → svc_balance_due)',
   service_reminder: 'Visit reminder (svc_visit_reminder)',
   service_due_cta: 'Service due letter v4 Book now (svc_service_due_letter_*_v4 → v3 → CTA)',
   amc_renewal: 'AMC expiry (svc_amc_expiry_notice)',

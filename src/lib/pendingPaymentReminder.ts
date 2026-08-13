@@ -98,30 +98,30 @@ function cleanAmountDigits(amount: number | string): string {
   );
 }
 
-/** Letter cold template name — v7 = Pay now, no thank-you; fallback v6 → v5 → v4. */
+/** Letter cold template name — v8 = Pay now, Call only; fallback v7 → v6. */
 export function resolvePendingPaymentLetterTemplateName(
   brand: DocumentBrand,
   opts?: { withPayButton?: boolean }
 ): string {
   if (opts?.withPayButton) {
-    return resolveBrandLetterTemplateName('balance_due', brand, 'v7');
+    return resolveBrandLetterTemplateName('balance_due', brand, 'v8');
   }
   return resolveBrandLetterTemplateName('balance_due', brand, 'v3');
 }
 
-/** Same letter as v7 with IMAGE header (QR / receipt / photo) — lean, no thank-you. */
+/** IMAGE header lean QR — Call only, no email/website. */
 export function resolvePendingPaymentLetterImageTemplateName(brand: DocumentBrand): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
-  return `svc_balance_due_letter_${suffix}_img_v3`;
+  return `svc_balance_due_letter_${suffix}_img_v4`;
 }
 
 export function resolvePendingPaymentLetterImageTemplateFallbackName(brand: DocumentBrand): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
-  return `svc_balance_due_letter_${suffix}_img_v2`;
+  return `svc_balance_due_letter_${suffix}_img_v3`;
 }
 
 export function resolvePendingPaymentLetterTemplateFallbackName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('balance_due', brand, 'v6');
+  return resolveBrandLetterTemplateName('balance_due', brand, 'v7');
 }
 
 export function resolvePendingPaymentLetterTemplateLegacyName(brand: DocumentBrand): string {
@@ -133,9 +133,11 @@ export function pendingPaymentTemplateFallbackNames(brand?: DocumentBrand | stri
   const resolved = resolvePendingPaymentMessageBrand(brand);
   const suffix = resolved === 'elevenro' ? 'ero' : 'hro';
   return [
+    `svc_balance_due_letter_${suffix}_img_v4`,
     `svc_balance_due_letter_${suffix}_img_v3`,
     `svc_balance_due_letter_${suffix}_img_v2`,
     `svc_balance_due_letter_${suffix}_img_v1`,
+    `svc_balance_due_letter_${suffix}_v8`,
     `svc_balance_due_letter_${suffix}_v7`,
     `svc_balance_due_letter_${suffix}_v6`,
     `svc_balance_due_letter_${suffix}_v5`,
@@ -213,6 +215,8 @@ export function buildPendingPaymentWhatsAppMessage(
       skipChatHint: true,
       includeTextUs: false,
       skipThankYou: true,
+      skipEmail: true,
+      skipWebsite: true,
     })
   );
   lines.push('');

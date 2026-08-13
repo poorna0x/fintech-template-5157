@@ -90,19 +90,19 @@ exports.handler = async (event) => {
       marketingBlocked,
       recommended: [
         {
-          name: 'svc_balance_due_letter_hro_img_v3',
+          name: 'svc_balance_due_letter_hro_img_v4',
           language: 'en',
-          hint: 'Balance due + QR IMAGE lean (HRO · no thank-you · Pay now)',
+          hint: 'Balance due + QR IMAGE (HRO · Call only · Pay now)',
         },
         {
-          name: 'svc_balance_due_letter_hro_v7',
+          name: 'svc_balance_due_letter_hro_v8',
           language: 'en',
-          hint: 'Balance due letter lean + Pay now (HRO · no thank-you)',
+          hint: 'Balance due letter Call only + Pay now (HRO)',
         },
         {
-          name: 'svc_balance_due_letter_ero_v7',
+          name: 'svc_balance_due_letter_ero_v8',
           language: 'en',
-          hint: 'Balance due letter lean + Pay now (ERO · no thank-you)',
+          hint: 'Balance due letter Call only + Pay now (ERO)',
         },
         { name: 'svc_visit_reminder', language: 'en', hint: 'Visit reminder ({{1}} name, {{2}} when)' },
         { name: 'svc_visit_confirmed', language: 'en', hint: 'Booking confirmed ({{1}} name, {{2}} ref, {{3}} when)' },
