@@ -52,6 +52,12 @@ import {
 import type { Bill, BillItem } from '@/types';
 import { formatDirectSaleBillTermsForPdf } from '@/lib/service-document-terms';
 import {
+  clearDirectSaleDraft,
+  readDirectSaleDraft,
+  writeDirectSaleDraft,
+  type DirectSaleDraft,
+} from '@/lib/directSaleDraft';
+import {
   buildOfficeSaleUpiShareMessage,
   DEFAULT_OFFICE_SALE_UPI_BRAND,
   shareOfficeSaleUpiOnWhatsApp,
@@ -209,8 +215,12 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const [emailBrand, setEmailBrand] = useState<DocumentBrand | null>(null);
   const [whatsappExtraLines, setWhatsappExtraLines] = useState('');
   const [sharingUpiLink, setSharingUpiLink] = useState(false);
+  const [resumeDraftOpen, setResumeDraftOpen] = useState(false);
+  const [draftToResume, setDraftToResume] = useState<DirectSaleDraft | null>(null);
   const proceedToSendRef = React.useRef(false);
   const skipResetOnCloseRef = React.useRef(false);
+  /** After Resume / Start over this open cycle, don't re-prompt. */
+  const resumePromptHandledRef = React.useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -332,6 +342,92 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     setEmailBrand(null);
   };
 
+  const snapshotDraftFields = React.useCallback(
+    (): Omit<DirectSaleDraft, 'version' | 'savedAt'> => ({
+      amount,
+      item,
+      saleDate,
+      customerName,
+      customerPhone,
+      billMode,
+      sellPrices,
+      paymentMode,
+      partialCashAmount,
+      partialOnlineAmount,
+      selectedQrId,
+      upiShareBrand,
+      selectedQuantities,
+      customItems,
+    }),
+    [
+      amount,
+      item,
+      saleDate,
+      customerName,
+      customerPhone,
+      billMode,
+      sellPrices,
+      paymentMode,
+      partialCashAmount,
+      partialOnlineAmount,
+      selectedQrId,
+      upiShareBrand,
+      selectedQuantities,
+      customItems,
+    ]
+  );
+
+  const applyDirectSaleDraft = React.useCallback((draft: DirectSaleDraft) => {
+    setAmount(draft.amount || '');
+    setItem(draft.item || '');
+    setSaleDate(draft.saleDate || todayInputValue());
+    setCustomerName(draft.customerName || '');
+    setCustomerPhone(draft.customerPhone || '');
+    setBillMode(draft.billMode === 'normal' ? 'normal' : 'set');
+    setSellPrices(draft.sellPrices && typeof draft.sellPrices === 'object' ? draft.sellPrices : {});
+    setPaymentMode(
+      draft.paymentMode === 'ONLINE' || draft.paymentMode === 'PARTIAL' ? draft.paymentMode : 'CASH'
+    );
+    setPartialCashAmount(draft.partialCashAmount || '');
+    setPartialOnlineAmount(draft.partialOnlineAmount || '');
+    setSelectedQrId(draft.selectedQrId || '');
+    setUpiShareBrand(
+      draft.upiShareBrand === 'elevenro' || draft.upiShareBrand === 'hydrogenro'
+        ? draft.upiShareBrand
+        : DEFAULT_OFFICE_SALE_UPI_BRAND
+    );
+    setSelectedQuantities(
+      draft.selectedQuantities && typeof draft.selectedQuantities === 'object'
+        ? draft.selectedQuantities
+        : {}
+    );
+    setCustomItems(Array.isArray(draft.customItems) ? draft.customItems : []);
+    resetCustomForm();
+  }, []);
+
+  // On open: offer Resume / Start over when a local draft exists.
+  useEffect(() => {
+    if (!open) {
+      resumePromptHandledRef.current = false;
+      return;
+    }
+    if (resumePromptHandledRef.current) return;
+    const saved = readDirectSaleDraft();
+    if (!saved) return;
+    resumePromptHandledRef.current = true;
+    setDraftToResume(saved);
+    setResumeDraftOpen(true);
+  }, [open]);
+
+  // Autosave draft while the dialog is open (same idea as tech complete-job).
+  useEffect(() => {
+    if (!open || isSaving || resumeDraftOpen) return;
+    const t = window.setTimeout(() => {
+      writeDirectSaleDraft(snapshotDraftFields());
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [open, isSaving, resumeDraftOpen, snapshotDraftFields]);
+
   const handleOpenChange = (next: boolean) => {
     if (isSaving) return;
     if (!next) {
@@ -355,6 +451,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         setCustomItems([]);
         resetCustomForm();
       } else if (!askSendOpen && !brandPickerOpen && !emailDialogOpen) {
+        writeDirectSaleDraft(snapshotDraftFields());
         resetForm();
       }
     }
@@ -733,6 +830,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
           : 'Walk-in office sale recorded.'
       );
 
+      clearDirectSaleDraft();
+
       const lines =
         hasItems
           ? [
@@ -847,6 +946,44 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
 
   return (
     <>
+      <AlertDialog
+        open={resumeDraftOpen}
+        onOpenChange={(next) => {
+          setResumeDraftOpen(next);
+          if (!next) setDraftToResume(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Resume previous sale?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have an unsaved Direct Sale draft on this device. Resume where you left off, or
+              start over.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                clearDirectSaleDraft();
+                setDraftToResume(null);
+                resetForm();
+              }}
+            >
+              Start over
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-black hover:bg-gray-800"
+              onClick={() => {
+                if (draftToResume) applyDirectSaleDraft(draftToResume);
+                setDraftToResume(null);
+              }}
+            >
+              Resume
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="!w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-6 [&>*]:min-w-0">
           <DialogHeader>
