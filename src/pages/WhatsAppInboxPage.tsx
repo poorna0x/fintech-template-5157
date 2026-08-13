@@ -83,8 +83,6 @@ import {
   isFailedDeliveryStatus,
   isR2MediaRef,
   isWhatsAppInboxListCacheFresh,
-  isWhatsAppThreadCacheFresh,
-  isWhatsAppThreadCachePaintable,
   isWhatsAppThreadUnread,
   isWithinCustomerServiceWindow,
   invalidateWhatsAppInboxThreadsCache,
@@ -128,6 +126,13 @@ import {
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
 import { quickReplyBookingUrl } from '@/lib/whatsappQuickMessages';
+import {
+  clearWhatsAppLocalDeviceData,
+  buildWhatsAppLocalBackup,
+  readWhatsAppLocalBackupFile,
+  restoreWhatsAppLocalBackup,
+  saveWhatsAppLocalBackupFile,
+} from '@/lib/whatsappLocalBackup';
 import { registerNativeBackHandler, tryNativeBackHandlers } from '@/lib/nativeBackButton';
 import { Capacitor } from '@capacitor/core';
 
@@ -411,6 +416,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const stickToBottomRef = useRef(true);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const backupImportInputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedPhoneRef = useRef(selectedPhone);
   selectedPhoneRef.current = selectedPhone;
@@ -473,15 +479,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const loadInbox = useCallback(async (opts?: { soft?: boolean; force?: boolean }) => {
     const rangeKey = inboxListRangeKey(listRangeRef.current);
     const cached = peekWhatsAppInboxThreadsCache({ rangeKey });
-    const cacheFresh = isWhatsAppInboxListCacheFresh(cached);
     // Soft refresh must NOT paint stale cache over live/optimistic patches.
     if (cached?.threads?.length && !opts?.force && !opts?.soft) {
       setThreads(cached.threads);
       setLoading(false);
-    }
-    // Fresh cache + not forced → skip network (realtime / soft still refresh)
-    if (cacheFresh && !opts?.force && !opts?.soft) {
-      setLoading(false);
+      // Forever on-device — skip network until Refresh / range change / soft realtime.
       return;
     }
     if (!opts?.soft && !(cached?.threads?.length)) setLoading(true);
@@ -501,6 +503,71 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       if (!opts?.soft) setLoading(false);
     }
   }, []);
+
+  const runLocalBackupExport = useCallback(async (includeMedia: boolean) => {
+    const toastId = toast.loading(includeMedia ? 'Exporting chats + media…' : 'Exporting chats…');
+    try {
+      const backup = await buildWhatsAppLocalBackup({ includeMedia });
+      const saved = await saveWhatsAppLocalBackupFile(backup);
+      if (!saved.ok) throw new Error(saved.error || 'Export failed');
+      const phones = Object.keys(backup.messagesByPhone || {}).length;
+      toast.success(
+        includeMedia
+          ? `Exported ${backup.threads.length} chats · ${phones} threads · ${backup.media?.length || 0} files`
+          : `Exported ${backup.threads.length} chats · ${phones} threads (text)`,
+        { id: toastId }
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Export failed', { id: toastId });
+    }
+  }, []);
+
+  const runLocalBackupImport = useCallback(async (file: File) => {
+    const toastId = toast.loading('Importing local backup…');
+    try {
+      const backup = await readWhatsAppLocalBackupFile(file);
+      const result = await restoreWhatsAppLocalBackup(backup);
+      const rangeKey = inboxListRangeKey(listRangeRef.current);
+      const cached = peekWhatsAppInboxThreadsCache({ rangeKey });
+      if (cached?.threads?.length) setThreads(cached.threads);
+      if (selectedPhoneRef.current) {
+        const msgs = peekWhatsAppThreadMessagesCache(selectedPhoneRef.current);
+        if (msgs?.messages?.length) {
+          setThreadMessages(msgs.messages);
+          setThreadHasMoreOlder(Boolean(msgs.hasMoreOlder));
+        }
+      }
+      setReadMap(loadWhatsAppReadMap());
+      toast.success(
+        `Imported ${result.threads} chats · ${result.phones} threads` +
+          (result.media ? ` · ${result.media} files` : ''),
+        { id: toastId }
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Import failed', { id: toastId });
+    }
+  }, []);
+
+  const runClearLocalCache = useCallback(async () => {
+    if (
+      !window.confirm(
+        'Clear all on-device WhatsApp cache (chats + saved photos/PDFs)?\n\nServer data is unchanged. You can export a backup first.'
+      )
+    ) {
+      return;
+    }
+    const toastId = toast.loading('Clearing local cache…');
+    try {
+      await clearWhatsAppLocalDeviceData({ includeMedia: true });
+      setThreads([]);
+      setThreadMessages([]);
+      setSelectedPhone(null);
+      toast.success('Local cache cleared', { id: toastId });
+      void loadInbox({ force: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Clear failed', { id: toastId });
+    }
+  }, [loadInbox]);
 
   const applyListRange = useCallback(
     (range: WhatsAppInboxListRange) => {
@@ -1032,21 +1099,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     setShowJumpToLatest(false);
     const cached = peekWhatsAppThreadMessagesCache(selectedPhone);
     if (cached?.messages?.length) {
-      // Instant paint from memory / localStorage (Admin APK survives process kill).
+      // Forever local — reopen without network until Refresh / clear cache.
       setThreadMessages(cached.messages);
       setThreadHasMoreOlder(Boolean(cached.hasMoreOlder));
       setThreadLoading(false);
-      // Fresh → no network. Older but paintable → quiet background sync only.
-      if (isWhatsAppThreadCacheFresh(cached)) {
-        return;
-      }
-      if (isWhatsAppThreadCachePaintable(cached)) {
-        void loadThread(selectedPhone, { soft: true });
-        return;
-      }
+      return;
     }
     setThreadHasMoreOlder(false);
-    if (!cached?.messages?.length) setThreadMessages([]);
+    setThreadMessages([]);
     void loadThread(selectedPhone);
   }, [selectedPhone, loadThread]);
 
@@ -1633,6 +1693,52 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         Chat settings
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="w-56 border-[#202c33] bg-[#202c33] text-[#e9edef]">
+                        <DropdownMenuItem
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
+                          onClick={() => void loadInbox({ force: true })}
+                        >
+                          Refresh chat list
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
+                          disabled={!selectedPhone}
+                          onClick={() =>
+                            selectedPhone
+                              ? void loadThread(selectedPhone, { force: true })
+                              : undefined
+                          }
+                        >
+                          Refresh open chat
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="bg-[#2a3942]" />
+                        <DropdownMenuItem
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
+                          onClick={() => void runLocalBackupExport(false)}
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          Export chats (text)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
+                          onClick={() => void runLocalBackupExport(true)}
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          Export chats + media
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
+                          onClick={() => backupImportInputRef.current?.click()}
+                        >
+                          Import local backup
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer text-red-400 focus:bg-[#202c33] focus:text-red-400"
+                          onClick={() => void runClearLocalCache()}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Clear on-device cache
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="bg-[#2a3942]" />
                         <DropdownMenuItem
                           className="cursor-pointer text-red-400 focus:bg-[#202c33] focus:text-red-400"
                           disabled={!selectedPhone}
@@ -2451,6 +2557,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         onChange={(e) => {
                           pickAttachFile(e.target.files?.[0]);
                           e.target.value = '';
+                        }}
+                      />
+                      <input
+                        ref={backupImportInputRef}
+                        type="file"
+                        accept="application/json,.json"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = '';
+                          if (f) void runLocalBackupImport(f);
                         }}
                       />
                       <button

@@ -184,13 +184,14 @@ export function invalidateInboundWindowCache(phoneE164?: string | null): void {
 
 const INBOX_LIST_CACHE_KEY = 'wa_inbox_threads_cache_v2';
 const THREAD_MSGS_CACHE_KEY = 'wa_thread_msgs_cache_v1';
-/** Skip network if list fetched within this window (soft refresh still updates). */
+/** Soft refresh / pull can still update; open-from-cache never expires by time. */
 export const WHATSAPP_INBOX_LIST_CACHE_TTL_MS = 45_000;
-/** Open chat: treat as fresh — reopen without network within this window. */
-export const WHATSAPP_THREAD_CACHE_TTL_MS = 5 * 60_000;
-/** APK cold start: still paint from localStorage within this window, then soft-refresh. */
-export const WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS = 30 * 60_000;
-const THREAD_CACHE_MAX_PHONES = 24;
+/** @deprecated Kept for callers; local chat cache no longer expires by age. */
+export const WHATSAPP_THREAD_CACHE_TTL_MS = Number.POSITIVE_INFINITY;
+/** @deprecated Local cache paints forever until cleared/exported-overwritten. */
+export const WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS = Number.POSITIVE_INFINITY;
+/** Max distinct chats kept in on-device message cache. */
+const THREAD_CACHE_MAX_PHONES = 200;
 
 /** How far back the inbox thread list loads (sidebar). */
 export type WhatsAppInboxListRange = 'today' | '7d' | '30d' | 'all' | { custom: string };
@@ -268,15 +269,15 @@ export function fetchOptsForInboxListRange(
   return { since: sinceIsoForInboxListRange(range), todayOnly: false };
 }
 
-type InboxListCacheEntry = {
-  rangeKey: string;
-  threads: WhatsAppThread[];
+export type ThreadMsgsCacheEntry = {
+  messages: WhatsAppMessageRow[];
+  hasMoreOlder: boolean;
   fetchedAt: number;
 };
 
-type ThreadMsgsCacheEntry = {
-  messages: WhatsAppMessageRow[];
-  hasMoreOlder: boolean;
+type InboxListCacheEntry = {
+  rangeKey: string;
+  threads: WhatsAppThread[];
   fetchedAt: number;
 };
 
@@ -370,17 +371,17 @@ export function peekWhatsAppInboxThreadsCache(opts?: {
 
 export function isWhatsAppInboxListCacheFresh(
   entry: InboxListCacheEntry | null | undefined,
-  ttlMs = WHATSAPP_INBOX_LIST_CACHE_TTL_MS
+  _ttlMs = WHATSAPP_INBOX_LIST_CACHE_TTL_MS
 ): boolean {
-  if (!entry?.fetchedAt) return false;
-  return Date.now() - entry.fetchedAt < ttlMs;
+  // Forever until cleared — any cached list skips network on normal open.
+  return Boolean(entry?.threads?.length);
 }
 
-/** True when cache is old for soft-refresh skip, but still worth painting on APK open. */
+/** True when on-device list cache can paint (survives APK kill until cleared). */
 export function isWhatsAppInboxListCachePaintable(
   entry: InboxListCacheEntry | null | undefined
 ): boolean {
-  return isWhatsAppInboxListCacheFresh(entry, WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS);
+  return Boolean(entry?.threads?.length);
 }
 
 export function writeWhatsAppInboxThreadsCache(
@@ -422,16 +423,16 @@ export function peekWhatsAppThreadMessagesCache(
 
 export function isWhatsAppThreadCacheFresh(
   entry: ThreadMsgsCacheEntry | null | undefined,
-  ttlMs = WHATSAPP_THREAD_CACHE_TTL_MS
+  _ttlMs = WHATSAPP_THREAD_CACHE_TTL_MS
 ): boolean {
-  if (!entry?.fetchedAt) return false;
-  return Date.now() - entry.fetchedAt < ttlMs;
+  // Forever until cleared — any cached messages count as fresh for skip-network.
+  return Boolean(entry?.messages?.length);
 }
 
 export function isWhatsAppThreadCachePaintable(
   entry: ThreadMsgsCacheEntry | null | undefined
 ): boolean {
-  return isWhatsAppThreadCacheFresh(entry, WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS);
+  return Boolean(entry?.messages?.length);
 }
 
 export function writeWhatsAppThreadMessagesCache(
@@ -488,6 +489,46 @@ export function invalidateWhatsAppThreadMessagesCache(phoneE164?: string | null)
   }
   threadMsgsCacheMem.clear();
   removeJsonCached(THREAD_MSGS_CACHE_KEY);
+}
+
+/** Snapshot of all on-device thread message caches (for local backup). */
+export function dumpWhatsAppThreadMessagesCache(): Record<string, ThreadMsgsCacheEntry> {
+  const store = readJsonCached<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
+  for (const [phone, entry] of threadMsgsCacheMem.entries()) {
+    store[phone] = entry;
+  }
+  return store;
+}
+
+export function restoreWhatsAppThreadMessagesCache(
+  store: Record<string, ThreadMsgsCacheEntry> | null | undefined
+): number {
+  threadMsgsCacheMem.clear();
+  if (!store || typeof store !== 'object') {
+    removeJsonCached(THREAD_MSGS_CACHE_KEY);
+    return 0;
+  }
+  let n = 0;
+  const next: Record<string, ThreadMsgsCacheEntry> = {};
+  for (const [phone, entry] of Object.entries(store)) {
+    if (!entry || !Array.isArray(entry.messages)) continue;
+    const digits = String(phone).replace(/\D/g, '');
+    if (!digits) continue;
+    next[digits] = {
+      messages: entry.messages,
+      hasMoreOlder: Boolean(entry.hasMoreOlder),
+      fetchedAt: Number(entry.fetchedAt) || Date.now(),
+    };
+    threadMsgsCacheMem.set(digits, next[digits]);
+    n += 1;
+  }
+  writeJsonCached(THREAD_MSGS_CACHE_KEY, next);
+  return n;
+}
+
+export function clearAllWhatsAppLocalTextCache(): void {
+  invalidateWhatsAppInboxThreadsCache();
+  invalidateWhatsAppThreadMessagesCache();
 }
 
 /** People list via RPC — not full message dump. */

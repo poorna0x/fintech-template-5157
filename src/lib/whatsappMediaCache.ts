@@ -9,8 +9,9 @@ const DB_NAME = 'hro_wa_media_v1';
 const STORE = 'media';
 const DB_VERSION = 1;
 /** Soft cap — evict oldest-by-access when over. */
-const MAX_TOTAL_BYTES = 96 * 1024 * 1024;
-const MAX_AGE_MS = 45 * 24 * 60 * 60 * 1000;
+const MAX_TOTAL_BYTES = 256 * 1024 * 1024;
+/** Keep media until cleared or size eviction — no time expiry. */
+const MAX_AGE_MS = Number.POSITIVE_INFINITY;
 /** Single object over this is still cached once, but eviction prioritizes large cold items. */
 const WARN_ENTRY_BYTES = 8 * 1024 * 1024;
 
@@ -103,7 +104,10 @@ async function readRecord(key: string): Promise<MediaRecord | null> {
     const tx = db.transaction(STORE, 'readonly');
     const row = (await idbReq(tx.objectStore(STORE).get(key))) as MediaRecord | undefined;
     if (!row?.blob) return null;
-    if (Date.now() - (row.savedAt || 0) > MAX_AGE_MS) {
+    if (
+      Number.isFinite(MAX_AGE_MS) &&
+      Date.now() - (row.savedAt || 0) > MAX_AGE_MS
+    ) {
       void deleteCachedMedia(key);
       return null;
     }
@@ -241,4 +245,96 @@ export async function putCachedMediaBlob(
     }
   }
   return rememberObjectUrl(key, blob);
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = String(reader.result || '');
+      const i = s.indexOf(',');
+      resolve(i >= 0 ? s.slice(i + 1) : s);
+    };
+    reader.onerror = () => reject(reader.error || new Error('read failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function base64ToBlob(base64: string, mime: string): Blob {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime || 'application/octet-stream' });
+}
+
+export type WhatsAppMediaBackupItem = {
+  key: string;
+  mime: string;
+  base64: string;
+  size: number;
+};
+
+/** Export cached media as base64 (may be large). Cap total payload. */
+export async function exportCachedMediaForBackup(
+  maxTotalBytes = 80 * 1024 * 1024
+): Promise<WhatsAppMediaBackupItem[]> {
+  const rows = await listAllKeys();
+  const sorted = [...rows].sort(
+    (a, b) => (b.lastAccess || b.savedAt || 0) - (a.lastAccess || a.savedAt || 0)
+  );
+  const out: WhatsAppMediaBackupItem[] = [];
+  let total = 0;
+  for (const row of sorted) {
+    if (!row?.blob || !row.key) continue;
+    if (total + row.size > maxTotalBytes) continue;
+    try {
+      const base64 = await blobToBase64(row.blob);
+      out.push({
+        key: row.key,
+        mime: row.mime || row.blob.type || 'application/octet-stream',
+        base64,
+        size: row.size || row.blob.size,
+      });
+      total += row.size || row.blob.size;
+    } catch {
+      /* skip */
+    }
+  }
+  return out;
+}
+
+export async function importCachedMediaFromBackup(
+  items: WhatsAppMediaBackupItem[] | null | undefined
+): Promise<number> {
+  if (!Array.isArray(items) || !items.length) return 0;
+  let n = 0;
+  for (const item of items) {
+    if (!item?.key || !item.base64) continue;
+    try {
+      const blob = base64ToBlob(item.base64, item.mime || 'application/octet-stream');
+      await putCachedMediaBlob(item.key, blob, item.mime);
+      n += 1;
+    } catch {
+      /* skip */
+    }
+  }
+  return n;
+}
+
+export async function clearAllCachedMedia(): Promise<void> {
+  for (const url of objectUrlByKey.values()) {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      /* ignore */
+    }
+  }
+  objectUrlByKey.clear();
+  try {
+    const db = await openDb();
+    const tx = db.transaction(STORE, 'readwrite');
+    await idbReq(tx.objectStore(STORE).clear());
+  } catch {
+    /* ignore */
+  }
 }
