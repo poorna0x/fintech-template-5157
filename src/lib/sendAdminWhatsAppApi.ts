@@ -201,7 +201,11 @@ export async function sendAdminWhatsAppDocument(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      return { ok: true, via: 'api' };
+      return {
+        ok: true,
+        via: 'api',
+        messageId: data?.messageId ? String(data.messageId) : null,
+      };
     }
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
     if (isFeatureDisabledResponse(data)) {
@@ -269,7 +273,11 @@ export async function sendAdminWhatsAppMedia(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      return { ok: true, via: 'api' };
+      return {
+        ok: true,
+        via: 'api',
+        messageId: data?.messageId ? String(data.messageId) : null,
+      };
     }
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
     if (isFeatureDisabledResponse(data)) {
