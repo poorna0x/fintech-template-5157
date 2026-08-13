@@ -84,6 +84,7 @@ import {
   isR2MediaRef,
   isWhatsAppInboxListCacheFresh,
   isWhatsAppThreadCacheFresh,
+  isWhatsAppThreadCachePaintable,
   isWhatsAppThreadUnread,
   isWithinCustomerServiceWindow,
   invalidateWhatsAppInboxThreadsCache,
@@ -1031,17 +1032,22 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     setShowJumpToLatest(false);
     const cached = peekWhatsAppThreadMessagesCache(selectedPhone);
     if (cached?.messages?.length) {
+      // Instant paint from memory / localStorage (Admin APK survives process kill).
       setThreadMessages(cached.messages);
       setThreadHasMoreOlder(Boolean(cached.hasMoreOlder));
-      void loadThread(selectedPhone, {
-        soft: true,
-        force: !isWhatsAppThreadCacheFresh(cached),
-      });
-    } else {
-      setThreadHasMoreOlder(false);
-      setThreadMessages([]);
-      void loadThread(selectedPhone);
+      setThreadLoading(false);
+      // Fresh → no network. Older but paintable → quiet background sync only.
+      if (isWhatsAppThreadCacheFresh(cached)) {
+        return;
+      }
+      if (isWhatsAppThreadCachePaintable(cached)) {
+        void loadThread(selectedPhone, { soft: true });
+        return;
+      }
     }
+    setThreadHasMoreOlder(false);
+    if (!cached?.messages?.length) setThreadMessages([]);
+    void loadThread(selectedPhone);
   }, [selectedPhone, loadThread]);
 
   const lastThreadMessageId = threadMessages[threadMessages.length - 1]?.id ?? null;

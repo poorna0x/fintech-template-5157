@@ -186,11 +186,11 @@ const INBOX_LIST_CACHE_KEY = 'wa_inbox_threads_cache_v2';
 const THREAD_MSGS_CACHE_KEY = 'wa_thread_msgs_cache_v1';
 /** Skip network if list fetched within this window (soft refresh still updates). */
 export const WHATSAPP_INBOX_LIST_CACHE_TTL_MS = 45_000;
-/** Open chat: show cache instantly; background refresh if older than this. */
-export const WHATSAPP_THREAD_CACHE_TTL_MS = 90_000;
+/** Open chat: treat as fresh — reopen without network within this window. */
+export const WHATSAPP_THREAD_CACHE_TTL_MS = 5 * 60_000;
 /** APK cold start: still paint from localStorage within this window, then soft-refresh. */
 export const WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS = 30 * 60_000;
-const THREAD_CACHE_MAX_PHONES = 12;
+const THREAD_CACHE_MAX_PHONES = 24;
 
 /** How far back the inbox thread list loads (sidebar). */
 export type WhatsAppInboxListRange = 'today' | '7d' | '30d' | 'all' | { custom: string };
