@@ -287,6 +287,43 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
         </CardContent>
       </Card>
 
+      {/* Website /book confirmation */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Website booking confirmation</CardTitle>
+          <CardDescription>
+            WhatsApp sent to the customer after they book on hydrogenro.com/book or elevenro.com/book
+            (approved UTILITY template). Soft-fails — never blocks the booking.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ToggleRow
+            label="Enable website booking WhatsApp"
+            description="Allow confirmation WhatsApp for public website bookings. Requires Cold templates ON."
+            checked={settings.allow_online_booking_whatsapp}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_online_booking_whatsapp', v)}
+          />
+          <ToggleRow
+            label="Auto-send after online booking"
+            description="Send automatically when a public /book job is created (same time as confirmation email). Deduped 30 min per phone."
+            checked={settings.auto_send_online_booking_whatsapp}
+            disabled={
+              !settings.enabled ||
+              !settings.allow_online_booking_whatsapp ||
+              !settings.allow_cold_templates
+            }
+            onCheckedChange={(v) => patch('auto_send_online_booking_whatsapp', v)}
+          />
+          {!settings.allow_cold_templates ? (
+            <p className="text-xs text-amber-800">
+              Turn on <span className="font-medium">Cold templates</span> above — website booking
+              confirmation uses a Meta template outside the 24h window.
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
       {/* Per-surface toggles */}
       <Card>
         <CardHeader className="pb-2">
@@ -345,24 +382,6 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
             checked={settings.allow_composer}
             disabled={!settings.enabled}
             onCheckedChange={(v) => patch('allow_composer', v)}
-          />
-          <ToggleRow
-            label="Online booking confirmation"
-            description="WhatsApp confirmation after customer books on elevenro.com/book or hydrogenro.com/book (UTILITY template, cold send)."
-            checked={settings.allow_online_booking_whatsapp}
-            disabled={!settings.enabled}
-            onCheckedChange={(v) => patch('allow_online_booking_whatsapp', v)}
-          />
-          <ToggleRow
-            label="Auto-send booking confirmation"
-            description="Send booking confirmation WhatsApp automatically when a public online booking is created (same time as confirmation email). Deduped 30 min per phone."
-            checked={settings.auto_send_online_booking_whatsapp}
-            disabled={
-              !settings.enabled ||
-              !settings.allow_online_booking_whatsapp ||
-              !settings.allow_cold_templates
-            }
-            onCheckedChange={(v) => patch('auto_send_online_booking_whatsapp', v)}
           />
           <ToggleRow
             label="Job completion → customer"
