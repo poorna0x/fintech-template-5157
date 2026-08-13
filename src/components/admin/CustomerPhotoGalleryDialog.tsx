@@ -11,6 +11,7 @@ import {
   isR2MediaRef,
   isWhatsAppOutboundImageMessage,
   listCustomerWhatsAppDocuments,
+  removeWhatsAppThreadMessageCache,
   type WhatsAppCustomerDocument,
 } from '@/lib/whatsappInbox';
 import { cn } from '@/lib/utils';
@@ -206,6 +207,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
           return;
         }
       }
+      removeWhatsAppThreadMessageCache(row.id, row.phone_e164);
       const next = docs.filter((d) => d.id !== row.id);
       setDocs(next);
       if (next.length === 0) setTab('photos');

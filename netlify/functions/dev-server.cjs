@@ -160,7 +160,9 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-r2-signed-url')) {
     handler = whatsappR2SignedUrl;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-purge-messages')) {
-    handler = whatsappPurgeMessages;
+    // Reload so local edits to messageId purge actually delete R2, not the old handler.
+    delete require.cache[require.resolve('./whatsapp-purge-messages')];
+    handler = require('./whatsapp-purge-messages');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-booking-start')) {
     handler = whatsappBookingStart;
   } else if (req.url.startsWith('/.netlify/functions/dial-call')) {

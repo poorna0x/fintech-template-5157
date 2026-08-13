@@ -64,6 +64,57 @@ export function loadWhatsAppReadMap(): Record<string, string> {
 }
 
 export const WA_INBOX_READ_SYNC_EVENT = 'wa-inbox-read-sync';
+export const WA_INBOX_MESSAGE_DELETED_EVENT = 'wa-inbox-message-deleted';
+
+const DELETED_MSG_IDS_KEY = 'wa_deleted_msg_ids_v1';
+const DELETED_MSG_IDS_MAX = 400;
+let deletedMessageIdsMem: Set<string> | null = null;
+
+function loadDeletedMessageIds(): Set<string> {
+  if (deletedMessageIdsMem) return deletedMessageIdsMem;
+  try {
+    const raw = sessionStorage.getItem(DELETED_MSG_IDS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+    deletedMessageIdsMem = new Set(
+      Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string' && id) : []
+    );
+  } catch {
+    deletedMessageIdsMem = new Set();
+  }
+  return deletedMessageIdsMem;
+}
+
+function persistDeletedMessageIds(ids: Set<string>): void {
+  const list = [...ids].slice(-DELETED_MSG_IDS_MAX);
+  deletedMessageIdsMem = new Set(list);
+  try {
+    sessionStorage.setItem(DELETED_MSG_IDS_KEY, JSON.stringify(list));
+  } catch {
+    /* quota */
+  }
+}
+
+export function isWhatsAppMessageDeletedLocally(id: string | null | undefined): boolean {
+  const key = String(id || '').trim();
+  return Boolean(key) && loadDeletedMessageIds().has(key);
+}
+
+function rememberWhatsAppDeletedMessageId(id: string): void {
+  const key = String(id || '').trim();
+  if (!key) return;
+  const ids = loadDeletedMessageIds();
+  ids.add(key);
+  persistDeletedMessageIds(ids);
+}
+
+function emitWhatsAppMessageDeleted(id: string, phoneE164?: string | null): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent(WA_INBOX_MESSAGE_DELETED_EVENT, {
+      detail: { id, phoneE164: String(phoneE164 || '') },
+    })
+  );
+}
 
 /** FCM / Android tray tag — must match admin-whatsapp-inbound-push + ForegroundPushNotifier. */
 export function whatsAppInboundNotificationTag(phoneE164: string): string {
@@ -816,13 +867,23 @@ export function peekWhatsAppThreadMessagesCache(
   const phone = String(phoneE164 || '').replace(/\D/g, '');
   if (!phone) return null;
   const mem = threadMsgsCacheMem.get(phone);
-  if (mem) return mem;
+  if (mem?.messages) {
+    const messages = mem.messages.filter((m) => !isWhatsAppMessageDeletedLocally(m.id));
+    if (messages.length !== mem.messages.length) {
+      const cleaned = { ...mem, messages };
+      threadMsgsCacheMem.set(phone, cleaned);
+      return cleaned;
+    }
+    return mem;
+  }
   const store = readJsonCached<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
   const stored = store[phone];
   if (stored && Array.isArray(stored.messages)) {
-    threadMsgsCacheMem.set(phone, stored);
+    const messages = stored.messages.filter((m) => !isWhatsAppMessageDeletedLocally(m.id));
+    const entry = { ...stored, messages };
+    threadMsgsCacheMem.set(phone, entry);
     writeJsonSession(THREAD_MSGS_CACHE_KEY, store);
-    return stored;
+    return entry;
   }
   return null;
 }
@@ -848,8 +909,9 @@ export function writeWhatsAppThreadMessagesCache(
 ): void {
   const phone = String(phoneE164 || '').replace(/\D/g, '');
   if (!phone) return;
+  const kept = messages.filter((m) => !isWhatsAppMessageDeletedLocally(m.id));
   const entry: ThreadMsgsCacheEntry = {
-    messages,
+    messages: kept,
     hasMoreOlder,
     fetchedAt: Date.now(),
   };
@@ -871,6 +933,7 @@ export function upsertWhatsAppThreadMessageCache(
 ): void {
   const phone = String(phoneE164 || '').replace(/\D/g, '');
   if (!phone || !row?.id) return;
+  if (isWhatsAppMessageDeletedLocally(row.id)) return;
   const prev = peekWhatsAppThreadMessagesCache(phone);
   if (!prev) return;
   const without = prev.messages.filter((m) => m.id !== row.id);
@@ -882,6 +945,65 @@ export function upsertWhatsAppThreadMessageCache(
       ? messages.slice(messages.length - WHATSAPP_THREAD_LIMIT)
       : messages;
   writeWhatsAppThreadMessagesCache(phone, capped, prev.hasMoreOlder);
+}
+
+function peekAnyInboxListCache(): InboxListCacheEntry | null {
+  if (inboxListCacheMem?.threads) return inboxListCacheMem;
+  const stored = readJsonCached<InboxListCacheEntry>(INBOX_LIST_CACHE_KEY);
+  return stored?.threads ? stored : null;
+}
+
+function patchInboxListPreviewFromRemaining(
+  phone: string,
+  remaining: WhatsAppMessageRow[],
+  removed: WhatsAppMessageRow | undefined
+): void {
+  const list = peekAnyInboxListCache();
+  if (!list?.threads?.length || !removed) return;
+  const idx = list.threads.findIndex((t) => t.phone_e164 === phone);
+  if (idx < 0) return;
+  const existing = list.threads[idx];
+  if (existing.last_at && existing.last_at !== removed.created_at) return;
+  const last = remaining[remaining.length - 1];
+  if (!last) return;
+  writeWhatsAppInboxThreadsCache(patchThreadFromMessage(list.threads, last), {
+    rangeKey: list.rangeKey,
+  });
+}
+
+/**
+ * Drop one message from on-device chat cache after a real DB delete.
+ * Also refreshes the sidebar preview when that row was the last message.
+ */
+export function removeWhatsAppThreadMessageCache(
+  messageId: string,
+  phoneE164?: string | null
+): { phone: string; remaining: WhatsAppMessageRow[] } | null {
+  const id = String(messageId || '').trim();
+  if (!id) return null;
+  rememberWhatsAppDeletedMessageId(id);
+  emitWhatsAppMessageDeleted(id, phoneE164);
+  const hinted = String(phoneE164 || '').replace(/\D/g, '');
+  const phones: string[] = [];
+  if (hinted) {
+    phones.push(hinted);
+  } else {
+    const store =
+      readJsonCached<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
+    for (const phone of new Set([...threadMsgsCacheMem.keys(), ...Object.keys(store)])) {
+      if (phone) phones.push(phone);
+    }
+  }
+  for (const phone of phones) {
+    const prev = peekWhatsAppThreadMessagesCache(phone);
+    if (!prev?.messages?.some((m) => m.id === id)) continue;
+    const removed = prev.messages.find((m) => m.id === id);
+    const remaining = prev.messages.filter((m) => m.id !== id);
+    writeWhatsAppThreadMessagesCache(phone, remaining, prev.hasMoreOlder);
+    patchInboxListPreviewFromRemaining(phone, remaining, removed);
+    return { phone, remaining };
+  }
+  return null;
 }
 
 /**
@@ -1965,6 +2087,7 @@ export function displayPhone(phoneE164: string): string {
 
 export type WhatsAppCustomerDocument = {
   id: string;
+  phone_e164: string | null;
   filename: string | null;
   media_url: string;
   media_mime: string | null;
@@ -2033,7 +2156,7 @@ export async function listCustomerWhatsAppDocuments(
 
   const { data, error } = await supabaseClient
     .from('whatsapp_messages')
-    .select('id, direction, msg_type, filename, media_url, media_mime, created_at')
+    .select('id, phone_e164, direction, msg_type, filename, media_url, media_mime, created_at')
     .eq('direction', 'outbound')
     .not('media_url', 'is', null)
     .or(orParts.join(','))
@@ -2058,6 +2181,7 @@ export async function listCustomerWhatsAppDocuments(
     seenUrls.add(mediaUrl);
     rows.push({
       id: row.id,
+      phone_e164: row.phone_e164 ? String(row.phone_e164).replace(/\D/g, '') : null,
       filename: row.filename || null,
       media_url: mediaUrl,
       media_mime: row.media_mime || null,

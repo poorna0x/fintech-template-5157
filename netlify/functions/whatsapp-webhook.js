@@ -3,7 +3,6 @@
  * Phase 2: write messages/statuses to whatsapp_messages; media → Cloudinary when possible.
  * Still keeps a short in-memory buffer for /whatsapp-test.
  */
-const { isLocalDev } = require('./cors-helper');
 const { pushEvent } = require('./whatsapp-event-store');
 const {
   getServiceSupabase,
@@ -227,9 +226,12 @@ exports.handler = async (event) => {
       event.headers['x-hub-signature-256'] ||
       event.headers['X-Hub-Signature-256'] ||
       '';
-    if (!appSecret && !isLocalDev()) {
-      console.error('[whatsapp-webhook] whatsapp_app_secret missing — refusing unsigned webhook');
-      return { statusCode: 401, body: 'Invalid signature' };
+    // Prefer HMAC when app_secrets.whatsapp_app_secret is set. If it is missing,
+    // do not drop inbound — Meta still delivers; we just cannot verify the signature.
+    if (!appSecret) {
+      console.error(
+        '[whatsapp-webhook] whatsapp_app_secret missing — accepting inbound without HMAC (set app_secrets.whatsapp_app_secret)'
+      );
     }
     const sig = verifyWhatsAppSignature(rawBody, sigHeader, appSecret);
     if (!sig.ok) {

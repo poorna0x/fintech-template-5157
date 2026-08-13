@@ -93,6 +93,7 @@ import {
   isWhatsAppThreadCacheFresh,
   isWhatsAppThreadUnread,
   isWithinCustomerServiceWindow,
+  isWhatsAppMessageDeletedLocally,
   invalidateWhatsAppInboxThreadsCache,
   invalidateWhatsAppThreadMessagesCache,
   loadWhatsAppReadMap,
@@ -103,6 +104,8 @@ import {
   patchThreadFromMessage,
   peekWhatsAppInboxThreadsCache,
   peekWhatsAppThreadMessagesCache,
+  removeWhatsAppThreadMessageCache,
+  WA_INBOX_MESSAGE_DELETED_EVENT,
   previewMessageBody,
   formatAdminWhatsAppBody,
   isBookingBotStateMessage,
@@ -777,13 +780,27 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         }
         return;
       }
-      const rows = ((data || []) as WhatsAppMessageRow[]).slice().reverse();
+      const rows = ((data || []) as WhatsAppMessageRow[])
+        .filter((r) => !isWhatsAppMessageDeletedLocally(r.id))
+        .slice()
+        .reverse();
       const pageHasMore = (data || []).length >= WHATSAPP_THREAD_PAGE_SIZE;
-      const prev = threadMessagesRef.current;
+      const prev = threadMessagesRef.current.filter((m) => !isWhatsAppMessageDeletedLocally(m.id));
       let next = rows;
       if (opts?.soft && prev.length) {
+        const serverIds = new Set(rows.map((r) => r.id));
+        const oldestTs = rows.length
+          ? Math.min(...rows.map((r) => new Date(r.created_at).getTime()))
+          : 0;
         const byId = new Map<string, WhatsAppMessageRow>();
-        for (const m of prev) byId.set(m.id, m);
+        for (const m of prev) {
+          const ts = new Date(m.created_at).getTime();
+          const keepOptimistic = String(m.id || '').startsWith('local-');
+          const olderThanPage = rows.length > 0 && Number.isFinite(ts) && ts < oldestTs;
+          if (keepOptimistic || olderThanPage || serverIds.has(m.id)) {
+            byId.set(m.id, m);
+          }
+        }
         for (const r of rows) byId.set(r.id, { ...byId.get(r.id), ...r });
         next = [...byId.values()].sort(
           (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -1148,6 +1165,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   );
 
   const upsertMessageLocal = useCallback((row: WhatsAppMessageRow) => {
+    if (isWhatsAppMessageDeletedLocally(row.id)) return;
     const rowPhone = toWhatsAppPhoneDigits(row.phone_e164);
     const selected = toWhatsAppPhoneDigits(selectedPhoneRef.current);
     setThreads((prev) => {
@@ -1243,7 +1261,15 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   );
 
   useEffect(() => {
-    void loadInbox();
+    const rangeKey = inboxListRangeKey(listRangeRef.current);
+    const cached = peekWhatsAppInboxThreadsCache({ rangeKey });
+    if (cached?.threads?.length) {
+      setThreads(cached.threads);
+      setLoading(false);
+      void loadInbox({ soft: true });
+      return;
+    }
+    void loadInbox({ force: true });
   }, [loadInbox]);
 
   useEffect(() => {
@@ -1354,7 +1380,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         (payload) => {
           const row = (payload.new || payload.old) as Partial<WhatsAppMessageRow> | null;
           if (payload.eventType === 'DELETE' && row?.id) {
+            removeWhatsAppThreadMessageCache(row.id, row.phone_e164);
             setThreadMessages((prev) => prev.filter((m) => m.id !== row.id));
+            const rangeKey = inboxListRangeKey(listRangeRef.current);
+            const list = peekWhatsAppInboxThreadsCache({ rangeKey });
+            if (list?.threads) setThreads(list.threads);
             scheduleSoftReload();
             return;
           }
@@ -1411,8 +1441,20 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   useEffect(() => {
     const onReadSync = () => setReadMap(loadWhatsAppReadMap());
+    const onDeleted = (ev: Event) => {
+      const id = String((ev as CustomEvent<{ id?: string }>).detail?.id || '').trim();
+      if (!id) return;
+      setThreadMessages((prev) => prev.filter((m) => m.id !== id));
+      const rangeKey = inboxListRangeKey(listRangeRef.current);
+      const list = peekWhatsAppInboxThreadsCache({ rangeKey });
+      if (list?.threads) setThreads(list.threads);
+    };
     window.addEventListener(WA_INBOX_READ_SYNC_EVENT, onReadSync);
-    return () => window.removeEventListener(WA_INBOX_READ_SYNC_EVENT, onReadSync);
+    window.addEventListener(WA_INBOX_MESSAGE_DELETED_EVENT, onDeleted);
+    return () => {
+      window.removeEventListener(WA_INBOX_READ_SYNC_EVENT, onReadSync);
+      window.removeEventListener(WA_INBOX_MESSAGE_DELETED_EVENT, onDeleted);
+    };
   }, []);
 
   useEffect(() => {
