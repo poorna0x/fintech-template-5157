@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, FileText, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getWhatsAppMediaBytesCached } from '@/lib/sendAdminWhatsAppApi';
 import { isR2MediaRef } from '@/lib/whatsappInbox';
-import { fetchWhatsAppR2MediaBytes } from '@/lib/sendAdminWhatsAppApi';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 type Props = {
@@ -31,8 +31,8 @@ async function loadPdfBytes(
   messageId: string,
   mediaUrl: string
 ): Promise<Uint8Array> {
-  if (isR2MediaRef(mediaUrl) || mediaUrl.startsWith('whatsapp-media:')) {
-    const fetched = await fetchWhatsAppR2MediaBytes({ mediaUrl, messageId });
+  if (isR2MediaRef(mediaUrl) || mediaUrl.startsWith('whatsapp-media:') || /^https:\/\//i.test(mediaUrl)) {
+    const fetched = await getWhatsAppMediaBytesCached({ mediaUrl, messageId });
     if (!fetched.ok) throw new Error(fetched.error || 'media');
     if (fetched.bytes) {
       // Copy — pdf.js may transfer/detach the buffer
@@ -44,12 +44,6 @@ async function loadPdfBytes(
       return new Uint8Array(await res.arrayBuffer());
     }
     throw new Error('no media bytes');
-  }
-
-  if (/^https:\/\//i.test(mediaUrl)) {
-    const res = await fetch(mediaUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return new Uint8Array(await res.arrayBuffer());
   }
 
   throw new Error('unsupported media');

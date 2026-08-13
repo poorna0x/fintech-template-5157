@@ -115,10 +115,10 @@ import {
 import { WhatsAppAvatar, WhatsAppTicks } from '@/components/whatsapp/WhatsAppTicks';
 import {
   fetchApprovedWhatsAppTemplates,
-  fetchWhatsAppR2MediaBytes,
-  fetchWhatsAppR2SignedUrl,
+  getWhatsAppMediaBytesCached,
   purgeWhatsAppMessages,
   readFileAsBase64,
+  resolveWhatsAppMediaDisplayUrl,
   sendAdminWhatsAppMedia,
   sendAdminWhatsAppTemplate,
   sendAdminWhatsAppText,
@@ -598,23 +598,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const resolveMediaHref = useCallback(async (row: WhatsAppMessageRow): Promise<string | null> => {
     const ref = row.media_url;
     if (!ref) return null;
-    if (
-      !isR2MediaRef(ref) &&
-      !ref.startsWith('whatsapp-media:') &&
-      /^https:\/\//i.test(ref)
-    ) {
-      return ref;
-    }
     const cached = mediaUrlCacheRef.current[row.id];
     if (cached) return cached;
-    const signed = await fetchWhatsAppR2SignedUrl({
+    const resolved = await resolveWhatsAppMediaDisplayUrl({
       mediaUrl: ref,
       messageId: row.id,
+      mimeHint: row.media_mime,
     });
-    if (!signed.ok || !signed.url) return null;
-    mediaUrlCacheRef.current[row.id] = signed.url;
-    setMediaUrlCache((prev) => (prev[row.id] ? prev : { ...prev, [row.id]: signed.url! }));
-    return signed.url;
+    if (!resolved.ok || !resolved.url) return null;
+    mediaUrlCacheRef.current[row.id] = resolved.url;
+    setMediaUrlCache((prev) => (prev[row.id] ? prev : { ...prev, [row.id]: resolved.url! }));
+    return resolved.url;
   }, []);
 
   const openImageViewer = useCallback(
@@ -712,9 +706,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       try {
         const ref = row.media_url;
         if (isR2MediaRef(ref) || ref.startsWith('whatsapp-media:')) {
-          const fetched = await fetchWhatsAppR2MediaBytes({
+          const fetched = await getWhatsAppMediaBytesCached({
             mediaUrl: ref,
             messageId: row.id,
+            mimeHint: row.media_mime,
           });
           if (fetched.ok && fetched.bytes) {
             const mime =
@@ -767,11 +762,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       if (!candidates.length) return;
       const results = await Promise.all(
         candidates.map(async (m) => {
-          const signed = await fetchWhatsAppR2SignedUrl({
+          const resolved = await resolveWhatsAppMediaDisplayUrl({
             mediaUrl: m.media_url!,
             messageId: m.id,
+            mimeHint: m.media_mime,
           });
-          return signed.ok && signed.url ? { id: m.id, url: signed.url } : null;
+          return resolved.ok && resolved.url ? { id: m.id, url: resolved.url } : null;
         })
       );
       if (cancelled) return;
