@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Download, Images, MapPin } from 'lucide-react';
+import { ChevronDown, Download, Images } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   DropdownMenu,
@@ -10,7 +10,6 @@ import {
 import {
   addWhatsAppPhotoToCustomerGallery,
   isWhatsAppImageMessage,
-  isWhatsAppLocationMessage,
 } from '@/lib/whatsappInboxApplyToCustomer';
 import type { WhatsAppMessageRow } from '@/lib/whatsappInbox';
 
@@ -18,19 +17,16 @@ type Props = {
   message: WhatsAppMessageRow;
   customerId?: string | null;
   onDownload?: () => void;
-  onUpdateLocation?: (message: WhatsAppMessageRow) => void;
 };
 
 export function WhatsAppMessageBubbleMenu({
   message,
   customerId,
   onDownload,
-  onUpdateLocation,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const isImage = isWhatsAppImageMessage(message);
-  const isLocation = isWhatsAppLocationMessage(message);
-  if (!isImage && !isLocation) return null;
+  if (!isImage) return null;
 
   const run = async (fn: () => Promise<{ ok: boolean; error?: string; address?: string }>, okMsg: string) => {
     setBusy(true);
@@ -62,36 +58,24 @@ export function WhatsAppMessageBubbleMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="z-[80] min-w-[12rem]" onClick={(e) => e.stopPropagation()}>
-        {isImage ? (
-          <DropdownMenuItem
-            className="cursor-pointer"
-            disabled={busy}
-            onSelect={() =>
-              void run(
-                () =>
-                  addWhatsAppPhotoToCustomerGallery({
-                    messageId: message.id,
-                    customerId,
-                  }),
-                'Photo added to customer gallery'
-              )
-            }
-          >
-            <Images className="mr-2 h-4 w-4" />
-            Add to customer gallery
-          </DropdownMenuItem>
-        ) : null}
-        {isLocation ? (
-          <DropdownMenuItem
-            className="cursor-pointer"
-            disabled={busy}
-            onSelect={() => onUpdateLocation?.(message)}
-          >
-            <MapPin className="mr-2 h-4 w-4" />
-            Update customer location
-          </DropdownMenuItem>
-        ) : null}
-        {isImage && onDownload ? (
+        <DropdownMenuItem
+          className="cursor-pointer"
+          disabled={busy}
+          onSelect={() =>
+            void run(
+              () =>
+                addWhatsAppPhotoToCustomerGallery({
+                  messageId: message.id,
+                  customerId,
+                }),
+              'Photo added to customer gallery'
+            )
+          }
+        >
+          <Images className="mr-2 h-4 w-4" />
+          Add to customer gallery
+        </DropdownMenuItem>
+        {onDownload ? (
           <DropdownMenuItem
             className="cursor-pointer"
             onSelect={() => onDownload()}

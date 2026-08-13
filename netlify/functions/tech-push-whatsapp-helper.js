@@ -22,6 +22,7 @@ const MIRROR_CATEGORIES = new Set([
   'bill_reminders',
   'cash_handover',
   'wrong_line',
+  'pay_qr_screenshot',
 ]);
 
 function isCategoryOn(prefs, category) {

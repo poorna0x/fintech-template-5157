@@ -6,7 +6,7 @@
  * Media previews on private Cloudflare R2 (r2: keys).
  */
 const { getCorsHeaders, shouldRejectMissingOrigin, isLocalDev } = require('./cors-helper');
-const { authorizeAdminRequest } = require('./admin-auth-guard');
+const { authorizeAdminRequest, authorizeStaffRequest } = require('./admin-auth-guard');
 const {
   digitsOnly,
   normalizePhoneE164,
@@ -130,13 +130,58 @@ exports.handler = async (event) => {
   }
 
   const pocOk = isLocalPocAuthorized(body);
-  let auth = { ok: false, userId: null };
+  let auth = { ok: false, userId: null, role: null };
   if (pocOk) {
-    auth = { ok: true, userId: null, via: 'poc_secret' };
+    auth = { ok: true, userId: null, via: 'poc_secret', role: 'admin' };
   } else {
-    auth = await authorizeAdminRequest(event);
-    if (!auth.ok) {
-      return json(401, headers, { error: auth.error || 'Unauthorized' });
+    // Staff first — technicians fail authorizeAdminRequest with "Forbidden".
+    const staff = await authorizeStaffRequest(event);
+    if (staff.ok && staff.role === 'technician') {
+      const source = String(body.source || body.sendSource || '')
+        .trim()
+        .toLowerCase();
+      if (source !== 'documents' && source !== 'pending_payment') {
+        return json(403, headers, {
+          error: 'Technicians can only send AMC PDFs and pay QR on WhatsApp',
+        });
+      }
+      const sendType = String(body.type || '').trim().toLowerCase();
+      if (source === 'documents' && sendType !== 'document' && sendType !== 'template') {
+        return json(403, headers, {
+          error: 'Technicians can only send AMC PDFs on WhatsApp',
+        });
+      }
+      if (source === 'pending_payment' && sendType !== 'template' && sendType !== 'image') {
+        return json(403, headers, {
+          error: 'Technicians can only send pay QR on WhatsApp',
+        });
+      }
+      auth = {
+        ok: true,
+        userId: staff.userId,
+        role: 'technician',
+        via: staff.via || 'session',
+      };
+    } else if (staff.ok) {
+      auth = {
+        ok: true,
+        userId: staff.userId,
+        role: staff.role || 'admin',
+        via: staff.via || 'session',
+      };
+    } else {
+      const admin = await authorizeAdminRequest(event);
+      if (!admin.ok) {
+        return json(401, headers, {
+          error: 'Sign in as a technician or admin to send WhatsApp',
+        });
+      }
+      auth = {
+        ok: true,
+        userId: admin.userId,
+        role: 'admin',
+        via: admin.via || 'session',
+      };
     }
   }
 
@@ -820,6 +865,30 @@ exports.handler = async (event) => {
         });
       } catch (err) {
         console.warn('[whatsapp-send] seedPendingAction failed', err?.message || err);
+      }
+    }
+
+    const watchPhotos = body.watchPhotos === true || body.watch_photos === true;
+    const watchSource = String(body.source || body.sendSource || '')
+      .trim()
+      .toLowerCase();
+    if (
+      watchPhotos &&
+      watchSource === 'pending_payment' &&
+      auth.role === 'technician' &&
+      auth.userId &&
+      db
+    ) {
+      try {
+        const { upsertPayQrWatch } = require('./whatsapp-pay-qr-helper');
+        await upsertPayQrWatch(db, {
+          phoneE164: to,
+          technicianId: auth.userId,
+          jobId: body.jobId || body.job_id || null,
+          customerName: body.customerName || body.customer_name || null,
+        });
+      } catch (err) {
+        console.warn('[whatsapp-send] pay-qr watch failed', err?.message || err);
       }
     }
 

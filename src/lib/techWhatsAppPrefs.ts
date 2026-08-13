@@ -36,6 +36,7 @@ export const TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES = [
   'bill_reminders',
   'cash_handover',
   'wrong_line',
+  'pay_qr_screenshot',
 ] as const satisfies readonly TechPushCategory[];
 
 export type TechWhatsAppAutoMirrorCategory =
@@ -86,6 +87,11 @@ export const TECH_WHATSAPP_LABELS: Record<
   wrong_line: {
     label: TECH_PUSH_LABELS.wrong_line.label + ' (WhatsApp)',
     description: 'Wrong company-line reminder — also WhatsApp when enabled.',
+  },
+  pay_qr_screenshot: {
+    label: TECH_PUSH_LABELS.pay_qr_screenshot.label + ' (WhatsApp)',
+    description:
+      'Payment screenshot after you send a pay QR — also WhatsApp when enabled (photo when the 24h window is open).',
   },
   tech_assigned_customer: {
     label: 'Technician assigned (to customer)',

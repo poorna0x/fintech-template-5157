@@ -9226,8 +9226,8 @@ const TechnicianDashboard = () => {
                           <div>
                             <p className="text-sm font-semibold text-violet-950">Share AMC with customer</p>
                             <p className="text-xs text-violet-900/75 mt-1 leading-relaxed">
-                              Download or email a reference AMC PDF using the details above and customer info.
-                              If the customer has no email, you can enter one when sending — it will be saved to their record.
+                              Send the AMC PDF on WhatsApp. Change the number if needed, or add a
+                              second number.
                             </p>
                           </div>
                           <AmcDocumentActions
@@ -9478,7 +9478,7 @@ const TechnicianDashboard = () => {
                             </SelectItem>
                                   ))}
                                 <SelectItem value={SHARE_QR_LINK_VALUE}>
-                                  Share QR Link (customer not on site)
+                                  Send pay QR on WhatsApp (customer not on site)
                                 </SelectItem>
                               </>
                             )}
@@ -9572,6 +9572,17 @@ const TechnicianDashboard = () => {
                             selectedJobForComplete?.customerName ||
                             selectedJobForComplete?.jobNumber ||
                             ''
+                          }
+                          jobId={selectedJobForComplete?.id || null}
+                          customerId={
+                            completeJobCustomerDoc?.id ||
+                            (selectedJobForComplete as { customerId?: string } | null)?.customerId ||
+                            null
+                          }
+                          jobRef={
+                            selectedJobForComplete?.jobNumber ||
+                            selectedJobForComplete?.customerName ||
+                            null
                           }
                         />
                       ) : null}

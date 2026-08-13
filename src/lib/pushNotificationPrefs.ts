@@ -24,6 +24,7 @@ export const TECH_PUSH_CATEGORIES = [
   'bill_reminders',
   'cash_handover',
   'wrong_line',
+  'pay_qr_screenshot',
 ] as const;
 
 export type AdminPushCategory = (typeof ADMIN_PUSH_CATEGORIES)[number];
@@ -129,6 +130,11 @@ export const TECH_PUSH_LABELS: Record<TechPushCategory, { label: string; descrip
     label: 'Wrong company-line reminder',
     description:
       'When this phone dials a customer from a non-company SIM: warn the tech and notify admins. Off = no wrong-line alerts from this phone (still needs “Detect calls” on to detect).',
+  },
+  pay_qr_screenshot: {
+    label: 'Pay QR payment screenshots',
+    description:
+      'When you send a pay QR on WhatsApp, customer photos for the next 30 minutes are pushed to this phone.',
   },
 };
 

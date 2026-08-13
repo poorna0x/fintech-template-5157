@@ -61,7 +61,6 @@ import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import WaterFilterServiceStartDialog from '@/components/whatsapp/WaterFilterServiceStartDialog';
 import { WhatsAppMessageBubbleMenu } from '@/components/whatsapp/WhatsAppMessageBubbleMenu';
 import { WhatsAppInboxLocationCard } from '@/components/whatsapp/WhatsAppInboxLocationCard';
-import { WhatsAppInboxLocationDialog } from '@/components/whatsapp/WhatsAppInboxLocationDialog';
 import { isWhatsAppLocationMessage } from '@/lib/whatsappInboxApplyToCustomer';
 import type { Customer, Technician } from '@/types';
 import {
@@ -438,29 +437,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     WhatsAppBookingQuickAction | InboxQuickMessageAction | null
   >(null);
   const [quickActionBusy, setQuickActionBusy] = useState(false);
-  const [locationDialogMessage, setLocationDialogMessage] = useState<WhatsAppMessageRow | null>(
-    null
-  );
-  const [locationDialogKey, setLocationDialogKey] = useState(0);
-
-  const openInboxLocationDialog = useCallback((message: WhatsAppMessageRow) => {
-    toast.loading('Opening map…', { id: 'wa-inbox-location' });
-    window.setTimeout(() => {
-      setLocationDialogKey((n) => n + 1);
-      setLocationDialogMessage(message);
-    }, 80);
-  }, []);
 
   /** Android back / header Back: close overlay → leave chat → exit inbox. */
   useEffect(() => {
     return registerNativeBackHandler(() => {
       if (inboxPhotoViewer) {
         setInboxPhotoViewer(null);
-        return true;
-      }
-      if (locationDialogMessage) {
-        toast.dismiss('wa-inbox-location');
-        setLocationDialogMessage(null);
         return true;
       }
       if (reportOpen) {
@@ -497,7 +479,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     });
   }, [
     inboxPhotoViewer,
-    locationDialogMessage,
     reportOpen,
     quickActionConfirm,
     newChatOpen,
@@ -2679,7 +2660,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       /^https:\/\//i.test(m.media_url || '')
                         ? m.media_url
                         : null);
-                    const showLocationMenu = !m.media_url && isWhatsAppLocationMessage(m);
+                    const showLocationCard = !m.media_url && isWhatsAppLocationMessage(m);
 
                     if (botState) {
                       return (
@@ -2792,15 +2773,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                 </div>
                               )
                             ) : null}
-                            {showLocationMenu ? (
-                              <>
-                                <WhatsAppInboxLocationCard body={m.body} />
-                                <WhatsAppMessageBubbleMenu
-                                  message={m}
-                                  customerId={m.customer_id || activeThread?.customer_id}
-                                  onUpdateLocation={openInboxLocationDialog}
-                                />
-                              </>
+                            {showLocationCard ? (
+                              <WhatsAppInboxLocationCard body={m.body} />
                             ) : (
                             (() => {
                               const text = formatAdminWhatsAppBody(m.body, { compact: false });
@@ -3290,21 +3264,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             setReportOpen(open);
             if (!open) setReportCustomer(null);
           }}
-        />
-      ) : null}
-
-      {locationDialogMessage ? (
-        <WhatsAppInboxLocationDialog
-          key={locationDialogKey}
-          open
-          onOpenChange={(open) => {
-            if (!open) {
-              toast.dismiss('wa-inbox-location');
-              setLocationDialogMessage(null);
-            }
-          }}
-          message={locationDialogMessage}
-          customerId={locationDialogMessage.customer_id || activeThread?.customer_id}
         />
       ) : null}
 

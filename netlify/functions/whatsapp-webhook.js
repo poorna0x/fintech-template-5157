@@ -22,6 +22,7 @@ const {
   BOOKING_FLOW_ALERT_MARKER,
 } = require('./whatsapp-booking-bot');
 const { handleUnsolicitedInboundMedia } = require('./whatsapp-unsolicited-media');
+const { handlePayQrWatchInbound } = require('./whatsapp-pay-qr-helper');
 const { handlePdfAuthenticityOtpInbound } = require('./whatsapp-pdf-authenticity-otp');
 const { handleDocumentAcceptInbound } = require('./document-accept-inbound');
 
@@ -85,9 +86,26 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       wa_message_id: msg.id || null,
     });
 
-    // Unsolicited photo/video/file → redirect to Eleven RO main WA (unless we asked for media).
-    let skipBookingBot = false;
+    // Technician pay-QR watch: forward inbound photos for 30 minutes.
+    let payQrWatchHandled = false;
     if (accessToken && phoneNumberId) {
+      try {
+        const watchResult = await handlePayQrWatchInbound({
+          db,
+          accessToken,
+          phoneNumberId,
+          msg,
+          media,
+        });
+        payQrWatchHandled = Boolean(watchResult?.handled);
+      } catch (err) {
+        console.warn('[whatsapp-webhook] pay-qr watch error', err?.message || err);
+      }
+    }
+
+    // Unsolicited photo/video/file → redirect to Eleven RO main WA (unless we asked for media).
+    let skipBookingBot = payQrWatchHandled;
+    if (accessToken && phoneNumberId && !payQrWatchHandled) {
       try {
         const unsolicitedResult = await handleUnsolicitedInboundMedia({
           db,

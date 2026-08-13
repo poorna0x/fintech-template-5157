@@ -27,7 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, ShoppingBag, Search, Check, X, Plus, ListOrdered, Wallet, Share2 } from 'lucide-react';
+import { Loader2, ShoppingBag, Search, Check, X, Plus, ListOrdered, Wallet } from 'lucide-react';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { filterInventoryByApproxSearch } from '@/lib/inventorySearch';
@@ -500,13 +501,14 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         payeeName: draft.payeeName,
         paymentPhone: draft.upiPaymentPhone,
         customerPhone: draft.customerPhone,
+        customerName: draft.customerName.trim() || undefined,
         note: draft.customerName.trim() || 'Office sale',
       });
       if (!result.ok) {
-        toast.error(result.error || 'Could not share UPI link');
+        toast.error(result.error || 'Could not send pay QR on WhatsApp');
         return false;
       }
-      toast.success('WhatsApp opened with UPI pay link');
+      toast.success('Pay QR sent on WhatsApp');
       return true;
     } finally {
       setSharingUpiLink(false);
@@ -1428,20 +1430,20 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                    className="h-11 w-full gap-2 rounded-xl border-emerald-300 text-emerald-800 hover:bg-emerald-50"
                     disabled={sharingUpiLink}
                     onClick={() => void handleShareUpiLink()}
                   >
                     {sharingUpiLink ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <Share2 className="h-4 w-4" />
+                      <WhatsAppIcon className="h-4 w-4" />
                     )}
-                    Share UPI pay link on WhatsApp
+                    {sharingUpiLink ? 'Sending pay QR…' : 'Send pay QR on WhatsApp'}
                   </Button>
                 ) : needsQr && selectedQr?.dynamicUpiEnabled ? (
-                  <p className="text-[11px] text-muted-foreground">
-                    Add customer phone (10 digits) to share the UPI pay link on WhatsApp.
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Add customer phone (10 digits) to send the pay QR on WhatsApp.
                   </p>
                 ) : null}
               </div>
@@ -1488,7 +1490,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
             <AlertDialogDescription>
               Sale is saved.
               {showPostSaleUpiShare
-                ? ' Share the UPI pay link and/or send the bill PDF by email or WhatsApp.'
+                ? ' Share the pay QR on WhatsApp and/or send the bill PDF by email or WhatsApp.'
                 : ' Send the bill PDF by email or WhatsApp?'}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1505,16 +1507,16 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                  className="h-11 w-full gap-2 rounded-xl border-emerald-300 text-emerald-800 hover:bg-emerald-50"
                   disabled={sharingUpiLink}
                   onClick={() => void onShareUpiAfterSale()}
                 >
                   {sharingUpiLink ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Share2 className="h-4 w-4" />
+                    <WhatsAppIcon className="h-4 w-4" />
                   )}
-                  Share UPI pay link on WhatsApp
+                  {sharingUpiLink ? 'Sending pay QR…' : 'Send pay QR on WhatsApp'}
                 </Button>
               </>
             ) : null}

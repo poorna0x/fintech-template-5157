@@ -9,6 +9,7 @@ import {
   resolveUpiPaySiteOrigin,
 } from '@/lib/upiPaymentAccounts';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { sendPayQrWhatsApp } from '@/lib/whatsappPayQrShare';
 
 /** Default pay-link brand for office sales (user can switch to Hydrogen RO in the UI). */
 export const DEFAULT_OFFICE_SALE_UPI_BRAND: DocumentBrand = 'elevenro';
@@ -21,6 +22,8 @@ export type OfficeSaleUpiShareInput = {
   /** UPI account payment phone (for iPhone fallback). */
   paymentPhone?: string;
   customerPhone: string;
+  customerName?: string;
+  customerId?: string | null;
   note?: string;
 };
 
@@ -64,7 +67,7 @@ export async function buildOfficeSaleUpiShareMessage(
   });
 }
 
-/** Open wa.me with short HTTPS UPI pay link (same as technician Share QR Link). */
+/** Send Cloud API UPI QR (image template). Direct Sales never starts a photo watch. */
 export async function shareOfficeSaleUpiOnWhatsApp(
   input: OfficeSaleUpiShareInput
 ): Promise<{ ok: boolean; error?: string }> {
@@ -72,17 +75,22 @@ export async function shareOfficeSaleUpiOnWhatsApp(
   if (!phone || phone.length < 10) {
     return { ok: false, error: 'Enter a valid 10-digit customer phone' };
   }
-  const message = await buildOfficeSaleUpiShareMessage(input);
-  if (!message) {
-    return {
-      ok: false,
-      error: 'Could not create pay link — check UPI ID or run UPI pay-link SQL in Supabase',
-    };
+  const result = await sendPayQrWhatsApp({
+    to: input.customerPhone,
+    amount: input.amount,
+    brand: input.brand,
+    upiId: input.upiId,
+    payeeName: input.payeeName,
+    paymentPhone: input.paymentPhone,
+    customerName: input.customerName || input.note || 'there',
+    customerId: input.customerId,
+    note: input.note,
+    jobRef: 'office sale',
+    watchPhotos: false,
+    source: 'pending_payment',
+  });
+  if (!result.ok) {
+    return { ok: false, error: result.error || 'Could not send pay QR on WhatsApp' };
   }
-  window.open(
-    `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
-    '_blank',
-    'noopener,noreferrer'
-  );
   return { ok: true };
 }

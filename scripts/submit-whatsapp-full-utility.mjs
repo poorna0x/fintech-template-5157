@@ -10,7 +10,7 @@
  *   node scripts/submit-whatsapp-full-utility.mjs --status     # list all on WABA
  *   node scripts/submit-whatsapp-full-utility.mjs --preview-md  # write docs/whatsapp-cold-template-previews.md
  *   node scripts/submit-whatsapp-full-utility.mjs --submit       # submit missing only
- *   node scripts/submit-whatsapp-full-utility.mjs --submit --force  # re-submit even if pending
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-tech-customer-photo
  */
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -1439,6 +1439,19 @@ function buildBalanceDueLetterImgV5Templates() {
 
 const BALANCE_DUE_LETTER_IMG_V5_TEMPLATES = buildBalanceDueLetterImgV5Templates();
 
+/**
+ * Technician-only: forward a customer payment photo when the 24h session is closed.
+ * IMAGE header + "{{1}}" name. No customer-facing buttons.
+ */
+const TECH_CUSTOMER_PHOTO_TEMPLATES = [
+  {
+    name: 'svc_tech_customer_photo_v1',
+    body: 'This photo was shared by {{1}} on WhatsApp.',
+    examples: ['Rahul'],
+    imageHeader: true,
+  },
+];
+
 /** Existing-customer schedule — Book online button only (no Call). */
 const EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES = [
   {
@@ -1832,6 +1845,34 @@ async function balanceDueLetterImagePayload(t, token = '') {
   return balanceDueLetterImagePayloadSync(t, headerHandle);
 }
 
+function techCustomerPhotoPayloadSync(t, headerHandle = '') {
+  const components = [];
+  if (headerHandle) {
+    components.push({
+      type: 'HEADER',
+      format: 'IMAGE',
+      example: { header_handle: [headerHandle] },
+    });
+  }
+  components.push({
+    type: 'BODY',
+    text: t.body,
+    example: { body_text: [t.examples] },
+  });
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: true,
+    components,
+  };
+}
+
+async function techCustomerPhotoPayload(t, token = '') {
+  const headerHandle = token ? await uploadTemplateSampleImageHandle(token) : '';
+  return techCustomerPhotoPayloadSync(t, headerHandle);
+}
+
 function letterPayload(t) {
   const callPhone = t.callPhone || callPhoneForTemplate(t.name);
   const websiteUrl = t.websiteUrl || websiteUrlForTemplate(t.name);
@@ -2179,6 +2220,11 @@ function collectAllTemplatePreviewEntries() {
   for (const t of BALANCE_DUE_LETTER_IMG_V5_TEMPLATES) {
     push('Balance due letter IMAGE v5 (no contact footer + Pay now)', t, (x) =>
       balanceDueLetterImagePayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
+    );
+  }
+  for (const t of TECH_CUSTOMER_PHOTO_TEMPLATES) {
+    push('Technician customer photo IMAGE', t, (x) =>
+      techCustomerPhotoPayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
     );
   }
   for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) push('Existing customer book', t, bookOnlyPayload);
@@ -2559,6 +2605,17 @@ async function main() {
       payload: await balanceDueLetterImagePayload(t, doSubmit ? token : ''),
     });
   }
+  for (const t of TECH_CUSTOMER_PHOTO_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({
+      label: t.name,
+      payload: await techCustomerPhotoPayload(t, doSubmit ? token : ''),
+    });
+  }
   for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
@@ -2819,6 +2876,14 @@ async function main() {
       ...BALANCE_DUE_LETTER_V9_TEMPLATES.map((t) => t.name),
       ...BALANCE_DUE_LETTER_IMG_V5_TEMPLATES.map((t) => t.name),
     ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyTechCustomerPhoto = process.argv.includes('--only-tech-customer-photo');
+  if (onlyTechCustomerPhoto) {
+    const keep = new Set(TECH_CUSTOMER_PHOTO_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

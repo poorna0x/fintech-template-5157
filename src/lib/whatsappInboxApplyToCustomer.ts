@@ -73,33 +73,3 @@ export async function addWhatsAppPhotoToCustomerGallery(opts: {
     ...(opts.customerId ? { customerId: opts.customerId } : {}),
   });
 }
-
-export async function applyWhatsAppLocationToCustomer(opts: {
-  messageId: string;
-  customerId?: string | null;
-  body?: string | null;
-  latitude?: number;
-  longitude?: number;
-  placeName?: string;
-}): Promise<ApplyResult> {
-  if (
-    !Number.isFinite(opts.latitude) ||
-    !Number.isFinite(opts.longitude) ||
-    Math.abs(opts.latitude as number) > 90 ||
-    Math.abs(opts.longitude as number) > 180
-  ) {
-    return {
-      ok: false,
-      error: 'Open the map preview, drag the pin to the right place, then tap Save location.',
-    };
-  }
-
-  return postApply({
-    action: 'apply_location',
-    messageId: opts.messageId,
-    ...(opts.customerId ? { customerId: opts.customerId } : {}),
-    latitude: opts.latitude,
-    longitude: opts.longitude,
-    ...(opts.placeName ? { placeName: opts.placeName } : {}),
-  });
-}

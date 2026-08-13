@@ -29,6 +29,7 @@ const TECH_PUSH_CATEGORIES = [
   'bill_reminders',
   'cash_handover',
   'wrong_line',
+  'pay_qr_screenshot',
 ];
 
 const DEFAULT_ADMIN_PREFS = Object.fromEntries(ADMIN_PUSH_CATEGORIES.map((k) => [k, true]));

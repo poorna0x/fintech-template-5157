@@ -156,7 +156,8 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/send-location-ping')) {
     handler = sendLocationPing;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-send')) {
-    handler = whatsappSend;
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    handler = loadFn('whatsapp-send');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-webhook')) {
     handler = whatsappWebhook;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-events')) {
@@ -178,7 +179,8 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/pdf-authenticity-check')) {
     handler = pdfAuthenticityCheck;
   } else if (req.url.startsWith('/.netlify/functions/document-accept-send')) {
-    handler = documentAcceptSend;
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    handler = loadFn('document-accept-send');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-tray-clear-push')) {
     handler = whatsappTrayClearPush;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-inbox-apply-to-customer')) {

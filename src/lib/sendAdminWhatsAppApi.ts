@@ -91,6 +91,14 @@ function isWindowOrTemplateError(message: string): boolean {
   return WINDOW_ERROR_RE.test(message);
 }
 
+function friendlyWhatsAppAuthError(errMsg: string): string {
+  const raw = String(errMsg || '').trim();
+  if (/^forbidden$/i.test(raw) || /^unauthorized$/i.test(raw)) {
+    return 'Sign in as a technician or admin to send WhatsApp';
+  }
+  return raw || 'Send failed';
+}
+
 export function resolveBillCustomerDisplayName(
   customer: { name?: string; fullName?: string; full_name?: string } | null | undefined
 ): string {
@@ -176,7 +184,9 @@ export async function sendAdminWhatsAppText(
       };
     }
 
-    const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
+    const errMsg = friendlyWhatsAppAuthError(
+      String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
+    );
     if (isFeatureDisabledResponse(data)) {
       return { ok: false, error: errMsg, featureDisabled: true };
     }
@@ -264,7 +274,9 @@ export async function sendAdminWhatsAppCtaUrl(
         messageId: data?.messageId ? String(data.messageId) : null,
       };
     }
-    const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
+    const errMsg = friendlyWhatsAppAuthError(
+      String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
+    );
     if (isFeatureDisabledResponse(data)) {
       return { ok: false, error: errMsg, featureDisabled: true };
     }
@@ -349,7 +361,9 @@ export async function sendAdminWhatsAppDocument(
         messageId: data?.messageId ? String(data.messageId) : null,
       };
     }
-    const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
+    const errMsg = friendlyWhatsAppAuthError(
+      String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
+    );
     if (isFeatureDisabledResponse(data)) {
       return { ok: false, error: errMsg, featureDisabled: true };
     }
@@ -372,6 +386,9 @@ export type SendAdminWhatsAppMediaOptions = {
   caption?: string;
   customerId?: string | null;
   source?: WhatsAppSendSource;
+  /** Technician JWT: record 30-min inbound photo watch for this number. */
+  watchPhotos?: boolean;
+  jobId?: string | null;
 };
 
 /** Send image (jpeg/png/webp) or document (pdf) from inbox attachments. */
@@ -411,6 +428,8 @@ export async function sendAdminWhatsAppMedia(
         ...(caption ? { caption } : {}),
         ...(options.customerId ? { customerId: options.customerId } : {}),
         ...(options.source ? { source: options.source } : {}),
+        ...(options.watchPhotos ? { watchPhotos: true } : {}),
+        ...(options.jobId ? { jobId: options.jobId } : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -428,7 +447,9 @@ export async function sendAdminWhatsAppMedia(
         messageId: data?.messageId ? String(data.messageId) : null,
       };
     }
-    const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
+    const errMsg = friendlyWhatsAppAuthError(
+      String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
+    );
     if (isFeatureDisabledResponse(data)) {
       return { ok: false, error: errMsg, featureDisabled: true };
     }
@@ -508,6 +529,9 @@ export type SendAdminWhatsAppTemplateOptions = {
   source?: WhatsAppSendSource;
   /** After send, seed booking-bot pending (e.g. book_service) for next customer reply. */
   seedPendingAction?: string | null;
+  /** Technician JWT: record 30-min inbound photo watch for this number. */
+  watchPhotos?: boolean;
+  jobId?: string | null;
   /** For DOCUMENT-header templates — attach PDF in the same cold send. */
   headerDocument?: {
     pdfBase64: string;
@@ -573,6 +597,8 @@ export async function sendAdminWhatsAppTemplate(
         ...(options.seedPendingAction
           ? { seedPendingAction: options.seedPendingAction }
           : {}),
+        ...(options.watchPhotos ? { watchPhotos: true } : {}),
+        ...(options.jobId ? { jobId: options.jobId } : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -600,7 +626,9 @@ export async function sendAdminWhatsAppTemplate(
         messageId: data?.messageId ? String(data.messageId) : null,
       };
     }
-    const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
+    const errMsg = friendlyWhatsAppAuthError(
+      String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
+    );
     if (isFeatureDisabledResponse(data)) {
       return { ok: false, error: errMsg, featureDisabled: true };
     }

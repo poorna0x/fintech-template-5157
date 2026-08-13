@@ -48,6 +48,19 @@ function buildUnsolicitedMediaReply() {
 async function recentlyAskedForMedia(db, phoneE164) {
   if (!db || !phoneE164) return false;
   try {
+    const { findActivePayQrWatch } = require('./whatsapp-pay-qr-helper');
+    if (await findActivePayQrWatch(db, phoneE164)) return true;
+    const sincePay = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const { data: payRows } = await db
+      .from('whatsapp_messages')
+      .select('template_name')
+      .eq('phone_e164', phoneE164)
+      .eq('direction', 'outbound')
+      .gte('created_at', sincePay)
+      .limit(8);
+    if ((payRows || []).some((row) => /balance_due/i.test(String(row.template_name || '')))) {
+      return true;
+    }
     const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
     const { data: botRow } = await db
       .from('whatsapp_booking_bot_state')

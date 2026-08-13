@@ -1,8 +1,7 @@
 /**
- * Admin: copy a WhatsApp inbox photo into the customer gallery (Cloudinary ro-service)
- * or apply a location pin onto the customer record.
+ * Admin: copy a WhatsApp inbox photo into the customer gallery (Cloudinary ro-service).
  *
- * Body: { action: 'gallery_photo' | 'apply_location', messageId, customerId? }
+ * Body: { action: 'gallery_photo', messageId, customerId? }
  */
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
@@ -14,21 +13,9 @@ const {
   uploadBufferToCloudinaryOnly,
 } = require('./whatsapp-helper');
 const { getR2ObjectBytes } = require('./r2-helper');
-const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
-const { extractMapsUrlFromText } = require('./resolve-maps-link');
 
 function json(statusCode, headers, payload) {
   return { statusCode, headers, body: JSON.stringify(payload) };
-}
-
-function parseLatLngFromBody(body) {
-  const m = String(body || '').match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
-  if (!m) return null;
-  const lat = Number(m[1]);
-  const lng = Number(m[2]);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  return { lat, lng };
 }
 
 function photoListContainsUrl(list, url) {
@@ -85,7 +72,7 @@ exports.handler = async (event) => {
   const action = String(body.action || '').trim();
   const messageId = String(body.messageId || body.message_id || '').trim();
   const requestedCustomerId = String(body.customerId || body.customer_id || '').trim();
-  if (!messageId || (action !== 'gallery_photo' && action !== 'apply_location')) {
+  if (!messageId || action !== 'gallery_photo') {
     return json(400, headers, { error: 'action and messageId required' });
   }
 
@@ -101,7 +88,7 @@ exports.handler = async (event) => {
     return json(404, headers, { error: 'Message not found' });
   }
 
-  let customerId = await resolveCustomerIdForWhatsAppChat(db, {
+  const customerId = await resolveCustomerIdForWhatsAppChat(db, {
     requestedCustomerId,
     messageCustomerId: msg.customer_id,
     phoneE164: msg.phone_e164,
@@ -113,133 +100,64 @@ exports.handler = async (event) => {
     });
   }
 
-  if (action === 'gallery_photo') {
-    const isImage =
-      msg.msg_type === 'image' || String(msg.media_mime || '').startsWith('image/');
-    if (!isImage || !msg.media_url) {
-      return json(400, headers, { error: 'This message is not a photo' });
-    }
+  const isImage =
+    msg.msg_type === 'image' || String(msg.media_mime || '').startsWith('image/');
+  if (!isImage || !msg.media_url) {
+    return json(400, headers, { error: 'This message is not a photo' });
+  }
 
-    let galleryUrl = /^https:\/\/res\.cloudinary\.com\//i.test(String(msg.media_url))
-      ? String(msg.media_url)
-      : null;
-    if (!galleryUrl) {
-      const media = await bufferFromMediaUrl(msg.media_url);
-      if (!media?.buffer?.length) {
-        return json(502, headers, { error: 'Could not load WhatsApp photo' });
-      }
-      const uploaded = await uploadBufferToCloudinaryOnly(
-        media.buffer,
-        media.mime || msg.media_mime || 'image/jpeg',
-        msg.filename || 'whatsapp-photo.jpg',
-        'ro-service'
-      );
-      galleryUrl = uploaded?.url || null;
+  let galleryUrl = /^https:\/\/res\.cloudinary\.com\//i.test(String(msg.media_url))
+    ? String(msg.media_url)
+    : null;
+  if (!galleryUrl) {
+    const media = await bufferFromMediaUrl(msg.media_url);
+    if (!media?.buffer?.length) {
+      return json(502, headers, { error: 'Could not load WhatsApp photo' });
     }
-    if (!galleryUrl) {
-      return json(502, headers, { error: 'Cloudinary upload failed' });
-    }
+    const uploaded = await uploadBufferToCloudinaryOnly(
+      media.buffer,
+      media.mime || msg.media_mime || 'image/jpeg',
+      msg.filename || 'whatsapp-photo.jpg',
+      'ro-service'
+    );
+    galleryUrl = uploaded?.url || null;
+  }
+  if (!galleryUrl) {
+    return json(502, headers, { error: 'Cloudinary upload failed' });
+  }
 
-    const { data: latestJob } = await db
-      .from('jobs')
-      .select('id, before_photos')
-      .eq('customer_id', customerId)
-      .order('created_at', { ascending: false })
-      .limit(1)
+  const { data: latestJob } = await db
+    .from('jobs')
+    .select('id, before_photos')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latestJob?.id) {
+    const current = Array.isArray(latestJob.before_photos) ? latestJob.before_photos : [];
+    if (!photoListContainsUrl(current, galleryUrl)) {
+      const { error: upErr } = await db
+        .from('jobs')
+        .update({ before_photos: [...current, galleryUrl] })
+        .eq('id', latestJob.id);
+      if (upErr) return json(500, headers, { error: upErr.message || 'Failed to save photo' });
+    }
+  } else {
+    const { data: cust } = await db
+      .from('customers')
+      .select('photos')
+      .eq('id', customerId)
       .maybeSingle();
-
-    if (latestJob?.id) {
-      const current = Array.isArray(latestJob.before_photos) ? latestJob.before_photos : [];
-      if (!photoListContainsUrl(current, galleryUrl)) {
-        const { error: upErr } = await db
-          .from('jobs')
-          .update({ before_photos: [...current, galleryUrl] })
-          .eq('id', latestJob.id);
-        if (upErr) return json(500, headers, { error: upErr.message || 'Failed to save photo' });
-      }
-    } else {
-      const { data: cust } = await db
+    const current = Array.isArray(cust?.photos) ? cust.photos : [];
+    if (!photoListContainsUrl(current, galleryUrl)) {
+      const { error: upErr } = await db
         .from('customers')
-        .select('photos')
-        .eq('id', customerId)
-        .maybeSingle();
-      const current = Array.isArray(cust?.photos) ? cust.photos : [];
-      if (!photoListContainsUrl(current, galleryUrl)) {
-        const { error: upErr } = await db
-          .from('customers')
-          .update({ photos: [...current, galleryUrl] })
-          .eq('id', customerId);
-        if (upErr) return json(500, headers, { error: upErr.message || 'Failed to save photo' });
-      }
+        .update({ photos: [...current, galleryUrl] })
+        .eq('id', customerId);
+      if (upErr) return json(500, headers, { error: upErr.message || 'Failed to save photo' });
     }
-
-    return json(200, headers, { ok: true, url: galleryUrl });
   }
 
-  const clientLat = Number(body.latitude ?? body.lat);
-  const clientLng = Number(body.longitude ?? body.lng);
-  const clientCoords =
-    Number.isFinite(clientLat) &&
-    Number.isFinite(clientLng) &&
-    Math.abs(clientLat) <= 90 &&
-    Math.abs(clientLng) <= 180
-      ? { lat: clientLat, lng: clientLng }
-      : null;
-
-  const mapsUrl = extractMapsUrlFromText(msg.body);
-  // Prefer the pin the admin dragged. Do not parse numbers out of a Maps URL
-  // (short-link HTML often contains junk pairs like 33,9).
-  let coords = clientCoords;
-  if (!coords && !mapsUrl) {
-    coords = parseLatLngFromBody(msg.body);
-  }
-  let placeName =
-    String(body.placeName || body.place_name || '').trim() ||
-    String(msg.body || '').replace(/-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?/, '').trim() ||
-    null;
-
-  if (!coords) {
-    return json(400, headers, {
-      error: 'Open the map preview, drag the pin to the right place, then tap Save location.',
-    });
-  }
-
-  const loc = await enrichWhatsAppLocation({
-    latitude: coords.lat,
-    longitude: coords.lng,
-    name: placeName,
-  });
-  const formatted =
-    loc.formattedAddress || loc.address || loc.name || `${coords.lat},${coords.lng}`;
-  const shortLoc = loc.shortLocation || null;
-  const address = {
-    street: formatted,
-    area: shortLoc || '',
-    city: 'Bangalore',
-    state: 'Karnataka',
-    pincode: '',
-    landmark: loc.name || shortLoc || '',
-  };
-  const { error: locErr } = await db
-    .from('customers')
-    .update({
-      location: {
-        latitude: coords.lat,
-        longitude: coords.lng,
-        formattedAddress: formatted,
-        googleLocation: `https://www.google.com/maps/place/${coords.lat},${coords.lng}`,
-        shortLocation: shortLoc,
-      },
-      visible_address: shortLoc || formatted,
-      address,
-    })
-    .eq('id', customerId);
-  if (locErr) return json(500, headers, { error: locErr.message || 'Failed to update location' });
-
-  return json(200, headers, {
-    ok: true,
-    address: shortLoc || formatted,
-    latitude: coords.lat,
-    longitude: coords.lng,
-  });
+  return json(200, headers, { ok: true, url: galleryUrl });
 };

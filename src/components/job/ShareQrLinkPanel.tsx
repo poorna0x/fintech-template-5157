@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Loader2, Share2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,20 +11,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { formatPhoneForWhatsApp } from '@/lib/utils';
-import { getDocumentBrandLabel, type DocumentBrand } from '@/lib/service-brands';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { type DocumentBrand } from '@/lib/service-brands';
 import {
   CommonQrCode,
   isDynamicUpiQr,
   isDynamicUpiTechnician,
   TechnicianQrPickerRow,
 } from '@/lib/qrCodeManager';
-import {
-  buildUpiPayShortHttpsLink,
-  createUpiPayShortLink,
-  normalizePaymentPhone,
-  resolveUpiPaySiteOrigin,
-} from '@/lib/upiPaymentAccounts';
+import { normalizePaymentPhone } from '@/lib/upiPaymentAccounts';
+import { sendPayQrWhatsApp } from '@/lib/whatsappPayQrShare';
 import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
 
 export const SHARE_QR_LINK_VALUE = 'share_qr_link';
@@ -50,6 +46,9 @@ type ShareQrLinkPanelProps = {
   customerPhone?: string | null;
   customerName?: string | null;
   note?: string | null;
+  jobId?: string | null;
+  customerId?: string | null;
+  jobRef?: string | null;
 };
 
 /** Build the same concise share text as the public /p pay page. */
@@ -80,7 +79,7 @@ export function buildTechSharePayMessage(input: {
 
 /**
  * After choosing "Share QR Link" in Select QR Code: pick which Dynamic UPI
- * account to use, then WhatsApp the customer the short pay link.
+ * account to use, then send the pay QR (Cloud API image template) on WhatsApp.
  */
 export default function ShareQrLinkPanel({
   commonQrCodes,
@@ -92,10 +91,12 @@ export default function ShareQrLinkPanel({
   customerPhone,
   customerName,
   note,
+  jobId,
+  customerId,
+  jobRef,
 }: ShareQrLinkPanelProps) {
   const [sharing, setSharing] = useState(false);
   const [waPhone, setWaPhone] = useState(() => String(customerPhone || '').trim());
-  const brandLabel = getDocumentBrandLabel(brand);
 
   useEffect(() => {
     setWaPhone(String(customerPhone || '').trim());
@@ -161,62 +162,48 @@ export default function ShareQrLinkPanel({
 
     setSharing(true);
     try {
-      const payeeName = selectedQr.payeeName || selectedQr.name;
-      const payPhone = normalizePaymentPhone(selectedQr.phone || '');
-      const code = await createUpiPayShortLink({
-        upiId: selectedQr.upiId || '',
-        payeeName,
+      const result = await sendPayQrWhatsApp({
+        to: phone,
         amount: am,
-        note: String(note || customerName || selectedQr.name || '')
-          .trim()
-          .slice(0, 80),
-        phone: payPhone || undefined,
         brand,
+        upiId: selectedQr.upiId || '',
+        payeeName: selectedQr.payeeName || selectedQr.name,
+        paymentPhone: selectedQr.phone,
+        customerName: customerName || 'there',
+        customerId,
+        note: note || customerName || selectedQr.name,
+        jobRef: jobRef || note || customerName || 'your service visit',
+        jobId,
+        watchPhotos: true,
+        source: 'pending_payment',
       });
-      const origin = resolveUpiPaySiteOrigin(brand);
-      const payLink = code
-        ? buildUpiPayShortHttpsLink(origin, code)
-        : null;
-      if (!payLink) {
-        toast.error(
-          'Could not create pay link — run the technician pay-link SQL, or try again'
-        );
+      if (!result.ok) {
+        toast.error(result.error || 'Could not send pay QR on WhatsApp');
         return;
       }
-      const message = buildTechSharePayMessage({
-        brandLabel,
-        amount: am,
-        payeeName,
-        upiId: selectedQr.upiId || '',
-        phone: payPhone,
-        payLink,
-      });
-      const wa = formatPhoneForWhatsApp(phone);
-      window.open(
-        `https://wa.me/${wa}?text=${encodeURIComponent(message)}`,
-        '_blank',
-        'noopener,noreferrer'
+      toast.success(
+        'Pay QR sent on WhatsApp. Photos from this number for the next 30 minutes will be forwarded to you.'
       );
-      toast.success('WhatsApp opened with pay link');
     } catch (e) {
       console.error('[ShareQrLink]', e);
-      toast.error('Failed to share pay link');
+      toast.error('Failed to send pay QR on WhatsApp');
     } finally {
       setSharing(false);
     }
   };
 
   return (
-    <div className="mt-3 space-y-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+    <div className="mt-3 space-y-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5">
       <div>
-        <p className="text-sm font-semibold text-emerald-900">Share QR Link</p>
-        <p className="mt-0.5 text-xs text-emerald-800/80">
-          Customer not on site? Pick the UPI account and send a pay link (QR page) on WhatsApp.
+        <p className="text-sm font-semibold text-emerald-950">Send pay QR on WhatsApp</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-emerald-800/85">
+          Customer not on site? Pick the UPI account and send the QR + Pay now button from the
+          business WhatsApp. You can change the number below.
         </p>
       </div>
 
       <div>
-        <Label>Which UPI / QR? *</Label>
+        <Label className="text-sm">Which UPI / QR? *</Label>
         {dynamicOptions.length === 0 ? (
           <p className="mt-1 text-xs text-amber-800">
             No Dynamic UPI accounts available. Enable Dynamic UPI on a common QR or
@@ -224,7 +211,7 @@ export default function ShareQrLinkPanel({
           </p>
         ) : (
           <Select value={selectedUpiQrId || undefined} onValueChange={onSelectUpiQrId}>
-            <SelectTrigger className="mt-1 bg-white">
+            <SelectTrigger className="mt-1 h-11 rounded-xl bg-white">
               <SelectValue placeholder="Select UPI account" />
             </SelectTrigger>
             <SelectContent className="!z-[110]">
@@ -240,22 +227,25 @@ export default function ShareQrLinkPanel({
       </div>
 
       <div>
-        <Label htmlFor="share-qr-wa-phone">Customer WhatsApp phone *</Label>
+        <Label htmlFor="share-qr-wa-phone" className="text-sm">
+          WhatsApp number *
+        </Label>
         <Input
           id="share-qr-wa-phone"
-          className="mt-1 bg-white"
+          className="mt-1 h-11 rounded-xl bg-white"
           value={waPhone}
           onChange={(e) => setWaPhone(e.target.value)}
           placeholder="10-digit mobile"
           inputMode="tel"
+          autoComplete="tel"
         />
-        <p className="mt-1 text-[11px] text-emerald-900/70">
-          Prefills from customer — edit if you need to send to another number.
+        <p className="mt-1 text-[11px] leading-relaxed text-emerald-900/70">
+          Prefills from the customer — edit to send to any other number.
         </p>
       </div>
 
       {selectedQr ? (
-        <div className="rounded-md border border-emerald-100 bg-white px-3 py-2 text-xs text-slate-700 space-y-0.5">
+        <div className="rounded-xl border border-emerald-100 bg-white px-3 py-2.5 text-xs text-slate-700 space-y-0.5">
           <p>
             <span className="text-slate-500">Payee:</span> {selectedQr.payeeName || selectedQr.name}
           </p>
@@ -278,24 +268,25 @@ export default function ShareQrLinkPanel({
 
       <Button
         type="button"
-        className="w-full bg-emerald-700 hover:bg-emerald-800"
+        className="h-11 w-full rounded-xl bg-emerald-700 hover:bg-emerald-800"
         disabled={sharing || !selectedUpiQrId || dynamicOptions.length === 0}
         onClick={() => void handleShare()}
       >
         {sharing ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Preparing link…
+            Sending pay QR…
           </>
         ) : (
           <>
-            <Share2 className="mr-2 h-4 w-4" />
-            Share to customer WhatsApp
+            <WhatsAppIcon className="mr-2 h-4 w-4" />
+            Send pay QR on WhatsApp
           </>
         )}
       </Button>
-      <p className="text-[11px] text-emerald-900/70">
-        After they pay, continue Next and attach the payment screenshot (optional) to complete the job.
+      <p className="text-[11px] leading-relaxed text-emerald-900/70">
+        For 30 minutes after send, photos from this number are forwarded to you (push + WhatsApp).
+        Then continue Next and complete the job.
       </p>
     </div>
   );
