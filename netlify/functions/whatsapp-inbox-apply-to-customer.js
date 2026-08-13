@@ -175,16 +175,28 @@ exports.handler = async (event) => {
     return json(200, headers, { ok: true, url: galleryUrl });
   }
 
-  let coords = parseLatLngFromBody(msg.body);
-  let placeName =
-    String(msg.body || '').replace(/-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?/, '').trim() || null;
+  const clientLat = Number(body.latitude ?? body.lat);
+  const clientLng = Number(body.longitude ?? body.lng);
+  const clientCoords =
+    Number.isFinite(clientLat) &&
+    Number.isFinite(clientLng) &&
+    Math.abs(clientLat) <= 90 &&
+    Math.abs(clientLng) <= 180
+      ? { lat: clientLat, lng: clientLng }
+      : null;
 
-  if (extractMapsUrlFromText(msg.body)) {
+  let coords = clientCoords || parseLatLngFromBody(msg.body);
+  let placeName =
+    String(body.placeName || body.place_name || '').trim() ||
+    String(msg.body || '').replace(/-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?/, '').trim() ||
+    null;
+
+  if (!coords && extractMapsUrlFromText(msg.body)) {
     const resolved = await resolveMapsShareToCoords(msg.body);
     if (resolved?.ok) {
       coords = { lat: resolved.latitude, lng: resolved.longitude };
       placeName = resolved.placeName || placeName;
-    } else if (!coords) {
+    } else {
       return json(400, headers, {
         error:
           resolved?.error ||

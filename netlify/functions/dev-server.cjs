@@ -6,9 +6,8 @@ const url = require('url');
 const path = require('path');
 const fs = require('fs');
 
-/** Load .env.local into process.env for function handlers (service role, etc.). */
-function loadEnvLocal() {
-  const envPath = path.join(__dirname, '../../.env.local');
+/** Load .env then .env.local so local functions get the same Maps key as Vite. */
+function loadEnvFile(envPath, override = false) {
   if (!fs.existsSync(envPath)) return;
   const lines = fs.readFileSync(envPath, 'utf8').split('\n');
   for (const line of lines) {
@@ -24,10 +23,11 @@ function loadEnvLocal() {
     ) {
       val = val.slice(1, -1);
     }
-    if (!process.env[key]) process.env[key] = val;
+    if (override || !process.env[key]) process.env[key] = val;
   }
 }
-loadEnvLocal();
+loadEnvFile(path.join(__dirname, '../../.env'));
+loadEnvFile(path.join(__dirname, '../../.env.local'), true);
 
 // Import function handlers
 const altchaVerify = require('./altcha-verify');
@@ -71,6 +71,12 @@ const whatsappTrayClearPush = require('./whatsapp-tray-clear-push');
 const whatsappInboxApplyToCustomer = require('./whatsapp-inbox-apply-to-customer');
 const dbStorageStats = require('./db-storage-stats');
 const salarySlipMonthEnd = require('./salary-slip-month-end');
+
+function loadFn(name) {
+  const resolved = require.resolve(`./${name}`);
+  delete require.cache[resolved];
+  return require(`./${name}`);
+}
 
 const PORT = 8888;
 
@@ -176,7 +182,13 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-tray-clear-push')) {
     handler = whatsappTrayClearPush;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-inbox-apply-to-customer')) {
-    handler = whatsappInboxApplyToCustomer;
+    delete require.cache[require.resolve('./resolve-maps-link')];
+    delete require.cache[require.resolve('./whatsapp-location-enrich')];
+    handler = loadFn('whatsapp-inbox-apply-to-customer');
+  } else if (req.url.startsWith('/.netlify/functions/geocode')) {
+    handler = loadFn('geocode');
+  } else if (req.url.startsWith('/.netlify/functions/resolve-maps-link')) {
+    handler = loadFn('resolve-maps-link');
   } else if (req.url.startsWith('/.netlify/functions/db-storage-stats')) {
     handler = dbStorageStats;
   } else if (req.url.startsWith('/.netlify/functions/salary-slip-month-end')) {

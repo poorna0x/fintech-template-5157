@@ -60,7 +60,12 @@ async function googleGeocodeRequest(params) {
   }
   url.searchParams.set('key', apiKey);
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url.toString(), {
+    headers: {
+      Referer: 'https://hydrogenro.com/',
+      'User-Agent': 'HydrogenRO-CRM/1.0',
+    },
+  });
   if (!response.ok) {
     throw new Error(`Google Geocoding API error: ${response.status}`);
   }
@@ -72,6 +77,30 @@ async function googleGeocodeRequest(params) {
   }
 
   return mapGoogleResults(data.results);
+}
+
+async function nominatimGeocode(query) {
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', query);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('limit', '1');
+  url.searchParams.set('countrycodes', 'in');
+  const response = await fetch(url.toString(), {
+    headers: {
+      'User-Agent': 'HydrogenRO-CRM/1.0 (geocode)',
+      Accept: 'application/json',
+    },
+  });
+  if (!response.ok) return [];
+  const data = await response.json();
+  if (!Array.isArray(data) || !data[0]) return [];
+  return [
+    {
+      lat: String(data[0].lat),
+      lon: String(data[0].lon),
+      display_name: data[0].display_name,
+    },
+  ];
 }
 
 exports.handler = async (event) => {
@@ -147,10 +176,20 @@ exports.handler = async (event) => {
       }
     }
 
-    const data =
-      lat !== undefined && lon !== undefined
-        ? await googleGeocodeRequest({ latlng: `${lat},${lon}`, region: 'in' })
-        : await googleGeocodeRequest({ address: query, region: 'in' });
+    let data = [];
+    try {
+      data =
+        lat !== undefined && lon !== undefined
+          ? await googleGeocodeRequest({ latlng: `${lat},${lon}`, region: 'in' })
+          : await googleGeocodeRequest({ address: query, region: 'in' });
+    } catch (googleErr) {
+      console.warn('Google geocode failed, trying Nominatim:', googleErr?.message || googleErr);
+      if (query) data = await nominatimGeocode(query);
+    }
+
+    if ((!data || !data.length) && query) {
+      data = await nominatimGeocode(query);
+    }
 
     return {
       statusCode: 200,

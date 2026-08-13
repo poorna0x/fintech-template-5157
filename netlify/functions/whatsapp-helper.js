@@ -246,28 +246,14 @@ async function findCustomerIdByPhone(db, phoneE164) {
   if (!db) return null;
   const phone = normalizePhoneE164(phoneE164);
   if (!phone || phone.length < 10) return null;
-  const last10 = phone.slice(-10);
-  const candidates = Array.from(
-    new Set([phone, last10, `91${last10}`, `+${phone}`, `+91${last10}`].filter(Boolean))
-  );
-
-  const { data, error } = await db
-    .from('customers')
-    .select('id')
-    .or(
-      [
-        ...candidates.map((p) => `phone.eq.${p}`),
-        ...candidates.map((p) => `alternate_phone.eq.${p}`),
-      ].join(',')
-    )
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    console.warn('[whatsapp-helper] customer lookup failed', error.message);
+  try {
+    const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
+    const row = await findCustomerByPhoneDigits(db, phone.slice(-10), 'id');
+    return row?.id || null;
+  } catch (err) {
+    console.warn('[whatsapp-helper] customer lookup failed', err?.message || err);
     return null;
   }
-  return data?.id || null;
 }
 
 /**

@@ -80,7 +80,7 @@ async function getAdminFcmTokens(db, category = null, skipIfViewingPhone = null)
     return [];
   }
   const now = Date.now();
-  const VIEWING_MAX_MS = 2 * 60 * 1000;
+  const VIEWING_MAX_MS = 10 * 60 * 1000;
   // Unique tokens — duplicate rows (reinstall / race) were causing 2 alerts on one phone.
   return [...new Set(
     (rows || [])
@@ -90,7 +90,12 @@ async function getAdminFcmTokens(db, category = null, skipIfViewingPhone = null)
         }
         if (!skipPhone) return true;
         const viewing = String(r.viewing_whatsapp_phone || '').replace(/\D/g, '');
-        if (viewing !== skipPhone) return true;
+        const sameChat =
+          viewing === skipPhone ||
+          (viewing.length >= 10 &&
+            skipPhone.length >= 10 &&
+            viewing.slice(-10) === skipPhone.slice(-10));
+        if (!sameChat) return true;
         const at = r.viewing_whatsapp_at ? new Date(r.viewing_whatsapp_at).getTime() : 0;
         if (Number.isFinite(at) && now - at < VIEWING_MAX_MS) return false;
         return true;

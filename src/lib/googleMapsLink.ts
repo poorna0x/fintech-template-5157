@@ -35,10 +35,10 @@ export function extractMapsUrlFromText(text: string): string | null {
   const trimmed = sanitizeGoogleMapsInput(text);
   if (!trimmed) return null;
   const MAPS_URL_REGEX =
-    /(?:https?:\/\/)?(?:www\.)?(?:google\.[^/\s]+\/maps\S*|maps\.google\.[^/\s]+\S*|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+)/i;
+    /(?:https?:\/\/)?(?:www\.)?(?:google\.[^/\s]+\/maps\S*|maps\.google\.[^/\s]+\S*|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+|share\.google\/\S+|g\.co\/\S+)/i;
   const match = trimmed.match(MAPS_URL_REGEX);
   if (!match) return null;
-  let url = match[0].replace(/[)>\].,;'"]+$/g, '');
+  let url = match[0].replace(/[)>\].,;'"*_~]+$/g, '');
   if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
   return url;
 }
@@ -169,13 +169,20 @@ export function isGoogleMapsUrl(url: string): boolean {
     value.includes('google.com/maps') ||
     value.includes('maps.google.com') ||
     value.includes('maps.app.goo.gl') ||
-    value.includes('goo.gl/maps')
+    value.includes('goo.gl/maps') ||
+    value.includes('share.google/') ||
+    /\/\/g\.co\//i.test(value)
   );
 }
 
 export function isGoogleMapsShortLink(url: string): boolean {
   const value = sanitizeGoogleMapsInput(url);
-  return value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps');
+  return (
+    value.includes('maps.app.goo.gl') ||
+    value.includes('goo.gl/maps') ||
+    value.includes('share.google/') ||
+    /\/\/g\.co\//i.test(value)
+  );
 }
 
 export function isMobileDevice(): boolean {
@@ -408,9 +415,15 @@ export async function geocodeFromPlaceHints(
   hints: string[],
   accessToken: string | null
 ): Promise<{ geocoded: GeocodedPlaceHint; hint: string } | null> {
+  const mapsJsBlocked =
+    typeof window !== 'undefined' &&
+    /localhost|127\.0\.0\.1/i.test(window.location.hostname);
+
   for (const hint of hints) {
-    const fromClient = await geocodePlaceHintWithGoogleMapsJs(hint);
-    if (fromClient) return { geocoded: fromClient, hint };
+    if (!mapsJsBlocked) {
+      const fromClient = await geocodePlaceHintWithGoogleMapsJs(hint);
+      if (fromClient) return { geocoded: fromClient, hint };
+    }
     if (accessToken) {
       const fromServer = await geocodePlaceHintViaApi(hint, accessToken);
       if (fromServer) return { geocoded: fromServer, hint };

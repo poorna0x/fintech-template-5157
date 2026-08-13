@@ -1216,10 +1216,15 @@ type SupabaseInboxClient = {
 function inboxRowToThread(
   r: InboxThreadRow,
   nameByCustomerId: Map<string, string>,
-  nameByPhone: Map<string, string>
+  nameByPhone: Map<string, string>,
+  idByPhone?: Map<string, string>
 ): WhatsAppThread {
   const phone = String(r.phone_e164 || '').replace(/\D/g, '');
-  const customerId = r.customer_id || null;
+  const customerId =
+    r.customer_id ||
+    idByPhone?.get(phone) ||
+    idByPhone?.get(phone.slice(-10)) ||
+    null;
   const customerName =
     String(r.customer_name || '').trim() ||
     (customerId ? nameByCustomerId.get(customerId) : null) ||
@@ -1243,14 +1248,19 @@ function inboxRowToThread(
   };
 }
 
-/** Resolve display names only when the RPC did not already join customer_name. */
+/** Resolve display names + customer UUID when the latest WA row has no customer_id. */
 async function resolveMissingInboxThreadNames(
   supabaseClient: SupabaseInboxClient,
   rows: InboxThreadRow[],
   nameHints?: Map<string, string>
-): Promise<{ nameByCustomerId: Map<string, string>; nameByPhone: Map<string, string> }> {
+): Promise<{
+  nameByCustomerId: Map<string, string>;
+  nameByPhone: Map<string, string>;
+  idByPhone: Map<string, string>;
+}> {
   const nameByCustomerId = new Map<string, string>(nameHints || []);
   const nameByPhone = new Map<string, string>();
+  const idByPhone = new Map<string, string>();
 
   for (const r of rows) {
     const id = r.customer_id;
@@ -1258,14 +1268,11 @@ async function resolveMissingInboxThreadNames(
     if (id && fromRpc) nameByCustomerId.set(id, fromRpc);
   }
 
-  const allNamed = rows.every(
-    (r) => Boolean(String(r.customer_name || '').trim()) || !r.customer_id
+  const allLinkedAndNamed = rows.every(
+    (r) => Boolean(r.customer_id) && Boolean(String(r.customer_name || '').trim())
   );
-  const needPhoneLookup = rows.some(
-    (r) => !r.customer_id && !String(r.customer_name || '').trim()
-  );
-  if (allNamed && !needPhoneLookup) {
-    return { nameByCustomerId, nameByPhone };
+  if (allLinkedAndNamed) {
+    return { nameByCustomerId, nameByPhone, idByPhone };
   }
 
   const needIds = [
@@ -1282,9 +1289,7 @@ async function resolveMissingInboxThreadNames(
         .filter((r) => {
           const phone = String(r.phone_e164 || '').replace(/\D/g, '');
           if (!phone || phone.length < 10) return false;
-          if (r.customer_id && nameByCustomerId.has(r.customer_id)) return false;
-          if (String(r.customer_name || '').trim()) return false;
-          return true;
+          return !r.customer_id;
         })
         .map((r) => String(r.phone_e164 || '').replace(/\D/g, ''))
     ),
@@ -1311,12 +1316,7 @@ async function resolveMissingInboxThreadNames(
     const last10s = [...new Set(needPhones.map((p) => p.slice(-10)))];
     const orParts: string[] = [];
     for (const d of last10s) {
-      orParts.push(
-        `phone.eq.${d}`,
-        `phone.eq.91${d}`,
-        `alternate_phone.eq.${d}`,
-        `alternate_phone.eq.91${d}`
-      );
+      orParts.push(`phone.like.%${d}%`, `alternate_phone.like.%${d}%`);
     }
     lookups.push(
       (async () => {
@@ -1326,14 +1326,18 @@ async function resolveMissingInboxThreadNames(
           .or(orParts.slice(0, 40).join(','))
           .limit(40);
         for (const c of data || []) {
+          if (!c.id) continue;
           const label = String(c.full_name || '').trim();
-          if (!c.id || !label) continue;
-          nameByCustomerId.set(c.id, label);
+          if (label) nameByCustomerId.set(c.id, label);
           for (const raw of [c.phone, c.alternate_phone]) {
             const digits = String(raw || '').replace(/\D/g, '');
-            if (digits.length >= 10) {
+            if (digits.length < 10) continue;
+            const last10 = digits.slice(-10);
+            idByPhone.set(digits, c.id);
+            idByPhone.set(last10, c.id);
+            if (label) {
               nameByPhone.set(digits, label);
-              nameByPhone.set(digits.slice(-10), label);
+              nameByPhone.set(last10, label);
             }
           }
         }
@@ -1342,7 +1346,7 @@ async function resolveMissingInboxThreadNames(
   }
 
   if (lookups.length) await Promise.all(lookups);
-  return { nameByCustomerId, nameByPhone };
+  return { nameByCustomerId, nameByPhone, idByPhone };
 }
 
 async function mapInboxRowsToThreads(
@@ -1351,12 +1355,12 @@ async function mapInboxRowsToThreads(
   nameHints?: Map<string, string>
 ): Promise<WhatsAppThread[]> {
   if (!rows.length) return [];
-  const { nameByCustomerId, nameByPhone } = await resolveMissingInboxThreadNames(
+  const { nameByCustomerId, nameByPhone, idByPhone } = await resolveMissingInboxThreadNames(
     supabaseClient,
     rows,
     nameHints
   );
-  return rows.map((r) => inboxRowToThread(r, nameByCustomerId, nameByPhone));
+  return rows.map((r) => inboxRowToThread(r, nameByCustomerId, nameByPhone, idByPhone));
 }
 
 async function fetchInboxLatestByPhonesRpc(
@@ -1456,7 +1460,8 @@ export async function fetchWhatsAppInboxThreads(
   }
 
   const threads =
-    rows.length > 0 && rows.every((r) => String(r.customer_name || '').trim())
+    rows.length > 0 &&
+    rows.every((r) => Boolean(r.customer_id) && Boolean(String(r.customer_name || '').trim()))
       ? rows.map((r) => inboxRowToThread(r, new Map(), new Map()))
       : await mapInboxRowsToThreads(supabaseClient, rows);
   return { threads };

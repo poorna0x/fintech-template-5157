@@ -20,15 +20,12 @@ let activity: WhatsAppInboxActivity = { open: false, selectedPhone: null };
 let lastSyncedViewingPhone: string | null | undefined = undefined;
 let pauseListenerAttached = false;
 
-function thisAdminFcmToken(): string | null {
-  try {
-    const raw = localStorage.getItem('hro_admin_push_persist_v2');
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { token?: string };
-    return typeof parsed?.token === 'string' && parsed.token ? parsed.token : null;
-  } catch {
-    return null;
-  }
+function phonesMatchWhatsApp(a: string | null | undefined, b: string | null | undefined): boolean {
+  const da = String(a || '').replace(/\D/g, '');
+  const db = String(b || '').replace(/\D/g, '');
+  if (!da || !db) return false;
+  if (da === db) return true;
+  return da.length >= 10 && db.length >= 10 && da.slice(-10) === db.slice(-10);
 }
 
 function viewingPhoneFromActivity(): string | null {
@@ -37,23 +34,25 @@ function viewingPhoneFromActivity(): string | null {
   return digits || null;
 }
 
-/** Native prefs + this device's FCM row. Other admin phones still get the push. */
+/** Native prefs + every Admin APK row for this login (laptop in chat should not ping the phone). */
 async function syncViewingWhatsAppPresence(phone: string | null): Promise<void> {
   const next = phone ? String(phone).replace(/\D/g, '') : '';
   const normalized = next || null;
   if (lastSyncedViewingPhone === normalized) return;
   lastSyncedViewingPhone = normalized;
   void setNativeViewingWhatsAppPhone(normalized);
-  const token = thisAdminFcmToken();
-  if (!token || !Capacitor.isNativePlatform()) return;
   try {
-    await supabase
+    const { data } = await supabase.auth.getSession();
+    const userId = data.session?.user?.id;
+    if (!userId) return;
+    const { error } = await supabase
       .from('admin_push_tokens')
       .update({
         viewing_whatsapp_phone: normalized,
         viewing_whatsapp_at: normalized ? new Date().toISOString() : null,
       })
-      .eq('token', token);
+      .eq('user_id', userId);
+    if (error) lastSyncedViewingPhone = undefined;
   } catch {
     lastSyncedViewingPhone = undefined;
   }
@@ -72,34 +71,57 @@ export function getWhatsAppInboxActivity(): WhatsAppInboxActivity {
   return activity;
 }
 
-/** Home button / app background: this APK should still get the next WhatsApp push. */
+export function isViewingWhatsAppPhone(phone: string | null | undefined): boolean {
+  return Boolean(activity.open && phonesMatchWhatsApp(activity.selectedPhone, phone));
+}
+
+/** Home / other tab: this admin should still get the next WhatsApp push. */
 export function startWhatsAppViewingPresence(): () => void {
-  if (!Capacitor.isNativePlatform() || pauseListenerAttached) return () => {};
+  if (pauseListenerAttached) return () => {};
   pauseListenerAttached = true;
   let handle: { remove: () => Promise<void> } | null = null;
-  void (async () => {
-    try {
-      const { App } = await import('@capacitor/app');
-      handle = await App.addListener('appStateChange', ({ isActive }) => {
-        if (!isActive) {
-          lastSyncedViewingPhone = undefined;
-          void syncViewingWhatsAppPresence(null);
-          return;
-        }
-        void syncViewingWhatsAppPresence(viewingPhoneFromActivity());
-        // Catch-up: reads missed while backgrounded — always try tray clear per phone.
-        void fetchWhatsAppInboxReadMap(supabase, { sinceHours: 24, force: true }).then((remote) => {
-          if (!Object.keys(remote).length) return;
-          const map = mergeWhatsAppReadMap(remote);
-          dismissWhatsAppTraysFromReadMap(map);
-        });
-      });
-    } catch {
-      pauseListenerAttached = false;
+  const onVisibility = () => {
+    if (document.hidden) {
+      lastSyncedViewingPhone = undefined;
+      void syncViewingWhatsAppPresence(null);
+      return;
     }
-  })();
+    void syncViewingWhatsAppPresence(viewingPhoneFromActivity());
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  const heartbeat = window.setInterval(() => {
+    if (document.hidden) return;
+    const phone = viewingPhoneFromActivity();
+    if (!phone) return;
+    lastSyncedViewingPhone = undefined;
+    void syncViewingWhatsAppPresence(phone);
+  }, 45_000);
+  if (Capacitor.isNativePlatform()) {
+    void (async () => {
+      try {
+        const { App } = await import('@capacitor/app');
+        handle = await App.addListener('appStateChange', ({ isActive }) => {
+          if (!isActive) {
+            lastSyncedViewingPhone = undefined;
+            void syncViewingWhatsAppPresence(null);
+            return;
+          }
+          void syncViewingWhatsAppPresence(viewingPhoneFromActivity());
+          void fetchWhatsAppInboxReadMap(supabase, { sinceHours: 24, force: true }).then((remote) => {
+            if (!Object.keys(remote).length) return;
+            const map = mergeWhatsAppReadMap(remote);
+            dismissWhatsAppTraysFromReadMap(map);
+          });
+        });
+      } catch {
+        /* old APK */
+      }
+    })();
+  }
   return () => {
     pauseListenerAttached = false;
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.clearInterval(heartbeat);
     void handle?.remove();
   };
 }

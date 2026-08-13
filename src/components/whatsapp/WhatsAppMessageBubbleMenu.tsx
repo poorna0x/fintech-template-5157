@@ -7,9 +7,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { WhatsAppInboxLocationDialog } from '@/components/whatsapp/WhatsAppInboxLocationDialog';
 import {
   addWhatsAppPhotoToCustomerGallery,
-  applyWhatsAppLocationToCustomer,
   isWhatsAppImageMessage,
   isWhatsAppLocationMessage,
 } from '@/lib/whatsappInboxApplyToCustomer';
@@ -23,15 +23,12 @@ type Props = {
 
 export function WhatsAppMessageBubbleMenu({ message, customerId, onDownload }: Props) {
   const [busy, setBusy] = useState(false);
+  const [locationOpen, setLocationOpen] = useState(false);
   const isImage = isWhatsAppImageMessage(message);
   const isLocation = isWhatsAppLocationMessage(message);
   if (!isImage && !isLocation) return null;
 
   const run = async (fn: () => Promise<{ ok: boolean; error?: string; address?: string }>, okMsg: string) => {
-    if (!customerId) {
-      toast.error('No customer linked to this chat');
-      return;
-    }
     setBusy(true);
     try {
       const result = await fn();
@@ -46,6 +43,7 @@ export function WhatsAppMessageBubbleMenu({ message, customerId, onDownload }: P
   };
 
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
@@ -84,16 +82,7 @@ export function WhatsAppMessageBubbleMenu({ message, customerId, onDownload }: P
           <DropdownMenuItem
             className="cursor-pointer"
             disabled={busy}
-            onSelect={() =>
-              void run(
-                () =>
-                  applyWhatsAppLocationToCustomer({
-                    messageId: message.id,
-                    customerId,
-                  }),
-                'Customer location updated'
-              )
-            }
+            onSelect={() => setLocationOpen(true)}
           >
             <MapPin className="mr-2 h-4 w-4" />
             Update customer location
@@ -110,5 +99,14 @@ export function WhatsAppMessageBubbleMenu({ message, customerId, onDownload }: P
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+      {isLocation ? (
+        <WhatsAppInboxLocationDialog
+          open={locationOpen}
+          onOpenChange={setLocationOpen}
+          message={message}
+          customerId={customerId}
+        />
+      ) : null}
+    </>
   );
 }

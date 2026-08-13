@@ -122,7 +122,12 @@ async function reverseGeocodeGoogle(lat, lng) {
   url.searchParams.set('language', 'en');
   url.searchParams.set('region', 'in');
   url.searchParams.set('key', apiKey);
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), {
+    headers: {
+      Referer: 'https://hydrogenro.com/',
+      'User-Agent': 'HydrogenRO-CRM/1.0',
+    },
+  });
   if (!res.ok) return null;
   const data = await res.json();
   if (data.status !== 'OK' || !data.results?.[0]) {

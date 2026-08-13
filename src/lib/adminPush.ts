@@ -10,7 +10,7 @@ import { deliverAdminPushDeepLink } from '@/lib/adminPushDeepLink';
 import { registrationDeviceName } from '@/lib/deviceTracker';
 import { getNativeDeviceLabel, syncDevicePrefsToNative } from '@/lib/devicePrefs';
 import { dismissWhatsAppTrayForPhone } from '@/lib/whatsappInbox';
-import { getWhatsAppInboxActivity } from '@/lib/whatsappInboxActivity';
+import { isViewingWhatsAppPhone } from '@/lib/whatsappInboxActivity';
 
 let registered = false;
 let lastToken: string | null = null;
@@ -190,12 +190,10 @@ export async function registerAdminPushToken(): Promise<void> {
           return;
         }
         if (type === 'whatsapp_inbound') {
-          const act = getWhatsAppInboxActivity();
           const inbound = String(data.phone || data.phone_e164 || '').replace(/\D/g, '');
-          const open = String(act.selectedPhone || '').replace(/\D/g, '');
           // App is in the foreground — on-screen toast is enough; drop tray.
           if (inbound) dismissWhatsAppTrayForPhone(inbound);
-          if (act.open && inbound && inbound === open) return;
+          if (isViewingWhatsAppPhone(inbound)) return;
         }
         if (
           type === 'tech_call' ||

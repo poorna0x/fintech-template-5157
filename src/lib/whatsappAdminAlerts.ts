@@ -22,7 +22,7 @@ import {
 } from '@/lib/whatsappInbox';
 import {
   dispatchWhatsAppUnreadChanged,
-  getWhatsAppInboxActivity,
+  isViewingWhatsAppPhone,
   startWhatsAppViewingPresence,
 } from '@/lib/whatsappInboxActivity';
 import { playWhatsAppAlertSound } from '@/lib/whatsappAlertSound';
@@ -89,8 +89,7 @@ function bumpUnreadFromInbound(row: WhatsAppMessageRow): WhatsAppThreadNameHint 
 }
 
 function shouldSuppressAlert(phone: string): boolean {
-  const activity = getWhatsAppInboxActivity();
-  return activity.open && normalizePhone(activity.selectedPhone) === phone;
+  return isViewingWhatsAppPhone(phone);
 }
 
 function maybePromptDesktopPermission(): void {
