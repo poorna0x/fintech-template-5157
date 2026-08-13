@@ -22,7 +22,10 @@ const {
   pdfBase64ToBuffer,
   fileBase64ToBuffer,
 } = require('./whatsapp-helper');
-const { stampAwaitingMediaIfAsking } = require('./whatsapp-unsolicited-media');
+const {
+  stampAwaitingMediaIfAsking,
+  stampPayQrAwaitingMedia,
+} = require('./whatsapp-unsolicited-media');
 const { resolveWaTemplateName } = require('./whatsapp-template-resolve');
 const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
 const { seedAdminPendingAction } = require('./whatsapp-booking-bot');
@@ -764,6 +767,19 @@ exports.handler = async (event) => {
       result.data?.messages?.[0]?.message_id ||
       null;
 
+    const watchSource = String(body.source || body.sendSource || '')
+      .trim()
+      .toLowerCase();
+    const watchPhotos = body.watchPhotos === true || body.watch_photos === true;
+    const isPayQrOutbound =
+      watchPhotos ||
+      watchSource === 'pending_payment' ||
+      /balance_due/i.test(String(persist.template_name || '')) ||
+      /upi qr|pending payment/i.test(String(persist.body || ''));
+    if (isPayQrOutbound) {
+      persist.body = stampPayQrAwaitingMedia(persist.body);
+    }
+
     const inserted = await insertWhatsAppMessage(db, {
       ...persist,
       wa_message_id: waId,
@@ -868,12 +884,8 @@ exports.handler = async (event) => {
       }
     }
 
-    const watchPhotos = body.watchPhotos === true || body.watch_photos === true;
-    const watchSource = String(body.source || body.sendSource || '')
-      .trim()
-      .toLowerCase();
     if (
-      watchPhotos &&
+      isPayQrOutbound &&
       watchSource === 'pending_payment' &&
       auth.role === 'technician' &&
       auth.userId &&

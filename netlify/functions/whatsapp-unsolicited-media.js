@@ -26,8 +26,22 @@ const ELEVEN_SUPPORT_WA_DISPLAY = ELEVEN_SUPPORT_DISPLAY;
 
 const MEDIA_TYPES = new Set(['image', 'document', 'audio', 'video', 'sticker', 'voice']);
 
+const PAY_QR_OUTBOUND_RE =
+  /balance_due|upi qr|pending payment|pay now|please send a photo of the payment/i;
+
 const ASK_MEDIA_RE =
   /please\s+(send|share|upload).{0,60}(photo|photos|image|picture|video|file|files|document|pdf|bill|receipt)|send\s+(a\s+|the\s+|us\s+)?(photo|photos|image|picture|video|file|document|pdf)|share\s+(a\s+|the\s+)?(photo|photos|image|picture|video|file)|upload\s+(a\s+|the\s+)?(photo|image|video|file|document)|awaiting customer media/i;
+
+function stampPayQrAwaitingMedia(bodyText) {
+  let t = String(bodyText || '').trim() || 'Pending payment';
+  if (!/please\s+send.{0,80}photo/i.test(t)) {
+    t = `${t}\n\nPlease send a photo of the payment screenshot.`;
+  }
+  if (!t.includes(AWAITING_CUSTOMER_MEDIA_MARKER)) {
+    t = `${t}\n${AWAITING_CUSTOMER_MEDIA_MARKER}`;
+  }
+  return t;
+}
 
 function isInboundMediaType(msgType) {
   return MEDIA_TYPES.has(String(msgType || '').toLowerCase());
@@ -48,31 +62,44 @@ function buildUnsolicitedMediaReply() {
 async function recentlyAskedForMedia(db, phoneE164) {
   if (!db || !phoneE164) return false;
   try {
+    const { digitsOnly, normalizePhoneE164 } = require('./whatsapp-helper');
+    const phone = normalizePhoneE164(phoneE164);
+    const last10 = digitsOnly(phoneE164).slice(-10);
+    const phoneCandidates = [...new Set([phoneE164, phone, last10, last10 ? `91${last10}` : ''].filter(Boolean))];
+
     const { findActivePayQrWatch } = require('./whatsapp-pay-qr-helper');
-    if (await findActivePayQrWatch(db, phoneE164)) return true;
+    if (await findActivePayQrWatch(db, phone)) return true;
+
     const sincePay = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const { data: payRows } = await db
       .from('whatsapp_messages')
-      .select('template_name')
-      .eq('phone_e164', phoneE164)
+      .select('template_name, body')
+      .in('phone_e164', phoneCandidates)
       .eq('direction', 'outbound')
       .gte('created_at', sincePay)
-      .limit(8);
-    if ((payRows || []).some((row) => /balance_due/i.test(String(row.template_name || '')))) {
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (
+      (payRows || []).some((row) => {
+        const name = String(row.template_name || '');
+        const body = String(row.body || '');
+        return PAY_QR_OUTBOUND_RE.test(name) || PAY_QR_OUTBOUND_RE.test(body);
+      })
+    ) {
       return true;
     }
     const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
     const { data: botRow } = await db
       .from('whatsapp_booking_bot_state')
       .select('awaiting_media, updated_at')
-      .eq('phone_e164', phoneE164)
+      .eq('phone_e164', phone)
       .gte('updated_at', since)
       .maybeSingle();
     if (botRow?.awaiting_media) return true;
     const { data } = await db
       .from('whatsapp_messages')
       .select('body, created_at')
-      .eq('phone_e164', phoneE164)
+      .in('phone_e164', phoneCandidates)
       .eq('direction', 'outbound')
       .gte('created_at', since)
       .order('created_at', { ascending: false })
@@ -81,6 +108,7 @@ async function recentlyAskedForMedia(db, phoneE164) {
       const body = String(row.body || '');
       if (body.includes(AWAITING_CUSTOMER_MEDIA_MARKER)) return true;
       if (ASK_MEDIA_RE.test(body)) return true;
+      if (PAY_QR_OUTBOUND_RE.test(body)) return true;
     }
   } catch (err) {
     console.warn('[unsolicited-media] ask check failed', err?.message || err);
@@ -174,4 +202,5 @@ module.exports = {
   handleUnsolicitedInboundMedia,
   buildUnsolicitedMediaReply,
   stampAwaitingMediaIfAsking,
+  stampPayQrAwaitingMedia,
 };

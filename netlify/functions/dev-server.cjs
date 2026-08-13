@@ -157,9 +157,13 @@ const server = http.createServer((req, res) => {
     handler = sendLocationPing;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-send')) {
     delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./whatsapp-unsolicited-media')];
+    delete require.cache[require.resolve('./whatsapp-pay-qr-helper')];
     handler = loadFn('whatsapp-send');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-webhook')) {
-    handler = whatsappWebhook;
+    delete require.cache[require.resolve('./whatsapp-unsolicited-media')];
+    delete require.cache[require.resolve('./whatsapp-pay-qr-helper')];
+    handler = loadFn('whatsapp-webhook');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-events')) {
     handler = whatsappEvents;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-templates')) {

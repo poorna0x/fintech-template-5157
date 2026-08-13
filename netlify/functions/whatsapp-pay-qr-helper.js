@@ -78,13 +78,16 @@ async function upsertPayQrWatch(db, opts = {}) {
 
 async function findActivePayQrWatch(db, phoneE164) {
   if (!db) return null;
+  const { digitsOnly } = require('./whatsapp-helper');
   const phone = normalizePhoneE164(phoneE164);
-  if (!phone) return null;
+  const last10 = digitsOnly(phoneE164).slice(-10);
+  const candidates = [...new Set([phone, last10, last10 ? `91${last10}` : ''].filter(Boolean))];
+  if (candidates.length === 0) return null;
   try {
     let { data, error } = await db
       .from('whatsapp_pay_qr_watch')
-      .select('id, technician_id, job_id, customer_name, expires_at')
-      .eq('phone_e164', phone)
+      .select('id, technician_id, job_id, customer_name, expires_at, phone_e164')
+      .in('phone_e164', candidates)
       .gt('expires_at', new Date().toISOString())
       .order('expires_at', { ascending: false })
       .limit(1)
@@ -92,8 +95,8 @@ async function findActivePayQrWatch(db, phoneE164) {
     if (error && /customer_name/i.test(error.message || '')) {
       ({ data, error } = await db
         .from('whatsapp_pay_qr_watch')
-        .select('id, technician_id, job_id, expires_at')
-        .eq('phone_e164', phone)
+        .select('id, technician_id, job_id, expires_at, phone_e164')
+        .in('phone_e164', candidates)
         .gt('expires_at', new Date().toISOString())
         .order('expires_at', { ascending: false })
         .limit(1)
@@ -378,7 +381,10 @@ async function notifyTechnicianPayQrPhoto({
  */
 async function handlePayQrWatchInbound({ db, accessToken, phoneNumberId, msg, media }) {
   const msgType = String(msg?.type || '').toLowerCase();
-  if (msgType !== 'image') return { handled: false };
+  const mime = String(media?.media_mime || msg?.image?.mime_type || msg?.document?.mime_type || '');
+  const isPhoto =
+    msgType === 'image' || (msgType === 'document' && /^image\//i.test(mime));
+  if (!isPhoto) return { handled: false };
   const phone = normalizePhoneE164(msg.from);
   if (!phone) return { handled: false };
 
