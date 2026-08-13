@@ -872,6 +872,34 @@ export function normalizeServiceSubType(value: string): string {
   );
 }
 
+/** Open AMC Service jobs — red border on ongoing / follow-up / tech cards. */
+const OPEN_AMC_JOB_STATUSES = new Set([
+  'PENDING',
+  'ASSIGNED',
+  'EN_ROUTE',
+  'IN_PROGRESS',
+  'FOLLOW_UP',
+  'RESCHEDULED',
+]);
+
+export function isOpenAmcServiceJob(job: {
+  status?: string;
+  service_sub_type?: string;
+  serviceSubType?: string;
+} | null | undefined): boolean {
+  if (!job) return false;
+  const status = String(job.status || '').toUpperCase();
+  if (!OPEN_AMC_JOB_STATUSES.has(status)) return false;
+  const sub = normalizeServiceSubType(
+    String(
+      (job as { service_sub_type?: string }).service_sub_type ??
+        job.serviceSubType ??
+        ''
+    )
+  );
+  return sub === 'AMC Service';
+}
+
 export function normalizeLeadType(value: string): string {
   const raw = (value || '').trim();
   if (!raw) return '';

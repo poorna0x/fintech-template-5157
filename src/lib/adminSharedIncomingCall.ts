@@ -20,6 +20,8 @@ const WINDOW_MS = 90_000; // 1.5 minutes
 /** Same window as shared board — auto-search only within 1.5 min of the ring. */
 export const INCOMING_CALL_SEARCH_WINDOW_MS = WINDOW_MS;
 const LAST_HANDLED_KEY = 'hro_admin_shared_call_handled_at';
+/** Phone last auto-searched on this device (local APK + shared board dedupe). */
+const LAST_HANDLED_PHONE_KEY = 'hro_admin_shared_call_handled_phone';
 const AUTO_SEARCH_KEY = 'hro_admin_incoming_auto_search';
 const CHANNEL_NAME = 'admin-incoming-calls';
 
@@ -122,6 +124,42 @@ function markHandled(atMs: number): void {
   }
 }
 
+function readLastHandledPhone(): { phone: string; at: number } | null {
+  try {
+    const raw = localStorage.getItem(LAST_HANDLED_PHONE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { phone?: string; at?: number };
+    if (!parsed.phone || typeof parsed.at !== 'number') return null;
+    return { phone: parsed.phone, at: parsed.at };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mark this caller as already handled on this device so the shared board
+ * does not fire a second search on the phone that rang.
+ */
+export function markIncomingCallPhoneHandled(phone: string, atMs = Date.now()): void {
+  const digits = normalizePhoneForSearch(phone);
+  if (digits.length < 7) return;
+  markHandled(atMs);
+  try {
+    localStorage.setItem(
+      LAST_HANDLED_PHONE_KEY,
+      JSON.stringify({ phone: digits, at: atMs })
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+function wasPhoneRecentlyHandled(digits: string): boolean {
+  const prev = readLastHandledPhone();
+  if (!prev || prev.phone !== digits) return false;
+  return Date.now() - prev.at <= WINDOW_MS;
+}
+
 /** Deliver a fresh, not-yet-handled caller number to `onNumber`. */
 function consider(
   phone: string | undefined,
@@ -132,10 +170,15 @@ function consider(
   const atMs = new Date(createdAt).getTime();
   if (Number.isNaN(atMs)) return false;
   if (Date.now() - atMs > WINDOW_MS) return false;
-  if (atMs <= readLastHandled()) return false;
   const digits = normalizePhoneForSearch(phone);
   if (digits.length < 7) return false;
-  markHandled(atMs);
+  // Same number already searched locally (or via board) — acknowledge without re-search.
+  if (wasPhoneRecentlyHandled(digits)) {
+    if (atMs > readLastHandled()) markHandled(atMs);
+    return true;
+  }
+  if (atMs <= readLastHandled()) return false;
+  markIncomingCallPhoneHandled(digits, atMs);
   onNumber(digits, atMs);
   return true;
 }

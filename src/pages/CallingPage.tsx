@@ -50,7 +50,17 @@ import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import CallingBulkWhatsAppDialog from '@/components/admin/CallingBulkWhatsAppDialog';
 import { WhatsAppCustomizeSendDialog } from '@/components/admin/WhatsAppCustomizeSendDialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { callingContextFromCustomer } from '@/lib/calling-whatsapp-templates';
+import { useSuspendDialogForPhotoViewer } from '@/lib/suspendDialogForPhotoViewer';
+import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
+import {
+  buildCallingWhatsAppMessage,
+  callingContextFromCustomer,
+  CALLING_WA_TEMPLATE_META,
+  CALLING_WA_TEMPLATE_ORDER,
+  type CallingWhatsAppTemplate,
+} from '@/lib/calling-whatsapp-templates';
+import type { DocumentBrand } from '@/lib/service-brands';
+import { getDocumentBrandLabel } from '@/lib/service-brands';
 
 interface CallHistory {
   id: string;
@@ -228,6 +238,11 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
   const [reportSelectedPhoto, setReportSelectedPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
   const [reportSelectedBillPhotos, setReportSelectedBillPhotos] = useState<string[] | null>(null);
+  const {
+    openSuspendedViewer,
+    closeSuspendedViewer,
+    ignoreParentDismissWhileSuspended,
+  } = useSuspendDialogForPhotoViewer();
 
   useEffect(() => {
     if (!hideHeader) {
@@ -1436,7 +1451,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         />
       )}
 
-      {/* Customer Report Dialog */}
+      {/* Customer Report Dialog — suspend while photo viewer open for pinch/zoom */}
       {customerReportDialogOpen && (
         <CustomerReportDialog
           open={customerReportDialogOpen}
@@ -1444,6 +1459,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           customer={selectedCustomerForReport}
           technicians={technicians}
           onOpenChange={(open) => {
+            if (!open && ignoreParentDismissWhileSuspended()) return;
             setCustomerReportDialogOpen(open);
             if (!open) {
               setSelectedCustomerForReport(null);
@@ -1452,14 +1468,35 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           }}
           onPhotoClick={(url, index, total, photos) => {
             const list = photos && photos.length > 0 ? photos : [url];
-            setReportSelectedBillPhotos(list);
-            setReportSelectedPhoto({ url: list[index] || url, index, total: list.length || total });
-            setReportPhotoViewerOpen(true);
+            const safeIndex = Math.min(Math.max(0, index), list.length - 1);
+            openSuspendedViewer(
+              () => setCustomerReportDialogOpen(false),
+              () => {
+                setReportSelectedBillPhotos(list);
+                setReportSelectedPhoto({
+                  url: list[safeIndex] || url,
+                  index: safeIndex,
+                  total: list.length || total,
+                });
+                setReportPhotoViewerOpen(true);
+              }
+            );
           }}
           onBillPhotosClick={(photos, index) => {
-            setReportSelectedBillPhotos(photos);
-            setReportSelectedPhoto({ url: photos[index], index, total: photos.length });
-            setReportPhotoViewerOpen(true);
+            if (!photos.length) return;
+            const safeIndex = Math.min(Math.max(0, index), photos.length - 1);
+            openSuspendedViewer(
+              () => setCustomerReportDialogOpen(false),
+              () => {
+                setReportSelectedBillPhotos(photos);
+                setReportSelectedPhoto({
+                  url: photos[safeIndex],
+                  index: safeIndex,
+                  total: photos.length,
+                });
+                setReportPhotoViewerOpen(true);
+              }
+            );
           }}
         />
       )}
@@ -1468,7 +1505,20 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       {reportPhotoViewerOpen && (
         <PhotoViewerDialog
           open={reportPhotoViewerOpen}
-          onOpenChange={setReportPhotoViewerOpen}
+          onOpenChange={(open) => {
+            if (open) {
+              setReportPhotoViewerOpen(true);
+              return;
+            }
+            closeSuspendedViewer(
+              () => setCustomerReportDialogOpen(true),
+              () => {
+                setReportPhotoViewerOpen(false);
+                setReportSelectedPhoto(null);
+                setReportSelectedBillPhotos(null);
+              }
+            );
+          }}
           selectedPhoto={reportSelectedPhoto}
           selectedBillPhotos={reportSelectedBillPhotos}
           selectedJobPhotos={null}
@@ -1500,9 +1550,14 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
             link.click();
           }}
           onClose={() => {
-            setReportPhotoViewerOpen(false);
-            setReportSelectedPhoto(null);
-            setReportSelectedBillPhotos(null);
+            closeSuspendedViewer(
+              () => setCustomerReportDialogOpen(true),
+              () => {
+                setReportPhotoViewerOpen(false);
+                setReportSelectedPhoto(null);
+                setReportSelectedBillPhotos(null);
+              }
+            );
           }}
         />
       )}

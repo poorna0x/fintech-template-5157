@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSuspendDialogForPhotoViewer } from '@/lib/suspendDialogForPhotoViewer';
 import {
   Dialog,
   DialogContent,
@@ -215,6 +216,11 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   const [reportTechniciansLoading, setReportTechniciansLoading] = useState(false);
   // Photo viewer state for clicking bill/payment images inside the Report dialog.
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
+  const {
+    openSuspendedViewer,
+    closeSuspendedViewer,
+    ignoreParentDismissWhileSuspended,
+  } = useSuspendDialogForPhotoViewer();
   const [reportSelectedPhoto, setReportSelectedPhoto] = useState<{
     url: string;
     index: number;
@@ -1106,6 +1112,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           open={reportDialogOpen}
           photoViewerOpen={reportPhotoViewerOpen}
           onOpenChange={(o) => {
+            if (!o && ignoreParentDismissWhileSuspended()) return;
             setReportDialogOpen(o);
             if (!o) {
               setReportCustomer(null);
@@ -1116,18 +1123,35 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           technicians={technicianRows as unknown as Technician[]}
           onPhotoClick={(url, index, total, photos) => {
             const list = photos && photos.length > 0 ? photos : [url];
-            setReportSelectedBillPhotos(list);
-            setReportSelectedPhoto({ url: list[index] || url, index, total: list.length || total });
-            setReportPhotoViewerOpen(true);
+            const safeIndex = Math.min(Math.max(0, index), list.length - 1);
+            openSuspendedViewer(
+              () => setReportDialogOpen(false),
+              () => {
+                setReportSelectedBillPhotos(list);
+                setReportSelectedPhoto({
+                  url: list[safeIndex] || url,
+                  index: safeIndex,
+                  total: list.length || total,
+                });
+                setReportPhotoViewerOpen(true);
+              }
+            );
           }}
           onBillPhotosClick={(photos, index) => {
-            setReportSelectedBillPhotos(photos);
-            setReportSelectedPhoto({
-              url: photos[index],
-              index,
-              total: photos.length,
-            });
-            setReportPhotoViewerOpen(true);
+            if (!photos.length) return;
+            const safeIndex = Math.min(Math.max(0, index), photos.length - 1);
+            openSuspendedViewer(
+              () => setReportDialogOpen(false),
+              () => {
+                setReportSelectedBillPhotos(photos);
+                setReportSelectedPhoto({
+                  url: photos[safeIndex],
+                  index: safeIndex,
+                  total: photos.length,
+                });
+                setReportPhotoViewerOpen(true);
+              }
+            );
           }}
         />
       )}
@@ -1136,7 +1160,20 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
       {reportPhotoViewerOpen && (
         <PhotoViewerDialog
           open={reportPhotoViewerOpen}
-          onOpenChange={setReportPhotoViewerOpen}
+          onOpenChange={(open) => {
+            if (open) {
+              setReportPhotoViewerOpen(true);
+              return;
+            }
+            closeSuspendedViewer(
+              () => setReportDialogOpen(true),
+              () => {
+                setReportPhotoViewerOpen(false);
+                setReportSelectedPhoto(null);
+                setReportSelectedBillPhotos(null);
+              }
+            );
+          }}
           selectedPhoto={reportSelectedPhoto}
           selectedBillPhotos={reportSelectedBillPhotos}
           selectedJobPhotos={null}
@@ -1185,7 +1222,16 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
             link.click();
             document.body.removeChild(link);
           }}
-          onClose={() => setReportPhotoViewerOpen(false)}
+          onClose={() => {
+            closeSuspendedViewer(
+              () => setReportDialogOpen(true),
+              () => {
+                setReportPhotoViewerOpen(false);
+                setReportSelectedPhoto(null);
+                setReportSelectedBillPhotos(null);
+              }
+            );
+          }}
         />
       )}
     </Dialog>

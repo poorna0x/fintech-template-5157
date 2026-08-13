@@ -50,6 +50,7 @@ import { mapCustomerGstFields } from '@/lib/customerGst';
 import NewJobDialog from '@/components/admin/NewJobDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
+import { useSuspendDialogForPhotoViewer } from '@/lib/suspendDialogForPhotoViewer';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 
 interface RecurringServiceTrackerProps {
@@ -275,6 +276,11 @@ export function RecurringServiceTracker({
 
   // Photo viewer for report images (payment/bill click-to-view)
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const {
+    openSuspendedViewer,
+    closeSuspendedViewer,
+    ignoreParentDismissWhileSuspended,
+  } = useSuspendDialogForPhotoViewer();
   const [viewerPhoto, setViewerPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
   const [viewerBillPhotos, setViewerBillPhotos] = useState<string[] | null>(null);
 
@@ -1265,19 +1271,44 @@ export function RecurringServiceTracker({
       />
       <CustomerReportDialog
         open={reportOpen}
-        onOpenChange={setReportOpen}
+        photoViewerOpen={photoViewerOpen}
+        onOpenChange={(o) => {
+          if (!o && ignoreParentDismissWhileSuspended()) return;
+          setReportOpen(o);
+        }}
         customer={activeCustomer}
         technicians={technicians}
         onPhotoClick={(url, index, total, photos) => {
           const list = photos && photos.length > 0 ? photos : [url];
-          setViewerBillPhotos(list);
-          setViewerPhoto({ url: list[index] || url, index, total: list.length || total });
-          setPhotoViewerOpen(true);
+          const safeIndex = Math.min(Math.max(0, index), list.length - 1);
+          openSuspendedViewer(
+            () => setReportOpen(false),
+            () => {
+              setViewerBillPhotos(list);
+              setViewerPhoto({
+                url: list[safeIndex] || url,
+                index: safeIndex,
+                total: list.length || total,
+              });
+              setPhotoViewerOpen(true);
+            }
+          );
         }}
         onBillPhotosClick={(photos, index) => {
-          setViewerBillPhotos(photos);
-          setViewerPhoto({ url: photos[index], index, total: photos.length });
-          setPhotoViewerOpen(true);
+          if (!photos.length) return;
+          const safeIndex = Math.min(Math.max(0, index), photos.length - 1);
+          openSuspendedViewer(
+            () => setReportOpen(false),
+            () => {
+              setViewerBillPhotos(photos);
+              setViewerPhoto({
+                url: photos[safeIndex],
+                index: safeIndex,
+                total: photos.length,
+              });
+              setPhotoViewerOpen(true);
+            }
+          );
         }}
       />
 
@@ -1285,7 +1316,20 @@ export function RecurringServiceTracker({
       {photoViewerOpen && (
         <PhotoViewerDialog
           open={photoViewerOpen}
-          onOpenChange={setPhotoViewerOpen}
+          onOpenChange={(open) => {
+            if (open) {
+              setPhotoViewerOpen(true);
+              return;
+            }
+            closeSuspendedViewer(
+              () => setReportOpen(true),
+              () => {
+                setPhotoViewerOpen(false);
+                setViewerPhoto(null);
+                setViewerBillPhotos(null);
+              }
+            );
+          }}
           selectedPhoto={viewerPhoto}
           selectedBillPhotos={viewerBillPhotos}
           selectedJobPhotos={null}
@@ -1309,9 +1353,14 @@ export function RecurringServiceTracker({
             link.click();
           }}
           onClose={() => {
-            setPhotoViewerOpen(false);
-            setViewerPhoto(null);
-            setViewerBillPhotos(null);
+            closeSuspendedViewer(
+              () => setReportOpen(true),
+              () => {
+                setPhotoViewerOpen(false);
+                setViewerPhoto(null);
+                setViewerBillPhotos(null);
+              }
+            );
           }}
         />
       )}

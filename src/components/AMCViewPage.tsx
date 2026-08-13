@@ -280,12 +280,25 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       const result = await db.amcContracts.createAMCServiceJobs({ force: true });
       if (result.error) {
         console.error('Error running AMC auto-generation:', result.error);
-        toast.error('Failed to run AMC auto-generation');
+        const msg =
+          typeof result.error === 'object' && result.error && 'message' in result.error
+            ? String((result.error as { message?: string }).message || '')
+            : result.error instanceof Error
+              ? result.error.message
+              : '';
+        toast.error(msg ? `AMC auto-generation failed: ${msg}` : 'Failed to run AMC auto-generation');
         return;
       }
 
       if (result.created > 0) {
-        toast.success(`Created ${result.created} AMC service job${result.created > 1 ? 's' : ''}`);
+        const failed = Array.isArray((result as any).insertErrors)
+          ? (result as any).insertErrors.length
+          : 0;
+        toast.success(
+          failed > 0
+            ? `Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} (${failed} failed)`
+            : `Created ${result.created} AMC service job${result.created > 1 ? 's' : ''}`
+        );
         await loadAMCRecords(currentPage);
         return;
       }
@@ -313,7 +326,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       toast.info('No AMC service jobs are due right now');
     } catch (error) {
       console.error('Error running AMC auto-generation:', error);
-      toast.error('Failed to run AMC auto-generation');
+      const msg = error instanceof Error ? error.message : '';
+      toast.error(msg ? `AMC auto-generation failed: ${msg}` : 'Failed to run AMC auto-generation');
     } finally {
       setRunningAutoGen(false);
     }

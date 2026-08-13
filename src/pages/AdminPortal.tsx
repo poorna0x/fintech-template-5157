@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminLogin from '@/components/AdminLogin';
 import { startAdminDashboardPrefetch } from '@/lib/adminDashboardCache';
@@ -12,6 +12,11 @@ import {
 } from '@/lib/adminBiometricLock';
 import { WhatsAppAdminNotifier } from '@/components/admin/WhatsAppAdminNotifier';
 import { unlockWhatsAppAlertSound } from '@/lib/whatsappAlertSound';
+import {
+  deliverAdminIncomingCallSearch,
+  hasAdminIncomingCallSearchHandler,
+} from '@/lib/adminIncomingCallBridge';
+import { adminDashboardLocation, buildAdminDashboardSearch } from '@/lib/adminDashboardUrl';
 
 const adminDashboardImport = () => import('@/components/AdminDashboard');
 const settingsImport = () => import('./Settings');
@@ -28,7 +33,10 @@ const settingsImport = () => import('./Settings');
  */
 export default function AdminPortal() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const onSettings = pathname.startsWith('/settings');
+  const onSettingsRef = useRef(onSettings);
+  onSettingsRef.current = onSettings;
   const { user, isAdmin, authInitializing } = useAuth();
   const [Dashboard, setDashboard] = useState<React.ComponentType | null>(null);
   const [Settings, setSettings] = useState<React.ComponentType | null>(null);
@@ -67,6 +75,137 @@ export default function AdminPortal() {
       void startAdminDashboardPrefetch();
     }
   }, [user, isAdmin]);
+
+  // Keep caller lookup alive on Settings too — AdminDashboard unmounts there, so
+  // without this a ring while in Settings never stashes/searches on return.
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+
+    let cancelled = false;
+    let cleanupLocal: (() => void) | null = null;
+    let cleanupShared: (() => void) | null = null;
+
+    const goHomeAndSearch = (digits: string) => {
+      navigate(
+        adminDashboardLocation(buildAdminDashboardSearch({ search: digits }, '')),
+        { replace: false }
+      );
+    };
+
+    const onLocalCall = (digits: string, at: number) => {
+      if (onSettingsRef.current) {
+        deliverAdminIncomingCallSearch(
+          digits,
+          { offerNotFound: true, ringAt: at },
+          false
+        );
+        goHomeAndSearch(digits);
+        return;
+      }
+      const live = deliverAdminIncomingCallSearch(digits, {
+        offerNotFound: true,
+        ringAt: at,
+      });
+      if (!live && !hasAdminIncomingCallSearchHandler()) {
+        goHomeAndSearch(digits);
+      }
+    };
+
+    const onSharedCall = (digits: string, ringAt: number) => {
+      if (onSettingsRef.current) {
+        deliverAdminIncomingCallSearch(
+          digits,
+          { offerNotFound: false, ringAt },
+          false
+        );
+        goHomeAndSearch(digits);
+        return;
+      }
+      const live = deliverAdminIncomingCallSearch(digits, {
+        offerNotFound: false,
+        ringAt,
+      });
+      if (!live && !hasAdminIncomingCallSearchHandler()) {
+        goHomeAndSearch(digits);
+      }
+    };
+
+    void import('@/lib/adminIncomingCall').then(async ({ initAdminCallerLookup }) => {
+      if (cancelled) return;
+      const dispose = await initAdminCallerLookup((digits, { at }) =>
+        onLocalCall(digits, at)
+      );
+      if (cancelled) dispose();
+      else cleanupLocal = dispose;
+    });
+
+    void import('@/lib/adminSharedIncomingCall').then(({ initAdminSharedCallLookup }) => {
+      if (cancelled) return;
+      const dispose = initAdminSharedCallLookup((digits, ringAt) =>
+        onSharedCall(digits, ringAt)
+      );
+      if (cancelled) dispose();
+      else cleanupShared = dispose;
+    });
+
+    return () => {
+      cancelled = true;
+      cleanupLocal?.();
+      cleanupShared?.();
+    };
+  }, [user, isAdmin, navigate]);
+
+  // Returning from Settings (or landing on /admin): pick up a ring that was
+  // stored natively while the dashboard was unmounted and never resumed.
+  useEffect(() => {
+    if (!user || !isAdmin || onSettings) return;
+    let cancelled = false;
+
+    void (async () => {
+      const [{ consumePendingAdminIncomingCall }, { checkSharedIncomingCall }] =
+        await Promise.all([
+          import('@/lib/adminIncomingCall'),
+          import('@/lib/adminSharedIncomingCall'),
+        ]);
+      if (cancelled) return;
+
+      const fresh = await consumePendingAdminIncomingCall();
+      if (cancelled) return;
+      if (fresh) {
+        const live = deliverAdminIncomingCallSearch(fresh.digits, {
+          offerNotFound: true,
+          ringAt: fresh.at,
+        });
+        if (!live) {
+          navigate(
+            adminDashboardLocation(
+              buildAdminDashboardSearch({ search: fresh.digits }, '')
+            ),
+            { replace: true }
+          );
+        }
+        return;
+      }
+
+      await checkSharedIncomingCall((digits, ringAt) => {
+        if (cancelled) return;
+        const live = deliverAdminIncomingCallSearch(digits, {
+          offerNotFound: false,
+          ringAt,
+        });
+        if (!live) {
+          navigate(
+            adminDashboardLocation(buildAdminDashboardSearch({ search: digits }, '')),
+            { replace: true }
+          );
+        }
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, isAdmin, onSettings, navigate]);
 
   // Admin APK: fingerprint lock controller (no-op in browser / old APKs).
   useEffect(() => {

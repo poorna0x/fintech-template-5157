@@ -192,9 +192,14 @@ import {
   INCOMING_CALL_SEARCH_WINDOW_MS,
   isIncomingAutoSearchStale,
   markIncomingAutoSearch,
+  markIncomingCallPhoneHandled,
   readIncomingAutoSearch,
   type IncomingAutoSearchRecord,
 } from '@/lib/adminSharedIncomingCall';
+import {
+  setAdminIncomingCallSearchHandler,
+  wasIncomingCallJustDeliveredLive,
+} from '@/lib/adminIncomingCallBridge';
 import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
@@ -1091,6 +1096,8 @@ const AdminDashboard = () => {
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
   const [reportViewerPhoto, setReportViewerPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
   const [reportViewerBillPhotos, setReportViewerBillPhotos] = useState<string[] | null>(null);
+  /** While set, report Dialog stays closed so PhotoSwipe can receive pinch/double-tap (Radix RemoveScroll). */
+  const reportPhotoSuspendRef = useRef(false);
   const [highlightJobId, setHighlightJobId] = useState<string | null>(null);
   /** Prevent re-scrolling the same highlight when `jobs` updates (e.g. customer search). */
   const highlightScrolledForRef = useRef<string | null>(null);
@@ -2048,7 +2055,9 @@ const AdminDashboard = () => {
       }
     }
     setCustomerPhotoGalleryOpen(modal === 'customer-photos' && !!resolveCustomer(parsed.customerId));
-    setCustomerReportDialogOpen(modal === 'report' && !!resolveCustomer(parsed.customerId));
+    setCustomerReportDialogOpen(
+      modal === 'report' && !!resolveCustomer(parsed.customerId) && !reportPhotoSuspendRef.current
+    );
     setHistoryDialogOpen(modal === 'history' && !!resolveCustomer(parsed.customerId));
     // Open bill as soon as URL says so — click handler already set selectedCustomerForBill.
     // Don't wait on resolveCustomer (search/list race can leave a blank first paint).
@@ -4624,28 +4633,49 @@ const AdminDashboard = () => {
           requestAnimationFrame(() => window.scrollTo(0, scrollY));
         };
 
+        // Stop shared-board Realtime from re-searching on the ringing device.
+        markIncomingCallPhoneHandled(digits, opts?.ringAt ?? Date.now());
+
         if (opts?.offerNotFound) {
+          // One network search only — reuse hits for the visible UI (was 2× before).
           const results = await runCustomerSearch(digits, { silent: true, skipNavigate: true });
           if (results.length === 0) {
             const at = opts.ringAt ?? Date.now();
             saveUnknownCaller(digits, at);
             setUnknownCaller({ phone: digits, at });
+            restoreScroll();
             return;
           }
           clearUnknownCaller();
           setUnknownCaller(null);
+
+          const auto = markIncomingAutoSearch(digits, opts?.ringAt);
+          if (auto) setIncomingAutoSearch(auto);
+
+          const trimmed = digits.trim();
+          setSearchTerm(trimmed);
+          setSearchQuery(trimmed);
+          setSearchResults(results);
+          adminSearchSyncedRef.current = trimmed;
+          const currentSearch = new URLSearchParams(location.search).get('search');
+          navigate(
+            adminDashboardLocation(
+              buildAdminDashboardSearch({ search: trimmed }, location.search)
+            ),
+            { replace: currentSearch === trimmed }
+          );
+          restoreScroll();
+          return;
         }
 
-        // Put ?search= in the URL so the URL-sync effect does not wipe results
-        // (skipNavigate previously set searchTerm, then the effect saw no
-        // ?search= and cleared — desktop scrolled but looked empty).
+        // Shared board / remount restore — single search, fill ?search=.
         const auto = markIncomingAutoSearch(digits, opts?.ringAt);
         if (auto) setIncomingAutoSearch(auto);
         await runCustomerSearch(digits);
         restoreScroll();
       })();
     },
-    [runCustomerSearch]
+    [runCustomerSearch, location.search, navigate]
   );
 
   useEffect(() => {
@@ -4730,46 +4760,18 @@ const AdminDashboard = () => {
     callerLookupSearchRef.current = handleSearchFromIncomingCall;
   }, [handleSearchFromIncomingCall]);
 
+  // Portal owns native/shared call listeners (stays alive on Settings). Dashboard
+  // only registers the search handler while mounted.
   useEffect(() => {
-    let cleanup: (() => void) | null = null;
-    let cancelled = false;
-    void import('@/lib/adminIncomingCall').then(async ({ initAdminCallerLookup }) => {
-      const dispose = await initAdminCallerLookup((digits, { at }) =>
-        callerLookupSearchRef.current(digits, { offerNotFound: true, ringAt: at })
-      );
-      if (cancelled) {
-        dispose();
-      } else {
-        cleanup = dispose;
-      }
+    setAdminIncomingCallSearchHandler((digits, opts) => {
+      callerLookupSearchRef.current(digits, opts);
     });
-    return () => {
-      cancelled = true;
-      cleanup?.();
-    };
-  }, []);
-
-  // Shared caller board: known customers only — auto-search, never the
-  // unknown-caller Recent button (local-phone-only, 10 min).
-  useEffect(() => {
-    let cleanup: (() => void) | null = null;
-    let cancelled = false;
-    void import('@/lib/adminSharedIncomingCall').then(({ initAdminSharedCallLookup }) => {
-      const dispose = initAdminSharedCallLookup((digits, ringAt) =>
-        callerLookupSearchRef.current(digits, { offerNotFound: false, ringAt })
-      );
-      if (cancelled) dispose();
-      else cleanup = dispose;
-    });
-    return () => {
-      cancelled = true;
-      cleanup?.();
-    };
+    return () => setAdminIncomingCallSearchHandler(null);
   }, []);
 
   // After Settings (or any remount): restore incoming-call auto-search from
-  // sessionStorage while the 1.5-min window is still open. Local prefs / shared
-  // board are already consumed/"handled", so without this Home opens empty.
+  // sessionStorage while the 1.5-min window is still open. Portal already
+  // stashes the number if the ring happened on Settings.
   useEffect(() => {
     const record = readIncomingAutoSearch();
     if (!record?.phone) return;
@@ -4779,6 +4781,10 @@ const AdminDashboard = () => {
       return;
     }
     setIncomingAutoSearch(record);
+    if (wasIncomingCallJustDeliveredLive(record.phone)) {
+      // Portal just delivered to this mount (or navigated with ?search=) — avoid a second search.
+      return;
+    }
     const searchParam =
       new URLSearchParams(window.location.search).get('search')?.trim() ?? '';
     if (
@@ -4789,7 +4795,7 @@ const AdminDashboard = () => {
       return;
     }
     callerLookupSearchRef.current(record.phone, {
-      offerNotFound: false,
+      offerNotFound: true,
       ringAt: record.at,
     });
   }, []);
@@ -7250,11 +7256,12 @@ const AdminDashboard = () => {
         jobs={jobs}
       />
 
-      {/* Customer Report Dialog */}
+      {/* Customer Report Dialog — suspend (close) while photo viewer is open so pinch/zoom works */}
       <CustomerReportDialog
         open={customerReportDialogOpen}
         photoViewerOpen={reportPhotoViewerOpen}
         onOpenChange={bindAdminModalDismiss('report', () => {
+          if (reportPhotoSuspendRef.current) return;
           setCustomerReportDialogOpen(false);
           setReportPhotoViewerOpen(false);
           setReportViewerPhoto(null);
@@ -7264,24 +7271,61 @@ const AdminDashboard = () => {
         technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
         onPhotoClick={(url, index, total, photos) => {
           const list = photos && photos.length > 0 ? photos : [url];
-          setReportViewerBillPhotos(list);
-          setReportViewerPhoto({ url: list[index] || url, index, total: list.length || total });
-          setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'payment' });
-          setReportPhotoViewerOpen(true);
+          const safeIndex = Math.min(Math.max(0, index), list.length - 1);
+          reportPhotoSuspendRef.current = true;
+          setCustomerReportDialogOpen(false);
+          window.setTimeout(() => {
+            setReportViewerBillPhotos(list);
+            setReportViewerPhoto({
+              url: list[safeIndex] || url,
+              index: safeIndex,
+              total: list.length || total,
+            });
+            setPhotoDownloadMeta({
+              customerName: selectedCustomerForReport?.fullName,
+              type: 'payment',
+            });
+            setReportPhotoViewerOpen(true);
+          }, 50);
         }}
         onBillPhotosClick={(photos, index) => {
-          setReportViewerBillPhotos(photos);
-          setReportViewerPhoto({ url: photos[index], index, total: photos.length });
-          setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'bill' });
-          setReportPhotoViewerOpen(true);
+          if (!photos.length) return;
+          const safeIndex = Math.min(Math.max(0, index), photos.length - 1);
+          reportPhotoSuspendRef.current = true;
+          setCustomerReportDialogOpen(false);
+          window.setTimeout(() => {
+            setReportViewerBillPhotos(photos);
+            setReportViewerPhoto({
+              url: photos[safeIndex],
+              index: safeIndex,
+              total: photos.length,
+            });
+            setPhotoDownloadMeta({
+              customerName: selectedCustomerForReport?.fullName,
+              type: 'bill',
+            });
+            setReportPhotoViewerOpen(true);
+          }, 50);
         }}
         onNavigateToCompletedJob={handleNavigateToCompletedJobFromReport}
       />
 
-      {/* Photo viewer overlay for customer report — local state so ?modal=report stays open */}
+      {/* Photo viewer for customer report (report Dialog is suspended/closed while this is open) */}
       <PhotoViewerDialog
         open={reportPhotoViewerOpen}
-        onOpenChange={setReportPhotoViewerOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setReportPhotoViewerOpen(true);
+            return;
+          }
+          setReportPhotoViewerOpen(false);
+          setReportViewerPhoto(null);
+          setReportViewerBillPhotos(null);
+          if (reportPhotoSuspendRef.current) {
+            reportPhotoSuspendRef.current = false;
+            setCustomerReportDialogOpen(true);
+          }
+        }}
         selectedPhoto={reportViewerPhoto}
         selectedBillPhotos={reportViewerBillPhotos}
         selectedJobPhotos={null}
@@ -7318,6 +7362,10 @@ const AdminDashboard = () => {
           setReportPhotoViewerOpen(false);
           setReportViewerPhoto(null);
           setReportViewerBillPhotos(null);
+          if (reportPhotoSuspendRef.current) {
+            reportPhotoSuspendRef.current = false;
+            setCustomerReportDialogOpen(true);
+          }
         }}
       />
 

@@ -5348,11 +5348,11 @@ export const db = {
         return out;
       };
 
-      // Helper function to generate job number
+      // Helper function to generate job number (unique enough for multi-row creates)
       const generateJobNumber = (serviceType: string) => {
         const prefix = serviceType === 'RO' ? 'RO' : 'WS';
-        const timestamp = Date.now().toString().slice(-6);
-        const random = Math.floor(Math.random() * 100).toString().padStart(2, '0');
+        const timestamp = Date.now().toString().slice(-8);
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
         return `${prefix}${timestamp}${random}`;
       };
 
@@ -5586,7 +5586,11 @@ export const db = {
 
         {
           if (isDev) console.log(`  ✅ Will create ${createReason} job for ${customer.customer_id || customer.id}`);
-          const serviceType = customer.service_type || 'RO';
+          // AMC Service is always RO (not softener). Customer may be RO_SOFTENER with
+          // comma-separated brand/model — take the RO slot only.
+          const { readCustomerEquipmentSlot } = await import('@/lib/equipment-suggestions');
+          const roEquipment = readCustomerEquipmentSlot(customer, 'RO');
+          const serviceType = 'RO' as const;
           const jobNumber = generateJobNumber(serviceType);
 
           const scheduledDateStr = getLocalCalendarDateYmd();
@@ -5602,16 +5606,18 @@ export const db = {
             customer_id: customer.id,
             service_type: serviceType,
             service_sub_type: 'AMC Service',
-            brand: customer.brand || 'Not Specified',
-            model: customer.model || 'Not Specified',
+            service_site: 'primary',
+            brand: roEquipment.brand || 'Not Specified',
+            model: roEquipment.model || 'Not Specified',
             scheduled_date: scheduledDateStr,
             scheduled_time_slot: 'MORNING',
             estimated_duration: 120,
-            service_address: customer.address || {},
-            service_location: customer.location || {},
+            // NOT NULL jsonb columns — never pass null from sparse customer rows
+            service_address: customer.address && typeof customer.address === 'object' ? customer.address : {},
+            service_location: customer.location && typeof customer.location === 'object' ? customer.location : {},
             status: 'PENDING',
             priority: createReason === 'pre_expiry' ? 'HIGH' : 'MEDIUM',
-            description,
+            description: description || 'AMC Service',
             requirements: [
               {
                 amc_contract_id: amc.id,
@@ -5638,26 +5644,71 @@ export const db = {
         return { data: null, error: null, created: 0, preview };
       }
 
-      // Create jobs in batch
+      // Insert one-by-one so a single bad row cannot block the rest of the due set
+      // (batch insert is all-or-nothing in Postgres).
       if (jobsToCreate.length > 0) {
-        if (isDev) console.log(`💾 Creating ${jobsToCreate.length} jobs...`);
-        const { data: createdJobsData, error: createError } = await supabase
-          .from('jobs')
-          .insert(jobsToCreate)
-          .select('id,job_number,customer_id,status,service_sub_type,created_at');
+        if (isDev) console.log(`💾 Creating ${jobsToCreate.length} jobs (per-row)...`);
+        const createdJobsData: any[] = [];
+        const insertErrors: { job_number?: string; customer_id?: string; message: string }[] = [];
 
-        if (createError) {
-          console.error('❌ Error creating jobs:', createError);
-          return { data: null, error: createError, created: 0 };
+        for (const jobData of jobsToCreate) {
+          let attempt = jobData;
+          let lastError: any = null;
+          for (let retry = 0; retry < 3; retry++) {
+            const { data: created, error: createError } = await supabase
+              .from('jobs')
+              .insert(attempt)
+              .select('id,job_number,customer_id,status,service_sub_type,created_at')
+              .single();
+            if (!createError && created) {
+              createdJobsData.push(created);
+              lastError = null;
+              break;
+            }
+            lastError = createError;
+            const msg = String(createError?.message || '');
+            // Rare job_number unique collision — regenerate and retry
+            if (/job_number|duplicate key|unique/i.test(msg)) {
+              attempt = {
+                ...attempt,
+                job_number: generateJobNumber(String(attempt.service_type || 'RO')),
+              };
+              continue;
+            }
+            break;
+          }
+          if (lastError) {
+            console.error('❌ Error creating AMC job:', attempt.job_number, lastError);
+            insertErrors.push({
+              job_number: attempt.job_number,
+              customer_id: attempt.customer_id,
+              message: String(lastError.message || lastError),
+            });
+          }
         }
 
-        createdCount = createdJobsData?.length || 0;
-        if (isDev) console.log(`✅ Successfully created ${createdCount} AMC service jobs`);
+        createdCount = createdJobsData.length;
+        if (isDev) {
+          console.log(`✅ Created ${createdCount}/${jobsToCreate.length} AMC service jobs`);
+          if (insertErrors.length) console.warn('AMC insert errors:', insertErrors);
+        }
         if (createdCount > 0) {
-          // Batch insert bypasses db.jobs.create — keep dashboard count cache in sync
           cacheInvalidate('job_counts_v1');
         }
-        return { data: createdJobsData, error: null, created: createdCount };
+        if (createdCount === 0 && insertErrors.length > 0) {
+          return {
+            data: null,
+            error: new Error(insertErrors.map((e) => e.message).join('; ')),
+            created: 0,
+            insertErrors,
+          };
+        }
+        return {
+          data: createdJobsData,
+          error: null,
+          created: createdCount,
+          insertErrors: insertErrors.length ? insertErrors : undefined,
+        };
       }
 
       if (isDev) console.log('ℹ️ No jobs to create');
