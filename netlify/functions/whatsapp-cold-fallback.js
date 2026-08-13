@@ -71,6 +71,59 @@ function templateUsesDynamicPayNowUrl(name) {
 }
 
 /**
+ * Hard deny cross-family cold fallbacks (defense in depth).
+ * Prevents pending-payment amount/due from landing on booking/visit/job-done copy.
+ */
+function isUnsafeColdFallback(primaryName, fallbackName) {
+  const primary = String(primaryName || '');
+  const fb = String(fallbackName || '');
+  if (!fb || fb === primary) return false;
+
+  const primaryPayment =
+    /balance_due|payment_overdue|svc_balance_due|svc_payment_received/i.test(primary);
+  const primaryDoc = /^svc_doc_/i.test(primary) || /^svc_doc_direct_/i.test(primary);
+  const primaryJobDone = /job_done|svc_completed/i.test(primary);
+  const primaryBooking =
+    /booking_confirmed|visit_confirmed|booking_cancelled|visit_cancelled/i.test(primary);
+  const primaryServiceDue =
+    /service_due|existing_service_schedule|visit_reminder|amc_expiry/i.test(primary);
+
+  const fbBooking =
+    /booking_confirmed|visit_confirmed|booking_cancelled|visit_cancelled/i.test(fb);
+  const fbJobDone = /job_done|svc_completed/i.test(fb);
+  const fbServiceDue =
+    /service_due|existing_service_schedule|visit_reminder|amc_expiry/i.test(fb);
+  const fbPayment =
+    /balance_due|payment_overdue|svc_balance_due|svc_payment_received/i.test(fb);
+  const fbDoc = /^svc_doc_/i.test(fb) || /^svc_doc_direct_/i.test(fb);
+  const fbSmoke = fb === SMOKE;
+
+  if (primaryPayment) {
+    // Payment may fall to older balance-due / overdue only — never booking/visit/job/smoke.
+    if (fbBooking || fbJobDone || fbServiceDue || fbDoc) return true;
+    if (fbSmoke) return true;
+    return false;
+  }
+  if (primaryDoc) {
+    if (fbBooking || fbJobDone || fbPayment || fbServiceDue) return true;
+    return false;
+  }
+  if (primaryJobDone) {
+    if (fbBooking || fbPayment || fbServiceDue || fbDoc) return true;
+    return false;
+  }
+  if (primaryBooking) {
+    if (fbPayment || fbJobDone || fbDoc) return true;
+    return false;
+  }
+  if (primaryServiceDue) {
+    if (fbPayment || fbJobDone || fbBooking || fbDoc) return true;
+    return false;
+  }
+  return false;
+}
+
+/**
  * @returns {Array<{ name: string, params: string[], headerComponents: object[] }>}
  */
 function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComponents = []) {
@@ -566,11 +619,11 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(SMOKE, [name || 'there']);
   }
 
-  // Last-resort smoke only. Do NOT map arbitrary 3-param templates (e.g. balance-due
-  // name/amount/due) onto svc_visit_confirmed — that produced "booking 10 is confirmed
-  // for <due date>" when pending-payment cold templates fell through.
-  // Booking-confirm → visit_confirmed is handled in the booking_confirmed blocks above.
-  push(SMOKE, [name]);
+  // Last-resort smoke only for non-payment families. Payment/balance/overdue must
+  // stay in-family (see isUnsafeColdFallback) — never generic smoke or visit_confirmed.
+  if (!/balance_due|payment_overdue|svc_balance_due/i.test(primaryName)) {
+    push(SMOKE, [name]);
+  }
   return attempts;
 }
 
@@ -635,6 +688,15 @@ async function sendTemplateWithColdFallbacks({
     return String(p?.type || '').toLowerCase() === 'document' || Boolean(p?.document);
   });
   for (const fb of buildFallbackAttempts(templateName, params, hasDocHeader, headers)) {
+    if (isUnsafeColdFallback(templateName, fb.name)) {
+      console.warn(
+        '[whatsapp-cold-fallback] skip unsafe fallback',
+        templateName,
+        '→',
+        fb.name
+      );
+      continue;
+    }
     const fbButtons = templateUsesDynamicPayNowUrl(fb.name) ? urlButtons : [];
     const fbResult = await callWhatsAppApi(
       phoneNumberId,
@@ -673,6 +735,7 @@ module.exports = {
   isTemplateMetaError,
   buildTemplatePayload,
   buildFallbackAttempts,
+  isUnsafeColdFallback,
   templateUsesDynamicPayNowUrl,
   sendTemplateWithColdFallbacks,
 };
