@@ -1263,7 +1263,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     >
       <span className="flex-1">{label}</span>
       {isListRangeActive(range) ? (
-        <Check className="ml-2 h-4 w-4 shrink-0 text-[#00a884]" />
+        <Check className="ml-2 h-4 w-4 shrink-0 text-[#8696a0]" />
       ) : null}
     </DropdownMenuItem>
   );
@@ -1586,7 +1586,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           ) : null}
           <h1 className="text-base font-semibold text-[#e9edef]">Inbox</h1>
           {unreadCount > 0 ? (
-            <span className="rounded-full bg-[#00a884] px-2 py-0.5 text-[11px] font-semibold text-white">
+            <span className="rounded-full bg-[#2a3942] px-2 py-0.5 text-[11px] font-semibold text-[#e9edef]">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           ) : null}
@@ -1608,7 +1608,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <h2 className="text-[20px] font-semibold tracking-tight text-[#e9edef] md:hidden">
                     Chats
                     {unreadCount > 0 ? (
-                      <span className="ml-2 align-middle text-[12px] font-semibold text-[#00a884]">
+                      <span className="ml-2 align-middle text-[12px] font-semibold text-[#8696a0]">
                         {unreadCount > 99 ? '99+' : unreadCount} new
                       </span>
                     ) : null}
@@ -1617,7 +1617,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <h2 className="text-[15px] font-medium tracking-tight text-[#e9edef] md:hidden">
                     Chats
                     {unreadCount > 0 ? (
-                      <span className="ml-2 align-middle text-[12px] font-semibold text-[#00a884]">
+                      <span className="ml-2 align-middle text-[12px] font-semibold text-[#8696a0]">
                         {unreadCount > 99 ? '99+' : unreadCount} new
                       </span>
                     ) : null}
@@ -1682,7 +1682,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         >
                           <span className="flex-1">Custom date…</span>
                           {typeof listRange === 'object' ? (
-                            <Check className="ml-2 h-4 w-4 shrink-0 text-[#00a884]" />
+                            <Check className="ml-2 h-4 w-4 shrink-0 text-[#8696a0]" />
                           ) : null}
                         </DropdownMenuItem>
                       </DropdownMenuSubContent>
@@ -1774,7 +1774,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search name, phone, email…"
-                  className="h-9 rounded-xl border-0 bg-[#202c33] pl-9 pr-8 text-[13px] text-[#e9edef] shadow-none placeholder:text-[#667781] focus-visible:ring-1 focus-visible:ring-[#00a884]/40"
+                  className="h-9 rounded-xl border-0 bg-[#202c33] pl-9 pr-8 text-[13px] text-[#e9edef] shadow-none placeholder:text-[#667781] focus-visible:ring-1 focus-visible:ring-[#8696a0]/40"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -1800,7 +1800,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               <Button
                 type="button"
                 size="sm"
-                className="h-9 shrink-0 cursor-pointer rounded-xl bg-[#00a884] px-3.5 text-[12px] font-semibold text-white shadow-sm hover:bg-[#008f72]"
+                className="h-9 shrink-0 cursor-pointer rounded-xl bg-[#2a3942] px-3.5 text-[12px] font-semibold text-[#e9edef] shadow-sm hover:bg-[#3b4a54]"
                 disabled={searchLoading || query.trim().length < 2}
                 onClick={() => void runSearch()}
               >
@@ -1816,7 +1816,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 Results for “{appliedSearch}” ·{' '}
                 <button
                   type="button"
-                  className="cursor-pointer font-medium text-[#00a884] underline-offset-2 hover:underline"
+                  className="cursor-pointer font-medium text-[#e9edef] underline-offset-2 hover:underline"
                   onClick={clearSearch}
                 >
                   {listRangeSubtitle}
@@ -1843,7 +1843,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 {!appliedSearch.trim() ? (
                   <Button
                     type="button"
-                    className="cursor-pointer rounded-xl bg-[#00a884] text-white hover:bg-[#008f72]"
+                    className="cursor-pointer rounded-xl bg-[#2a3942] text-[#e9edef] hover:bg-[#3b4a54]"
                     onClick={() => setNewChatOpen(true)}
                   >
                     <MessageSquarePlus className="mr-2 h-4 w-4" />
@@ -1874,16 +1874,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       >
                         {active ? (
                           <span
-                            className="absolute left-0 top-1/2 h-8 w-[3px] -translate-y-1/2 rounded-r-full bg-[#00a884]"
+                            className="absolute left-0 top-1/2 h-8 w-[3px] -translate-y-1/2 rounded-r-full bg-[#8696a0]"
                             aria-hidden
                           />
                         ) : null}
                         <WhatsAppAvatar
                           name={t.customer_name}
-                          className={cn(
-                            'ring-2 ring-[#0b141a]',
-                            active ? 'bg-[#005c4b] text-[#e9edef]' : null
-                          )}
+                          className="ring-2 ring-[#0b141a]"
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-baseline justify-between gap-2">
@@ -1898,7 +1895,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                             <span
                               className={cn(
                                 'shrink-0 text-[11px] tabular-nums',
-                                unread ? 'font-semibold text-[#00a884]' : 'text-[#667781]'
+                                unread ? 'font-semibold text-[#e9edef]' : 'text-[#667781]'
                               )}
                             >
                               {formatThreadTime(t.last_at)}
@@ -1924,7 +1921,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               {t.last_body}
                             </p>
                             {unread ? (
-                              <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[#00a884] px-1 text-[10px] font-bold text-[#0b141a] shadow-sm">
+                              <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[#53bdeb] px-1 text-[10px] font-bold text-[#0b141a] shadow-sm">
                                 1
                               </span>
                             ) : null}
@@ -1950,7 +1947,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           <button
             type="button"
             onClick={() => setNewChatOpen(true)}
-            className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-10 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-[#00a884] text-white shadow-lg transition active:scale-95 md:hidden"
+            className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-10 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-[#2a3942] text-[#e9edef] shadow-lg transition hover:bg-[#3b4a54] active:scale-95 md:hidden"
             title="New chat"
             aria-label="New chat"
           >
