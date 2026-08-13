@@ -1,8 +1,18 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Customer } from '@/types';
-import { Camera, Upload, Image, Trash2 } from 'lucide-react';
+import { Camera, Download, FileText, Image, Images, Loader2, Upload, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { supabase } from '@/lib/supabaseClient';
+import { fetchWhatsAppR2SignedUrl } from '@/lib/sendAdminWhatsAppApi';
+import {
+  isR2MediaRef,
+  listCustomerWhatsAppDocuments,
+  type WhatsAppCustomerDocument,
+} from '@/lib/whatsappInbox';
+import { cn } from '@/lib/utils';
 
 interface CustomerPhotoGalleryDialogProps {
   open: boolean;
@@ -23,6 +33,19 @@ interface CustomerPhotoGalleryDialogProps {
   onDeletePhoto: (photoUrl: string, photoIndex: number) => void;
 }
 
+function directHttpsUrl(ref: string | null | undefined): string | null {
+  const raw = String(ref || '').trim();
+  if (!raw || isR2MediaRef(raw)) return null;
+  return /^https:\/\//i.test(raw) ? raw : null;
+}
+
+function documentLabel(row: WhatsAppCustomerDocument): string {
+  const name = String(row.filename || '').trim();
+  if (name) return name;
+  if (String(row.media_mime || '').includes('pdf') || row.msg_type === 'pdf') return 'PDF';
+  return 'WhatsApp document';
+}
+
 const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
   open,
   onOpenChange,
@@ -41,27 +64,179 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
   onPhotoClick,
   onDeletePhoto
 }) => {
-  if (!customer) return null;
+  const [tab, setTab] = useState('photos');
+  const [docs, setDocs] = useState<WhatsAppCustomerDocument[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+  const [docsLoadedFor, setDocsLoadedFor] = useState<string | null>(null);
+  const [busyDocId, setBusyDocId] = useState<string | null>(null);
 
-  const customerId = customer.customer_id || customer.customerId || '';
-  // Sort photos to show latest first (reverse array)
+  const customerId = customer?.customer_id || customer?.customerId || '';
+  const customerUuid =
+    typeof customer?.id === 'string' && customer.id.includes('-') ? customer.id : '';
   const photos = [...(customerPhotos[customerId] || [])].reverse();
   const uploadingCount = Object.keys(uploadingThumbnails).length;
   const hasPhotos = photos.length > 0 || uploadingCount > 0;
+  const loadKey = `${customerUuid || customerId}|${customer?.phone || ''}`;
+  const customerPhone = customer?.phone || '';
+  const customerAlt =
+    customer?.alternate_phone ||
+    (customer as { alternatePhone?: string } | null)?.alternatePhone ||
+    '';
+
+  useEffect(() => {
+    if (!open) {
+      setTab('photos');
+      return;
+    }
+    setDocsLoadedFor(null);
+    setDocs([]);
+    setDocsError(null);
+    setTab('photos');
+  }, [open, loadKey]);
+
+  // Prefetch WhatsApp docs on open (same whatsapp_messages.media_url — no second copy).
+  // Documents tab only appears when at least one doc exists.
+  useEffect(() => {
+    if (!open || !customer || docsLoadedFor === loadKey) return;
+    let cancelled = false;
+    setDocsLoading(true);
+    setDocsError(null);
+    void (async () => {
+      const result = await listCustomerWhatsAppDocuments(supabase, {
+        customerId: customerUuid || null,
+        phone: customerPhone,
+        alternatePhone: customerAlt,
+        limit: 80,
+      });
+      if (cancelled) return;
+      setDocsLoading(false);
+      if (result.error) {
+        setDocsError(result.error);
+        setDocs([]);
+        setDocsLoadedFor(loadKey);
+        setTab('photos');
+        toast.error('Could not load WhatsApp documents');
+        return;
+      }
+      setDocs(result.rows);
+      setDocsLoadedFor(loadKey);
+      if (result.rows.length === 0) setTab('photos');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, loadKey, customer, customerUuid, customerPhone, customerAlt, docsLoadedFor]);
+
+  if (!customer) return null;
+
+  const showDocumentsTab = docs.length > 0;
+
+  const resolveDocUrl = async (row: WhatsAppCustomerDocument): Promise<string | null> => {
+    const direct = directHttpsUrl(row.media_url);
+    if (direct) return direct;
+    const signed = await fetchWhatsAppR2SignedUrl({
+      mediaUrl: row.media_url,
+      messageId: row.id,
+    });
+    return signed.ok && signed.url ? signed.url : null;
+  };
+
+  const openDoc = async (row: WhatsAppCustomerDocument) => {
+    setBusyDocId(row.id);
+    try {
+      const url = await resolveDocUrl(row);
+      if (!url) {
+        toast.error('Could not open document');
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setBusyDocId(null);
+    }
+  };
+
+  const downloadDoc = async (row: WhatsAppCustomerDocument) => {
+    setBusyDocId(row.id);
+    try {
+      const url = await resolveDocUrl(row);
+      if (!url) {
+        toast.error('Could not download document');
+        return;
+      }
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = documentLabel(row);
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      setBusyDocId(null);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[85vw] lg:max-w-7xl max-h-[95vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader className="space-y-3 sm:space-y-2">
           <DialogTitle className="flex items-center gap-2">
-            <span className="text-lg sm:text-xl font-semibold">Photo Gallery</span>
+            <span className="text-lg sm:text-xl font-semibold">Gallery</span>
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
-            View and manage photos for this customer
+            {showDocumentsTab
+              ? 'Customer photos, plus WhatsApp PDFs (same links as the inbox — delete there and they leave here too).'
+              : 'Photos for this customer'}
           </DialogDescription>
         </DialogHeader>
-        
-        <div className="space-y-4 sm:space-y-6">
+
+        <Tabs
+          value={showDocumentsTab ? tab : 'photos'}
+          onValueChange={setTab}
+          className="w-full"
+        >
+          {showDocumentsTab && (
+            <TabsList
+              className={cn(
+                'grid h-auto w-full grid-cols-2 gap-1 rounded-xl border border-border/80 bg-muted/60 p-1.5',
+                'sm:inline-flex sm:w-auto sm:min-w-[280px]'
+              )}
+            >
+              <TabsTrigger
+                value="photos"
+                className={cn(
+                  'group min-h-[44px] cursor-pointer gap-2 rounded-lg px-3 text-sm font-medium transition-colors duration-200',
+                  'data-[state=active]:bg-sky-700 data-[state=active]:text-white data-[state=active]:shadow-sm',
+                  'data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:bg-background/70 data-[state=inactive]:hover:text-foreground'
+                )}
+              >
+                <Images className="h-4 w-4 shrink-0" aria-hidden />
+                Photos
+                {(photos.length + uploadingCount) > 0 && (
+                  <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none group-data-[state=active]:bg-white/20">
+                    {photos.length + uploadingCount}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                value="documents"
+                className={cn(
+                  'group min-h-[44px] cursor-pointer gap-2 rounded-lg px-3 text-sm font-medium transition-colors duration-200',
+                  'data-[state=active]:bg-sky-700 data-[state=active]:text-white data-[state=active]:shadow-sm',
+                  'data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:bg-background/70 data-[state=inactive]:hover:text-foreground'
+                )}
+              >
+                <FileText className="h-4 w-4 shrink-0" aria-hidden />
+                Documents
+                <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none group-data-[state=active]:bg-white/20">
+                  {docs.length}
+                </span>
+              </TabsTrigger>
+            </TabsList>
+          )}
+
+          <TabsContent value="photos" className="mt-4 space-y-4 sm:space-y-6">
           {/* Upload Area - Only show if no photos and no uploading thumbnails */}
           {!hasPhotos && (
             <div
@@ -289,11 +464,86 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
               </div>
             </div>
           )}
-        </div>
+          </TabsContent>
+
+          {showDocumentsTab && (
+          <TabsContent value="documents" className="mt-4">
+            {docsLoading ? (
+              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading WhatsApp documents…
+              </div>
+            ) : docsError ? (
+              <p className="py-8 text-center text-sm text-red-600">{docsError}</p>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  {docs.length} document{docs.length !== 1 ? 's' : ''} from WhatsApp
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Opens the same stored link as the inbox. Deleting the chat message removes it here too.
+                </p>
+                <ul className="divide-y divide-border rounded-lg border border-border">
+                  {docs.map((row) => (
+                    <li
+                      key={row.id}
+                      className="flex items-center gap-3 px-3 py-3"
+                    >
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-red-500/10 text-red-600">
+                        <FileText className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {documentLabel(row)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(row.created_at).toLocaleString('en-IN', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="min-h-[40px] cursor-pointer"
+                          disabled={busyDocId === row.id}
+                          onClick={() => void openDoc(row)}
+                        >
+                          {busyDocId === row.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            'Open'
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-10 w-10 cursor-pointer"
+                          disabled={busyDocId === row.id}
+                          onClick={() => void downloadDoc(row)}
+                          aria-label="Download"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </TabsContent>
+          )}
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
 };
 
 export default CustomerPhotoGalleryDialog;
-

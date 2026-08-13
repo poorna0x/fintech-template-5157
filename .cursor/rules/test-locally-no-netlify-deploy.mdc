@@ -1,0 +1,14 @@
+---
+description: Test locally; do not deploy to Netlify unless asked (save build credits)
+alwaysApply: true
+---
+
+# Test Locally — No Netlify Deploys Until Asked
+
+Netlify build minutes / credits are limited. Prefer local testing for all work unless the user explicitly asks to deploy.
+
+- **Never deploy to Netlify** (`netlify deploy`, `netlify deploy --prod`, production publish, or anything that triggers a site build) unless the user explicitly asks in that conversation (e.g. "deploy", "push to netlify", "go live").
+- **Never git push** solely to trigger a Netlify build. Git push is already gated by `no-push-until-asked`; do not suggest push/deploy as the default way to verify a change.
+- **Test with local stack**: `npm run dev` (Vite on `:8080` + functions on `:8888` via `netlify/functions/dev-server.cjs`). Put secrets in `.env.local` (gitignored), not in Netlify env, for POC/local work.
+- For Netlify Functions (WhatsApp, webhooks, etc.): wire them into the local functions server + Vite proxy first; use ngrok only if Meta must hit a public webhook URL — still do **not** deploy the whole site for that unless asked.
+- When a change truly needs production to verify, ask the user first and explain why local isn't enough — then wait for an explicit deploy OK.

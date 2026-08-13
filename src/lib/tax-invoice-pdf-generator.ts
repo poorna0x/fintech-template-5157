@@ -4,7 +4,11 @@
 import { getCompanyStateCode } from './indian-state-codes';
 import { sanitizeForTemplate, sanitizeNotesHtml } from './sanitize';
 import { resolveBrandSealSrc, resolveDocumentBrandFromData } from './service-brands';
-import { downloadDocumentPdf, downloadDocumentPdfReturningBase64 } from './server-pdf-download';
+import {
+  downloadDocumentPdf,
+  downloadDocumentPdfReturningBase64,
+  withAbsoluteAssetUrls,
+} from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 import {
   buildInvoicePaymentNoticeHtml,
@@ -12,6 +16,7 @@ import {
   documentPaymentNoticeCss,
 } from './document-payment';
 import {
+  formatDocumentPdfVerifyFooterLine,
   generateDocumentPdfVerifyCode,
   recordDocumentPdfAuthenticity,
 } from './documentPdfAuthenticity';
@@ -232,7 +237,7 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
     const invoiceContent = createTaxInvoiceContent(billData);
     
     // Write content to new window
-    printWindow.document.write(buildTaxInvoiceDocumentHtml(billData));
+    printWindow.document.write(withAbsoluteAssetUrls(buildTaxInvoiceDocumentHtml(billData)));
     printWindow.document.close();
     
     // Wait for content to load, then print
@@ -740,7 +745,15 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
           <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
           ` : ''}
           ${(data as any).pdfOptions?.authenticityVerifyCode ? `
-          <p style="margin-top: 6px; letter-spacing: 0.02em; color: #9ca3af;">Verify authenticity in CRM · Code ${sanitizeForTemplate(String((data as any).pdfOptions.authenticityVerifyCode))}</p>
+          <p style="margin-top: 6px; letter-spacing: 0.02em; color: #9ca3af;">${sanitizeForTemplate(
+            formatDocumentPdfVerifyFooterLine(
+              String((data as any).pdfOptions.authenticityVerifyCode),
+              resolveDocumentBrandFromData({
+                company: data.company,
+                documentBrand: (data as { documentBrand?: unknown }).documentBrand,
+              })
+            )
+          )}</p>
           ` : ''}
         </div>
       ` : ''}
@@ -947,6 +960,29 @@ function getTaxInvoiceDocumentStyles(): string {
             padding-left: 10px;
             border-left: 3px solid #d1d5db;
             color: #4b5563;
+          }
+          .notes-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0;
+            table-layout: fixed;
+            font-size: inherit;
+          }
+          .notes-content th,
+          .notes-content td {
+            border: 1px solid #d1d5db;
+            padding: 6px 8px;
+            text-align: left;
+            vertical-align: top;
+            word-break: break-word;
+          }
+          .notes-content th {
+            background: #f3f4f6;
+            font-weight: 700;
+            color: #111827;
+          }
+          .notes-content tbody tr:nth-child(even) td {
+            background: #f9fafb;
           }
           
           .terms-list {
@@ -1402,6 +1438,29 @@ export async function generateCombinedTaxInvoicePDF(
             border-left: 3px solid #d1d5db;
             color: #4b5563;
           }
+          .notes-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0;
+            table-layout: fixed;
+            font-size: inherit;
+          }
+          .notes-content th,
+          .notes-content td {
+            border: 1px solid #d1d5db;
+            padding: 6px 8px;
+            text-align: left;
+            vertical-align: top;
+            word-break: break-word;
+          }
+          .notes-content th {
+            background: #f3f4f6;
+            font-weight: 700;
+            color: #111827;
+          }
+          .notes-content tbody tr:nth-child(even) td {
+            background: #f9fafb;
+          }
           
           .terms-list {
             margin: 0;
@@ -1598,7 +1657,7 @@ export async function generateCombinedTaxInvoicePDF(
       return;
     }
 
-    printWindow.document.write(combinedHtml);
+    printWindow.document.write(withAbsoluteAssetUrls(combinedHtml));
 
     printWindow.document.close();
     printWindow.onload = () => {

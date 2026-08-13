@@ -9,6 +9,7 @@ import {
   teamMemberAddedPushText,
   teamMemberRemovedPushText,
 } from '@/lib/adminTechPushNotify';
+import { queueTechnicianJobWhatsAppAutoMessage } from '@/lib/jobTechnicianWhatsApp';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -70,9 +71,19 @@ export async function saveAdminTeamMember(
     }
 
     // App push to the helper (primary assignee already got assign/reassign pushes).
+    const teamPush = teamMemberAddedPushText({ job: ctx.jobForTeam as any });
     notifyTechnicianJobPush({
       technicianId: ctx.selectedTeamMemberId,
-      ...teamMemberAddedPushText({ job: ctx.jobForTeam as any }),
+      ...teamPush,
+    });
+    queueTechnicianJobWhatsAppAutoMessage({
+      technicianId: ctx.selectedTeamMemberId,
+      category: 'job_assigned',
+      title: teamPush.title,
+      body: teamPush.body,
+      phone: teamMember?.phone,
+      whatsappPhone:
+        (teamMember as any)?.whatsappPhone || (teamMember as any)?.whatsapp_phone,
     });
 
     toast.success('Team member added successfully');
@@ -115,9 +126,16 @@ export async function removeAdminTeamMember(
 
     broadcastTechnicianJobListRefresh([ctx.selectedTeamMemberToRemove]);
 
+    const removedPush = teamMemberRemovedPushText({ job: ctx.jobForRemoveTeam as any });
     notifyTechnicianJobPush({
       technicianId: ctx.selectedTeamMemberToRemove,
-      ...teamMemberRemovedPushText({ job: ctx.jobForRemoveTeam as any }),
+      ...removedPush,
+    });
+    queueTechnicianJobWhatsAppAutoMessage({
+      technicianId: ctx.selectedTeamMemberToRemove,
+      category: 'job_unassigned',
+      title: removedPush.title,
+      body: removedPush.body,
     });
 
     toast.success('Team member removed successfully');

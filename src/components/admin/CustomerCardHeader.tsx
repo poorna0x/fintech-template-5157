@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Edit, Plus, Camera, FileText, MoreVertical, Receipt, Star, Bell, ShieldCheck } from 'lucide-react';
+import { Edit, Plus, Images, FileText, MoreVertical, Receipt, Star, Bell, ShieldCheck } from 'lucide-react';
 import { Customer } from '@/types';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { preloadDocumentGeneratorModals } from '@/lib/document-generator-preload';
@@ -161,9 +161,9 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
               <div className="w-2 h-2 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
             </div>
           ) : (
-            <Camera className="w-4 h-4" />
+            <Images className="w-4 h-4" />
           )}
-          Photos
+          Gallery
         </Button>
         <Button 
           variant="outline" 
@@ -255,9 +255,9 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
                 <div className="w-1.5 h-1.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
               </div>
             ) : (
-              <Camera className="w-3 h-3" />
+              <Images className="w-3 h-3" />
             )}
-            Photos
+            Gallery
           </Button>
           <Button 
             variant="outline" 

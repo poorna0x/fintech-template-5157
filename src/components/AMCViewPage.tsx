@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -17,6 +17,7 @@ import {
   FileText,
   Filter,
   ArrowLeft,
+  ArrowRight,
   CheckCircle,
   XCircle,
   Clock,
@@ -36,6 +37,7 @@ import { DocumentBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   computeAmcAutoCreateDue,
   computeAmcPreExpiryAutoCreate,
+  deriveAmcServicePeriodKind,
   getDefaultAmcServicePeriodMonths,
 } from '@/lib/amcAutoJobSchedule';
 import { getLocalCalendarDateYmd } from '@/lib/pendingPaymentReminder';
@@ -44,6 +46,19 @@ import {
   getAmcAmountFromContract,
   parseAmcAdditionalInfoMetadata,
 } from '@/lib/amc-contract-metadata';
+
+const AMC_PAGE_SIZE = 20;
+
+/** Label for AMC service auto-job period shown under Duration. */
+function formatAmcAutoGenPeriodLabel(servicePeriodMonths: number | null | undefined): string {
+  const usingDefault = servicePeriodMonths == null;
+  const { kind, custom } = deriveAmcServicePeriodKind(servicePeriodMonths);
+  const defaultHint = usingDefault ? ' (app default)' : '';
+  if (kind === 'no_auto') return 'No auto jobs';
+  if (kind === '4') return `Auto every 4 months${defaultHint}`;
+  if (kind === '6') return `Auto every 6 months${defaultHint}`;
+  return `Auto every ${custom} months${defaultHint}`;
+}
 
 interface AMCRecord {
   id: string;
@@ -88,8 +103,21 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
   const [loading, setLoading] = useState(true);
   const [runningAutoGen, setRunningAutoGen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXPIRED'>('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [selectedAMC, setSelectedAMC] = useState<AMCRecord | null>(null);
+  const techniciansLoadedRef = useRef(false);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+      setCurrentPage(1);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [searchTerm]);
+
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -107,8 +135,9 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
   });
 
   useEffect(() => {
-    loadAMCRecords();
-  }, []);
+    void loadAMCRecords(currentPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load when page/filters change; loadAMCRecords closes over latest filters
+  }, [currentPage, debouncedSearch, statusFilter]);
 
   const getCustomerOneWordLocation = (customer: any, metadata: any): string => {
     const address = customer?.address || metadata.customer_address || {};
@@ -270,7 +299,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
             ? `Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} (${failed} failed)`
             : `Created ${result.created} AMC service job${result.created > 1 ? 's' : ''}`
         );
-        await loadAMCRecords();
+        await loadAMCRecords(currentPage);
         return;
       }
 
@@ -304,21 +333,37 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
     }
   };
 
-  const loadAMCRecords = async () => {
+  const loadAMCRecords = async (page = currentPage) => {
     try {
       setLoading(true);
-      const { data: amcContracts, error } = await db.amcContracts.getAll(1000, 0);
+      const offset = (Math.max(1, page) - 1) * AMC_PAGE_SIZE;
+      // List pagination only — createAMCServiceJobs ignores this and scans all ACTIVE contracts.
+      const { data: amcContracts, error, count } = await db.amcContracts.getAll(
+        AMC_PAGE_SIZE,
+        offset,
+        {
+          endDateStatus: statusFilter,
+          search: debouncedSearch || undefined,
+          todayYmd: getLocalCalendarDateYmd(),
+        }
+      );
 
       if (error) {
         throw error;
       }
 
-      const { data: techniciansData } = await db.technicians.getAll(500, { activeRosterOnly: false });
-      const technicianList = techniciansData || [];
-      setTechnicians(technicianList);
+      setTotalCount(typeof count === 'number' ? count : 0);
+
+      let technicianList = technicians;
+      if (!techniciansLoadedRef.current) {
+        const { data: techniciansData } = await db.technicians.getAll(500, { activeRosterOnly: false });
+        technicianList = techniciansData || [];
+        setTechnicians(technicianList);
+        techniciansLoadedRef.current = true;
+      }
       const technicianById = new Map<string, any>(technicianList.map((tech: any) => [tech.id, tech]));
 
-      // Transform AMC contracts to AMCRecord format
+      // Transform current page of AMC contracts to AMCRecord format
       const amcList: AMCRecord[] = [];
       const customerIds = [...new Set((amcContracts || []).map((amc: any) => amc.customer_id).filter(Boolean))] as string[];
       const jobIds = [...new Set((amcContracts || []).map((amc: any) => amc.job_id).filter(Boolean))] as string[];
@@ -479,13 +524,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
         }
       }
 
-      // Sort by date given (newest first)
-      amcList.sort((a, b) => {
-        const dateA = new Date(a.dateGiven).getTime();
-        const dateB = new Date(b.dateGiven).getTime();
-        return dateB - dateA;
-      });
-
+      // Server already orders by created_at desc
       setAmcRecords(amcList);
     } catch (error: any) {
       console.error('Error loading AMC records:', error);
@@ -495,44 +534,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
     }
   };
 
-  const filteredAMCs = useMemo(() => {
-    let filtered = amcRecords;
-
-    // Filter by search term
-    if (searchTerm.trim()) {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(amc =>
-        amc.customerName.toLowerCase().includes(searchLower) ||
-        amc.customerPhone.includes(searchTerm) ||
-        amc.customerLocation.toLowerCase().includes(searchLower) ||
-        amc.givenByTechnicianName.toLowerCase().includes(searchLower) ||
-        amc.autoGenerationLabel.toLowerCase().includes(searchLower) ||
-        (amc.nextAutoGenerationDate || '').includes(searchTerm) ||
-        amc.brand.toLowerCase().includes(searchLower) ||
-        amc.model.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Filter by status
-    if (statusFilter !== 'ALL') {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      filtered = filtered.filter(amc => {
-        const endDate = new Date(amc.endDate);
-        endDate.setHours(0, 0, 0, 0);
-        
-        if (statusFilter === 'ACTIVE') {
-          return endDate >= today;
-        } else if (statusFilter === 'EXPIRED') {
-          return endDate < today;
-        }
-        return true;
-      });
-    }
-
-    return filtered;
-  }, [amcRecords, searchTerm, statusFilter]);
+  const totalPages = Math.max(1, Math.ceil(totalCount / AMC_PAGE_SIZE));
 
   const getAMCStatus = (endDate: string): 'ACTIVE' | 'EXPIRED' => {
     const today = new Date();
@@ -631,7 +633,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       toast.success('AMC updated successfully');
       setEditDialogOpen(false);
       setSelectedAMC(null);
-      loadAMCRecords(); // Reload records
+      void loadAMCRecords(currentPage);
     } catch (error: any) {
       console.error('Error updating AMC:', error);
       toast.error('Failed to update AMC: ' + (error.message || 'Unknown error'));
@@ -652,7 +654,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       toast.success('AMC deleted successfully');
       setDeleteDialogOpen(false);
       setAmcToDelete(null);
-      loadAMCRecords(); // Reload records
+      void loadAMCRecords(currentPage);
       onAMCDeleted?.(); // Refresh parent (e.g. dashboard green dot)
     } catch (error: any) {
       console.error('Error deleting AMC:', error);
@@ -738,7 +740,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                 {runningAutoGen ? 'Running…' : 'Run AMC generation now'}
               </Button>
               <div className="text-sm text-gray-600 whitespace-nowrap">
-                Total: {filteredAMCs.length} AMC{filteredAMCs.length !== 1 ? 's' : ''}
+                {totalCount} AMC{totalCount !== 1 ? 's' : ''}
+                {totalPages > 1 ? ` · page ${currentPage}/${totalPages}` : ''}
               </div>
             </div>
           </div>
@@ -760,7 +763,13 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                 </div>
               </div>
               <div className="w-full sm:w-48">
-                <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
+                <Select
+                  value={statusFilter}
+                  onValueChange={(value: 'ALL' | 'ACTIVE' | 'EXPIRED') => {
+                    setStatusFilter(value);
+                    setCurrentPage(1);
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
@@ -776,7 +785,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
         </Card>
 
         {/* AMC Table */}
-        {filteredAMCs.length === 0 ? (
+        {amcRecords.length === 0 ? (
           <Card>
             <CardContent className="p-12 text-center">
               <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -791,13 +800,14 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                   If you see AMC contracts on another device (e.g. your phone), sign in with the <strong>same admin account</strong> on this device. Each browser or incognito window has its own sign-in.
                 </p>
               )}
-              <Button variant="outline" onClick={() => loadAMCRecords()}>
+              <Button variant="outline" onClick={() => void loadAMCRecords(currentPage)}>
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Retry
               </Button>
             </CardContent>
           </Card>
         ) : (
+          <>
           <Card>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
@@ -817,7 +827,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredAMCs.map((amc) => {
+                    {amcRecords.map((amc) => {
                       const status = getAMCStatus(amc.endDate);
                       return (
                         <TableRow key={amc.id}>
@@ -853,7 +863,14 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                             {amc.endDate ? new Date(amc.endDate).toLocaleDateString('en-IN') : 'N/A'}
                           </TableCell>
                           <TableCell>
-                            {amc.years} {amc.years === 1 ? 'year' : 'years'}
+                            <div className="text-sm">
+                              <div className="font-medium text-gray-900">
+                                {amc.years} {amc.years === 1 ? 'year' : 'years'}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {formatAmcAutoGenPeriodLabel(amc.servicePeriodMonths)}
+                              </div>
+                            </div>
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">
@@ -930,6 +947,39 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
               </div>
             </CardContent>
           </Card>
+          {totalPages > 1 && (
+            <div className="mt-4 flex flex-col items-center gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  disabled={loading || currentPage <= 1}
+                  onClick={() => currentPage > 1 && setCurrentPage(currentPage - 1)}
+                >
+                  <ArrowLeft className="h-4 w-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Previous</span>
+                </Button>
+                <span className="text-sm text-gray-700 tabular-nums px-2 min-w-[5.5rem] text-center">
+                  {currentPage} / {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  disabled={loading || currentPage >= totalPages}
+                  onClick={() => currentPage < totalPages && setCurrentPage(currentPage + 1)}
+                >
+                  <span className="hidden sm:inline">Next</span>
+                  <ArrowRight className="h-4 w-4 sm:ml-1" />
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500">{totalCount} total AMCs</p>
+            </div>
+          )}
+          </>
         )}
 
         {/* View AMC Dialog */}
@@ -994,6 +1044,9 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                     <Label className="text-xs text-gray-500">Duration</Label>
                     <p className="font-medium">
                       {selectedAMC.years} {selectedAMC.years === 1 ? 'year' : 'years'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {formatAmcAutoGenPeriodLabel(selectedAMC.servicePeriodMonths)}
                     </p>
                   </div>
                   <div>

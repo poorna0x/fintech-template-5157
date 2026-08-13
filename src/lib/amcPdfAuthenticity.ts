@@ -5,6 +5,7 @@
 import { supabase } from '@/lib/supabaseClient';
 import { billToAmcPdfData, generateAMCHTML, type AMCPDFOptions } from '@/lib/amc-pdf-generator';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
+import { formatDocumentPdfVerifyFooterLine } from '@/lib/documentPdfAuthenticity';
 import type { Bill } from '@/types';
 
 const VERIFY_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
@@ -61,8 +62,11 @@ export async function sha256HexFromFile(file: File): Promise<string> {
 }
 
 /** Footer line that blends with existing footer-text (no QR). */
-export function formatAmcPdfVerifyFooterLine(verifyCode: string): string {
-  return `Verify authenticity in CRM · Code ${verifyCode}`;
+export function formatAmcPdfVerifyFooterLine(
+  verifyCode: string,
+  brand?: string | null
+): string {
+  return formatDocumentPdfVerifyFooterLine(verifyCode, brand);
 }
 
 export function buildAmcPdfAuthenticityOptions(opts: {

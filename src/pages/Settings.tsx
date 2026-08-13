@@ -39,7 +39,8 @@ import {
   GitMerge,
   Repeat,
   ShieldCheck,
-  CalendarPlus
+  CalendarPlus,
+  Database
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -56,16 +57,40 @@ import { isValidUpiId, normalizeUpiId, normalizePaymentPhone } from '@/lib/upiPa
 // button actions (data export ZIP, styled QR image). They are dynamically
 // imported at their call sites so they stay out of the main Settings chunk.
 import CallingPage from '@/pages/CallingPage';
+import WhatsAppInboxPage from '@/pages/WhatsAppInboxPage';
+import WhatsAppSettingsPage from '@/pages/WhatsAppSettingsPage';
+import LeadCatalogSettingsPage from '@/pages/LeadCatalogSettingsPage';
 import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
 import { DeviceTrackerSettings } from '@/components/admin/DeviceTrackerSettings';
+import {
+  defaultTechPushPrefs,
+  normalizeTechPushPrefs,
+  TECH_PUSH_CATEGORIES,
+  TECH_PUSH_LABELS,
+  type TechPushPrefs,
+} from '@/lib/pushNotificationPrefs';
+import {
+  defaultTechWhatsAppPrefs,
+  normalizeTechWhatsAppPrefs,
+  TECH_WHATSAPP_CATEGORIES,
+  TECH_WHATSAPP_LABELS,
+  type TechWhatsAppPrefs,
+} from '@/lib/techWhatsAppPrefs';
 import { AdminAppLockSettings } from '@/components/admin/AdminAppLockSettings';
 import { AppCrashReports } from '@/components/admin/AppCrashReports';
 import {
   isFollowUpGlowEnabled,
   setFollowUpGlowEnabled,
 } from '@/lib/followUpGlowSettings';
+import {
+  JOB_WA_NOTIFY_CHANGED_EVENT,
+  fetchJobWhatsAppNotifyPrefs,
+  readJobWhatsAppNotifyPrefsCached,
+  saveJobWhatsAppMasterEnabled,
+  type JobWhatsAppNotifyPrefs,
+} from '@/lib/jobAssignWhatsAppSettingsCache';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
@@ -74,6 +99,7 @@ import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
 import PdfAuthenticityVerifyPage from '@/pages/PdfAuthenticityVerifyPage';
+import DbStorageStatsPage from '@/pages/DbStorageStatsPage';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
@@ -127,6 +153,12 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'admin_users', orderBy: 'id', label: 'Admin Users' },
   { name: 'admin_audit_log', orderBy: 'created_at', label: 'Admin Audit Log', optional: true },
   { name: 'amc_contracts', orderBy: 'created_at', label: 'AMC Contracts' },
+  {
+    name: 'amc_pdf_authenticity',
+    orderBy: 'created_at',
+    label: 'AMC PDF Authenticity',
+    optional: true,
+  },
   { name: 'amount_trackers', orderBy: 'created_at', label: 'Amount Trackers' },
   { name: 'app_crash_reports', orderBy: 'last_seen_at', label: 'App Crash Reports', optional: true },
   { name: 'booking_abandonments', orderBy: 'created_at', label: 'Booking Abandonments', optional: true },
@@ -136,6 +168,12 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'crm_settings', orderBy: 'key', label: 'CRM Settings', optional: true },
   { name: 'customers', orderBy: 'created_at', label: 'Customers' },
   { name: 'document_drafts', orderBy: 'updated_at', label: 'Document Drafts' },
+  {
+    name: 'document_pdf_authenticity',
+    orderBy: 'created_at',
+    label: 'Document PDF Authenticity',
+    optional: true,
+  },
   { name: 'follow_ups', orderBy: 'created_at', label: 'Follow-ups' },
   { name: 'inventory', orderBy: 'created_at', label: 'Inventory' },
   { name: 'inventory_bundle_items', orderBy: 'id', label: 'Inventory Bundle Items' },
@@ -202,6 +240,40 @@ const DATABASE_EXPORT_TABLES: {
     name: 'website_booking_intent_archive',
     orderBy: 'archived_at',
     label: 'Website Booking Intent Archive',
+    optional: true,
+  },
+  { name: 'app_secrets', orderBy: 'key', label: 'App Secrets (values redacted)', optional: true },
+  {
+    name: 'auth_login_attempts',
+    orderBy: 'last_attempt_at',
+    label: 'Auth Login Attempts',
+    optional: true,
+  },
+  {
+    name: 'document_accept_invites',
+    orderBy: 'created_at',
+    label: 'Document Accept Invites',
+    optional: true,
+  },
+  {
+    name: 'pdf_authenticity_otp',
+    orderBy: 'created_at',
+    label: 'PDF Authenticity OTP',
+    optional: true,
+  },
+  { name: 'push_crm_settings', orderBy: 'id', label: 'Push CRM Settings', optional: true },
+  {
+    name: 'whatsapp_booking_bot_state',
+    orderBy: 'updated_at',
+    label: 'WhatsApp Booking Bot State',
+    optional: true,
+  },
+  { name: 'whatsapp_crm_settings', orderBy: 'id', label: 'WhatsApp CRM Settings', optional: true },
+  { name: 'whatsapp_messages', orderBy: 'created_at', label: 'WhatsApp Messages', optional: true },
+  {
+    name: 'whatsapp_usage_monthly',
+    orderBy: 'month_key',
+    label: 'WhatsApp Usage Monthly',
     optional: true,
   },
 ];
@@ -348,6 +420,8 @@ const Settings = () => {
     salaryEffectiveFromMonth: getCurrentMonthKey(),
     accountStatus: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED',
     pushNotificationsEnabled: true,
+    pushPrefs: defaultTechPushPrefs() as TechPushPrefs,
+    whatsappPrefs: defaultTechWhatsAppPrefs() as TechWhatsAppPrefs,
     visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
     commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
   });
@@ -360,6 +434,15 @@ const Settings = () => {
   });
 
   const [followUpGlowEnabled, setFollowUpGlowEnabledState] = useState<boolean>(isFollowUpGlowEnabled);
+  const [jobWaNotifyPrefs, setJobWaNotifyPrefs] = useState<JobWhatsAppNotifyPrefs>(
+    () =>
+      readJobWhatsAppNotifyPrefsCached() || {
+        enabled: true,
+        autoAssign: false,
+        autoUnassign: false,
+      }
+  );
+  const [jobWaNotifySaving, setJobWaNotifySaving] = useState(false);
 
   // Download data state
   const [isDownloading, setIsDownloading] = useState(false);
@@ -389,11 +472,23 @@ const Settings = () => {
   const [showCallingPage, setShowCallingPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'calling'
   );
+  const [showWhatsAppInboxPage, setShowWhatsAppInboxPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'whatsapp-inbox'
+  );
+  const [showWhatsAppSettingsPage, setShowWhatsAppSettingsPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'whatsapp-settings'
+  );
   const [showPdfAuthenticityPage, setShowPdfAuthenticityPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'pdf-authenticity'
   );
+  const [showDbStoragePage, setShowDbStoragePage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'db-storage'
+  );
   const [showRecurringServicePage, setShowRecurringServicePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'recurring-service'
+  );
+  const [showLeadCatalogPage, setShowLeadCatalogPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'lead-catalog'
   );
 
   const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
@@ -436,6 +531,13 @@ const Settings = () => {
       ({ setAdminPushDeepLinkHandler, queueAdminPushDeepLink }) => {
         if (cancelled) return;
         setAdminPushDeepLinkHandler((payload) => {
+          if (payload.kind === 'settings' && payload.panel === 'whatsapp-inbox') {
+            const phone = payload.phone || payload.reminderId;
+            if (!phone) return;
+            navigate(settingsPanelPath('whatsapp-inbox', { id: phone }));
+            return;
+          }
+
           if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
             navigate(
               settingsPanelPath(payload.panel, {
@@ -476,8 +578,12 @@ const Settings = () => {
     prevSettingsPanelRef.current = panel;
 
     setShowCallingPage(panel === 'calling');
+    setShowWhatsAppInboxPage(panel === 'whatsapp-inbox');
+    setShowWhatsAppSettingsPage(panel === 'whatsapp-settings');
     setShowPdfAuthenticityPage(panel === 'pdf-authenticity');
+    setShowDbStoragePage(panel === 'db-storage');
     setShowRecurringServicePage(panel === 'recurring-service');
+    setShowLeadCatalogPage(panel === 'lead-catalog');
     setRemindersDialogOpen(panel === 'reminders');
     setAdvancedSearchDialogOpen(panel === 'advanced-search');
     setAddGeneralReminderOpen(panel === 'add-general-reminder');
@@ -537,6 +643,8 @@ const Settings = () => {
           commonQrCodeIds: (tech as any).commonQrCodeIds || [],
           accountStatus: (tech.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
           pushNotificationsEnabled: tech.push_notifications_enabled !== false,
+          pushPrefs: normalizeTechPushPrefs((tech as any).push_prefs),
+          whatsappPrefs: normalizeTechWhatsAppPrefs((tech as any).whatsapp_prefs),
         });
         setNewlyCreatedTechnicianId(null);
       }
@@ -612,6 +720,33 @@ const Settings = () => {
     });
   }, [location.search, navigate]);
 
+  // Thin hydrate of job WhatsApp prefs (4 bools) once; assign path uses localStorage after.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { prefs } = await fetchJobWhatsAppNotifyPrefs();
+      if (!cancelled) setJobWaNotifyPrefs(prefs);
+    })();
+    const onChanged = (ev: Event) => {
+      const detail = (ev as CustomEvent<JobWhatsAppNotifyPrefs>).detail;
+      if (detail && typeof detail.enabled === 'boolean') {
+        setJobWaNotifyPrefs({
+          enabled: detail.enabled !== false,
+          autoAssign: detail.autoAssign === true,
+          autoUnassign: detail.autoUnassign === true,
+        });
+      } else {
+        const cached = readJobWhatsAppNotifyPrefsCached();
+        if (cached) setJobWaNotifyPrefs(cached);
+      }
+    };
+    window.addEventListener(JOB_WA_NOTIFY_CHANGED_EVENT, onChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(JOB_WA_NOTIFY_CHANGED_EVENT, onChanged);
+    };
+  }, []);
+
   // Handle location tracking toggle
   const handleLocationTrackingToggle = (enabled: boolean) => {
     setLocationTrackingEnabled(enabled);
@@ -633,6 +768,28 @@ const Settings = () => {
     );
   };
 
+  const handleJobWaMasterToggle = async (enabled: boolean) => {
+    const prev = jobWaNotifyPrefs;
+    setJobWaNotifyPrefs({ ...prev, enabled });
+    setJobWaNotifySaving(true);
+    try {
+      const result = await saveJobWhatsAppMasterEnabled(enabled);
+      if (!result.ok) {
+        setJobWaNotifyPrefs(prev);
+        toast.error(result.error || 'Could not save job WhatsApp setting');
+        return;
+      }
+      if (result.prefs) setJobWaNotifyPrefs(result.prefs);
+      toast.success(
+        enabled
+          ? 'Job WhatsApp on — assign/unassign can show message or auto-send'
+          : 'Job WhatsApp off — no WhatsApp popup on assign/unassign'
+      );
+    } finally {
+      setJobWaNotifySaving(false);
+    }
+  };
+
   // Transform technician data from database format to frontend format
   const transformTechnicianData = (tech: any) => ({
     id: tech.id,
@@ -643,6 +800,9 @@ const Settings = () => {
     employeeId: tech.employee_id,
     account_status: tech.account_status || 'ACTIVE',
     push_notifications_enabled: tech.push_notifications_enabled !== false,
+    push_prefs: tech.push_prefs && typeof tech.push_prefs === 'object' ? tech.push_prefs : {},
+    whatsapp_prefs:
+      tech.whatsapp_prefs && typeof tech.whatsapp_prefs === 'object' ? tech.whatsapp_prefs : {},
     skills: tech.skills,
     serviceAreas: tech.service_areas,
     status: tech.status,
@@ -762,6 +922,8 @@ const Settings = () => {
       commonQrCodeIds: [],
       accountStatus: 'ACTIVE',
       pushNotificationsEnabled: true,
+      pushPrefs: defaultTechPushPrefs(),
+      whatsappPrefs: defaultTechWhatsAppPrefs(),
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('add-technician');
@@ -794,6 +956,8 @@ const Settings = () => {
       commonQrCodeIds: (technician as any).commonQrCodeIds || [],
       accountStatus: (technician.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
       pushNotificationsEnabled: technician.push_notifications_enabled !== false,
+      pushPrefs: normalizeTechPushPrefs((technician as any).push_prefs),
+      whatsappPrefs: normalizeTechWhatsAppPrefs((technician as any).whatsapp_prefs),
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('edit-technician', { id: technician.id });
@@ -893,6 +1057,8 @@ const Settings = () => {
         technicianData.account_status = technicianFormData.accountStatus || 'ACTIVE';
         technicianData.push_notifications_enabled =
           technicianFormData.pushNotificationsEnabled !== false;
+        technicianData.push_prefs = normalizeTechPushPrefs(technicianFormData.pushPrefs);
+        technicianData.whatsapp_prefs = normalizeTechWhatsAppPrefs(technicianFormData.whatsappPrefs);
       } else {
         technicianData.status = 'OFFLINE';
         technicianData.performance = {
@@ -905,6 +1071,8 @@ const Settings = () => {
         technicianData.created_at = new Date().toISOString();
         technicianData.account_status = 'ACTIVE';
         technicianData.push_notifications_enabled = true;
+        technicianData.push_prefs = defaultTechPushPrefs();
+        technicianData.whatsapp_prefs = defaultTechWhatsAppPrefs();
       }
 
       const password = technicianFormData.password?.trim() || '';
@@ -1821,7 +1989,17 @@ const Settings = () => {
   }, []);
 
   useEffect(() => {
-    if (showCallingPage || showPdfAuthenticityPage || showRecurringServicePage) return;
+    if (
+      showCallingPage ||
+      showWhatsAppInboxPage ||
+      showWhatsAppSettingsPage ||
+      showPdfAuthenticityPage ||
+      showDbStoragePage ||
+      showRecurringServicePage ||
+      showLeadCatalogPage
+    ) {
+      return;
+    }
 
     const pairs: Array<[SettingsLazySection, React.RefObject<HTMLDivElement | null>]> = [
       ['todos', todosSectionRef],
@@ -1853,7 +2031,16 @@ const Settings = () => {
       observers.push(obs);
     }
     return () => observers.forEach((o) => o.disconnect());
-  }, [ensureSettingsSectionLoaded, showCallingPage, showPdfAuthenticityPage, showRecurringServicePage]);
+  }, [
+    ensureSettingsSectionLoaded,
+    showCallingPage,
+    showWhatsAppInboxPage,
+    showWhatsAppSettingsPage,
+    showPdfAuthenticityPage,
+    showDbStoragePage,
+    showRecurringServicePage,
+    showLeadCatalogPage,
+  ]);
 
   // Deep-link / panel open: fetch only what that panel needs.
   useEffect(() => {
@@ -1999,7 +2186,19 @@ const Settings = () => {
           continue;
         }
         // `technicians.password` column was dropped 2026-05-24; nothing to strip from the row anymore.
-        const rows = data;
+        // Skip huge pdf_base64 blobs from legacy AMC authenticity rows (hash metadata stays).
+        const rows =
+          name === 'amc_pdf_authenticity'
+            ? (data || []).map((row: Record<string, unknown>) => {
+                const { pdf_base64: _omit, ...rest } = row;
+                return rest;
+              })
+            : name === 'app_secrets'
+              ? (data || []).map((row: Record<string, unknown>) => ({
+                  ...row,
+                  value: row.value != null ? '[REDACTED]' : row.value,
+                }))
+              : data;
         tables.push({ name, data: rows });
       }
 
@@ -2091,6 +2290,44 @@ const Settings = () => {
     );
   }
 
+  if (showDbStoragePage) {
+    return (
+      <div className="admin-page">
+        <div className="bg-card border-b border-border">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Database className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
+                    Database storage
+                  </h1>
+                  <p className="text-xs text-muted-foreground truncate sm:hidden">
+                    Table and column sizes
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeSettingsPanel}
+                className="text-muted-foreground hover:text-foreground -ml-2 self-start sm:self-auto cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-5 sm:py-8 pb-10 max-w-6xl">
+          <DbStorageStatsPage hideHeader onBack={closeSettingsPanel} />
+        </div>
+      </div>
+    );
+  }
+
   if (showPdfAuthenticityPage) {
     return (
       <div className="admin-page min-h-[100dvh] bg-gradient-to-b from-emerald-50/40 via-background to-background">
@@ -2129,7 +2366,91 @@ const Settings = () => {
     );
   }
 
-  // Dedicated recurring service worklist (Tools → Recurring Service)
+  if (showWhatsAppSettingsPage) {
+    return (
+      <div className="admin-page">
+        <div className="bg-card border-b border-border">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
+              <div className="flex items-center">
+                <img
+                  src="/whatsapp.png"
+                  alt=""
+                  className="w-7 h-7 sm:w-8 sm:h-8 mr-2 sm:mr-3 shrink-0 rounded-md object-contain"
+                  width={32}
+                  height={32}
+                />
+                <div>
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground">WhatsApp settings</h1>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeSettingsPanel}
+                className="text-muted-foreground hover:text-foreground -ml-2"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-4 sm:py-8">
+          <WhatsAppSettingsPage
+            hideHeader
+            onBack={closeSettingsPanel}
+            onOpenInbox={() => openSettingsPanel('whatsapp-inbox')}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (showWhatsAppInboxPage) {
+    return (
+      <div className="admin-page flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#f0f2f5]">
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#d1d7db] bg-[#f0f2f5] px-3 py-2 sm:px-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={closeSettingsPanel}
+            className="h-9 shrink-0 cursor-pointer text-[#54656f] hover:bg-black/5 hover:text-[#111b21]"
+          >
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            Back
+          </Button>
+          <div className="min-w-0 flex-1" />
+          <img
+            src="/whatsapp.png"
+            alt=""
+            className="h-6 w-6 rounded object-contain"
+            width={24}
+            height={24}
+          />
+          <span className="text-sm font-semibold text-[#111b21]">WhatsApp</span>
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <WhatsAppInboxPage
+            hideHeader
+            onBack={closeSettingsPanel}
+            initialPhone={parseSettingsUrl(location.search).panelId}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (showLeadCatalogPage) {
+    return (
+      <div className="admin-page min-h-screen bg-background">
+        <div className="container mx-auto px-3 py-4 sm:px-4 sm:py-6">
+          <LeadCatalogSettingsPage onBack={closeSettingsPanel} />
+        </div>
+      </div>
+    );
+  }
+
   if (showRecurringServicePage) {
     return (
       <div className="admin-page">
@@ -2771,6 +3092,24 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          <SettingsActionCard
+            sectionId="lead-catalog"
+            title="Lead sources & costs"
+            description="Manage lead sources, sub-services, default costs, OTP rules — cached locally, not loaded every keystroke"
+            icon={<DollarSign className="w-5 h-5" />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('lead-catalog')}
+              >
+                <DollarSign className="w-4 h-4 shrink-0" />
+                Manage catalog
+              </Button>
+            }
+          />
+
           {/* Calling */}
           <SettingsActionCard
             sectionId="calling"
@@ -2787,6 +3126,35 @@ const Settings = () => {
                 <PhoneCall className="w-4 h-4 shrink-0" />
                 Open Calling Page
               </Button>
+            }
+          />
+
+          {/* WhatsApp Cloud API inbox */}
+          <SettingsActionCard
+            sectionId="whatsapp-inbox"
+            title="WhatsApp"
+            description="Inbox, send controls, rate card, and expected Meta bill"
+            icon={<img src="/whatsapp.png" alt="" className="w-5 h-5 object-contain" width={20} height={20} />}
+            actions={
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                  onClick={() => openSettingsPanel('whatsapp-inbox')}
+                >
+                  <img src="/whatsapp.png" alt="" className="w-4 h-4 object-contain" width={16} height={16} />
+                  Open inbox
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                  onClick={() => openSettingsPanel('whatsapp-settings')}
+                >
+                  Settings
+                </Button>
+              </div>
             }
           />
 
@@ -3307,22 +3675,41 @@ const Settings = () => {
                 Dashboard Settings
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                Control visual highlights on the admin dashboard
+                Dashboard visuals (this device) and job WhatsApp popup (all admins)
               </CardDescription>
             </CardHeader>
-            <CardContent className="p-4 sm:p-6">
+            <CardContent className="p-4 sm:p-6 space-y-3">
               <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
                 <div className="flex-1">
                   <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
                     Follow-up glow highlights
                   </h3>
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
-                    When enabled, the Followup stats card and follow-up job cards glow red for today and yellow for tomorrow.
+                    This device only. When enabled, the Followup stats card and follow-up job cards glow
+                    red for today and yellow for tomorrow.
                   </p>
                 </div>
                 <Switch
                   checked={followUpGlowEnabled}
                   onCheckedChange={handleFollowUpGlowToggle}
+                  className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
+                    Job assign / unassign WhatsApp
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
+                    Universal for all admins. OFF = no WhatsApp popup when assigning or unassigning.
+                    ON = show manual wa.me dialog (or auto-send if enabled in WhatsApp Settings).
+                  </p>
+                </div>
+                <Switch
+                  checked={jobWaNotifyPrefs.enabled}
+                  disabled={jobWaNotifySaving}
+                  onCheckedChange={(v) => void handleJobWaMasterToggle(v)}
                   className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>
@@ -3377,13 +3764,30 @@ const Settings = () => {
                     ))}
                   </ul>
                 <p className="text-xs text-blue-700 dark:text-blue-400 mt-3">
-                  Up to {DATABASE_EXPORT_TABLES.length} tables as CSV in one ZIP. Optional tables (
-                  {DATABASE_EXPORT_TABLES.filter((t) => t.optional).map((t) => t.label).join(', ')}
-                  ) are skipped if not created in Supabase. Technician passwords are stored in Supabase Auth (not exported).
+                  Up to {DATABASE_EXPORT_TABLES.length} tables as CSV in one ZIP. Optional tables are
+                  skipped if not created in Supabase. App secret values are redacted. Technician
+                  passwords are stored in Supabase Auth (not exported).
                 </p>
               </div>
             </CardContent>
           </Card>
+
+          <SettingsActionCard
+            title="Database storage"
+            description="See which Postgres tables and columns use the most space (R2 media is separate)"
+            icon={<Database />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('db-storage')}
+              >
+                <Database className="w-4 h-4 shrink-0" />
+                View storage
+              </Button>
+            }
+          />
                 </div>
       </div>
 
@@ -3573,7 +3977,7 @@ const Settings = () => {
                         Push notifications
                       </Label>
                       <p className="text-xs text-muted-foreground leading-snug">
-                        Job alerts, OTP requests, and office messages to their phone app.
+                        Master switch for this technician. Turn off to mute all FCM alerts.
                       </p>
                     </div>
                     <Switch
@@ -3586,6 +3990,80 @@ const Settings = () => {
                         }))
                       }
                     />
+                  </div>
+                  {technicianFormData.pushNotificationsEnabled ? (
+                    <div className="space-y-2 rounded-md border border-border bg-card px-3 py-2.5">
+                      <p className="text-sm font-medium">App push types (FCM) for this technician</p>
+                      <p className="text-xs text-muted-foreground leading-snug mb-2">
+                        Android APK alerts only — not WhatsApp. Global Settings and Device Tracker can
+                        still block a type.
+                      </p>
+                      {TECH_PUSH_CATEGORIES.map((key) => {
+                        const meta = TECH_PUSH_LABELS[key];
+                        return (
+                          <div
+                            key={key}
+                            className="flex items-start justify-between gap-3 border-b border-border/50 py-2 last:border-0 last:pb-0"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{meta.label}</p>
+                              <p className="text-[11px] text-muted-foreground leading-snug">
+                                {meta.description}
+                              </p>
+                            </div>
+                            <Switch
+                              checked={technicianFormData.pushPrefs?.[key] !== false}
+                              onCheckedChange={(checked) =>
+                                setTechnicianFormData((prev) => ({
+                                  ...prev,
+                                  pushPrefs: {
+                                    ...normalizeTechPushPrefs(prev.pushPrefs),
+                                    [key]: checked,
+                                  },
+                                }))
+                              }
+                              aria-label={meta.label}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <div className="space-y-2 rounded-md border border-emerald-200/80 bg-emerald-50/30 px-3 py-2.5 dark:bg-emerald-950/20">
+                    <p className="text-sm font-medium">WhatsApp for this technician</p>
+                    <p className="text-xs text-muted-foreground leading-snug mb-2">
+                      Same categories as push alerts, plus customer tech-share. Global: Settings →
+                      WhatsApp. Assign master: Dashboard Settings.
+                    </p>
+                    {TECH_WHATSAPP_CATEGORIES.map((key) => {
+                      const meta = TECH_WHATSAPP_LABELS[key];
+                      return (
+                        <div
+                          key={key}
+                          className="flex items-start justify-between gap-3 border-b border-border/50 py-2 last:border-0 last:pb-0"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">{meta.label}</p>
+                            <p className="text-[11px] text-muted-foreground leading-snug">
+                              {meta.description}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={technicianFormData.whatsappPrefs?.[key] !== false}
+                            onCheckedChange={(checked) =>
+                              setTechnicianFormData((prev) => ({
+                                ...prev,
+                                whatsappPrefs: {
+                                  ...normalizeTechWhatsAppPrefs(prev.whatsappPrefs),
+                                  [key]: checked,
+                                },
+                              }))
+                            }
+                            aria-label={meta.label}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

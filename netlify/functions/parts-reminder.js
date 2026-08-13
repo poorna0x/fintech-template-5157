@@ -82,6 +82,17 @@ exports.handler = async (event) => {
       'parts_reminder'
     );
     sent += result.sent;
+    try {
+      const { maybeSendTechnicianPushWhatsApp } = require('./tech-push-whatsapp-helper');
+      await maybeSendTechnicianPushWhatsApp(db, {
+        technicianId,
+        category: 'parts_reminder',
+        title: 'Add all used parts',
+        body: 'Make sure every part you used today is added to your completed jobs.',
+      });
+    } catch {
+      /* never block parts reminder */
+    }
   }
 
   // Companion push to every admin phone: how many jobs finished today, so

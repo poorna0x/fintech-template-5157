@@ -6,14 +6,16 @@ import {
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
 import { getDocumentBrandLabel, resolveBrandSealSrc } from './service-brands';
-import { downloadDocumentPdfReturningBase64 } from './server-pdf-download';
+import { downloadDocumentPdfReturningBase64, withAbsoluteAssetUrls } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 import {
+  formatDocumentPdfVerifyFooterLine,
   generateDocumentPdfVerifyCode,
   recordDocumentPdfAuthenticity,
   todayYmdIst,
 } from './documentPdfAuthenticity';
 import { toast } from 'sonner';
+import { buildAmcDocumentPaymentNoticeHtml } from './document-payment';
 
 interface AMCPDFData {
   billNumber: string;
@@ -55,6 +57,8 @@ interface AMCPDFData {
   totalAmount: number;
   paymentStatus?: 'PENDING' | 'PAID' | 'PARTIAL' | 'OVERDUE';
   amountPaid?: number;
+  /** Payment due date (YYYY-MM-DD) when PENDING / PARTIAL. */
+  paymentDueDate?: string;
   notes?: string;
   terms?: string;
   validity?: string;
@@ -66,7 +70,7 @@ interface AMCPDFData {
 interface AMCPDFOptions {
   includeDetails?: boolean;
   showComputerGeneratedText?: boolean;
-  /** 8-char code shown in footer — Verify authenticity in CRM · Code XXXXXXXX */
+  /** 8-char code shown in footer — Verify authenticity at {brand}.com/authenticity · Code XXXXXXXX */
   authenticityVerifyCode?: string;
   /** Stable "Generated on" date (YYYY-MM-DD) so fingerprint matches re-downloads */
   authenticityGeneratedOnYmd?: string;
@@ -90,6 +94,7 @@ export function billToAmcPdfData(bill: Bill): AMCPDFData {
     totalAmount: bill.totalAmount,
     paymentStatus: bill.paymentStatus,
     amountPaid: bill.amountPaid,
+    paymentDueDate: bill.dueDate || (bill as { paymentDueDate?: string }).paymentDueDate,
     notes: bill.notes,
     terms: bill.terms,
     validity: bill.validity,
@@ -130,34 +135,12 @@ function resolveAmcPayment(data: AMCPDFData): {
 }
 
 function buildAmcPaymentNoticeHtml(data: AMCPDFData): string {
-  const { status, total, paid, balance } = resolveAmcPayment(data);
-  if (status === 'PAID') return '';
-
-  const totalStr = formatInr(total);
-  const paidStr = formatInr(paid);
-  const balanceStr = formatInr(balance);
-
-  if (status === 'PARTIAL') {
-    return `
-      <div class="payment-notice payment-notice-partial">
-        <div class="payment-notice-title">Payment acknowledgement — partial payment</div>
-        <p class="payment-notice-line"><strong>Total AMC agreement amount (all taxes inclusive):</strong> ₹${totalStr}</p>
-        <p class="payment-notice-line"><strong>Amount received as on agreement date:</strong> ₹${paidStr}</p>
-        <p class="payment-notice-line"><strong>Balance amount due:</strong> ₹${balanceStr}</p>
-        <p class="payment-notice-legal">The customer acknowledges that only part of the AMC agreement consideration has been received. This agreement is issued subject to payment of the full agreement amount. The company may withhold further AMC service visits until the outstanding balance is cleared, unless otherwise agreed in writing. The customer agrees to pay the balance amount on demand and, in any event, before the next scheduled service visit.</p>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="payment-notice payment-notice-pending">
-      <div class="payment-notice-title">Payment acknowledgement — payment pending</div>
-      <p class="payment-notice-line"><strong>Total AMC agreement amount (all taxes inclusive):</strong> ₹${totalStr}</p>
-      <p class="payment-notice-line"><strong>Amount received as on agreement date:</strong> ₹0</p>
-      <p class="payment-notice-line"><strong>Balance amount due:</strong> ₹${balanceStr}</p>
-      <p class="payment-notice-legal">This AMC agreement is issued for record and customer acknowledgement. AMC services shall commence only upon receipt of the full agreement amount, unless the company confirms otherwise in writing.</p>
-    </div>
-  `;
+  return buildAmcDocumentPaymentNoticeHtml({
+    paymentStatus: data.paymentStatus,
+    totalAmount: Number(data.totalAmount) || 0,
+    amountPaid: data.amountPaid,
+    paymentDueDate: data.paymentDueDate,
+  });
 }
 
 export function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
@@ -969,7 +952,9 @@ export function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): stri
         })()} | Professional RO Water Purifier Services in Bengaluru</p>
         ${options?.authenticityVerifyCode ? `
         <p class="footer-text" style="margin-top: 6px; letter-spacing: 0.02em; color: #9ca3af;">
-          Verify authenticity in CRM · Code ${sanitizeForTemplate(options.authenticityVerifyCode)}
+          ${sanitizeForTemplate(
+            formatDocumentPdfVerifyFooterLine(options.authenticityVerifyCode, brand)
+          )}
         </p>
         ` : ''}
         <p class="footer-text" style="margin-top: 10px;">
@@ -1106,6 +1091,7 @@ export function generateAMCPDF(
       totalAmount: bill.totalAmount,
       paymentStatus: bill.paymentStatus,
       amountPaid: bill.amountPaid,
+      paymentDueDate: bill.dueDate || (bill as { paymentDueDate?: string }).paymentDueDate,
       notes: bill.notes,
       terms: bill.terms,
       validity: bill.validity,
@@ -1115,7 +1101,7 @@ export function generateAMCPDF(
     };
     
     // Write content to new window
-    printWindow.document.write(generateAMCHTML(data, options));
+    printWindow.document.write(withAbsoluteAssetUrls(generateAMCHTML(data, options)));
     printWindow.document.close();
     
     // Wait for content to load, then print
@@ -1219,6 +1205,7 @@ function handleMobilePrint(
       totalAmount: bill.totalAmount,
       paymentStatus: bill.paymentStatus,
       amountPaid: bill.amountPaid,
+      paymentDueDate: bill.dueDate || (bill as { paymentDueDate?: string }).paymentDueDate,
       notes: bill.notes,
       terms: bill.terms,
       validity: bill.validity,

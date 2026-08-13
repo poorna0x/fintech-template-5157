@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
+import DOMPurify from 'dompurify';
 import {
   Bold,
   Italic,
@@ -16,6 +17,7 @@ import {
   Eraser,
   Undo2,
   Redo2,
+  Table2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -182,6 +184,28 @@ export default function RichTextEditor({
     exec('removeFormat');
   }, [exec]);
 
+  const insertTable = useCallback(() => {
+    editorRef.current?.focus();
+    const colRaw = window.prompt('Number of columns (2–6)', '3');
+    if (colRaw === null) return;
+    const rowRaw = window.prompt('Number of rows including header (2–8)', '3');
+    if (rowRaw === null) return;
+    const cols = Math.min(6, Math.max(2, Number.parseInt(colRaw, 10) || 3));
+    const rows = Math.min(8, Math.max(2, Number.parseInt(rowRaw, 10) || 3));
+
+    const headerCells = Array.from({ length: cols }, (_, i) => `<th>Header ${i + 1}</th>`).join('');
+    const bodyRows = Array.from({ length: rows - 1 }, () => {
+      const cells = Array.from({ length: cols }, () => '<td><br></td>').join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+
+    const html =
+      `<table class="rte-table"><thead><tr>${headerCells}</tr></thead>` +
+      `<tbody>${bodyRows}</tbody></table><p><br></p>`;
+    document.execCommand('insertHTML', false, html);
+    emit();
+  }, [emit]);
+
   const isHeading = (tag: string) => active.block === tag || active.block === tag.toLowerCase();
 
   return (
@@ -257,6 +281,10 @@ export default function RichTextEditor({
         >
           <ListOrdered className="w-4 h-4" />
         </ToolbarButton>
+        <Divider />
+        <ToolbarButton title="Insert table" onClick={insertTable}>
+          <Table2 className="w-4 h-4" />
+        </ToolbarButton>
         {!compact && (
           <>
             <Divider />
@@ -316,12 +344,27 @@ export default function RichTextEditor({
         onMouseUp={refreshActive}
         onFocus={refreshActive}
         onPaste={(event) => {
-          // Keep basic formatting from Word/Google Docs when available; fall back to plain text.
-          const html = event.clipboardData.getData('text/html');
-          const text = event.clipboardData.getData('text/plain');
           event.preventDefault();
-          if (html) {
-            document.execCommand('insertHTML', false, html);
+          const rawHtml = event.clipboardData.getData('text/html');
+          const text = event.clipboardData.getData('text/plain');
+          if (rawHtml) {
+            // Sanitize Word/Google Docs clipboard HTML — strips <html>/<body>/<meta>/
+            // <colgroup>/<col>/namespace tags while keeping tables, lists, headings etc.
+            const clean = DOMPurify.sanitize(rawHtml, {
+              ALLOWED_TAGS: [
+                'p', 'br', 'span', 'div', 'strong', 'em', 'u', 's', 'b', 'i',
+                'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'li', 'a', 'blockquote', 'hr',
+                'table', 'thead', 'tbody', 'tr', 'th', 'td',
+              ],
+              ALLOWED_ATTR: ['href', 'target', 'rel', 'style', 'class', 'colspan', 'rowspan'],
+              ALLOW_DATA_ATTR: false,
+            });
+            if (clean.trim()) {
+              document.execCommand('insertHTML', false, clean);
+            } else {
+              // Sanitizer stripped everything (pure namespace soup) — fall back to plain text
+              document.execCommand('insertText', false, text);
+            }
           } else {
             document.execCommand('insertText', false, text);
           }
@@ -345,6 +388,30 @@ export default function RichTextEditor({
         .lh-rte-content p { margin: 0.25rem 0; }
         .lh-rte-content ul, .lh-rte-content ol { padding-left: 1.25rem; margin: 0.25rem 0; }
         .lh-rte-content a { color: #0369a1; text-decoration: underline; }
+        .lh-rte-content table.rte-table,
+        .lh-rte-content table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 0.5rem 0;
+          table-layout: fixed;
+        }
+        .lh-rte-content th,
+        .lh-rte-content td {
+          border: 1px solid #d1d5db;
+          padding: 6px 8px;
+          text-align: left;
+          vertical-align: top;
+          word-break: break-word;
+          min-width: 48px;
+        }
+        .lh-rte-content th {
+          background: #f3f4f6;
+          font-weight: 700;
+          color: #111827;
+        }
+        .lh-rte-content tbody tr:nth-child(even) td {
+          background: #f9fafb;
+        }
       `}</style>
     </div>
   );

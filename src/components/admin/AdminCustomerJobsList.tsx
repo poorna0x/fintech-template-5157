@@ -716,13 +716,26 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                                 // Check if there's a custom time in requirements
                                 const customTime = requirements.find((r: any) => r?.custom_time)?.custom_time;
                                 
-                                if (customTime) {
+                                if (customTime && /^\d{1,2}:\d{2}$/.test(String(customTime).trim())) {
                                   // Format the time nicely (e.g., "14:30" -> "2:30 PM")
-                                  const [hours, minutes] = customTime.split(':');
-                                  const hour24 = parseInt(hours);
-                                  const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
-                                  const ampm = hour24 >= 12 ? 'PM' : 'AM';
-                                  return `${hour12}:${minutes} ${ampm}`;
+                                  const [hours, minutes] = String(customTime).trim().split(':');
+                                  const hour24 = parseInt(hours, 10);
+                                  if (!Number.isNaN(hour24)) {
+                                    const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
+                                    const ampm = hour24 >= 12 ? 'PM' : 'AM';
+                                    return `${hour12}:${minutes} ${ampm}`;
+                                  }
+                                }
+                                // Period label wrongly stored as custom_time (WhatsApp bot legacy)
+                                if (customTime && /morning|afternoon|evening|am|pm/i.test(String(customTime))) {
+                                  const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot;
+                                  const timeSlotMap: { [key: string]: string } = {
+                                    MORNING: 'Morning (9 AM - 12 PM)',
+                                    AFTERNOON: 'Afternoon (12 PM - 3 PM)',
+                                    EVENING: 'Evening (3 PM - 6 PM)',
+                                  };
+                                  if (timeSlot && timeSlotMap[timeSlot]) return timeSlotMap[timeSlot];
+                                  return String(customTime);
                                 }
                                 
                                 // Check for flexible time
@@ -735,9 +748,9 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                                 const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot || 'Time not specified';
                                 // Map time slots to readable format
                                 const timeSlotMap: { [key: string]: string } = {
-                                  'MORNING': 'Morning (9 AM - 1 PM)',
-                                  'AFTERNOON': 'Afternoon (1 PM - 6 PM)',
-                                  'EVENING': 'Evening (6 PM - 9 PM)'
+                                  'MORNING': 'Morning (9 AM - 12 PM)',
+                                  'AFTERNOON': 'Afternoon (12 PM - 3 PM)',
+                                  'EVENING': 'Evening (3 PM - 6 PM)'
                                 };
                                 return timeSlotMap[timeSlot] || timeSlot;
                               })()}

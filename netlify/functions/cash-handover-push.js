@@ -12,15 +12,17 @@ async function sendCashHandoverReminder(db, messaging, technicianId, amountInr, 
   const amount = Number(amountInr);
   const rupees = `₹${(Number.isFinite(amount) ? amount : 0).toLocaleString('en-IN')}`;
   const whose = opts.forYesterday ? "yesterday's" : "today's";
-  return sendToTechnicianDevices(
+  const title = 'Cash pending — hand over to office';
+  const body = `Please hand over ${whose} cash collection of ${rupees} to the office.`;
+  const result = await sendToTechnicianDevices(
     db,
     messaging,
     technicianId,
     (token) => ({
       token,
       notification: {
-        title: 'Cash pending — hand over to office',
-        body: `Please hand over ${whose} cash collection of ${rupees} to the office.`,
+        title,
+        body,
       },
       data: { type: 'job_notification', event: 'cash_handover' },
       android: {
@@ -33,8 +35,20 @@ async function sendCashHandoverReminder(db, messaging, technicianId, amountInr, 
         },
       },
     }),
-    'job_nudges'
+    'cash_handover'
   );
+  try {
+    const { maybeSendTechnicianPushWhatsApp } = require('./tech-push-whatsapp-helper');
+    await maybeSendTechnicianPushWhatsApp(db, {
+      technicianId,
+      category: 'cash_handover',
+      title,
+      body,
+    });
+  } catch {
+    /* never block cash push */
+  }
+  return result;
 }
 
 module.exports = { sendCashHandoverReminder };

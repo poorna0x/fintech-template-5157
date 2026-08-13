@@ -1,6 +1,8 @@
-import { Phone, PhoneOff, PhoneForwarded, Search, X } from 'lucide-react';
+import { Phone, PhoneOff, PhoneForwarded, Search, X, MessageCircle } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import type { IncomingAutoSearchRecord } from '@/lib/adminSharedIncomingCall';
+import { sendMissedCallCallbackWhatsApp } from '@/lib/missedCallWhatsApp';
 
 function formatPhone(raw?: string): string {
   const d = String(raw || '').replace(/\D/g, '');
@@ -57,6 +59,7 @@ type Props = {
 
 export function AdminCallAlertContextBanner({ record, onDismiss }: Props) {
   const { title, detail, tone } = describeCallAlertContext(record);
+  const [sendingWa, setSendingWa] = useState(false);
   const Icon =
     record.kind === 'wrong_line_call'
       ? PhoneForwarded
@@ -73,6 +76,21 @@ export function AdminCallAlertContextBanner({ record, onDismiss }: Props) {
         ? 'border-sky-200 bg-sky-50 text-sky-950'
         : 'border-slate-200 bg-slate-50 text-slate-900';
 
+  const showMissedWa = record.kind === 'missed_call' && Boolean(record.phone);
+
+  const handleMissedWa = async () => {
+    if (!record.phone || sendingWa) return;
+    setSendingWa(true);
+    try {
+      await sendMissedCallCallbackWhatsApp({
+        phone: record.phone,
+        customerId: record.customerId || null,
+      });
+    } finally {
+      setSendingWa(false);
+    }
+  };
+
   return (
     <div
       className={`mb-4 flex items-start gap-3 rounded-lg border px-3 py-2.5 ${shell}`}
@@ -83,6 +101,19 @@ export function AdminCallAlertContextBanner({ record, onDismiss }: Props) {
         <p className="text-sm font-semibold leading-snug">{title}</p>
         {detail ? <p className="mt-0.5 text-xs opacity-80">{detail}</p> : null}
       </div>
+      {showMissedWa ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0 gap-1 border-emerald-300 bg-white px-2 text-emerald-800 hover:bg-emerald-50"
+          disabled={sendingWa}
+          onClick={() => void handleMissedWa()}
+        >
+          <MessageCircle className="h-3.5 w-3.5" />
+          {sendingWa ? 'Sending…' : 'WhatsApp callback'}
+        </Button>
+      ) : null}
       <Button
         type="button"
         variant="ghost"

@@ -33,6 +33,7 @@ export default function BillModal({ isOpen, onClose, customer }: BillModalProps)
     paymentStatus: bill.paymentStatus,
     paymentMethod: bill.paymentMethod,
     amountPaid: bill.amountPaid,
+    paymentDueDate: bill.dueDate || (bill as { paymentDueDate?: string }).paymentDueDate,
     notes: bill.notes,
     notesHeading: (bill as { notesHeading?: string }).notesHeading,
     terms: bill.terms,

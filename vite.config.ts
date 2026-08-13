@@ -20,6 +20,56 @@ export default defineConfig(({ mode }) => ({
       clientPort: 8080,
     },
     proxy: {
+      // WhatsApp Cloud API POC — local functions (reads WHATSAPP_* from .env.local).
+      '/.netlify/functions/whatsapp-send': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/whatsapp-webhook': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/whatsapp-events': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/whatsapp-templates': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/whatsapp-r2-signed-url': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/whatsapp-purge-messages': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/whatsapp-booking-start': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/pdf-authenticity-otp-verify': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/pdf-authenticity-check': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/document-accept-send': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/db-storage-stats': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      // Local Puppeteer — must not hit production (cannot load localhost/ngrok assets).
+      '/.netlify/functions/generate-pdf': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Proxy Netlify functions to avoid CORS issues
       '/.netlify/functions': {
         // Use production functions so nudges like goingNow work without netlify:dev.

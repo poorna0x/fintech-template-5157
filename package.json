@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "npm run dev:kill-stale && concurrently \"npm run dev:server\" \"npm run dev:vite\"",
-    "dev:kill-stale": "lsof -ti:8888 | xargs kill -9 2>/dev/null || true",
+    "dev:kill-stale": "lsof -ti:8888,8080,8081 | xargs kill -9 2>/dev/null || true",
     "dev:server": "node netlify/functions/dev-server.cjs",
     "dev:vite": "vite",
     "build": "node scripts/sync-csp-to-netlify.mjs && node scripts/generate-sitemaps.mjs && vite build && node scripts/inject-security-headers.mjs",
@@ -18,9 +18,13 @@
     "preview": "vite preview",
     "generate:sitemaps": "node scripts/generate-sitemaps.mjs",
     "test": "vitest run",
-    "test:cors": "node test-cors-production.js"
+    "wa:templates:status": "node scripts/submit-whatsapp-full-utility.mjs --status",
+    "wa:templates:submit": "node scripts/submit-whatsapp-full-utility.mjs --submit",
+    "wa:templates:cleanup-marketing": "node scripts/submit-whatsapp-full-utility.mjs --delete-marketing"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1106.0",
+    "@aws-sdk/s3-request-presigner": "^3.1106.0",
     "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor/android": "^8.4.2",
     "@capacitor/app": "^8.1.1",
@@ -90,6 +94,7 @@
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
     "nodemailer": "^7.0.6",
+    "pdfjs-dist": "^4.10.38",
     "photoswipe": "^5.4.4",
     "qr-code-styling": "^1.9.2",
     "react": "^18.3.1",

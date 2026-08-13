@@ -2,15 +2,26 @@ import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { Job } from '@/types';
-import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
+import { WA_COLD } from '@/lib/whatsappColdTemplates';
+import { isWhatsAppJobNotifyAllowed } from '@/lib/whatsappCrmSettings';
 
 export interface ShareTechnicianInfoToCustomerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   job: Job | null;
-  customer: { phone?: string; alternate_phone?: string; alternatePhone?: string; full_name?: string; fullName?: string } | null;
+  customer: {
+    id?: string;
+    phone?: string;
+    alternate_phone?: string;
+    alternatePhone?: string;
+    full_name?: string;
+    fullName?: string;
+  } | null;
   technicians: Array<{
     id: string;
     fullName?: string;
@@ -32,6 +43,7 @@ const ShareTechnicianInfoToCustomerDialog: React.FC<ShareTechnicianInfoToCustome
 }) => {
   const [etaResult, setEtaResult] = useState<{ durationText?: string; estimatedArrival?: string } | null>(null);
   const [etaLoading, setEtaLoading] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const assignedTechnicianId = job ? (job as any).assigned_technician_id || (job as any).assignedTechnicianId : null;
   const assignedTechnician = assignedTechnicianId
@@ -92,43 +104,91 @@ We'll reach you soon. For any queries, contact the technician directly.`;
   const customerPhone = customer.phone || '';
   const alternatePhone = customer.alternate_phone || customer.alternatePhone || '';
   const hasAlternate = alternatePhone.trim() !== '' && alternatePhone.trim() !== customerPhone.trim();
+  const customerName = customer.full_name || customer.fullName || 'Customer';
+  const customerId =
+    customer.id ||
+    (job as any).customer_id ||
+    (job as any).customerId ||
+    undefined;
 
-  const sendTo = (phone: string) => {
-    const formatted = formatPhoneForWhatsApp(phone);
-    const url = `https://wa.me/${formatted}?text=${encodeURIComponent(whatsappMessage)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+  const sendTo = async (phone: string) => {
+    if (!phone?.trim()) {
+      toast.error('Phone number not available');
+      return;
+    }
+    setSending(true);
+    const toastId = toast.loading('Sending WhatsApp…');
+    try {
+      const allowed = await isWhatsAppJobNotifyAllowed(
+        'tech_assigned_customer',
+        assignedTechnicianId || null
+      );
+      if (!allowed.ok) {
+        toast.error(allowed.reason || 'WhatsApp notify disabled for this technician', {
+          id: toastId,
+        });
+        return;
+      }
+      const result = await sendAdminWhatsAppTextWithOptionalTemplate({
+        to: phone,
+        text: whatsappMessage,
+        customerId,
+        source: 'tech_assigned',
+        fallbackWaMe: true,
+        coldTemplate: {
+          name: WA_COLD.tech_assigned.name,
+          languageCode: WA_COLD.tech_assigned.language,
+          bodyParams: WA_COLD.tech_assigned.bodyParams(customerName, techName),
+        },
+      });
+      if (!result.ok) {
+        toast.error(result.error || 'Send failed', { id: toastId });
+        return;
+      }
+      if (result.via === 'api' && result.usedTemplate) {
+        toast.success('Technician-assigned template sent', { id: toastId });
+      } else if (result.via === 'api') {
+        toast.success('WhatsApp sent via API', { id: toastId });
+      } else {
+        toast.success('Opened phone WhatsApp as backup', { id: toastId });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Send failed', { id: toastId });
+    } finally {
+      setSending(false);
+    }
   };
 
-  const customerName = customer.full_name || customer.fullName || 'Customer';
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+    <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
+      <DialogContent className="max-h-[min(92dvh,720px)] w-[calc(100vw-1.25rem)] max-w-2xl overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>Share technician info to customer</DialogTitle>
           <DialogDescription>
-            Send technician name, contact phone, location, estimated time and ID card link via WhatsApp
+            Sends via Cloud API when the 24h window is open; uses the tech-assigned template when
+            approved and cold; wa.me as backup.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          <div className="rounded-lg bg-muted/40 p-4">
+        <div className="space-y-4 py-2 sm:py-4">
+          <div className="rounded-lg bg-muted/40 p-3 sm:p-4">
             <div className="text-sm text-muted-foreground">
-              Customer: <span className="font-medium">{customerName}</span>
+              Customer: <span className="font-medium text-foreground">{customerName}</span>
             </div>
             <div className="text-sm text-muted-foreground">
-              Phone: <span className="font-medium">{customerPhone}</span>
+              Phone: <span className="font-medium text-foreground break-all">{customerPhone}</span>
             </div>
             {hasAlternate && (
               <div className="text-sm text-muted-foreground mt-1">
-                Alternate: <span className="font-medium">{alternatePhone}</span>
+                Alternate:{' '}
+                <span className="font-medium text-foreground break-all">{alternatePhone}</span>
               </div>
             )}
           </div>
 
           <div className="space-y-3">
             <Label>Message preview</Label>
-            <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+            <div className="max-h-[28vh] overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm text-foreground/90 sm:max-h-48">
               {whatsappMessage}
             </div>
 
@@ -138,29 +198,46 @@ We'll reach you soon. For any queries, contact the technician directly.`;
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   <Button
                     variant="default"
-                    className="bg-green-600 text-white hover:bg-green-700"
-                    onClick={() => sendTo(customerPhone)}
+                    className="h-11 bg-green-600 text-white hover:bg-green-700"
+                    disabled={sending || !customerPhone.trim()}
+                    onClick={() => void sendTo(customerPhone)}
                   >
-                    <WhatsAppIcon className="mr-2 h-4 w-4" />
+                    {sending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <WhatsAppIcon className="mr-2 h-4 w-4" />
+                    )}
                     Primary
                   </Button>
                   <Button
                     variant="default"
-                    className="bg-green-600 text-white hover:bg-green-700"
-                    onClick={() => sendTo(alternatePhone)}
+                    className="h-11 bg-green-600 text-white hover:bg-green-700"
+                    disabled={sending || !alternatePhone.trim()}
+                    onClick={() => void sendTo(alternatePhone)}
                   >
-                    <WhatsAppIcon className="mr-2 h-4 w-4" />
+                    {sending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <WhatsAppIcon className="mr-2 h-4 w-4" />
+                    )}
                     Alternate
                   </Button>
                   <Button
                     variant="default"
-                    className="bg-green-600 text-white hover:bg-green-700 sm:col-span-2"
+                    className="h-11 bg-green-600 text-white hover:bg-green-700 sm:col-span-2"
+                    disabled={sending}
                     onClick={() => {
-                      sendTo(customerPhone);
-                      setTimeout(() => sendTo(alternatePhone), 300);
+                      void (async () => {
+                        await sendTo(customerPhone);
+                        await sendTo(alternatePhone);
+                      })();
                     }}
                   >
-                    <WhatsAppIcon className="mr-2 h-4 w-4" />
+                    {sending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <WhatsAppIcon className="mr-2 h-4 w-4" />
+                    )}
                     Send to both
                   </Button>
                 </div>
@@ -168,18 +245,28 @@ We'll reach you soon. For any queries, contact the technician directly.`;
             ) : (
               <Button
                 variant="default"
-                className="w-full bg-green-600 text-white hover:bg-green-700"
-                onClick={() => sendTo(customerPhone)}
+                className="h-11 w-full bg-green-600 text-white hover:bg-green-700"
+                disabled={sending || !customerPhone.trim()}
+                onClick={() => void sendTo(customerPhone)}
               >
-                <WhatsAppIcon className="mr-2 h-4 w-4" />
+                {sending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <WhatsAppIcon className="mr-2 h-4 w-4" />
+                )}
                 Send WhatsApp message
               </Button>
             )}
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
+          <Button
+            variant="outline"
+            className="h-11 w-full sm:h-10 sm:w-auto"
+            disabled={sending}
+            onClick={() => onOpenChange(false)}
+          >
             Close
           </Button>
         </DialogFooter>

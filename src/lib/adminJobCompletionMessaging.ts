@@ -123,7 +123,7 @@ export async function markAdminJobMessageSent(
       JSON.stringify(result.requirements, null, 2)
     );
 
-    toast.success('Message sent confirmation saved');
+    toast.success('Message sent status updated');
     ctx.closeAdminModal();
     ctx.setSelectedJobForMessage(null);
     await ctx.loadCompletedJobDetails(jobId);

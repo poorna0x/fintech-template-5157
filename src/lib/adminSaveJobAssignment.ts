@@ -4,6 +4,7 @@ import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
 import { openAdminWhatsappForJobAssign } from '@/lib/openAdminWhatsappForJobAssign';
 import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
+import { readJobWhatsAppNotifyPrefsCached } from '@/lib/jobAssignWhatsAppSettingsCache';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
@@ -86,7 +87,42 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
     const assignedTechnician = ctx.technicians.find((t) => t.id === ctx.selectedTechnicianId);
 
     if (assignedTechnician && getTechnicianAdminWhatsAppPhone(assignedTechnician)) {
-      openAdminWhatsappForJobAssign(ctx, ctx.jobToAssign, assignedTechnician, scrollY);
+      // Auto-send: close assign UI immediately; WhatsApp goes out in background.
+      const cached = readJobWhatsAppNotifyPrefsCached();
+      const willAuto = cached?.enabled !== false && cached?.autoAssign === true;
+      if (willAuto) {
+        ctx.setAssignJobDialogOpen(false);
+        ctx.closeAdminModal();
+        void openAdminWhatsappForJobAssign(
+          ctx,
+          ctx.jobToAssign,
+          {
+            id: assignedTechnician.id,
+            fullName: assignedTechnician.fullName || (assignedTechnician as any).full_name || 'Technician',
+            phone: assignedTechnician.phone,
+            whatsappPhone: (assignedTechnician as any).whatsappPhone,
+            whatsapp_phone: (assignedTechnician as any).whatsapp_phone,
+          },
+          scrollY
+        );
+      } else {
+        const result = await openAdminWhatsappForJobAssign(
+          ctx,
+          ctx.jobToAssign,
+          {
+            id: assignedTechnician.id,
+            fullName: assignedTechnician.fullName || (assignedTechnician as any).full_name || 'Technician',
+            phone: assignedTechnician.phone,
+            whatsappPhone: (assignedTechnician as any).whatsappPhone,
+            whatsapp_phone: (assignedTechnician as any).whatsapp_phone,
+          },
+          scrollY
+        );
+        if (result !== 'dialog') {
+          ctx.setAssignJobDialogOpen(false);
+          ctx.closeAdminModal();
+        }
+      }
     } else {
       ctx.setAssignJobDialogOpen(false);
       ctx.closeAdminModal();

@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Mail, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Share2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import { getCustomerGstNumber } from '@/lib/customerGst';
@@ -54,7 +54,9 @@ import {
   isDocumentPaymentStatus,
   resolveDocumentPayment,
   validatePartialPaymentAmount,
+  validatePaymentDueDate,
 } from '@/lib/document-payment';
+import { resolveDocumentPaymentDueDate } from '@/lib/documentPaymentDueDate';
 import {
   type EditableNumber,
   num,
@@ -180,6 +182,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   const extraChargeLabel = EXTRA_CHARGE_LABELS[extraChargeKind];
   const [paymentStatus, setPaymentStatus] = useState<DocumentPaymentStatus>('PAID');
   const [amountReceived, setAmountReceived] = useState<EditableNumber>(0);
+  const [paymentDueDate, setPaymentDueDate] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [hideGstInHeader, setHideGstInHeader] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
@@ -463,6 +466,22 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     }
   }, [paymentStatus, totalAmount]);
 
+  // Auto-fill payment due date from job / reminder when entering Pending/Partial
+  useEffect(() => {
+    if (paymentStatus !== 'PENDING' && paymentStatus !== 'PARTIAL') return;
+    if (paymentDueDate.trim()) return;
+    let cancelled = false;
+    void (async () => {
+      const due = await resolveDocumentPaymentDueDate({
+        customerId: customer?.id,
+      });
+      if (!cancelled && due) setPaymentDueDate(due);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentStatus, customer?.id, paymentDueDate]);
+
   const resolvedPayment = resolveDocumentPayment({
     paymentStatus,
     totalAmount,
@@ -587,6 +606,12 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       return null;
     }
 
+    const dueError = validatePaymentDueDate(paymentStatus, paymentDueDate);
+    if (dueError) {
+      toast.error(dueError);
+      return null;
+    }
+
     const brandCompany = getCompanyInfoForBrand(brand);
     setCompany(brandCompany);
 
@@ -607,10 +632,10 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       customer: {
         id: customer.id || '',
         name: editableCustomer.name,
-        address: `${editableCustomer.address.street || ''}, ${editableCustomer.address.area || ''}`.trim() || '',
-        city: editableCustomer.address.city || '',
-        state: editableCustomer.address.state || '',
-        pincode: editableCustomer.address.pincode || '',
+        address: '',
+        city: '',
+        state: '',
+        pincode: '',
         phone: editableCustomer.phone,
         email: editableCustomer.email,
         gstNumber: editableCustomer.gst
@@ -623,6 +648,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       totalAmount: billTotal,
       paymentStatus: resolvedPayment.status,
       amountPaid: resolvedPayment.paid,
+      dueDate: paymentStatus === 'PAID' ? undefined : paymentDueDate || undefined,
       paymentMethod: 'CASH',
       notes: joinNotesHtml(notes),
       notesHeading,
@@ -708,6 +734,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     extraChargeKind,
     paymentStatus,
     amountReceived: num(amountReceived),
+    paymentDueDate,
     hideGstInHeader,
     editableCustomer,
   });
@@ -744,6 +771,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     }
     if (isDocumentPaymentStatus(snap.paymentStatus)) setPaymentStatus(snap.paymentStatus);
     if (typeof snap.amountReceived === 'number') setAmountReceived(snap.amountReceived);
+    if (typeof snap.paymentDueDate === 'string') setPaymentDueDate(snap.paymentDueDate);
     if (typeof snap.hideGstInHeader === 'boolean') setHideGstInHeader(snap.hideGstInHeader);
     if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
@@ -815,8 +843,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                     variant="outline"
                     className={documentOutlineBtnClass}
                   >
-                    <Mail className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Email PDF</span>
+                    <Share2 className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Send PDF</span>
                   </Button>
                 </div>
               </div>
@@ -924,82 +952,14 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                     />
                   </div>
                 </div>
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Address</Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="address-street">Street</Label>
-                      <Input
-                        id="address-street"
-                        value={editableCustomer.address.street}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...prev.address, street: e.target.value }
-                        }))}
-                        placeholder="Enter street address"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="address-area">Area</Label>
-                      <Input
-                        id="address-area"
-                        value={editableCustomer.address.area}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...prev.address, area: e.target.value }
-                        }))}
-                        placeholder="Enter area"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="address-city">City</Label>
-                      <Input
-                        id="address-city"
-                        value={editableCustomer.address.city}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...prev.address, city: e.target.value }
-                        }))}
-                        placeholder="Enter city"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="address-state">State</Label>
-                      <Input
-                        id="address-state"
-                        value={editableCustomer.address.state}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...prev.address, state: e.target.value }
-                        }))}
-                        placeholder="Enter state"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="address-pincode">Pincode</Label>
-                      <Input
-                        id="address-pincode"
-                        value={editableCustomer.address.pincode}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...prev.address, pincode: e.target.value }
-                        }))}
-                        placeholder="Enter pincode"
-                      />
-                    </div>
-                  </div>
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  Name and phone are enough for the bill — address is optional and omitted from this form.
+                </p>
               </div>
             ) : (
             <div className="space-y-2">
                 <div className="font-semibold text-lg">{editableCustomer.name}</div>
               <div className="text-sm text-gray-600">
-                  {(editableCustomer.address.street || editableCustomer.address.area) && (
-                    <div>{editableCustomer.address.street || ''}, {editableCustomer.address.area || ''}</div>
-                  )}
-                  {(editableCustomer.address.city || editableCustomer.address.state || editableCustomer.address.pincode) && (
-                    <div>{editableCustomer.address.city || ''}, {editableCustomer.address.state || ''} - {editableCustomer.address.pincode || ''}</div>
-                  )}
                   {editableCustomer.phone && <div>Phone: {editableCustomer.phone}</div>}
                   {editableCustomer.email && <div>Email: {editableCustomer.email}</div>}
                   {editableCustomer.gst && <div>GST: {editableCustomer.gst}</div>}
@@ -1279,7 +1239,22 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
         amountReceived={amountReceived}
         onAmountReceivedChange={setAmountReceived}
         totalAmount={totalAmount}
-      />
+      >
+        {(paymentStatus === 'PENDING' || paymentStatus === 'PARTIAL') && (
+          <div>
+            <Label htmlFor="bill-paymentDueDate">Payment due date</Label>
+            <DatePicker
+              value={paymentDueDate}
+              onChange={(v) => setPaymentDueDate(v ?? '')}
+              placeholder="Pick due date"
+              className="mt-1"
+            />
+            <p className="text-xs text-gray-600 mt-1">
+              Required. Auto-filled from the job’s pending payment date when available.
+            </p>
+          </div>
+        )}
+      </DocumentPaymentStatusCard>
 
       {/* Bill Summary */}
       <Card>
@@ -1350,7 +1325,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
               {isEditingNotes ? (
                 <div className="space-y-4">
                   <div className="text-sm text-blue-600">
-                    Same formatting as Custom Document (Bold, headings, lists, alignment, links).
+                    Same formatting as Custom Document (Bold, headings, lists, tables, alignment, links).
                   </div>
                   <div className="flex flex-col gap-2">
                     <RichTextEditor

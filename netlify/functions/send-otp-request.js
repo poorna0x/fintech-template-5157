@@ -87,6 +87,16 @@ exports.handler = async (event) => {
       },
       android: { priority: 'high' },
     }), 'otp_request');
+    void require('./tech-push-whatsapp-helper')
+      .maybeSendTechnicianPushWhatsApp(db, {
+        technicianId,
+        category: 'otp_request',
+        title: "Office needs the customer's OTP",
+        body: customerName
+          ? `Ask ${customerName} for the code, then tap Enter OTP in the app.`
+          : 'Ask the customer for the code, then tap Enter OTP in the app.',
+      })
+      .catch(() => {});
     if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
     }

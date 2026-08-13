@@ -42,8 +42,21 @@ export function generateDocumentPdfVerifyCode(): string {
   return out;
 }
 
-export function formatDocumentPdfVerifyFooterLine(verifyCode: string): string {
-  return `Verify authenticity in CRM · Code ${verifyCode}`;
+/** Public host for /authenticity based on which brand issued the PDF. */
+export function pdfAuthenticityPublicHost(brand?: string | null): string {
+  return String(brand || '').toLowerCase() === 'elevenro' ? 'elevenro.com' : 'hydrogenro.com';
+}
+
+/**
+ * Footer line shown on customer PDFs (no CRM wording).
+ * Example: Verify authenticity at elevenro.com/authenticity · Code AB12CD34
+ */
+export function formatDocumentPdfVerifyFooterLine(
+  verifyCode: string,
+  brand?: string | null
+): string {
+  const host = pdfAuthenticityPublicHost(brand);
+  return `Verify authenticity at ${host}/authenticity · Code ${verifyCode}`;
 }
 
 export function todayYmdIst(): string {

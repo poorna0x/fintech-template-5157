@@ -17,7 +17,7 @@ import {
   normalizeDocumentBrand,
   resolveBrandSealSrc,
 } from './service-brands';
-import { downloadDocumentPdf } from './server-pdf-download';
+import { downloadDocumentPdf, withAbsoluteAssetUrls } from './server-pdf-download';
 
 /**
  * DOMPurify config tuned for the rich text editor inside the letterhead builder.
@@ -46,8 +46,14 @@ const LETTERHEAD_RICH_TEXT_CONFIG = {
     'a',
     'blockquote',
     'hr',
+    'table',
+    'thead',
+    'tbody',
+    'tr',
+    'th',
+    'td',
   ],
-  ALLOWED_ATTR: ['href', 'target', 'rel', 'style', 'class'],
+  ALLOWED_ATTR: ['href', 'target', 'rel', 'style', 'class', 'colspan', 'rowspan'],
   ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
 };
 
@@ -731,6 +737,29 @@ const LETTERHEAD_BASE_CSS = `
   }
   .lh-table tr:nth-child(even) td { background: #f8fafc; }
 
+  /* Tables inserted inside rich-text body blocks */
+  .lh-text-block table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0 12px;
+    table-layout: fixed;
+  }
+  .lh-text-block th,
+  .lh-text-block td {
+    border: 1px solid #cbd5e1;
+    padding: 7px 8px;
+    text-align: left;
+    vertical-align: top;
+    word-break: break-word;
+    font-size: 12px;
+  }
+  .lh-text-block th {
+    background: #f1f5f9;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .lh-text-block tbody tr:nth-child(even) td { background: #f8fafc; }
+
   .lh-image-block { margin: 10px 0; }
   /* Floated image that text wraps around; caption sits under the image. */
   .lh-image-wrap { margin: 10px 0; }
@@ -916,7 +945,7 @@ export function generateLetterheadPDF(
       return;
     }
 
-    printWindow.document.write(buildLetterheadDocumentHtml(data));
+    printWindow.document.write(withAbsoluteAssetUrls(buildLetterheadDocumentHtml(data)));
     printWindow.document.close();
 
     printWindow.onload = () => {

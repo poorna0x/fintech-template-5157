@@ -2,8 +2,9 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { toast } from 'sonner';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
-import { openAdminWhatsappForJobAssign } from '@/lib/openAdminWhatsappForJobAssign';
+import { openAdminWhatsappForJobAssign, openAdminWhatsappForJobUnassign, type OpenAdminWhatsappForJobCtx } from '@/lib/openAdminWhatsappForJobAssign';
 import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
+import { readJobWhatsAppNotifyPrefsCached } from '@/lib/jobAssignWhatsAppSettingsCache';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 import {
   appendJobToTechnicianVisitOrder,
@@ -110,7 +111,31 @@ export async function submitAdminJobReassign(
       (t) => t.id === ctx.selectedTechnicianForReassign
     );
     if (reassignedTechnician && getTechnicianAdminWhatsAppPhone(reassignedTechnician)) {
-      openAdminWhatsappForJobAssign(ctx, ctx.jobToReassign, reassignedTechnician, scrollY);
+      const techPayload = {
+        id: reassignedTechnician.id,
+        fullName: reassignedTechnician.fullName || (reassignedTechnician as any).full_name || 'Technician',
+        phone: reassignedTechnician.phone,
+        whatsappPhone: (reassignedTechnician as any).whatsappPhone,
+        whatsapp_phone: (reassignedTechnician as any).whatsapp_phone,
+      };
+      const cached = readJobWhatsAppNotifyPrefsCached();
+      const willAuto = cached?.enabled !== false && cached?.autoAssign === true;
+      if (willAuto) {
+        ctx.setReassignDialogOpen(false);
+        ctx.closeAdminModal();
+        void openAdminWhatsappForJobAssign(ctx, ctx.jobToReassign, techPayload, scrollY);
+      } else {
+        const result = await openAdminWhatsappForJobAssign(
+          ctx,
+          ctx.jobToReassign,
+          techPayload,
+          scrollY
+        );
+        if (result !== 'dialog') {
+          ctx.setReassignDialogOpen(false);
+          ctx.closeAdminModal();
+        }
+      }
     } else {
       ctx.setReassignDialogOpen(false);
       ctx.closeAdminModal();
@@ -141,6 +166,8 @@ export async function unassignAdminJob(
   ctx: {
     setJobs: Dispatch<SetStateAction<Job[]>>;
     setCustomerJobs: Dispatch<SetStateAction<Record<string, Job[]>>>;
+    technicians?: Technician[];
+    whatsappCtx?: OpenAdminWhatsappForJobCtx;
   }
 ) {
   try {
@@ -214,6 +241,23 @@ export async function unassignAdminJob(
     });
 
     toast.success('Technician unassigned successfully. Job status set to PENDING.');
+
+    if (previousTechnicianId && ctx.whatsappCtx && ctx.technicians?.length) {
+      const prevTech = ctx.technicians.find((t) => t.id === previousTechnicianId);
+      if (prevTech) {
+        void openAdminWhatsappForJobUnassign(
+          ctx.whatsappCtx,
+          job,
+          {
+            id: prevTech.id,
+            fullName: prevTech.fullName || (prevTech as any).full_name || 'Technician',
+            phone: prevTech.phone,
+            whatsappPhone: (prevTech as any).whatsappPhone || (prevTech as any).whatsapp_phone,
+          },
+          window.scrollY
+        );
+      }
+    }
   } catch (error) {
     console.error('Error unassigning job:', error);
     toast.error('Failed to unassign job');

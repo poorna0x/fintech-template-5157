@@ -391,10 +391,19 @@ export default function ArrangeTechnicianVisitOrderDialog({
             'Customer'
           );
         });
+        const orderPush = visitOrderChangedPushText({ stopLabels });
         notifyTechnicianJobPush({
           technicianId,
-          ...visitOrderChangedPushText({ stopLabels }),
+          ...orderPush,
         });
+        void import('@/lib/jobTechnicianWhatsApp').then(({ queueTechnicianJobWhatsAppAutoMessage }) =>
+          queueTechnicianJobWhatsAppAutoMessage({
+            technicianId,
+            category: 'job_assigned',
+            title: orderPush.title,
+            body: orderPush.body,
+          })
+        );
       }
 
       toast.success(

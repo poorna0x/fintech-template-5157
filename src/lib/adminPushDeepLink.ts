@@ -67,6 +67,19 @@ export function parseAdminPushDeepLinkData(
 ): AdminPushDeepLinkPayload | null {
   if (!raw || typeof raw !== 'object') return null;
 
+  if (String(raw.type || '').trim() === 'whatsapp_inbound') {
+    const phone = String(raw.phone || raw.phone_e164 || '').replace(/\D/g, '');
+    if (!phone) return null;
+    return {
+      kind: 'settings',
+      jobId: '',
+      event: 'whatsapp_inbound',
+      panel: 'whatsapp-inbox',
+      phone,
+      reminderId: phone,
+    };
+  }
+
   if (String(raw.type || '').trim() === 'admin_reminder') {
     const reminderId = String(raw.reminderId || '').trim();
     const panelRaw = String(raw.panel || '').trim();

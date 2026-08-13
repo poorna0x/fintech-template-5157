@@ -87,6 +87,7 @@ const TEMPLATE_ORDER: AdminEmailTemplateType[] = [
   'amc_document',
   'quotation',
   'service_reminder',
+  'tech_running_late',
   'general',
 ];
 

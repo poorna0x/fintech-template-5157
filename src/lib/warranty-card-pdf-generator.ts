@@ -5,6 +5,7 @@ import {
   renderPdfLogoHtml,
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
+import { formatDocumentPdfVerifyFooterLine } from './documentPdfAuthenticity';
 import {
   addDuration,
   formatWarrantyDate,
@@ -21,6 +22,7 @@ import {
   type DocumentBrand,
 } from './service-brands';
 import { POPPINS_FONT_FAMILY, renderPoppinsFontHeadLinks } from './pdf-document-fonts';
+import { withAbsoluteAssetUrls } from './server-pdf-download';
 
 export interface WarrantyCardPDFCustomer {
   name: string;
@@ -750,7 +752,9 @@ export function generateWarrantyCardHTML(data: WarrantyCardPDFData): string {
       ).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
       ${
         data.authenticityVerifyCode
-          ? `<div style="margin-top: 6px; letter-spacing: 0.02em; color: #9ca3af;">Verify authenticity in CRM · Code ${sanitizeForTemplate(data.authenticityVerifyCode)}</div>`
+          ? `<div style="margin-top: 6px; letter-spacing: 0.02em; color: #9ca3af;">${sanitizeForTemplate(
+              formatDocumentPdfVerifyFooterLine(data.authenticityVerifyCode, brand)
+            )}</div>`
           : ''
       }
     </div>
@@ -781,7 +785,7 @@ export function generateWarrantyCardPDF(
       alert('Please allow popups to preview the warranty card.');
       return;
     }
-    printWindow.document.write(generateWarrantyCardHTML(data));
+    printWindow.document.write(withAbsoluteAssetUrls(generateWarrantyCardHTML(data)));
     printWindow.document.close();
     printWindow.onload = () => {
       printWindow.focus();

@@ -12,6 +12,7 @@ import {
 import { db } from '@/lib/supabase';
 import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
 import type { Job, Technician } from '@/types';
 
 export async function shareAdminJobViaWhatsApp(job: Job, technicians: Technician[]) {
@@ -78,13 +79,16 @@ export async function shareAdminJobViaWhatsApp(job: Job, technicians: Technician
     '';
   const lines = [
     `*Job: ${(job as any).job_number || job.jobNumber || job.id}*`,
-    `Service: ${serviceType}${serviceSubType ? ` - ${serviceSubType}` : ''}`,
-    `Name: ${name}`,
-    `Phone: ${phone}`,
-    ...(altPhone ? [`Alt. phone: ${altPhone}`] : []),
-    `Lead source: ${leadSource}`,
-    ...(siteLabel ? [`Service at: ${siteLabel}`] : []),
-    ...(googleMapLink ? [`Location: ${googleMapLink}`] : []),
+    waPlainLabelValue(
+      'Service',
+      `${serviceType}${serviceSubType ? ` - ${serviceSubType}` : ''}`
+    ),
+    waPlainLabelValue('Name', name),
+    waPlainLabelValue('Phone', phone),
+    ...(altPhone ? [waPlainLabelValue('Alt. phone', altPhone)] : []),
+    waPlainLabelValue('Lead source', leadSource),
+    ...(siteLabel ? [waPlainLabelValue('Service at', siteLabel)] : []),
+    ...(googleMapLink ? [waPlainLabelValue('Location', googleMapLink)] : []),
     ...(fullAddressLine ? ['', '_Full address:_', fullAddressLine] : []),
   ];
   const text = lines.join('\n');

@@ -36,6 +36,9 @@ import { hapticTap } from '@/lib/haptics';
 import { focusAndroidInputWithoutScroll } from '@/lib/isNativeApp';
 import { settingsPath } from '@/lib/settingsSections';
 import { settingsPanelPath } from '@/lib/settingsUrl';
+import { useWhatsAppUnreadCount } from '@/lib/whatsappInboxActivity';
+import { cn } from '@/lib/utils';
+import { WhatsAppLogo, WhatsAppUnreadBadge } from '@/components/whatsapp/WhatsAppLogo';
 import type { AdminDashboardView, AdminToolDialog } from '@/lib/adminDashboardUrl';
 
 export type UnknownCallerChipProps = {
@@ -121,6 +124,8 @@ export function AdminDashboardHeader({
   unknownCallerPending = false,
 }: AdminDashboardHeaderProps) {
   const navigate = useNavigate();
+  const whatsAppUnreadCount = useWhatsAppUnreadCount();
+  const hasWhatsAppUnread = whatsAppUnreadCount > 0;
 
   const trimSearchOnBlur: React.FocusEventHandler<HTMLInputElement> = (e) => {
     const trimmed = e.target.value.trim();
@@ -195,10 +200,18 @@ export function AdminDashboardHeader({
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
-                    className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                    title="Tools"
+                    className={cn(
+                      'flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3',
+                      hasWhatsAppUnread &&
+                        'border-2 border-emerald-500 bg-emerald-50/60 text-emerald-900 hover:bg-emerald-50 hover:text-emerald-900'
+                    )}
+                    title={hasWhatsAppUnread ? `${whatsAppUnreadCount} unread WhatsApp` : 'Tools'}
                   >
-                    <Wrench className="w-4 h-4" />
+                    {hasWhatsAppUnread ? (
+                      <WhatsAppLogo size={18} />
+                    ) : (
+                      <Wrench className="w-4 h-4" />
+                    )}
                     <span className="hidden sm:inline">Tools</span>
                   </Button>
                 </DropdownMenuTrigger>
@@ -215,6 +228,10 @@ export function AdminDashboardHeader({
                       </span>
                     ) : null}
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onOpenAdminTool('quick-customer')}>
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    Quick customer
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => {
                       hapticTap();
@@ -224,6 +241,23 @@ export function AdminDashboardHeader({
                   >
                     <PhoneCall className="w-4 h-4 mr-2" />
                     Calling Page
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className={cn(
+                      hasWhatsAppUnread &&
+                        'font-medium text-emerald-800 focus:bg-emerald-50 focus:text-emerald-900 data-[highlighted]:bg-emerald-50 data-[highlighted]:text-emerald-900'
+                    )}
+                    onClick={() => {
+                      hapticTap();
+                      onToolsMenuOpenChange(false);
+                      navigate(settingsPanelPath('whatsapp-inbox'));
+                    }}
+                  >
+                    <WhatsAppLogo size={18} className="mr-2" />
+                    <span className={hasWhatsAppUnread ? 'text-emerald-800' : undefined}>
+                      WhatsApp
+                    </span>
+                    <WhatsAppUnreadBadge count={whatsAppUnreadCount} />
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => {

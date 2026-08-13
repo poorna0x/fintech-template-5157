@@ -12,7 +12,15 @@ import { Customer } from '@/types';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
-import { generateJobNumber, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
+import { generateJobNumber, formatCustomTimeLabel, getDefaultLeadCost } from '@/lib/adminUtils';
+import {
+  isLeadSourceAllowCustomText,
+  isLeadSourceRequiresOtp,
+  isServiceSubTypeAllowCustomText,
+  leadSourceValueForSave,
+} from '@/lib/leadCatalog';
+import { LeadSourceSelect } from '@/components/admin/LeadSourceSelect';
+import { ServiceSubTypeSelect } from '@/components/admin/ServiceSubTypeSelect';
 import { db } from '@/lib/supabase';
 import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
 import { jobAssignPushText, notifyTechnicianJobPush } from '@/lib/adminTechPushNotify';
@@ -187,7 +195,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     onOpenChange(false);
   };
 
-  const handleFormChange = (field: keyof NewJobFormData, value: string | number) => {
+  const handleFormChange = (field: keyof NewJobFormData, value: string | number | boolean) => {
     // If service_type changes, update brand/model defaults to match that service
     if (field === 'service_type' && customer) {
       const nextServiceType = String(value) as 'RO' | 'SOFTENER';
@@ -219,7 +227,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         field === 'service_sub_type' ||
         field === 'service_sub_type_custom' ||
         field === 'lead_source';
-      if (shouldRecalcLeadCost && next.lead_source && next.lead_source !== 'Other') {
+      if (shouldRecalcLeadCost && next.lead_source && !isLeadSourceAllowCustomText(next.lead_source)) {
         next.lead_cost = getDefaultLeadCost(
           next.lead_source,
           next.service_sub_type,
@@ -333,7 +341,10 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       return;
     }
     
-    if (newJobFormData.lead_source === 'Other' && (!newJobFormData.lead_source_custom || newJobFormData.lead_source_custom.trim() === '')) {
+    if (
+      isLeadSourceAllowCustomText(newJobFormData.lead_source) &&
+      (!newJobFormData.lead_source_custom || newJobFormData.lead_source_custom.trim() === '')
+    ) {
       toast.error('Please enter a custom lead source', TOAST_VALIDATION);
       return;
     }
@@ -386,7 +397,10 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       }
 
       const requirements: any[] = [{ 
-        lead_source: newJobFormData.lead_source === 'Other' ? (newJobFormData.lead_source_custom || 'Other') : newJobFormData.lead_source,
+        lead_source: leadSourceValueForSave(
+          newJobFormData.lead_source,
+          newJobFormData.lead_source_custom
+        ),
         cost_range: newJobFormData.cost_agreed || '',
         custom_time: customTimeInRequirements,
         flexible_time: isFlexible
@@ -427,7 +441,9 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         job_number: jobNumber,
         customer_id: customer.id,
         service_type: newJobFormData.service_type,
-        service_sub_type: newJobFormData.service_sub_type === 'Other' ? newJobFormData.service_sub_type_custom : newJobFormData.service_sub_type,
+        service_sub_type: isServiceSubTypeAllowCustomText(newJobFormData.service_sub_type)
+          ? newJobFormData.service_sub_type_custom || newJobFormData.service_sub_type
+          : newJobFormData.service_sub_type,
         brand: newJobFormData.brand === 'Not specified' ? '' : newJobFormData.brand,
         model: newJobFormData.model === 'Not specified' ? '' : newJobFormData.model,
         scheduled_date: newJobFormData.scheduled_date,
@@ -485,6 +501,23 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           jobId: newJob.id,
           ...jobAssignPushText({ job: newJob as any, customer: customer as any }),
         });
+        const assignedTech = technicians.find((t) => t.id === newJobFormData.assigned_technician_id);
+        if (assignedTech) {
+          void import('@/lib/jobTechnicianWhatsApp').then(({ notifyTechnicianJobWhatsApp }) =>
+            notifyTechnicianJobWhatsApp({
+              job: newJob as any,
+              technician: {
+                id: assignedTech.id,
+                fullName: assignedTech.fullName || (assignedTech as any).full_name || 'Technician',
+                phone: assignedTech.phone,
+                whatsappPhone: (assignedTech as any).whatsappPhone,
+                whatsapp_phone: (assignedTech as any).whatsapp_phone,
+              },
+              mode: 'assign',
+              ctx: null,
+            })
+          );
+        }
       }
 
       onJobCreated(newJob);
@@ -565,14 +598,13 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 
       // Capture values needed for the WhatsApp notify dialog BEFORE handleClose() resets the form.
       const assignedTechIdToNotify = newJobFormData.assigned_technician_id;
-      const subTypeToNotify =
-        newJobFormData.service_sub_type === 'Other'
-          ? newJobFormData.service_sub_type_custom
-          : newJobFormData.service_sub_type;
-      const leadSourceToNotify =
-        newJobFormData.lead_source === 'Other'
-          ? newJobFormData.lead_source_custom || 'Other'
-          : newJobFormData.lead_source;
+      const subTypeToNotify = isServiceSubTypeAllowCustomText(newJobFormData.service_sub_type)
+        ? newJobFormData.service_sub_type_custom || newJobFormData.service_sub_type
+        : newJobFormData.service_sub_type;
+      const leadSourceToNotify = leadSourceValueForSave(
+        newJobFormData.lead_source,
+        newJobFormData.lead_source_custom
+      );
       const customTimeToNotify =
         newJobFormData.scheduled_time_slot === 'CUSTOM' && newJobFormData.scheduled_time_custom
           ? formatCustomTimeLabel(newJobFormData.scheduled_time_custom) || undefined
@@ -709,38 +741,13 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   </select>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="job_service_sub_type">Service Sub Type</Label>
-                  <select
-                    id="job_service_sub_type"
-                    value={newJobFormData.service_sub_type || 'Service'}
-                    onChange={(e) => handleFormChange('service_sub_type', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-card"
-                  >
-                    <option value="Service">Service</option>
-                    <option value="Installation">Installation</option>
-                    <option value="Reinstallation">Reinstallation</option>
-                    <option value="Return Complaint">Return Complaint</option>
-                    <option value="Return Service">Return Service</option>
-                    <option value="AMC Service">AMC Service</option>
-                    <option value="New Purifier Installation">New Purifier Installation</option>
-                    <option value="Un-Installation">Un-Installation</option>
-                    <option value="Repair">Repair</option>
-                    <option value="Maintenance">Maintenance</option>
-                    <option value="Replacement">Replacement</option>
-                    <option value="Inspection">Inspection</option>
-                    <option value="Other">Other</option>
-                  </select>
-                  {newJobFormData.service_sub_type === 'Other' && (
-                    <Input
-                      id="job_service_sub_type_custom"
-                      value={newJobFormData.service_sub_type_custom}
-                      onChange={(e) => handleFormChange('service_sub_type_custom', e.target.value)}
-                      placeholder="Enter custom service sub type"
-                      className="mt-2"
-                    />
-                  )}
-                </div>
+                <ServiceSubTypeSelect
+                  id="job_service_sub_type"
+                  value={newJobFormData.service_sub_type || 'Service'}
+                  customValue={newJobFormData.service_sub_type_custom}
+                  onChange={(v) => handleFormChange('service_sub_type', v)}
+                  onCustomChange={(v) => handleFormChange('service_sub_type_custom', v)}
+                />
               </div>
             </div>
 
@@ -960,53 +967,25 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                 <p className="text-xs text-muted-foreground">Enter a single amount or a range (e.g., 400-500)</p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="job_lead_source">Lead Source *</Label>
-                <select
-                  id="job_lead_source"
-                  value={newJobFormData.lead_source}
-                  onChange={(e) => {
-                    const selectedLeadSource = e.target.value;
-                    handleFormChange('lead_source', selectedLeadSource);
-                    // Auto-set default lead cost based on lead source
-                    if (selectedLeadSource) {
-                      const defaultCost = getDefaultLeadCost(
-                        selectedLeadSource,
-                        newJobFormData.service_sub_type,
-                        newJobFormData.service_sub_type_custom,
-                      );
-                      handleFormChange('lead_cost', defaultCost);
-                    }
-                    // OTP on for Home Triangle variants; off when switching away
-                    handleFormChange(
-                      'require_otp',
-                      isHomeTriangleLeadSource(selectedLeadSource),
+              <LeadSourceSelect
+                id="job_lead_source"
+                value={newJobFormData.lead_source}
+                customValue={newJobFormData.lead_source_custom || ''}
+                required
+                onChange={(selectedLeadSource) => {
+                  handleFormChange('lead_source', selectedLeadSource);
+                  if (selectedLeadSource) {
+                    const defaultCost = getDefaultLeadCost(
+                      selectedLeadSource,
+                      newJobFormData.service_sub_type,
+                      newJobFormData.service_sub_type_custom,
                     );
-                  }}
-                  required
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-card"
-                >
-                  <option value="">Select lead source</option>
-                  <option value="Website">Website</option>
-                  <option value="Direct call">Direct call</option>
-                  <option value="Google-Leads">Google-Leads</option>
-                  <option value="RO care india">RO care india</option>
-                  <option value="Home Triangle">Home Triangle</option>
-                  <option value="Home Triangle-Srujan">Home Triangle-Srujan</option>
-                  <option value="Home Triangle-3">Home Triangle-3</option>
-                  <option value="Local Ramu">Local Ramu</option>
-                  <option value="Other">Other</option>
-                </select>
-                {newJobFormData.lead_source === 'Other' && (
-                  <Input
-                    id="job_lead_source_custom"
-                    value={newJobFormData.lead_source_custom || ''}
-                    onChange={(e) => handleFormChange('lead_source_custom', e.target.value)}
-                    placeholder="Enter lead source"
-                    className="mt-2"
-                  />
-                )}
-              </div>
+                    handleFormChange('lead_cost', defaultCost);
+                  }
+                  handleFormChange('require_otp', isLeadSourceRequiresOtp(selectedLeadSource));
+                }}
+                onCustomChange={(v) => handleFormChange('lead_source_custom', v)}
+              />
 
               {/* Lead Cost - Required when lead source is selected (hidden for technicians; server applies the default) */}
               {!technicianMode && newJobFormData.lead_source && (

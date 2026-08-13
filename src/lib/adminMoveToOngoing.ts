@@ -12,6 +12,7 @@ import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
 import { jobAssignPushText, notifyTechnicianJobPush } from '@/lib/adminTechPushNotify';
+import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -205,6 +206,24 @@ export async function performAdminMoveToOngoing(ctx: AdminMoveToOngoingCtx) {
         jobId: ctx.selectedJob.id,
         ...jobAssignPushText({ job: ctx.selectedJob as any }),
       });
+
+      const assignedTech = ctx.technicians.find((t) => t.id === ctx.followUpAssignTechnicianId);
+      if (assignedTech && getTechnicianAdminWhatsAppPhone(assignedTech)) {
+        void import('@/lib/jobTechnicianWhatsApp').then(({ notifyTechnicianJobWhatsApp }) =>
+          notifyTechnicianJobWhatsApp({
+            job: ctx.selectedJob as Job,
+            technician: {
+              id: assignedTech.id,
+              fullName: assignedTech.fullName || (assignedTech as any).full_name || 'Technician',
+              phone: assignedTech.phone,
+              whatsappPhone: (assignedTech as any).whatsappPhone,
+              whatsapp_phone: (assignedTech as any).whatsapp_phone,
+            },
+            mode: 'assign',
+            ctx: null,
+          })
+        );
+      }
     }
 
     const jobId = ctx.selectedJob.id;

@@ -1,4 +1,4 @@
-import { DocumentBrand, getDocumentBrandLabel } from './service-brands';
+import { DocumentBrand } from './service-brands';
 
 /** Same asset as Hydrogen — icon is the left portion of this wide logo */
 export const BRAND_FULL_LOGO_SRC = '/fulllogo.webp';

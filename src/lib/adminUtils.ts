@@ -6,6 +6,7 @@ import {
   parseDbServiceType,
   readCustomerEquipmentSlot,
 } from '@/lib/equipment-suggestions';
+import { isLeadSourceRequiresOtp } from '@/lib/leadCatalog';
 
 /** Technician employee id used for zero-commission (office) completions. */
 export const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
@@ -27,13 +28,25 @@ export const generateJobNumber = (serviceType: 'RO' | 'SOFTENER'): string => {
 };
 
 // Helper function to format preferred time slot with custom time
+/** True when custom_time is clock HH:MM (not a period label like "Afternoon (12:00 PM – 3:00 PM)"). */
+export function isClockCustomTime(customTime: string | null | undefined): boolean {
+  if (!customTime || typeof customTime !== 'string') return false;
+  const t = customTime.trim();
+  // Strict 24h HH:MM used by CRM time pickers
+  if (/^\d{1,2}:\d{2}$/.test(t)) {
+    const [h, m] = t.split(':').map(Number);
+    return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+  }
+  return false;
+}
+
 export const formatPreferredTimeSlot = (timeSlot: string | undefined, customTime: string | null | undefined): string => {
   if (!timeSlot) return 'Not specified';
   
-  if (timeSlot === 'CUSTOM' && customTime) {
+  if (timeSlot === 'CUSTOM' && isClockCustomTime(customTime)) {
     // Format custom time (HH:MM) to readable format (e.g., "2:30 PM")
-    const [hours, minutes] = customTime.split(':');
-    const hour24 = parseInt(hours);
+    const [hours, minutes] = customTime!.split(':');
+    const hour24 = parseInt(hours, 10);
     const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
     const ampm = hour24 >= 12 ? 'PM' : 'AM';
     return `Custom: ${hour12}:${minutes} ${ampm}`;
@@ -575,17 +588,15 @@ export const getOfficeJobParts = (job: any): OfficeJobPart[] => {
 // Format time string to 12-hour format
 export const formatTimeTo12Hour = (timeString: string | null): string | null => {
   if (!timeString) return null;
+  if (!isClockCustomTime(timeString)) {
+    // Period labels / free text — show as-is (do not invent NaN:00)
+    return String(timeString).trim();
+  }
   const [hours, minutes] = String(timeString).split(':');
-  if (!hours || !minutes) {
-    return timeString;
-  }
   const hourNum = parseInt(hours, 10);
-  if (Number.isNaN(hourNum)) {
-    return timeString;
-  }
   const normalizedHour = ((hourNum % 12) + 12) % 12 || 12;
   const suffix = hourNum >= 12 ? 'PM' : 'AM';
-  return `${normalizedHour}:${minutes.padEnd(2, '0')} ${suffix}`;
+  return `${normalizedHour}:${String(minutes).padStart(2, '0')} ${suffix}`;
 };
 
 /** Short custom visit time for WhatsApp (e.g. "9 AM", "10:30 AM"), or null if none. */
@@ -602,6 +613,7 @@ export function getJobCustomTimeLabel(job: Record<string, unknown> | null | unde
   try {
     const requirements = parseJobRequirements(job.requirements);
     const customTime = requirements.find((r: any) => r?.custom_time)?.custom_time;
+    if (!isClockCustomTime(typeof customTime === 'string' ? customTime : null)) return null;
     return formatCustomTimeLabel(typeof customTime === 'string' ? customTime : null);
   } catch {
     return null;
@@ -610,27 +622,28 @@ export function getJobCustomTimeLabel(job: Record<string, unknown> | null | unde
 
 // Get formatted time slot from job requirements
 export const getFormattedTimeSlot = (job: any, requirements: any[]): string => {
-  // Check if there's a custom time in requirements
   const customTime = requirements.find((r: any) => r?.custom_time)?.custom_time;
-  
-  if (customTime) {
+
+  // CRM clock times only — ignore period labels wrongly stored as custom_time
+  if (isClockCustomTime(customTime)) {
     return formatTimeTo12Hour(customTime) || customTime;
   }
-  
-  // Check for flexible time
+
   const isFlexible = requirements.find((r: any) => r?.flexible_time)?.flexible_time;
   if (isFlexible) {
     return 'Flexible';
   }
-  
-  // Otherwise show the time slot
+
   const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot || 'Time not specified';
   const timeSlotMap: { [key: string]: string } = {
-    'MORNING': 'Morning (9 AM - 1 PM)',
-    'AFTERNOON': 'Afternoon (1 PM - 6 PM)',
-    'EVENING': 'Evening (6 PM - 9 PM)'
+    MORNING: 'Morning (9 AM - 12 PM)',
+    AFTERNOON: 'Afternoon (12 PM - 3 PM)',
+    EVENING: 'Evening (3 PM - 6 PM)',
   };
-  return timeSlotMap[timeSlot] || timeSlot;
+  if (timeSlotMap[timeSlot]) return timeSlotMap[timeSlot];
+  // Legacy WhatsApp period label left in custom_time
+  if (typeof customTime === 'string' && customTime.trim()) return customTime.trim();
+  return timeSlot;
 };
 
 // Find lead source in requirements
@@ -895,60 +908,10 @@ export function normalizeLeadType(value: string): string {
 }
 
 export function isHomeTriangleLeadSource(leadSource: string | undefined | null): boolean {
-  const s = (leadSource || '').trim().toLowerCase();
-  if (!s) return false;
-  return s === 'home triangle' || s.startsWith('home triangle');
+  return isLeadSourceRequiresOtp(leadSource || '');
 }
 
-function resolveJobServiceSubTypeLabel(
-  serviceSubType: string | undefined | null,
-  customValue?: string | null,
-): string {
-  const base = (serviceSubType || '').trim();
-  if (base === 'Custom' || base === 'Other') {
-    return (customValue || '').trim() || base;
-  }
-  return base;
-}
-
-function isInstallationOrReinstallationServiceSubType(
-  serviceSubType: string | undefined | null,
-  customValue?: string | null,
-): boolean {
-  const label = resolveJobServiceSubTypeLabel(serviceSubType, customValue).toLowerCase();
-  return label === 'installation' || label === 'reinstallation';
-}
-
-/** Default lead cost (₹) by lead source; Home Triangle + Installation/Reinstallation → 116. */
-export function getDefaultLeadCost(
-  leadSource: string,
-  serviceSubType?: string,
-  serviceSubTypeCustom?: string,
-): string {
-  if (
-    isHomeTriangleLeadSource(leadSource) &&
-    isInstallationOrReinstallationServiceSubType(serviceSubType, serviceSubTypeCustom)
-  ) {
-    return '116';
-  }
-  switch (leadSource) {
-    case 'Home Triangle':
-    case 'Home Triangle-Srujan':
-    case 'Home Triangle-3':
-      return '231';
-    case 'Direct call':
-      return '0';
-    case 'RO care india':
-      return '400';
-    case 'Local Ramu':
-      return '500';
-    case 'Google-Leads':
-    case 'Website':
-      return '0';
-    default:
-      return '0';
-  }
-}
+export { getDefaultLeadCost } from '@/lib/leadCatalog';
 
 /** Technician row shape from admin dashboard / API (camelCase or snake_case). */
 export type CompletedJobTechnicianLike = {

@@ -12,9 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Mail } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Share2, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
+import ImageUpload from '@/components/ImageUpload';
 import { getCustomerGstNumber, normalizeCustomerGstNumber } from '@/lib/customerGst';
 import {
   getCompanyStateCode,
@@ -33,6 +34,15 @@ import {
   getCompanyInfoForBrand,
   getDocumentSealVariantLabel,
 } from '@/lib/service-brands';
+import {
+  createQuotationImageBlock,
+  normalizeQuotationImageBlocks,
+  quotationImageBlocksForPdf,
+  type QuotationImageAlign,
+  type QuotationImageBlock,
+  type QuotationImageColumns,
+  type QuotationImageSize,
+} from '@/lib/quotation-custom-images';
 import DraftToolbar from '@/components/document-drafts/DraftToolbar';
 import DocumentGeneratorPageHeader, {
   DocumentGeneratorActionBar,
@@ -132,6 +142,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
   const [notes, setNotes] = useState<string[]>([]);
   const [newNote, setNewNote] = useState('');
   const [notesHeading, setNotesHeading] = useState('Additional Info');
+  const [customImageBlocks, setCustomImageBlocks] = useState<QuotationImageBlock[]>([]);
   const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
   const [validityNote, setValidityNote] = useState('This quotation is valid for 30 days from the date of issue. Prices are subject to change without prior notice.');
   const [showValidityNote, setShowValidityNote] = useState(false);
@@ -455,6 +466,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       company: companyInfo,
       customer: {
         id: customer?.id || '',
+        name: editableCustomer.name,
         fullName: editableCustomer.name,
         phone: editableCustomer.phone,
         email: editableCustomer.email,
@@ -521,6 +533,14 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       (quotation as Bill & { bankDetails?: object }).bankDetails = bankDetails;
     }
 
+    const printableBlocks = quotationImageBlocksForPdf(customImageBlocks);
+    if (printableBlocks.length > 0) {
+      quotation.customImageBlocks = printableBlocks;
+      // Legacy flat fields for older consumers
+      quotation.customImages = printableBlocks.flatMap((b) => b.images);
+      quotation.customImagesHeading = printableBlocks[0]?.heading || 'Product Images';
+    }
+
     return quotation;
   };
 
@@ -585,6 +605,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     serviceCharge,
     notes,
     notesHeading,
+    customImageBlocks,
     validityNote,
     showValidityNote,
     termItems: serializeTermItems(termItems),
@@ -611,6 +632,14 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     if (typeof snap.serviceCharge === 'number') setServiceCharge(snap.serviceCharge);
     if (Array.isArray(snap.notes)) setNotes(snap.notes as string[]);
     if (typeof snap.notesHeading === 'string') setNotesHeading(snap.notesHeading);
+    if (Array.isArray(snap.customImageBlocks) || Array.isArray(snap.customImages)) {
+      setCustomImageBlocks(
+        normalizeQuotationImageBlocks(snap.customImageBlocks, {
+          heading: snap.customImagesHeading,
+          images: snap.customImages,
+        })
+      );
+    }
     if (typeof snap.validityNote === 'string') setValidityNote(snap.validityNote);
     if (typeof snap.showValidityNote === 'boolean') setShowValidityNote(snap.showValidityNote);
     setTermItems(
@@ -701,8 +730,8 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
                     variant="outline"
                     className={documentOutlineBtnClass}
                   >
-                    <Mail className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Email PDF</span>
+                    <Share2 className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Send PDF</span>
                   </Button>
                 </div>
               </div>
@@ -1622,6 +1651,168 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
             </div>
           </CardContent>
         )}
+      </Card>
+
+      {/* Custom images at end of quotation PDF (before signature) */}
+      <Card className="border-violet-200 bg-violet-50/30">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-lg sm:text-xl text-violet-900 flex items-center gap-2">
+                <ImageIcon className="w-5 h-5 shrink-0" />
+                Custom Images
+              </CardTitle>
+              <p className="text-xs text-gray-600 mt-1">
+                Add one or more sections with their own heading, layout, size, and alignment. Printed before the signature.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-violet-300 text-violet-800 hover:bg-violet-100 shrink-0"
+              onClick={() =>
+                setCustomImageBlocks((prev) => [
+                  ...prev,
+                  createQuotationImageBlock({
+                    heading: prev.length === 0 ? 'Product Images' : `Section ${prev.length + 1}`,
+                  }),
+                ])
+              }
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add section
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {customImageBlocks.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No image sections yet. Click <span className="font-medium">Add section</span> to attach photos with a custom heading.
+            </p>
+          )}
+          {customImageBlocks.map((block, blockIndex) => {
+            const updateBlock = (patch: Partial<QuotationImageBlock>) => {
+              setCustomImageBlocks((prev) =>
+                prev.map((b) => (b.id === block.id ? { ...b, ...patch } : b))
+              );
+            };
+            return (
+              <div
+                key={block.id}
+                className="rounded-lg border border-violet-200 bg-white/80 p-3 sm:p-4 space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-violet-900">Section {blockIndex + 1}</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 px-2"
+                    onClick={() =>
+                      setCustomImageBlocks((prev) => prev.filter((b) => b.id !== block.id))
+                    }
+                  >
+                    <Trash2 className="w-4 h-4 mr-1" />
+                    Remove
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-sm font-medium text-violet-900">Heading</Label>
+                    <Input
+                      value={block.heading}
+                      onChange={(e) => updateBlock({ heading: e.target.value })}
+                      placeholder="Product Images"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-violet-900">Subheading (optional)</Label>
+                    <Input
+                      value={block.subheading}
+                      onChange={(e) => updateBlock({ subheading: e.target.value })}
+                      placeholder="e.g. Installation examples"
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-sm font-medium text-violet-900">Photos per row</Label>
+                    <Select
+                      value={String(block.columns)}
+                      onValueChange={(v) =>
+                        updateBlock({ columns: Number(v) as QuotationImageColumns })
+                      }
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 per row</SelectItem>
+                        <SelectItem value="2">2 per row</SelectItem>
+                        <SelectItem value="3">3 per row</SelectItem>
+                        <SelectItem value="4">4 per row</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-violet-900">Image size</Label>
+                    <Select
+                      value={block.size}
+                      onValueChange={(v) => updateBlock({ size: v as QuotationImageSize })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="small">Small</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="large">Large</SelectItem>
+                        <SelectItem value="full">Full width</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-violet-900">Alignment</Label>
+                    <Select
+                      value={block.align}
+                      onValueChange={(v) => updateBlock({ align: v as QuotationImageAlign })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="left">Left</SelectItem>
+                        <SelectItem value="center">Center</SelectItem>
+                        <SelectItem value="right">Right</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <ImageUpload
+                  key={block.id}
+                  onImagesChange={(images) => updateBlock({ images })}
+                  initialImages={block.images}
+                  maxImages={12}
+                  folder="quotation-attachments"
+                  title={`Section ${blockIndex + 1} images`}
+                  description="Upload photos for this section"
+                  compact
+                  skipOfflineQueue
+                  maxWidth={1600}
+                  quality={0.85}
+                  aggressiveCompression={false}
+                  useSecondaryAccount={false}
+                />
+              </div>
+            );
+          })}
+        </CardContent>
       </Card>
 
       <DocumentBrandPickerDialog

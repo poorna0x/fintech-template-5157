@@ -28,7 +28,8 @@ import {
   FileText,
   Loader2,
   Send,
-  ChevronDown
+  ChevronDown,
+  Users
 } from 'lucide-react';
 
 // WhatsApp Icon Component
@@ -46,6 +47,9 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
+import CallingBulkWhatsAppDialog from '@/components/admin/CallingBulkWhatsAppDialog';
+import { WhatsAppCustomizeSendDialog } from '@/components/admin/WhatsAppCustomizeSendDialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useSuspendDialogForPhotoViewer } from '@/lib/suspendDialogForPhotoViewer';
 import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
 import {
@@ -221,12 +225,9 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [selectedCustomerForWhatsApp, setSelectedCustomerForWhatsApp] = useState<CustomerWithHistory | null>(null);
-  const [waBrand, setWaBrand] = useState<DocumentBrand>('hydrogenro');
-  const [waLastServiceBrand, setWaLastServiceBrand] = useState<DocumentBrand | null>(null);
-  const [waBrandLoading, setWaBrandLoading] = useState(false);
-  const [waTemplate, setWaTemplate] = useState<CallingWhatsAppTemplate>('service_due');
-  const [waMessage, setWaMessage] = useState('');
-  const [waMessageTouched, setWaMessageTouched] = useState(false);
+  const [selectedBulkIds, setSelectedBulkIds] = useState<Set<string>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkQueue, setBulkQueue] = useState<CustomerWithHistory[]>([]);
   const [customerPhotoGalleryOpen, setCustomerPhotoGalleryOpen] = useState(false);
   const [selectedCustomerForPhotos, setSelectedCustomerForPhotos] = useState<Customer | null>(null);
   const [customerPhotos, setCustomerPhotos] = useState<string[]>([]);
@@ -326,6 +327,11 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     statusFilter,
     prefilterFilter,
   ]);
+
+  useEffect(() => {
+    // Clear bulk selection when filters/page change so we don't send stale rows.
+    setSelectedBulkIds(new Set());
+  }, [filterSignature, currentPage, itemsPerPage]);
 
   useEffect(() => {
     if (hideHeader || (!authInitializing && user && isAdmin)) {
@@ -449,62 +455,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     [selectedCustomerForWhatsApp]
   );
 
-  useEffect(() => {
-    if (!whatsappDialogOpen || !selectedCustomerForWhatsApp?.id) return;
-
-    let cancelled = false;
-    setWaBrandLoading(true);
-    setWaTemplate('service_due');
-    setWaMessageTouched(false);
-
-    resolveCustomerSendBrand(selectedCustomerForWhatsApp.id)
-      .then(({ sendBrand, lastServiceBrand }) => {
-        if (cancelled) return;
-        setWaBrand(sendBrand);
-        setWaLastServiceBrand(lastServiceBrand);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWaBrand('hydrogenro');
-          setWaLastServiceBrand(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setWaBrandLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [whatsappDialogOpen, selectedCustomerForWhatsApp?.id]);
-
-  useEffect(() => {
-    if (!waMessageContext || waMessageTouched) return;
-    setWaMessage(buildCallingWhatsAppMessage(waMessageContext, waTemplate, waBrand));
-  }, [waMessageContext, waTemplate, waBrand, waMessageTouched]);
-
-  const waBrandHint = useMemo(() => {
-    if (waBrandLoading) return 'Loading last service brand…';
-    if (waLastServiceBrand) {
-      const lastLabel = getDocumentBrandLabel(waLastServiceBrand);
-      if (waBrand === waLastServiceBrand) {
-        return `Using last service brand (${lastLabel}). Change if needed.`;
-      }
-      return `Last served: ${lastLabel}. Currently sending as ${getDocumentBrandLabel(waBrand)}.`;
-    }
-    return `No prior service brand on file — using ${getDocumentBrandLabel(waBrand)}.`;
-  }, [waBrandLoading, waLastServiceBrand, waBrand]);
-
-  const resetWhatsAppComposer = () => {
-    setWhatsappDialogOpen(false);
-    setSelectedCustomerForWhatsApp(null);
-    setWaMessageTouched(false);
-    setWaTemplate('service_due');
-  };
-
   const handleWhatsApp = (customer: CustomerWithHistory) => {
-    const phoneNumber = customer.phone?.replace(/\D/g, '');
-    if (!phoneNumber) {
+    if (!customer.phone?.replace(/\D/g, '') && !customer.alternatePhone?.replace(/\D/g, '')) {
       toast.error('Phone number not available');
       return;
     }
@@ -512,44 +464,36 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     setWhatsappDialogOpen(true);
   };
 
-  const handleWaTemplateSelect = (template: CallingWhatsAppTemplate) => {
-    setWaTemplate(template);
-    setWaMessageTouched(false);
+  const pageSelectableIds = useMemo(
+    () =>
+      pageRows
+        .filter((c) => String(c.phone || '').replace(/\D/g, '').length >= 10)
+        .map((c) => c.id),
+    [pageRows]
+  );
+
+  const allPageSelected =
+    pageSelectableIds.length > 0 && pageSelectableIds.every((id) => selectedBulkIds.has(id));
+
+  const toggleBulkId = (id: string, checked: boolean) => {
+    setSelectedBulkIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   };
 
-  const handleWaBrandChange = (brand: DocumentBrand) => {
-    setWaBrand(brand);
-    setWaMessageTouched(false);
-  };
-
-  const sendWhatsAppMessage = async () => {
-    const customer = selectedCustomerForWhatsApp;
-    if (!customer?.phone) {
-      toast.error('Phone number not available');
-      return;
-    }
-    const message = waMessage.trim();
-    if (!message) {
-      toast.error('Message is empty');
-      return;
-    }
-
-    const formattedPhone = formatPhoneForWhatsApp(customer.phone);
-    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-
-    await recordCall(
-      customer.id,
-      'WHATSAPP',
-      customer.phone,
-      message,
-      'COMPLETED',
-      undefined,
-      { quiet: true }
-    );
-
-    resetWhatsAppComposer();
-    toast.success('WhatsApp opened — message saved to contact history');
+  const toggleSelectAllPage = (checked: boolean) => {
+    setSelectedBulkIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        for (const id of pageSelectableIds) next.add(id);
+      } else {
+        for (const id of pageSelectableIds) next.delete(id);
+      }
+      return next;
+    });
   };
 
   // Handle viewing photos
@@ -1098,7 +1042,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
             <>
               {/* Results toolbar — sticky on mobile */}
               <div className="sticky top-0 z-10 -mx-3 px-3 py-2 mb-2 sm:static sm:mx-0 sm:px-0 sm:py-0 sm:mb-4 bg-muted/80 backdrop-blur-md sm:bg-transparent sm:backdrop-blur-none border-b border-border/40 sm:border-0">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="text-[11px] sm:text-sm text-muted-foreground leading-tight min-w-0">
                     <span className="font-medium text-foreground tabular-nums">
                       {totalCount === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1}–{Math.min(currentPage * itemsPerPage, totalCount)}
@@ -1106,10 +1050,40 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                     <span className="hidden sm:inline"> of {totalCount.toLocaleString()}</span>
                     <span className="sm:hidden"> / {totalCount.toLocaleString()}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                     {listLoading && (
                       <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
                     )}
+                    <label className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground cursor-pointer select-none">
+                      <Checkbox
+                        checked={allPageSelected}
+                        onCheckedChange={(v) => toggleSelectAllPage(v === true)}
+                        disabled={pageSelectableIds.length === 0}
+                        aria-label="Select all on this page"
+                      />
+                      <span className="hidden sm:inline">Select page</span>
+                      <span className="sm:hidden">All</span>
+                    </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs"
+                      disabled={selectedBulkIds.size === 0}
+                      onClick={() => {
+                        const queue = pageRows.filter((c) => selectedBulkIds.has(c.id));
+                        if (!queue.length) {
+                          toast.error('Select at least one customer');
+                          return;
+                        }
+                        setBulkQueue(queue);
+                        setBulkDialogOpen(true);
+                      }}
+                    >
+                      <Users className="w-3.5 h-3.5 mr-1.5" />
+                      Bulk WA
+                      {selectedBulkIds.size > 0 ? ` (${selectedBulkIds.size})` : ''}
+                    </Button>
                     <Select value={itemsPerPage.toString()} onValueChange={(value) => {
                       setItemsPerPage(parseInt(value));
                       setCurrentPage(1);
@@ -1142,6 +1116,13 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 <CardContent className="p-0">
                   {/* Header */}
                   <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
+                    <Checkbox
+                      checked={selectedBulkIds.has(customer.id)}
+                      disabled={String(customer.phone || '').replace(/\D/g, '').length < 10}
+                      onCheckedChange={(v) => toggleBulkId(customer.id, v === true)}
+                      aria-label={`Select ${customer.fullName}`}
+                      className="shrink-0"
+                    />
                     <span className="shrink-0 font-mono text-[10px] font-semibold text-blue-700 bg-blue-50/80 px-1.5 py-0.5 rounded">
                       {customer.customerId}
                     </span>
@@ -1327,139 +1308,47 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         </div>
       </div>
 
-      {/* WhatsApp Message Composer */}
-      <Dialog
-        open={whatsappDialogOpen}
+      {selectedCustomerForWhatsApp && (
+        <WhatsAppCustomizeSendDialog
+          open={whatsappDialogOpen}
+          onOpenChange={(open) => {
+            setWhatsappDialogOpen(open);
+            if (!open) setSelectedCustomerForWhatsApp(null);
+          }}
+          title="Calling — WhatsApp"
+          customerName={selectedCustomerForWhatsApp.fullName || 'Customer'}
+          customerId={selectedCustomerForWhatsApp.id}
+          primaryPhone={selectedCustomerForWhatsApp.phone}
+          alternatePhone={selectedCustomerForWhatsApp.alternatePhone}
+          source="calling"
+          messageContext={waMessageContext || undefined}
+          onSent={async ({ phone, message }) => {
+            await recordCall(
+              selectedCustomerForWhatsApp.id,
+              'WHATSAPP',
+              phone,
+              message,
+              'COMPLETED',
+              undefined,
+              { quiet: true }
+            );
+          }}
+        />
+      )}
+
+      <CallingBulkWhatsAppDialog
+        open={bulkDialogOpen}
         onOpenChange={(open) => {
-          if (!open) resetWhatsAppComposer();
-          else setWhatsappDialogOpen(true);
+          setBulkDialogOpen(open);
+          if (!open) setBulkQueue([]);
         }}
-      >
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <WhatsAppIcon className="w-5 h-5 text-green-600" />
-              WhatsApp message
-            </DialogTitle>
-            <DialogDescription asChild>
-              <span>
-                Compose for{' '}
-                <span className={customerNameClassName(selectedCustomerForWhatsApp as any)}>
-                  {selectedCustomerForWhatsApp?.fullName}
-                </span>
-                {selectedCustomerForWhatsApp?.phone ? (
-                  <span className="text-muted-foreground"> · {selectedCustomerForWhatsApp.phone}</span>
-                ) : null}
-              </span>
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedCustomerForWhatsApp && (
-            <div className="space-y-4 py-1">
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                <div className="space-y-2">
-                  <Label htmlFor="calling-wa-brand">Send as brand</Label>
-                  <Select
-                    value={waBrand}
-                    onValueChange={(v) => handleWaBrandChange(v as DocumentBrand)}
-                    disabled={waBrandLoading}
-                  >
-                    <SelectTrigger id="calling-wa-brand">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="hydrogenro">Hydrogen RO</SelectItem>
-                      <SelectItem value="elevenro">Eleven RO</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    {waBrandLoading && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
-                    {waBrandHint}
-                  </p>
-                </div>
-                {waMessageContext?.deviceBrand && (
-                  <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground sm:max-w-[200px]">
-                    <span className="font-medium text-foreground">Purifier on file</span>
-                    <div className="mt-0.5 break-words">
-                      {waMessageContext.deviceBrand}
-                      {waMessageContext.deviceModel ? ` — ${waMessageContext.deviceModel}` : ''}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label>Message type</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {CALLING_WA_TEMPLATE_ORDER.map((key) => {
-                    const meta = CALLING_WA_TEMPLATE_META[key];
-                    const selected = waTemplate === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => handleWaTemplateSelect(key)}
-                        className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                          selected
-                            ? 'border-green-600 bg-green-50 ring-1 ring-green-600/30'
-                            : 'border-border hover:bg-muted/40'
-                        }`}
-                      >
-                        <div className="text-sm font-medium text-foreground">{meta.label}</div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                          {meta.description}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor="calling-wa-message">Message preview</Label>
-                  {waMessageTouched && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => setWaMessageTouched(false)}
-                    >
-                      Reset to template
-                    </Button>
-                  )}
-                </div>
-                <Textarea
-                  id="calling-wa-message"
-                  value={waMessage}
-                  onChange={(e) => {
-                    setWaMessageTouched(true);
-                    setWaMessage(e.target.value);
-                  }}
-                  rows={12}
-                  className="text-sm font-mono leading-relaxed resize-y min-h-[200px]"
-                  placeholder="Choose a template or type your message…"
-                />
-              </div>
-            </div>
-          )}
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={resetWhatsAppComposer}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-green-600 hover:bg-green-700 text-white"
-              onClick={sendWhatsAppMessage}
-              disabled={!waMessage.trim() || waBrandLoading}
-            >
-              <Send className="w-4 h-4 mr-2" />
-              Open in WhatsApp
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        customers={bulkQueue}
+        onRecordSent={async (customerId, phone, message) => {
+          await recordCall(customerId, 'WHATSAPP', phone, message, 'COMPLETED', undefined, {
+            quiet: true,
+          });
+        }}
+      />
 
       {/* Status Dialog */}
       <Dialog open={statusDialogOpen} onOpenChange={handleStatusDialogClose}>

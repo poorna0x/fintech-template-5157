@@ -56,6 +56,18 @@ const submitTechMessageReply = require('./submit-tech-message-reply');
 const submitAdminMessageReply = require('./submit-admin-message-reply');
 const notifyAdmins = require('./notify-admins');
 const sendLocationPing = require('./send-location-ping');
+const whatsappSend = require('./whatsapp-send');
+const whatsappWebhook = require('./whatsapp-webhook');
+const whatsappEvents = require('./whatsapp-events');
+const whatsappTemplates = require('./whatsapp-templates');
+const whatsappR2SignedUrl = require('./whatsapp-r2-signed-url');
+const whatsappPurgeMessages = require('./whatsapp-purge-messages');
+const whatsappBookingStart = require('./whatsapp-booking-start');
+const dialCall = require('./dial-call');
+const pdfAuthenticityOtpVerify = require('./pdf-authenticity-otp-verify');
+const pdfAuthenticityCheck = require('./pdf-authenticity-check');
+const documentAcceptSend = require('./document-accept-send');
+const dbStorageStats = require('./db-storage-stats');
 
 const PORT = 8888;
 
@@ -134,6 +146,30 @@ const server = http.createServer((req, res) => {
     handler = notifyAdmins;
   } else if (req.url.startsWith('/.netlify/functions/send-location-ping')) {
     handler = sendLocationPing;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-send')) {
+    handler = whatsappSend;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-webhook')) {
+    handler = whatsappWebhook;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-events')) {
+    handler = whatsappEvents;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-templates')) {
+    handler = whatsappTemplates;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-r2-signed-url')) {
+    handler = whatsappR2SignedUrl;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-purge-messages')) {
+    handler = whatsappPurgeMessages;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-booking-start')) {
+    handler = whatsappBookingStart;
+  } else if (req.url.startsWith('/.netlify/functions/dial-call')) {
+    handler = dialCall;
+  } else if (req.url.startsWith('/.netlify/functions/pdf-authenticity-otp-verify')) {
+    handler = pdfAuthenticityOtpVerify;
+  } else if (req.url.startsWith('/.netlify/functions/pdf-authenticity-check')) {
+    handler = pdfAuthenticityCheck;
+  } else if (req.url.startsWith('/.netlify/functions/document-accept-send')) {
+    handler = documentAcceptSend;
+  } else if (req.url.startsWith('/.netlify/functions/db-storage-stats')) {
+    handler = dbStorageStats;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }
@@ -279,10 +315,16 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 ALTCHA function: http://localhost:${PORT}/.netlify/functions/altcha-verify`);
   console.log(`📍 Distance Matrix: http://localhost:${PORT}/.netlify/functions/distance-matrix`);
   console.log(
+    `💬 WhatsApp send POC: http://localhost:${PORT}/.netlify/functions/whatsapp-send`
+  );
+  console.log(
     `🔐 Secure auth login: http://localhost:${PORT}/.netlify/functions/secure-auth-login`
   );
   console.log(
     `🔑 Sync technician Auth: http://localhost:${PORT}/.netlify/functions/sync-technician-auth-user`
+  );
+  console.log(
+    `📄 Document Accept send: http://localhost:${PORT}/.netlify/functions/document-accept-send`
   );
   const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
   console.log(

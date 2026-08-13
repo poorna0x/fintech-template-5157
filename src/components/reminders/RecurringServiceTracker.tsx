@@ -33,6 +33,11 @@ import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { addDays, addMonths, format } from 'date-fns';
 import { db, supabase } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
+import { WhatsAppCustomizeSendDialog } from '@/components/admin/WhatsAppCustomizeSendDialog';
+import {
+  formatServiceReminderWhenLabel,
+} from '@/lib/serviceReminderWhatsApp';
 import {
   addMonthsToReminderAt,
   getLocalCalendarDateYmd,
@@ -259,6 +264,9 @@ export function RecurringServiceTracker({
   const [noteTarget, setNoteTarget] = useState<Reminder | null>(null);
   const [noteText, setNoteText] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
+
+  const [waDialogOpen, setWaDialogOpen] = useState(false);
+  const [waReminder, setWaReminder] = useState<Reminder | null>(null);
 
   // Create job / reports (reuse existing dialogs)
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
@@ -499,26 +507,15 @@ export function RecurringServiceTracker({
 
   const openWhatsApp = (r: Reminder) => {
     const c = r.entity_id ? labels[r.entity_id] : undefined;
-    if (!c?.phone) {
+    if (!c?.phone && !c?.altPhone) {
       toast.error('No phone number on file');
       return;
     }
-    const every = r.interval_value ? `every ${r.interval_value} month${r.interval_value > 1 ? 's' : ''}` : 'periodic';
-    const message = `Hi ${c.name} 😊
-
-This is a friendly reminder for your scheduled ${r.title} (${every}). It's time for your next service.
-
-Would you like us to schedule a visit? Let us know a convenient day and time.
-
-For any help/support:
-📞 Phone: 8884944288
-📧 Email: info@hydrogenro.com
-🌐 Website: https://hydrogenro.com
-
-Thanks & regards 🙏`;
-    const url = `https://wa.me/${formatPhoneForWhatsApp(c.phone)}?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+    setWaReminder(r);
+    setWaDialogOpen(true);
   };
+
+  const waDialogCustomer = waReminder?.entity_id ? labels[waReminder.entity_id] : undefined;
 
   // ---- Status edit ----
   const openStatusDialog = (r: Reminder) => {
@@ -899,7 +896,7 @@ Thanks & regards 🙏`;
                         <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openCall(c?.phone || null)}>
                           <Phone className="w-3.5 h-3.5 mr-1" /> Call
                         </Button>
-                        <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openWhatsApp(r)}>
+                        <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => void openWhatsApp(r)}>
                           <WhatsAppIcon className="w-3.5 h-3.5 mr-1 text-green-600" /> WhatsApp
                         </Button>
                       </>
@@ -1364,6 +1361,28 @@ Thanks & regards 🙏`;
                 setViewerBillPhotos(null);
               }
             );
+          }}
+        />
+      )}
+
+      {waDialogCustomer && waReminder && (
+        <WhatsAppCustomizeSendDialog
+          open={waDialogOpen}
+          onOpenChange={(open) => {
+            setWaDialogOpen(open);
+            if (!open) setWaReminder(null);
+          }}
+          title="Service reminder — WhatsApp"
+          customerName={waDialogCustomer.name}
+          customerId={waReminder.entity_id || undefined}
+          primaryPhone={waDialogCustomer.phone}
+          alternatePhone={waDialogCustomer.altPhone}
+          source="service_reminder"
+          defaultTemplate="service_due"
+          showWhenLabelField
+          serviceWhenLabel={formatServiceReminderWhenLabel(waReminder.reminder_at)}
+          onSent={async () => {
+            await markCalled(waReminder);
           }}
         />
       )}

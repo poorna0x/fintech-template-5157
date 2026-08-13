@@ -7,7 +7,7 @@ alwaysApply: true
 
 Whenever a **customer-facing PDF is generated for Download, Email, or WhatsApp** (Puppeteer / `generateDocumentPdfBase64` / `downloadDocumentPdfReturningBase64`):
 
-1. Put an 8-char verify code in the PDF footer (`Verify authenticity in CRM · Code …`).
+1. Put an 8-char verify code in the PDF footer (`Verify authenticity at hydrogenro.com/authenticity · Code …` or `elevenro.com/authenticity` based on document brand).
 2. Hash the **exact** bytes being downloaded/sent (SHA-256).
 3. Persist hash + code via `recordDocumentPdfAuthenticity` (`document_pdf_authenticity`) — **hash only, never store PDF bytes** in that flow.
 4. Soft-fail DB insert (send/download still succeeds; warn if useful).

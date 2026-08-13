@@ -14,7 +14,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download, Users as UsersIcon, Filter } from 'lucide-react';
+import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download, Users as UsersIcon, Filter, Loader2 } from 'lucide-react';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
+import { sendSalarySlipWhatsApp } from '@/lib/sendSalarySlipWhatsApp';
 import { supabase } from '@/lib/supabase';
 import { generateSalarySlipPDF, getSalarySlipPreviewHtml } from '@/lib/salary-slip-pdf-generator';
 import { runAfterDialogClose } from '@/lib/document-preview-utils';
@@ -313,6 +316,7 @@ const TechnicianPayments = () => {
   // Salary slip download dialog
   const [salarySlipDialogOpen, setSalarySlipDialogOpen] = useState(false);
   const [selectedBreakdownForSlip, setSelectedBreakdownForSlip] = useState<TechnicianSalaryBreakdown | null>(null);
+  const [salarySlipSending, setSalarySlipSending] = useState(false);
   const [includeDayWiseBreakdown, setIncludeDayWiseBreakdown] = useState(true);
   const [salarySlipPreviewOpen, setSalarySlipPreviewOpen] = useState(false);
   const [salarySlipPreviewHtml, setSalarySlipPreviewHtml] = useState<string | null>(null);
@@ -1627,6 +1631,48 @@ const TechnicianPayments = () => {
       setJobsForDate([]);
     } finally {
       setLoadingJobsForDate(false);
+    }
+  };
+
+  const handleSendSalarySlipWhatsApp = async (opts?: { closeDialog?: boolean }) => {
+    if (!selectedBreakdownForSlip || !commissionPeriod) {
+      toast.error('Period information not available');
+      return;
+    }
+    const tech = technicians.find((t: { id?: string }) => t.id === selectedBreakdownForSlip.technicianId);
+    const phone = getTechnicianAdminWhatsAppPhone(tech);
+    if (!phone) {
+      toast.error('Technician WhatsApp / phone number not set');
+      return;
+    }
+    setSalarySlipSending(true);
+    const toastId = toast.loading('Generating salary slip PDF…');
+    try {
+      const result = await sendSalarySlipWhatsApp({
+        to: phone,
+        breakdown: selectedBreakdownForSlip,
+        period: commissionPeriod,
+        includeDayWiseBreakdown,
+      });
+      if (result.ok) {
+        toast.success(
+          result.viaColdTemplate
+            ? 'Salary slip sent (cold template — PDF follows when customer replies)'
+            : 'Salary slip sent via WhatsApp',
+          { id: toastId }
+        );
+        if (opts?.closeDialog) {
+          setSalarySlipDialogOpen(false);
+          setSalarySlipPreviewOpen(false);
+          setSelectedBreakdownForSlip(null);
+        }
+        return;
+      }
+      toast.error(result.error || 'WhatsApp send failed', { id: toastId });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'WhatsApp send failed', { id: toastId });
+    } finally {
+      setSalarySlipSending(false);
     }
   };
 
@@ -3878,6 +3924,19 @@ const TechnicianPayments = () => {
               <Download className="w-4 h-4 mr-2" />
               Download
             </Button>
+            <Button
+              variant="outline"
+              disabled={salarySlipSending}
+              onClick={() => void handleSendSalarySlipWhatsApp({ closeDialog: true })}
+              className="border-green-600 text-green-700 hover:bg-green-50"
+            >
+              {salarySlipSending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <WhatsAppIcon className="w-4 h-4 mr-2" />
+              )}
+              WhatsApp
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3923,6 +3982,22 @@ const TechnicianPayments = () => {
             setSelectedBreakdownForSlip(null);
           });
         }}
+        extraFooter={
+          <Button
+            type="button"
+            variant="outline"
+            disabled={salarySlipSending}
+            onClick={() => void handleSendSalarySlipWhatsApp()}
+            className="border-green-600 text-green-700 hover:bg-green-50"
+          >
+            {salarySlipSending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <WhatsAppIcon className="w-4 h-4 mr-2" />
+            )}
+            Send WhatsApp
+          </Button>
+        }
       />
 
       {/* General business_expenses first, then other_expenses below. Lists load on demand. */}

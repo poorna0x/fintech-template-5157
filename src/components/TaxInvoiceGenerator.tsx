@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer, Eye, Mail } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer, Eye, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import { getCustomerGstNumber, normalizeCustomerGstNumber } from '@/lib/customerGst';
@@ -74,7 +74,9 @@ import {
   isDocumentPaymentStatus,
   resolveDocumentPayment,
   validatePartialPaymentAmount,
+  validatePaymentDueDate,
 } from '@/lib/document-payment';
+import { resolveDocumentPaymentDueDate } from '@/lib/documentPaymentDueDate';
 
 // Helper function to convert number to words
 function numberToWords(num: number): string {
@@ -506,6 +508,21 @@ export default function TaxInvoiceGenerator({
     }
   }, [paymentStatus, totalAmount]);
 
+  useEffect(() => {
+    if (paymentStatus !== 'PENDING' && paymentStatus !== 'PARTIAL') return;
+    if (paymentDueDate.trim()) return;
+    let cancelled = false;
+    void (async () => {
+      const due = await resolveDocumentPaymentDueDate({
+        customerId: customer?.id,
+      });
+      if (!cancelled && due) setPaymentDueDate(due);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentStatus, customer?.id, paymentDueDate]);
+
   const resolvedPayment = resolveDocumentPayment({
     paymentStatus,
     totalAmount,
@@ -622,6 +639,12 @@ export default function TaxInvoiceGenerator({
     );
     if (partialError) {
       toast.error(partialError);
+      return;
+    }
+
+    const dueError = validatePaymentDueDate(paymentStatus, paymentDueDate);
+    if (dueError) {
+      toast.error(dueError);
       return;
     }
 
@@ -837,6 +860,12 @@ export default function TaxInvoiceGenerator({
     );
     if (partialError) {
       toast.error(partialError);
+      return null;
+    }
+
+    const dueError = validatePaymentDueDate(paymentStatus, paymentDueDate);
+    if (dueError) {
+      toast.error(dueError);
       return null;
     }
 
@@ -1137,8 +1166,8 @@ export default function TaxInvoiceGenerator({
                       <span className="truncate">Download</span>
                     </Button>
                     <Button onClick={handleEmailCustomer} variant="outline" className={documentOutlineBtnClass}>
-                      <Mail className="w-4 h-4 shrink-0" />
-                      <span className="truncate">Email PDF</span>
+                      <Share2 className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Send PDF</span>
                     </Button>
                   </div>
                 </div>
@@ -1179,8 +1208,8 @@ export default function TaxInvoiceGenerator({
                         <span className="truncate">Download</span>
                       </Button>
                       <Button onClick={handleEmailCustomer} variant="outline" className={documentOutlineBtnClass}>
-                        <Mail className="w-4 h-4 shrink-0" />
-                        <span className="truncate">Email PDF</span>
+                        <Share2 className="w-4 h-4 shrink-0" />
+                        <span className="truncate">Send PDF</span>
                       </Button>
                     </div>
                   </div>
@@ -1400,13 +1429,16 @@ export default function TaxInvoiceGenerator({
         >
           {(paymentStatus === 'PENDING' || paymentStatus === 'PARTIAL') && (
             <div>
-              <Label htmlFor="paymentDueDate">Payment Due Date (Optional)</Label>
+              <Label htmlFor="paymentDueDate">Payment due date</Label>
               <DatePicker
                 value={paymentDueDate}
                 onChange={(v) => setPaymentDueDate(v ?? '')}
-                placeholder="Pick date"
+                placeholder="Pick due date"
                 className="mt-1"
               />
+              <p className="text-xs text-gray-600 mt-1">
+                Required. Auto-filled from the job’s pending payment date when available.
+              </p>
             </div>
           )}
         </DocumentPaymentStatusCard>
@@ -1848,7 +1880,7 @@ export default function TaxInvoiceGenerator({
               {isEditingNotes ? (
                 <div className="space-y-4">
                   <div className="text-sm text-blue-600">
-                    Same formatting as Custom Document (Bold, headings, lists, alignment, links).
+                    Same formatting as Custom Document (Bold, headings, lists, tables, alignment, links).
                   </div>
                   <div className="flex flex-col gap-2">
                     <RichTextEditor

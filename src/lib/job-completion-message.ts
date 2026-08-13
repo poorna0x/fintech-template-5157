@@ -1,7 +1,10 @@
 import type { DocumentBrand } from '@/lib/service-brands';
-import { getCompanyInfoForBrand, getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
+import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { isJobPendingPaymentOpen, parseJobPendingPayment } from '@/lib/jobPendingPayment';
 import { formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
+import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
+import type { PendingPaymentWhatsAppUpiOptions } from '@/lib/pendingPaymentReminder';
 
 export interface JobCompletionMessageInput {
   customerName: string;
@@ -13,6 +16,10 @@ export interface JobCompletionMessageInput {
   amountPending?: number;
   /** Promised payment date YYYY-MM-DD when amountPending > 0. */
   pendingDueDate?: string | null;
+  /** Invoice / job ref for letter cold templates. */
+  jobRef?: string | null;
+  /** UPI pay link for pending balance (24h free-form). */
+  upi?: PendingPaymentWhatsAppUpiOptions | null;
   documentBrand: DocumentBrand;
 }
 
@@ -48,32 +55,37 @@ export function formatJobCompletionAmount(amount: unknown): string {
   return `₹${n.toLocaleString('en-IN')}`;
 }
 
+/** Always returns a rupee string (₹0 when missing) — for completion messages. */
+export function formatJobCompletionAmountOrZero(amount: unknown): string {
+  return formatJobCompletionAmount(amount) || '₹0';
+}
+
 function pendingDueLabel(dueDateYmd?: string | null): string | null {
   return formatPendingPaymentDueLabel(dueDateYmd);
 }
 
-/** Plain-text payment lines for email body / message field (no emoji). */
+/** Always include collected amount (₹0 ok) + pending lines when open. */
 export function buildJobCompletionPaymentPlainLines(input: {
   amountCollected?: number;
   amountPending?: number;
   pendingDueDate?: string | null;
 }): string[] {
-  const collected = Number(input.amountCollected) || 0;
-  const pending = Number(input.amountPending) || 0;
+  const collected = Math.max(0, Number(input.amountCollected) || 0);
+  const pending = Math.max(0, Number(input.amountPending) || 0);
   const due = pendingDueLabel(input.pendingDueDate);
   const lines: string[] = [];
 
   if (pending > 0) {
-    if (collected > 0) {
-      lines.push(`Amount of ${formatJobCompletionAmount(collected)} has been collected today.`);
-    }
+    lines.push(
+      `Amount of ${formatJobCompletionAmountOrZero(collected)} has been collected today.`
+    );
     lines.push(
       due
-        ? `Balance of ${formatJobCompletionAmount(pending)} is pending. Payment due date: ${due}.`
-        : `Balance of ${formatJobCompletionAmount(pending)} is pending.`
+        ? `Balance of ${formatJobCompletionAmountOrZero(pending)} is pending. Payment due date: ${due}.`
+        : `Balance of ${formatJobCompletionAmountOrZero(pending)} is pending.`
     );
-  } else if (collected > 0) {
-    lines.push(`Amount of ${formatJobCompletionAmount(collected)} has been collected.`);
+  } else {
+    lines.push(`Amount of ${formatJobCompletionAmountOrZero(collected)} has been collected.`);
   }
 
   return lines;
@@ -89,56 +101,171 @@ export function buildJobCompletionMessage(input: JobCompletionMessageInput): str
 
   return [
     completionLine,
-    ...(paymentLines.length ? ['', ...paymentLines] : []),
+    '',
+    ...paymentLines,
     '',
     `Thank you for choosing ${brandName}. We appreciate your trust and hope you're satisfied with our work.`,
+    '',
+    ...brandLetterFooterLines(input.documentBrand, { includeReview: true, skipChatHint: true }),
   ].join('\n');
 }
 
-/** WhatsApp variant — keeps emoji formatting used in the completed-jobs send dialog. */
+/**
+ * WhatsApp free-form (24h) — letter layout matching Meta letter templates.
+ * Call = voice main line (Hydrogen 8884944288 / Eleven 9880693311), not Cloud API WA.
+ */
 export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInput): string {
   const customerName = input.customerName.trim() || 'Customer';
+  const collected = Math.max(0, Number(input.amountCollected) || 0);
+  const pending = Math.max(0, Number(input.amountPending) || 0);
+  const due = pendingDueLabel(input.pendingDueDate);
+  const contact = brandContactLines(input.documentBrand);
+  const jobRef = String(input.jobRef || '').trim();
+
+  const amountLines: string[] = [];
+  if (pending > 0) {
+    amountLines.push(`Amount collected today: ${formatJobCompletionAmountOrZero(collected)}`);
+    amountLines.push(
+      due
+        ? `Balance pending: ${formatJobCompletionAmountOrZero(pending)} (due ${due})`
+        : `Balance pending: ${formatJobCompletionAmountOrZero(pending)}`
+    );
+  } else {
+    amountLines.push(`Amount collected: ${formatJobCompletionAmountOrZero(collected)}`);
+  }
+  if (jobRef) amountLines.push(`Invoice / Job: ${jobRef}`);
+
+  const payLink = (input.upi?.httpsLink || '').trim();
+  const upiId = (input.upi?.upiId || '').trim();
+  if (pending > 0 && (payLink || upiId)) {
+    amountLines.push('');
+    amountLines.push('*Pay now*');
+    if (payLink) {
+      amountLines.push(waLabeledLink('💳', 'UPI pay link (GPay / PhonePe / UPI)', payLink));
+    }
+    if (upiId) {
+      amountLines.push(waLabeledValue('📱', 'UPI ID', upiId));
+    }
+    if (input.upi?.label) {
+      amountLines.push(waLabeledValue('🏦', 'Pay to', input.upi.label));
+    }
+  }
+
+  return [
+    `Hi ${customerName}, 👋`,
+    `This is an update from ${contact.brandLabel} regarding your completed water purifier service. ✅`,
+    '',
+    ...amountLines.map((line) => {
+      if (/^Amount collected today/i.test(line)) return `💰 ${line}`;
+      if (/^Amount collected/i.test(line)) return `💰 ${line}`;
+      if (/^Balance pending/i.test(line)) return `⏳ ${line}`;
+      if (/^Invoice \/ Job/i.test(line)) return `🧾 ${line}`;
+      return line;
+    }),
+    '',
+    ...brandLetterClosingLines(input.documentBrand, {
+      skipChatHint: true,
+      includeTextUs: false,
+    }),
+    '',
+    pending > 0 && (payLink || upiId)
+      ? '💬 Reply on this chat if you need any help or if you have already paid.'
+      : '💬 Reply on this chat if you need any help.',
+  ].join('\n');
+}
+
+/** Plain payment line for Meta cold template {{3}} (no emoji — UTILITY-safe). Always has amount. */
+export function buildJobCompletionColdPaymentLine(input: {
+  amountCollected?: number;
+  amountPending?: number;
+  pendingDueDate?: string | null;
+}): string {
+  return buildJobCompletionPaymentPlainLines(input)
+    .join(' ')
+    .replace(/₹/g, 'INR ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Meta cold template body params: [name, completion line, payment line]. */
+export function buildJobCompletionColdBodyParams(
+  input: JobCompletionMessageInput
+): [string, string, string] {
+  const name = input.customerName.trim() || 'Customer';
   const completionLine = buildJobCompletionLine(
     input.serviceType || '',
     input.serviceSubType || ''
   );
-  const collected = Number(input.amountCollected) || 0;
-  const pending = Number(input.amountPending) || 0;
-  const due = pendingDueLabel(input.pendingDueDate);
-
-  let amountBlock = '';
-  if (pending > 0) {
-    const parts: string[] = [];
-    if (collected > 0) {
-      parts.push(
-        `💰 Amount of ${formatJobCompletionAmount(collected)} has been collected today.`
-      );
-    }
-    parts.push(
-      due
-        ? `⏳ Balance of ${formatJobCompletionAmount(pending)} is pending. Payment due date: ${due}.`
-        : `⏳ Balance of ${formatJobCompletionAmount(pending)} is pending.`
-    );
-    amountBlock = `${parts.join('\n')}\n\n`;
-  } else if (collected > 0) {
-    amountBlock = `💰 Amount of ${formatJobCompletionAmount(collected)} has been collected.\n\n`;
-  }
-
-  const brand = input.documentBrand;
-  const info = getCompanyInfoForBrand(brand);
-  const website = info.website.startsWith('http') ? info.website : `https://${info.website}`;
-  const bookingUrl = `${website.replace(/\/$/, '')}/book`;
-
-  return `Dear ${customerName},
-
-✅ ${completionLine}
-${amountBlock}For any queries or support, please contact us:
-📞 Phone: ${info.phone}
-📧 Email: ${info.email}
-🌐 Website: ${website}
-
-📱 For future bookings, you can book directly on ${bookingUrl} for ease and convenience.`;
+  const paymentLine = buildJobCompletionColdPaymentLine(input);
+  return [name, completionLine, paymentLine];
 }
+
+function cleanAmountDigits(amount: number | string): string {
+  return (
+    String(amount ?? '0')
+      .replace(/[^\d.]/g, '')
+      .replace(/\.0+$/, '') || '0'
+  );
+}
+
+/** Letter cold template params: [name, amount digits, invoice/job]. */
+export function buildJobCompletionLetterBodyParams(
+  input: JobCompletionMessageInput
+): [string, string, string] {
+  const name = input.customerName.trim() || 'Customer';
+  const amount = cleanAmountDigits(input.amountCollected ?? 0);
+  const jobRef = String(input.jobRef || '').trim() || 'your service visit';
+  return [name, amount, jobRef];
+}
+
+/** Preview of preferred cold body (letter when used; else v3 shell). */
+export function formatJobCompletionColdTemplatePreview(
+  input: JobCompletionMessageInput
+): string {
+  const contact = brandContactLines(input.documentBrand);
+  const [name, amount, jobRef] = buildJobCompletionLetterBodyParams(input);
+  return [
+    `Hi ${name}, 👋`,
+    `This is an update from ${contact.brandLabel} regarding your completed water purifier service. ✅`,
+    '',
+    `💰 Amount collected: INR ${amount}`,
+    `🧾 Invoice / Job: ${jobRef}`,
+    '',
+    ...brandLetterClosingLines(input.documentBrand, { includeTextUs: false }),
+    '',
+    '💬 Reply on this chat if you need any help.',
+  ].join('\n');
+}
+
+/** Letter UTILITY (newline footer + Call us / Website). Prefer v4 when APPROVED. */
+export function resolveJobCompletionLetterTemplateName(brand: DocumentBrand): string {
+  return resolveBrandLetterTemplateName('job_done', brand, 'v4');
+}
+
+export function resolveJobCompletionLetterTemplateFallbackName(brand: DocumentBrand): string {
+  return resolveBrandLetterTemplateName('job_done', brand, 'v3');
+}
+
+export function resolveJobCompletionLetterTemplateLegacyName(brand: DocumentBrand): string {
+  return resolveBrandLetterTemplateName('job_done', brand, 'v1');
+}
+
+/**
+ * Brand-specific rich cold template (v3).
+ * Callers try letter v3 → v2 → v1 → short svc_job_done.
+ */
+export function resolveJobCompletionColdTemplateName(brand: DocumentBrand): string {
+  return brand === 'elevenro' ? 'svc_job_done_ero_v3' : 'svc_job_done_hro_v3';
+}
+
+export function resolveJobCompletionColdTemplateFallbackName(brand: DocumentBrand): string {
+  return brand === 'elevenro' ? 'svc_job_done_ero_v2' : 'svc_job_done_hro_v2';
+}
+
+export const JOB_COMPLETION_COLD_FALLBACK = {
+  name: 'svc_job_done',
+  language: 'en' as const,
+};
 
 function resolveBillAmount(job: Record<string, unknown>): number {
   const actualCost = job.actual_cost ?? job.actualCost;
@@ -185,6 +312,7 @@ export function buildJobCompletionMessageFromJob(job: Record<string, unknown>): 
     normalizeDocumentBrand((job as Record<string, unknown>).serviceBrand) ||
     'hydrogenro';
 
+  const jobNumber = String(job.job_number || job.jobNumber || '');
   const input: JobCompletionMessageInput = {
     customerName,
     serviceType,
@@ -192,6 +320,7 @@ export function buildJobCompletionMessageFromJob(job: Record<string, unknown>): 
     amountCollected,
     amountPending: amountPendingValue,
     pendingDueDate: pendingDueDate || null,
+    jobRef: jobNumber || null,
     documentBrand,
   };
 
@@ -199,7 +328,7 @@ export function buildJobCompletionMessageFromJob(job: Record<string, unknown>): 
     message: buildJobCompletionMessage(input),
     whatsappMessage: buildJobCompletionWhatsAppMessage(input),
     customerName,
-    jobNumber: String(job.job_number || job.jobNumber || ''),
+    jobNumber,
     amount: formatJobCompletionAmount(amountCollected),
     amountPending: formatJobCompletionAmount(amountPendingValue),
     pendingDueDate,

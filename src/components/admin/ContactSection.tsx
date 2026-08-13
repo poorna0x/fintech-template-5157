@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { getAdminEmailComposerUrl, getAdminWhatsAppComposerUrl, getValidCustomerEmail } from '@/lib/customer-email';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { settingsPanelPath } from '@/lib/settingsUrl';
 import WhatsAppActionDialog from '@/components/admin/WhatsAppActionDialog';
 import PhoneNumbersDialog from '@/components/admin/PhoneNumbersDialog';
 import LocationsDialog from '@/components/admin/LocationsDialog';
@@ -55,6 +56,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   const customerEmail = getValidCustomerEmail(customer.email);
   const [whatsappChoiceOpen, setWhatsappChoiceOpen] = useState(false);
   const [whatsappNumbersOpen, setWhatsappNumbersOpen] = useState(false);
+  /** When picking among phones: inbox vs native wa.me */
+  const [whatsappNumbersMode, setWhatsappNumbersMode] = useState<'inbox' | 'native'>('inbox');
   const [locationsDialogOpen, setLocationsDialogOpen] = useState(false);
   const [locationsDialogCustomer, setLocationsDialogCustomer] = useState<Customer | null>(null);
 
@@ -68,20 +71,43 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     navigate(getAdminEmailComposerUrl(customer.id));
   };
 
-  const openWhatsAppDirect = () => {
+  const openNativeWhatsAppForPhone = (phone: string) => {
+    const formatted = formatPhoneForWhatsApp(phone);
+    if (!formatted || formatted.length < 10) {
+      toast.error('Phone number not available');
+      return;
+    }
+    window.open(`https://wa.me/${formatted}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const openWhatsAppInbox = () => {
     if (!customer.phone?.trim()) {
       toast.error('Phone number not available');
       return;
     }
     if (alternatePhone && String(alternatePhone).trim() !== customer.phone?.trim()) {
+      setWhatsappNumbersMode('inbox');
       setWhatsappNumbersOpen(true);
       return;
     }
-    window.open(
-      `https://wa.me/${formatPhoneForWhatsApp(customer.phone)}`,
-      '_blank',
-      'noopener,noreferrer'
+    navigate(
+      settingsPanelPath('whatsapp-inbox', {
+        id: formatPhoneForWhatsApp(customer.phone),
+      })
     );
+  };
+
+  const openWhatsAppNative = () => {
+    if (!customer.phone?.trim()) {
+      toast.error('Phone number not available');
+      return;
+    }
+    if (alternatePhone && String(alternatePhone).trim() !== customer.phone?.trim()) {
+      setWhatsappNumbersMode('native');
+      setWhatsappNumbersOpen(true);
+      return;
+    }
+    openNativeWhatsAppForPhone(customer.phone);
   };
 
   const openWhatsAppTemplate = () => {
@@ -185,7 +211,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         open={whatsappChoiceOpen}
         onOpenChange={setWhatsappChoiceOpen}
         customerName={customerDisplayName}
-        onOpenWhatsApp={openWhatsAppDirect}
+        onOpenInbox={openWhatsAppInbox}
+        onOpenNativeWhatsApp={openWhatsAppNative}
         onOpenTemplate={openWhatsAppTemplate}
       />
       <PhoneNumbersDialog
@@ -193,6 +220,17 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         onOpenChange={setWhatsappNumbersOpen}
         customer={customer}
         mode="whatsapp"
+        onWhatsAppPhone={(phone) => {
+          if (whatsappNumbersMode === 'native') {
+            openNativeWhatsAppForPhone(phone);
+            return;
+          }
+          navigate(
+            settingsPanelPath('whatsapp-inbox', {
+              id: formatPhoneForWhatsApp(phone),
+            })
+          );
+        }}
       />
       <LocationsDialog
         open={locationsDialogOpen}

@@ -766,6 +766,26 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       });
 
       toast.success('Job completed successfully');
+      // Brand completion WhatsApp when auto-send is ON (skips AMC / dont_send).
+      // Refresh again after a successful send so "Message Sent" updates on the completed card.
+      void import('@/lib/jobCompletionWhatsApp').then(({ queueJobCompletionWhatsAppAutoSend }) => {
+        queueJobCompletionWhatsAppAutoSend(
+          {
+            ...(job as Record<string, unknown>),
+            id: job.id,
+            status: 'COMPLETED',
+            actual_cost: parseFloat(billAmount) || (job as any).actual_cost,
+            payment_amount: parseFloat(billAmount) || (job as any).payment_amount,
+            service_brand: serviceBrand || (job as any).service_brand,
+            requirements: (job as any).requirements,
+          },
+          {
+            onResult: (result) => {
+              if (result === 'sent') onJobCompleted(job?.id);
+            },
+          }
+        );
+      });
       onJobCompleted(job?.id);
       handleClose();
     } catch (error: any) {

@@ -287,6 +287,18 @@ exports.handler = async (event) => {
       'wrong_line'
     );
 
+    try {
+      const { maybeSendTechnicianPushWhatsApp } = require('./tech-push-whatsapp-helper');
+      await maybeSendTechnicianPushWhatsApp(db, {
+        technicianId,
+        category: 'wrong_line',
+        title: techTitle,
+        body: techBody,
+      });
+    } catch {
+      /* never block wrong-line push */
+    }
+
     return {
       statusCode: 200,
       headers: HEADERS,

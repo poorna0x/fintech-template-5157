@@ -58,6 +58,10 @@
 [functions."ephemeral-data-cleanup"]
   schedule = "30 20 * * 0"
 
+# WhatsApp billing snapshot: 10:35 PM IST = 17:05 UTC — upsert current month usage.
+[functions."whatsapp-usage-monthly-rollup"]
+  schedule = "5 17 * * *"
+
 # Force HTTPS - redirect HTTP to HTTPS
 [[redirects]]
   from = "http://hydrogenro.com/*"

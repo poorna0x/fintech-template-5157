@@ -1,6 +1,8 @@
 /** Full-screen overlays and dialogs on /settings (mobile back / swipe-back). */
 export const SETTINGS_PANELS = [
   'calling',
+  'whatsapp-inbox',
+  'whatsapp-settings',
   'reminders',
   'recurring-service',
   'pending-payments',
@@ -9,6 +11,8 @@ export const SETTINGS_PANELS = [
   'add-customer-reminder',
   'merge-customers',
   'warranty',
+  'pdf-authenticity',
+  'db-storage',
   'direct-sale',
   'add-technician',
   'edit-technician',
@@ -20,7 +24,7 @@ export const SETTINGS_PANELS = [
   'edit-product-qr',
   'add-todo',
   'add-tracker',
-  'pdf-authenticity',
+  'lead-catalog',
 ] as const;
 
 export type SettingsPanelSlug = (typeof SETTINGS_PANELS)[number];

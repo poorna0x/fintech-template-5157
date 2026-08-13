@@ -1,3 +1,5 @@
+import type { DocumentBrand } from '@/lib/service-brands';
+import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   ADMIN_EMAIL_TEMPLATE_META,
   type AdminDocumentEmailData,
@@ -10,11 +12,15 @@ import {
   resolveBookingEmailDocumentBrand,
   type BookingConfirmationEmailData,
 } from '@/lib/booking-confirmation-email';
-import type { DocumentBrand } from '@/lib/service-brands';
-import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   buildJobCompletionWhatsAppMessage,
 } from '@/lib/job-completion-message';
+import {
+  waBrandWebsiteUrl,
+  waLabeledLink,
+  waLabeledValue,
+  waPlainLabelValue,
+} from '@/lib/whatsappMessageFormat';
 
 export interface AdminWhatsAppMessageResult {
   text: string;
@@ -36,12 +42,12 @@ function formatDisplayDate(iso: string): string {
 
 function brandFooter(brand: DocumentBrand): string {
   const info = getCompanyInfoForBrand(brand);
-  const website = info.website.startsWith('http') ? info.website : `https://${info.website}`;
+  const website = waBrandWebsiteUrl(info.website);
   return [
     'For any help, contact us:',
-    `📞 ${info.phone}`,
-    `📧 ${info.email}`,
-    `🌐 ${website}`,
+    waLabeledValue('📞', 'Phone', info.phone),
+    waLabeledValue('📧', 'Email', info.email),
+    waLabeledLink('🌐', 'Website', website),
   ].join('\n');
 }
 
@@ -57,11 +63,11 @@ function buildBookingWhatsApp(data: BookingConfirmationEmailData): AdminWhatsApp
   const address = data.serviceAddress.trim() || '—';
 
   const detailLines = [
-    `Service: ${serviceLine}`,
-    ...(deviceLine ? [`Device: ${deviceLine}`] : []),
-    `Date: ${serviceDate}`,
-    `Time: ${timeSlot}`,
-    `Address: ${address}`,
+    waPlainLabelValue('Service', serviceLine),
+    ...(deviceLine ? [waPlainLabelValue('Device', deviceLine)] : []),
+    waPlainLabelValue('Date', serviceDate),
+    waPlainLabelValue('Time', timeSlot),
+    waPlainLabelValue('Address', address),
   ];
 
   const text = [
@@ -135,14 +141,14 @@ function buildDocumentWhatsApp(
           : type === 'quotation'
             ? 'Quote no.'
             : 'Reference';
-    detailLines.push(`${refLabel}: ${data.documentRef.trim()}`);
+    detailLines.push(waPlainLabelValue(refLabel, data.documentRef.trim()));
   }
   if (meta.showAmount && data.amount.trim()) {
-    detailLines.push(`Amount: ${data.amount.trim()}`);
+    detailLines.push(waPlainLabelValue('Amount', data.amount.trim()));
   }
   if (meta.showDueDate && data.dueDate.trim()) {
     const dueLabel = type === 'service_reminder' ? 'Suggested date' : 'Valid / due date';
-    detailLines.push(`${dueLabel}: ${formatDisplayDate(data.dueDate.trim())}`);
+    detailLines.push(waPlainLabelValue(dueLabel, formatDisplayDate(data.dueDate.trim())));
   }
 
   const headline =
@@ -156,7 +162,28 @@ function buildDocumentWhatsApp(
           ? 'Quotation'
           : type === 'service_reminder'
             ? 'Service reminder'
-            : 'Message';
+            : type === 'tech_running_late'
+              ? 'Technician delayed'
+              : 'Message';
+
+  if (type === 'tech_running_late') {
+    const delayText =
+      message ||
+      'Sorry — our technician is facing an issue and will be a bit late. We will inform you shortly about the arrival time.';
+    const text = [
+      `Hi ${customerName},`,
+      '',
+      delayText,
+      '',
+      `Thank you for your patience.`,
+      '',
+      brandFooter(brand),
+    ].join('\n');
+    return {
+      text,
+      previewTitle: `Technician delayed · ${brandName}`,
+    };
+  }
 
   const text = [
     `Hi ${customerName},`,

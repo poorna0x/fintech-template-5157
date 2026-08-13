@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,18 +27,40 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { format } from 'date-fns';
-import { Check, ChevronsUpDown, Edit3, FileText, Loader2, PhoneCall, Plus, RefreshCw, Search, UserRound } from 'lucide-react';
+import { Check, ChevronsUpDown, Edit3, FileText, ImagePlus, Loader2, PhoneCall, Plus, RefreshCw, Search, UserRound, X } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Customer, Reminder, Technician } from '@/types';
 import { db, supabase, REMINDER_ROW_COLUMNS } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import {
+  openWhatsAppMeDeepLink,
+  readFileAsBase64,
+  sendAdminWhatsAppMedia,
+  sendAdminWhatsAppTemplate,
+  sendAdminWhatsAppText,
+  sendAdminWhatsAppTextWithOptionalTemplate,
+  validateWhatsAppAttachFile,
+} from '@/lib/sendAdminWhatsAppApi';
+import { resolveColdPaymentReceived } from '@/lib/whatsappUtilityTemplates';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import { useSuspendDialogForPhotoViewer } from '@/lib/suspendDialogForPhotoViewer';
 import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate, buildPendingPaymentWhatsAppMessage, buildPendingPaymentReceivedWhatsAppMessage, parsePendingPaymentReminderNotes } from '@/lib/pendingPaymentReminder';
+import {
+  PENDING_PAYMENT_REMINDER_TITLE,
+  parseReminderAtLocalDate,
+  buildPendingPaymentWhatsAppMessage,
+  buildPendingPaymentReceivedWhatsAppMessage,
+  buildPendingPaymentLetterBodyParams,
+  buildPendingPaymentLetterButtonUrlParams,
+  resolvePendingPaymentLetterTemplateName,
+  resolvePendingPaymentLetterImageTemplateName,
+  parsePendingPaymentReminderNotes,
+  formatPendingPaymentDueLabel,
+  resolvePendingPaymentMessageBrand,
+} from '@/lib/pendingPaymentReminder';
 import { markPendingPaymentSettledInRequirements } from '@/lib/jobPendingPayment';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
@@ -453,10 +476,18 @@ export function SettingsPendingPaymentsDialogV2({
   /** Which UPI account to use when include-UPI is on. */
   const [whatsappUpiAccountId, setWhatsappUpiAccountId] = useState<string>('');
   /** Checkbox: include UPI ID + pay link in the WhatsApp message. */
-  const [whatsappIncludeUpi, setWhatsappIncludeUpi] = useState(false);
+  const [whatsappIncludeUpi, setWhatsappIncludeUpi] = useState(true);
   const [whatsappManageUpiOpen, setWhatsappManageUpiOpen] = useState(false);
   const [whatsappDraftMessage, setWhatsappDraftMessage] = useState('');
   const [whatsappDraftLoading, setWhatsappDraftLoading] = useState(false);
+  /** Optional image (QR / receipt) for IMAGE-header cold template or 24h media send. */
+  const [whatsappAttachImage, setWhatsappAttachImage] = useState<{
+    base64: string;
+    mimeType: string;
+    filename: string;
+    previewUrl: string;
+  } | null>(null);
+  const whatsappImageInputRef = useRef<HTMLInputElement | null>(null);
   /** Last completed job service_brand per customer — drives WhatsApp brand contact. */
   const [brandByCustomerId, setBrandByCustomerId] = useState<Record<string, DocumentBrand | null>>({});
 
@@ -498,11 +529,217 @@ export function SettingsPendingPaymentsDialogV2({
   const [reportSelectedBillPhotos, setReportSelectedBillPhotos] = useState<string[] | null>(null);
   const reportTechsLoadedRef = useRef(false);
 
-  const openWhatsApp = (phone: string, message: string) => {
+  const openWhatsApp = (
+    phone: string,
+    message: string,
+    opts?: {
+      customerName?: string;
+      amount?: number;
+      customerId?: string | null;
+      dueDateYmd?: string | null;
+      invoiceRef?: string | null;
+      brand?: DocumentBrand | string | null;
+      /** Use pending_payment Meta template when 24h window is closed (default true). */
+      coldPendingTemplate?: boolean;
+      /** Cold Meta template when 24h window is closed (default pending_payment). */
+      coldTemplateKind?: 'pending_payment' | 'payment_received';
+      /** When true, keep the pay link in the message (wa.me fallback if window closed). */
+      includePayLink?: boolean;
+      /** UPI pay HTTPS link — used for cold Pay now button (v4 template). */
+      payHttpsLink?: string | null;
+      /** Optional image for IMAGE-header cold template or 24h media+caption. */
+      headerImage?: {
+        imageBase64: string;
+        filename?: string;
+        mimeType?: string;
+      } | null;
+    }
+  ) => {
     if (!phone) return;
-    const formatted = formatPhoneForWhatsApp(phone);
-    const url = `https://wa.me/${formatted}?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+    void (async () => {
+      const trimmed = message.trim();
+      if (!trimmed) {
+        toast.error('Message is empty');
+        return;
+      }
+
+      const payHttpsLink =
+        opts?.payHttpsLink ||
+        (() => {
+          const m = trimmed.match(/https?:\/\/[^\s]+\/p\/[a-zA-Z0-9]+/i);
+          return m?.[0] || null;
+        })();
+      const payButtonParams = buildPendingPaymentLetterButtonUrlParams(payHttpsLink);
+
+      const hasPayLink =
+        opts?.includePayLink === true ||
+        Boolean(payHttpsLink) ||
+        /https?:\/\/[^\s]+/i.test(trimmed);
+
+      const brand = resolvePendingPaymentMessageBrand(opts?.brand);
+      const headerImage = opts?.headerImage?.imageBase64
+        ? {
+            imageBase64: opts.headerImage.imageBase64,
+            filename: opts.headerImage.filename || 'image.jpg',
+            mimeType: opts.headerImage.mimeType || 'image/jpeg',
+          }
+        : null;
+      const letterBodyParams = buildPendingPaymentLetterBodyParams(
+        opts?.customerName || 'Customer',
+        opts?.amount ?? 0,
+        opts?.dueDateYmd,
+        opts?.invoiceRef
+      );
+
+      // Image attached: 24h → media+caption; cold → IMAGE-header balance-due template
+      if (headerImage && opts?.coldTemplateKind !== 'payment_received') {
+        const mediaResult = await sendAdminWhatsAppMedia({
+          to: phone,
+          fileBase64: headerImage.imageBase64,
+          filename: headerImage.filename,
+          mimeType: headerImage.mimeType,
+          caption: trimmed,
+          customerId: opts?.customerId,
+          source: 'pending_payment',
+        });
+        if (mediaResult.ok) {
+          toast.success('WhatsApp reminder sent with image');
+          return;
+        }
+        if (mediaResult.featureDisabled) {
+          toast.error(mediaResult.error || 'WhatsApp pending payment is disabled in Settings');
+          return;
+        }
+        if (mediaResult.needsWindowOrTemplate && opts?.coldPendingTemplate !== false) {
+          const coldResult = await sendAdminWhatsAppTemplate({
+            to: phone,
+            templateName: resolvePendingPaymentLetterImageTemplateName(brand),
+            languageCode: 'en',
+            bodyParams: letterBodyParams,
+            buttonUrlParams: payButtonParams,
+            headerImage,
+            customerId: opts?.customerId,
+            source: 'pending_payment',
+          });
+          if (coldResult.ok) {
+            toast.success('Cold balance-due template sent with image');
+            return;
+          }
+          if (coldResult.featureDisabled) {
+            toast.error(coldResult.error || 'WhatsApp pending payment is disabled in Settings');
+            return;
+          }
+          // Image template not ready — fall back to text letter (no image)
+          const textCold = await sendAdminWhatsAppTemplate({
+            to: phone,
+            templateName: resolvePendingPaymentLetterTemplateName(brand, {
+              withPayButton: payButtonParams.length > 0,
+            }),
+            languageCode: 'en',
+            bodyParams: letterBodyParams,
+            buttonUrlParams: payButtonParams,
+            customerId: opts?.customerId,
+            source: 'pending_payment',
+          });
+          if (textCold.ok) {
+            toast.message('Image template unavailable — sent text balance-due template');
+            return;
+          }
+          openWhatsAppMeDeepLink(phone, trimmed);
+          toast.message('24h window closed — opened WhatsApp (image not included)');
+          return;
+        }
+        openWhatsAppMeDeepLink(phone, trimmed);
+        toast.error(mediaResult.error || 'API send failed — opened phone WhatsApp');
+        return;
+      }
+
+      if (hasPayLink && opts?.coldPendingTemplate !== false) {
+        const result = await sendAdminWhatsAppText({
+          to: phone,
+          text: trimmed,
+          customerId: opts?.customerId,
+          source: 'pending_payment',
+          fallbackWaMe: false,
+        });
+        if (result.ok) {
+          toast.success('WhatsApp reminder sent (with pay link)');
+          return;
+        }
+        if (result.featureDisabled) {
+          toast.error(result.error || 'WhatsApp pending payment is disabled in Settings');
+          return;
+        }
+        if (result.needsWindowOrTemplate) {
+          const coldResult = await sendAdminWhatsAppTextWithOptionalTemplate({
+            to: phone,
+            text: trimmed,
+            customerId: opts?.customerId,
+            source: 'pending_payment',
+            fallbackWaMe: true,
+            coldTemplate: {
+              name: resolvePendingPaymentLetterTemplateName(brand, {
+                withPayButton: payButtonParams.length > 0,
+              }),
+              languageCode: 'en',
+              bodyParams: letterBodyParams,
+              buttonUrlParams: payButtonParams,
+            },
+          });
+          if (coldResult.ok && coldResult.usedTemplate) {
+            toast.success('Cold balance-due template sent with Pay now button');
+            return;
+          }
+          if (coldResult.ok && coldResult.via === 'wa_me') {
+            toast.message('24h window closed — opened WhatsApp with pay link');
+            return;
+          }
+          openWhatsAppMeDeepLink(phone, trimmed);
+          toast.message('24h window closed — opened WhatsApp with pay link');
+          return;
+        }
+        openWhatsAppMeDeepLink(phone, trimmed);
+        toast.error(result.error || 'API send failed — opened phone WhatsApp with pay link');
+        return;
+      }
+
+      const allowColdTpl = opts?.coldPendingTemplate !== false;
+      const coldKind = opts?.coldTemplateKind || 'pending_payment';
+      const coldTemplate = allowColdTpl
+        ? coldKind === 'payment_received'
+          ? resolveColdPaymentReceived(opts?.customerName || 'Customer', opts?.amount ?? 0)
+          : {
+              name: resolvePendingPaymentLetterTemplateName(brand, {
+                withPayButton: payButtonParams.length > 0,
+              }),
+              languageCode: 'en',
+              bodyParams: letterBodyParams,
+              buttonUrlParams: payButtonParams,
+            }
+        : null;
+
+      const result = await sendAdminWhatsAppTextWithOptionalTemplate({
+        to: phone,
+        text: trimmed,
+        customerId: opts?.customerId,
+        source: 'pending_payment',
+        fallbackWaMe: true,
+        coldTemplate: coldTemplate || undefined,
+      });
+
+      if (result.ok) {
+        if (result.usedTemplate) {
+          toast.success('Cold balance-due template sent (24h window was closed)');
+        } else if (result.via === 'wa_me') {
+          toast.message('Opened phone WhatsApp');
+        } else {
+          toast.success('WhatsApp reminder sent');
+        }
+        return;
+      }
+
+      toast.error(result.error || 'WhatsApp send failed');
+    })();
   };
 
   const openCall = (phone: string) => {
@@ -532,6 +769,10 @@ export function SettingsPendingPaymentsDialogV2({
     setWhatsappUpiAccountId(preferred?.id ?? accounts[0]?.id ?? '');
     setWhatsappIncludeUpi(Boolean(preferred || accounts[0]));
     setWhatsappManageUpiOpen(false);
+    if (whatsappAttachImage?.previewUrl) {
+      URL.revokeObjectURL(whatsappAttachImage.previewUrl);
+    }
+    setWhatsappAttachImage(null);
     setWhatsappTarget(payment);
     setWhatsappDialogOpen(true);
   };
@@ -539,10 +780,13 @@ export function SettingsPendingPaymentsDialogV2({
   const buildPendingPaymentMessage = async (
     payment: PendingPaymentReminder,
     customer: CustomerLabel,
-    opts?: { includeUpi?: boolean; upiAccountId?: string }
+    opts?: { includeUpi?: boolean; upiAccountId?: string; withQrImage?: boolean }
   ) => {
     const includeUpi = opts?.includeUpi ?? whatsappIncludeUpi;
-    const upiAccountId = opts?.upiAccountId ?? whatsappUpiAccountId;
+    let upiAccountId = opts?.upiAccountId ?? whatsappUpiAccountId;
+    if (includeUpi && !upiAccountId && upiAccounts.length > 0) {
+      upiAccountId = resolvePreferredUpiAccount(upiAccounts)?.id ?? upiAccounts[0]?.id ?? '';
+    }
     let upiOpts = null as
       | { label: string; upiId: string; phone?: string; deepLink?: string | null; httpsLink?: string | null }
       | null;
@@ -571,7 +815,9 @@ export function SettingsPendingPaymentsDialogV2({
       Number(payment.amount_pending) || 0,
       payment.reminder_at ? String(payment.reminder_at).slice(0, 10) : null,
       brandForCustomer(payment.entity_id as string | undefined),
-      upiOpts
+      upiOpts,
+      payment.job_number || payment.job_id || null,
+      { withQrImage: opts?.withQrImage ?? Boolean(whatsappAttachImage) }
     );
   };
 
@@ -595,6 +841,7 @@ export function SettingsPendingPaymentsDialogV2({
         const msg = await buildPendingPaymentMessage(whatsappTarget, customer, {
           includeUpi: whatsappIncludeUpi,
           upiAccountId: whatsappUpiAccountId,
+          withQrImage: Boolean(whatsappAttachImage),
         });
         if (!cancelled) setWhatsappDraftMessage(msg);
       } finally {
@@ -604,12 +851,13 @@ export function SettingsPendingPaymentsDialogV2({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild when dialog UPI options change
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild when dialog UPI / QR options change
   }, [
     whatsappDialogOpen,
     whatsappTarget,
     whatsappIncludeUpi,
     whatsappUpiAccountId,
+    whatsappAttachImage,
     upiAccounts,
     customerLabels,
     brandByCustomerId,
@@ -1495,7 +1743,12 @@ export function SettingsPendingPaymentsDialogV2({
                                 className="bg-green-600 hover:bg-green-700 text-white"
                                 onClick={() => {
                                   if (!primaryPhone) return;
-                                  openWhatsApp(primaryPhone, message);
+                                  openWhatsApp(primaryPhone, message, {
+                                    customerName: customer?.name,
+                                    amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
+                                    customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
+                                    coldTemplateKind: 'payment_received',
+                                  });
                                   setPostCompleteWhatsappOpen(false);
                                 }}
                               >
@@ -1507,7 +1760,12 @@ export function SettingsPendingPaymentsDialogV2({
                                 className="bg-green-600 hover:bg-green-700 text-white"
                                 onClick={() => {
                                   if (!alternatePhone) return;
-                                  openWhatsApp(alternatePhone, message);
+                                  openWhatsApp(alternatePhone, message, {
+                                    customerName: customer?.name,
+                                    amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
+                                    customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
+                                    coldTemplateKind: 'payment_received',
+                                  });
                                   setPostCompleteWhatsappOpen(false);
                                 }}
                               >
@@ -1522,7 +1780,12 @@ export function SettingsPendingPaymentsDialogV2({
                               onClick={() => {
                                 const phone = primaryPhone || alternatePhone;
                                 if (!phone) return;
-                                openWhatsApp(phone, message);
+                                openWhatsApp(phone, message, {
+                                  customerName: customer?.name,
+                                  amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
+                                  customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
+                                  coldTemplateKind: 'payment_received',
+                                });
                                 setPostCompleteWhatsappOpen(false);
                               }}
                             >
@@ -1561,6 +1824,10 @@ export function SettingsPendingPaymentsDialogV2({
               setWhatsappTarget(null);
               setWhatsappManageUpiOpen(false);
               setWhatsappIncludeUpi(false);
+              if (whatsappAttachImage?.previewUrl) {
+                URL.revokeObjectURL(whatsappAttachImage.previewUrl);
+              }
+              setWhatsappAttachImage(null);
             }
           }}
         >
@@ -1576,10 +1843,16 @@ export function SettingsPendingPaymentsDialogV2({
                   const message = whatsappDraftMessage;
                   const hasAlternate =
                     !!alternatePhone && alternatePhone.trim() !== (primaryPhone || '').trim();
+                  const resolvedUpiAccountId =
+                    whatsappUpiAccountId ||
+                    resolvePreferredUpiAccount(upiAccounts)?.id ||
+                    upiAccounts[0]?.id ||
+                    '';
                   const canIncludeUpi =
                     whatsappIncludeUpi &&
-                    Boolean(whatsappUpiAccountId) &&
-                    upiAccounts.some((a) => a.id === whatsappUpiAccountId);
+                    Boolean(resolvedUpiAccountId) &&
+                    upiAccounts.some((a) => a.id === resolvedUpiAccountId);
+                  const messageHasPayLink = /https?:\/\/[^\s]+/i.test(message);
 
                   const sendWithPhone = (phone: string) => {
                     if (!phone) return;
@@ -1587,14 +1860,35 @@ export function SettingsPendingPaymentsDialogV2({
                       toast.error('Select a UPI account, or uncheck “Include UPI pay details”');
                       return;
                     }
+                    if (whatsappIncludeUpi && canIncludeUpi && !messageHasPayLink) {
+                      toast.error('Pay link still generating — wait a moment and try again');
+                      return;
+                    }
                     if (whatsappDraftLoading || !message.trim()) {
                       toast.error('Preparing pay link… try again in a moment');
                       return;
                     }
                     if (canIncludeUpi) {
-                      setLastSelectedUpiAccountId(whatsappUpiAccountId);
+                      setLastSelectedUpiAccountId(resolvedUpiAccountId);
                     }
-                    openWhatsApp(phone, message);
+                    openWhatsApp(phone, message, {
+                      customerName: customer?.name,
+                      amount: Number(whatsappTarget.amount_pending) || 0,
+                      customerId: whatsappTarget.entity_id as string | undefined,
+                      dueDateYmd: whatsappTarget.reminder_at
+                        ? String(whatsappTarget.reminder_at).slice(0, 10)
+                        : null,
+                      invoiceRef: whatsappTarget.job_number || whatsappTarget.job_id || null,
+                      brand: brandForCustomer(whatsappTarget.entity_id as string | undefined),
+                      includePayLink: canIncludeUpi || messageHasPayLink,
+                      headerImage: whatsappAttachImage
+                        ? {
+                            imageBase64: whatsappAttachImage.base64,
+                            filename: whatsappAttachImage.filename,
+                            mimeType: whatsappAttachImage.mimeType,
+                          }
+                        : null,
+                    });
                     setWhatsappDialogOpen(false);
                   };
 
@@ -1606,7 +1900,7 @@ export function SettingsPendingPaymentsDialogV2({
                           Notify via WhatsApp
                         </DialogTitle>
                         <DialogDescription>
-                          Optionally include a short UPI pay link customers can open to pay.
+                          Message includes amount due, due date, and UPI pay link when enabled.
                         </DialogDescription>
                       </DialogHeader>
 
@@ -1616,11 +1910,30 @@ export function SettingsPendingPaymentsDialogV2({
                             <strong>Customer:</strong> {customer?.name ?? 'Customer'}
                           </div>
                           <div className="text-sm text-foreground">
-                            <strong>Amount:</strong> ₹
+                            <strong>Amount due:</strong> ₹
                             {(Number(whatsappTarget.amount_pending) || 0).toLocaleString('en-IN', {
                               maximumFractionDigits: 2,
                             })}
                           </div>
+                          <div className="text-sm text-foreground">
+                            <strong>Due by:</strong>{' '}
+                            {formatPendingPaymentDueLabel(
+                              whatsappTarget.reminder_at
+                                ? String(whatsappTarget.reminder_at).slice(0, 10)
+                                : null
+                            ) || 'At your earliest convenience'}
+                          </div>
+                          {canIncludeUpi ? (
+                            <div className="text-sm text-foreground">
+                              <strong>Pay link:</strong>{' '}
+                              {whatsappDraftLoading
+                                ? 'Generating…'
+                                : (() => {
+                                    const match = message.match(/https?:\/\/[^\s]+/);
+                                    return match ? match[0] : 'Included in message below';
+                                  })()}
+                            </div>
+                          ) : null}
                           <div className="text-sm text-foreground">
                             <strong>Primary:</strong> {primaryPhone ?? '—'}
                           </div>
@@ -1652,10 +1965,10 @@ export function SettingsPendingPaymentsDialogV2({
                                 htmlFor="include-upi-pay"
                                 className="text-sm font-medium cursor-pointer leading-snug"
                               >
-                                Include UPI pay details in message
+                                Include amount, due date &amp; UPI pay link in message
                               </label>
                               <p className="text-xs text-muted-foreground mt-0.5">
-                                Adds a short pay link (QR + UPI apps). Uncheck for reminder-only.
+                                Adds payment link, UPI ID, and pre-filled amount. Uncheck for a short reminder only.
                               </p>
                             </div>
                             <Button
@@ -1722,10 +2035,103 @@ export function SettingsPendingPaymentsDialogV2({
                         </div>
 
                         <div className="space-y-2">
-                          <Label>Message preview</Label>
-                          <div className="mt-1 p-3 bg-white dark:bg-background border border-gray-200 dark:border-border rounded text-sm text-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">
-                            {whatsappDraftLoading ? 'Preparing short pay link…' : message || '—'}
-                          </div>
+                          <Label>UPI QR code (optional)</Label>
+                          <input
+                            ref={whatsappImageInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              if (!file) return;
+                              const err = validateWhatsAppAttachFile(file);
+                              if (err) {
+                                toast.error(err);
+                                return;
+                              }
+                              if (!/^image\//i.test(file.type) && !/\.(jpe?g|png|webp)$/i.test(file.name)) {
+                                toast.error('Only JPEG, PNG, or WebP images');
+                                return;
+                              }
+                              void (async () => {
+                                try {
+                                  const read = await readFileAsBase64(file);
+                                  if (whatsappAttachImage?.previewUrl) {
+                                    URL.revokeObjectURL(whatsappAttachImage.previewUrl);
+                                  }
+                                  setWhatsappAttachImage({
+                                    base64: read.base64,
+                                    mimeType: read.mimeType || file.type || 'image/jpeg',
+                                    filename: read.filename || file.name || 'upi-qr.jpg',
+                                    previewUrl: URL.createObjectURL(file),
+                                  });
+                                } catch {
+                                  toast.error('Could not read image');
+                                }
+                              })();
+                            }}
+                          />
+                          {whatsappAttachImage ? (
+                            <div className="flex items-center gap-3 rounded-md border p-2">
+                              <img
+                                src={whatsappAttachImage.previewUrl}
+                                alt=""
+                                className="h-14 w-14 rounded object-cover bg-muted"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm truncate">{whatsappAttachImage.filename}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Customer can scan/tap QR to pay, or use Pay now
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => {
+                                  if (whatsappAttachImage?.previewUrl) {
+                                    URL.revokeObjectURL(whatsappAttachImage.previewUrl);
+                                  }
+                                  setWhatsappAttachImage(null);
+                                }}
+                                aria-label="Remove QR image"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5"
+                              onClick={() => whatsappImageInputRef.current?.click()}
+                            >
+                              <ImagePlus className="h-4 w-4" />
+                              Attach UPI QR
+                            </Button>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="pending-wa-message">Message</Label>
+                          <Textarea
+                            id="pending-wa-message"
+                            value={message}
+                            onChange={(e) => setWhatsappDraftMessage(e.target.value)}
+                            rows={10}
+                            disabled={whatsappDraftLoading}
+                            className="text-sm font-normal resize-y min-h-[160px]"
+                            placeholder={whatsappDraftLoading ? 'Preparing short pay link…' : 'Edit message before sending'}
+                          />
+                          {canIncludeUpi ? (
+                            <p className="text-xs text-muted-foreground">
+                              Pay link included. If the customer&apos;s 24h chat window is closed, WhatsApp opens on
+                              your phone with the full message and link (cold templates cannot carry URLs).
+                            </p>
+                          ) : null}
                         </div>
 
                         <div className="space-y-2">

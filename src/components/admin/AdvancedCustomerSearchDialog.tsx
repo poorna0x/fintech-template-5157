@@ -49,6 +49,11 @@ import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import type { Customer, Technician } from '@/types';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import { useLeadCatalog } from '@/hooks/useLeadCatalog';
+import {
+  LEGACY_LEAD_SOURCE_LABELS,
+  LEGACY_SERVICE_SUB_TYPE_LABELS,
+} from '@/lib/leadCatalog';
 import {
   extractMapsUrlFromText,
   isGoogleMapsUrl,
@@ -112,34 +117,11 @@ const EMPTY_FILTERS: AdvancedSearchFilters = {
   limit: 200,
 };
 
-/** Match the lead-source values used in NewJob / AddCustomer flows. */
-const LEAD_SOURCES = [
-  'Website',
-  'Direct call',
-  'Google-Leads',
-  'RO care india',
-  'Home Triangle',
-  'Home Triangle-Srujan',
-  'Home Triangle-3',
-  'Local Ramu',
-  'Other',
-];
-
-/** Match the service-sub-type values used in NewJob / AddCustomer flows. */
-const SERVICE_SUB_TYPES = [
-  'Service',
-  'Installation',
-  'Reinstallation',
-  'Return Complaint',
-  'Return Service',
-  'AMC Service',
-  'New Purifier Installation',
-  'Un-Installation',
-  'Repair',
-  'Maintenance',
-  'Replacement',
-  'Inspection',
-];
+/** Fallback if catalog cache is empty (pre-migration / offline). */
+const FALLBACK_LEAD_SOURCES = [...LEGACY_LEAD_SOURCE_LABELS];
+const FALLBACK_SERVICE_SUB_TYPES = LEGACY_SERVICE_SUB_TYPE_LABELS.filter(
+  (s) => s !== 'Other'
+);
 
 const formatLocation = (row: AdvancedSearchRow): string => {
   if (row.visible_address && row.visible_address.trim()) return row.visible_address.trim();
@@ -202,7 +184,25 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   open,
   onOpenChange,
 }) => {
-  const navigate = useNavigate();
+  const { sources, subTypes } = useLeadCatalog();
+  const leadSourceOptions = useMemo(() => {
+    const labels = sources.length
+      ? sources.map((s) => s.label)
+      : FALLBACK_LEAD_SOURCES;
+    if (filters.leadSource && !labels.includes(filters.leadSource)) {
+      return [...labels, filters.leadSource];
+    }
+    return labels;
+  }, [sources, filters.leadSource]);
+  const serviceSubTypeOptions = useMemo(() => {
+    const labels = subTypes.length
+      ? subTypes.map((s) => s.label)
+      : FALLBACK_SERVICE_SUB_TYPES;
+    if (filters.serviceSubType && !labels.includes(filters.serviceSubType)) {
+      return [...labels, filters.serviceSubType];
+    }
+    return labels;
+  }, [subTypes, filters.serviceSubType]);
   const [filters, setFilters] = useState<AdvancedSearchFilters>(EMPTY_FILTERS);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -797,7 +797,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="any">Any</SelectItem>
-                    {SERVICE_SUB_TYPES.map((s) => (
+                    {serviceSubTypeOptions.map((s) => (
                       <SelectItem key={s} value={s}>
                         {s}
                       </SelectItem>
@@ -818,7 +818,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="any">Any</SelectItem>
-                    {LEAD_SOURCES.map((s) => (
+                    {leadSourceOptions.map((s) => (
                       <SelectItem key={s} value={s}>
                         {s}
                       </SelectItem>
@@ -1374,7 +1374,7 @@ const ResultRow: React.FC<ResultRowProps> = ({
             variant="outline"
             className="h-8 px-2"
             onClick={onPhotos}
-            title="Photos (opens in Admin)"
+            title="Gallery (opens in Admin)"
           >
             <ImageIcon className="w-3.5 h-3.5" />
           </Button>

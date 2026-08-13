@@ -10,6 +10,8 @@ import {
   startAdminBiometricLockController,
   stopAdminBiometricLockController,
 } from '@/lib/adminBiometricLock';
+import { WhatsAppAdminNotifier } from '@/components/admin/WhatsAppAdminNotifier';
+import { unlockWhatsAppAlertSound } from '@/lib/whatsappAlertSound';
 import {
   deliverAdminIncomingCallSearch,
   hasAdminIncomingCallSearchHandler,
@@ -217,6 +219,18 @@ export default function AdminPortal() {
     };
   }, [user, isAdmin]);
 
+  // Unlock WhatsApp alert audio after first click (browser autoplay policy).
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+    const unlock = () => unlockWhatsAppAlertSound();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, [user, isAdmin]);
+
   const booting =
     authInitializing ||
     (user && isAdmin && (onSettings ? !Settings : !Dashboard));
@@ -247,6 +261,7 @@ export default function AdminPortal() {
   return (
     <>
       {shell}
+      <WhatsAppAdminNotifier />
       <AdminBiometricLockScreen />
     </>
   );

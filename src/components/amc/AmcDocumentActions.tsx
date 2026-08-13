@@ -2,13 +2,31 @@ import React, { useMemo, useState } from 'react';
 import { Download, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import AmcEmailSendDialog, { type AmcPersistResult } from '@/components/amc/AmcEmailSendDialog';
 import type { Bill } from '@/types';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getValidCustomerEmail } from '@/lib/customer-email';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import { downloadAmcAgreementPdf } from '@/lib/send-amc-agreement-email';
+import { generateAmcPdfBase64ForWhatsApp } from '@/lib/send-amc-whatsapp';
+import {
+  generateAmcAcceptPdfPair,
+  sendDocumentAcceptInvite,
+  showAcceptPreviewSentToast,
+} from '@/lib/documentAcceptPreview';
+import {
+  resolveBillCustomerDisplayName,
+  sendAdminWhatsAppDocumentWithColdFallback,
+} from '@/lib/sendAdminWhatsAppApi';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
+import { buildDocumentPdfWhatsAppCaption } from '@/lib/document-pdf-whatsapp-caption';
+import {
+  fetchLastInboundAt,
+  invalidateInboundWindowCache,
+  isWithinCustomerServiceWindow,
+} from '@/lib/whatsappInbox';
+import { supabase } from '@/lib/supabaseClient';
 
 export interface AmcDocumentActionsProps {
   bill: Bill | null;
@@ -48,13 +66,17 @@ export default function AmcDocumentActions({
 }: AmcDocumentActionsProps) {
   const [emailOpen, setEmailOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
+  const [requireAccept, setRequireAccept] = useState(false);
 
   const defaultRecipients = useMemo(() => {
     const valid = getValidCustomerEmail(customerEmail);
     return valid ? [valid] : [];
   }, [customerEmail]);
 
+  const customerPhone = String(bill?.customer?.phone || '').trim();
   const canAct = Boolean(bill && brand && !disabled);
+  const canWhatsApp = canAct && Boolean(customerPhone);
 
   const handleDownload = async () => {
     if (!bill) return;
@@ -86,8 +108,122 @@ export default function AmcDocumentActions({
     }
   };
 
+  const handleWhatsApp = async () => {
+    if (!bill || !brand || !customerPhone) {
+      toast.error('Customer phone required for WhatsApp');
+      return;
+    }
+    setSendingWhatsApp(true);
+    const toastId = toast.loading('Preparing AMC for WhatsApp…');
+    try {
+      if (onPersistBeforeAction) {
+        const sessionReady = await ensureSupabaseSessionForWrite();
+        if (!sessionReady.ok) {
+          toast.error('Could not refresh your session. Please try again.', { id: toastId });
+          return;
+        }
+        const saved = await onPersistBeforeAction();
+        if (!saved.ok) {
+          toast.error(saved.error || 'Could not save AMC', { id: toastId });
+          return;
+        }
+      }
+      toast.loading('Generating PDF…', { id: toastId });
+      if (requireAccept) {
+        toast.loading('Generating preview + original…', { id: toastId });
+        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions);
+        toast.loading('Sending Accept preview on WhatsApp…', { id: toastId });
+        const invite = await sendDocumentAcceptInvite({
+          to: customerPhone,
+          brand,
+          docType: 'amc',
+          documentLabel: 'AMC agreement',
+          documentRef: bill.billNumber,
+          sourceKey: bill.billNumber,
+          customerId: bill.customer?.id || null,
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+          filename: pair.filename,
+          verifyCode: pair.verifyCode,
+          previewVerifyCode: pair.previewVerifyCode,
+          originalPdfBase64: pair.originalPdfBase64,
+          previewPdfBase64: pair.previewPdfBase64,
+        });
+        if (!invite.ok) {
+          toast.error(invite.error || 'Could not send Accept preview', { id: toastId });
+          return;
+        }
+        showAcceptPreviewSentToast(toastId);
+        invalidateInboundWindowCache(customerPhone);
+        onSent?.();
+        return;
+      }
+      const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
+      const inboundAt = await fetchLastInboundAt(customerPhone, supabase);
+      const windowClosed = !isWithinCustomerServiceWindow(inboundAt);
+      toast.loading(
+        windowClosed ? '24h window closed — sending PDF via template…' : 'Sending on WhatsApp…',
+        { id: toastId }
+      );
+      const caption = buildDocumentPdfWhatsAppCaption({
+        kind: 'amc',
+        brand,
+        customerName: resolveBillCustomerDisplayName(bill.customer),
+      }).slice(0, 1024);
+      const result = await sendAdminWhatsAppDocumentWithColdFallback({
+        to: customerPhone,
+        pdfBase64: pdf.pdfBase64,
+        filename: pdf.filename,
+        caption,
+        customerId: bill.customer?.id || null,
+        source: 'documents',
+        preferColdTemplate: windowClosed,
+        cold: {
+          kind: 'amc',
+          brand,
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+        },
+      });
+      if (!result.ok) {
+        toast.error(
+          result.error ||
+            '24h window closed — cold PDF template not approved yet (svc_doc_amc_*_v2)',
+          { id: toastId }
+        );
+        return;
+      }
+      toast.success(
+        result.viaColdTemplate ? 'AMC PDF sent via WhatsApp template' : 'AMC PDF sent on WhatsApp',
+        { id: toastId }
+      );
+      invalidateInboundWindowCache(customerPhone);
+      onSent?.();
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : 'Could not send AMC on WhatsApp', {
+        id: toastId,
+      });
+    } finally {
+      setSendingWhatsApp(false);
+    }
+  };
+
   return (
     <>
+      {canWhatsApp ? (
+        <label className="mb-2 flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-emerald-700"
+            checked={requireAccept}
+            onChange={(e) => setRequireAccept(e.target.checked)}
+            disabled={sendingWhatsApp || downloading}
+          />
+          <span className="text-xs leading-snug text-foreground">
+            <span className="font-semibold">Require Accept</span> — preview on WhatsApp, then I Accept
+            for original AMC
+          </span>
+        </label>
+      ) : null}
       <div
         className={
           className ||
@@ -100,7 +236,7 @@ export default function AmcDocumentActions({
           type="button"
           variant="outline"
           className="h-10 w-full justify-center"
-          disabled={!canAct || downloading}
+          disabled={!canAct || downloading || sendingWhatsApp}
           onClick={() => void handleDownload()}
         >
           {downloading ? (
@@ -112,9 +248,24 @@ export default function AmcDocumentActions({
         </Button>
         <Button
           type="button"
+          variant="outline"
+          className="h-10 w-full justify-center"
+          disabled={!canWhatsApp || downloading || sendingWhatsApp}
+          onClick={() => void handleWhatsApp()}
+          title={!customerPhone ? 'Customer phone required' : undefined}
+        >
+          {sendingWhatsApp ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <WhatsAppIcon className="h-4 w-4 mr-2 shrink-0" />
+          )}
+          WhatsApp AMC PDF
+        </Button>
+        <Button
+          type="button"
           variant="default"
-          className="h-10 w-full justify-center bg-violet-700 hover:bg-violet-800"
-          disabled={!canAct}
+          className="h-10 w-full justify-center bg-sky-700 hover:bg-sky-800"
+          disabled={!canAct || sendingWhatsApp}
           onClick={() => setEmailOpen(true)}
         >
           <Mail className="h-4 w-4 mr-2 shrink-0" />
@@ -140,6 +291,12 @@ export default function AmcDocumentActions({
             : undefined)
         }
         onPersistAfterEmail={onPersistAfterEmail}
+        onPersistAfterWhatsApp={
+          onPersistBeforeAction
+            ? async () => onPersistBeforeAction()
+            : undefined
+        }
+        allowWhatsApp
         onSent={onSent}
       />
     </>

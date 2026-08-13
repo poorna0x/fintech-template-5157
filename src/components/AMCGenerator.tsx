@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail, Save, Printer, Eye } from 'lucide-react';
+import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail, Share2, Save, Printer, Eye } from 'lucide-react';
 import DocumentBrandLogo from '@/components/DocumentBrandLogo';
 import { toast } from 'sonner';
 import { Customer, Bill, BillItem, CompanyInfo } from '@/types';
@@ -47,6 +47,8 @@ import DocumentGeneratorPageHeader, {
 import { mergeEditableCustomer } from '@/lib/document-drafts';
 import { suggestAmcAgreementNumber } from '@/lib/amc-agreement-number';
 import { getValidCustomerEmail } from '@/lib/customer-email';
+import { validatePaymentDueDate } from '@/lib/document-payment';
+import { resolveDocumentPaymentDueDate } from '@/lib/documentPaymentDueDate';
 import {
   formatCustomerAddressForBill,
   formatCustomerFullAddressLine,
@@ -130,6 +132,7 @@ export default function AMCGenerator({
   const [serviceCharge, setServiceCharge] = useState<EditableNumber>(0);
   const [paymentStatus, setPaymentStatus] = useState<'PAID' | 'PARTIAL' | 'PENDING'>('PAID');
   const [amountReceived, setAmountReceived] = useState<EditableNumber>(7000);
+  const [paymentDueDate, setPaymentDueDate] = useState('');
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [newTerm, setNewTerm] = useState('');
   const [termSection, setTermSection] = useState<'services' | 'terms'>('services');
@@ -161,7 +164,7 @@ export default function AMCGenerator({
   /** Skip one terms auto-regen after loading a draft (preserves custom/edited terms). */
   const skipTermsAutoGenRef = useRef(0);
 
-  // Prefill from last completed job AMC reference (amount, validity, prefilter, auto-visit).
+  // Prefill from same-day completed job AMC reference (amount, validity, prefilter, auto-visit).
   React.useEffect(() => {
     if (!initialFromJob?.jobId || !initialFromJob.amcInfo) return;
     if (jobPrefillAppliedRef.current === initialFromJob.jobId) return;
@@ -229,7 +232,7 @@ export default function AMCGenerator({
         : includesPreSedimentFiltration;
     setTerms(generateAmcTerms(prefilter, period.kind, period.custom));
 
-    toast.success('Filled from last completed job AMC details');
+    toast.success('Filled from today’s completed job AMC details');
   }, [initialFromJob]);
 
   // Update terms when pre-sediment filtration or AMC service period (auto job creation) changes
@@ -305,6 +308,21 @@ export default function AMCGenerator({
       setAmountReceived(0);
     }
   }, [paymentStatus, totalAmount]);
+
+  React.useEffect(() => {
+    if (paymentStatus !== 'PENDING' && paymentStatus !== 'PARTIAL') return;
+    if (paymentDueDate.trim()) return;
+    let cancelled = false;
+    void (async () => {
+      const due = await resolveDocumentPaymentDueDate({
+        customerId: customer?.id,
+      });
+      if (!cancelled && due) setPaymentDueDate(due);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentStatus, customer?.id, paymentDueDate]);
 
   const resolvedAmountReceived =
     paymentStatus === 'PAID'
@@ -583,6 +601,11 @@ export default function AMCGenerator({
         return false;
       }
     }
+    const dueError = validatePaymentDueDate(paymentStatus, paymentDueDate);
+    if (dueError) {
+      toast.error(dueError);
+      return false;
+    }
     return true;
   };
 
@@ -626,6 +649,7 @@ export default function AMCGenerator({
       totalAmount,
       paymentStatus,
       amountPaid: resolvedAmountReceived,
+      dueDate: paymentStatus === 'PAID' ? undefined : paymentDueDate || undefined,
       notes,
       terms,
       validity:
@@ -765,6 +789,7 @@ export default function AMCGenerator({
     serviceCharge,
     paymentStatus,
     amountReceived,
+    paymentDueDate,
     agreementIntro,
     description,
     documentBrand,
@@ -801,6 +826,7 @@ export default function AMCGenerator({
       setPaymentStatus(snap.paymentStatus);
     }
     if (typeof snap.amountReceived === 'number') setAmountReceived(snap.amountReceived);
+    if (typeof snap.paymentDueDate === 'string') setPaymentDueDate(snap.paymentDueDate);
     if (typeof snap.agreementIntro === 'string') setAgreementIntro(snap.agreementIntro);
     if (typeof snap.description === 'string') setDescription(snap.description);
     if (snap.documentBrand === 'hydrogenro' || snap.documentBrand === 'elevenro') {
@@ -912,8 +938,8 @@ export default function AMCGenerator({
                       className={documentOutlineBtnClass}
                       disabled={!billNumber.trim()}
                     >
-                      <Mail className="w-4 h-4 shrink-0" />
-                      <span className="truncate">Email PDF</span>
+                      <Share2 className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Send PDF</span>
                     </Button>
                   </div>
                 </div>
@@ -1278,6 +1304,20 @@ export default function AMCGenerator({
                 <p className="text-sm text-amber-900 font-medium">
                   Full amount pending: ₹{totalAmount.toLocaleString('en-IN')}
                 </p>
+              )}
+              {(paymentStatus === 'PENDING' || paymentStatus === 'PARTIAL') && (
+                <div>
+                  <Label htmlFor="amc-paymentDueDate">Payment due date</Label>
+                  <DatePicker
+                    value={paymentDueDate}
+                    onChange={(v) => setPaymentDueDate(v ?? '')}
+                    placeholder="Pick due date"
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-600 mt-1">
+                    Required. Auto-filled from the job’s pending payment date when available.
+                  </p>
+                </div>
               )}
               {paymentStatus === 'PAID' && (
                 <p className="text-sm text-green-800 font-medium">
@@ -1681,7 +1721,7 @@ export default function AMCGenerator({
           pendingBrandAction?.type === 'save'
             ? 'Select Hydrogen RO or Eleven RO. This brand is stored on the AMC contract when you save.'
             : pendingBrandAction?.type === 'email'
-              ? 'The PDF attachment and email will use the selected brand address, logo, and sender.'
+              ? 'The PDF will use the selected brand. Next you can send it by Email or WhatsApp.'
               : pendingBrandAction?.type === 'preview'
                 ? 'The preview will show the agreement with the selected brand logo and address.'
                 : 'The agreement PDF will use the selected brand address and logo.'
@@ -1743,8 +1783,8 @@ export default function AMCGenerator({
               disabled={!previewBill}
               onClick={openEmailFromPreview}
             >
-              <Mail className="w-4 h-4 shrink-0" />
-              <span className="truncate">Email AMC</span>
+              <Share2 className="w-4 h-4 shrink-0" />
+              <span className="truncate">Send AMC</span>
             </Button>
             <Button
               type="button"
@@ -1793,6 +1833,7 @@ export default function AMCGenerator({
           includeDetails: true,
           showComputerGeneratedText,
         }}
+        allowWhatsApp
         onPersistAfterEmail={async (recipients) => {
           const brand = emailSendContext?.brand;
           if (!brand) {
@@ -1801,6 +1842,15 @@ export default function AMCGenerator({
           return persistAmcToDatabase(brand, {
             emailedTo: recipients,
             sharedVia: 'admin_email',
+          });
+        }}
+        onPersistAfterWhatsApp={async () => {
+          const brand = emailSendContext?.brand;
+          if (!brand) {
+            return { ok: false, error: 'Agreement brand is missing' };
+          }
+          return persistAmcToDatabase(brand, {
+            sharedVia: 'admin_whatsapp',
           });
         }}
       />

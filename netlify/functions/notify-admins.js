@@ -316,7 +316,7 @@ exports.handler = async (event) => {
   try {
     const messaging = await getMessaging(db);
 
-    // Remind the technician immediately via app push (bill photo only — no WhatsApp).
+    // Remind the technician immediately via app push + optional WhatsApp.
     if (billMissing && technicianId) {
       try {
         await sendToTechnicianDevices(db, messaging, technicianId, (token) => ({
@@ -340,6 +340,13 @@ exports.handler = async (event) => {
             },
           },
         }), 'bill_reminders');
+        const { maybeSendTechnicianPushWhatsApp } = require('./tech-push-whatsapp-helper');
+        void maybeSendTechnicianPushWhatsApp(db, {
+          technicianId,
+          category: 'bill_reminders',
+          title: 'Bill photo missing',
+          body: `${customerName} — ${service}. Please upload the bill photo.`,
+        });
       } catch (techPushErr) {
         console.warn(
           '[notify-admins] bill-missing tech push failed',

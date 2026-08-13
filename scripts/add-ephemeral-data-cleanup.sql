@@ -138,6 +138,8 @@ BEGIN
     v_remaining := v_remaining || jsonb_build_object('website_analytics_events', v_n);
   END IF;
 
+  -- whatsapp_messages retained (manual CRM timeline delete)
+
   SELECT coalesce(sum((value)::text::integer), 0)::integer
   INTO v_remaining_total
   FROM jsonb_each(v_remaining);
@@ -148,7 +150,8 @@ BEGIN
     'incoming_calls_cutoff', v_incoming_cutoff,
     'deleted', v_deleted,
     'remaining_stale', v_remaining,
-    'verified', v_remaining_total = 0
+    'verified', v_remaining_total = 0,
+    'whatsapp_messages', 'retained_manual_delete'
   );
 END;
 $$;

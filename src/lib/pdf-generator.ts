@@ -11,7 +11,7 @@ import {
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
 import type { DocumentSealVariant } from './service-brands';
-import { downloadDocumentPdfReturningBase64 } from './server-pdf-download';
+import { downloadDocumentPdfReturningBase64, withAbsoluteAssetUrls } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 import {
   buildBillPaymentNoticeHtml,
@@ -66,6 +66,8 @@ export interface PDFBillData {
   paymentMethod?: string;
   /** Amount received toward total (PARTIAL / paid record on PDF). */
   amountPaid?: number;
+  /** Payment due date (YYYY-MM-DD) when PENDING / PARTIAL. */
+  paymentDueDate?: string;
   notes?: string;
   notesHeading?: string;
   terms?: string;
@@ -152,7 +154,7 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
     console.log('Bill content generated:', billContent.substring(0, 200) + '...');
     
     // Write content to new window
-    printWindow.document.write(buildBillDocumentHtml(billData));
+    printWindow.document.write(withAbsoluteAssetUrls(buildBillDocumentHtml(billData)));
     
     printWindow.document.close();
     
@@ -492,6 +494,29 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         padding-left: 10px;
         border-left: 3px solid #d1d5db;
         color: #4b5563;
+      }
+      .notes-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 8px 0;
+        table-layout: fixed;
+        font-size: inherit;
+      }
+      .notes-content th,
+      .notes-content td {
+        border: 1px solid #d1d5db;
+        padding: 6px 8px;
+        text-align: left;
+        vertical-align: top;
+        word-break: break-word;
+      }
+      .notes-content th {
+        background: #f3f4f6;
+        font-weight: 700;
+        color: #111827;
+      }
+      .notes-content tbody tr:nth-child(even) td {
+        background: #f9fafb;
       }
       
       .terms-list {
@@ -877,6 +902,7 @@ function createBillContent(data: PDFBillData): string {
         paymentStatus: data.paymentStatus,
         totalAmount: data.totalAmount,
         amountPaid: data.amountPaid,
+        paymentDueDate: data.paymentDueDate,
       })}
       
       <!-- Notes and Terms -->
@@ -1100,6 +1126,29 @@ function getBillDocumentStyles(): string {
             padding-left: 10px;
             border-left: 3px solid #d1d5db;
             color: #4b5563;
+          }
+          .notes-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0;
+            table-layout: fixed;
+            font-size: inherit;
+          }
+          .notes-content th,
+          .notes-content td {
+            border: 1px solid #d1d5db;
+            padding: 6px 8px;
+            text-align: left;
+            vertical-align: top;
+            word-break: break-word;
+          }
+          .notes-content th {
+            background: #f3f4f6;
+            font-weight: 700;
+            color: #111827;
+          }
+          .notes-content tbody tr:nth-child(even) td {
+            background: #f9fafb;
           }
           
           .terms-list {

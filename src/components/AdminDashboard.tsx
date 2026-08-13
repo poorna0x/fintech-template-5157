@@ -255,7 +255,13 @@ import {
   type AdminToolDialog,
   type LetterheadDocumentType,
 } from '@/lib/adminDashboardUrl';
-import { settingsPanelPath } from '@/lib/settingsUrl';
+import {
+  ensureLeadCatalogLoaded,
+  getLeadSourceOptionsForFilters,
+  getSubTypeOptionsForFilters,
+  peekLeadCatalog,
+  preloadLeadCatalog,
+} from '@/lib/leadCatalog';
 import WarrantyManagementDialog from './admin/WarrantyManagementDialog';
 import { CompleteJobDialog } from './admin/CompleteJobDialog';
 import { StatsCards } from './admin/StatsCards';
@@ -271,6 +277,7 @@ import { sendJobCompletionEmail } from '@/lib/send-job-completion-email';
 import type { DocumentBrand } from '@/lib/service-brands';
 import ShareTechnicianInfoToCustomerDialog from './admin/ShareTechnicianInfoToCustomerDialog';
 import RecentAccountsDialog from './admin/RecentAccountsDialog';
+import QuickCustomerCreateDialog from './admin/QuickCustomerCreateDialog';
 import DirectSaleDialog from './admin/DirectSaleDialog';
 import AmountTrackersDialog from './admin/AmountTrackersDialog';
 import { EmailSentLogDialog } from './admin/EmailSentLogDialog';
@@ -345,6 +352,7 @@ const AdminDashboard = () => {
   const location = useLocation();
   const { user, isAdmin, authInitializing, logout } = useAuth();
   const { isManager } = useAdminRole();
+  const [, setLeadCatalogTick] = useState(0);
   const managerRestrictedTitle = 'Restricted for Manager role';
   const savedUi = getModuleAdminUiState();
   const initialDashboardCache = readAdminDashboardCache();
@@ -608,6 +616,8 @@ const AdminDashboard = () => {
     void import('@/lib/adminPush').then(({ registerAdminPushToken }) =>
       registerAdminPushToken()
     );
+    preloadLeadCatalog();
+    void ensureLeadCatalogLoaded().then(() => setLeadCatalogTick((n) => n + 1));
   }, []);
 
   // Notification tap → Completed / Ongoing + highlight that job (no network wait).
@@ -616,6 +626,13 @@ const AdminDashboard = () => {
     void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) => {
       if (cancelled) return;
       setAdminPushDeepLinkHandler((payload) => {
+        if (payload.kind === 'settings' && payload.panel === 'whatsapp-inbox') {
+          const phone = payload.phone || payload.reminderId;
+          if (!phone) return;
+          navigate(settingsPanelPath('whatsapp-inbox', { id: phone }));
+          return;
+        }
+
         if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
           navigate(
             settingsPanelPath(payload.panel, {
@@ -983,6 +1000,7 @@ const AdminDashboard = () => {
   const [loadingRecentAccounts, setLoadingRecentAccounts] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const recentAccountsDialogOpen = activeAdminTool === 'recent-accounts';
+  const quickCustomerDialogOpen = activeAdminTool === 'quick-customer';
   const emailSentLogOpen = activeAdminTool === 'sent-email-log';
   const directSaleOpen = activeAdminTool === 'direct-sale';
   const amountTrackersOpen = activeAdminTool === 'amount-trackers';
@@ -3214,6 +3232,28 @@ const AdminDashboard = () => {
           jobId: newJob.id,
           ...jobAssignPushText({ job: newJob as any, customer: selectedCustomerForJob as any }),
         });
+        const assignedTechDash = technicians.find(
+          (t) => t.id === newJobFormData.assigned_technician_id
+        );
+        if (assignedTechDash) {
+          void import('@/lib/jobTechnicianWhatsApp').then(({ notifyTechnicianJobWhatsApp }) =>
+            notifyTechnicianJobWhatsApp({
+              job: { ...(newJob as any), customer: selectedCustomerForJob } as any,
+              technician: {
+                id: assignedTechDash.id,
+                fullName:
+                  assignedTechDash.fullName ||
+                  (assignedTechDash as any).full_name ||
+                  'Technician',
+                phone: assignedTechDash.phone,
+                whatsappPhone: (assignedTechDash as any).whatsappPhone,
+                whatsapp_phone: (assignedTechDash as any).whatsapp_phone,
+              },
+              mode: 'assign',
+              ctx: null,
+            })
+          );
+        }
       }
 
       // Add to local state
@@ -4985,7 +5025,7 @@ const AdminDashboard = () => {
     setAmcModalOpen(true);
     void loadCustomerForDocuments(customer).then(setSelectedCustomerForAMC);
     if (fromJob) return;
-    // Menu → Generate AMC: pull AMC fields from the latest completed job (if any).
+    // Menu → Generate AMC: prefill only from a same-day completed job with amc_info (if any).
     void import('@/lib/jobAmcInfo').then(({ fetchLatestJobAmcPrefill }) =>
       fetchLatestJobAmcPrefill(customer.id).then((prefill) => {
         if (prefill) setAmcPrefillFromJob(prefill);
@@ -5262,7 +5302,24 @@ const AdminDashboard = () => {
   };
 
   const handleUnassignJob = async (job: Job) => {
-    await unassignAdminJob(job, { setJobs, setCustomerJobs });
+    await unassignAdminJob(job, {
+      setJobs,
+      setCustomerJobs,
+      technicians,
+      whatsappCtx: {
+        scrollPositionBeforeWhatsAppRef,
+        setWhatsappTechnician,
+        setWhatsappServiceSubType,
+        setWhatsappCustomerName,
+        setWhatsappLocation,
+        setWhatsappLeadSource,
+        setWhatsappCustomTime,
+        setWhatsappDescription,
+        setWhatsappAgreedCost,
+        setWhatsappDialogOpen,
+        openAdminWhatsappModal,
+      },
+    });
   };
 
   const handleEditJob = (job: Job) => {
@@ -5946,32 +6003,9 @@ const AdminDashboard = () => {
           completedRangeEndDate,
         });
       });
-  const MASTER_LEAD_TYPES = [
-    'Website',
-    'Direct call',
-    'Google-Leads',
-    'RO care india',
-    'Home Triangle',
-    'Home Triangle-Srujan',
-    'Home Triangle-3',
-    'Local Ramu',
-    'Other'
-  ];
-  const MASTER_SERVICE_SUB_TYPES = [
-    'Service',
-    'Installation',
-    'Reinstallation',
-    'Return Complaint',
-    'Return Service',
-    'AMC Service',
-    'New Purifier Installation',
-    'Un-Installation',
-    'Repair',
-    'Maintenance',
-    'Replacement',
-    'Inspection',
-    'Other'
-  ];
+  const leadCatalogSnapshot = peekLeadCatalog();
+  const MASTER_LEAD_TYPES = getLeadSourceOptionsForFilters(leadCatalogSnapshot);
+  const MASTER_SERVICE_SUB_TYPES = getSubTypeOptionsForFilters(leadCatalogSnapshot);
   const dataLeadTypeOptions = completedJobsInSelectedWindow
     .map((job) => normalizeLeadType(findLeadSource(parseJobRequirements((job as any).requirements || job.requirements || [])) || 'Direct call'))
     .filter(Boolean);
@@ -7528,6 +7562,11 @@ const AdminDashboard = () => {
           closeAdminTool();
         }}
         unknownCaller={unknownCallerChip}
+      />
+
+      <QuickCustomerCreateDialog
+        open={quickCustomerDialogOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('quick-customer', open)}
       />
 
       <JobDistanceMeasurementDialog

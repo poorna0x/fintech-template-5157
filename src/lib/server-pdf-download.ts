@@ -12,12 +12,27 @@ function sanitizeFilename(raw: string): string {
   return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
 }
 
+/**
+ * Origin for /public logos & seals (preview + Puppeteer).
+ * Must match the page origin in the browser so DEV CSP `img-src 'self'` allows them.
+ * Hardcoding 127.0.0.1:8080 breaks when Vite is on :8081 (or localhost vs 127.0.0.1).
+ */
+export function resolvePdfAssetOrigin(explicit?: string): string {
+  const trimmed = String(explicit || '').trim().replace(/\/$/, '');
+  if (trimmed) return trimmed;
+
+  const fromEnv = String(import.meta.env.VITE_PDF_ASSET_ORIGIN || '').trim().replace(/\/$/, '');
+  if (fromEnv) return fromEnv;
+
+  if (typeof window !== 'undefined') {
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return '';
+}
+
 /** Rewrite root-relative asset URLs so headless Chromium can load logos/seals. */
 export function withAbsoluteAssetUrls(html: string, origin?: string): string {
-  const base = (origin || (typeof window !== 'undefined' ? window.location.origin : '')).replace(
-    /\/$/,
-    ''
-  );
+  const base = resolvePdfAssetOrigin(origin);
   if (!base) return html;
 
   return html
@@ -300,7 +315,8 @@ export function openHtmlPrintFallback(html: string): boolean {
     return false;
   }
 
-  printWindow.document.write(html);
+  // Ensure logos/seals are absolute + same-origin (about:blank breaks root-relative /fulllogo.webp).
+  printWindow.document.write(withAbsoluteAssetUrls(html));
   printWindow.document.close();
 
   printWindow.onload = () => {

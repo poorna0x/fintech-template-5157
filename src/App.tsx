@@ -56,7 +56,10 @@ const TechnicianIdCard = lazy(() => import("./pages/TechnicianIdCard"));
 const ProductVerification = lazy(() => import("./pages/ProductVerification"));
 const SpareParts = lazy(() => import("./pages/SpareParts"));
 const Warranty = lazy(() => import("./pages/Warranty"));
+const PublicPdfAuthenticityPage = lazy(() => import("./pages/PublicPdfAuthenticityPage"));
 const PayUpi = lazy(() => import("./pages/PayUpi"));
+const WhatsAppTest = lazy(() => import("./pages/WhatsAppTest"));
+const CallDialPage = lazy(() => import("./pages/CallDialPage"));
 
 /** Plain bounce — used for in-session Suspense (Settings, previews, tech dashboard, …). */
 function PlainPortalSuspenseLoader() {
@@ -208,6 +211,7 @@ const App = () => (
                   <Route path="/blog/:slug" element={<BlogArticle />} />
                   <Route path="/spare-parts" element={<SpareParts />} />
                   <Route path="/warranty" element={<Warranty />} />
+                  <Route path="/authenticity" element={<PublicPdfAuthenticityPage />} />
                   
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />
@@ -236,6 +240,10 @@ const App = () => (
                   {/* Short UPI pay links: /p/xK9m2q — also legacy /pay-upi?... */}
                   <Route path="/p/:code" element={<PayUpi />} />
                   <Route path="/pay-upi" element={<PayUpi />} />
+                  <Route path="/call" element={<CallDialPage />} />
+
+                  {/* WhatsApp Cloud API POC (text + PDF) */}
+                  <Route path="/whatsapp-test" element={<WhatsAppTest />} />
                   
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />

@@ -4,6 +4,7 @@ import { supabase, db } from '@/lib/supabase';
 import { toDateOnly } from '@/lib/amcAutoJobSchedule';
 import type { Job } from '@/types';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
+import { isLeadSourceAllowCustomText, leadSourceValueForSave } from '@/lib/leadCatalog';
 import {
   type PaidTodayMode,
   validatePendingPaymentInputs,
@@ -182,22 +183,27 @@ try {
   // Update or add lead source
   if (completedJobEditData.leadSource) {
     const leadSourceIndex = requirements.findIndex((r: any) => r?.lead_source);
-    const leadSourceValue = completedJobEditData.leadSource === 'Other' 
-      ? (completedJobEditData.leadSourceCustom || 'Other')
-      : completedJobEditData.leadSource;
+    const leadSourceValue = leadSourceValueForSave(
+      completedJobEditData.leadSource,
+      completedJobEditData.leadSourceCustom
+    );
     
     if (leadSourceIndex >= 0) {
       requirements[leadSourceIndex].lead_source = leadSourceValue;
-      if (completedJobEditData.leadSource === 'Other' && completedJobEditData.leadSourceCustom) {
+      if (
+        isLeadSourceAllowCustomText(completedJobEditData.leadSource) &&
+        completedJobEditData.leadSourceCustom
+      ) {
         requirements[leadSourceIndex].lead_source_custom = completedJobEditData.leadSourceCustom;
       } else {
-        // Remove custom if not "Other"
         delete requirements[leadSourceIndex].lead_source_custom;
       }
     } else {
-      // Add new lead source entry
       const newLeadSource: any = { lead_source: leadSourceValue };
-      if (completedJobEditData.leadSource === 'Other' && completedJobEditData.leadSourceCustom) {
+      if (
+        isLeadSourceAllowCustomText(completedJobEditData.leadSource) &&
+        completedJobEditData.leadSourceCustom
+      ) {
         newLeadSource.lead_source_custom = completedJobEditData.leadSourceCustom;
       }
       requirements.push(newLeadSource);

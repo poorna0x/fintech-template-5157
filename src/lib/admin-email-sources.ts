@@ -218,6 +218,7 @@ export function getCrmSourceLabel(templateType: AdminEmailTemplateType): string 
       return 'Completed job';
     case 'quotation':
     case 'general':
+    case 'tech_running_late':
       return 'Customer';
     case 'service_reminder':
       return 'Active AMC (service due)';
@@ -241,6 +242,7 @@ export function getEmailSourceSearchHint(templateType: AdminEmailTemplateType): 
       return 'Enter customer name, phone, or job #, then click Search to find a completed job.';
     case 'quotation':
     case 'general':
+    case 'tech_running_late':
       return 'Enter customer name, phone, or ID, then click Search.';
     case 'job_completion':
       return 'Enter customer name, phone, or job #, then click Search to find a completed job.';
@@ -304,6 +306,7 @@ export async function fetchEmailSourceOptions(
       return searchCompletedJobsByCustomer(q);
     case 'quotation':
     case 'general':
+    case 'tech_running_late':
       return fetchCustomerSearchOptions(q);
     case 'job_completion':
       return searchCompletedJobsByCustomer(q);
@@ -596,6 +599,7 @@ export async function applyEmailSourceForCustomer(
     }
     case 'quotation':
     case 'general':
+    case 'tech_running_late':
       return applyCustomerRecord(customerId, templateType);
     case 'job_completion': {
       const jobId = await findLatestCompletedJobIdForCustomer(customerId);
@@ -629,6 +633,8 @@ export async function applyEmailSourceRecord(
       return applyCustomerRecord(recordId, 'quotation');
     case 'general':
       return applyCustomerRecord(recordId, 'general');
+    case 'tech_running_late':
+      return applyCustomerRecord(recordId, 'tech_running_late');
     case 'job_completion':
       return applyCompletedJobRecord(recordId);
     default:
@@ -821,7 +827,7 @@ async function applyInvoiceRecord(invoiceId: string): Promise<EmailSourceApplyRe
 
 async function applyCustomerRecord(
   customerId: string,
-  templateType: 'quotation' | 'general' = 'quotation'
+  templateType: 'quotation' | 'general' | 'tech_running_late' = 'quotation'
 ): Promise<EmailSourceApplyResult | null> {
   const { data, error } = await db.customers.getById(customerId);
   if (error || !data) return null;

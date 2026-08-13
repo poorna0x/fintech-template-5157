@@ -4,6 +4,10 @@ import { generateBillHTML } from '@/lib/pdf-generator';
 import { generateQuotationHTML } from '@/lib/quotation-pdf-generator';
 import { generateTaxInvoiceHTML } from '@/lib/tax-invoice-pdf-generator';
 import { withAbsoluteAssetUrls } from '@/lib/server-pdf-download';
+import {
+  normalizeQuotationImageBlocks,
+  quotationImageBlocksForPdf,
+} from '@/lib/quotation-custom-images';
 
 export function billToBillPdfData(bill: Bill) {
   return {
@@ -20,6 +24,7 @@ export function billToBillPdfData(bill: Bill) {
     paymentStatus: bill.paymentStatus,
     paymentMethod: bill.paymentMethod,
     amountPaid: bill.amountPaid,
+    paymentDueDate: bill.dueDate || (bill as { paymentDueDate?: string }).paymentDueDate,
     notes: bill.notes,
     notesHeading: (bill as { notesHeading?: string }).notesHeading,
     terms: bill.terms,
@@ -73,6 +78,13 @@ export function billToQuotationPdfData(bill: Bill) {
   if (ext.bankDetails) pdfData.bankDetails = ext.bankDetails;
   if (ext.documentBrand) pdfData.documentBrand = ext.documentBrand;
   if (ext.sealVariant) pdfData.sealVariant = ext.sealVariant;
+  const blocks = normalizeQuotationImageBlocks(ext.customImageBlocks, {
+    heading: ext.customImagesHeading,
+    images: ext.customImages,
+  });
+  if (blocks.length > 0) {
+    pdfData.customImageBlocks = quotationImageBlocksForPdf(blocks);
+  }
 
   return pdfData;
 }

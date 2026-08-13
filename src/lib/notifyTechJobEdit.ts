@@ -1,11 +1,13 @@
 /**
  * Notify assigned technician when admin edits job details (one push, specific copy).
+ * WhatsApp mirrors the same text when Dashboard job WhatsApp is ON (bg API).
  */
 import { formatCustomTimeLabel } from '@/lib/adminUtils';
 import {
   TECH_PUSH_COLOR_UPDATED,
   notifyTechnicianJobPush,
 } from '@/lib/adminTechPushNotify';
+import { queueTechnicianJobWhatsAppAutoMessage } from '@/lib/jobTechnicianWhatsApp';
 
 export type JobEditSnapshot = {
   description: string;
@@ -160,12 +162,22 @@ export function notifyTechnicianAfterJobEdit(opts: {
   let body = `${customerName} — ${lines.join(' · ')}`;
   if (body.length > 300) body = `${body.slice(0, 297)}…`;
 
+  const title = titleForChanges(flags);
+
   notifyTechnicianJobPush({
     technicianId: techId,
     jobId: opts.jobId,
-    title: titleForChanges(flags),
+    title,
     body,
     color: TECH_PUSH_COLOR_UPDATED,
     event: 'updated',
+  });
+
+  queueTechnicianJobWhatsAppAutoMessage({
+    technicianId: techId,
+    category: 'job_assigned',
+    title,
+    body,
+    notifyIfSkipped: true,
   });
 }

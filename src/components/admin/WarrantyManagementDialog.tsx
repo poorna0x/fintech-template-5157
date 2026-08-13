@@ -35,7 +35,7 @@ import {
   BadgeCheck,
   Download,
   Printer,
-  Mail,
+  Share2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
@@ -995,13 +995,13 @@ export default function WarrantyManagementDialog({
                                 className="h-8 w-8 p-0"
                                 title={
                                   customerEmail
-                                    ? 'Email warranty card PDF'
-                                    : 'Email warranty card (add customer email)'
+                                    ? 'Send warranty card PDF'
+                                    : 'Send warranty card (add email or use WhatsApp)'
                                 }
                                 disabled={generatingId === w.id || downloadingId === w.id}
                                 onClick={() => openWarrantyEmail(w as unknown as PublicWarranty)}
                               >
-                                <Mail className="h-4 w-4" />
+                                <Share2 className="h-4 w-4" />
                               </Button>
                               <Button
                                 type="button"
@@ -1421,8 +1421,8 @@ export default function WarrantyManagementDialog({
                           disabled={saving || includedItems.length === 0}
                           onClick={() => openDraftWarrantyEmail()}
                         >
-                          <Mail className="h-4 w-4 mr-2" />
-                          Email PDF
+                          <Share2 className="h-4 w-4 mr-2" />
+                          Send PDF
                         </Button>
                       </div>
                       <div className="flex flex-col-reverse sm:flex-row gap-2">
@@ -1458,6 +1458,7 @@ export default function WarrantyManagementDialog({
         brand={documentBrand}
         customerEmailOnFile={customer?.email}
         customerId={customer?.id}
+        defaultPhone={customer?.phone}
         onSaveCustomerEmail={handleSaveCustomerEmail}
       />
     </Dialog>

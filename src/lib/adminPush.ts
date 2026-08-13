@@ -185,7 +185,8 @@ export async function registerAdminPushToken(): Promise<void> {
         if (
           type === 'tech_call' ||
           type === 'wrong_line_call' ||
-          type === 'tech_search'
+          type === 'tech_search' ||
+          type === 'whatsapp_inbound'
         ) {
           deliverAdminPushDeepLink(data);
         }

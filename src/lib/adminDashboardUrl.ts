@@ -287,6 +287,7 @@ export function readAdminOverlayFromSearch(search: string): {
 /** Tool dialogs opened via ?tool=… on the admin dashboard. */
 export const ADMIN_TOOL_DIALOGS = [
   'recent-accounts',
+  'quick-customer',
   'direct-sale',
   'amount-trackers',
   'sent-email-log',

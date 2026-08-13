@@ -73,6 +73,11 @@ function getAllowedOrigin(requestOrigin) {
     if (localNetworkPattern.test(requestOrigin)) {
       return requestOrigin;
     }
+    // WhatsApp webhook testing via ngrok while CRM runs locally
+    const ngrokPattern = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.ngrok(-free)?\.(app|dev)(:\d+)?\/?$/i;
+    if (ngrokPattern.test(requestOrigin)) {
+      return requestOrigin;
+    }
   }
 
   return null;

@@ -398,6 +398,9 @@ const TECHNICIAN_ROW_COLUMNS = [
   'visible_qr_codes',
   'common_qr_code_ids',
   'account_status',
+  'push_notifications_enabled',
+  'push_prefs',
+  'whatsapp_prefs',
   'created_at',
   'updated_at',
 ].join(',');
@@ -1225,6 +1228,67 @@ export const db = {
       } as unknown as Database['public']['Tables']['customers']['Insert'];
 
       return db.customers.create(walkInPayload);
+    },
+
+    /**
+     * Direct office sale: real customer when name + 10-digit phone are given;
+     * shared walk-in placeholder only when both are omitted.
+     */
+    async resolveForDirectSale(opts?: { name?: string; phone?: string }) {
+      const name = String(opts?.name || '').trim();
+      const phone = String(opts?.phone || '').replace(/\D/g, '').slice(-10);
+
+      if (!name && !phone) {
+        const walkIn = await db.customers.getOrCreateWalkIn();
+        return { ...walkIn, isWalkIn: true as const };
+      }
+
+      if (!name || phone.length !== 10) {
+        return {
+          data: null,
+          error: {
+            message:
+              'Enter both customer name and a valid 10-digit phone, or leave both empty for walk-in sale.',
+          } as any,
+          isWalkIn: false as const,
+        };
+      }
+
+      const { data: existing, error: findError } = await db.customers.getByPhone(phone);
+      if (findError) return { data: null, error: findError, isWalkIn: false as const };
+      if (existing) return { data: existing, error: null, isWalkIn: false as const };
+
+      const payload = {
+        full_name: name,
+        phone,
+        alternate_phone: '',
+        email: '',
+        address: {
+          street: '',
+          area: 'Office',
+          city: 'Bangalore',
+          state: 'Karnataka',
+          pincode: '',
+        },
+        location: {
+          latitude: 0,
+          longitude: 0,
+          formattedAddress: 'Office',
+          googleLocation: '',
+        },
+        visible_address: 'Office',
+        service_type: 'RO',
+        brand: '',
+        model: '',
+        status: 'ACTIVE',
+        notes: 'Created from direct office sale.',
+        customer_since: new Date().toISOString(),
+        preferred_time_slot: 'MORNING',
+        preferred_language: 'ENGLISH',
+      } as unknown as Database['public']['Tables']['customers']['Insert'];
+
+      const created = await db.customers.create(payload);
+      return { ...created, isWalkIn: false as const };
     },
     
     async getById(id: string) {
@@ -2232,17 +2296,21 @@ export const db = {
     },
 
     /**
-     * Record a direct/office sale that has no real customer and no technician.
-     * Stored as a COMPLETED, fully-paid job against the shared walk-in customer so it
-     * flows into revenue, service-type and payment-method analytics for the sale date.
+     * Record a direct/office counter sale (no technician).
+     * When `customerName` + `customerPhone` (10 digits) are provided, finds or creates a
+     * real customer and attaches the job to them. When both are omitted, uses the shared
+     * walk-in placeholder customer.
      *
-     * When an inventory item is provided, the part cost (item price × qty) is stored in
-     * `parts_cost_total` so profit = sale amount − cost, and main stock is decremented.
+     * Stored as a COMPLETED, fully-paid job so it flows into revenue analytics for the sale date.
+     * When inventory items are provided, cost is stored in `parts_cost_total` and stock is decremented.
      */
     async createDirectSale(params: {
       amount: number;
       item?: string;
       saleDate: Date;
+      /** Real customer — both required together; omit both for walk-in sale. */
+      customerName?: string;
+      customerPhone?: string;
       /** @deprecated single-item fields kept for backward compatibility; prefer `items`. */
       inventoryId?: string | null;
       quantity?: number;
@@ -2272,6 +2340,8 @@ export const db = {
         amount,
         item,
         saleDate,
+        customerName,
+        customerPhone,
         inventoryId,
         quantity,
         partsCost,
@@ -2316,9 +2386,19 @@ export const db = {
       const useInventory = cleanItems.length > 0;
       const totalPartsCost = cleanItems.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
 
-      const { data: walkIn, error: customerError } = await db.customers.getOrCreateWalkIn();
-      if (customerError || !walkIn) {
-        return { data: null, error: customerError || { message: 'Could not resolve walk-in customer' } as any };
+      const {
+        data: saleCustomer,
+        error: customerError,
+        isWalkIn,
+      } = await db.customers.resolveForDirectSale({
+        name: customerName,
+        phone: customerPhone,
+      });
+      if (customerError || !saleCustomer) {
+        return {
+          data: null,
+          error: customerError || ({ message: 'Could not resolve customer for sale' } as any),
+        };
       }
 
       // Reserve stock first so an out-of-stock sale fails before any job row is created.
@@ -2358,6 +2438,9 @@ export const db = {
       const description = useInventory && itemsLabel ? itemsLabel : baseItem;
 
       const requirements: any[] = [{ lead_source: 'Office Sale' }];
+      if (isWalkIn) {
+        requirements.push({ completed_by_office: true });
+      }
       if (useInventory) {
         requirements.push({
           office_parts: cleanItems.map((it) => ({
@@ -2382,15 +2465,15 @@ export const db = {
 
       const jobData = {
         job_number: jobNumber,
-        customer_id: (walkIn as any).id,
+        customer_id: (saleCustomer as any).id,
         service_type: 'RO',
         service_sub_type: 'Direct Sale',
         brand: '',
         model: '',
         scheduled_date: completionISO,
         scheduled_time_slot: 'MORNING',
-        service_address: (walkIn as any).address ?? {},
-        service_location: (walkIn as any).location ?? {},
+        service_address: (saleCustomer as any).address ?? {},
+        service_location: (saleCustomer as any).location ?? {},
         status: 'COMPLETED',
         priority: 'LOW',
         description,
@@ -5065,11 +5148,101 @@ export const db = {
       return { data: data && data.length > 0 ? data[0] : null, error };
     },
 
-    async getAll(limit: number = 100, offset: number = 0) {
+    /**
+     * Paginated AMC list for the AMC view UI.
+     * Auto-generation (`createAMCServiceJobs`) does NOT use this — it queries all ACTIVE
+     * contracts itself so list pagination cannot shrink or skip auto-create.
+     */
+    async getAll(
+      limit: number = 100,
+      offset: number = 0,
+      options?: {
+        /** UI filter by end_date vs today (not amc_contracts.status). */
+        endDateStatus?: 'ALL' | 'ACTIVE' | 'EXPIRED';
+        search?: string;
+        /** YYYY-MM-DD; defaults to local calendar date when status filter is used. */
+        todayYmd?: string;
+      }
+    ) {
+      const endDateStatus = options?.endDateStatus ?? 'ALL';
+      const searchRaw = (options?.search || '').trim();
+      const todayYmd =
+        options?.todayYmd ||
+        (() => {
+          const d = new Date();
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        })();
+
+      // Sanitize for PostgREST .or() / ilike (commas break or-lists).
+      const search = searchRaw.replace(/[%_,.()]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+
+      let customerIdFilter: string[] | null = null;
+      let technicianIdFilter: string[] | null = null;
+
+      if (search) {
+        const pattern = `%${search}%`;
+        const quoted = `"${pattern.replace(/"/g, '')}"`;
+        const [{ data: matchedCustomers, error: customerSearchError }, { data: matchedTechs, error: techSearchError }] =
+          await Promise.all([
+            supabase
+              .from('customers')
+              .select('id')
+              .or(
+                [
+                  `full_name.ilike.${quoted}`,
+                  `phone.ilike.${quoted}`,
+                  `brand.ilike.${quoted}`,
+                  `model.ilike.${quoted}`,
+                  `visible_address.ilike.${quoted}`,
+                  `customer_id.ilike.${quoted}`,
+                ].join(',')
+              )
+              .limit(400),
+            supabase.from('technicians').select('id').ilike('full_name', pattern).limit(50),
+          ]);
+
+        if (customerSearchError) {
+          return { data: null, error: customerSearchError, count: 0 };
+        }
+        if (techSearchError) {
+          return { data: null, error: techSearchError, count: 0 };
+        }
+
+        customerIdFilter = (matchedCustomers || []).map((c: { id: string }) => c.id);
+        technicianIdFilter = (matchedTechs || []).map((t: { id: string }) => t.id);
+
+        if (customerIdFilter.length === 0 && technicianIdFilter.length === 0) {
+          return { data: [], error: null, count: 0 };
+        }
+      }
+
       let query = supabase
         .from('amc_contracts')
-        .select(`${AMC_CONTRACT_ROW_COLUMNS},customers(id, full_name, phone, email, customer_id, service_type, brand, model, last_service_date, visible_address, address)`, { count: 'exact' })
+        .select(
+          `${AMC_CONTRACT_ROW_COLUMNS},customers(id, full_name, phone, email, customer_id, service_type, brand, model, last_service_date, visible_address, address)`,
+          { count: 'exact' }
+        )
         .order('created_at', { ascending: false });
+
+      if (endDateStatus === 'ACTIVE') {
+        query = query.gte('end_date', todayYmd);
+      } else if (endDateStatus === 'EXPIRED') {
+        query = query.lt('end_date', todayYmd);
+      }
+
+      if (customerIdFilter || technicianIdFilter) {
+        const parts: string[] = [];
+        if (customerIdFilter && customerIdFilter.length > 0) {
+          parts.push(`customer_id.in.(${customerIdFilter.join(',')})`);
+        }
+        if (technicianIdFilter && technicianIdFilter.length > 0) {
+          parts.push(`given_by_technician_id.in.(${technicianIdFilter.join(',')})`);
+        }
+        query = query.or(parts.join(','));
+      }
 
       if (limit > 0 && limit < 100000) {
         query = query.range(offset, offset + limit - 1);
@@ -5078,7 +5251,7 @@ export const db = {
       }
 
       const { data, error, count } = await query;
-      return { data, error, count };
+      return { data, error, count: count ?? 0 };
     },
 
     async getById(id: string) {
@@ -5137,6 +5310,7 @@ export const db = {
     },
 
     async createAMCServiceJobs(options?: { dryRun?: boolean; force?: boolean }) {
+      // Independent of AMC view pagination: always scans all ACTIVE contracts still in force.
       const dryRun = options?.dryRun === true;
       // force: manual "Run now" button bypasses the 6-hour throttle WITHOUT touching the
       // shared throttle timer, so automatic background runs keep their own 6-hour schedule.
