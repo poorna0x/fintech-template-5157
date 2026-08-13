@@ -27,9 +27,9 @@ const WA_TEMPLATE_ALIASES: Record<string, string> = {
   pending_payment_hro: 'svc_balance_due_letter_hro_v9',
   pending_payment_ero: 'svc_balance_due_letter_ero_v9',
   // Old booking CTA names → UTILITY replacements
-  book_existing_customer_cta: 'existing_service_schedule_ero_cta_v2',
-  book_existing_customer_ero_cta: 'existing_service_schedule_ero_cta_v2',
-  book_existing_customer_hro_cta: 'existing_service_schedule_hro_cta_v2',
+  book_existing_customer_cta: 'existing_service_schedule_ero_cta_v3',
+  book_existing_customer_ero_cta: 'existing_service_schedule_ero_cta_v3',
+  book_existing_customer_hro_cta: 'existing_service_schedule_hro_cta_v3',
   book_new_customer_cta: 'unregistered_number_service_ero_cta',
   book_new_customer_ero_cta: 'unregistered_number_service_ero_cta',
   book_new_customer_hro_cta: 'unregistered_number_service_hro_cta',

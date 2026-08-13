@@ -91,6 +91,137 @@ export function countUnreadWhatsAppThreads(
   return threads.reduce((n, t) => n + (isWhatsAppThreadUnread(t, readMap) ? 1 : 0), 0);
 }
 
+const UNREAD_COUNTS_STORAGE_KEY = 'wa_inbox_unread_counts_v1';
+
+export function loadWhatsAppUnreadCounts(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(UNREAD_COUNTS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: Record<string, number> = {};
+    for (const [phone, n] of Object.entries(parsed)) {
+      const p = String(phone || '').replace(/\D/g, '');
+      const count = Math.floor(Number(n));
+      if (p && count > 0) out[p] = Math.min(count, 999);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function saveWhatsAppUnreadCounts(counts: Record<string, number>): void {
+  try {
+    const trimmed = Object.fromEntries(
+      Object.entries(counts)
+        .filter(([, n]) => Number(n) > 0)
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+        .slice(0, 200)
+    );
+    localStorage.setItem(UNREAD_COUNTS_STORAGE_KEY, JSON.stringify(trimmed));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Inbound messages after the thread's read watermark (or all listed if never read). */
+export function countInboundUnreadInMessages(
+  messages: Pick<WhatsAppMessageRow, 'direction' | 'created_at'>[],
+  readAt: string | null | undefined
+): number {
+  const readMs = readAt ? new Date(readAt).getTime() : 0;
+  let n = 0;
+  for (const m of messages) {
+    if (m.direction !== 'inbound') continue;
+    const t = new Date(m.created_at).getTime();
+    if (!Number.isFinite(t)) continue;
+    if (readMs && t <= readMs) continue;
+    n += 1;
+  }
+  return n;
+}
+
+export function unreadMessageCountForThread(
+  thread: Pick<WhatsAppThread, 'phone_e164' | 'last_at' | 'last_direction'>,
+  readMap: Record<string, string>,
+  counts: Record<string, number>
+): number {
+  if (!isWhatsAppThreadUnread(thread, readMap)) return 0;
+  const phone = String(thread.phone_e164 || '').replace(/\D/g, '');
+  const n = counts[phone];
+  return n && n > 0 ? n : 1;
+}
+
+/** Sum of per-chat unread message counts (fallback 1 per unread chat). */
+export function countUnreadWhatsAppMessages(
+  threads: WhatsAppThread[],
+  readMap: Record<string, string>,
+  counts: Record<string, number>
+): number {
+  return threads.reduce(
+    (sum, t) => sum + unreadMessageCountForThread(t, readMap, counts),
+    0
+  );
+}
+
+/**
+ * One slim query: inbound rows for currently-unread chats, then count per phone
+ * after each chat's read watermark. Soft-fail → {}.
+ */
+export async function fetchWhatsAppUnreadMessageCounts(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseClient: { from: (table: string) => any },
+  threads: WhatsAppThread[],
+  readMap: Record<string, string>
+): Promise<Record<string, number>> {
+  const targets = threads.filter((t) => isWhatsAppThreadUnread(t, readMap)).slice(0, 80);
+  if (!targets.length) return {};
+
+  const phones = targets.map((t) => String(t.phone_e164 || '').replace(/\D/g, '')).filter(Boolean);
+  let sinceMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  for (const t of targets) {
+    const phone = String(t.phone_e164 || '').replace(/\D/g, '');
+    const readAt = readMap[phone];
+    if (readAt) {
+      const tMs = new Date(readAt).getTime();
+      if (Number.isFinite(tMs)) sinceMs = Math.min(sinceMs, tMs);
+    }
+  }
+
+  const { data, error } = await supabaseClient
+    .from('whatsapp_messages')
+    .select('phone_e164, created_at')
+    .in('phone_e164', phones)
+    .eq('direction', 'inbound')
+    .gt('created_at', new Date(sinceMs).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(800);
+
+  if (error) return {};
+
+  const counts: Record<string, number> = {};
+  for (const phone of phones) counts[phone] = 0;
+
+  for (const row of data || []) {
+    const phone = String(row.phone_e164 || '').replace(/\D/g, '');
+    if (!phone || !(phone in counts)) continue;
+    const readAt = readMap[phone];
+    const createdMs = new Date(row.created_at).getTime();
+    if (!Number.isFinite(createdMs)) continue;
+    if (readAt) {
+      const readMs = new Date(readAt).getTime();
+      if (Number.isFinite(readMs) && createdMs <= readMs) continue;
+    }
+    counts[phone] += 1;
+  }
+
+  for (const phone of phones) {
+    if (!counts[phone]) counts[phone] = 1;
+  }
+  return counts;
+}
+
 /** In-memory + sessionStorage cache for 24h-window checks (cuts repeat egress). */
 const WINDOW_CACHE_TTL_MS = 60_000;
 const WINDOW_CACHE_KEY = 'wa_inbound_at_cache_v1';

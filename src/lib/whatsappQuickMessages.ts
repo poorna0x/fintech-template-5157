@@ -16,6 +16,7 @@ import {
 } from '@/lib/pendingPaymentReminder';
 import { waBrandBookingUrl, waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
 import { brandLetterClosingLines } from '@/lib/whatsappBrandContact';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export type WhatsAppQuickReplyContext = {
   customerName?: string;
@@ -62,7 +63,7 @@ export type WhatsAppQuickTemplateSend = {
 };
 
 function cleanName(ctx: WhatsAppQuickReplyContext): string {
-  return String(ctx.customerName || 'Customer').trim() || 'Customer';
+  return whatsappGreetingName(ctx.customerName, 'there');
 }
 
 function cleanAmount(ctx: WhatsAppQuickReplyContext): string {

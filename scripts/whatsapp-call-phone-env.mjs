@@ -47,12 +47,13 @@ export function resolveWhatsAppCallPhones() {
   };
 }
 
-/** Pick Call-us E.164 from template name (`*_ero_*` vs `*_hro_*`) or brand label. */
+/** Pick Call-us E.164 from template name (`*_ero*` / `*_hro*`) or brand label. */
 export function callPhoneForTemplate(templateName, brandLabel) {
   const { eleven, hydrogen } = resolveWhatsAppCallPhones();
   const name = String(templateName || '').toLowerCase();
-  if (/_hro_/.test(name) || name.includes('_hro_cta')) return hydrogen;
-  if (/_ero_/.test(name) || name.includes('_ero_cta')) return eleven;
+  // Match _hro / _ero as a brand segment (…_hro, …_hro_v2, …_hro_cta, …).
+  if (/_hro(?:_|$)/.test(name)) return hydrogen;
+  if (/_ero(?:_|$)/.test(name)) return eleven;
   const brand = String(brandLabel || '').toLowerCase();
   if (brand.includes('hydrogen')) return hydrogen;
   if (brand.includes('eleven')) return eleven;

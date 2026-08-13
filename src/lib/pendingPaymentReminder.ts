@@ -4,6 +4,7 @@ import { normalizeDocumentBrand } from '@/lib/service-brands';
 import { brandContactLines, brandLetterClosingLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import { extractUpiPayShortCode } from '@/lib/upiPaymentAccounts';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 /** Must match reminders created from Settings → Pending payments. */
 export const PENDING_PAYMENT_REMINDER_TITLE = 'Pending payment';
@@ -159,7 +160,7 @@ export function buildPendingPaymentLetterBodyParams(
   invoiceRef?: string | null
 ): [string, string, string, string] {
   return [
-    String(customerName || 'Customer').trim() || 'Customer',
+    whatsappGreetingName(customerName, 'there'),
     cleanAmountDigits(amountPending),
     formatPendingPaymentDueLabel(dueDateYmd) || 'at your earliest convenience',
     String(invoiceRef || '').trim() || 'your service visit',
@@ -185,7 +186,7 @@ export function buildPendingPaymentWhatsAppMessage(
   const ctaButton = Boolean(opts?.ctaButton);
 
   const lines: string[] = [
-    `Hi ${customerName}, 👋`,
+    `Hi ${whatsappGreetingName(customerName, 'there')}, 👋`,
     withQr
       ? `Pending payment for your water purifier service — ${contact.brandLabel}. 💧`
       : `This is an update from ${contact.brandLabel} regarding your pending payment for water purifier service. 💧`,
@@ -233,7 +234,7 @@ export function buildPendingPaymentReceivedWhatsAppMessage(
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
   return [
-    `Hi ${customerName},`,
+    `Hi ${whatsappGreetingName(customerName, 'there')},`,
     `This is an update from ${contact.brandLabel} regarding your payment.`,
     '',
     `We have received your payment of ₹${formattedAmount}. Thank you.`,

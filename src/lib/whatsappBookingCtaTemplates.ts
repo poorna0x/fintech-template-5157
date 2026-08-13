@@ -1,24 +1,27 @@
 /**
- * Dual-brand booking CTAs for one WhatsApp number (Eleven RO line).
+ * Dual-brand booking CTAs for one WhatsApp number (Eleven RO / Hydrogen RO WABA).
  *
- * Meta template body + Book URL are fixed at approval time, so each use-case
- * has TWO templates:
- *   - *_ero_cta  → Eleven RO + https://elevenro.com/book
- *   - *_hro_cta  → Hydrogen RO + https://hydrogenro.com/book
+ * Meta template body + Book URL + Call us phone are fixed at approval time, so each
+ * use-case has TWO templates:
+ *   - *_ero_cta*  → Eleven RO Call us (+919880693311) + https://elevenro.com/book
+ *   - *_hro_cta*  → Hydrogen RO Call us (+918884944288) + https://hydrogenro.com/book
  *
- * CRM picks by DocumentBrand when sending. Call button uses the shared line.
+ * Prefer *_cta_v3 (Call us + Book). Older v2 is Book-only; v1 ero Call us had wrong number.
  *
- * Submit: node scripts/submit-whatsapp-booking-cta-templates.mjs --submit
+ * Submit: node scripts/submit-whatsapp-full-utility.mjs --submit --only-booking-cta-v3
  */
 
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export const WA_BOOKING_CTA_BUTTONS = {
   callDisplay: 'Call us',
-  /** Eleven RO business line on this WABA */
-  callPhone: '+918884944288',
+  callPhone: {
+    elevenro: '+919880693311',
+    hydrogenro: '+918884944288',
+  },
   bookDisplay: 'Book online',
   bookUrl: {
     elevenro: 'https://elevenro.com/book',
@@ -52,18 +55,20 @@ export function bookingCtaTemplateName(kind: BookingCtaKind, brand: DocumentBran
   const suffix = brandSuffix(brand);
   // Avoid marketing-prone names Meta reclassifies.
   if (kind === 'book_existing_customer') {
-    return `existing_service_schedule_${suffix}_cta_v2`;
+    return `existing_service_schedule_${suffix}_cta_v3`;
   }
   if (kind === 'missed_call_book') {
-    return `missed_call_callback_${suffix}_cta`;
+    return `missed_call_callback_${suffix}_cta_v2`;
   }
   if (kind === 'book_new_customer') {
-    // Avoid marketing-prone “new_customer_*” names Meta reclassifies.
-    return `unregistered_number_service_${suffix}_cta`;
+    return `unregistered_number_service_${suffix}_cta_v2`;
   }
   if (kind === 'booking_confirmed') {
     // Letter v4 emoji (Call us + Website) → v3 → v2 via cold fallback.
     return resolveBrandLetterTemplateName('booking_confirmed', brand, 'v4');
+  }
+  if (kind === 'reschedule_visit') {
+    return `reschedule_visit_${suffix}_cta_v2`;
   }
   return `${kind}_${suffix}_cta`;
 }
@@ -203,5 +208,5 @@ export function listBookingCtaTemplatesForMetaSubmit(): Array<{
 }
 
 function cleanName(customerName: string): string {
-  return String(customerName || 'Customer').trim() || 'Customer';
+  return whatsappGreetingName(customerName, 'there');
 }

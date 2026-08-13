@@ -150,10 +150,12 @@ async function sendElevenSupportWhatsAppCta({
   to,
   bodyText,
   prefill,
+  displayText,
 }) {
   const phone = normalizePhoneE164(to);
   if (!phone || !phoneNumberId || !accessToken) return { ok: false };
   const url = supportWaUrl(prefill);
+  const btn = String(displayText || 'Contact team').trim().slice(0, 20) || 'Contact team';
   const payload = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -164,13 +166,13 @@ async function sendElevenSupportWhatsAppCta({
       body: {
         text: String(
           bodyText ||
-            `Tap below to WhatsApp ${ELEVEN_SUPPORT_LABEL} (${ELEVEN_SUPPORT_DISPLAY}).`
+            `Tap *${btn}* to WhatsApp ${ELEVEN_SUPPORT_LABEL} on ${ELEVEN_SUPPORT_DISPLAY}.`
         ).slice(0, 1024),
       },
       action: {
         name: 'cta_url',
         parameters: {
-          display_text: 'Open WhatsApp',
+          display_text: btn,
           url,
         },
       },
@@ -184,10 +186,54 @@ async function sendElevenSupportWhatsAppCta({
     phone,
     waId,
     'interactive',
-    `[CTA Open WhatsApp] ${url}`,
+    `[CTA ${btn}] ${url}`,
     result
   );
-  return { ok: result.ok };
+  return { ok: result.ok, error: result.data?.error?.message };
+}
+
+/**
+ * One-tap post-booking / chat handoff: body + CTA → Eleven RO main WhatsApp (9880693311).
+ * Optional second CTA for Call us (dialer) when includeCall is true.
+ */
+async function sendElevenSupportContactTeamCta({
+  phoneNumberId,
+  accessToken,
+  db,
+  to,
+  bodyText,
+  prefill,
+  includeCall = false,
+}) {
+  const wa = await sendElevenSupportWhatsAppCta({
+    phoneNumberId,
+    accessToken,
+    db,
+    to,
+    bodyText:
+      bodyText ||
+      [
+        `Message our team on ${ELEVEN_SUPPORT_LABEL} WhatsApp (*${ELEVEN_SUPPORT_DISPLAY}*).`,
+        '',
+        'Tap *Contact team* below to open that chat.',
+      ].join('\n'),
+    prefill,
+    displayText: 'Contact team',
+  });
+  if (includeCall) {
+    await sendElevenSupportDialCta({
+      phoneNumberId,
+      accessToken,
+      db,
+      to,
+      bodyText: [
+        `Or call ${ELEVEN_SUPPORT_LABEL} on *${ELEVEN_SUPPORT_DISPLAY}*.`,
+        '',
+        'Tap *Call us* to open your phone dialer.',
+      ].join('\n'),
+    });
+  }
+  return wa;
 }
 
 /** CTA URL → HTTPS dial redirect → opens phone dialer. */
@@ -286,8 +332,9 @@ async function handleElevenSupportButton({
       accessToken,
       db,
       to,
-      bodyText: `WhatsApp ${ELEVEN_SUPPORT_LABEL} team on ${ELEVEN_SUPPORT_DISPLAY}. Tap below to open the chat.`,
+      bodyText: `WhatsApp ${ELEVEN_SUPPORT_LABEL} team on ${ELEVEN_SUPPORT_DISPLAY}. Tap *Contact team* below to open the chat.`,
       prefill,
+      displayText: 'Contact team',
     });
     return { handled: true };
   }
@@ -309,5 +356,6 @@ module.exports = {
   sendElevenSupportContactCard,
   sendElevenSupportWhatsAppCta,
   sendElevenSupportDialCta,
+  sendElevenSupportContactTeamCta,
   handleElevenSupportButton,
 };

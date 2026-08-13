@@ -25,8 +25,8 @@ function isTemplateMetaError(result) {
 }
 
 function customerNameFrom(params) {
-  const n = String(params?.[0] || '').trim();
-  return n || 'there';
+  const { whatsappGreetingName } = require('./whatsapp-greeting-name');
+  return whatsappGreetingName(params?.[0], 'there');
 }
 
 function buildTemplatePayload(to, templateName, languageCode, bodyParams, headerComponents = [], buttonUrlParams = []) {
@@ -112,13 +112,24 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push('svc_balance_due', [name, amount]);
   }
 
-  // DOCUMENT-header cold PDF — v3 letter → direct (any label) → v2 → svc_doc_pdf_v2
-  if (/^svc_doc_accept_preview_/i.test(primaryName)) {
-    const label = String(bodyParams?.[1] || '').trim() || 'document';
-    push(SMOKE, [name, label]);
+  // Accept-preview DOCUMENT + I Accept QR only (v8/v7). Do NOT fall back to v4–v1
+  // (those use a web /c/{token} Accept URL that is not shipped).
+  if (/^svc_doc_accept_preview_(ero|hro)_v/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    const params = bodyParams.slice(0, 2).map(String);
+    const headers = Array.isArray(headerComponents) ? headerComponents : [];
+    if (/_v8$/i.test(primaryName)) {
+      push(`svc_doc_accept_preview_${suffix}_v7`, params, headers);
+    }
+    // No SMOKE / URL-button legacy accept templates — wrong UX for WhatsApp-only Accept.
   }
 
-  if (hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName)) {
+  // DOCUMENT-header cold PDF — v3 letter → direct (any label) → v2 → svc_doc_pdf_v2
+  // Skip accept-preview here (handled above — WhatsApp I Accept only, no web URL templates).
+  if (
+    (hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName)) &&
+    !/^svc_doc_accept_preview_/i.test(primaryName)
+  ) {
     const labelMap = {
       bill: 'service bill',
       invoice: 'tax invoice',
@@ -266,6 +277,7 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     }
     push(`svc_service_due_${suffix}_cta_v2`, [name, when]);
     push(`svc_service_due_${suffix}_cta`, [name, when]);
+    push(`existing_service_schedule_${suffix}_cta_v3`, [name]);
     push(`existing_service_schedule_${suffix}_cta_v2`, [name]);
     push(`existing_service_schedule_${suffix}_cta`, [name]);
     push(VISIT, [name, when]);
@@ -280,20 +292,52 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     } else {
       push(`svc_service_due_${suffix}_cta_v2`, bodyParams.slice(0, 2).map(String));
     }
+    push(`existing_service_schedule_${suffix}_cta_v3`, [name]);
     push(`existing_service_schedule_${suffix}_cta_v2`, [name]);
     push(`existing_service_schedule_${suffix}_cta`, [name]);
     push(VISIT, [name, when]);
   }
 
-  // Existing-customer schedule CTA v2 → v1 → visit reminder
-  if (/^existing_service_schedule_(ero|hro)_cta(_v2)?$/i.test(primaryName)) {
+  // Existing-customer schedule CTA v3 (Call us + Book) → v2 (Book only) → v1 → visit reminder
+  if (/^existing_service_schedule_(ero|hro)_cta(_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
-    if (/_v2$/i.test(primaryName)) {
+    if (/_v3$/i.test(primaryName)) {
+      push(`existing_service_schedule_${suffix}_cta_v2`, [name]);
       push(`existing_service_schedule_${suffix}_cta`, [name]);
+    } else if (/_v2$/i.test(primaryName)) {
+      push(`existing_service_schedule_${suffix}_cta`, [name]);
+      push(`existing_service_schedule_${suffix}_cta_v3`, [name]);
     } else {
+      push(`existing_service_schedule_${suffix}_cta_v3`, [name]);
       push(`existing_service_schedule_${suffix}_cta_v2`, [name]);
     }
     push(VISIT, [name, 'your upcoming service visit']);
+  }
+
+  // Missed-call / unregistered / reschedule CTA v2 (correct Call us) → v1
+  if (/^missed_call_callback_(ero|hro)_cta(_v2)?$/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    if (/_v2$/i.test(primaryName)) {
+      push(`missed_call_callback_${suffix}_cta`, [name]);
+    } else {
+      push(`missed_call_callback_${suffix}_cta_v2`, [name]);
+    }
+  }
+  if (/^unregistered_number_service_(ero|hro)_cta(_v2)?$/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    if (/_v2$/i.test(primaryName)) {
+      push(`unregistered_number_service_${suffix}_cta`, [name]);
+    } else {
+      push(`unregistered_number_service_${suffix}_cta_v2`, [name]);
+    }
+  }
+  if (/^reschedule_visit_(ero|hro)_cta(_v2)?$/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    if (/_v2$/i.test(primaryName)) {
+      push(`reschedule_visit_${suffix}_cta`, bodyParams.slice(0, 2).map(String));
+    } else {
+      push(`reschedule_visit_${suffix}_cta_v2`, bodyParams.slice(0, 2).map(String));
+    }
   }
 
   // Booking confirm letter v4 emoji → v3 → v2 → v1 → phone-only / visit confirmed

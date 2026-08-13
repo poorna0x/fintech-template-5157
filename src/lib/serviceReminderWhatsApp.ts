@@ -7,6 +7,7 @@ import {
 } from '@/lib/calling-whatsapp-templates';
 import type { CallingMessageContext } from '@/lib/calling-whatsapp-templates';
 import { parseReminderAtLocalDate } from '@/lib/pendingPaymentReminder';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export function formatServiceReminderWhenLabel(reminderAtYmd: string | null | undefined): string {
   const raw = String(reminderAtYmd || '').trim();
@@ -24,7 +25,7 @@ export function buildServiceReminderWhatsAppMessage(opts: {
   intervalMonths?: number | null;
   brand: DocumentBrand;
 }): string {
-  const name = String(opts.customerName || 'Customer').trim() || 'Customer';
+  const name = whatsappGreetingName(opts.customerName, 'there');
   const title = String(opts.reminderTitle || 'RO service').trim() || 'RO service';
   const every =
     opts.intervalMonths && opts.intervalMonths > 0

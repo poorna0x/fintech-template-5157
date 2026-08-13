@@ -68,13 +68,17 @@ import {
   WHATSAPP_THREAD_COLUMNS,
   WHATSAPP_THREAD_LIMIT,
   WHATSAPP_THREAD_PAGE_SIZE,
-  countUnreadWhatsAppThreads,
+  countUnreadWhatsAppMessages,
+  countInboundUnreadInMessages,
   displayPhone,
   fetchWhatsAppInboxThreads,
+  fetchWhatsAppUnreadMessageCounts,
   inboxListRangeKey,
   inboxListRangeLabel,
   loadWhatsAppInboxListRange,
+  loadWhatsAppUnreadCounts,
   saveWhatsAppInboxListRange,
+  saveWhatsAppUnreadCounts,
   searchWhatsAppInboxThreads,
   formatBubbleTime,
   formatThreadTime,
@@ -83,6 +87,7 @@ import {
   isFailedDeliveryStatus,
   isR2MediaRef,
   isWhatsAppInboxListCacheFresh,
+  isWhatsAppThreadCacheFresh,
   isWhatsAppThreadUnread,
   isWithinCustomerServiceWindow,
   invalidateWhatsAppInboxThreadsCache,
@@ -95,6 +100,8 @@ import {
   previewMessageBody,
   formatAdminWhatsAppBody,
   isBookingBotStateMessage,
+  toWhatsAppPhoneDigits,
+  unreadMessageCountForThread,
   upsertWhatsAppThreadMessageCache,
   writeWhatsAppInboxThreadsCache,
   writeWhatsAppThreadMessagesCache,
@@ -112,7 +119,7 @@ import {
   type InboxPhotoSlide,
 } from '@/components/whatsapp/WhatsAppInboxPhotoViewer';
 import { WhatsAppAvatar, WhatsAppTicks } from '@/components/whatsapp/WhatsAppTicks';
-import { WhatsAppLogo } from '@/components/whatsapp/WhatsAppLogo';
+import { WhatsAppLogo, WhatsAppUnreadBadge } from '@/components/whatsapp/WhatsAppLogo';
 import {
   fetchApprovedWhatsAppTemplates,
   getWhatsAppMediaBytesCached,
@@ -139,7 +146,7 @@ import {
   saveWhatsAppLocalBackupFile,
 } from '@/lib/whatsappLocalBackup';
 import { registerNativeBackHandler, tryNativeBackHandlers } from '@/lib/nativeBackButton';
-import { Capacitor } from '@capacitor/core';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -378,7 +385,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [templatesHint, setTemplatesHint] = useState<string | null>(null);
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('');
   const [templateParams, setTemplateParams] = useState<string[]>([]);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [readMap, setReadMap] = useState<Record<string, string>>(() => loadWhatsAppReadMap());
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>(() =>
+    loadWhatsAppUnreadCounts()
+  );
   const [listRange, setListRange] = useState<WhatsAppInboxListRange>(() =>
     loadWhatsAppInboxListRange()
   );
@@ -570,6 +581,22 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       }
       setThreads(result.threads);
       writeWhatsAppInboxThreadsCache(result.threads, { rangeKey });
+      if (!opts?.soft) {
+        const map = loadWhatsAppReadMap();
+        void fetchWhatsAppUnreadMessageCounts(supabase, result.threads, map).then((counts) => {
+          if (!counts || !Object.keys(counts).length) return;
+          setUnreadCounts((prev) => {
+            const next = { ...prev, ...counts };
+            for (const t of result.threads) {
+              if (!isWhatsAppThreadUnread(t, map)) {
+                delete next[t.phone_e164];
+              }
+            }
+            saveWhatsAppUnreadCounts(next);
+            return next;
+          });
+        });
+      }
     } finally {
       if (!opts?.soft) setLoading(false);
     }
@@ -686,7 +713,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   const loadThread = useCallback(async (phone: string, opts?: { soft?: boolean; force?: boolean }) => {
     const seq = ++loadThreadSeqRef.current;
-    const cached = peekWhatsAppThreadMessagesCache(phone);
+    const phoneDigits = toWhatsAppPhoneDigits(phone);
+    if (!phoneDigits) return;
+    const cached = peekWhatsAppThreadMessagesCache(phoneDigits);
     const cacheFresh = isWhatsAppThreadCacheFresh(cached);
     // Soft refresh must not wipe newer optimistic/realtime messages with stale cache.
     if (cached?.messages?.length && !opts?.force && !opts?.soft) {
@@ -703,7 +732,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       const { data, error } = await supabase
         .from('whatsapp_messages')
         .select(WHATSAPP_THREAD_COLUMNS)
-        .eq('phone_e164', phone)
+        .eq('phone_e164', phoneDigits)
         .order('created_at', { ascending: false })
         .limit(WHATSAPP_THREAD_PAGE_SIZE);
       if (seq !== loadThreadSeqRef.current) return;
@@ -734,14 +763,27 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       threadHasMoreOlderRef.current = hasMore;
       setThreadMessages(next);
       setThreadHasMoreOlder(hasMore);
-      writeWhatsAppThreadMessagesCache(phone, next, hasMore);
+      writeWhatsAppThreadMessagesCache(phoneDigits, next, hasMore);
+      if (next.length) {
+        const readAt = loadWhatsAppReadMap()[phoneDigits];
+        const exact = countInboundUnreadInMessages(next, readAt);
+        setUnreadCounts((prev) => {
+          const cur = prev[phoneDigits] || 0;
+          if (cur === exact) return prev;
+          const updated = { ...prev };
+          if (exact > 0) updated[phoneDigits] = exact;
+          else delete updated[phoneDigits];
+          saveWhatsAppUnreadCounts(updated);
+          return updated;
+        });
+      }
     } finally {
       if (seq === loadThreadSeqRef.current && !opts?.soft) setThreadLoading(false);
     }
   }, []);
 
   const loadOlderMessages = useCallback(async () => {
-    const phone = selectedPhoneRef.current;
+    const phone = toWhatsAppPhoneDigits(selectedPhoneRef.current);
     if (!phone || threadLoadingOlderRef.current || !threadHasMoreOlderRef.current) return;
     const oldest = threadMessagesRef.current[0];
     if (!oldest?.created_at) return;
@@ -1071,6 +1113,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   );
 
   const upsertMessageLocal = useCallback((row: WhatsAppMessageRow) => {
+    const rowPhone = toWhatsAppPhoneDigits(row.phone_e164);
+    const selected = toWhatsAppPhoneDigits(selectedPhoneRef.current);
     setThreads((prev) => {
       const next = patchThreadFromMessage(prev, row);
       writeWhatsAppInboxThreadsCache(next, {
@@ -1078,7 +1122,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       });
       return next;
     });
-    if (row.phone_e164 === selectedPhoneRef.current) {
+    if (rowPhone && rowPhone === selected) {
       setThreadMessages((prev) => {
         const idx = prev.findIndex((m) => m.id === row.id);
         let next: WhatsAppMessageRow[];
@@ -1088,19 +1132,26 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         } else {
           next = [...prev, row].slice(-WHATSAPP_THREAD_LIMIT);
         }
-        const cached = peekWhatsAppThreadMessagesCache(row.phone_e164);
+        const cached = peekWhatsAppThreadMessagesCache(rowPhone);
         writeWhatsAppThreadMessagesCache(
-          row.phone_e164,
+          rowPhone,
           next,
           cached?.hasMoreOlder ?? false
         );
         return next;
       });
       if (row.direction === 'inbound') {
-        invalidateInboundWindowCache(row.phone_e164);
+        invalidateInboundWindowCache(rowPhone);
       }
-    } else {
-      upsertWhatsAppThreadMessageCache(row.phone_e164, row);
+    } else if (rowPhone) {
+      upsertWhatsAppThreadMessageCache(rowPhone, row);
+      if (row.direction === 'inbound') {
+        setUnreadCounts((prev) => {
+          const next = { ...prev, [rowPhone]: (prev[rowPhone] || 0) + 1 };
+          saveWhatsAppUnreadCounts(next);
+          return next;
+        });
+      }
     }
   }, []);
 
@@ -1166,19 +1217,21 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       setThreadHasMoreOlder(false);
       return;
     }
+    const phoneDigits = toWhatsAppPhoneDigits(selectedPhone);
     stickToBottomRef.current = true;
     setShowJumpToLatest(false);
-    const cached = peekWhatsAppThreadMessagesCache(selectedPhone);
+    const cached = peekWhatsAppThreadMessagesCache(phoneDigits);
     if (cached?.messages?.length) {
-      // Forever local — reopen without network until Refresh / clear cache.
+      // Paint cache immediately, then soft-fetch so sidebar preview can't drift from empty thread.
       setThreadMessages(cached.messages);
       setThreadHasMoreOlder(Boolean(cached.hasMoreOlder));
       setThreadLoading(false);
+      void loadThread(phoneDigits, { soft: true });
       return;
     }
     setThreadHasMoreOlder(false);
     setThreadMessages([]);
-    void loadThread(selectedPhone);
+    void loadThread(phoneDigits, { force: true });
   }, [selectedPhone, loadThread]);
 
   const lastThreadMessageId = threadMessages[threadMessages.length - 1]?.id ?? null;
@@ -1294,8 +1347,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, [threads, searchThreads, selectedPhone]);
 
   const unreadCount = useMemo(
-    () => countUnreadWhatsAppThreads(threads, readMap),
-    [threads, readMap]
+    () => countUnreadWhatsAppMessages(threads, readMap, unreadCounts),
+    [threads, readMap, unreadCounts]
   );
 
   useEffect(() => {
@@ -1305,8 +1358,18 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   useEffect(() => {
     if (!selectedPhone || !activeThread) return;
     if (activeThread.last_direction !== 'inbound') return;
+    const phone = toWhatsAppPhoneDigits(selectedPhone);
     markWhatsAppThreadRead(selectedPhone, activeThread.last_at);
     setReadMap(loadWhatsAppReadMap());
+    if (phone) {
+      setUnreadCounts((prev) => {
+        if (!prev[phone]) return prev;
+        const next = { ...prev };
+        delete next[phone];
+        saveWhatsAppUnreadCounts(next);
+        return next;
+      });
+    }
   }, [selectedPhone, activeThread?.last_at, activeThread?.last_direction]);
 
   const filteredThreads = useMemo(() => {
@@ -1408,11 +1471,27 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   useEffect(() => {
     const count = selectedTemplate?.bodyParamCount ?? 0;
+    const defaultName = whatsappGreetingName(activeThread?.customer_name, 'there');
     setTemplateParams((prev) => {
-      if (prev.length === count) return prev;
-      return Array.from({ length: count }, (_, i) => prev[i] || '');
+      const next = Array.from({ length: count }, (_, i) => {
+        if (prev[i]?.trim()) return prev[i];
+        // Prefill first body var with customer name; leave the rest blank for custom entry.
+        if (i === 0) return defaultName;
+        return '';
+      });
+      if (prev.length === count && prev.every((v, i) => v === next[i])) return prev;
+      return next;
     });
-  }, [selectedTemplate?.bodyParamCount, selectedTemplateKey]);
+  }, [
+    selectedTemplate?.bodyParamCount,
+    selectedTemplateKey,
+    activeThread?.customer_name,
+  ]);
+
+  const openTemplatePicker = useCallback(() => {
+    setTemplatePickerOpen(true);
+    void loadTemplates(false);
+  }, [loadTemplates]);
 
   const handleSend = useCallback(async () => {
     const phone = selectedPhoneRef.current;
@@ -1420,7 +1499,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     const file = attachFileRef.current;
     if (!phone || sendingRef.current) return;
     if (!windowOpenRef.current) {
-      toast.error('24-hour window closed — use an approved template below');
+      toast.error('24-hour window closed — use Quick actions → Select template');
       return;
     }
     if (!file && !text) return;
@@ -1495,7 +1574,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     if (!selectedPhone || !selectedTemplate || sending) return;
     const needed = selectedTemplate.bodyParamCount;
     if (needed > 0 && templateParams.some((p) => !String(p).trim())) {
-      toast.error('Fill all template variables');
+      toast.error('Fill all template fields');
       return;
     }
     setSending(true);
@@ -1515,6 +1594,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       toast.success('Template sent');
       setSelectedTemplateKey('');
       setTemplateParams([]);
+      setTemplatePickerOpen(false);
       bumpThreadAfterOutbound({
         phone: selectedPhone,
         body: selectedTemplate.name,
@@ -1532,7 +1612,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     if (!selectedPhone || quickActionBusy) return;
     setQuickActionBusy(true);
     try {
-      const name = String(activeThread?.customer_name || 'there').trim() || 'there';
+      const name = whatsappGreetingName(activeThread?.customer_name, 'there');
       const who = waterFilterServiceFromLabel({
         customerName: name,
         brand: threadBrand,
@@ -2079,9 +2159,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               {t.last_body}
                             </p>
                             {unread ? (
-                              <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[#53bdeb] px-1 text-[10px] font-bold text-[#0b141a] shadow-sm">
-                                1
-                              </span>
+                              <WhatsAppUnreadBadge
+                                count={unreadMessageCountForThread(t, readMap, unreadCounts)}
+                              />
                             ) : null}
                             {!open && !failed ? (
                               <span
@@ -2214,6 +2294,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       type="button"
                       className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/5 disabled:opacity-40"
                       title="Quick actions"
+                      aria-label="Quick actions"
                       disabled={quickActionBusy}
                     >
                       {quickActionBusy ? (
@@ -2225,6 +2306,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
                     <DropdownMenuLabel>Quick actions</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy || sending || !selectedPhone}
+                      onClick={() => openTemplatePicker()}
+                    >
+                      Select template…
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
                       Booking
@@ -2621,95 +2710,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 ) : null}
               </div>
 
+              {windowOpen ? (
               <div className="shrink-0 border-t border-[#2a3942] bg-[#111b21] px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-3">
-                {!windowOpen ? (
-                  <div className="mb-2 max-h-[36vh] space-y-2 overflow-y-auto overscroll-contain rounded-xl bg-[#0b141a] p-3 shadow-sm ring-1 ring-white/5 sm:max-h-none">
-                    <p className="text-xs text-[#f59e0b]">
-                      Free-form reply needs an open 24h window. Send an approved template to reopen.
-                    </p>
-                    {templatesLoading ? (
-                      <p className="flex items-center gap-2 text-xs text-[#667781]">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Loading templates…
-                      </p>
-                    ) : null}
-                    {templatesError ? (
-                      <p className="text-xs text-red-400">{templatesError}</p>
-                    ) : null}
-                    {templatesHint ? (
-                      <p className="text-xs text-[#667781]">{templatesHint}</p>
-                    ) : null}
-                    {templates.length > 0 ? (
-                      <>
-                        <Select
-                          value={selectedTemplateKey || undefined}
-                          onValueChange={(v) => setSelectedTemplateKey(v)}
-                          disabled={sending}
-                        >
-                          <SelectTrigger className="h-10 w-full border-[#202c33] bg-[#202c33] text-[#e9edef]">
-                            <SelectValue placeholder="Choose template" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {templates.map((t) => (
-                              <SelectItem
-                                key={`${t.name}::${t.language}`}
-                                value={`${t.name}::${t.language}`}
-                              >
-                                {t.name} ({t.language})
-                                {t.category ? ` · ${t.category}` : ''}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {selectedTemplate?.bodyPreview ? (
-                          <p className="rounded-md bg-[#0b141a] px-2 py-1.5 text-[11px] text-[#667781] whitespace-pre-wrap">
-                            {selectedTemplate.bodyPreview}
-                          </p>
-                        ) : null}
-                        {(selectedTemplate?.bodyParamCount ?? 0) > 0
-                          ? templateParams.map((val, i) => (
-                              <Input
-                                key={i}
-                                value={val}
-                                onChange={(e) => {
-                                  const next = [...templateParams];
-                                  next[i] = e.target.value;
-                                  setTemplateParams(next);
-                                }}
-                                placeholder={`Variable {{${i + 1}}}`}
-                                className="h-9 border-[#202c33] bg-[#202c33] text-[#e9edef] placeholder:text-[#667781]"
-                                disabled={sending}
-                              />
-                            ))
-                          : null}
-                        <Button
-                          type="button"
-                          className="h-10 w-full cursor-pointer bg-[#00a884] text-white hover:bg-[#008f72]"
-                          disabled={!selectedTemplate || sending}
-                          onClick={() => void handleSendTemplate()}
-                        >
-                          {sending ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Send className="mr-2 h-4 w-4" />
-                          )}
-                          Send template
-                        </Button>
-                      </>
-                    ) : !templatesLoading && !templatesError ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="cursor-pointer border-[#202c33] bg-transparent text-[#e9edef] hover:bg-[#202c33]"
-                        onClick={() => void loadTemplates(true)}
-                      >
-                        Refresh templates
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-                {windowOpen ? (
                   <div className="space-y-2">
                     {attachFile ? (
                       <div className="flex items-center gap-2 rounded-xl bg-[#202c33] px-2 py-1.5 shadow-sm">
@@ -2822,8 +2824,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       </button>
                     </div>
                   </div>
-                ) : null}
               </div>
+              ) : null}
             </>
           )}
         </section>
@@ -2914,6 +2916,144 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           void loadThread(phoneE164, { soft: true });
         }}
       />
+
+      <Dialog
+        open={templatePickerOpen}
+        onOpenChange={(open) => {
+          if (sending) return;
+          setTemplatePickerOpen(open);
+          if (!open) {
+            setSelectedTemplateKey('');
+            setTemplateParams([]);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Send cold template</DialogTitle>
+            <DialogDescription>
+              Pick an approved Meta template and fill each field with custom values before sending.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {templatesLoading ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading templates…
+              </p>
+            ) : null}
+            {templatesError ? (
+              <p className="text-sm text-red-600">{templatesError}</p>
+            ) : null}
+            {templatesHint ? (
+              <p className="text-xs text-muted-foreground">{templatesHint}</p>
+            ) : null}
+            {templates.length > 0 ? (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Template</label>
+                  <Select
+                    value={selectedTemplateKey || undefined}
+                    onValueChange={(v) => {
+                      setSelectedTemplateKey(v);
+                      setTemplateParams([]);
+                    }}
+                    disabled={sending}
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Choose template" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {templates.map((t) => (
+                        <SelectItem
+                          key={`${t.name}::${t.language}`}
+                          value={`${t.name}::${t.language}`}
+                        >
+                          {t.name} ({t.language})
+                          {t.category ? ` · ${t.category}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedTemplate?.bodyPreview ? (
+                  <div className="rounded-lg border bg-muted/40 px-3 py-2 text-[12px] leading-snug text-muted-foreground whitespace-pre-wrap">
+                    {selectedTemplate.bodyPreview}
+                  </div>
+                ) : null}
+                {(selectedTemplate?.bodyParamCount ?? 0) > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Custom fields — edit each value as needed
+                    </p>
+                    {templateParams.map((val, i) => (
+                      <div key={i} className="space-y-1">
+                        <label className="text-[11px] font-medium text-muted-foreground">
+                          Field {`{{${i + 1}}}`}
+                          {i === 0 ? ' · usually name' : ''}
+                        </label>
+                        <Input
+                          value={val}
+                          onChange={(e) => {
+                            const next = [...templateParams];
+                            next[i] = e.target.value;
+                            setTemplateParams(next);
+                          }}
+                          placeholder={`Enter value for {{${i + 1}}}`}
+                          className="h-10"
+                          disabled={sending}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : selectedTemplate ? (
+                  <p className="text-xs text-muted-foreground">
+                    This template has no body variables.
+                  </p>
+                ) : null}
+              </>
+            ) : !templatesLoading ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="cursor-pointer"
+                onClick={() => void loadTemplates(true)}
+              >
+                Refresh templates
+              </Button>
+            ) : null}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={sending}
+              onClick={() => setTemplatePickerOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#00a884] text-white hover:bg-[#008f72]"
+              disabled={!selectedTemplate || sending}
+              onClick={() => void handleSendTemplate()}
+            >
+              {sending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  Send template
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(quickActionConfirm)}

@@ -20,6 +20,7 @@ const {
   normalizePhoneE164,
   ensurePublicCrmPhotoUrl,
 } = require('./whatsapp-helper');
+const { whatsappGreetingName } = require('./whatsapp-greeting-name');
 const {
   ELEVEN_SUPPORT_DISPLAY,
   ELEVEN_SUPPORT_E164_PLUS,
@@ -27,6 +28,7 @@ const {
   sendElevenSupportContactCard,
   sendElevenSupportWhatsAppCta,
   sendElevenSupportDialCta,
+  sendElevenSupportContactTeamCta,
   handleElevenSupportButton,
 } = require('./whatsapp-eleven-support');
 const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
@@ -53,7 +55,7 @@ function brandShortLabelForWfs(brand) {
 
 /** Body for native WhatsApp *Send location* button (24h interactive only). */
 function buildAskLocationBodyText(customerName, fromLabel) {
-  const name = String(customerName || 'there').trim() || 'there';
+  const name = whatsappGreetingName(customerName, 'there');
   const who = String(fromLabel || WATER_FILTER_SERVICE_LABEL).trim() || WATER_FILTER_SERVICE_LABEL;
   return [
     `Hi ${name}, 👋`,
@@ -71,7 +73,7 @@ function buildAskLocationBodyText(customerName, fromLabel) {
  * With lead → from Direct call - Hydrogen RO Water Filter Service.
  */
 function buildQuickCustomerLocationBodyText(customerName, whatsappLeadLine, brand) {
-  const name = String(customerName || 'there').trim() || 'there';
+  const name = whatsappGreetingName(customerName, 'there');
   const intro = String(whatsappLeadLine || '').trim();
   const brandShort = brandShortLabelForWfs(brand);
   const lines = [`Hi ${name}, 👋`, ''];
@@ -1033,9 +1035,10 @@ async function sendChatHandoff(ctx, customer = null, state = {}) {
     bodyText: [
       `Chat with us on WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
       '',
-      'Tap below to open the chat with our team.',
+      'Tap *Contact team* below to open the chat with our team.',
     ].join('\n'),
     prefill,
+    displayText: 'Contact team',
   });
 }
 
@@ -1134,7 +1137,7 @@ async function sendRecentProblemPrompt(ctx, state = {}) {
 }
 
 async function sendKnownMenu(ctx, state = {}) {
-  const name = String(state.name || 'there').trim() || 'there';
+  const name = whatsappGreetingName(state.name, 'there');
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_known_menu' });
   return sendButtons({
     ...ctx,
@@ -1149,7 +1152,7 @@ async function sendKnownMenu(ctx, state = {}) {
 }
 
 async function sendAmcCheckin(ctx, state = {}) {
-  const name = String(state.name || 'there').trim() || 'there';
+  const name = whatsappGreetingName(state.name, 'there');
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_amc_checkin' });
   return sendButtons({
     ...ctx,
@@ -1213,7 +1216,7 @@ async function askOtherPhone(ctx, state = {}) {
 }
 
 async function sendLinkedIdentityConfirm(ctx, state, customer, lastInfo) {
-  const name = String(customer?.full_name || 'Customer').trim() || 'Customer';
+  const name = whatsappGreetingName(customer?.full_name, 'there');
   const next = {
     ...state,
     step: 'await_linked_identity_confirm',
@@ -1250,7 +1253,7 @@ async function startInboundIdentityFlow(ctx) {
     return { ok: true, known: false };
   }
 
-  const name = String(customer.full_name || 'there').trim() || 'there';
+  const name = whatsappGreetingName(customer.full_name, 'there');
   const lastInfo = await lookupLastServiceInfo(ctx.db, customer.id, customer);
   const amc = await lookupActiveAmc(ctx.db, customer.id);
   const base = {
@@ -1485,7 +1488,7 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
 
   if (act === 'request_location') {
     const customer = await lookupCustomerFull(ctx.db, ctx.to);
-    const name = String(opts.customerName || customer?.full_name || 'there').trim() || 'there';
+    const name = whatsappGreetingName(opts.customerName || customer?.full_name, 'there');
     const fromLabel = waterFilterServiceLabelForBrand(opts.brand);
     await setBookingState(ctx.db, ctx.to, {
       step: 'await_location',
@@ -2001,14 +2004,17 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
       step: 'booking_complete',
       supportPrefill: prefill,
     });
-    await sendElevenSupportButtons({
-      ...ctx,
+    await sendElevenSupportContactTeamCta({
+      phoneNumberId: ctx.phoneNumberId,
+      accessToken: ctx.accessToken,
+      db: ctx.db,
+      to: ctx.to,
       bodyText: [
-        `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+        `Chat with our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
         '',
-        'Tap *Call us* to open the dialer, or *WhatsApp team* to message us.',
+        'Tap *Contact team* below to open that chat.',
       ].join('\n'),
-      footer: BRAND_LABEL,
+      prefill,
     });
     return { ok: true };
   }
@@ -2298,7 +2304,7 @@ async function askLocConfirm(ctx, state, locSummary) {
 /** After location confirm — building / flat / house no (skippable). */
 async function askBuildingFlat(ctx, state = {}) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_building_flat' });
-  let name = String(state.name || state.customerName || '').trim();
+  let name = whatsappGreetingName(state.name || state.customerName, '');
   if (!name) {
     const customer = await lookupCustomerFull(ctx.db, ctx.to);
     name = String(customer?.full_name || '').trim();
@@ -2654,7 +2660,7 @@ function customerBookedMessage({
   jobNumber,
   updated,
 }) {
-  const who = String(name || 'there').trim() || 'there';
+  const who = whatsappGreetingName(name, 'there');
   const ref = String(jobNumber || '').trim() || 'your booking';
   const when = [dateIso ? formatDateIsoLabel(dateIso) : '', timeLabel || '']
     .filter(Boolean)
@@ -2979,31 +2985,35 @@ async function sendPostBookingHumanRedirect(ctx, state = null) {
     phoneE164: ctx.to,
   });
 
+  // One-tap CTA → Eleven RO main WhatsApp (9880693311); no reply-button round-trip.
   const bodyText = [
     'Thanks for your message.',
     '',
     'Your booking on this number is already in progress.',
-    `Message our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+    `For anything else, contact our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
     '',
-    'Tap *Call us* to open the dialer, or *WhatsApp team* to chat (your details will be attached).',
+    'Tap *Contact team* below to open that chat.',
   ].join('\n');
 
-  await sendElevenSupportButtons({
-    ...ctx,
-    bodyText,
-    footer: BRAND_LABEL,
-  });
-  // Keep prefill on state for WhatsApp button tap — stay on booking_complete
   await setBookingState(ctx.db, ctx.to, {
     ...st,
     step: 'booking_complete',
     supportPrefill: prefill,
   });
+  await sendElevenSupportContactTeamCta({
+    phoneNumberId: ctx.phoneNumberId,
+    accessToken: ctx.accessToken,
+    db: ctx.db,
+    to: ctx.to,
+    bodyText,
+    prefill,
+    includeCall: false,
+  });
   await insertWhatsAppMessage(ctx.db, {
     direction: 'outbound',
     phone_e164: ctx.to,
     msg_type: 'text',
-    body: slimInboxBody(`${POST_BOOKING_REDIRECT_MARKER} Handoff to team`),
+    body: slimInboxBody(`${POST_BOOKING_REDIRECT_MARKER} Contact team CTA`),
     status: 'sent',
     customer_id: customer?.id || st.customerId || null,
   });
@@ -3647,14 +3657,17 @@ async function handleBookingBotInbound({
       const customer = await lookupCustomerFull(db, to);
       const prefill = buildAdminHandoffPrefill({ customer, state: {}, phoneE164: to });
       await setBookingState(db, to, { step: 'booking_complete', supportPrefill: prefill });
-      await sendElevenSupportButtons({
-        ...ctx,
+      await sendElevenSupportContactTeamCta({
+        phoneNumberId: ctx.phoneNumberId,
+        accessToken: ctx.accessToken,
+        db: ctx.db,
+        to: ctx.to,
         bodyText: [
-          `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+          `Chat with our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
           '',
-          'Tap *Call us* to open the dialer, or *WhatsApp team* to message us.',
+          'Tap *Contact team* below to open that chat.',
         ].join('\n'),
-        footer: BRAND_LABEL,
+        prefill,
       });
       return { handled: true };
     }
@@ -3716,17 +3729,19 @@ async function handleBookingBotInbound({
         phoneE164: to,
       });
       await setBookingState(db, to, { ...doneState, supportPrefill: prefill });
-      await sendElevenSupportButtons({
-        ...ctx,
+      await sendElevenSupportContactTeamCta({
+        phoneNumberId: ctx.phoneNumberId,
+        accessToken: ctx.accessToken,
+        db: ctx.db,
+        to: ctx.to,
         bodyText: [
           'Perfect — thank you.',
           '',
           'Your booking is confirmed. We’ll update you here once a technician is assigned.',
           '',
-          `Need anything else? Message our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
-          'Tap *Call us* or *WhatsApp team* (details attached).',
+          `Need anything else? Tap *Contact team* to WhatsApp Eleven RO (*${SUPPORT_PHONE_DISPLAY}*).`,
         ].join('\n'),
-        footer: BRAND_LABEL,
+        prefill,
       });
       return { handled: true };
     }
@@ -3933,10 +3948,15 @@ async function handleBookingBotInbound({
               ...ctx,
               text: `We couldn’t complete booking right now. Our team will help you shortly.`,
             });
-            await sendElevenSupportButtons({
-              ...ctx,
-              bodyText: `Reach Eleven RO on ${SUPPORT_PHONE_DISPLAY}:`,
-              footer: BRAND_LABEL,
+            await sendElevenSupportContactTeamCta({
+              phoneNumberId: ctx.phoneNumberId,
+              accessToken: ctx.accessToken,
+              db: ctx.db,
+              to: ctx.to,
+              bodyText: [
+                `We couldn’t complete booking right now.`,
+                `Tap *Contact team* to WhatsApp Eleven RO (*${SUPPORT_PHONE_DISPLAY}*).`,
+              ].join('\n'),
             });
             return { handled: true };
           }
@@ -3993,10 +4013,14 @@ async function handleBookingBotInbound({
           ...ctx,
           text: `Booking didn’t go through. Our team will finish it for you.`,
         });
-        await sendElevenSupportButtons({
-          ...ctx,
-          bodyText: `Reach Eleven RO on ${SUPPORT_PHONE_DISPLAY}:`,
-          footer: BRAND_LABEL,
+        await sendElevenSupportContactTeamCta({
+          phoneNumberId: ctx.phoneNumberId,
+          accessToken: ctx.accessToken,
+          db: ctx.db,
+          to: ctx.to,
+          bodyText: [
+            `Tap *Contact team* to WhatsApp Eleven RO (*${SUPPORT_PHONE_DISPLAY}*).`,
+          ].join('\n'),
         });
         await clearBookingState(db, to);
         return { handled: true };
@@ -4117,15 +4141,17 @@ async function handleBookingBotInbound({
         step: state?.jobNumber ? 'booking_complete' : state?.step || 'idle',
         supportPrefill: prefill,
       });
-      await sendElevenSupportButtons({
-        ...ctx,
+      await sendElevenSupportContactTeamCta({
+        phoneNumberId: ctx.phoneNumberId,
+        accessToken: ctx.accessToken,
+        db: ctx.db,
+        to: ctx.to,
         bodyText: [
-          `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+          `Chat with our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
           '',
-          `*Call us* opens your phone dialer.`,
-          `*WhatsApp team* opens chat with details attached when available.`,
+          'Tap *Contact team* below to open that chat.',
         ].join('\n'),
-        footer: BRAND_LABEL,
+        prefill,
       });
       return { handled: true };
     }
@@ -4272,10 +4298,15 @@ async function handleBookingBotInbound({
           ...ctx,
           text: `We couldn’t complete booking right now. Our team will help shortly.`,
         });
-        await sendElevenSupportButtons({
-          ...ctx,
-          bodyText: `Reach Eleven RO on ${SUPPORT_PHONE_DISPLAY}:`,
-          footer: BRAND_LABEL,
+        await sendElevenSupportContactTeamCta({
+          phoneNumberId: ctx.phoneNumberId,
+          accessToken: ctx.accessToken,
+          db: ctx.db,
+          to: ctx.to,
+          bodyText: [
+            `We couldn’t complete booking right now.`,
+            `Tap *Contact team* to WhatsApp Eleven RO (*${SUPPORT_PHONE_DISPLAY}*).`,
+          ].join('\n'),
         });
         await insertWhatsAppMessage(db, {
           direction: 'outbound',
@@ -4374,14 +4405,17 @@ async function handleBookingBotInbound({
         phoneE164: to,
       });
       await setBookingState(db, to, { step: 'booking_complete', supportPrefill: prefill });
-      await sendElevenSupportButtons({
-        ...ctx,
+      await sendElevenSupportContactTeamCta({
+        phoneNumberId: ctx.phoneNumberId,
+        accessToken: ctx.accessToken,
+        db: ctx.db,
+        to: ctx.to,
         bodyText: [
-          `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+          `Chat with our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
           '',
-          'Tap *Call us* to open the dialer, or *WhatsApp team* to message us.',
+          'Tap *Contact team* below to open that chat.',
         ].join('\n'),
-        footer: BRAND_LABEL,
+        prefill,
       });
       return { handled: true };
     }

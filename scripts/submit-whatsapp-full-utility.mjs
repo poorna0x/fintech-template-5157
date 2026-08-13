@@ -1569,9 +1569,9 @@ function buildDocPdfV3Templates() {
 const DOC_PDF_V3_TEMPLATES = buildDocPdfV3Templates();
 
 /**
- * Preview PDF → Accept → original PDF (DOCUMENT header).
- * v6 rejected INCORRECT_CATEGORY (long legal block + URL + emojis).
- * v7 pending — no explicit terms. v8: one transactional terms sentence (UTILITY).
+ * Preview PDF → Accept → original PDF (DOCUMENT header). WhatsApp-only I Accept QR.
+ * v6 rejected INCORRECT_CATEGORY. v7/v8 pending Meta approval (Call + I Accept).
+ * Do not use v1–v4 (web /c/ Accept URL — not used).
  */
 function buildDocAcceptPreviewTemplates() {
   const out = [];
@@ -1601,52 +1601,52 @@ function buildDocAcceptPreviewTemplates() {
 
 const DOC_ACCEPT_PREVIEW_TEMPLATES = buildDocAcceptPreviewTemplates();
 
-/** UTILITY schedule / callback CTAs — no booking_confirmed_*_cta (use svc_booking_confirmed_* phone-only). */
+/** UTILITY schedule / callback CTAs — Call us (brand phone) + Book online. */
 const BOOKING_TEMPLATES = [
   {
-    name: 'existing_service_schedule_ero_cta',
+    name: 'existing_service_schedule_ero_cta_v3',
     bookUrl: 'https://elevenro.com/book',
     body: 'Hi {{1}}, this is Eleven RO. Our records show your RO service visit can be scheduled. Please reply BOOK on this chat to confirm a convenient time, or use Call / Book below for assistance.',
     examples: ['Rahul'],
   },
   {
-    name: 'unregistered_number_service_ero_cta',
+    name: 'unregistered_number_service_ero_cta_v2',
     bookUrl: 'https://elevenro.com/book',
     body: 'Hi {{1}}, this is Eleven RO. This WhatsApp number is not linked to a service account in our system. Reply BOOK on this chat with your name and service address to register your request, or use Call / Book below for assistance.',
     examples: ['there'],
   },
   {
-    name: 'missed_call_callback_ero_cta',
+    name: 'missed_call_callback_ero_cta_v2',
     bookUrl: 'https://elevenro.com/book',
     body: 'Hi {{1}}, this is Eleven RO. We tried to reach you and could not connect. Please reply on this chat so we can assist with your RO service, or use Call / Book below.',
     examples: ['Rahul'],
   },
   {
-    name: 'reschedule_visit_ero_cta',
+    name: 'reschedule_visit_ero_cta_v2',
     bookUrl: 'https://elevenro.com/book',
     body: 'Hi {{1}}, your Eleven RO visit is set for {{2}}. To reschedule, reply on this chat or use Call / Book online below.',
     examples: ['Rahul', 'Mon 12 Aug, 10:00 AM'],
   },
   {
-    name: 'existing_service_schedule_hro_cta',
+    name: 'existing_service_schedule_hro_cta_v3',
     bookUrl: 'https://hydrogenro.com/book',
     body: 'Hi {{1}}, this is Hydrogen RO. Our records show your RO service visit can be scheduled. Please reply BOOK on this chat to confirm a convenient time, or use Call / Book below for assistance.',
     examples: ['Rahul'],
   },
   {
-    name: 'unregistered_number_service_hro_cta',
+    name: 'unregistered_number_service_hro_cta_v2',
     bookUrl: 'https://hydrogenro.com/book',
     body: 'Hi {{1}}, this is Hydrogen RO. This WhatsApp number is not linked to a service account in our system. Reply BOOK on this chat with your name and service address to register your request, or use Call / Book below for assistance.',
     examples: ['there'],
   },
   {
-    name: 'missed_call_callback_hro_cta',
+    name: 'missed_call_callback_hro_cta_v2',
     bookUrl: 'https://hydrogenro.com/book',
     body: 'Hi {{1}}, this is Hydrogen RO. We tried to reach you and could not connect. Please reply on this chat so we can assist with your RO service, or use Call / Book below.',
     examples: ['Rahul'],
   },
   {
-    name: 'reschedule_visit_hro_cta',
+    name: 'reschedule_visit_hro_cta_v2',
     bookUrl: 'https://hydrogenro.com/book',
     body: 'Hi {{1}}, your Hydrogen RO visit is set for {{2}}. To reschedule, reply on this chat or use Call / Book online below.',
     examples: ['Rahul', 'Mon 12 Aug, 10:00 AM'],
@@ -2012,17 +2012,12 @@ function bookOnlyPayload(t) {
 }
 
 function bookingPayload(t) {
-  const callPhone = callPhoneForTemplate(t.name);
-  const chatUrl = `https://wa.me/${String(callPhone).replace(/\D/g, '')}`;
+  const callPhone = t.callPhone || callPhoneForTemplate(t.name);
   const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }];
   if (t.bookUrl) {
-    buttons.push({ type: 'URL', text: 'Text us', url: chatUrl });
     buttons.push({ type: 'URL', text: 'Book online', url: t.bookUrl });
-  } else {
-    if (t.websiteUrl) {
-      buttons.push({ type: 'URL', text: 'Website', url: t.websiteUrl });
-    }
-    buttons.push({ type: 'URL', text: 'Text us', url: chatUrl });
+  } else if (t.websiteUrl) {
+    buttons.push({ type: 'URL', text: 'Website', url: t.websiteUrl });
   }
   return {
     name: t.name,
@@ -2862,6 +2857,14 @@ async function main() {
   const onlyBookingCancelledV4 = process.argv.includes('--only-booking-cancelled-v4');
   if (onlyBookingCancelledV4) {
     const keep = new Set(BOOKING_CANCELLED_LETTER_V4_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyBookingCtaV3 = process.argv.includes('--only-booking-cta-v3');
+  if (onlyBookingCtaV3) {
+    const keep = new Set(BOOKING_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

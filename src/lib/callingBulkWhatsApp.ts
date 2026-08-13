@@ -156,6 +156,7 @@ export async function sendCallingWhatsAppOne(opts: {
     `svc_service_due_letter_${suffix}`,
     `svc_service_due_${suffix}_cta_v2`,
     `svc_service_due_${suffix}_cta`,
+    `existing_service_schedule_${suffix}_cta_v3`,
     `existing_service_schedule_${suffix}_cta_v2`,
     `existing_service_schedule_${suffix}_cta`,
     'svc_visit_reminder',

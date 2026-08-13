@@ -6,6 +6,7 @@ import {
 } from '@/lib/booking-confirmation-email';
 import { brandLetterClosingLines } from '@/lib/whatsappBrandContact';
 import { resolveBookingCta } from '@/lib/whatsappBookingCtaTemplates';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export function buildBookingConfirmationWhenLabel(data: {
   scheduledDate?: string;
@@ -39,7 +40,7 @@ export function buildBookingConfirmationWhatsAppText(opts: {
 }): string {
   const brand = opts.brand || 'hydrogenro';
   const brandLabel = brand === 'elevenro' ? 'Eleven RO' : 'Hydrogen RO';
-  const name = String(opts.customerName || 'Customer').trim() || 'Customer';
+  const name = whatsappGreetingName(opts.customerName, 'there');
   const ref = String(opts.jobNumber || '').trim() || 'your booking';
   const when = String(opts.whenLabel || '').trim() || 'the scheduled time';
   return [

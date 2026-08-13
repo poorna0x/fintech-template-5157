@@ -6,8 +6,10 @@ function brandSuffix(brand) {
   return String(brand || '').toLowerCase() === 'elevenro' ? 'ero' : 'hro';
 }
 
+const { whatsappGreetingName } = require('./whatsapp-greeting-name');
+
 function cleanName(name) {
-  return String(name || 'Customer').trim() || 'Customer';
+  return whatsappGreetingName(name, 'there');
 }
 
 function resolveBrandFromBookingSource(source, domain) {

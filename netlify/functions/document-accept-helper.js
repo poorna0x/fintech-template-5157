@@ -32,6 +32,7 @@ const {
   recordDocumentPdfAuthenticityServer,
   todayYmdIst,
 } = require('./document-pdf-authenticity-record');
+const { whatsappGreetingName } = require('./whatsapp-greeting-name');
 
 const DEFAULT_TTL_HOURS = 48;
 const MAX_PDF_BYTES = 4.5 * 1024 * 1024;
@@ -49,7 +50,7 @@ function buildAcceptPreviewMessageBody(customerName, documentLabel, brand, opts)
   const label = String(documentLabel || 'document').trim() || 'document';
   const co = brandContact(brand).label;
   const lines = [
-    `Hi ${customerName || 'there'}, 👋`,
+    `Hi ${whatsappGreetingName(customerName, 'there')}, 👋`,
     '',
     `📄 Your PREVIEW ${label} is attached above — not the original document.`,
     'Please download and save this PDF for your records.',
@@ -164,7 +165,7 @@ async function sendAcceptPreviewColdTemplate(
   opts
 ) {
   const templateName = resolveAcceptPreviewColdTemplateName(brand);
-  const bodyParams = [customerName, documentLabel];
+  const bodyParams = [whatsappGreetingName(customerName, 'there'), documentLabel];
   const headerComponents = [
     {
       type: 'header',
@@ -186,7 +187,8 @@ async function sendAcceptPreviewColdTemplate(
     bodyParams,
     headerComponents,
     buttonUrlParams: [],
-    enableFallback: false,
+    // WhatsApp-only I Accept: try v8 then v7 (both QR). Never fall back to web /c/ URL templates.
+    enableFallback: true,
   });
 
   if (!sent.ok) return { ok: false, data: sent.result?.data, templateName };
@@ -245,7 +247,8 @@ async function markExpiredIfNeeded(db, row) {
 }
 
 /**
- * Preview on WhatsApp + I Accept. Uses free-form interactive in 24h window; cold template v5 otherwise.
+ * Preview on WhatsApp + I Accept. Free-form interactive in 24h; cold v8→v7 outside.
+ * WhatsApp-only — no web Accept page.
  */
 async function createAndSendAcceptInvite(opts) {
   const db = getServiceSupabase();
@@ -299,7 +302,7 @@ async function createAndSendAcceptInvite(opts) {
   const documentLabel = String(opts.documentLabel || 'document').trim() || 'document';
   const filename =
     String(opts.filename || `${documentLabel.replace(/\s+/g, '_')}.pdf`).trim() || 'document.pdf';
-  const customerName = String(opts.customerName || 'Customer').trim() || 'Customer';
+  const customerName = whatsappGreetingName(opts.customerName, 'there');
   const ttlHours = Math.min(72, Math.max(1, Number(opts.ttlHours) || DEFAULT_TTL_HOURS));
   const expiresAt = new Date(Date.now() + ttlHours * 3600 * 1000).toISOString();
   const originalSha = sha256Hex(originalBuf);
@@ -428,7 +431,7 @@ async function createAndSendAcceptInvite(opts) {
         cold.data?.error?.error_user_msg ||
         'Cold accept-preview template send failed';
       const hint = /template|not exist|translation|approved/i.test(coldErr)
-        ? ' Submit svc_doc_accept_preview_*_v8 in Meta (node scripts/submit-whatsapp-full-utility.mjs --submit --only-doc-accept).'
+        ? ' Waiting for Meta to approve svc_doc_accept_preview_*_v8 (or v7). Inside 24h window, preview still sends as interactive I Accept.'
         : '';
       await db
         .from('document_accept_invites')

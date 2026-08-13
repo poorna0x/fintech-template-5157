@@ -12,6 +12,7 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
 import { formatDocumentPdfColdPreview } from '@/lib/document-pdf-whatsapp-caption';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 export const WA_COLD = {
   /** @deprecated Meta marked svc_booking_menu MARKETING — use resolveBookingCta() instead. */
   booking_menu: {
@@ -123,9 +124,8 @@ export const WA_COLD = {
     ],
   },
   /**
-   * Preview PDF (DOCUMENT) + Accept URL → /c/{token}.
-   * After terms accept, CRM sends the original PDF on WhatsApp.
-   * Meta: svc_doc_accept_preview_{ero|hro}_v8 (DOCUMENT + Call + I Accept + terms line)
+   * Preview PDF (DOCUMENT) + WhatsApp I Accept quick reply → original on same chat.
+   * Meta: svc_doc_accept_preview_{ero|hro}_v8 (no web /c/ URL).
    */
   document_accept_preview: {
     name: 'svc_doc_accept_preview_hro_v8',
@@ -292,7 +292,7 @@ export const WA_COLD = {
   },
   // —— Booking flows: use resolveBookingCta(kind, brand) at send time (UTILITY *_cta templates) ——
   book_existing_customer: {
-    name: 'existing_service_schedule_ero_cta_v2',
+    name: 'existing_service_schedule_ero_cta_v3',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
@@ -539,7 +539,7 @@ export function formatColdDocTemplatePreview(
 }
 
 function cleanName(customerName: string): string {
-  return String(customerName || 'Customer').trim() || 'Customer';
+  return whatsappGreetingName(customerName, 'there');
 }
 
 function cleanAmount(amount: number | string): string {
@@ -587,7 +587,7 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   ask_name_long: 'Ask name long (svc_wfs_ask_name_*_v2 UTILITY)',
   crm_notice: 'CRM notice → visit reminder',
   crm_update_details: 'CRM update → visit reminder',
-  book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta_v2 → v1)',
+  book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta_v3 → v2 → v1)',
   book_new_customer: 'Unregistered number (unregistered_number_service_*_cta)',
   missed_call: 'Missed call (svc_missed_call)',
   missed_call_book: 'Missed call (svc_missed_call / missed_call_callback_*_cta)',

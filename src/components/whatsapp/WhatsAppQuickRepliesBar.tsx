@@ -415,6 +415,8 @@ export function WhatsAppQuickRepliesBar({
 
   const showBookVisit =
     !approvedTemplateNames?.size ||
+    approvedTemplateNames.has('existing_service_schedule_ero_cta_v3') ||
+    approvedTemplateNames.has('existing_service_schedule_hro_cta_v3') ||
     approvedTemplateNames.has('existing_service_schedule_ero_cta_v2') ||
     approvedTemplateNames.has('existing_service_schedule_hro_cta_v2') ||
     approvedTemplateNames.has('existing_service_schedule_ero_cta') ||
