@@ -1,34 +1,108 @@
 /**
  * Cloudflare R2 helpers for WhatsApp media (private bucket + signed URLs).
- * Secrets: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID,
- * CLOUDFLARE_R2_SECRET_ACCESS_KEY, CLOUDFLARE_R2_BUCKET_NAME
- * Optional: CLOUDFLARE_R2_SIGNED_URL_TTL_SECONDS (default 900)
  *
- * Ops (required): bucket must be private — disable r2.dev public access and
- * public listing. Objects are referenced as r2:whatsapp/... and served only via
- * short-lived signed GETs (whatsapp-r2-signed-url).
+ * Secrets (prefer app_secrets to stay under Netlify/Lambda 4KB env limit):
+ *   app_secrets.cloudflare_r2 = JSON {
+ *     accountId, accessKeyId, secretAccessKey, bucket, ttlSeconds?
+ *   }
+ * Env fallback (local): CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID,
+ *   CLOUDFLARE_R2_SECRET_ACCESS_KEY, CLOUDFLARE_R2_BUCKET_NAME,
+ *   CLOUDFLARE_R2_SIGNED_URL_TTL_SECONDS
+ *
+ * Ops: bucket must be private — disable r2.dev public access. Objects are
+ * referenced as r2:whatsapp/... and served only via short-lived signed GETs.
  */
 const crypto = require('crypto');
+const { createClient } = require('@supabase/supabase-js');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 
 const R2_KEY_PREFIX = 'r2:';
+const APP_SECRET_KEY = 'cloudflare_r2';
+const CACHE_TTL_MS = 60_000;
 
-function getR2Config() {
-  const accountId = (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
-  const accessKeyId = (process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '').trim();
-  const secretAccessKey = (process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '').trim();
-  const bucket = (process.env.CLOUDFLARE_R2_BUCKET_NAME || '').trim();
+let cachedConfig = null;
+let cachedAt = 0;
+
+function getServiceSupabase() {
+  const url = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  if (!url || !serviceKey) return null;
+  return createClient(url, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
+function normalizeConfig(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const accountId = String(raw.accountId || raw.account_id || '').trim();
+  const accessKeyId = String(raw.accessKeyId || raw.access_key_id || '').trim();
+  const secretAccessKey = String(raw.secretAccessKey || raw.secret_access_key || '').trim();
+  const bucket = String(raw.bucket || raw.bucket_name || '').trim();
   if (!accountId || !accessKeyId || !secretAccessKey || !bucket) return null;
   const ttl = Math.max(
     60,
-    Math.min(3600, Number(process.env.CLOUDFLARE_R2_SIGNED_URL_TTL_SECONDS) || 900)
+    Math.min(3600, Number(raw.ttlSeconds || raw.ttl || process.env.CLOUDFLARE_R2_SIGNED_URL_TTL_SECONDS) || 900)
   );
   return { accountId, accessKeyId, secretAccessKey, bucket, ttl };
 }
 
-function getR2Client(config = getR2Config()) {
+function getR2ConfigFromEnv() {
+  return normalizeConfig({
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+    accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+    bucket: process.env.CLOUDFLARE_R2_BUCKET_NAME,
+    ttlSeconds: process.env.CLOUDFLARE_R2_SIGNED_URL_TTL_SECONDS,
+  });
+}
+
+async function readCloudflareR2Secret() {
+  const db = getServiceSupabase();
+  if (!db) return null;
+  const { data, error } = await db
+    .from('app_secrets')
+    .select('value')
+    .eq('key', APP_SECRET_KEY)
+    .maybeSingle();
+  if (error || !data?.value) return null;
+  try {
+    const parsed = JSON.parse(String(data.value).trim());
+    return normalizeConfig(parsed);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Prefer env (local), then app_secrets.cloudflare_r2 (production).
+ * Cached briefly to avoid a DB round-trip on every media op.
+ */
+async function getR2Config() {
+  const now = Date.now();
+  if (cachedConfig && now - cachedAt < CACHE_TTL_MS) return cachedConfig;
+
+  const fromEnv = getR2ConfigFromEnv();
+  if (fromEnv) {
+    cachedConfig = fromEnv;
+    cachedAt = now;
+    return fromEnv;
+  }
+
+  const fromSecret = await readCloudflareR2Secret();
+  if (fromSecret) {
+    cachedConfig = fromSecret;
+    cachedAt = now;
+    return fromSecret;
+  }
+
+  cachedConfig = null;
+  cachedAt = now;
+  return null;
+}
+
+function getR2Client(config) {
   if (!config) return null;
   return new S3Client({
     region: 'auto',
@@ -87,7 +161,7 @@ function isR2MediaRef(mediaUrlOrRef) {
  * ref is stored in media_url (r2:...).
  */
 async function uploadWhatsAppMediaToR2(buffer, mime, filename, folder = 'inbound') {
-  const config = getR2Config();
+  const config = await getR2Config();
   const client = getR2Client(config);
   if (!config || !client || !buffer?.length) return null;
 
@@ -124,7 +198,7 @@ async function uploadAcceptOriginalToR2(buffer, mime, filename) {
 }
 
 async function deleteR2Object(objectKeyOrRef) {
-  const config = getR2Config();
+  const config = await getR2Config();
   const client = getR2Client(config);
   const key = parseR2ObjectKey(objectKeyOrRef) || String(objectKeyOrRef || '').trim();
   if (!config || !client || !key || !key.startsWith('whatsapp/')) {
@@ -145,7 +219,7 @@ async function deleteR2Object(objectKeyOrRef) {
 }
 
 async function createR2SignedGetUrl(objectKeyOrRef, expiresInSeconds) {
-  const config = getR2Config();
+  const config = await getR2Config();
   const client = getR2Client(config);
   const key = parseR2ObjectKey(objectKeyOrRef);
   if (!config || !client || !key) return null;
@@ -168,7 +242,7 @@ async function createR2SignedGetUrl(objectKeyOrRef, expiresInSeconds) {
 
 /** Server-side GET for private objects (thumbnails / proxy; avoids browser CORS to R2). */
 async function getR2ObjectBytes(objectKeyOrRef) {
-  const config = getR2Config();
+  const config = await getR2Config();
   const client = getR2Client(config);
   const key = parseR2ObjectKey(objectKeyOrRef);
   if (!config || !client || !key) return null;
@@ -198,7 +272,9 @@ async function getR2ObjectBytes(objectKeyOrRef) {
 
 module.exports = {
   R2_KEY_PREFIX,
+  APP_SECRET_KEY,
   getR2Config,
+  getR2ConfigFromEnv,
   toMediaRef,
   parseR2ObjectKey,
   isR2MediaRef,
