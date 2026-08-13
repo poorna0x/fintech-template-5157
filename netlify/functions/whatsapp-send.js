@@ -65,6 +65,37 @@ function inboxBodyForOutboundMedia(caption, filename, kind) {
   return 'Document';
 }
 
+/** Human-readable inbox body for Meta templates (especially pending payment). */
+function inboxBodyForTemplate(templateName, bodyParams, opts = {}) {
+  const name = String(templateName || '').trim();
+  const params = Array.isArray(bodyParams) ? bodyParams.map((p) => String(p ?? '').trim()) : [];
+  const payCode = String(opts.payCode || '').trim();
+  const msgType = String(opts.msgType || 'template');
+  const filename = String(opts.filename || '').trim();
+
+  if (/balance_due/i.test(name)) {
+    const [customer, amount, due, invoice] = params;
+    const lines = [];
+    if (msgType === 'image' || /_img_/i.test(name)) {
+      lines.push(filename ? `UPI QR · ${filename}` : 'UPI QR');
+    }
+    lines.push('Pending payment reminder');
+    if (customer) lines.push(`Hi ${customer}`);
+    if (amount) lines.push(`Amount pending: ₹${amount.replace(/[^\d.]/g, '') || amount}`);
+    if (due) lines.push(`Due: ${due}`);
+    if (invoice) lines.push(`Invoice / Job: ${invoice}`);
+    lines.push(payCode ? `Pay now: /p/${payCode}` : 'Pay now');
+    return lines.join('\n');
+  }
+
+  if ((msgType === 'image' || msgType === 'document') && opts.preservedBody) {
+    return String(opts.preservedBody);
+  }
+
+  if (params.length) return `${name}: ${params.join(' · ')}`;
+  return name || 'Template';
+}
+
 function json(statusCode, headers, payload) {
   return { statusCode, headers, body: JSON.stringify(payload) };
 }
@@ -597,10 +628,17 @@ exports.handler = async (event) => {
           persist.media_mime = null;
           persist.filename = null;
         }
-        persist.body =
-          sendResult.bodyParams.length > 0
-            ? `${sendResult.templateName}: ${sendResult.bodyParams.map(String).join(' · ')}`
-            : sendResult.templateName;
+        const payCode = Array.isArray(sendResult.buttonUrlParams)
+          ? String(sendResult.buttonUrlParams[0]?.text || sendResult.buttonUrlParams[0] || '').trim()
+          : Array.isArray(buttonUrlParams)
+            ? String(buttonUrlParams[0]?.text || buttonUrlParams[0] || '').trim()
+            : '';
+        persist.body = inboxBodyForTemplate(sendResult.templateName, sendResult.bodyParams, {
+          msgType: persist.msg_type,
+          filename: persist.filename,
+          payCode,
+          preservedBody: persist.body,
+        });
         if (sendResult.usedFallback && sendResult.primaryTemplate) {
           console.warn(
             '[whatsapp-send] cold template fallback',
@@ -757,6 +795,12 @@ exports.handler = async (event) => {
       phone: to,
       messageId: inserted?.id || null,
       customerId: persist.customer_id || null,
+      body: persist.body || null,
+      msgType: persist.msg_type || null,
+      templateName: persist.template_name || null,
+      filename: persist.filename || null,
+      mediaUrl: persist.media_url || null,
+      mediaMime: persist.media_mime || null,
       seedPendingAction: seedPending || null,
     });
   } catch (err) {

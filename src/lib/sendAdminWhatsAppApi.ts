@@ -21,6 +21,7 @@ import {
   putCachedMediaBlob,
   whatsappMediaCacheKey,
 } from '@/lib/whatsappMediaCache';
+import { noteWhatsAppOutboundInLocalCaches } from '@/lib/whatsappInbox';
 
 export type AdminWhatsAppSendVia = 'api' | 'wa_me';
 
@@ -35,6 +36,49 @@ export type AdminWhatsAppSendResult = {
   /** True when Settings → WhatsApp toggled this surface off. */
   featureDisabled?: boolean;
 };
+
+function noteApiSendInInboxCaches(
+  to: string,
+  data: Record<string, unknown> | null | undefined,
+  extras?: {
+    body?: string | null;
+    msgType?: string | null;
+    filename?: string | null;
+    mediaMime?: string | null;
+    customerId?: string | null;
+    customerName?: string | null;
+    templateName?: string | null;
+  }
+): void {
+  try {
+    noteWhatsAppOutboundInLocalCaches({
+      phoneE164: to,
+      body: (typeof data?.body === 'string' ? data.body : null) || extras?.body || null,
+      msgType:
+        (typeof data?.msgType === 'string' ? data.msgType : null) || extras?.msgType || null,
+      filename:
+        (typeof data?.filename === 'string' ? data.filename : null) || extras?.filename || null,
+      mediaMime:
+        (typeof data?.mediaMime === 'string' ? data.mediaMime : null) || extras?.mediaMime || null,
+      mediaUrl: typeof data?.mediaUrl === 'string' ? data.mediaUrl : null,
+      messageId:
+        data?.messageId != null
+          ? String(data.messageId)
+          : null,
+      customerId:
+        (typeof data?.customerId === 'string' ? data.customerId : null) ||
+        extras?.customerId ||
+        null,
+      customerName: extras?.customerName || null,
+      templateName:
+        (typeof data?.templateName === 'string' ? data.templateName : null) ||
+        extras?.templateName ||
+        null,
+    });
+  } catch {
+    // Soft-fail — send already succeeded
+  }
+}
 
 function isFeatureDisabledResponse(data: { code?: string } | null | undefined): boolean {
   return String(data?.code || '') === 'WHATSAPP_FEATURE_DISABLED';
@@ -119,6 +163,12 @@ export async function sendAdminWhatsAppText(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
+      noteApiSendInInboxCaches(to, data, {
+        body: text,
+        msgType: 'text',
+        customerId: options.customerId,
+        customerName: options.customerName,
+      });
       return {
         ok: true,
         via: 'api',
@@ -201,6 +251,13 @@ export async function sendAdminWhatsAppDocument(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
+      noteApiSendInInboxCaches(to, data, {
+        body: caption || filename,
+        msgType: 'document',
+        filename,
+        mediaMime: 'application/pdf',
+        customerId: options.customerId,
+      });
       return {
         ok: true,
         via: 'api',
@@ -273,6 +330,13 @@ export async function sendAdminWhatsAppMedia(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
+      noteApiSendInInboxCaches(to, data, {
+        body: caption || filename,
+        msgType: type === 'image' ? 'image' : 'document',
+        filename,
+        mediaMime: mimeType,
+        customerId: options.customerId,
+      });
       return {
         ok: true,
         via: 'api',
@@ -428,6 +492,23 @@ export async function sendAdminWhatsAppTemplate(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
+      noteApiSendInInboxCaches(to, data, {
+        body:
+          Array.isArray(options.bodyParams) && options.bodyParams.length
+            ? `${templateName}: ${options.bodyParams.map(String).join(' · ')}`
+            : templateName,
+        msgType: options.headerImage
+          ? 'image'
+          : options.headerDocument
+            ? 'document'
+            : 'template',
+        filename:
+          options.headerImage?.filename || options.headerDocument?.filename || null,
+        mediaMime: options.headerImage?.mimeType || null,
+        customerId: options.customerId,
+        customerName: options.customerName,
+        templateName,
+      });
       return {
         ok: true,
         via: 'api',

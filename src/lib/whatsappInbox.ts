@@ -478,6 +478,92 @@ export function upsertWhatsAppThreadMessageCache(
   writeWhatsAppThreadMessagesCache(phone, capped, prev.hasMoreOlder);
 }
 
+/**
+ * After any CRM Cloud API send (pending payment, PDF, template, etc.):
+ * update list preview + invalidate that chat’s message cache so the next open
+ * loads the full thread including this outbound (forever-cache safe).
+ */
+export function noteWhatsAppOutboundInLocalCaches(opts: {
+  phoneE164: string;
+  body?: string | null;
+  msgType?: string | null;
+  filename?: string | null;
+  mediaMime?: string | null;
+  mediaUrl?: string | null;
+  messageId?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  templateName?: string | null;
+}): void {
+  const phone = String(opts.phoneE164 || '').replace(/\D/g, '');
+  if (!phone) return;
+
+  const now = new Date().toISOString();
+  const mime = opts.mediaMime || null;
+  const filename = opts.filename || null;
+  let msgType = String(opts.msgType || 'text').trim() || 'text';
+  if (!opts.msgType && mime) {
+    if (mime.startsWith('image/')) msgType = 'image';
+    else if (mime.includes('pdf') || /\.pdf$/i.test(filename || '')) msgType = 'document';
+  }
+  if (opts.templateName && !opts.body && msgType === 'text') msgType = 'template';
+
+  const body =
+    String(opts.body || '').trim() ||
+    (opts.templateName ? String(opts.templateName) : '') ||
+    (filename ? filename : '') ||
+    (msgType === 'image' ? 'Photo' : msgType === 'document' ? 'Document' : 'Message');
+
+  const row: WhatsAppMessageRow = {
+    id: opts.messageId || `local-${Date.now()}`,
+    wa_message_id: null,
+    direction: 'outbound',
+    phone_e164: phone,
+    customer_id: opts.customerId || null,
+    msg_type: msgType,
+    body,
+    media_url: opts.mediaUrl || null,
+    media_mime: mime,
+    filename,
+    status: 'sent',
+    template_name: opts.templateName || null,
+    error_message: null,
+    created_at: now,
+  };
+
+  const prevThread = peekWhatsAppThreadMessagesCache(phone);
+  if (prevThread?.messages?.length) {
+    upsertWhatsAppThreadMessageCache(phone, row);
+  } else {
+    // No local history yet — don't seed a 1-message cache (would hide older history
+    // under forever skip-network). Force a network load next open.
+    invalidateWhatsAppThreadMessagesCache(phone);
+  }
+
+  const list = peekWhatsAppInboxThreadsCache();
+  if (!list?.threads?.length) {
+    invalidateWhatsAppInboxThreadsCache();
+    return;
+  }
+  const preview = previewMessageBody(row);
+  const existing = list.threads.find((t) => String(t.phone_e164).replace(/\D/g, '') === phone);
+  const nextThread: WhatsAppThread = {
+    phone_e164: phone,
+    customer_id: opts.customerId || existing?.customer_id || null,
+    customer_name: opts.customerName || existing?.customer_name || null,
+    last_at: now,
+    last_direction: 'outbound',
+    last_body: preview,
+    last_status: 'sent',
+    last_error: null,
+    last_msg_type: msgType,
+    inbound_at: existing?.inbound_at || null,
+    has_failed: false,
+  };
+  const others = list.threads.filter((t) => String(t.phone_e164).replace(/\D/g, '') !== phone);
+  writeWhatsAppInboxThreadsCache([nextThread, ...others], { rangeKey: list.rangeKey });
+}
+
 export function invalidateWhatsAppThreadMessagesCache(phoneE164?: string | null): void {
   const phone = String(phoneE164 || '').replace(/\D/g, '');
   if (phone) {
@@ -1260,6 +1346,13 @@ export function formatAdminWhatsAppBody(
   // Meta template / bot slug stored as body (e.g. svc_wfs_ask_name_ero_v2)
   if (/^svc_[a-z0-9_]+$/i.test(text.trim())) {
     text = humanizeWhatsAppTemplateSlug(text.trim());
+  } else {
+    // Template slug + params: "svc_balance_due_letter_hro_v6: Poorna · 1500 · …"
+    const tplWithParams = text.trim().match(/^(svc_[a-z0-9_]+)\s*:\s*(.+)$/i);
+    if (tplWithParams) {
+      const label = humanizeWhatsAppTemplateSlug(tplWithParams[1]);
+      text = `${label}\n${tplWithParams[2].trim()}`;
+    }
   }
 
   // Collapse leftover blank lines
@@ -1270,6 +1363,11 @@ export function formatAdminWhatsAppBody(
 /** svc_wfs_ask_name_ero_v2 → Ask name */
 function humanizeWhatsAppTemplateSlug(slug: string): string {
   let s = slug.replace(/^svc_/i, '').replace(/_(ero|hro)_v\d+$/i, '').replace(/_v\d+$/i, '');
+  s = s.replace(/_img$/i, '').replace(/_letter$/i, '_letter');
+  if (/balance_due/i.test(slug) || /balance_due/i.test(s)) {
+    return /_img/i.test(slug) ? 'Pending payment (UPI QR)' : 'Pending payment';
+  }
+  if (/job_done|job_completion/i.test(slug)) return 'Job completed';
   const stepHints: Record<string, string> = {
     ask_name: 'Ask name',
     await_name: 'Ask name',
