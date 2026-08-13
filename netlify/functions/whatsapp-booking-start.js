@@ -61,17 +61,12 @@ function coldWfsCollectParams(brand, customerName) {
 
 function coldAskLocationParams(brand, customerName) {
   const name = String(customerName || 'Customer').trim() || 'Customer';
-  const b = String(brand || '').toLowerCase();
-  const templateName =
-    b === 'elevenro'
-      ? 'svc_wfs_ask_loc_from_ero_v1'
-      : b === 'hydrogenro'
-        ? 'svc_wfs_ask_loc_from_hro_v1'
-        : 'svc_wfs_ask_loc_from_v1';
+  // No "Share location" quick-reply — that forced a 2nd step before the native
+  // Send location button. Plain ask → customer replies → bot sends Send location once.
   return {
-    name: templateName,
+    name: 'svc_ask_location',
     languageCode: 'en',
-    bodyParams: [name],
+    bodyParams: [name, waterFilterFromLabel(brand)],
   };
 }
 
@@ -270,7 +265,7 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
         languageCode: 'en',
         bodyParams: [
           name,
-          `${waterFilterFromLabel(brand)} — reply here and we will send a Share location button`,
+          `${waterFilterFromLabel(brand)} — reply here and we will send a Send location button`,
         ],
         seedPending: 'water_filter_service',
       },

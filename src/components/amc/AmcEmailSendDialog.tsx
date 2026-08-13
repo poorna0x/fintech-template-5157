@@ -365,7 +365,12 @@ export default function AmcEmailSendDialog({
       if (requireAccept) {
         toast.loading('Generating preview + original…', { id: toastId });
         const pair = await generateAmcAcceptPdfPair(bill, pdfOptions);
-        toast.loading('Sending Accept preview on WhatsApp…', { id: toastId });
+        toast.loading(
+          windowOpen === false
+            ? 'Sending Accept preview (cold template)…'
+            : 'Sending Accept preview on WhatsApp…',
+          { id: toastId }
+        );
         const invite = await sendDocumentAcceptInvite({
           to: phone,
           brand,
@@ -380,6 +385,7 @@ export default function AmcEmailSendDialog({
           previewVerifyCode: pair.previewVerifyCode,
           originalPdfBase64: pair.originalPdfBase64,
           previewPdfBase64: pair.previewPdfBase64,
+          preferColdTemplate: windowOpen === false,
         });
         if (!invite.ok) {
           toast.error(invite.error || 'Could not send Accept preview', { id: toastId });
@@ -399,7 +405,7 @@ export default function AmcEmailSendDialog({
           }
         }
         invalidateInboundWindowCache(phone);
-        showAcceptPreviewSentToast(toastId);
+        showAcceptPreviewSentToast(toastId, invite.via);
         onSent?.();
         onOpenChange(false);
         return;
@@ -585,6 +591,7 @@ export default function AmcEmailSendDialog({
           previewVerifyCode: pair.previewVerifyCode,
           originalPdfBase64: pair.originalPdfBase64,
           previewPdfBase64: pair.previewPdfBase64,
+          preferColdTemplate: windowOpen === false,
         });
         if (!invite.ok) {
           toast.error(invite.error || 'Email sent, but Accept WhatsApp failed', { id: toastId });
@@ -594,7 +601,7 @@ export default function AmcEmailSendDialog({
           await onPersistAfterWhatsApp();
         }
         invalidateInboundWindowCache(phone);
-        showAcceptPreviewSentToast(toastId);
+        showAcceptPreviewSentToast(toastId, invite.via);
         onSent?.();
         onOpenChange(false);
         return;
@@ -753,11 +760,11 @@ export default function AmcEmailSendDialog({
                 </p>
               ) : windowOpen === false ? (
                 <p className="text-xs text-amber-800">
-                  Window closed — AMC PDF will send via approved WhatsApp document template.
+                  Window closed — AMC PDF / Accept preview will send via approved WhatsApp template.
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  PDF sends when the customer has messaged this business number in the last 24h.
+                  Open window: free-form send. Closed window: cold document / Accept templates.
                 </p>
               )}
               <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
@@ -769,8 +776,9 @@ export default function AmcEmailSendDialog({
                   disabled={sending}
                 />
                 <span className="text-xs leading-snug text-foreground">
-                  <span className="font-semibold">Require Accept</span> — preview on WhatsApp, then
-                  customer taps <span className="font-semibold">I Accept</span> for the original AMC.
+                  <span className="font-semibold">Require Accept</span> — preview on WhatsApp, then{' '}
+                  <span className="font-semibold">I Accept</span> for the original AMC (works inside
+                  24h and via cold template when closed).
                 </span>
               </label>
             </div>

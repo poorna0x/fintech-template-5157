@@ -132,7 +132,14 @@ export default function AmcDocumentActions({
       if (requireAccept) {
         toast.loading('Generating preview + original…', { id: toastId });
         const pair = await generateAmcAcceptPdfPair(bill, pdfOptions);
-        toast.loading('Sending Accept preview on WhatsApp…', { id: toastId });
+        const inboundAt = await fetchLastInboundAt(customerPhone, supabase);
+        const windowClosed = !isWithinCustomerServiceWindow(inboundAt);
+        toast.loading(
+          windowClosed
+            ? 'Sending Accept preview (cold template)…'
+            : 'Sending Accept preview on WhatsApp…',
+          { id: toastId }
+        );
         const invite = await sendDocumentAcceptInvite({
           to: customerPhone,
           brand,
@@ -147,12 +154,13 @@ export default function AmcDocumentActions({
           previewVerifyCode: pair.previewVerifyCode,
           originalPdfBase64: pair.originalPdfBase64,
           previewPdfBase64: pair.previewPdfBase64,
+          preferColdTemplate: windowClosed,
         });
         if (!invite.ok) {
           toast.error(invite.error || 'Could not send Accept preview', { id: toastId });
           return;
         }
-        showAcceptPreviewSentToast(toastId);
+        showAcceptPreviewSentToast(toastId, invite.via);
         invalidateInboundWindowCache(customerPhone);
         onSent?.();
         return;
@@ -220,7 +228,7 @@ export default function AmcDocumentActions({
           />
           <span className="text-xs leading-snug text-foreground">
             <span className="font-semibold">Require Accept</span> — preview on WhatsApp, then I Accept
-            for original AMC
+            for original AMC (cold template when 24h window is closed)
           </span>
         </label>
       ) : null}

@@ -10,9 +10,9 @@ alwaysApply: true
 ## Agreed product flow
 
 1. CRM generates a **PREVIEW** PDF (watermarked “PREVIEW – NOT VALID”).
-2. WhatsApp sends preview PDF + **I Accept** (quick reply):
-   - **Inside 24h:** free-form interactive (DOCUMENT + terms + I Accept).
-   - **Outside 24h:** cold template `svc_doc_accept_preview_{hro|ero}_v8` (fallback **v7** only). Both pending Meta approval until APPROVED.
+2. WhatsApp sends preview PDF + **I Accept** (quick reply) — **normal flow in all CRM Require Accept places** (`document-accept-send` → `createAndSendAcceptInvite`):
+ - **Inside 24h:** free-form interactive (DOCUMENT + terms + I Accept).
+ - **Outside 24h (or interactive fail):** cold template `svc_doc_accept_preview_{hro|ero}_v8` (fallback **v7** only). Do **not** try interactive first when the window is closed (Meta may 200 then fail with Re-engagement).
 3. Customer taps **I Accept** on WhatsApp → webhook `document-accept-inbound`.
 4. Server validates invite → saves audit → status `accepted` (single-use claim).
 5. Send **ORIGINAL** PDF on same WhatsApp chat (seal + authenticity hash + confirmation id).

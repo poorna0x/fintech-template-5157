@@ -404,11 +404,19 @@ export type SendDocumentAcceptInviteParams = {
   previewVerifyCode: string;
   originalPdfBase64: string;
   previewPdfBase64: string;
+  /** When 24h window is closed, skip interactive (Meta 200 then Re-engagement). */
+  preferColdTemplate?: boolean;
 };
 
 export async function sendDocumentAcceptInvite(
   params: SendDocumentAcceptInviteParams
-): Promise<{ ok: boolean; error?: string; inviteId?: string; expiresAt?: string }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  inviteId?: string;
+  expiresAt?: string;
+  via?: 'interactive' | 'cold_template' | string;
+}> {
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     return { ok: false, error: 'Could not verify your session' };
@@ -437,6 +445,7 @@ export async function sendDocumentAcceptInvite(
       previewVerifyCode: params.previewVerifyCode,
       originalPdfBase64: params.originalPdfBase64,
       previewPdfBase64: params.previewPdfBase64,
+      preferColdTemplate: params.preferColdTemplate === true,
     }),
   });
 
@@ -448,13 +457,21 @@ export async function sendDocumentAcceptInvite(
     ok: true,
     inviteId: data.inviteId,
     expiresAt: data.expiresAt,
+    via: data.via,
   };
 }
 
-export function showAcceptPreviewSentToast(toastId: string | number): void {
-  toast.success('Preview sent — customer taps I Accept on WhatsApp for the original PDF', {
-    id: toastId,
-  });
+export function showAcceptPreviewSentToast(
+  toastId: string | number,
+  via?: string | null
+): void {
+  const cold = via === 'cold_template';
+  toast.success(
+    cold
+      ? 'Preview sent (cold template) — customer taps I Accept for the original PDF'
+      : 'Preview sent — customer taps I Accept on WhatsApp for the original PDF',
+    { id: toastId }
+  );
 }
 
 /** @deprecated use generateDocumentAcceptPdfPair — kept for accidental imports */

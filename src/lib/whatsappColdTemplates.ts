@@ -236,9 +236,12 @@ export const WA_COLD = {
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
   ask_location: {
-    name: 'svc_wfs_ask_loc_from_v1',
+    name: 'svc_ask_location',
     language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName)],
+    bodyParams: (customerName: string, fromLabel?: string) => [
+      cleanName(customerName),
+      String(fromLabel || '').trim() || 'Water Filter Service',
+    ],
   },
   ask_photo: {
     name: 'svc_ask_photo',
@@ -567,7 +570,7 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   warranty_ready: 'Warranty PDF (svc_doc_warranty_*_v3 → direct → v2)',
   receipt_ready: 'Receipt PDF (svc_doc_receipt_*_v3 → direct → v2)',
   document_accept_preview:
-    'Preview PDF + I Accept + terms (svc_doc_accept_preview_*_v8 → original PDF)',
+    'Preview PDF + I Accept (24h interactive · outside 24h svc_doc_accept_preview_*_v8→v7)',
   document_direct: 'Direct PDF any label (svc_doc_direct_{ero|hro}_v1 — no Accept)',
   customer_followup: 'Follow-up → visit reminder',
   appointment_reminder: 'Appointment reminder (svc_visit_reminder)',
@@ -580,7 +583,7 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   wfs_hello: 'WFS Hi (svc_wfs_hello_{hro|ero|generic})',
   wfs_just_hi: 'Just Hi (svc_wfs_just_hi_{hro|ero|generic})',
   wfs_collect: 'WFS collect info (svc_wfs_collect_* → location + photo flow)',
-  ask_location: 'Ask location (svc_wfs_ask_loc_from_* → Share location CTA + from WFS)',
+  ask_location: 'Ask location (svc_ask_location → reply → Send location once)',
   ask_photo: 'Ask photo (svc_ask_photo)',
   ask_flat: 'Ask flat (svc_ask_flat)',
   ask_name: 'Ask name short (svc_wfs_ask_name_simple_*_v2 — This is … WFS)',

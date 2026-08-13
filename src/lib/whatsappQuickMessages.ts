@@ -202,20 +202,14 @@ export function isAskNameTemplateName(name: string): boolean {
   return /^svc_wfs_ask_name(_simple)?(_(hro|ero))?(_v\d+)?$/i.test(String(name || '').trim());
 }
 
-/** Cold ask location — prefer “from Water Filter Service” + Share location CTA. */
-export function resolveWfsAskLocTemplateName(ctx: WhatsAppQuickReplyContext): string {
-  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_loc_from_v1';
-  return ctx.brand === 'elevenro'
-    ? 'svc_wfs_ask_loc_from_ero_v1'
-    : 'svc_wfs_ask_loc_from_hro_v1';
+/** Cold ask location — plain UTILITY (no Share location QR). Reply → Send location once. */
+export function resolveWfsAskLocTemplateName(_ctx: WhatsAppQuickReplyContext): string {
+  return 'svc_ask_location';
 }
 
-/** Shorter cold ask location — prefer v3 Share location QR. */
-export function resolveWfsAskLocSimpleTemplateName(ctx: WhatsAppQuickReplyContext): string {
-  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_loc_simple_v3';
-  return ctx.brand === 'elevenro'
-    ? 'svc_wfs_ask_loc_simple_ero_v3'
-    : 'svc_wfs_ask_loc_simple_hro_v3';
+/** Shorter cold ask location — same no-QR path. */
+export function resolveWfsAskLocSimpleTemplateName(_ctx: WhatsAppQuickReplyContext): string {
+  return 'svc_ask_location';
 }
 
 export function isAskLocationTemplateName(name: string): boolean {
@@ -225,6 +219,7 @@ export function isAskLocationTemplateName(name: string): boolean {
 
 export function askLocationTemplateFallbackNames(): string[] {
   return [
+    'svc_ask_location',
     'svc_wfs_ask_loc_from_v1',
     'svc_wfs_ask_loc_from_hro_v1',
     'svc_wfs_ask_loc_from_ero_v1',
@@ -234,7 +229,6 @@ export function askLocationTemplateFallbackNames(): string[] {
     'svc_wfs_ask_loc_simple_v3',
     'svc_wfs_ask_loc_simple_hro_v3',
     'svc_wfs_ask_loc_simple_ero_v3',
-    'svc_ask_location',
   ];
 }
 
@@ -642,9 +636,9 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_ask_location',
     label: 'Ask location',
     group: 'request',
-    templateName: 'svc_wfs_ask_loc_from_hro_v1',
+    templateName: 'svc_ask_location',
     language: 'en',
-    bodyParams: (ctx) => [cleanName(ctx)],
+    bodyParams: (ctx) => [cleanName(ctx), waterFilterServiceFromLabel(ctx)],
     resolveTemplateName: (ctx) => resolveWfsAskLocTemplateName(ctx),
   },
   {

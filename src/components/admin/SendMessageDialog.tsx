@@ -18,6 +18,7 @@ import {
 } from '@/lib/sendAdminWhatsAppApi';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { parseRequirements } from '@/lib/followUpToOngoing';
+import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
 
 type DeliveryMode = 'api' | 'wa_me';
 
@@ -50,14 +51,39 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 }) => {
   const [brandConfirmed, setBrandConfirmed] = useState(false);
   const [sending, setSending] = useState(false);
-  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('api');
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('wa_me');
+  /** Cloud API only when Settings allow + auto-send completion are ON. */
+  const [cloudApiAllowed, setCloudApiAllowed] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setBrandConfirmed(false);
       setSending(false);
-      setDeliveryMode('api');
+      setDeliveryMode('wa_me');
+      setCloudApiAllowed(false);
+      return;
     }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { settings } = await fetchWhatsAppCrmSettings();
+        const allowCloud =
+          settings.enabled !== false &&
+          settings.allow_job_completion_whatsapp !== false &&
+          settings.auto_send_job_completion_whatsapp === true;
+        if (cancelled) return;
+        setCloudApiAllowed(allowCloud);
+        setDeliveryMode(allowCloud ? 'api' : 'wa_me');
+      } catch {
+        if (!cancelled) {
+          setCloudApiAllowed(false);
+          setDeliveryMode('wa_me');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   if (!job) return null;
@@ -100,9 +126,10 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       toast.error('Invalid phone number');
       return;
     }
+    const mode: DeliveryMode = cloudApiAllowed ? deliveryMode : 'wa_me';
     setSending(true);
     try {
-      if (deliveryMode === 'wa_me') {
+      if (mode === 'wa_me') {
         const result = await sendAdminWhatsAppText({
           to,
           text: whatsappMessage,
@@ -167,7 +194,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   };
 
   const sendPrimaryLabel =
-    deliveryMode === 'wa_me'
+    deliveryMode === 'wa_me' || !cloudApiAllowed
       ? alreadySent
         ? 'Open phone WhatsApp again'
         : 'Open phone WhatsApp'
@@ -253,39 +280,46 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 )}
               </div>
 
-              <div className="space-y-1.5">
-                <Label>How to send</Label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    className={
-                      deliveryMode === 'api'
-                        ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
-                        : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
-                    }
-                    onClick={() => setDeliveryMode('api')}
-                  >
-                    <span className="block">Cloud API</span>
-                    <span className="block text-[11px] font-normal opacity-80">
-                      Business line · inbox log
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className={
-                      deliveryMode === 'wa_me'
-                        ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
-                        : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
-                    }
-                    onClick={() => setDeliveryMode('wa_me')}
-                  >
-                    <span className="block">Phone WhatsApp</span>
-                    <span className="block text-[11px] font-normal opacity-80">
-                      Opens wa.me on this device
-                    </span>
-                  </button>
+              {cloudApiAllowed ? (
+                <div className="space-y-1.5">
+                  <Label>How to send</Label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      className={
+                        deliveryMode === 'api'
+                          ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
+                          : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
+                      }
+                      onClick={() => setDeliveryMode('api')}
+                    >
+                      <span className="block">Cloud API</span>
+                      <span className="block text-[11px] font-normal opacity-80">
+                        Business line · inbox log
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        deliveryMode === 'wa_me'
+                          ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
+                          : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
+                      }
+                      onClick={() => setDeliveryMode('wa_me')}
+                    >
+                      <span className="block">Phone WhatsApp</span>
+                      <span className="block text-[11px] font-normal opacity-80">
+                        Opens wa.me on this device
+                      </span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  Cloud API is off for completion (Settings → WhatsApp → Auto-send
+                  completion message). This will open Phone WhatsApp (wa.me).
+                </p>
+              )}
 
               <div>
                 <Label>Message preview</Label>
@@ -346,7 +380,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                     ) : (
                       <WhatsAppIcon className="mr-2 h-4 w-4" />
                     )}
-                    {deliveryMode === 'wa_me' ? 'Open' : 'API'} · Primary
+                    {deliveryMode === 'wa_me' || !cloudApiAllowed ? 'Open' : 'API'} · Primary
                   </Button>
                   <Button
                     variant="default"
@@ -359,7 +393,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                     ) : (
                       <WhatsAppIcon className="mr-2 h-4 w-4" />
                     )}
-                    {deliveryMode === 'wa_me' ? 'Open' : 'API'} · Alt
+                    {deliveryMode === 'wa_me' || !cloudApiAllowed ? 'Open' : 'API'} · Alt
                   </Button>
                 </>
               ) : (

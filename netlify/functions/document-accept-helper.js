@@ -147,6 +147,27 @@ async function isColdTemplatesAllowed(db) {
   return data?.allow_cold_templates !== false;
 }
 
+/** True when customer messaged inbound within last 24h (free-form / interactive OK). */
+async function hasOpenCustomerServiceWindow(db, phoneE164) {
+  const phone = normalizePhoneE164(phoneE164);
+  if (!db || !phone) return false;
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await db
+      .from('whatsapp_messages')
+      .select('id')
+      .eq('phone_e164', phone)
+      .eq('direction', 'inbound')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return Boolean(data?.id);
+  } catch {
+    return false;
+  }
+}
+
 function resolveAcceptPreviewColdTemplateName(brand) {
   const suffix = normalizeBrand(brand) === 'elevenro' ? 'ero' : 'hro';
   return `svc_doc_accept_preview_${suffix}_v8`;
@@ -376,27 +397,42 @@ async function createAndSendAcceptInvite(opts) {
     previewFilename
   );
 
-  let sent = await sendAcceptPreviewCombinedMessage(
-    creds,
-    db,
-    phone,
-    invite.id,
-    customerName,
-    documentLabel,
-    brand,
-    media.id,
-    previewFilename,
-    previewStore,
-    { customerId: opts.customerId, createdBy: opts.createdBy, previewVerifyCode }
-  );
-
+  // Meta often returns 200 for interactive outside 24h, then fails async with
+  // "Re-engagement message". Prefer cold Accept template when window is closed
+  // (CRM 24h check or no inbound in last 24h). Interactive fail → cold v8→v7.
+  const windowOpen =
+    opts.preferColdTemplate === true
+      ? false
+      : await hasOpenCustomerServiceWindow(db, phone);
+  let sent = { ok: false };
   let via = 'interactive';
 
-  if (!sent.ok && isOutsideServiceWindowError(sent)) {
+  if (windowOpen) {
+    sent = await sendAcceptPreviewCombinedMessage(
+      creds,
+      db,
+      phone,
+      invite.id,
+      customerName,
+      documentLabel,
+      brand,
+      media.id,
+      previewFilename,
+      previewStore,
+      { customerId: opts.customerId, createdBy: opts.createdBy, previewVerifyCode }
+    );
+    via = 'interactive';
+  }
+
+  if (!sent.ok) {
     const coldOk = await isColdTemplatesAllowed(db);
     if (!coldOk) {
       const errMsg =
-        sent.data?.error?.message || sent.data?.error?.error_user_msg || 'WhatsApp send failed';
+        sent.data?.error?.message ||
+        sent.data?.error?.error_user_msg ||
+        (!windowOpen
+          ? '24h window closed'
+          : 'WhatsApp send failed');
       await db
         .from('document_accept_invites')
         .update({ status: 'failed', updated_at: new Date().toISOString() })
@@ -404,7 +440,7 @@ async function createAndSendAcceptInvite(opts) {
       await deleteR2Object(uploaded.key);
       return {
         ok: false,
-        error: `${errMsg} Cold templates are disabled in WhatsApp settings.`,
+        error: `${errMsg}. Enable cold templates in WhatsApp settings for Accept outside 24h.`,
         meta: sent.data,
       };
     }
@@ -431,7 +467,7 @@ async function createAndSendAcceptInvite(opts) {
         cold.data?.error?.error_user_msg ||
         'Cold accept-preview template send failed';
       const hint = /template|not exist|translation|approved/i.test(coldErr)
-        ? ' Waiting for Meta to approve svc_doc_accept_preview_*_v8 (or v7). Inside 24h window, preview still sends as interactive I Accept.'
+        ? ' Check Meta APPROVED status for svc_doc_accept_preview_*_v8 (or v7).'
         : '';
       await db
         .from('document_accept_invites')
@@ -445,15 +481,12 @@ async function createAndSendAcceptInvite(opts) {
   if (!sent.ok) {
     const errMsg =
       sent.data?.error?.message || sent.data?.error?.error_user_msg || 'WhatsApp send failed';
-    const hint = isOutsideServiceWindowError(sent)
-      ? ' Customer must message you on WhatsApp first (24h window), then send again.'
-      : '';
     await db
       .from('document_accept_invites')
       .update({ status: 'failed', updated_at: new Date().toISOString() })
       .eq('id', invite.id);
     await deleteR2Object(uploaded.key);
-    return { ok: false, error: `${errMsg}${hint}`, meta: sent.data };
+    return { ok: false, error: errMsg, meta: sent.data };
   }
 
   const waMessageId = sent.waMessageId || sent.data?.messages?.[0]?.id || null;
@@ -489,6 +522,9 @@ async function sendOriginalAfterAccept(db, row) {
 
   const filename = row.original_filename || 'document.pdf';
   const caption = buildOriginalDocumentCaption(row);
+  const phone = normalizePhoneE164(row.phone_e164);
+  const documentLabel = String(row.document_label || 'document').trim() || 'document';
+  const customerName = whatsappGreetingName(row.customer_name, 'there');
 
   const media = await uploadOutboundPdfToWhatsAppMedia(
     creds.phoneNumberId,
@@ -504,13 +540,42 @@ async function sendOriginalAfterAccept(db, row) {
     filename
   );
 
-  const sent = await callWhatsAppApi(creds.phoneNumberId, creds.accessToken, {
+  // I Accept usually opens the 24h window — try free-form original first.
+  let sent = await callWhatsAppApi(creds.phoneNumberId, creds.accessToken, {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
-    to: row.phone_e164,
+    to: phone,
     type: 'document',
     document: { id: media.id, filename, caption },
   });
+  let via = 'interactive';
+  let templateName = null;
+
+  // If Meta still treats the session as closed, send original as cold DOCUMENT template.
+  if (!sent.ok) {
+    const suffix = normalizeBrand(row.brand) === 'elevenro' ? 'ero' : 'hro';
+    const cold = await sendTemplateWithColdFallbacks({
+      phoneNumberId: creds.phoneNumberId,
+      accessToken: creds.accessToken,
+      to: phone,
+      templateName: `svc_doc_direct_${suffix}_v1`,
+      languageCode: 'en',
+      bodyParams: [customerName, documentLabel],
+      headerComponents: [
+        {
+          type: 'header',
+          parameters: [{ type: 'document', document: { id: media.id, filename } }],
+        },
+      ],
+      buttonUrlParams: [],
+      enableFallback: true,
+    });
+    if (cold.ok) {
+      sent = { ok: true, data: cold.result?.data };
+      via = 'cold_template';
+      templateName = cold.templateName || `svc_doc_direct_${suffix}_v1`;
+    }
+  }
 
   if (!sent.ok) {
     return {
@@ -524,10 +589,11 @@ async function sendOriginalAfterAccept(db, row) {
   await insertWhatsAppMessage(db, {
     wa_message_id: waMessageId,
     direction: 'outbound',
-    phone_e164: row.phone_e164,
+    phone_e164: phone,
     customer_id: row.customer_id || null,
-    msg_type: 'document',
-    body: caption,
+    msg_type: via === 'cold_template' ? 'template' : 'document',
+    template_name: templateName,
+    body: via === 'cold_template' ? `${templateName}: ${customerName} · ${documentLabel}` : caption,
     media_url: previewStore?.url || previewStore?.ref || null,
     media_mime: 'application/pdf',
     filename,
@@ -536,7 +602,7 @@ async function sendOriginalAfterAccept(db, row) {
 
   await deleteR2Object(row.r2_object_key);
 
-  return { ok: true, waMessageId, sha256: serverSha };
+  return { ok: true, waMessageId, sha256: serverSha, via };
 }
 
 async function claimInviteAndSendOriginal(db, row) {

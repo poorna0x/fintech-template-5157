@@ -88,6 +88,10 @@ exports.handler = async (event) => {
       summary: body.summary,
       ttlHours: body.ttlHours,
       createdBy: auth.userId,
+      preferColdTemplate:
+        body.preferColdTemplate === true ||
+        body.prefer_cold_template === true ||
+        body.forceCold === true,
     });
 
     if (!result.ok) {

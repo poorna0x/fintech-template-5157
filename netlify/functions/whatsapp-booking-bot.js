@@ -1659,6 +1659,7 @@ async function startWaterFilterServiceBooking(ctx, opts = {}) {
     ...(requireOtp ? { requireOtp: true } : {}),
     ...(existingId ? { existingCustomerId: existingId } : {}),
     ...(brand ? { brand } : {}),
+    ...(opts.locationBodyOnly ? { locationBodyOnly: true } : {}),
   };
 
   await askLocationForWaterFilterService(ctx, base);
@@ -1700,10 +1701,13 @@ async function startBookLocationPhoto(ctx, opts = {}) {
 }
 
 async function askLocationForWaterFilterService(ctx, state = {}) {
-  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_location' });
+  const { locationBodyOnly, ...persist } = state;
+  await setBookingState(ctx.db, ctx.to, { ...persist, step: 'await_location' });
   await sendLocationRequest({
     ...ctx,
-    bodyText: buildLocationRequestBodyText(state),
+    bodyText: locationBodyOnly
+      ? 'Tap *Send location* below.'
+      : buildLocationRequestBodyText(persist),
   });
 }
 
@@ -2028,6 +2032,12 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
     return { ok: true };
   }
   if (intent === 'water_filter_service' || pending === 'water_filter_service') {
+    const fromShareLoc =
+      resolveGreetingIntent({
+        id: interactive?.id,
+        title: interactive?.title,
+        text,
+      }) === 'request_location';
     await startWaterFilterServiceBooking(ctx, {
       customerName: seed.name || seed.customerName,
       name: seed.name || seed.customerName,
@@ -2040,6 +2050,8 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
       serviceLabel: seed.serviceLabel,
       leadCost: seed.leadCost,
       requireOtp: seed.requireOtp,
+      // Legacy Share location QR already asked — only show Send location.
+      ...(fromShareLoc ? { locationBodyOnly: true } : {}),
     });
     return { ok: true };
   }
@@ -2065,10 +2077,37 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
     return { ok: true };
   }
   if (intent === 'request_location' || pending === 'request_location') {
+    // Legacy "Share location" QR: template already asked — only native Send location.
+    if (
+      resolveGreetingIntent({
+        id: interactive?.id,
+        title: interactive?.title,
+        text,
+      }) === 'request_location'
+    ) {
+      await setBookingState(ctx.db, ctx.to, {
+        step: 'await_location',
+        needNewLocation: true,
+        startedByAdmin: true,
+        ...(seed.name || seed.customerName
+          ? { name: seed.name || seed.customerName }
+          : {}),
+        ...(seed.brand ? { brand: seed.brand } : {}),
+        ...(seed.existingCustomerId
+          ? { existingCustomerId: seed.existingCustomerId }
+          : {}),
+      });
+      await sendLocationRequest({
+        ...ctx,
+        bodyText: 'Tap *Send location* below.',
+      });
+      return { ok: true };
+    }
     return startAdminQuickAction(ctx, 'request_location', {
       customerName: seed.name || seed.customerName,
       brand: seed.brand,
       leadSource: seed.leadSource,
+      whatsappLeadLine: seed.whatsappLeadLine,
     });
   }
   if (intent === 'request_name' || pending === 'request_name') {
@@ -3156,7 +3195,7 @@ async function handleBookingBotInbound({
     return { handled: true };
   }
 
-  // Cold "Share location" quick reply (or typed) without pending seed → Send location.
+  // Cold "Share location" quick reply (legacy) without pending seed → Send location only.
   if (
     resolveGreetingIntent({
       id: interactive?.id,
@@ -3164,7 +3203,15 @@ async function handleBookingBotInbound({
       text,
     }) === 'request_location'
   ) {
-    await startAdminQuickAction(ctx, 'request_location');
+    await setBookingState(db, to, {
+      step: 'await_location',
+      needNewLocation: true,
+      startedByAdmin: true,
+    });
+    await sendLocationRequest({
+      ...ctx,
+      bodyText: 'Tap *Send location* below.',
+    });
     return { handled: true };
   }
 
@@ -4301,7 +4348,23 @@ async function handleBookingBotInbound({
     }
 
     if (id === 'share_location') {
-      await sendLocationRequest({ ...ctx });
+      // Cold template already explained why — only show native Send location.
+      if (state?.step === 'await_location' || state?.needNewLocation) {
+        await sendLocationRequest({
+          ...ctx,
+          bodyText: 'Tap *Send location* below.',
+        });
+      } else {
+        await setBookingState(db, to, {
+          ...(state || {}),
+          step: 'await_location',
+          needNewLocation: true,
+        });
+        await sendLocationRequest({
+          ...ctx,
+          bodyText: 'Tap *Send location* below.',
+        });
+      }
       return { handled: true };
     }
 
