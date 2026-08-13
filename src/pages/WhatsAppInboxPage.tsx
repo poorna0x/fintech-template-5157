@@ -112,6 +112,7 @@ import {
   type InboxPhotoSlide,
 } from '@/components/whatsapp/WhatsAppInboxPhotoViewer';
 import { WhatsAppAvatar, WhatsAppTicks } from '@/components/whatsapp/WhatsAppTicks';
+import { WhatsAppLogo } from '@/components/whatsapp/WhatsAppLogo';
 import {
   fetchApprovedWhatsAppTemplates,
   getWhatsAppMediaBytesCached,
@@ -1584,6 +1585,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               Back
             </button>
           ) : null}
+          <WhatsAppLogo size={18} className="text-[#e9edef]" />
           <h1 className="text-base font-semibold text-[#e9edef]">Inbox</h1>
           {unreadCount > 0 ? (
             <span className="rounded-full bg-[#2a3942] px-2 py-0.5 text-[11px] font-semibold text-[#e9edef]">

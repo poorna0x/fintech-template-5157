@@ -60,6 +60,7 @@ import CallingPage from '@/pages/CallingPage';
 import WhatsAppInboxPage from '@/pages/WhatsAppInboxPage';
 import WhatsAppSettingsPage from '@/pages/WhatsAppSettingsPage';
 import LeadCatalogSettingsPage from '@/pages/LeadCatalogSettingsPage';
+import { WhatsAppLogo } from '@/components/whatsapp/WhatsAppLogo';
 import { tryNativeBackHandlers } from '@/lib/nativeBackButton';
 import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
@@ -2426,8 +2427,10 @@ const Settings = () => {
             <ArrowLeft className="mr-1 h-4 w-4" />
             Back
           </Button>
-          <div className="min-w-0 flex-1" />
-          <span className="text-sm font-semibold tracking-tight text-[#e9edef]">Inbox</span>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <WhatsAppLogo size={18} className="text-[#e9edef]" />
+            <span className="text-sm font-semibold tracking-tight text-[#e9edef]">Inbox</span>
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           <WhatsAppInboxPage
