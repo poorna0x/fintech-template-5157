@@ -62,7 +62,7 @@ function buildTemplatePayload(to, templateName, languageCode, bodyParams, header
 
 /** Balance-due letter v4+ / IMAGE — dynamic Pay now URL `/p/{{1}}`. */
 function templateUsesDynamicPayNowUrl(name) {
-  return /svc_balance_due_letter_(ero|hro)_(img_v?\d*|v[4-6])$/i.test(String(name || ''))
+  return /svc_balance_due_letter_(ero|hro)_(img_v?\d*|v[4-7])$/i.test(String(name || ''))
     || /svc_balance_due_letter_(ero|hro)_img_/i.test(String(name || ''));
 }
 
@@ -80,14 +80,18 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     attempts.push({ name, params, headerComponents });
   };
 
-  // Balance-due IMAGE header (QR) → older img (keep QR) → text letter v6…
+  // Balance-due IMAGE header (QR) → older img (keep QR) → text letter v7…
   if (/^svc_balance_due_letter_(ero|hro)_img_/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
     const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
     const imgHeaders = Array.isArray(headerComponents) ? headerComponents : [];
-    if (/_img_v2$/i.test(primaryName)) {
+    if (/_img_v3$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_img_v2`, bodyParams.slice(0, 4).map(String), imgHeaders);
+      push(`svc_balance_due_letter_${suffix}_img_v1`, bodyParams.slice(0, 4).map(String), imgHeaders);
+    } else if (/_img_v2$/i.test(primaryName)) {
       push(`svc_balance_due_letter_${suffix}_img_v1`, bodyParams.slice(0, 4).map(String), imgHeaders);
     }
+    push(`svc_balance_due_letter_${suffix}_v7`, bodyParams.slice(0, 4).map(String));
     push(`svc_balance_due_letter_${suffix}_v6`, bodyParams.slice(0, 4).map(String));
     push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
     push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
@@ -179,11 +183,18 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(`svc_job_done_letter_${suffix}_v4`, bodyParams.slice(0, 3).map(String));
   }
 
-  // Balance-due letter v6 (emoji) → v5 → v4 → v3 → v2 → v1 → short svc_balance_due
-  if (/^svc_balance_due_letter_(ero|hro)(_v6|_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
+  // Balance-due letter v7 → v6 → v5 → v4 → v3 → v2 → v1 → short svc_balance_due
+  if (/^svc_balance_due_letter_(ero|hro)(_v7|_v6|_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
     const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
-    if (/_v6$/i.test(primaryName)) {
+    if (/_v7$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_v6`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
+    } else if (/_v6$/i.test(primaryName)) {
       push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
       push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
       push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));

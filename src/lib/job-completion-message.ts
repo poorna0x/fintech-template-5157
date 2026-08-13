@@ -3,7 +3,7 @@ import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-bra
 import { isJobPendingPaymentOpen, parseJobPendingPayment } from '@/lib/jobPendingPayment';
 import { formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
 import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
-import { waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
+import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import type { PendingPaymentWhatsAppUpiOptions } from '@/lib/pendingPaymentReminder';
 
 export interface JobCompletionMessageInput {
@@ -138,24 +138,13 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
   if (jobRef) amountLines.push(`Invoice / Job: ${jobRef}`);
 
   const payLink = (input.upi?.httpsLink || '').trim();
-  const upiId = (input.upi?.upiId || '').trim();
   if (pending > 0 && input.withQrImage) {
     amountLines.push('');
-    amountLines.push('*Pay with UPI QR*');
-    amountLines.push('📱 Scan or tap the QR code above to pay directly (GPay / PhonePe / WhatsApp Pay).');
+    amountLines.push('📱 Scan the QR above, or tap Pay now / open the link below.');
   }
-  if (pending > 0 && (payLink || upiId)) {
+  if (pending > 0 && payLink) {
     amountLines.push('');
-    amountLines.push('*Pay now*');
-    if (payLink) {
-      amountLines.push(waLabeledLink('💳', 'UPI pay link (GPay / PhonePe / UPI)', payLink));
-    }
-    if (upiId) {
-      amountLines.push(waLabeledValue('📱', 'UPI ID', upiId));
-    }
-    if (input.upi?.label) {
-      amountLines.push(waLabeledValue('🏦', 'Pay to', input.upi.label));
-    }
+    amountLines.push(waLabeledLink('💳', 'Pay now', payLink));
   }
 
   return [
