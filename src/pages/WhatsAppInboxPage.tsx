@@ -1518,7 +1518,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               Back
             </button>
           ) : null}
-          <h1 className="text-base font-semibold text-[#f2efe9]">WhatsApp</h1>
+          <h1 className="text-base font-semibold text-[#f2efe9]">Inbox</h1>
           {unreadCount > 0 ? (
             <span className="rounded-full bg-[#8fa4b8] px-2 py-0.5 text-[11px] font-semibold text-white">
               {unreadCount > 99 ? '99+' : unreadCount}
@@ -1540,7 +1540,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               <div className="min-w-0">
                 {!hideHeader ? (
                   <h2 className="text-[20px] font-semibold tracking-tight text-[#f2efe9] md:hidden">
-                    WhatsApp
+                    Chats
                     {unreadCount > 0 ? (
                       <span className="ml-2 align-middle text-[12px] font-semibold text-[#8fa4b8]">
                         {unreadCount > 99 ? '99+' : unreadCount} new
@@ -1888,14 +1888,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
           {!selectedPhone ? (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#14181c] p-8 text-center">
-              <img
-                src="/whatsapp.png"
-                alt=""
-                className="h-20 w-20 object-contain opacity-90"
-                width={80}
-                height={80}
-              />
-              <p className="text-[28px] font-light text-[#f2efe9]">WhatsApp CRM</p>
+              <p className="text-[28px] font-light tracking-tight text-[#f2efe9]">Messages</p>
               <p className="max-w-md text-sm text-[#857f78]">
                 Select a chat on the left, or start a new one.
               </p>

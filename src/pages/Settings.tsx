@@ -2427,14 +2427,7 @@ const Settings = () => {
             Back
           </Button>
           <div className="min-w-0 flex-1" />
-          <img
-            src="/whatsapp.png"
-            alt=""
-            className="h-6 w-6 rounded-md object-contain opacity-90"
-            width={24}
-            height={24}
-          />
-          <span className="text-sm font-semibold tracking-tight text-[#f2efe9]">WhatsApp</span>
+          <span className="text-sm font-semibold tracking-tight text-[#f2efe9]">Inbox</span>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           <WhatsAppInboxPage
