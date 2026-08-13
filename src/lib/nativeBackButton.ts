@@ -4,9 +4,37 @@
  * Without @capacitor/app, Android finishes the Activity → phone home screen,
  * even when the SPA has history (e.g. /admin → /admin?view=payments). The PWA
  * kept browser history; the native WebView needs this listener instead.
+ *
+ * Pages can register layered handlers (photo viewer → chat → exit) via
+ * registerNativeBackHandler — last registered runs first.
  */
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+
+/** Return true if the back press was consumed. */
+export type NativeBackHandler = () => boolean;
+
+const backHandlers: NativeBackHandler[] = [];
+
+export function registerNativeBackHandler(handler: NativeBackHandler): () => void {
+  backHandlers.push(handler);
+  return () => {
+    const i = backHandlers.indexOf(handler);
+    if (i >= 0) backHandlers.splice(i, 1);
+  };
+}
+
+/** Run registered overlays/chat handlers (newest first). */
+export function tryNativeBackHandlers(): boolean {
+  for (let i = backHandlers.length - 1; i >= 0; i--) {
+    try {
+      if (backHandlers[i]()) return true;
+    } catch {
+      /* ignore handler errors */
+    }
+  }
+  return false;
+}
 
 function notifyReactRouter(): void {
   // pushState alone does not fire popstate; BrowserRouter needs the event.
@@ -55,7 +83,7 @@ function collapseSettingsDeepLink(): boolean {
   return true;
 }
 
-/** WhatsApp inbox always exits to dashboard home (never Settings list). */
+/** WhatsApp inbox list (no overlay/chat) exits to dashboard home. */
 function collapseWhatsAppInboxToHome(): boolean {
   const { pathname, search } = window.location;
   if (!pathname.startsWith('/settings')) return false;
@@ -75,7 +103,9 @@ export async function startNativeBackButtonHandler(): Promise<void> {
   started = true;
 
   await App.addListener('backButton', ({ canGoBack }) => {
-    // Inbox Back = home (skip Settings even when history can go back).
+    // Photo viewer / dialogs / open chat first — stay in WhatsApp.
+    if (tryNativeBackHandlers()) return;
+    // Inbox thread list → admin home (skip Settings even when history can go back).
     if (collapseWhatsAppInboxToHome()) return;
     if (canGoBack) {
       window.history.back();

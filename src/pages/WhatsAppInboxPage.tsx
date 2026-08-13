@@ -127,6 +127,7 @@ import {
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
 import { quickReplyBookingUrl } from '@/lib/whatsappQuickMessages';
+import { registerNativeBackHandler, tryNativeBackHandlers } from '@/lib/nativeBackButton';
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -338,6 +339,56 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [quickActionConfirm, setQuickActionConfirm] =
     useState<WhatsAppBookingQuickAction | null>(null);
   const [quickActionBusy, setQuickActionBusy] = useState(false);
+
+  /** Android back / header Back: close overlay → leave chat → exit inbox. */
+  useEffect(() => {
+    return registerNativeBackHandler(() => {
+      if (inboxPhotoViewer) {
+        setInboxPhotoViewer(null);
+        return true;
+      }
+      if (reportOpen) {
+        setReportOpen(false);
+        setReportCustomer(null);
+        return true;
+      }
+      if (quickActionConfirm) {
+        setQuickActionConfirm(null);
+        return true;
+      }
+      if (newChatOpen) {
+        setNewChatOpen(false);
+        return true;
+      }
+      if (waterFilterOpen) {
+        setWaterFilterOpen(false);
+        return true;
+      }
+      if (customRangeOpen) {
+        setCustomRangeOpen(false);
+        return true;
+      }
+      if (selectedPhone) {
+        setSelectedPhone(null);
+        return true;
+      }
+      return false;
+    });
+  }, [
+    inboxPhotoViewer,
+    reportOpen,
+    quickActionConfirm,
+    newChatOpen,
+    waterFilterOpen,
+    customRangeOpen,
+    selectedPhone,
+  ]);
+
+  const handleChromeBack = useCallback(() => {
+    if (tryNativeBackHandlers()) return;
+    onBack?.();
+  }, [onBack]);
+
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const loadOlderSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -1366,7 +1417,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           {onBack ? (
             <button
               type="button"
-              onClick={onBack}
+              onClick={handleChromeBack}
               className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-[#9aaeb8] transition hover:bg-white/5"
             >
               <ArrowLeft className="h-4 w-4" />
