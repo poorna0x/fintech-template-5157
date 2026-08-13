@@ -134,15 +134,15 @@ function dayKey(iso: string): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
-/** WhatsApp Android dark chat wallpaper. */
+/** Soft dark chat wallpaper — lower contrast to reduce eye strain. */
 const CHAT_THREAD_BG_DARK: CSSProperties = {
-  backgroundColor: '#0b141a',
+  backgroundColor: '#0e1519',
   backgroundImage: [
-    'radial-gradient(ellipse at 20% 0%, rgba(18, 42, 52, 0.9) 0%, transparent 55%)',
-    'radial-gradient(ellipse at 80% 100%, rgba(12, 28, 36, 0.85) 0%, transparent 50%)',
+    'radial-gradient(ellipse at 18% 0%, rgba(28, 48, 56, 0.55) 0%, transparent 55%)',
+    'radial-gradient(ellipse at 82% 100%, rgba(22, 40, 48, 0.45) 0%, transparent 50%)',
     `url("data:image/svg+xml,${encodeURIComponent(
       `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'>
-        <g fill='%23ffffff' fill-opacity='0.035'>
+        <g fill='%23ffffff' fill-opacity='0.022'>
           <path d='M20 40c8-14 28-14 36 0 8 14-4 32-18 32s-26-18-18-32z'/>
           <path d='M78 78c6-10 20-10 26 0 6 10-3 24-13 24s-19-14-13-24z'/>
           <circle cx='96' cy='28' r='3'/>
@@ -250,11 +250,11 @@ function InboxChatPhoto({
           loading="lazy"
         />
       ) : failed ? (
-        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#8696a0]">
+        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#7d8f99]">
           Could not load photo
         </span>
       ) : (
-        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#8696a0]">
+        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#7d8f99]">
           <Loader2 className="mr-1 h-4 w-4 animate-spin" />
           Loading photo…
         </span>
@@ -1076,12 +1076,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   const rangeMenuItem = (label: string, range: WhatsAppInboxListRange) => (
     <DropdownMenuItem
-      className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]"
+      className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]"
       onClick={() => applyListRange(range)}
     >
       <span className="flex-1">{label}</span>
       {isListRangeActive(range) ? (
-        <Check className="ml-2 h-4 w-4 shrink-0 text-[#00a884]" />
+        <Check className="ml-2 h-4 w-4 shrink-0 text-[#2d9f78]" />
       ) : null}
     </DropdownMenuItem>
   );
@@ -1364,22 +1364,22 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   };
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#111b21]">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#121a1f]">
       {!hideHeader ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-[#222d34] bg-[#1f2c34] px-3 py-2">
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#253038] bg-[#1a242c] px-3 py-2">
           {onBack ? (
             <button
               type="button"
               onClick={onBack}
-              className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-[#aebac1] transition hover:bg-white/5"
+              className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-[#9aaeb8] transition hover:bg-white/5"
             >
               <ArrowLeft className="h-4 w-4" />
               Back
             </button>
           ) : null}
-          <h1 className="text-base font-semibold text-[#e9edef]">WhatsApp</h1>
+          <h1 className="text-base font-semibold text-[#e4eaec]">WhatsApp</h1>
           {unreadCount > 0 ? (
-            <span className="rounded-full bg-[#00a884] px-2 py-0.5 text-[11px] font-semibold text-white">
+            <span className="rounded-full bg-[#2d9f78] px-2 py-0.5 text-[11px] font-semibold text-white">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           ) : null}
@@ -1390,25 +1390,36 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         {/* Chat list — dark WhatsApp sidebar */}
         <aside
           className={cn(
-            'relative flex min-h-0 w-full flex-col border-[#222d34] bg-[#111b21] md:w-[360px] md:shrink-0 md:border-r',
+            'relative flex min-h-0 w-full flex-col border-[#253038] bg-[#121a1f] md:w-[360px] md:shrink-0 md:border-r',
             showChat ? 'hidden md:flex' : 'flex'
           )}
         >
-          <div className="shrink-0 border-b border-[#222d34] bg-[#1f2c34] px-3 pb-3 pt-2.5 md:px-3.5 md:pt-3">
+          <div className="shrink-0 border-b border-[#253038] bg-[#1a242c] px-3 pb-3 pt-2.5 md:px-3.5 md:pt-3">
             <div className="mb-2.5 flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <h2 className="text-[20px] font-semibold tracking-tight text-[#e9edef] md:hidden">
-                  WhatsApp
-                  {unreadCount > 0 ? (
-                    <span className="ml-2 align-middle text-[12px] font-semibold text-[#00a884]">
-                      {unreadCount > 99 ? '99+' : unreadCount} new
-                    </span>
-                  ) : null}
-                </h2>
-                <h2 className="hidden text-[17px] font-semibold tracking-tight text-[#e9edef] md:block">
+                {!hideHeader ? (
+                  <h2 className="text-[20px] font-semibold tracking-tight text-[#e4eaec] md:hidden">
+                    WhatsApp
+                    {unreadCount > 0 ? (
+                      <span className="ml-2 align-middle text-[12px] font-semibold text-[#2d9f78]">
+                        {unreadCount > 99 ? '99+' : unreadCount} new
+                      </span>
+                    ) : null}
+                  </h2>
+                ) : (
+                  <h2 className="text-[15px] font-medium tracking-tight text-[#e4eaec] md:hidden">
+                    Chats
+                    {unreadCount > 0 ? (
+                      <span className="ml-2 align-middle text-[12px] font-semibold text-[#2d9f78]">
+                        {unreadCount > 99 ? '99+' : unreadCount} new
+                      </span>
+                    ) : null}
+                  </h2>
+                )}
+                <h2 className="hidden text-[17px] font-semibold tracking-tight text-[#e4eaec] md:block">
                   Chats
                 </h2>
-                <p className="mt-0.5 hidden text-[11px] text-[#8696a0] md:block">
+                <p className="mt-0.5 hidden text-[11px] text-[#7d8f99] md:block">
                   {appliedSearch
                     ? `Search · ${filteredThreads.length}`
                     : unreadCount > 0
@@ -1421,7 +1432,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-[#aebac1] transition hover:bg-[#2a3942] hover:text-[#e9edef] disabled:opacity-50"
+                      className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-[#9aaeb8] transition hover:bg-[#2c3840] hover:text-[#e4eaec] disabled:opacity-50"
                       disabled={purging}
                       title="More"
                     >
@@ -1432,51 +1443,51 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       )}
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64 border-[#2a3942] bg-[#233138] text-[#e9edef]">
+                  <DropdownMenuContent align="end" className="w-64 border-[#2c3840] bg-[#243038] text-[#e4eaec]">
                     <DropdownMenuItem
-                      className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]"
+                      className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]"
                       onClick={() => setNewChatOpen(true)}
                     >
                       <MessageSquarePlus className="mr-2 h-4 w-4" />
                       New chat
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]"
+                      className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]"
                       onClick={() => setWaterFilterOpen(true)}
                     >
                       <MapPin className="mr-2 h-4 w-4" />
                       Water Filter Service
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator className="bg-[#2a3942]" />
+                    <DropdownMenuSeparator className="bg-[#2c3840]" />
                     <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]">
+                      <DropdownMenuSubTrigger className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]">
                         <Calendar className="mr-2 h-4 w-4" />
                         Show chats
                       </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-56 border-[#2a3942] bg-[#233138] text-[#e9edef]">
+                      <DropdownMenuSubContent className="w-56 border-[#2c3840] bg-[#243038] text-[#e4eaec]">
                         {rangeMenuItem("Today", 'today')}
                         {rangeMenuItem('Last 7 days', '7d')}
                         {rangeMenuItem('Last 30 days', '30d')}
                         {rangeMenuItem('All chats', 'all')}
                         <DropdownMenuItem
-                          className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]"
+                          className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]"
                           onClick={() => setCustomRangeOpen(true)}
                         >
                           <span className="flex-1">Custom date…</span>
                           {typeof listRange === 'object' ? (
-                            <Check className="ml-2 h-4 w-4 shrink-0 text-[#00a884]" />
+                            <Check className="ml-2 h-4 w-4 shrink-0 text-[#2d9f78]" />
                           ) : null}
                         </DropdownMenuItem>
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
                     <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="cursor-pointer focus:bg-[#2a3942] focus:text-[#e9edef]">
+                      <DropdownMenuSubTrigger className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]">
                         <Settings className="mr-2 h-4 w-4" />
                         Chat settings
                       </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-56 border-[#2a3942] bg-[#233138] text-[#e9edef]">
+                      <DropdownMenuSubContent className="w-56 border-[#2c3840] bg-[#243038] text-[#e4eaec]">
                         <DropdownMenuItem
-                          className="cursor-pointer text-red-400 focus:bg-[#2a3942] focus:text-red-400"
+                          className="cursor-pointer text-red-400 focus:bg-[#2c3840] focus:text-red-400"
                           disabled={!selectedPhone}
                           onClick={() =>
                             selectedPhone
@@ -1488,7 +1499,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           Delete chat (keep files)
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          className="cursor-pointer text-red-400 focus:bg-[#2a3942] focus:text-red-400"
+                          className="cursor-pointer text-red-400 focus:bg-[#2c3840] focus:text-red-400"
                           disabled={!selectedPhone}
                           onClick={() =>
                             selectedPhone ? void runPurge({ phoneE164: selectedPhone }) : undefined
@@ -1505,12 +1516,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             </div>
             <div className="flex items-center gap-1.5">
               <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8696a0]" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#7d8f99]" />
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search name, phone, email…"
-                  className="h-9 rounded-xl border-0 bg-[#2a3942] pl-9 pr-8 text-[13px] text-[#e9edef] shadow-none placeholder:text-[#8696a0] focus-visible:ring-1 focus-visible:ring-[#00a884]/40"
+                  className="h-9 rounded-xl border-0 bg-[#2c3840] pl-9 pr-8 text-[13px] text-[#e4eaec] shadow-none placeholder:text-[#7d8f99] focus-visible:ring-1 focus-visible:ring-[#2d9f78]/40"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -1525,7 +1536,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 {query || appliedSearch ? (
                   <button
                     type="button"
-                    className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-[#8696a0] hover:bg-[#111b21] hover:text-[#e9edef]"
+                    className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-[#7d8f99] hover:bg-[#121a1f] hover:text-[#e4eaec]"
                     title="Clear search"
                     onClick={clearSearch}
                   >
@@ -1536,7 +1547,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               <Button
                 type="button"
                 size="sm"
-                className="h-9 shrink-0 cursor-pointer rounded-xl bg-[#00a884] px-3.5 text-[12px] font-semibold text-white shadow-sm hover:bg-[#008f72]"
+                className="h-9 shrink-0 cursor-pointer rounded-xl bg-[#2d9f78] px-3.5 text-[12px] font-semibold text-white shadow-sm hover:bg-[#268a68]"
                 disabled={searchLoading || query.trim().length < 2}
                 onClick={() => void runSearch()}
               >
@@ -1548,11 +1559,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               </Button>
             </div>
             {appliedSearch ? (
-              <p className="mt-2 truncate px-0.5 text-[11px] text-[#8696a0]">
+              <p className="mt-2 truncate px-0.5 text-[11px] text-[#7d8f99]">
                 Results for “{appliedSearch}” ·{' '}
                 <button
                   type="button"
-                  className="cursor-pointer font-medium text-[#00a884] underline-offset-2 hover:underline"
+                  className="cursor-pointer font-medium text-[#2d9f78] underline-offset-2 hover:underline"
                   onClick={clearSearch}
                 >
                   {listRangeSubtitle}
@@ -1563,13 +1574,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 py-1.5 md:px-2">
             {listBusy ? (
-              <div className="flex items-center justify-center gap-2 p-8 text-sm text-[#8696a0]">
+              <div className="flex items-center justify-center gap-2 p-8 text-sm text-[#7d8f99]">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {searchLoading ? 'Searching…' : 'Loading…'}
               </div>
             ) : filteredThreads.length === 0 ? (
               <div className="space-y-3 p-8 text-center">
-                <p className="text-sm text-[#8696a0]">
+                <p className="text-sm text-[#7d8f99]">
                   {appliedSearch.trim()
                     ? 'No matching customers or chats'
                     : listRange === 'today'
@@ -1579,7 +1590,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 {!appliedSearch.trim() ? (
                   <Button
                     type="button"
-                    className="cursor-pointer rounded-xl bg-[#00a884] text-white hover:bg-[#008f72]"
+                    className="cursor-pointer rounded-xl bg-[#2d9f78] text-white hover:bg-[#268a68]"
                     onClick={() => setNewChatOpen(true)}
                   >
                     <MessageSquarePlus className="mr-2 h-4 w-4" />
@@ -1605,27 +1616,27 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         onClick={() => setSelectedPhone(t.phone_e164)}
                         className={cn(
                           'group relative flex w-full cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors',
-                          active ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'
+                          active ? 'bg-[#2c3840]' : 'hover:bg-[#1e2a31]'
                         )}
                       >
                         {active ? (
                           <span
-                            className="absolute left-0 top-1/2 h-8 w-[3px] -translate-y-1/2 rounded-r-full bg-[#00a884]"
+                            className="absolute left-0 top-1/2 h-8 w-[3px] -translate-y-1/2 rounded-r-full bg-[#2d9f78]"
                             aria-hidden
                           />
                         ) : null}
                         <WhatsAppAvatar
                           name={t.customer_name}
                           className={cn(
-                            'ring-2 ring-[#111b21]',
-                            active ? 'bg-[#005c4b] text-[#e9edef]' : null
+                            'ring-2 ring-[#121a1f]',
+                            active ? 'bg-[#1a5c4e] text-[#e4eaec]' : null
                           )}
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-baseline justify-between gap-2">
                             <p
                               className={cn(
-                                'truncate text-[14.5px] tracking-tight text-[#e9edef]',
+                                'truncate text-[14.5px] tracking-tight text-[#e4eaec]',
                                 unread ? 'font-semibold' : 'font-medium'
                               )}
                             >
@@ -1634,7 +1645,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                             <span
                               className={cn(
                                 'shrink-0 text-[11px] tabular-nums',
-                                unread ? 'font-semibold text-[#00a884]' : 'text-[#8696a0]'
+                                unread ? 'font-semibold text-[#2d9f78]' : 'text-[#7d8f99]'
                               )}
                             >
                               {formatThreadTime(t.last_at)}
@@ -1647,8 +1658,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                 failed
                                   ? 'text-red-400'
                                   : unread
-                                    ? 'font-medium text-[#aebac1]'
-                                    : 'text-[#8696a0]'
+                                    ? 'font-medium text-[#9aaeb8]'
+                                    : 'text-[#7d8f99]'
                               )}
                             >
                               {failed ? 'Not delivered · ' : ''}
@@ -1660,7 +1671,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               {t.last_body}
                             </p>
                             {unread ? (
-                              <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[#00a884] px-1 text-[10px] font-bold text-[#111b21] shadow-sm">
+                              <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[#2d9f78] px-1 text-[10px] font-bold text-[#121a1f] shadow-sm">
                                 1
                               </span>
                             ) : null}
@@ -1686,7 +1697,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           <button
             type="button"
             onClick={() => setNewChatOpen(true)}
-            className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-10 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-[#00a884] text-white shadow-lg transition active:scale-95 md:hidden"
+            className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-10 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-[#2d9f78] text-white shadow-lg transition active:scale-95 md:hidden"
             title="New chat"
             aria-label="New chat"
           >
@@ -1697,7 +1708,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         {/* Chat pane — sticky header + scroll messages + sticky composer */}
         <section
           className={cn(
-            'relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#0b141a]',
+            'relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#0e1519]',
             showList && !showChat ? 'hidden md:flex' : 'flex'
           )}
           onDragEnter={(e) => {
@@ -1726,16 +1737,16 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         >
           {dragOver && windowOpen ? (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/30 px-4">
-              <div className="rounded-2xl border-2 border-dashed border-[#25d366] bg-white px-8 py-10 text-center shadow-xl">
-                <Paperclip className="mx-auto mb-2 h-8 w-8 text-[#25d366]" />
-                <p className="text-sm font-semibold text-[#111b21]">Drop photo or PDF</p>
-                <p className="mt-1 text-xs text-[#667781]">JPEG, PNG, WebP, PDF · max 4MB</p>
+              <div className="rounded-2xl border-2 border-dashed border-[#3cb87a] bg-white px-8 py-10 text-center shadow-xl">
+                <Paperclip className="mx-auto mb-2 h-8 w-8 text-[#3cb87a]" />
+                <p className="text-sm font-semibold text-[#121a1f]">Drop photo or PDF</p>
+                <p className="mt-1 text-xs text-[#6b7c86]">JPEG, PNG, WebP, PDF · max 4MB</p>
               </div>
             </div>
           ) : null}
 
           {!selectedPhone ? (
-            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#0b141a] p-8 text-center">
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#0e1519] p-8 text-center">
               <img
                 src="/whatsapp.png"
                 alt=""
@@ -1743,14 +1754,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 width={80}
                 height={80}
               />
-              <p className="text-[28px] font-light text-[#e9edef]">WhatsApp CRM</p>
-              <p className="max-w-md text-sm text-[#8696a0]">
+              <p className="text-[28px] font-light text-[#e4eaec]">WhatsApp CRM</p>
+              <p className="max-w-md text-sm text-[#7d8f99]">
                 Select a chat on the left, or start a new one.
               </p>
               <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
                 <Button
                   type="button"
-                  className="cursor-pointer bg-[#00a884] text-white hover:bg-[#008f72]"
+                  className="cursor-pointer bg-[#2d9f78] text-white hover:bg-[#268a68]"
                   onClick={() => setNewChatOpen(true)}
                 >
                   <MessageSquarePlus className="mr-2 h-4 w-4" />
@@ -1760,10 +1771,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             </div>
           ) : (
             <>
-              <div className="flex shrink-0 items-center gap-1 border-b border-[#222d34] bg-[#1f2c34] px-1.5 py-2 sm:gap-2 sm:px-4">
+              <div className="flex shrink-0 items-center gap-1 border-b border-[#253038] bg-[#1a242c] px-1.5 py-2 sm:gap-2 sm:px-4">
                 <button
                   type="button"
-                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-[#aebac1] transition hover:bg-white/5 md:hidden"
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5 md:hidden"
                   onClick={() => setSelectedPhone(null)}
                   aria-label="Back to chats"
                 >
@@ -1775,10 +1786,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   className="bg-[#6a7175] text-white"
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[16px] font-medium text-[#e9edef]">
+                  <p className="truncate text-[16px] font-medium text-[#e4eaec]">
                     {activeThread?.customer_name || displayPhone(selectedPhone)}
                   </p>
-                  <p className="truncate text-[12px] text-[#8696a0]">
+                  <p className="truncate text-[12px] text-[#7d8f99]">
                     {activeThread?.customer_name ? `${displayPhone(selectedPhone)} · ` : ''}
                     {getDocumentBrandLabel(threadBrand)}
                     {' · '}
@@ -1789,7 +1800,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 </div>
                 <button
                   type="button"
-                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#aebac1] transition hover:bg-white/5"
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5"
                   title="Copy number"
                   onClick={() => void copyPhone()}
                 >
@@ -1799,7 +1810,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#aebac1] transition hover:bg-white/5 disabled:opacity-40"
+                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5 disabled:opacity-40"
                       title="Quick actions"
                       disabled={quickActionBusy}
                     >
@@ -1854,7 +1865,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#aebac1] transition hover:bg-white/5 disabled:opacity-40 md:text-[#54656f] md:hover:bg-black/5"
+                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5 disabled:opacity-40 md:text-[#7d8f99] md:hover:bg-white/5"
                       title="Customer"
                       disabled={!activeThread?.customer_id || reportLoading}
                     >
@@ -1888,7 +1899,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#aebac1] transition hover:bg-white/5 md:text-[#54656f] md:hover:bg-black/5"
+                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5 md:text-[#7d8f99] md:hover:bg-white/5"
                       title="More"
                     >
                       <MoreVertical className="h-4 w-4" />
@@ -1943,12 +1954,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   style={CHAT_THREAD_BG_DARK}
                 >
                 {threadLoading ? (
-                  <div className="flex justify-center py-10 text-sm text-[#8696a0]">
+                  <div className="flex justify-center py-10 text-sm text-[#7d8f99]">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Loading chat…
                   </div>
                 ) : threadMessages.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-[#8696a0]">
+                  <p className="py-10 text-center text-sm text-[#7d8f99]">
                     No messages in this chat
                   </p>
                 ) : (
@@ -1960,7 +1971,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         aria-hidden={!threadLoadingOlder}
                       >
                         {threadLoadingOlder ? (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#8696a0]">
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#7d8f99]">
                             <Loader2 className="h-3 w-3 animate-spin" />
                             Loading older…
                           </span>
@@ -1989,7 +2000,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         <div key={`m-${m.id}`}>
                           {showDay ? (
                             <div className="my-3 flex justify-center">
-                              <span className="rounded-lg bg-[#182229] px-3 py-1 text-[12px] font-medium text-[#8696a0] shadow-sm">
+                              <span className="rounded-lg bg-[#161e24] px-3 py-1 text-[12px] font-medium text-[#7d8f99] shadow-sm">
                                 {formatDaySeparator(m.created_at)}
                               </span>
                             </div>
@@ -1999,10 +2010,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#f59e0b]">
                                 Booking bot (internal)
                               </p>
-                              <p className="whitespace-pre-wrap break-words text-[13px] leading-[18px] text-[#e9edef]">
+                              <p className="whitespace-pre-wrap break-words text-[13px] leading-[18px] text-[#e4eaec]">
                                 {formatAdminWhatsAppBody(m.body, { compact: false })}
                               </p>
-                              <p className="mt-1 text-right text-[10px] text-[#8696a0]">
+                              <p className="mt-1 text-right text-[10px] text-[#7d8f99]">
                                 {formatBubbleTime(m.created_at)}
                               </p>
                             </div>
@@ -2015,7 +2026,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       <div key={`m-${m.id}`}>
                         {showDay ? (
                           <div className="my-3.5 flex justify-center">
-                            <span className="rounded-lg bg-[#182229] px-3 py-1 text-[12px] font-medium text-[#8696a0] shadow-sm">
+                            <span className="rounded-lg bg-[#161e24] px-3 py-1 text-[12px] font-medium text-[#7d8f99] shadow-sm">
                               {formatDaySeparator(m.created_at)}
                             </span>
                           </div>
@@ -2029,8 +2040,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               failed
                                 ? 'rounded-br-sm border border-red-500/40 bg-[#3b1818] text-[#fecaca]'
                                 : outbound
-                                  ? 'rounded-br-sm bg-[#005c4b] text-[#e9edef]'
-                                  : 'rounded-bl-sm bg-[#202c33] text-[#e9edef]'
+                                  ? 'rounded-br-sm bg-[#1a5c4e] text-[#e4eaec]'
+                                  : 'rounded-bl-sm bg-[#1e2a31] text-[#e4eaec]'
                             )}
                           >
                             {failed ? (
@@ -2086,7 +2097,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                       <span className="block truncate text-sm font-medium">
                                         {m.filename || 'Document'}
                                       </span>
-                                      <span className="text-[11px] text-[#8696a0]">
+                                      <span className="text-[11px] text-[#7d8f99]">
                                         Tap to open
                                       </span>
                                     </span>
@@ -2094,7 +2105,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                   <button
                                     type="button"
                                     onClick={() => void downloadMedia(m)}
-                                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#aebac1]"
+                                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8]"
                                     title="Download"
                                     aria-label="Download file"
                                   >
@@ -2129,17 +2140,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               }
                               if (!text?.trim()) return null;
                               return (
-                                <p className="whitespace-pre-wrap break-words px-1 text-[14.2px] leading-[19px] text-[#e9edef]">
+                                <p className="whitespace-pre-wrap break-words px-1 text-[14.2px] leading-[19px] text-[#e4eaec]">
                                   {text}
                                 </p>
                               );
                             })()}
                             <div className="mt-0.5 flex items-center justify-end gap-1 px-1">
-                              <span className="text-[11px] leading-none text-[#8696a0]">
+                              <span className="text-[11px] leading-none text-[#7d8f99]">
                                 {formatBubbleTime(m.created_at)}
                               </span>
                               {outbound ? (
-                                <WhatsAppTicks status={m.status} failed={failed} className="text-[#8696a0]" />
+                                <WhatsAppTicks status={m.status} failed={failed} className="text-[#7d8f99]" />
                               ) : null}
                             </div>
                             {m.error_message ? (
@@ -2160,7 +2171,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <button
                     type="button"
                     onClick={scrollChatToLatest}
-                    className="absolute bottom-3 right-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-[#1f2c34] text-[#aebac1] shadow-md ring-1 ring-white/10 transition hover:bg-[#2a3942] sm:right-6"
+                    className="absolute bottom-3 right-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-[#1a242c] text-[#9aaeb8] shadow-md ring-1 ring-white/10 transition hover:bg-[#2c3840] sm:right-6"
                     title="Jump to latest"
                     aria-label="Jump to latest messages"
                   >
@@ -2169,14 +2180,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 ) : null}
               </div>
 
-              <div className="shrink-0 border-t border-[#222d34] bg-[#1f2c34] px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-3">
+              <div className="shrink-0 border-t border-[#253038] bg-[#1a242c] px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-3">
                 {!windowOpen ? (
-                  <div className="mb-2 max-h-[36vh] space-y-2 overflow-y-auto overscroll-contain rounded-xl bg-[#111b21] p-3 shadow-sm ring-1 ring-white/5 sm:max-h-none">
+                  <div className="mb-2 max-h-[36vh] space-y-2 overflow-y-auto overscroll-contain rounded-xl bg-[#121a1f] p-3 shadow-sm ring-1 ring-white/5 sm:max-h-none">
                     <p className="text-xs text-[#f59e0b]">
                       Free-form reply needs an open 24h window. Send an approved template to reopen.
                     </p>
                     {templatesLoading ? (
-                      <p className="flex items-center gap-2 text-xs text-[#8696a0]">
+                      <p className="flex items-center gap-2 text-xs text-[#7d8f99]">
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         Loading templates…
                       </p>
@@ -2185,7 +2196,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       <p className="text-xs text-red-400">{templatesError}</p>
                     ) : null}
                     {templatesHint ? (
-                      <p className="text-xs text-[#8696a0]">{templatesHint}</p>
+                      <p className="text-xs text-[#7d8f99]">{templatesHint}</p>
                     ) : null}
                     {templates.length > 0 ? (
                       <>
@@ -2194,7 +2205,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           onValueChange={(v) => setSelectedTemplateKey(v)}
                           disabled={sending}
                         >
-                          <SelectTrigger className="h-10 w-full border-[#2a3942] bg-[#2a3942] text-[#e9edef]">
+                          <SelectTrigger className="h-10 w-full border-[#2c3840] bg-[#2c3840] text-[#e4eaec]">
                             <SelectValue placeholder="Choose template" />
                           </SelectTrigger>
                           <SelectContent>
@@ -2210,7 +2221,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           </SelectContent>
                         </Select>
                         {selectedTemplate?.bodyPreview ? (
-                          <p className="rounded-md bg-[#0b141a] px-2 py-1.5 text-[11px] text-[#8696a0] whitespace-pre-wrap">
+                          <p className="rounded-md bg-[#0e1519] px-2 py-1.5 text-[11px] text-[#7d8f99] whitespace-pre-wrap">
                             {selectedTemplate.bodyPreview}
                           </p>
                         ) : null}
@@ -2225,14 +2236,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                   setTemplateParams(next);
                                 }}
                                 placeholder={`Variable {{${i + 1}}}`}
-                                className="h-9 border-[#2a3942] bg-[#2a3942] text-[#e9edef] placeholder:text-[#8696a0]"
+                                className="h-9 border-[#2c3840] bg-[#2c3840] text-[#e4eaec] placeholder:text-[#7d8f99]"
                                 disabled={sending}
                               />
                             ))
                           : null}
                         <Button
                           type="button"
-                          className="h-10 w-full cursor-pointer bg-[#00a884] text-white hover:bg-[#008f72]"
+                          className="h-10 w-full cursor-pointer bg-[#2d9f78] text-white hover:bg-[#268a68]"
                           disabled={!selectedTemplate || sending}
                           onClick={() => void handleSendTemplate()}
                         >
@@ -2249,7 +2260,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="cursor-pointer border-[#2a3942] bg-transparent text-[#e9edef] hover:bg-[#2a3942]"
+                        className="cursor-pointer border-[#2c3840] bg-transparent text-[#e4eaec] hover:bg-[#2c3840]"
                         onClick={() => void loadTemplates(true)}
                       >
                         Refresh templates
@@ -2261,7 +2272,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <div className="space-y-2">
                     {attachFile ? (
                       <div
-                        className="flex items-center gap-2 rounded-xl bg-[#2a3942] px-2 py-1.5 shadow-sm"
+                        className="flex items-center gap-2 rounded-xl bg-[#2c3840] px-2 py-1.5 shadow-sm"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                             e.preventDefault();
@@ -2276,21 +2287,21 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                             className="h-11 w-11 rounded-lg object-cover"
                           />
                         ) : (
-                          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#111b21] text-[10px] font-semibold uppercase text-[#aebac1]">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#121a1f] text-[10px] font-semibold uppercase text-[#9aaeb8]">
                             PDF
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-medium text-[#e9edef]">
+                          <p className="truncate text-xs font-medium text-[#e4eaec]">
                             {attachFile.name}
                           </p>
-                          <p className="text-[10px] text-[#8696a0]">
+                          <p className="text-[10px] text-[#7d8f99]">
                             {(attachFile.size / 1024).toFixed(0)} KB · Enter to send
                           </p>
                         </div>
                         <button
                           type="button"
-                          className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#aebac1] transition hover:bg-white/5"
+                          className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5"
                           disabled={sending}
                           onClick={clearAttach}
                           aria-label="Remove attachment"
@@ -2312,14 +2323,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       />
                       <button
                         type="button"
-                        className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#aebac1] transition hover:bg-white/5 disabled:opacity-50"
+                        className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5 disabled:opacity-50"
                         disabled={sending}
                         title="Attach image or PDF"
                         onClick={() => fileInputRef.current?.click()}
                       >
                         <Paperclip className="h-5 w-5 rotate-45" />
                       </button>
-                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] bg-[#2a3942] px-3 py-1.5 shadow-sm">
+                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] bg-[#2c3840] px-3 py-1.5 shadow-sm">
                         <Textarea
                           ref={composerRef}
                           value={draft}
@@ -2327,7 +2338,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           placeholder={attachFile ? 'Add a caption (Enter to send)' : 'Message'}
                           disabled={sending}
                           rows={1}
-                          className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#e9edef] shadow-none placeholder:text-[#8696a0] focus-visible:ring-0"
+                          className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#e4eaec] shadow-none placeholder:text-[#7d8f99] focus-visible:ring-0"
                           onKeyDown={(e) => {
                             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                             if (e.key === 'Enter' && !e.shiftKey) {
@@ -2350,7 +2361,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       </div>
                       <button
                         type="button"
-                        className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#00a884] text-white shadow transition hover:bg-[#008f72] disabled:opacity-40"
+                        className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#2d9f78] text-white shadow transition hover:bg-[#268a68] disabled:opacity-40"
                         disabled={sending || (!draft.trim() && !attachFile)}
                         onClick={() => void handleSend()}
                         aria-label="Send"
@@ -2391,7 +2402,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             </Button>
             <Button
               type="button"
-              className="bg-[#00a884] text-white hover:bg-[#008f72]"
+              className="bg-[#2d9f78] text-white hover:bg-[#268a68]"
               onClick={() => {
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(customRangeDate)) {
                   toast.error('Pick a valid date');
@@ -2434,7 +2445,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             </Button>
             <Button
               type="button"
-              className="bg-[#25d366] text-white hover:bg-[#1da851]"
+              className="bg-[#3cb87a] text-white hover:bg-[#1da851]"
               onClick={openNewChat}
             >
               Open chat
@@ -2485,7 +2496,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             </Button>
             <Button
               type="button"
-              className="bg-[#25d366] text-white hover:bg-[#1da851]"
+              className="bg-[#3cb87a] text-white hover:bg-[#1da851]"
               disabled={!quickActionConfirm || quickActionBusy}
               onClick={() =>
                 quickActionConfirm ? void runQuickAction(quickActionConfirm) : undefined

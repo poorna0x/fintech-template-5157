@@ -72,6 +72,7 @@ import {
   setLastSelectedUpiAccountId,
   type UpiPaymentAccount,
 } from '@/lib/upiPaymentAccounts';
+import { generateUpiQrPngBase64 } from '@/lib/generateUpiQrPng';
 
 const PENDING_PAYMENT_TITLE = PENDING_PAYMENT_REMINDER_TITLE;
 const PAGE_SIZE = 20;
@@ -487,6 +488,9 @@ export function SettingsPendingPaymentsDialogV2({
     filename: string;
     previewUrl: string;
   } | null>(null);
+  /** auto = dynamic UPI QR; manual = user photo; off = cleared / no QR. */
+  const [whatsappQrMode, setWhatsappQrMode] = useState<'auto' | 'manual' | 'off'>('auto');
+  const [whatsappQrGenerating, setWhatsappQrGenerating] = useState(false);
   const whatsappImageInputRef = useRef<HTMLInputElement | null>(null);
   /** Last completed job service_brand per customer — drives WhatsApp brand contact. */
   const [brandByCustomerId, setBrandByCustomerId] = useState<Record<string, DocumentBrand | null>>({});
@@ -763,16 +767,21 @@ export function SettingsPendingPaymentsDialogV2({
     return next;
   };
 
+  const clearWhatsappAttachImage = () => {
+    setWhatsappAttachImage((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  };
+
   const openPendingWhatsAppDialog = async (payment: PendingPaymentReminder) => {
     const accounts = await syncUpiAccountsFromStorage();
     const preferred = resolvePreferredUpiAccount(accounts);
     setWhatsappUpiAccountId(preferred?.id ?? accounts[0]?.id ?? '');
     setWhatsappIncludeUpi(Boolean(preferred || accounts[0]));
     setWhatsappManageUpiOpen(false);
-    if (whatsappAttachImage?.previewUrl) {
-      URL.revokeObjectURL(whatsappAttachImage.previewUrl);
-    }
-    setWhatsappAttachImage(null);
+    clearWhatsappAttachImage();
+    setWhatsappQrMode(preferred || accounts[0] ? 'auto' : 'off');
     setWhatsappTarget(payment);
     setWhatsappDialogOpen(true);
   };
@@ -860,6 +869,66 @@ export function SettingsPendingPaymentsDialogV2({
     whatsappAttachImage,
     upiAccounts,
     customerLabels,
+    brandByCustomerId,
+  ]);
+
+  /** Auto-generate dynamic UPI QR when Include UPI is on (manual upload / cleared skip). */
+  useEffect(() => {
+    if (!whatsappDialogOpen || !whatsappTarget) return;
+    if (!whatsappIncludeUpi || whatsappQrMode !== 'auto') return;
+    const account = upiAccounts.find((a) => a.id === whatsappUpiAccountId);
+    if (!account) {
+      clearWhatsappAttachImage();
+      return;
+    }
+    let cancelled = false;
+    setWhatsappQrGenerating(true);
+    void (async () => {
+      try {
+        const amount = Number(whatsappTarget.amount_pending) || 0;
+        const noteParts = ['Pending payment'];
+        const jobRef = whatsappTarget.job_number || whatsappTarget.job_id;
+        if (jobRef) noteParts.push(String(jobRef));
+        const brand = brandForCustomer(whatsappTarget.entity_id as string | undefined);
+        const png = await generateUpiQrPngBase64({
+          upiId: account.upiId,
+          payeeName: account.payeeName || account.label,
+          amount,
+          note: noteParts.join(' '),
+          phone: account.phone || undefined,
+          brand,
+        });
+        if (cancelled) return;
+        if (!png) {
+          toast.message('Could not generate UPI QR — attach a photo manually if needed');
+          return;
+        }
+        const bytes = Uint8Array.from(atob(png.base64), (c) => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: png.mimeType });
+        setWhatsappAttachImage((prev) => {
+          if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+          return {
+            base64: png.base64,
+            mimeType: png.mimeType,
+            filename: png.filename,
+            previewUrl: URL.createObjectURL(blob),
+          };
+        });
+      } finally {
+        if (!cancelled) setWhatsappQrGenerating(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- auto QR when UPI account / amount / mode change
+  }, [
+    whatsappDialogOpen,
+    whatsappTarget,
+    whatsappIncludeUpi,
+    whatsappUpiAccountId,
+    whatsappQrMode,
+    upiAccounts,
     brandByCustomerId,
   ]);
 
@@ -1952,10 +2021,16 @@ export function SettingsPendingPaymentsDialogV2({
                               onCheckedChange={(v) => {
                                 const on = v === true;
                                 setWhatsappIncludeUpi(on);
-                                if (on && !whatsappUpiAccountId && upiAccounts[0]) {
-                                  setWhatsappUpiAccountId(
-                                    resolvePreferredUpiAccount(upiAccounts)?.id ?? upiAccounts[0].id
-                                  );
+                                if (on) {
+                                  if (!whatsappUpiAccountId && upiAccounts[0]) {
+                                    setWhatsappUpiAccountId(
+                                      resolvePreferredUpiAccount(upiAccounts)?.id ?? upiAccounts[0].id
+                                    );
+                                  }
+                                  if (whatsappQrMode !== 'manual') setWhatsappQrMode('auto');
+                                } else {
+                                  clearWhatsappAttachImage();
+                                  setWhatsappQrMode('off');
                                 }
                               }}
                               className="mt-0.5"
@@ -2035,7 +2110,7 @@ export function SettingsPendingPaymentsDialogV2({
                         </div>
 
                         <div className="space-y-2">
-                          <Label>UPI QR code (optional)</Label>
+                          <Label>UPI QR code</Label>
                           <input
                             ref={whatsappImageInputRef}
                             type="file"
@@ -2057,9 +2132,8 @@ export function SettingsPendingPaymentsDialogV2({
                               void (async () => {
                                 try {
                                   const read = await readFileAsBase64(file);
-                                  if (whatsappAttachImage?.previewUrl) {
-                                    URL.revokeObjectURL(whatsappAttachImage.previewUrl);
-                                  }
+                                  clearWhatsappAttachImage();
+                                  setWhatsappQrMode('manual');
                                   setWhatsappAttachImage({
                                     base64: read.base64,
                                     mimeType: read.mimeType || file.type || 'image/jpeg',
@@ -2072,6 +2146,12 @@ export function SettingsPendingPaymentsDialogV2({
                               })();
                             }}
                           />
+                          {whatsappQrGenerating && !whatsappAttachImage ? (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Generating dynamic UPI QR…
+                            </div>
+                          ) : null}
                           {whatsappAttachImage ? (
                             <div className="flex items-center gap-3 rounded-md border p-2">
                               <img
@@ -2082,7 +2162,9 @@ export function SettingsPendingPaymentsDialogV2({
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm truncate">{whatsappAttachImage.filename}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  Customer can scan/tap QR to pay, or use Pay now
+                                  {whatsappQrMode === 'auto'
+                                    ? 'Dynamic QR (amount pre-filled) — sent as photo + caption'
+                                    : 'Attached photo — sent as photo + caption / IMAGE template'}
                                 </p>
                               </div>
                               <Button
@@ -2091,28 +2173,51 @@ export function SettingsPendingPaymentsDialogV2({
                                 size="icon"
                                 className="h-8 w-8 shrink-0"
                                 onClick={() => {
-                                  if (whatsappAttachImage?.previewUrl) {
-                                    URL.revokeObjectURL(whatsappAttachImage.previewUrl);
-                                  }
-                                  setWhatsappAttachImage(null);
+                                  clearWhatsappAttachImage();
+                                  setWhatsappQrMode('off');
                                 }}
                                 aria-label="Remove QR image"
                               >
                                 <X className="h-4 w-4" />
                               </Button>
                             </div>
-                          ) : (
+                          ) : !whatsappQrGenerating ? (
+                            <div className="flex flex-wrap gap-2">
+                              {whatsappIncludeUpi && whatsappUpiAccountId ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1.5"
+                                  onClick={() => setWhatsappQrMode('auto')}
+                                >
+                                  <RefreshCw className="h-4 w-4" />
+                                  Generate dynamic QR
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                onClick={() => whatsappImageInputRef.current?.click()}
+                              >
+                                <ImagePlus className="h-4 w-4" />
+                                Attach photo
+                              </Button>
+                            </div>
+                          ) : null}
+                          {whatsappAttachImage && whatsappQrMode === 'auto' ? (
                             <Button
                               type="button"
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              className="gap-1.5"
+                              className="h-8 px-2 text-xs text-muted-foreground"
                               onClick={() => whatsappImageInputRef.current?.click()}
                             >
-                              <ImagePlus className="h-4 w-4" />
-                              Attach UPI QR
+                              Replace with custom photo
                             </Button>
-                          )}
+                          ) : null}
                         </div>
 
                         <div className="space-y-2">

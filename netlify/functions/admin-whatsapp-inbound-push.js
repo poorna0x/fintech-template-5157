@@ -81,12 +81,15 @@ async function pushWhatsAppInboundToAdmins(db, details) {
       type: 'whatsapp_inbound',
       phone,
       panel: 'whatsapp-inbox',
+      color: WA_GREEN,
       ...(details.waMessageId ? { waMessageId: String(details.waMessageId) } : {}),
     },
     android: {
       priority: 'high',
       notification: {
         channelId: 'job_alerts_v2',
+        // Admin APK drawable — WhatsApp mark instead of HRO default ic_stat_notify
+        icon: 'ic_stat_whatsapp',
         defaultSound: true,
         color: WA_GREEN,
         tag: `wa_inbound_${phone}`,

@@ -23,14 +23,8 @@ import {
   resolveJobCompletionLetterTemplateLegacyName,
 } from '@/lib/job-completion-message';
 import {
-  buildPendingPaymentLetterBodyParams,
-  buildPendingPaymentLetterButtonUrlParams,
-  resolvePendingPaymentLetterTemplateName,
-  resolvePendingPaymentLetterTemplateFallbackName,
-  resolvePendingPaymentLetterTemplateLegacyName,
-} from '@/lib/pendingPaymentReminder';
-import {
   openWhatsAppMeDeepLink,
+  sendAdminWhatsAppMedia,
   sendAdminWhatsAppTemplate,
   sendAdminWhatsAppText,
 } from '@/lib/sendAdminWhatsAppApi';
@@ -43,6 +37,16 @@ import {
   fetchUpiPaymentAccounts,
   resolvePreferredUpiAccount,
 } from '@/lib/upiPaymentAccounts';
+import { generateUpiQrPngBase64 } from '@/lib/generateUpiQrPng';
+import {
+  buildPendingPaymentLetterBodyParams,
+  buildPendingPaymentLetterButtonUrlParams,
+  resolvePendingPaymentLetterImageTemplateName,
+  resolvePendingPaymentLetterImageTemplateFallbackName,
+  resolvePendingPaymentLetterTemplateName,
+  resolvePendingPaymentLetterTemplateFallbackName,
+  resolvePendingPaymentLetterTemplateLegacyName,
+} from '@/lib/pendingPaymentReminder';
 
 export type JobCompletionWhatsAppSendResult = {
   ok: boolean;
@@ -69,12 +73,25 @@ export async function sendJobCompletionWhatsApp(opts: {
   jobRef?: string | null;
   /** UPI pay HTTPS link for cold Pay now button when balance is pending. */
   payHttpsLink?: string | null;
+  /** Optional UPI QR PNG for balance-due photo+caption / IMAGE cold template. */
+  headerImage?: {
+    imageBase64: string;
+    filename?: string;
+    mimeType?: string;
+  } | null;
   fallbackWaMe?: boolean;
   forceWaMe?: boolean;
 }): Promise<JobCompletionWhatsAppSendResult> {
   const pending = Math.max(0, Number(opts.amountPending) || 0);
   const payButtonParams = buildPendingPaymentLetterButtonUrlParams(opts.payHttpsLink);
   const useBalanceDueCold = pending > 0;
+  const headerImage = opts.headerImage?.imageBase64
+    ? {
+        imageBase64: opts.headerImage.imageBase64,
+        filename: opts.headerImage.filename || 'upi-qr.png',
+        mimeType: opts.headerImage.mimeType || 'image/png',
+      }
+    : null;
 
   const letterName = useBalanceDueCold
     ? resolvePendingPaymentLetterTemplateName(opts.documentBrand, {
@@ -112,6 +129,51 @@ export async function sendJobCompletionWhatsApp(opts: {
   if (opts.forceWaMe) {
     openWhatsAppMeDeepLink(opts.to, opts.text);
     return { ok: true, via: 'wa_me' };
+  }
+
+  // Balance due + QR: 24h media+caption, else IMAGE-header letter template
+  if (useBalanceDueCold && headerImage) {
+    const mediaResult = await sendAdminWhatsAppMedia({
+      to: opts.to,
+      fileBase64: headerImage.imageBase64,
+      filename: headerImage.filename,
+      mimeType: headerImage.mimeType,
+      caption: opts.text,
+      customerId: opts.customerId,
+      source: 'job_completion',
+    });
+    if (mediaResult.ok) {
+      return { ...mediaResult, usedTemplate: false };
+    }
+    if (mediaResult.featureDisabled) {
+      return mediaResult;
+    }
+    if (mediaResult.needsWindowOrTemplate) {
+      for (const templateName of [
+        resolvePendingPaymentLetterImageTemplateName(opts.documentBrand),
+        resolvePendingPaymentLetterImageTemplateFallbackName(opts.documentBrand),
+      ]) {
+        const cold = await sendAdminWhatsAppTemplate({
+          to: opts.to,
+          templateName,
+          languageCode: 'en',
+          bodyParams: letterParams,
+          buttonUrlParams: payButtonParams,
+          headerImage,
+          customerId: opts.customerId,
+          source: 'job_completion',
+        });
+        if (cold.ok) {
+          return { ...cold, usedTemplate: true, usedRichColdTemplate: true };
+        }
+      }
+      // fall through to text letter templates below
+    } else if (opts.fallbackWaMe !== false) {
+      openWhatsAppMeDeepLink(opts.to, opts.text);
+      return { ok: true, via: 'wa_me', error: mediaResult.error };
+    } else {
+      return mediaResult;
+    }
   }
 
   const textResult = await sendAdminWhatsAppText({
@@ -340,6 +402,11 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
     let payHttpsLink: string | null = null;
     let upiOpts: import('@/lib/pendingPaymentReminder').PendingPaymentWhatsAppUpiOptions | null =
       null;
+    let headerImage: {
+      imageBase64: string;
+      filename?: string;
+      mimeType?: string;
+    } | null = null;
     if (built.amountPendingValue > 0) {
       try {
         const { accounts } = await fetchUpiPaymentAccounts();
@@ -361,6 +428,21 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
               httpsLink: share.httpsLink,
             };
           }
+          const png = await generateUpiQrPngBase64({
+            upiId: account.upiId,
+            payeeName: account.payeeName || account.label,
+            amount: built.amountPendingValue,
+            note: ['Pending payment', built.jobNumber || ''].filter(Boolean).join(' '),
+            phone: account.phone || undefined,
+            brand: built.documentBrand,
+          });
+          if (png) {
+            headerImage = {
+              imageBase64: png.base64,
+              filename: png.filename,
+              mimeType: png.mimeType,
+            };
+          }
         }
       } catch (err) {
         console.warn('[job-completion-wa] UPI share failed', err);
@@ -379,6 +461,7 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
             jobRef: built.jobNumber || null,
             documentBrand: built.documentBrand,
             upi: upiOpts,
+            withQrImage: Boolean(headerImage),
           })
         : built.whatsappMessage;
 
@@ -395,6 +478,7 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       pendingDueDate: built.pendingDueDate || null,
       jobRef: built.jobNumber || null,
       payHttpsLink,
+      headerImage,
       fallbackWaMe: false,
     });
 

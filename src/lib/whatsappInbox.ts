@@ -180,7 +180,7 @@ export function invalidateInboundWindowCache(phoneE164?: string | null): void {
   }
 }
 
-/* —— Inbox list + open-chat message cache (session + memory; cut repeat egress) —— */
+/* —— Inbox list + open-chat message cache (session + localStorage + memory) —— */
 
 const INBOX_LIST_CACHE_KEY = 'wa_inbox_threads_cache_v2';
 const THREAD_MSGS_CACHE_KEY = 'wa_thread_msgs_cache_v1';
@@ -188,6 +188,8 @@ const THREAD_MSGS_CACHE_KEY = 'wa_thread_msgs_cache_v1';
 export const WHATSAPP_INBOX_LIST_CACHE_TTL_MS = 45_000;
 /** Open chat: show cache instantly; background refresh if older than this. */
 export const WHATSAPP_THREAD_CACHE_TTL_MS = 90_000;
+/** APK cold start: still paint from localStorage within this window, then soft-refresh. */
+export const WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS = 30 * 60_000;
 const THREAD_CACHE_MAX_PHONES = 12;
 
 /** How far back the inbox thread list loads (sidebar). */
@@ -291,11 +293,52 @@ function readJsonSession<T>(key: string): T | null {
   }
 }
 
+function readJsonLocal<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Memory-session first; fall back to localStorage (survives Admin APK process kill). */
+function readJsonCached<T>(key: string): T | null {
+  return readJsonSession<T>(key) ?? readJsonLocal<T>(key);
+}
+
 function writeJsonSession(key: string, value: unknown): void {
   try {
     sessionStorage.setItem(key, JSON.stringify(value));
   } catch {
     /* quota */
+  }
+}
+
+function writeJsonLocal(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* quota */
+  }
+}
+
+function writeJsonCached(key: string, value: unknown): void {
+  writeJsonSession(key, value);
+  writeJsonLocal(key, value);
+}
+
+function removeJsonCached(key: string): void {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -309,7 +352,7 @@ export function peekWhatsAppInboxThreadsCache(opts?: {
   if (inboxListCacheMem && inboxListCacheMem.rangeKey === rangeKey) {
     return inboxListCacheMem;
   }
-  const stored = readJsonSession<InboxListCacheEntry & { todayOnly?: boolean }>(
+  const stored = readJsonCached<InboxListCacheEntry & { todayOnly?: boolean }>(
     INBOX_LIST_CACHE_KEY
   );
   if (stored && Array.isArray(stored.threads)) {
@@ -317,6 +360,8 @@ export function peekWhatsAppInboxThreadsCache(opts?: {
       stored.rangeKey ?? (stored.todayOnly === false ? 'all' : 'today');
     if (storedKey === rangeKey) {
       inboxListCacheMem = { ...stored, rangeKey: storedKey };
+      // Promote localStorage hit into session for this WebView session.
+      writeJsonSession(INBOX_LIST_CACHE_KEY, inboxListCacheMem);
       return inboxListCacheMem;
     }
   }
@@ -331,6 +376,13 @@ export function isWhatsAppInboxListCacheFresh(
   return Date.now() - entry.fetchedAt < ttlMs;
 }
 
+/** True when cache is old for soft-refresh skip, but still worth painting on APK open. */
+export function isWhatsAppInboxListCachePaintable(
+  entry: InboxListCacheEntry | null | undefined
+): boolean {
+  return isWhatsAppInboxListCacheFresh(entry, WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS);
+}
+
 export function writeWhatsAppInboxThreadsCache(
   threads: WhatsAppThread[],
   opts?: { rangeKey?: string; todayOnly?: boolean }
@@ -343,16 +395,12 @@ export function writeWhatsAppInboxThreadsCache(
     fetchedAt: Date.now(),
   };
   inboxListCacheMem = entry;
-  writeJsonSession(INBOX_LIST_CACHE_KEY, entry);
+  writeJsonCached(INBOX_LIST_CACHE_KEY, entry);
 }
 
 export function invalidateWhatsAppInboxThreadsCache(): void {
   inboxListCacheMem = null;
-  try {
-    sessionStorage.removeItem(INBOX_LIST_CACHE_KEY);
-  } catch {
-    /* ignore */
-  }
+  removeJsonCached(INBOX_LIST_CACHE_KEY);
 }
 
 export function peekWhatsAppThreadMessagesCache(
@@ -362,10 +410,11 @@ export function peekWhatsAppThreadMessagesCache(
   if (!phone) return null;
   const mem = threadMsgsCacheMem.get(phone);
   if (mem) return mem;
-  const store = readJsonSession<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
+  const store = readJsonCached<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
   const stored = store[phone];
   if (stored && Array.isArray(stored.messages)) {
     threadMsgsCacheMem.set(phone, stored);
+    writeJsonSession(THREAD_MSGS_CACHE_KEY, store);
     return stored;
   }
   return null;
@@ -377,6 +426,12 @@ export function isWhatsAppThreadCacheFresh(
 ): boolean {
   if (!entry?.fetchedAt) return false;
   return Date.now() - entry.fetchedAt < ttlMs;
+}
+
+export function isWhatsAppThreadCachePaintable(
+  entry: ThreadMsgsCacheEntry | null | undefined
+): boolean {
+  return isWhatsAppThreadCacheFresh(entry, WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS);
 }
 
 export function writeWhatsAppThreadMessagesCache(
@@ -392,14 +447,14 @@ export function writeWhatsAppThreadMessagesCache(
     fetchedAt: Date.now(),
   };
   threadMsgsCacheMem.set(phone, entry);
-  const store = readJsonSession<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
+  const store = readJsonCached<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
   store[phone] = entry;
   const trimmed = Object.fromEntries(
     Object.entries(store)
       .sort((a, b) => (b[1].fetchedAt || 0) - (a[1].fetchedAt || 0))
       .slice(0, THREAD_CACHE_MAX_PHONES)
   );
-  writeJsonSession(THREAD_MSGS_CACHE_KEY, trimmed);
+  writeJsonCached(THREAD_MSGS_CACHE_KEY, trimmed);
 }
 
 /** Patch one message into thread cache (realtime / send) without full reload. */
@@ -426,17 +481,13 @@ export function invalidateWhatsAppThreadMessagesCache(phoneE164?: string | null)
   const phone = String(phoneE164 || '').replace(/\D/g, '');
   if (phone) {
     threadMsgsCacheMem.delete(phone);
-    const store = readJsonSession<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
+    const store = readJsonCached<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
     delete store[phone];
-    writeJsonSession(THREAD_MSGS_CACHE_KEY, store);
+    writeJsonCached(THREAD_MSGS_CACHE_KEY, store);
     return;
   }
   threadMsgsCacheMem.clear();
-  try {
-    sessionStorage.removeItem(THREAD_MSGS_CACHE_KEY);
-  } catch {
-    /* ignore */
-  }
+  removeJsonCached(THREAD_MSGS_CACHE_KEY);
 }
 
 /** People list via RPC — not full message dump. */

@@ -9,6 +9,11 @@ import {
   resolveColdTechDelayed,
   resolveColdVisitCancelled,
 } from '@/lib/whatsappUtilityTemplates';
+import {
+  buildPendingPaymentLetterBodyParams,
+  pendingPaymentTemplateFallbackNames,
+  resolvePendingPaymentLetterTemplateName,
+} from '@/lib/pendingPaymentReminder';
 import { waBrandBookingUrl, waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
 import { brandLetterClosingLines } from '@/lib/whatsappBrandContact';
 
@@ -726,9 +731,17 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_balance_due',
     label: 'Balance due',
     group: 'payment',
-    templateName: 'svc_balance_due',
+    templateName: 'svc_balance_due_letter_hro_v6',
     language: 'en',
-    bodyParams: (ctx) => [cleanName(ctx), cleanAmount(ctx) || '0'],
+    resolveTemplateName: (ctx) =>
+      resolvePendingPaymentLetterTemplateName(ctx.brand || 'hydrogenro', { withPayButton: true }),
+    bodyParams: (ctx) =>
+      buildPendingPaymentLetterBodyParams(
+        cleanName(ctx),
+        cleanAmount(ctx) || '0',
+        ctx.whenLabel || null,
+        ctx.jobRef || null
+      ),
     needsAmount: true,
   },
   {
@@ -970,6 +983,11 @@ export function filterQuickTemplatesByApproved(
         'svc_wfs_ask_name_ero_v1',
         'svc_wfs_ask_name_v1',
       ].some((n) => approvedNames.has(resolveWaTemplateName(n)));
+    }
+    if (r.id === 'tpl_balance_due') {
+      return pendingPaymentTemplateFallbackNames('hydrogenro').some((n) =>
+        approvedNames.has(resolveWaTemplateName(n))
+      );
     }
     const name = r.resolveTemplateName
       ? resolveWaTemplateName(r.resolveTemplateName({ brand: 'hydrogenro', customerName: 'Customer' }))

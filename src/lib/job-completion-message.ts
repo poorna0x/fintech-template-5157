@@ -20,6 +20,8 @@ export interface JobCompletionMessageInput {
   jobRef?: string | null;
   /** UPI pay link for pending balance (24h free-form). */
   upi?: PendingPaymentWhatsAppUpiOptions | null;
+  /** When true, caption mentions QR image attached above. */
+  withQrImage?: boolean;
   documentBrand: DocumentBrand;
 }
 
@@ -137,6 +139,11 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
 
   const payLink = (input.upi?.httpsLink || '').trim();
   const upiId = (input.upi?.upiId || '').trim();
+  if (pending > 0 && input.withQrImage) {
+    amountLines.push('');
+    amountLines.push('*Pay with UPI QR*');
+    amountLines.push('📱 Scan or tap the QR code above to pay directly (GPay / PhonePe / WhatsApp Pay).');
+  }
   if (pending > 0 && (payLink || upiId)) {
     amountLines.push('');
     amountLines.push('*Pay now*');

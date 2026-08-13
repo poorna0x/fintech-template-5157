@@ -153,7 +153,7 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
         : 'Service/Repair';
     const schedulePrimary = hasCustomer
       ? {
-          name: `existing_service_schedule_${suffix}_cta`,
+          name: `existing_service_schedule_${suffix}_cta_v2`,
           languageCode: 'en',
           bodyParams: [name],
           seedPending: action === 'book_reinstall' ? 'book_reinstall' : 'book_service',

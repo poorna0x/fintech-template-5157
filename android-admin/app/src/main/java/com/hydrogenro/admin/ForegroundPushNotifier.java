@@ -4,6 +4,8 @@ import android.app.Notification;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
@@ -72,6 +74,12 @@ public final class ForegroundPushNotifier {
             }
         }
 
+        boolean isWhatsApp = "whatsapp_inbound".equals(type);
+        int smallIcon = isWhatsApp ? R.drawable.ic_stat_whatsapp : R.drawable.ic_stat_notify;
+        if (isWhatsApp && (colorHex == null || colorHex.isEmpty())) {
+            color = Color.parseColor("#25D366");
+        }
+
         Intent openIntent = new Intent(context, MainActivity.class)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         // Capacitor only treats a tap as a push action when google.message_id is present.
@@ -95,8 +103,8 @@ public final class ForegroundPushNotifier {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        Notification notification = new NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_stat_notify)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(smallIcon)
             .setColor(color)
             .setContentTitle(title)
             .setContentText(body)
@@ -104,8 +112,23 @@ public final class ForegroundPushNotifier {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(Notification.DEFAULT_ALL)
             .setContentIntent(openPending)
-            .setAutoCancel(true)
-            .build();
+            .setAutoCancel(true);
+
+        if (isWhatsApp) {
+            try {
+                Bitmap large = BitmapFactory.decodeResource(
+                    context.getResources(),
+                    R.drawable.ic_notify_whatsapp
+                );
+                if (large != null) {
+                    builder.setLargeIcon(large);
+                }
+            } catch (Exception ignored) {
+                /* keep small icon only */
+            }
+        }
+
+        Notification notification = builder.build();
 
         try {
             NotificationManagerCompat.from(context).notify(tag, 0, notification);

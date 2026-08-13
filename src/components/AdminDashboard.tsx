@@ -752,9 +752,7 @@ const AdminDashboard = () => {
     });
     return () => {
       cancelled = true;
-      void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) =>
-        setAdminPushDeepLinkHandler(null)
-      );
+      // Do not clear handler — AdminPortal keeps a WhatsApp fallback during remounts.
     };
   }, [navigate, location.search]);
 

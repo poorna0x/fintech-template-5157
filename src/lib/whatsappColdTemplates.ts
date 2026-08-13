@@ -20,12 +20,20 @@ export const WA_COLD = {
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
   pending_payment: {
-    name: 'svc_balance_due',
+    /** Prefer resolvePendingPaymentLetterTemplateName / Image — HRO v6 is default alias target. */
+    name: 'svc_balance_due_letter_hro_v6',
     language: 'en',
-    /** {{1}}=name, {{2}}=amount digits */
-    bodyParams: (customerName: string, amount: number | string) => [
+    /** {{1}}=name, {{2}}=amount, {{3}}=due, {{4}}=invoice/job */
+    bodyParams: (
+      customerName: string,
+      amount: number | string,
+      dueDateLabel?: string,
+      invoiceRef?: string
+    ) => [
       cleanName(customerName),
       cleanAmount(amount),
+      String(dueDateLabel || '').trim() || 'at your earliest convenience',
+      String(invoiceRef || '').trim() || 'your service visit',
     ],
   },
   /** Prefer this name — Meta reclassified service_reminder_cta as MARKETING. */
@@ -284,7 +292,7 @@ export const WA_COLD = {
   },
   // —— Booking flows: use resolveBookingCta(kind, brand) at send time (UTILITY *_cta templates) ——
   book_existing_customer: {
-    name: 'existing_service_schedule_ero_cta',
+    name: 'existing_service_schedule_ero_cta_v2',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
@@ -333,7 +341,7 @@ export const WA_COLD = {
   },
   booking_confirmed: {
     /** Use resolveBookingCta('booking_confirmed', brand, name, ref, when) at send time. */
-    name: 'svc_booking_confirmed_ero',
+    name: 'svc_booking_confirmed_letter_ero_v4',
     language: 'en',
     bodyParams: (customerName: string, jobRef: string, whenLabel: string) => [
       cleanName(customerName),
