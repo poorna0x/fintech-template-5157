@@ -2456,7 +2456,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       >
                         <Paperclip className="h-5 w-5 rotate-45" />
                       </button>
-                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] bg-[#2c3840] px-3 py-1.5 shadow-sm">
+                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] border border-transparent bg-[#2c3840] px-3 py-1.5 shadow-sm transition-[border-color,box-shadow] duration-150 focus-within:border-[#2d9f78]/50 focus-within:shadow-[0_0_0_2px_rgba(45,159,120,0.18)]">
                         <Textarea
                           ref={composerRef}
                           value={draft}
@@ -2465,6 +2465,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           disabled={sending}
                           rows={1}
                           className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#e4eaec] shadow-none outline-none ring-0 ring-offset-0 placeholder:text-[#7d8f99] focus:border-0 focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                          style={{ WebkitTapHighlightColor: 'transparent' }}
                           onKeyDown={(e) => {
                             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                             if (e.key === 'Enter' && !e.shiftKey) {
