@@ -12,13 +12,9 @@ import {
   FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import {
   formatBytes,
-  normalizeVerifyCodeInput,
-  resolvePdfAuthenticityByVerifyCode,
   verifyPdfFileAuthenticity,
   type PdfAuthenticityHit,
   type PdfAuthenticityResolve,
@@ -88,11 +84,13 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [verifyCode, setVerifyCode] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [lastHash, setLastHash] = useState<string | null>(null);
   const [result, setResult] = useState<PdfAuthenticityResolve | null>(null);
   const dragDepth = useRef(0);
+
+  const failTone = result?.status === 'unknown' || result?.status === 'error';
+  const matchTone = result?.status === 'match';
 
   const resetResults = useCallback(() => {
     setResult(null);
@@ -105,18 +103,21 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [resetResults]);
 
-  const runFileVerify = useCallback(async (file: File) => {
-    setSelectedFile(file);
-    setBusy(true);
-    resetResults();
-    try {
-      const resolved = await verifyPdfFileAuthenticity(file);
-      if (resolved.sha256Hex) setLastHash(resolved.sha256Hex);
-      setResult(resolved);
-    } finally {
-      setBusy(false);
-    }
-  }, [resetResults]);
+  const runFileVerify = useCallback(
+    async (file: File) => {
+      setSelectedFile(file);
+      setBusy(true);
+      resetResults();
+      try {
+        const resolved = await verifyPdfFileAuthenticity(file);
+        if (resolved.sha256Hex) setLastHash(resolved.sha256Hex);
+        setResult(resolved);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [resetResults]
+  );
 
   const onPickFiles = useCallback(
     (list: FileList | File[] | null) => {
@@ -126,16 +127,6 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
     },
     [runFileVerify]
   );
-
-  const handleVerifyCode = async () => {
-    setBusy(true);
-    setResult(null);
-    try {
-      setResult(await resolvePdfAuthenticityByVerifyCode(verifyCode));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -176,12 +167,16 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
     onPickFiles(e.dataTransfer.files);
   };
 
-  const codeReady = normalizeVerifyCodeInput(verifyCode).length === 8;
-
   return (
-    <div className="mx-auto w-full max-w-2xl">
+    <div
+      className={cn(
+        'mx-auto w-full max-w-2xl rounded-2xl p-1 sm:p-2 transition-colors duration-300',
+        failTone && 'bg-gradient-to-b from-red-100/90 via-red-50/80 to-transparent ring-1 ring-red-200/80',
+        matchTone && 'bg-gradient-to-b from-emerald-50/70 via-transparent to-transparent'
+      )}
+    >
       {!hideHeader && (
-        <div className="mb-5 flex items-start justify-between gap-3">
+        <div className="mb-5 flex items-start justify-between gap-3 px-1">
           <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight">
               Verify PDF authenticity
@@ -209,10 +204,19 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
         <section
           className={cn(
             'relative rounded-2xl border-2 border-dashed transition-colors duration-200',
-            'bg-gradient-to-b from-emerald-50/80 to-white',
-            dragging
-              ? 'border-emerald-500 bg-emerald-50 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.35)]'
-              : 'border-emerald-200/80 hover:border-emerald-400',
+            failTone
+              ? cn(
+                  'bg-gradient-to-b from-red-50 to-white',
+                  dragging
+                    ? 'border-red-500 bg-red-50 shadow-[inset_0_0_0_1px_rgba(239,68,68,0.35)]'
+                    : 'border-red-300 hover:border-red-400'
+                )
+              : cn(
+                  'bg-gradient-to-b from-emerald-50/80 to-white',
+                  dragging
+                    ? 'border-emerald-500 bg-emerald-50 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.35)]'
+                    : 'border-emerald-200/80 hover:border-emerald-400'
+                ),
             busy && 'pointer-events-none opacity-80'
           )}
           onDragEnter={onDragEnter}
@@ -229,7 +233,6 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
             disabled={busy}
             onChange={(e) => {
               onPickFiles(e.target.files);
-              // allow re-selecting the same file
               e.target.value = '';
             }}
           />
@@ -243,8 +246,8 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
           >
             <div
               className={cn(
-                'flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl',
-                'bg-emerald-600 text-white shadow-sm transition-transform duration-200',
+                'flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl text-white shadow-sm transition-transform duration-200',
+                failTone ? 'bg-red-600' : 'bg-emerald-600',
                 dragging && 'scale-105'
               )}
             >
@@ -262,7 +265,12 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
                 or tap to browse · paste from clipboard on desktop
               </p>
             </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1 text-xs font-medium ring-1',
+                failTone ? 'text-red-800 ring-red-200' : 'text-emerald-800 ring-emerald-200'
+              )}
+            >
               <ShieldCheck className="h-3.5 w-3.5" />
               AMC · Bill · Quotation · Invoice · Warranty
             </span>
@@ -270,8 +278,18 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
         </section>
 
         {selectedFile && (
-          <div className="flex items-start gap-3 rounded-xl border border-border bg-card px-3 py-3 sm:px-4">
-            <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+          <div
+            className={cn(
+              'flex items-start gap-3 rounded-xl border px-3 py-3 sm:px-4',
+              failTone ? 'border-red-200 bg-red-50/60' : 'border-border bg-card'
+            )}
+          >
+            <div
+              className={cn(
+                'mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
+                failTone ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+              )}
+            >
               <FileText className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -292,52 +310,19 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
           </div>
         )}
 
-        <div className="relative flex items-center gap-3">
-          <div className="h-px flex-1 bg-border" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            or enter code
-          </span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
-
-        <section className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-sm">
-          <Label htmlFor="pdf-verify-code" className="text-sm font-medium">
-            Footer verify code
-          </Label>
-          <p className="mt-1 text-xs text-muted-foreground mb-3">
-            8 characters from the PDF footer — confirms the code was issued; upload the file to prove
-            it was not edited.
-          </p>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Input
-              id="pdf-verify-code"
-              value={verifyCode}
-              onChange={(e) => setVerifyCode(normalizeVerifyCodeInput(e.target.value).slice(0, 8))}
-              placeholder="AB12CD34"
-              maxLength={8}
-              disabled={busy}
-              autoCapitalize="characters"
-              autoCorrect="off"
-              spellCheck={false}
-              className="h-11 font-mono text-base tracking-[0.2em] sm:tracking-[0.28em] uppercase"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && codeReady && !busy) void handleVerifyCode();
-              }}
-            />
-            <Button
-              type="button"
-              className="h-11 w-full sm:w-auto shrink-0 cursor-pointer bg-emerald-600 hover:bg-emerald-700"
-              disabled={busy || !codeReady}
-              onClick={() => void handleVerifyCode()}
-            >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Look up'}
-            </Button>
-          </div>
-        </section>
-
         {lastHash && (
-          <div className="rounded-xl border border-border bg-muted/40 p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-1.5">
+          <div
+            className={cn(
+              'rounded-xl border p-3 sm:p-4',
+              failTone ? 'border-red-200 bg-red-50/50' : 'border-border bg-muted/40'
+            )}
+          >
+            <div
+              className={cn(
+                'flex items-center gap-1.5 text-xs font-medium mb-1.5',
+                failTone ? 'text-red-800/80' : 'text-muted-foreground'
+              )}
+            >
               <Hash className="h-3.5 w-3.5" />
               File SHA-256
             </div>
@@ -355,8 +340,8 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
               result.status === 'match' &&
                 'border-emerald-200 bg-emerald-50 text-emerald-950',
               result.status === 'code_found' && 'border-sky-200 bg-sky-50 text-sky-950',
-              result.status === 'unknown' && 'border-amber-200 bg-amber-50 text-amber-950',
-              result.status === 'error' && 'border-red-200 bg-red-50 text-red-950'
+              result.status === 'unknown' && 'border-red-300 bg-red-100 text-red-950 shadow-sm shadow-red-100',
+              result.status === 'error' && 'border-red-300 bg-red-100 text-red-950 shadow-sm shadow-red-100'
             )}
           >
             {result.status === 'match' && (
@@ -389,7 +374,7 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
             )}
             {result.status === 'unknown' && (
               <div className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
                 <div>
                   <p className="font-semibold text-base">Not verified</p>
                   <p className="mt-1 opacity-90">{result.message}</p>
@@ -407,11 +392,6 @@ export default function PdfAuthenticityVerifyPage({ hideHeader, onBack }: Props)
             )}
           </div>
         )}
-
-        <p className="text-xs text-muted-foreground leading-relaxed px-0.5 pb-2">
-          Tip: use the PDF from Download / Email / WhatsApp. Browser Print → Save as PDF creates
-          different bytes and will not match.
-        </p>
       </div>
     </div>
   );
