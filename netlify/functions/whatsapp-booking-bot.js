@@ -738,11 +738,14 @@ async function upsertBookingBotRow(db, phone, patch) {
   const phoneE164 = normalizePhoneE164(phone);
   if (!phoneE164) return;
   try {
-    const { data: existing } = await db
+    const { data: existing, error: selErr } = await db
       .from('whatsapp_booking_bot_state')
-      .select('state, remembered_location, awaiting_media')
+      .select('phone_e164, state, remembered_location, awaiting_media')
       .eq('phone_e164', phoneE164)
       .maybeSingle();
+    if (selErr) {
+      console.warn('[whatsapp-booking-bot] bot state select failed', selErr.message || selErr);
+    }
     const row = {
       phone_e164: phoneE164,
       updated_at: new Date().toISOString(),
@@ -750,15 +753,26 @@ async function upsertBookingBotRow(db, phone, patch) {
     if (patch.state !== undefined) row.state = patch.state;
     if (patch.remembered_location !== undefined) row.remembered_location = patch.remembered_location;
     if (patch.awaiting_media !== undefined) row.awaiting_media = patch.awaiting_media;
-    if (!existing?.phone_e164) {
-      await db.from('whatsapp_booking_bot_state').insert({
+    // Must key off row presence — select used to omit phone_e164 so updates always
+    // attempted INSERT, failed unique, and left step stuck (e.g. identity gate loop).
+    if (!existing) {
+      const { error: insErr } = await db.from('whatsapp_booking_bot_state').insert({
         ...row,
         state: row.state || {},
         awaiting_media: row.awaiting_media ?? false,
       });
+      if (insErr) {
+        console.warn('[whatsapp-booking-bot] bot state insert failed', insErr.message || insErr);
+      }
       return;
     }
-    await db.from('whatsapp_booking_bot_state').update(row).eq('phone_e164', phoneE164);
+    const { error: updErr } = await db
+      .from('whatsapp_booking_bot_state')
+      .update(row)
+      .eq('phone_e164', phoneE164);
+    if (updErr) {
+      console.warn('[whatsapp-booking-bot] bot state update failed', updErr.message || updErr);
+    }
   } catch (err) {
     console.warn('[whatsapp-booking-bot] bot state upsert failed', err?.message || err);
   }
