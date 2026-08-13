@@ -771,6 +771,11 @@ function generateSalarySlipHTML(data, includeDayWiseBreakdown = true) {
         <div class="footer">
           <div>This is a computer-generated salary slip.</div>
           <div style="margin-top: 5px;">💧 <span style="color: #2563eb; font-weight: bold;">Hydrogen RO</span> - Authorized Service Provider</div>
+          ${data.authenticityVerifyCode ? `
+          <div style="margin-top: 8px; font-size: 11px; color: #4b5563;">
+            ${escapeHtml('Verify authenticity at hydrogenro.com/authenticity · Code ' + data.authenticityVerifyCode)}
+          </div>
+          ` : ''}
         </div>
       </div>
     </body>
@@ -807,6 +812,7 @@ function buildSalarySlipHtml(breakdown, period, includeDayWiseBreakdown, assetOr
     monthlyBreakdowns: breakdown.monthlyBreakdowns || [],
     company: getDefaultCompanyData(),
     includeDayWiseBreakdown: includeDayWiseBreakdown !== false,
+    authenticityVerifyCode: breakdown.authenticityVerifyCode || null,
   };
   const html = generateSalarySlipHTML(data, includeDayWiseBreakdown !== false);
   const origin =

@@ -26,6 +26,11 @@ const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
 const { whatsappGreetingName } = require('./whatsapp-greeting-name');
 const { loadMonthSalaryBreakdowns } = require('./salary-slip-month-calc');
 const { buildSalarySlipHtml, getSalarySlipFilename } = require('./salary-slip-html');
+const {
+  recordDocumentPdfAuthenticityServer,
+  generateDocumentPdfVerifyCode,
+  todayYmdIst,
+} = require('./document-pdf-authenticity-record');
 // Lazy-load Chromium/Puppeteer only when actually rendering (early exits stay fast).
 function renderHtmlToPdf(html, requestOrigin) {
   // eslint-disable-next-line global-require
@@ -324,8 +329,10 @@ exports.handler = async (event) => {
     }
 
     try {
+      const verifyCode = generateDocumentPdfVerifyCode();
+      const generatedOnYmd = todayYmdIst();
       const html = buildSalarySlipHtml(
-        breakdown,
+        { ...breakdown, authenticityVerifyCode: verifyCode },
         loaded.period,
         true,
         process.env.URL || process.env.DEPLOY_PRIME_URL || 'https://hydrogenro.com'
@@ -334,6 +341,23 @@ exports.handler = async (event) => {
       const pdfBuffer = await renderHtmlToPdf(html, process.env.URL || null);
       if (!pdfBuffer?.length) {
         throw new Error('PDF generation returned empty buffer');
+      }
+
+      const fingerprint = await recordDocumentPdfAuthenticityServer(db, {
+        docType: 'salary_slip',
+        sourceKey: `salary-slip:${breakdown.technicianId}:${monthKey}`,
+        verifyCode,
+        pdfBuffer,
+        filename,
+        documentRef: `${breakdown.technicianName} · ${monthKey}`,
+        generatedOnYmd,
+      });
+      if (!fingerprint.ok) {
+        console.warn(
+          '[salary-slip-month-end] authenticity fingerprint not saved',
+          breakdown.technicianId,
+          fingerprint.error
+        );
       }
 
       if (query.dryRun) {
@@ -346,6 +370,8 @@ exports.handler = async (event) => {
           filename,
           pdfBytes: pdfBuffer.length,
           netSalary: breakdown.totalSalary,
+          verifyCode,
+          authenticityOk: fingerprint.ok === true,
         });
         continue;
       }
@@ -384,6 +410,8 @@ exports.handler = async (event) => {
         status: 'sent',
         via: sent.via,
         waMessageId: sent.waMessageId,
+        verifyCode,
+        authenticityOk: fingerprint.ok === true,
       });
     } catch (err) {
       results.failed += 1;

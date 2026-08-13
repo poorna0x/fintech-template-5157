@@ -10,6 +10,7 @@ const ALLOWED_DOC_TYPES = new Set([
   'invoice',
   'warranty',
   'amc',
+  'salary_slip',
 ]);
 
 function sha256HexFromBuffer(buf) {
@@ -33,6 +34,16 @@ function normalizeVerifyCode(code) {
     .slice(0, 8);
 }
 
+function generateDocumentPdfVerifyCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(8);
+  let out = '';
+  for (let i = 0; i < 8; i += 1) {
+    out += alphabet[bytes[i] % alphabet.length];
+  }
+  return out;
+}
+
 function normalizeDocType(docType) {
   const t = String(docType || '')
     .trim()
@@ -41,6 +52,7 @@ function normalizeDocType(docType) {
   if (t === 'bill') return 'service_bill';
   if (t === 'amc_document') return 'amc';
   if (t === 'warranty_document') return 'warranty';
+  if (t === 'salary' || t === 'salary-slip') return 'salary_slip';
   return 'quotation';
 }
 
@@ -105,5 +117,6 @@ module.exports = {
   normalizeDocType,
   previewAuthenticitySourceKey,
   recordDocumentPdfAuthenticityServer,
+  generateDocumentPdfVerifyCode,
   todayYmdIst,
 };

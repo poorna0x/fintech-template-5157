@@ -2,12 +2,19 @@ import { TechnicianSalaryBreakdown } from '@/components/TechnicianPayments';
 import { BRAND_SEAL_SIGN_SRC } from './service-brands';
 import { sanitizeForTemplate } from './sanitize';
 import {
-  downloadDocumentPdf,
+  downloadDocumentPdfReturningBase64,
   generateDocumentPdfBase64,
   withAbsoluteAssetUrls,
   type GenerateDocumentPdfBase64Result,
 } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
+import {
+  formatDocumentPdfVerifyFooterLine,
+  generateDocumentPdfVerifyCode,
+  recordDocumentPdfAuthenticity,
+  todayYmdIst,
+} from './documentPdfAuthenticity';
+import { toast } from 'sonner';
 
 interface Payment {
   id: string;
@@ -98,6 +105,8 @@ interface SalarySlipPDFData {
     gstNumber?: string;
   };
   includeDayWiseBreakdown: boolean;
+  /** 8-char code shown in footer — Verify authenticity at hydrogenro.com/authenticity · Code … */
+  authenticityVerifyCode?: string;
 }
 
 export function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown: boolean = true): string {
@@ -836,6 +845,11 @@ export function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBr
         <div class="footer">
           <div>This is a computer-generated salary slip.</div>
           <div style="margin-top: 5px;">💧 <span style="color: #2563eb; font-weight: bold;">Hydrogen RO</span> - Authorized Service Provider</div>
+          ${data.authenticityVerifyCode ? `
+          <div style="margin-top: 8px; font-size: 11px; color: #4b5563;">
+            ${sanitizeForTemplate(formatDocumentPdfVerifyFooterLine(data.authenticityVerifyCode, 'hydrogenro'))}
+          </div>
+          ` : ''}
         </div>
       </div>
     </body>
@@ -870,7 +884,8 @@ function getDefaultCompanyData(): SalarySlipPDFData['company'] {
 export function buildSalarySlipPdfData(
   breakdown: TechnicianSalaryBreakdown,
   period: { start: Date; end: Date },
-  includeDayWiseBreakdown: boolean = true
+  includeDayWiseBreakdown: boolean = true,
+  authenticityVerifyCode?: string
 ): SalarySlipPDFData {
   return {
     technicianName: breakdown.technicianName,
@@ -899,6 +914,7 @@ export function buildSalarySlipPdfData(
     monthlyBreakdowns: (breakdown as { monthlyBreakdowns?: MonthlySalaryBreakdown[] }).monthlyBreakdowns || [],
     company: getDefaultCompanyData(),
     includeDayWiseBreakdown,
+    authenticityVerifyCode: authenticityVerifyCode || undefined,
   };
 }
 
@@ -907,6 +923,18 @@ export function getSalarySlipFilename(
   period: { start: Date; end: Date }
 ): string {
   return `SalarySlip_${breakdown.technicianName.replace(/\s+/g, '_')}_${period.start.toISOString().slice(0, 10)}.pdf`;
+}
+
+function salarySlipSourceKey(
+  breakdown: TechnicianSalaryBreakdown,
+  period: { start: Date; end: Date }
+): string {
+  const techId = String(breakdown.technicianId || breakdown.employeeId || 'tech').trim() || 'tech';
+  const start =
+    period.start instanceof Date
+      ? `${period.start.getFullYear()}-${String(period.start.getMonth() + 1).padStart(2, '0')}`
+      : String(period.start || '').slice(0, 7);
+  return `salary-slip:${techId}:${start}`;
 }
 
 /** HTML for in-app preview (absolute asset URLs for logos/seals). */
@@ -925,11 +953,32 @@ export async function generateSalarySlipPdfBase64(
   period: { start: Date; end: Date },
   includeDayWiseBreakdown: boolean = true
 ): Promise<GenerateDocumentPdfBase64Result> {
-  const pdfData = buildSalarySlipPdfData(breakdown, period, includeDayWiseBreakdown);
-  return generateDocumentPdfBase64({
+  const verifyCode = generateDocumentPdfVerifyCode();
+  const generatedOnYmd = todayYmdIst();
+  const pdfData = buildSalarySlipPdfData(
+    breakdown,
+    period,
+    includeDayWiseBreakdown,
+    verifyCode
+  );
+  const filename = getSalarySlipFilename(breakdown, period);
+  const pdf = await generateDocumentPdfBase64({
     html: generateSalarySlipHTML(pdfData, includeDayWiseBreakdown),
-    filename: getSalarySlipFilename(breakdown, period),
+    filename,
   });
+  const recorded = await recordDocumentPdfAuthenticity({
+    docType: 'salary_slip',
+    sourceKey: salarySlipSourceKey(breakdown, period),
+    verifyCode,
+    pdfBase64: pdf.pdfBase64,
+    filename: pdf.filename,
+    documentRef: `${breakdown.technicianName} · ${generatedOnYmd}`,
+    generatedOnYmd,
+  });
+  if (!recorded.ok) {
+    console.warn('[salary-slip] authenticity fingerprint not saved:', recorded.error);
+  }
+  return pdf;
 }
 
 export function generateSalarySlipPDF(
@@ -946,22 +995,45 @@ export function generateSalarySlipPDF(
     }
     (window as any).isPrintingSalarySlip = true;
 
-    const pdfData = buildSalarySlipPdfData(breakdown, period, includeDayWiseBreakdown);
-
     if (action === 'pdf') {
-      void downloadDocumentPdf({
+      const verifyCode = generateDocumentPdfVerifyCode();
+      const generatedOnYmd = todayYmdIst();
+      const pdfData = buildSalarySlipPdfData(
+        breakdown,
+        period,
+        includeDayWiseBreakdown,
+        verifyCode
+      );
+      void downloadDocumentPdfReturningBase64({
         html: generateSalarySlipHTML(pdfData, includeDayWiseBreakdown),
         filename: getSalarySlipFilename(breakdown, period),
       })
-        .then(() => {
-          (window as any).isPrintingSalarySlip = false;
+        .then(async (pdf) => {
+          const recorded = await recordDocumentPdfAuthenticity({
+            docType: 'salary_slip',
+            sourceKey: salarySlipSourceKey(breakdown, period),
+            verifyCode,
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
+            documentRef: `${breakdown.technicianName} · ${generatedOnYmd}`,
+            generatedOnYmd,
+          });
+          if (!recorded.ok) {
+            toast.warning('PDF downloaded, but authenticity fingerprint was not saved', {
+              description: recorded.error,
+            });
+          }
         })
         .catch(() => {
+          // downloadDocumentPdfReturningBase64 already toasts
+        })
+        .finally(() => {
           (window as any).isPrintingSalarySlip = false;
         });
       return;
     }
 
+    const pdfData = buildSalarySlipPdfData(breakdown, period, includeDayWiseBreakdown);
     // Create a new window for printing
     const printWindow = window.open('', '_blank', 'width=800,height=600');
     

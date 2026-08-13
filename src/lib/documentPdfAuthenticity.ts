@@ -7,7 +7,13 @@ import { sha256HexFromBase64, sha256HexFromFile } from '@/lib/amcPdfAuthenticity
 
 const VERIFY_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 
-export type DocumentPdfDocType = 'service_bill' | 'quotation' | 'invoice' | 'warranty' | 'amc';
+export type DocumentPdfDocType =
+  | 'service_bill'
+  | 'quotation'
+  | 'invoice'
+  | 'warranty'
+  | 'amc'
+  | 'salary_slip';
 
 export const DOCUMENT_PDF_DOC_TYPE_LABELS: Record<DocumentPdfDocType, string> = {
   service_bill: 'Service bill',
@@ -15,6 +21,7 @@ export const DOCUMENT_PDF_DOC_TYPE_LABELS: Record<DocumentPdfDocType, string> = 
   invoice: 'Tax invoice',
   warranty: 'Warranty card',
   amc: 'AMC agreement',
+  salary_slip: 'Salary slip',
 };
 
 export type DocumentPdfAuthenticityRow = {
