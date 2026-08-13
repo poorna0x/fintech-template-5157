@@ -256,6 +256,61 @@ async function findCustomerIdByPhone(db, phoneE164) {
   }
 }
 
+async function customerIdIfExists(db, id) {
+  const value = String(id || '').trim();
+  if (!db || !value) return null;
+  const { data } = await db.from('customers').select('id').eq('id', value).maybeSingle();
+  return data?.id || null;
+}
+
+/**
+ * Inbox apply / gallery: thread customer_id, message, phone last-10,
+ * booking-bot linked/existing id, then any prior WhatsApp row for this number.
+ */
+async function resolveCustomerIdForWhatsAppChat(db, opts = {}) {
+  if (!db) return null;
+  const requested = await customerIdIfExists(db, opts.requestedCustomerId);
+  if (requested) return requested;
+  const fromMessage = await customerIdIfExists(db, opts.messageCustomerId);
+  if (fromMessage) return fromMessage;
+
+  const phone = normalizePhoneE164(opts.phoneE164);
+  const byPhone = await findCustomerIdByPhone(db, phone);
+  if (byPhone) return byPhone;
+
+  if (!phone) return null;
+  try {
+    const { data: bot } = await db
+      .from('whatsapp_booking_bot_state')
+      .select('state')
+      .eq('phone_e164', phone)
+      .maybeSingle();
+    const st = bot?.state && typeof bot.state === 'object' ? bot.state : {};
+    const fromBot = await customerIdIfExists(
+      db,
+      st.linkedCustomerId || st.existingCustomerId
+    );
+    if (fromBot) return fromBot;
+  } catch (err) {
+    console.warn('[whatsapp-helper] bot-state customer lookup failed', err?.message || err);
+  }
+
+  try {
+    const { data: prior } = await db
+      .from('whatsapp_messages')
+      .select('customer_id')
+      .eq('phone_e164', phone)
+      .not('customer_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return (await customerIdIfExists(db, prior?.customer_id)) || null;
+  } catch (err) {
+    console.warn('[whatsapp-helper] prior-message customer lookup failed', err?.message || err);
+    return null;
+  }
+}
+
 /**
  * Download WhatsApp media bytes via Graph API.
  * @returns {Promise<{ buffer: Buffer, mime: string } | null>}
@@ -654,6 +709,7 @@ module.exports = {
   insertWhatsAppMessage,
   updateWhatsAppMessageStatus,
   findCustomerIdByPhone,
+  resolveCustomerIdForWhatsAppChat,
   downloadWhatsAppMedia,
   uploadWhatsAppMediaToCloudinary,
   uploadBufferToCloudinaryOnly,

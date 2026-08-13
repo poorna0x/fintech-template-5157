@@ -7,7 +7,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { WhatsAppInboxLocationDialog } from '@/components/whatsapp/WhatsAppInboxLocationDialog';
 import {
   addWhatsAppPhotoToCustomerGallery,
   isWhatsAppImageMessage,
@@ -19,11 +18,16 @@ type Props = {
   message: WhatsAppMessageRow;
   customerId?: string | null;
   onDownload?: () => void;
+  onUpdateLocation?: (message: WhatsAppMessageRow) => void;
 };
 
-export function WhatsAppMessageBubbleMenu({ message, customerId, onDownload }: Props) {
+export function WhatsAppMessageBubbleMenu({
+  message,
+  customerId,
+  onDownload,
+  onUpdateLocation,
+}: Props) {
   const [busy, setBusy] = useState(false);
-  const [locationOpen, setLocationOpen] = useState(false);
   const isImage = isWhatsAppImageMessage(message);
   const isLocation = isWhatsAppLocationMessage(message);
   if (!isImage && !isLocation) return null;
@@ -43,8 +47,7 @@ export function WhatsAppMessageBubbleMenu({ message, customerId, onDownload }: P
   };
 
   return (
-    <>
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -82,7 +85,7 @@ export function WhatsAppMessageBubbleMenu({ message, customerId, onDownload }: P
           <DropdownMenuItem
             className="cursor-pointer"
             disabled={busy}
-            onSelect={() => setLocationOpen(true)}
+            onSelect={() => onUpdateLocation?.(message)}
           >
             <MapPin className="mr-2 h-4 w-4" />
             Update customer location
@@ -99,14 +102,5 @@ export function WhatsAppMessageBubbleMenu({ message, customerId, onDownload }: P
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
-      {isLocation ? (
-        <WhatsAppInboxLocationDialog
-          open={locationOpen}
-          onOpenChange={setLocationOpen}
-          message={message}
-          customerId={customerId}
-        />
-      ) : null}
-    </>
   );
 }

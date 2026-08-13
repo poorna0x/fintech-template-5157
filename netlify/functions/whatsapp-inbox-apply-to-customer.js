@@ -8,17 +8,14 @@ const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
 const {
   getServiceSupabase,
-  findCustomerIdByPhone,
+  resolveCustomerIdForWhatsAppChat,
   isR2MediaRef,
   parseR2ObjectKey,
   uploadBufferToCloudinaryOnly,
 } = require('./whatsapp-helper');
 const { getR2ObjectBytes } = require('./r2-helper');
 const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
-const {
-  extractMapsUrlFromText,
-  resolveMapsShareToCoords,
-} = require('./resolve-maps-link');
+const { extractMapsUrlFromText } = require('./resolve-maps-link');
 
 function json(statusCode, headers, payload) {
   return { statusCode, headers, body: JSON.stringify(payload) };
@@ -104,12 +101,16 @@ exports.handler = async (event) => {
     return json(404, headers, { error: 'Message not found' });
   }
 
-  let customerId =
-    requestedCustomerId ||
-    msg.customer_id ||
-    (await findCustomerIdByPhone(db, msg.phone_e164));
+  let customerId = await resolveCustomerIdForWhatsAppChat(db, {
+    requestedCustomerId,
+    messageCustomerId: msg.customer_id,
+    phoneE164: msg.phone_e164,
+  });
   if (!customerId) {
-    return json(400, headers, { error: 'No customer linked to this chat' });
+    return json(400, headers, {
+      error:
+        'No customer linked to this chat. Open the customer from the header, or save this WhatsApp number on the customer record.',
+    });
   }
 
   if (action === 'gallery_photo') {
@@ -185,29 +186,21 @@ exports.handler = async (event) => {
       ? { lat: clientLat, lng: clientLng }
       : null;
 
-  let coords = clientCoords || parseLatLngFromBody(msg.body);
+  const mapsUrl = extractMapsUrlFromText(msg.body);
+  // Prefer the pin the admin dragged. Do not parse numbers out of a Maps URL
+  // (short-link HTML often contains junk pairs like 33,9).
+  let coords = clientCoords;
+  if (!coords && !mapsUrl) {
+    coords = parseLatLngFromBody(msg.body);
+  }
   let placeName =
     String(body.placeName || body.place_name || '').trim() ||
     String(msg.body || '').replace(/-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?/, '').trim() ||
     null;
 
-  if (!coords && extractMapsUrlFromText(msg.body)) {
-    const resolved = await resolveMapsShareToCoords(msg.body);
-    if (resolved?.ok) {
-      coords = { lat: resolved.latitude, lng: resolved.longitude };
-      placeName = resolved.placeName || placeName;
-    } else {
-      return json(400, headers, {
-        error:
-          resolved?.error ||
-          'Could not read this Maps link. Ask them to resend a location pin or the full Google Maps share.',
-      });
-    }
-  }
-
   if (!coords) {
     return json(400, headers, {
-      error: 'This pin has no coordinates. Ask them to resend location.',
+      error: 'Open the map preview, drag the pin to the right place, then tap Save location.',
     });
   }
 

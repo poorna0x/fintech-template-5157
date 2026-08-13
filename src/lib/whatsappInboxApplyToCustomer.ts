@@ -1,9 +1,5 @@
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
-import {
-  extractMapsUrlFromText,
-  isGoogleMapsUrl,
-  resolveGoogleMapsInputToCoords,
-} from '@/lib/googleMapsLink';
+import { extractMapsUrlFromText, isGoogleMapsUrl } from '@/lib/googleMapsLink';
 
 export function parseLatLngFromWhatsAppLocationBody(
   body: string | null | undefined
@@ -86,52 +82,24 @@ export async function applyWhatsAppLocationToCustomer(opts: {
   longitude?: number;
   placeName?: string;
 }): Promise<ApplyResult> {
-  const accessToken = await resolveSupabaseAccessTokenForApi();
-  if (!accessToken) return { ok: false, error: 'Not signed in' };
-
   if (
-    Number.isFinite(opts.latitude) &&
-    Number.isFinite(opts.longitude) &&
-    Math.abs(opts.latitude as number) <= 90 &&
-    Math.abs(opts.longitude as number) <= 180
+    !Number.isFinite(opts.latitude) ||
+    !Number.isFinite(opts.longitude) ||
+    Math.abs(opts.latitude as number) > 90 ||
+    Math.abs(opts.longitude as number) > 180
   ) {
-    return postApply({
-      action: 'apply_location',
-      messageId: opts.messageId,
-      ...(opts.customerId ? { customerId: opts.customerId } : {}),
-      latitude: opts.latitude,
-      longitude: opts.longitude,
-      ...(opts.placeName ? { placeName: opts.placeName } : {}),
-    });
-  }
-
-  const shareText = String(opts.body || '').trim();
-  const mapsUrl = extractMapsUrlFromText(shareText);
-  let latitude: number | undefined;
-  let longitude: number | undefined;
-  let placeName: string | undefined;
-
-  const pin = parseLatLngFromWhatsAppLocationBody(shareText);
-  if (pin && !mapsUrl) {
-    latitude = pin.lat;
-    longitude = pin.lng;
-  } else if (mapsUrl) {
-    const resolved = await resolveGoogleMapsInputToCoords(shareText, {
-      shareText,
-      accessToken,
-    });
-    if (resolved.ok) {
-      latitude = resolved.coords.latitude;
-      longitude = resolved.coords.longitude;
-      placeName = resolved.placeHintUsed;
-    }
+    return {
+      ok: false,
+      error: 'Open the map preview, drag the pin to the right place, then tap Save location.',
+    };
   }
 
   return postApply({
     action: 'apply_location',
     messageId: opts.messageId,
     ...(opts.customerId ? { customerId: opts.customerId } : {}),
-    ...(latitude != null && longitude != null ? { latitude, longitude } : {}),
-    ...(placeName ? { placeName } : {}),
+    latitude: opts.latitude,
+    longitude: opts.longitude,
+    ...(opts.placeName ? { placeName: opts.placeName } : {}),
   });
 }
