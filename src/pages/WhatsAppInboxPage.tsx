@@ -406,6 +406,18 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     selectedPhone,
   ]);
 
+  /** Esc → same as Android back: close overlay, else leave chat to Chats list (not exit inbox). */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (tryNativeBackHandlers()) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const handleChromeBack = useCallback(() => {
     if (tryNativeBackHandlers()) return;
     onBack?.();
