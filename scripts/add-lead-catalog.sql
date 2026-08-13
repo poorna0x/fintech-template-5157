@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS public.lead_sources (
   allow_custom_text boolean NOT NULL DEFAULT false,
   default_cost_inr numeric(10, 2) NOT NULL DEFAULT 0,
   aliases text[] NOT NULL DEFAULT '{}',
+  whatsapp_from_line text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -37,6 +38,9 @@ CREATE TABLE IF NOT EXISTS public.lead_cost_rules (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (lead_source_id, service_sub_type_id)
 );
+
+ALTER TABLE public.lead_sources
+  ADD COLUMN IF NOT EXISTS whatsapp_from_line text NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_lead_sources_active_sort
   ON public.lead_sources (active, sort_order);
@@ -83,6 +87,12 @@ ON CONFLICT (slug) DO UPDATE SET
   default_cost_inr = EXCLUDED.default_cost_inr,
   aliases = EXCLUDED.aliases,
   updated_at = now();
+
+UPDATE public.lead_sources
+SET whatsapp_from_line = 'Home Triangle Water Filter Service',
+    updated_at = now()
+WHERE slug IN ('home_triangle', 'home_triangle_srujan', 'home_triangle_3')
+  AND coalesce(trim(whatsapp_from_line), '') = '';
 
 INSERT INTO public.service_sub_types (slug, label, sort_order, allow_custom_text, aliases)
 VALUES
@@ -248,7 +258,8 @@ BEGIN
           'requires_otp', ls.requires_otp,
           'allow_custom_text', ls.allow_custom_text,
           'default_cost_inr', ls.default_cost_inr,
-          'aliases', ls.aliases
+          'aliases', ls.aliases,
+          'whatsapp_from_line', coalesce(ls.whatsapp_from_line, '')
         )
         ORDER BY ls.sort_order, ls.label
       )

@@ -12,6 +12,8 @@ type Props = {
   onCustomChange?: (value: string) => void;
   className?: string;
   disabled?: boolean;
+  required?: boolean;
+  label?: string;
 };
 
 export function ServiceSubTypeSelect({
@@ -22,6 +24,8 @@ export function ServiceSubTypeSelect({
   onCustomChange,
   className,
   disabled,
+  required,
+  label = 'Service Sub Type',
 }: Props) {
   const { subTypes, loading } = useLeadCatalog();
   const options = subTypes.length
@@ -44,11 +48,15 @@ export function ServiceSubTypeSelect({
 
   return (
     <div className={cn('space-y-2', className)}>
-      <Label htmlFor={id}>Service Sub Type</Label>
+      <Label htmlFor={id}>
+        {label}
+        {required ? ' *' : ''}
+      </Label>
       <select
         id={id}
         value={value || 'Service'}
         disabled={disabled || loading}
+        required={required}
         onChange={(e) => onChange(e.target.value)}
         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
       >

@@ -46,13 +46,6 @@ function waterFilterServiceLabelForBrand(brand) {
   return WATER_FILTER_SERVICE_LABEL;
 }
 
-function brandShortLabelForWfs(brand) {
-  const b = String(brand || '').toLowerCase();
-  if (b === 'elevenro') return 'Eleven RO';
-  if (b === 'hydrogenro') return 'Hydrogen RO';
-  return '';
-}
-
 /** Body for native WhatsApp *Send location* button (24h interactive only). */
 function buildAskLocationBodyText(customerName, fromLabel) {
   const name = whatsappGreetingName(customerName, 'there');
@@ -68,40 +61,25 @@ function buildAskLocationBodyText(customerName, fromLabel) {
 }
 
 /**
- * Tools → Quick customer / WFS — optional lead/intro (no double Hi, no *bold*).
- * Empty whatsappLeadLine → from {brand} Water Filter Service.
- * With lead → from Direct call - Hydrogen RO Water Filter Service.
+ * Tools → Quick customer / WFS location ask.
  */
-function buildQuickCustomerLocationBodyText(customerName, whatsappLeadLine, brand) {
+function buildQuickCustomerLocationBodyText(customerName) {
   const name = whatsappGreetingName(customerName, 'there');
-  const intro = String(whatsappLeadLine || '').trim();
-  const brandShort = brandShortLabelForWfs(brand);
-  const lines = [`Hi ${name}, 👋`, ''];
-  if (intro && brandShort) {
-    lines.push(`from ${intro} - ${brandShort} Water Filter Service.`, '');
-  } else if (intro) {
-    lines.push(`from ${intro} - Water Filter Service.`, '');
-  } else if (brandShort) {
-    lines.push(`from ${brandShort} Water Filter Service.`, '');
-  } else {
-    lines.push('from Water Filter Service.', '');
-  }
-  lines.push(
+  return [
+    `Hi ${name}, 👋`,
+    '',
+    'from Water Filter Service or Installation.',
+    '',
     '📍 To serve you better we need your exact location. Please share your Google Maps location pin on this chat.',
     '',
-    'Tap Send location below 👇'
-  );
-  return lines.join('\n');
+    'Tap Send location below 👇',
+  ].join('\n');
 }
 
 function buildLocationRequestBodyText(state = {}) {
   const name = String(state.name || 'Customer').trim() || 'Customer';
   if (state.waterFilterService) {
-    const mention =
-      state.whatsappLeadLine != null
-        ? String(state.whatsappLeadLine).trim()
-        : String(state.leadSource || '').trim();
-    return buildQuickCustomerLocationBodyText(name, mention, state.brand);
+    return buildQuickCustomerLocationBodyText(name);
   }
   return buildAskLocationBodyText(name, waterFilterServiceLabelForBrand(state.brand));
 }
@@ -1610,19 +1588,12 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
   if (act === 'request_location') {
     const customer = await lookupCustomerFull(ctx.db, ctx.to);
     const name = whatsappGreetingName(opts.customerName || customer?.full_name, 'there');
-    const fromLabel = waterFilterServiceLabelForBrand(opts.brand);
     await setBookingState(ctx.db, ctx.to, {
       step: 'await_location',
       needNewLocation: true,
       startedByAdmin: true,
     });
-    const locBody = String(opts.whatsappLeadLine || opts.leadSource || '').trim()
-      ? buildQuickCustomerLocationBodyText(
-          name,
-          opts.whatsappLeadLine != null ? opts.whatsappLeadLine : opts.leadSource,
-          opts.brand
-        )
-      : buildAskLocationBodyText(name, fromLabel);
+    const locBody = buildQuickCustomerLocationBodyText(name);
     const loc = await sendLocationRequest({
       ...ctx,
       bodyText: locBody,
@@ -1647,7 +1618,7 @@ async function startWaterFilterServiceBooking(ctx, opts = {}) {
     String((await lookupCustomerFull(ctx.db, ctx.to))?.full_name || '').trim() ||
     'Customer';
   const leadSource = resolveLeadSource(opts.leadSource);
-  // Empty string = skip WhatsApp intro; omit field → skip (do not force Direct call on WA).
+  // Empty string = generic “from Water Filter Service.”
   const whatsappLeadLine =
     opts.whatsappLeadLine != null
       ? String(opts.whatsappLeadLine).trim().slice(0, 80)
@@ -1659,15 +1630,16 @@ async function startWaterFilterServiceBooking(ctx, opts = {}) {
     String(opts.customerId || opts.existingCustomerId || '').trim() || existing?.id || null;
   const brand = opts.brand || null;
   const subRaw = String(opts.serviceSubType || '').trim();
-  const serviceSubType =
-    subRaw === 'Installation' || subRaw === 'Reinstallation' ? subRaw : 'Repair';
+  const serviceSubType = subRaw || 'Service';
   const serviceLabel =
     String(opts.serviceLabel || '').trim() ||
     (serviceSubType === 'Installation'
       ? 'Installation'
       : serviceSubType === 'Reinstallation'
         ? 'Reinstallation'
-        : WATER_FILTER_SERVICE_LABEL);
+        : serviceSubType === 'Service'
+          ? 'Service'
+          : WATER_FILTER_SERVICE_LABEL);
   const leadCost =
     opts.leadCost != null && Number.isFinite(Number(opts.leadCost))
       ? Number(opts.leadCost)

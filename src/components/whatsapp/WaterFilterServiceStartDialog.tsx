@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader2, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -45,24 +44,23 @@ export default function WaterFilterServiceStartDialog({
   const [phone, setPhone] = useState('');
   const [leadSource, setLeadSource] = useState<string>('Direct call');
   const [leadCustom, setLeadCustom] = useState('');
-  const [showLeadOnWhatsApp, setShowLeadOnWhatsApp] = useState(false);
-  const [whatsappLeadLine, setWhatsappLeadLine] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const sendBrand = brand === 'elevenro' ? 'elevenro' : 'hydrogenro';
   const resolvedLead = leadSourceValueForSave(leadSource, leadCustom) || 'Direct call';
 
   const syncOpen = (next: boolean) => {
-    if (next) {
-      setName(String(defaultName || '').trim());
-      const digits = String(defaultPhone || '').replace(/\D/g, '');
-      setPhone(digits.length >= 10 ? digits.slice(-10) : digits);
-      setLeadSource('Direct call');
-      setLeadCustom('');
-      setShowLeadOnWhatsApp(false);
-      setWhatsappLeadLine('');
-    }
     onOpenChange(next);
   };
+
+  useEffect(() => {
+    if (!open) return;
+    setName(String(defaultName || '').trim());
+    const digits = String(defaultPhone || '').replace(/\D/g, '');
+    setPhone(digits.length >= 10 ? digits.slice(-10) : digits);
+    setLeadSource('Direct call');
+    setLeadCustom('');
+  }, [open, defaultName, defaultPhone]);
 
   const handleStart = async () => {
     const customerName = name.trim();
@@ -79,10 +77,6 @@ export default function WaterFilterServiceStartDialog({
       toast.error('Enter custom lead source');
       return;
     }
-    if (showLeadOnWhatsApp && !whatsappLeadLine.trim()) {
-      toast.error('Enter WhatsApp intro text, or turn off “Show on WhatsApp”');
-      return;
-    }
 
     setBusy(true);
     try {
@@ -90,9 +84,9 @@ export default function WaterFilterServiceStartDialog({
         phone: phoneE164,
         action: 'request_location',
         customerName,
-        brand: brand === 'elevenro' ? 'elevenro' : 'hydrogenro',
+        brand: sendBrand,
         leadSource: resolvedLead,
-        whatsappLeadLine: showLeadOnWhatsApp ? whatsappLeadLine.trim() : '',
+        whatsappLeadLine: '',
       });
       if (!result.ok) {
         toast.error(result.error || 'Could not ask for location');
@@ -155,25 +149,6 @@ export default function WaterFilterServiceStartDialog({
               onChange={setLeadSource}
               onCustomChange={setLeadCustom}
             />
-          </div>
-          <div className="flex items-start gap-2 rounded-lg border border-border/60 p-2.5">
-            <Checkbox
-              id="wfs-show-lead"
-              checked={showLeadOnWhatsApp}
-              onCheckedChange={(v) => setShowLeadOnWhatsApp(v === true)}
-            />
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Label htmlFor="wfs-show-lead" className="cursor-pointer text-sm font-medium">
-                Show intro on WhatsApp
-              </Label>
-              {showLeadOnWhatsApp ? (
-                <Input
-                  value={whatsappLeadLine}
-                  onChange={(e) => setWhatsappLeadLine(e.target.value)}
-                  placeholder="e.g. Google-Leads"
-                />
-              ) : null}
-            </div>
           </div>
         </div>
 

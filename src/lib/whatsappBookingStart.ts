@@ -52,7 +52,7 @@ export async function startWhatsAppBookingQuickAction(opts: {
   customerName?: string | null;
   brand?: 'hydrogenro' | 'elevenro' | null;
   leadSource?: string | null;
-  /** Optional line: “from {lead} - {brand} Water Filter Service”. Empty = brand/generic only. */
+  /** Unused for location copy — bot always says “from Water Filter Service or Installation.” */
   whatsappLeadLine?: string | null;
   serviceSubType?: string | null;
   serviceLabel?: string | null;
@@ -122,7 +122,7 @@ export async function startWaterFilterServiceBooking(opts: {
   phone: string;
   customerName: string;
   leadSource: string;
-  /** Empty / omit = skip “From …” line on WhatsApp. */
+  /** Unused for location copy — bot always says “from Water Filter Service or Installation.” */
   whatsappLeadLine?: string | null;
   brand?: 'hydrogenro' | 'elevenro' | null;
   customerId?: string | null;

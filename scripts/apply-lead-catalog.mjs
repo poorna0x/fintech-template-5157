@@ -39,7 +39,9 @@ if (!databaseUrl) {
 }
 
 const sqlPath = path.join(root, 'scripts/add-lead-catalog.sql');
+const fromLinePath = path.join(root, 'scripts/add-lead-whatsapp-from-line.sql');
 const sql = fs.readFileSync(sqlPath, 'utf8');
+const fromLineSql = fs.readFileSync(fromLinePath, 'utf8');
 
 const client = new pg.Client({
   connectionString: databaseUrl,
@@ -50,6 +52,8 @@ await client.connect();
 try {
   await client.query(sql);
   console.log('OK: applied scripts/add-lead-catalog.sql');
+  await client.query(fromLineSql);
+  console.log('OK: applied scripts/add-lead-whatsapp-from-line.sql');
   const sample = await client.query(
     `SELECT public.resolve_default_lead_cost('Home Triangle', 'Installation') AS cost`
   );

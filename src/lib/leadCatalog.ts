@@ -69,7 +69,7 @@ export const LEGACY_SERVICE_SUB_TYPE_LABELS = [
   'Other',
 ] as const;
 
-const CACHE_KEY = 'lead_catalog_cache_v1';
+const CACHE_KEY = 'lead_catalog_cache_v2';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 let catalogMem: { catalog: LeadCatalog; at: number } | null = null;
