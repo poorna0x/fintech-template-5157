@@ -33,7 +33,10 @@ const {
 } = require('./whatsapp-eleven-support');
 const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
 const {
+  extractCoordinatesFromUrl,
   extractMapsUrlFromText,
+  extractPlaceHintFromShareText,
+  isShortMapsUrl,
   resolveMapsShareToCoords,
 } = require('./resolve-maps-link');
 const { letterLabelValue } = require('./whatsapp-brand-contact');
@@ -439,12 +442,22 @@ function normalizeAltPhoneInput(text) {
 }
 
 function buildAlternateLocationPayload(loc) {
-  if (!loc || loc.lat == null || loc.lng == null) return null;
+  if (!loc) return null;
+  const share = preferMapsShareUrl(loc);
+  const hasCoords =
+    loc.lat != null &&
+    loc.lng != null &&
+    Number.isFinite(Number(loc.lat)) &&
+    Number.isFinite(Number(loc.lng));
+  if (!hasCoords && !share) return null;
   return {
-    latitude: Number(loc.lat),
-    longitude: Number(loc.lng),
-    formattedAddress: loc.formattedAddress || loc.address || loc.name || '',
-    googleLocation: `https://www.google.com/maps/place/${loc.lat},${loc.lng}`,
+    ...(hasCoords
+      ? { latitude: Number(loc.lat), longitude: Number(loc.lng) }
+      : {}),
+    formattedAddress: loc.formattedAddress || loc.address || loc.name || (share ? 'Google Maps link' : ''),
+    googleLocation:
+      share ||
+      (hasCoords ? `https://www.google.com/maps/place/${loc.lat},${loc.lng}` : null),
     shortLocation: loc.shortLocation || null,
   };
 }
@@ -517,6 +530,8 @@ function formatServiceLocationLine(state, customer, locOverride) {
       line = address;
     } else if (name) {
       line = name;
+    } else if (preferMapsShareUrl(pin)) {
+      line = 'Google Maps link shared';
     } else if (pin.lat != null && pin.lng != null) {
       line = 'Location shared via WhatsApp pin';
     }
@@ -558,6 +573,7 @@ function buildServiceAddress(customer, locOverride) {
 }
 
 function buildServiceLocation(customer, locOverride) {
+  const share = preferMapsShareUrl(locOverride);
   if (locOverride?.lat != null && locOverride?.lng != null) {
     const lat = Number(locOverride.lat);
     const lng = Number(locOverride.lng);
@@ -569,7 +585,18 @@ function buildServiceLocation(customer, locOverride) {
         locOverride.address ||
         locOverride.name ||
         `${lat},${lng}`,
-      googleLocation: `https://www.google.com/maps/place/${lat},${lng}`,
+      googleLocation: share || `https://www.google.com/maps/place/${lat},${lng}`,
+      shortLocation: locOverride.shortLocation || null,
+    };
+  }
+  if (share) {
+    return {
+      formattedAddress:
+        locOverride.formattedAddress ||
+        locOverride.address ||
+        locOverride.name ||
+        'Google Maps link',
+      googleLocation: share,
       shortLocation: locOverride.shortLocation || null,
     };
   }
@@ -584,11 +611,49 @@ function buildServiceLocation(customer, locOverride) {
         `https://www.google.com/maps/place/${loc.latitude},${loc.longitude}`,
     };
   }
+  if (typeof loc.googleLocation === 'string' && loc.googleLocation.trim()) {
+    return {
+      formattedAddress: loc.formattedAddress || formatAddressLine(customer) || 'Google Maps link',
+      googleLocation: loc.googleLocation.trim(),
+      shortLocation: loc.shortLocation || null,
+    };
+  }
   return {
     latitude: 0,
     longitude: 0,
     formattedAddress: formatAddressLine(customer) || '',
     googleLocation: null,
+  };
+}
+
+/** Prefer the customer's original Maps share link over a reconstructed lat,lng URL. */
+function preferMapsShareUrl(loc) {
+  const raw = String(loc?.mapsShareUrl || loc?.googleLocation || '').trim();
+  return raw || null;
+}
+
+/** CRM customers.location JSON from booking-bot pin / Maps share. */
+function crmLocationFromBotLoc(loc) {
+  if (!loc) return null;
+  const share = preferMapsShareUrl(loc);
+  const hasCoords =
+    loc.lat != null &&
+    loc.lng != null &&
+    Number.isFinite(Number(loc.lat)) &&
+    Number.isFinite(Number(loc.lng));
+  if (!hasCoords && !share) return null;
+  const lat = hasCoords ? Number(loc.lat) : null;
+  const lng = hasCoords ? Number(loc.lng) : null;
+  return {
+    ...(hasCoords ? { latitude: lat, longitude: lng } : {}),
+    formattedAddress:
+      loc.formattedAddress ||
+      loc.address ||
+      loc.name ||
+      (share ? 'Google Maps link' : '') ||
+      (hasCoords ? `${lat},${lng}` : ''),
+    googleLocation: share || (hasCoords ? `https://www.google.com/maps/place/${lat},${lng}` : null),
+    shortLocation: loc.shortLocation || null,
   };
 }
 
@@ -1544,12 +1609,14 @@ async function continueAfterLinkedConfirm(ctx, state = {}) {
 
 function packRememberedLocation(loc) {
   return {
-    lat: loc.latitude,
-    lng: loc.longitude,
+    lat: loc.latitude != null ? loc.latitude : loc.lat != null ? loc.lat : null,
+    lng: loc.longitude != null ? loc.longitude : loc.lng != null ? loc.lng : null,
     name: loc.name || null,
     address: loc.address || null,
     shortLocation: loc.shortLocation || null,
     formattedAddress: loc.formattedAddress || loc.address || null,
+    mapsShareUrl: preferMapsShareUrl(loc),
+    googleLocation: preferMapsShareUrl(loc),
   };
 }
 
@@ -1571,6 +1638,7 @@ function parseLatLngFromText(text) {
 }
 
 async function acceptSharedLocation(ctx, state, enriched) {
+  const mapsShareUrl = preferMapsShareUrl(enriched);
   await rememberSharedLocation(ctx.db, ctx.to, {
     latitude: enriched.lat,
     longitude: enriched.lng,
@@ -1578,6 +1646,8 @@ async function acceptSharedLocation(ctx, state, enriched) {
     address: enriched.address,
     shortLocation: enriched.shortLocation,
     formattedAddress: enriched.formattedAddress,
+    mapsShareUrl,
+    googleLocation: mapsShareUrl,
   });
 
   if (state?.step === 'await_location' || state?.step === 'await_loc_confirm') {
@@ -1585,12 +1655,14 @@ async function acceptSharedLocation(ctx, state, enriched) {
       ...state,
       step: 'await_loc_confirm',
       loc: {
-        lat: enriched.lat,
-        lng: enriched.lng,
+        lat: enriched.lat ?? null,
+        lng: enriched.lng ?? null,
         name: enriched.name,
         address: enriched.address,
         shortLocation: enriched.shortLocation,
         formattedAddress: enriched.formattedAddress,
+        mapsShareUrl,
+        googleLocation: mapsShareUrl,
       },
     };
     await askLocConfirm(ctx, next, null);
@@ -1601,7 +1673,10 @@ async function acceptSharedLocation(ctx, state, enriched) {
     enriched.shortLocation,
     enriched.name,
     enriched.address || enriched.formattedAddress,
-    `https://maps.google.com/?q=${enriched.lat},${enriched.lng}`,
+    mapsShareUrl ||
+      (enriched.lat != null && enriched.lng != null
+        ? `https://maps.google.com/?q=${enriched.lat},${enriched.lng}`
+        : null),
   ]
     .filter(Boolean)
     .join('\n');
@@ -1609,22 +1684,73 @@ async function acceptSharedLocation(ctx, state, enriched) {
 }
 
 async function tryAcceptLocationFromText(ctx, state, text) {
-  if (extractMapsUrlFromText(text)) {
-    const resolved = await resolveMapsShareToCoords(text);
-    if (!resolved?.ok) {
-      await sendText({
-        ...ctx,
-        text:
-          'We couldn’t read that Maps link. Please tap *Send location*, or paste the full Google Maps share (place name + link).',
+  const mapsUrl = extractMapsUrlFromText(text);
+  if (mapsUrl) {
+    const shareHint = extractPlaceHintFromShareText(text) || null;
+    const fromUrl = extractCoordinatesFromUrl(mapsUrl);
+
+    // Short share links (maps.app.goo.gl / goo.gl) — save the URL as-is for now.
+    // Admin can resolve later from the customer Google Maps field.
+    if (isShortMapsUrl(mapsUrl) && !fromUrl) {
+      await acceptSharedLocation(ctx, state, {
+        lat: null,
+        lng: null,
+        name: shareHint || 'Google Maps link',
+        address: shareHint || null,
+        shortLocation: shareHint || null,
+        formattedAddress: shareHint || 'Google Maps link',
+        mapsShareUrl: mapsUrl,
+        googleLocation: mapsUrl,
       });
       return { handled: true };
     }
-    const enriched = await enrichWhatsAppLocation({
-      latitude: resolved.latitude,
-      longitude: resolved.longitude,
-      name: resolved.placeName,
+
+    // Coords already in the URL (or extractable) — use them.
+    if (fromUrl?.latitude != null && fromUrl?.longitude != null) {
+      const enriched = await enrichWhatsAppLocation({
+        latitude: fromUrl.latitude,
+        longitude: fromUrl.longitude,
+        name: shareHint || undefined,
+      });
+      enriched.mapsShareUrl = mapsUrl;
+      enriched.googleLocation = mapsUrl;
+      await acceptSharedLocation(ctx, state, enriched);
+      return { handled: true };
+    }
+
+    // Longer Maps URLs without embedded coords — try resolve once; still save link if it fails.
+    let resolved = null;
+    try {
+      resolved = await resolveMapsShareToCoords(text);
+    } catch (err) {
+      console.warn('[whatsapp-booking-bot] maps resolve soft-fail', err?.message || err);
+    }
+
+    const placeName = (resolved && resolved.placeName) || shareHint || null;
+    const shareUrl = (resolved && (resolved.originalUrl || resolved.expandedUrl)) || mapsUrl;
+
+    if (resolved?.ok && resolved.latitude != null && resolved.longitude != null) {
+      const enriched = await enrichWhatsAppLocation({
+        latitude: resolved.latitude,
+        longitude: resolved.longitude,
+        name: placeName || undefined,
+      });
+      enriched.mapsShareUrl = shareUrl;
+      enriched.googleLocation = shareUrl;
+      await acceptSharedLocation(ctx, state, enriched);
+      return { handled: true };
+    }
+
+    await acceptSharedLocation(ctx, state, {
+      lat: null,
+      lng: null,
+      name: placeName || 'Google Maps link',
+      address: placeName || null,
+      shortLocation: placeName || null,
+      formattedAddress: placeName || 'Google Maps link',
+      mapsShareUrl: shareUrl,
+      googleLocation: shareUrl,
     });
-    await acceptSharedLocation(ctx, state, enriched);
     return { handled: true };
   }
 
@@ -1652,6 +1778,7 @@ async function getRememberedLocation(db, phone) {
       .maybeSingle();
     const parsed = data?.remembered_location;
     if (parsed?.lat != null && parsed?.lng != null) return parsed;
+    if (preferMapsShareUrl(parsed)) return parsed;
   } catch {
     /* fall through */
   }
@@ -1966,16 +2093,7 @@ async function createCustomerFromDraft(db, phoneE164, draft) {
     landmark: buildingFlat || String(loc.name || shortLoc || '').trim() || '',
     ...(buildingFlat ? { building_flat: buildingFlat } : {}),
   };
-  const location =
-    loc.lat != null && loc.lng != null
-      ? {
-          latitude: Number(loc.lat),
-          longitude: Number(loc.lng),
-          formattedAddress: addressLine || `${loc.lat},${loc.lng}`,
-          googleLocation: `https://www.google.com/maps/place/${loc.lat},${loc.lng}`,
-          shortLocation: shortLoc,
-        }
-      : {};
+  const location = crmLocationFromBotLoc(loc) || {};
 
   const photos = draft.photoUrl
     ? [{ url: draft.photoUrl, source: 'whatsapp_bot', kind: 'unit' }]
@@ -2613,7 +2731,7 @@ async function askLocationForNew(ctx, state) {
 async function askLocConfirm(ctx, state, locSummary) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_loc_confirm' });
   const short = state?.loc?.shortLocation ? `*Area:* ${state.loc.shortLocation}\n` : '';
-  const locLine = formatServiceLocationLine(state) || locSummary || 'Shared pin';
+  const locLine = formatServiceLocationLine(state) || locSummary || 'Shared location';
   const secondaryNote = state?.useSecondarySite
     ? '\n\n_Saved as secondary site — primary address stays the same._'
     : state?.reinstallUpdateLocation || state?.serviceSubType === 'Reinstallation'
@@ -2621,10 +2739,11 @@ async function askLocConfirm(ctx, state, locSummary) {
       : '';
   const lat = state?.loc?.lat;
   const lng = state?.loc?.lng;
+  const share = preferMapsShareUrl(state?.loc);
   const mapsUrl =
     lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
-      ? `https://www.google.com/maps?q=${Number(lat)},${Number(lng)}`
-      : '';
+      ? share || `https://www.google.com/maps?q=${Number(lat)},${Number(lng)}`
+      : share || '';
 
   const detailBody = [
     '📍 *Location received*',
@@ -2723,7 +2842,8 @@ async function finishAdminNameOnly(ctx, state) {
 
 async function finishAdminLocationOnly(ctx, state) {
   const customer = await lookupCustomerFull(ctx.db, ctx.to);
-  if (customer?.id && state?.loc?.lat != null) {
+  const crmLoc = crmLocationFromBotLoc(state?.loc);
+  if (customer?.id && crmLoc) {
     const flat = String(state.buildingFlat || '').trim();
     const addressLine = String(state.loc.address || state.loc.formattedAddress || state.loc.name || '').trim();
     const shortLoc = String(state.loc.shortLocation || '').trim() || null;
@@ -2740,17 +2860,7 @@ async function finishAdminLocationOnly(ctx, state) {
     await ctx.db
       .from('customers')
       .update({
-        location: {
-          latitude: Number(state.loc.lat),
-          longitude: Number(state.loc.lng),
-          formattedAddress:
-            state.loc.formattedAddress ||
-            state.loc.address ||
-            formatServiceLocationLine(state) ||
-            `${state.loc.lat},${state.loc.lng}`,
-          googleLocation: `https://www.google.com/maps/place/${state.loc.lat},${state.loc.lng}`,
-          shortLocation: shortLoc,
-        },
+        location: crmLoc,
         visible_address: shortLoc || formatServiceLocationLine(state) || null,
         address,
       })
@@ -3205,7 +3315,10 @@ async function persistBookingEditsToCrm(db, state) {
         jobPatch.scheduled_time_slot = state.periodSlot;
       }
 
-      if (state.loc?.lat != null && state.loc?.lng != null) {
+      if (
+        (state.loc?.lat != null && state.loc?.lng != null) ||
+        preferMapsShareUrl(state.loc)
+      ) {
         const locOverride = {
           lat: state.loc.lat,
           lng: state.loc.lng,
@@ -3213,6 +3326,8 @@ async function persistBookingEditsToCrm(db, state) {
           address: state.loc.address,
           shortLocation: state.loc.shortLocation,
           formattedAddress: state.loc.formattedAddress,
+          mapsShareUrl: preferMapsShareUrl(state.loc),
+          googleLocation: preferMapsShareUrl(state.loc),
           buildingFlat: state.buildingFlat || '',
         };
         jobPatch.service_location = buildServiceLocation(null, locOverride);
@@ -3262,20 +3377,17 @@ async function persistBookingEditsToCrm(db, state) {
         }
       }
 
-      if (state.loc?.lat != null && state.loc?.lng != null) {
+      if (
+        (state.loc?.lat != null && state.loc?.lng != null) ||
+        preferMapsShareUrl(state.loc)
+      ) {
         const addressLine = formatServiceLocationLine(state);
         const shortLoc = String(state.loc.shortLocation || '').trim() || null;
-        custPatch.location = {
-          latitude: Number(state.loc.lat),
-          longitude: Number(state.loc.lng),
-          formattedAddress:
-            state.loc.formattedAddress ||
-            state.loc.address ||
-            addressLine ||
-            `${state.loc.lat},${state.loc.lng}`,
-          googleLocation: `https://www.google.com/maps/place/${state.loc.lat},${state.loc.lng}`,
-          shortLocation: shortLoc,
-        };
+        const crmLoc = crmLocationFromBotLoc({
+          ...state.loc,
+          buildingFlat: state.buildingFlat || '',
+        });
+        if (crmLoc) custPatch.location = crmLoc;
         custPatch.visible_address = shortLoc || addressLine || null;
         custPatch.address = {
           street: [String(state.buildingFlat || '').trim(), state.loc.address || state.loc.formattedAddress || addressLine || '']
@@ -4400,16 +4512,19 @@ async function handleBookingBotInbound({
               if (saved.customer) customer = saved.customer;
               st.useSecondarySite = true;
             } else {
+              const crmLoc = crmLocationFromBotLoc(st.loc);
               await db.rpc('update_customer_for_booking', {
                 p_customer_id: customer.id,
                 p_phone: phone10FromE164(to),
                 p_updates: {
-                  location: {
+                  location: crmLoc || {
                     latitude: Number(st.loc.lat),
                     longitude: Number(st.loc.lng),
                     formattedAddress:
                       st.loc.formattedAddress || st.loc.address || st.loc.name || '',
-                    googleLocation: `https://www.google.com/maps/place/${st.loc.lat},${st.loc.lng}`,
+                    googleLocation:
+                      preferMapsShareUrl(st.loc) ||
+                      `https://www.google.com/maps/place/${st.loc.lat},${st.loc.lng}`,
                     shortLocation: st.loc.shortLocation || null,
                   },
                   visible_address: st.loc.shortLocation || st.loc.address || st.loc.name || null,
@@ -4483,6 +4598,8 @@ async function handleBookingBotInbound({
             address: st.loc.address,
             shortLocation: st.loc.shortLocation,
             formattedAddress: st.loc.formattedAddress,
+            mapsShareUrl: preferMapsShareUrl(st.loc),
+            googleLocation: preferMapsShareUrl(st.loc),
             buildingFlat: st.buildingFlat || '',
           }
         : await getRememberedLocation(db, to);
@@ -4772,6 +4889,8 @@ async function handleBookingBotInbound({
             address: st.loc.address,
             shortLocation: st.loc.shortLocation,
             formattedAddress: st.loc.formattedAddress,
+            mapsShareUrl: preferMapsShareUrl(st.loc),
+            googleLocation: preferMapsShareUrl(st.loc),
             buildingFlat: st.buildingFlat || '',
           }
         : await getRememberedLocation(db, to);

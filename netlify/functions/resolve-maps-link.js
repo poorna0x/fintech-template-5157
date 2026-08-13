@@ -821,5 +821,7 @@ exports.handler = async (event) => {
 
 exports.extractCoordinatesFromUrl = extractCoordinatesFromUrl;
 exports.extractMapsUrlFromText = extractMapsUrlFromText;
+exports.extractPlaceHintFromShareText = extractPlaceHintFromShareText;
+exports.isShortMapsUrl = isShortMapsUrl;
 exports.followRedirects = followRedirects;
 exports.resolveMapsShareToCoords = resolveMapsShareToCoords;
