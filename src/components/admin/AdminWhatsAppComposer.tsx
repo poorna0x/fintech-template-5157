@@ -49,6 +49,7 @@ import { normalizePhoneDigits } from '@/lib/whatsappPhoneTarget';
 import {
   fetchLastInboundAt,
   invalidateInboundWindowCache,
+  isCustomerServiceWindowClosed,
   isWithinCustomerServiceWindow,
 } from '@/lib/whatsappInbox';
 import { supabase } from '@/lib/supabaseClient';
@@ -517,7 +518,7 @@ export function AdminWhatsAppComposerPanel({
                     ? 'warranty card'
                     : 'document';
         const inboundAt = await fetchLastInboundAt(phone.trim(), supabase);
-        const windowClosed = !isWithinCustomerServiceWindow(inboundAt);
+        const windowClosed = isCustomerServiceWindowClosed(inboundAt);
         const docResult = await sendAdminWhatsAppDocumentWithColdFallback({
           to: phone.trim(),
           pdfBase64: pdf.content,

@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabaseClient';
 import {
   fetchLastInboundAt,
   invalidateInboundWindowCache,
-  isWithinCustomerServiceWindow,
+  isCustomerServiceWindowClosed,
 } from '@/lib/whatsappInbox';
 
 export type WhatsAppDestSendOneResult = {
@@ -25,7 +25,7 @@ export async function sendWhatsAppToMany(
   for (let i = 0; i < destinations.length; i += 1) {
     const to = destinations[i];
     const inboundAt = await fetchLastInboundAt(to, supabase);
-    const windowClosed = !isWithinCustomerServiceWindow(inboundAt);
+    const windowClosed = isCustomerServiceWindowClosed(inboundAt);
     onProgress?.(to, windowClosed, i, destinations.length);
     const result = await sendOne(to, windowClosed);
     if (!result.ok) {

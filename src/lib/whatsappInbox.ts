@@ -4,6 +4,7 @@ import { clearNativeWhatsAppTrayNotification } from '@/lib/devicePrefs';
 import { supabase } from '@/lib/supabaseClient';
 import { escapeForLike, normalizePhoneForSearch } from '@/lib/utils';
 import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
+import { whatsappPhoneLookupKeys } from '@/lib/whatsappPhoneTarget';
 
 export const WHATSAPP_INBOX_COLUMNS =
   'id, wa_message_id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
@@ -587,25 +588,26 @@ export async function fetchLastInboundAt(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabaseClient: { from: (table: string) => any }
 ): Promise<string | null> {
-  const phone = String(phoneE164 || '').replace(/\D/g, '');
-  if (!phone || phone.length < 10) return null;
+  const keys = whatsappPhoneLookupKeys(phoneE164);
+  if (keys.length === 0) return null;
+  const cacheKey = keys[keys.length - 1] || keys[0];
 
   const now = Date.now();
-  const mem = windowCacheMem.get(phone);
+  const mem = windowCacheMem.get(cacheKey);
   if (mem && now - mem.checkedAt < WINDOW_CACHE_TTL_MS) {
     return mem.at;
   }
   const store = readWindowCacheStore();
-  const stored = store[phone];
+  const stored = store[cacheKey];
   if (stored && now - stored.checkedAt < WINDOW_CACHE_TTL_MS) {
-    windowCacheMem.set(phone, stored);
+    windowCacheMem.set(cacheKey, stored);
     return stored.at;
   }
 
   const { data } = await supabaseClient
     .from('whatsapp_messages')
     .select('created_at')
-    .eq('phone_e164', phone)
+    .in('phone_e164', keys)
     .eq('direction', 'inbound')
     .order('created_at', { ascending: false })
     .limit(1)
@@ -613,19 +615,21 @@ export async function fetchLastInboundAt(
 
   const at = (data?.created_at as string | undefined) ?? null;
   const entry = { at, checkedAt: now };
-  windowCacheMem.set(phone, entry);
-  store[phone] = entry;
+  windowCacheMem.set(cacheKey, entry);
+  store[cacheKey] = entry;
   writeWindowCacheStore(store);
   return at;
 }
 
 /** Call after a successful outbound/inbound so the next window check is fresh. */
 export function invalidateInboundWindowCache(phoneE164?: string | null): void {
-  const phone = String(phoneE164 || '').replace(/\D/g, '');
-  if (phone) {
-    windowCacheMem.delete(phone);
+  const keys = phoneE164 ? whatsappPhoneLookupKeys(phoneE164) : [];
+  if (keys.length) {
     const store = readWindowCacheStore();
-    delete store[phone];
+    for (const key of keys) {
+      windowCacheMem.delete(key);
+      delete store[key];
+    }
     writeWindowCacheStore(store);
     return;
   }
@@ -1996,6 +2000,15 @@ export function isWithinCustomerServiceWindow(lastInboundAt: string | null | und
   const t = new Date(lastInboundAt).getTime();
   if (!Number.isFinite(t)) return false;
   return Date.now() - t < MS_24H;
+}
+
+/**
+ * True only when we *know* the 24h window is closed (inbound exists and is older than 24h).
+ * Missing inbound → try free-form first; Meta will reject if the window is actually closed.
+ */
+export function isCustomerServiceWindowClosed(lastInboundAt: string | null | undefined): boolean {
+  if (!lastInboundAt) return false;
+  return !isWithinCustomerServiceWindow(lastInboundAt);
 }
 
 export function hoursLeftInWindow(lastInboundAt: string | null | undefined): number | null {

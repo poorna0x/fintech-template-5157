@@ -591,19 +591,23 @@ exports.handler = async (event) => {
       let mime = String(headerImg?.mimeType || headerImg?.mime || 'image/jpeg').trim() || 'image/jpeg';
 
       if (!mediaId && headerImgB64) {
-        const buf = fileBase64ToBuffer(headerImgB64) || pdfBase64ToBuffer(headerImgB64);
+        let buf = fileBase64ToBuffer(headerImgB64) || pdfBase64ToBuffer(headerImgB64);
         if (!buf || buf.length < 32) {
           return json(400, headers, { error: 'Invalid header image base64' });
         }
         if (buf.length > MAX_OUTBOUND_BYTES) {
           return json(413, headers, { error: 'File too large (max ~4.5MB for WhatsApp send)' });
         }
+        const normalized = await normalizeOutboundImageForWhatsApp(buf, mime, filename);
+        buf = normalized.buffer;
+        mime = normalized.mime;
+        filename = normalized.filename;
         const uploaded = await uploadOutboundFileToWhatsAppMedia(
           phoneNumberId,
           accessToken,
           buf,
-          mime,
-          filename
+          filename,
+          mime
         );
         if (!uploaded?.id) {
           return json(502, headers, { error: 'Could not upload image for template header' });

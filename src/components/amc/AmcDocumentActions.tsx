@@ -26,7 +26,7 @@ import { buildDocumentPdfWhatsAppCaption } from '@/lib/document-pdf-whatsapp-cap
 import {
   fetchLastInboundAt,
   invalidateInboundWindowCache,
-  isWithinCustomerServiceWindow,
+  isCustomerServiceWindowClosed,
 } from '@/lib/whatsappInbox';
 import { supabase } from '@/lib/supabaseClient';
 import {
@@ -166,7 +166,7 @@ export default function AmcDocumentActions({
         let lastError = '';
         for (const to of destinations) {
           const inboundAt = await fetchLastInboundAt(to, supabase);
-          const windowClosed = !isWithinCustomerServiceWindow(inboundAt);
+          const windowClosed = isCustomerServiceWindowClosed(inboundAt);
           toast.loading(
             windowClosed
               ? `Sending Accept preview to ${to} (cold template)…`
@@ -216,7 +216,7 @@ export default function AmcDocumentActions({
       let lastError = '';
       for (const to of destinations) {
         const inboundAt = await fetchLastInboundAt(to, supabase);
-        const windowClosed = !isWithinCustomerServiceWindow(inboundAt);
+        const windowClosed = isCustomerServiceWindowClosed(inboundAt);
         toast.loading(
           destinations.length > 1
             ? `Sending AMC PDF to ${to}…`

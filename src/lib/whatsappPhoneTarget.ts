@@ -5,6 +5,14 @@ export function normalizePhoneDigits(raw: string): string {
   return String(raw || '').replace(/\D/g, '');
 }
 
+/** Digits to try when matching `whatsapp_messages.phone_e164` (10-digit vs 91…). */
+export function whatsappPhoneLookupKeys(raw: string): string[] {
+  const digits = normalizePhoneDigits(raw);
+  if (digits.length < 10) return [];
+  const last10 = digits.slice(-10);
+  return [...new Set([digits, last10, `91${last10}`])];
+}
+
 export function resolveWhatsAppPhone(opts: {
   primaryPhone?: string | null;
   alternatePhone?: string | null;

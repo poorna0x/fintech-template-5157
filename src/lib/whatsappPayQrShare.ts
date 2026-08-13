@@ -26,6 +26,8 @@ import {
   resolveUpiPaySiteOrigin,
 } from '@/lib/upiPaymentAccounts';
 import type { WhatsAppSendSource } from '@/lib/whatsappCrmSettings';
+import { fetchLastInboundAt, isCustomerServiceWindowClosed } from '@/lib/whatsappInbox';
+import { supabase } from '@/lib/supabaseClient';
 
 export type SendPayQrWhatsAppInput = {
   to: string;
@@ -124,6 +126,43 @@ export async function sendPayQrWhatsApp(
     ...(input.jobId ? { jobId: input.jobId } : {}),
   };
 
+  const sendSessionQr = async () => {
+    if (!headerImage) return { ok: false as const, error: 'QR image missing' };
+    const caption = buildPendingPaymentWhatsAppMessage(
+      customerName,
+      amount,
+      dueYmd,
+      brand,
+      { label: payeeName, upiId, phone: payPhone, httpsLink: payLink },
+      jobRef,
+      { withQrImage: true, ctaButton: false }
+    );
+    return sendAdminWhatsAppMedia({
+      to,
+      fileBase64: headerImage.imageBase64,
+      filename: headerImage.filename,
+      mimeType: headerImage.mimeType,
+      caption,
+      customerId: input.customerId,
+      source,
+      ...watch,
+    });
+  };
+
+  const inboundAt = await fetchLastInboundAt(to, supabase);
+  const windowClosed = isCustomerServiceWindowClosed(inboundAt);
+
+  // Open / unknown 24h window: send the actual QR as a session image (not a text template).
+  if (!windowClosed && headerImage) {
+    const media = await sendSessionQr();
+    if (media.ok) {
+      return { ok: true, payLink, viaTemplate: false };
+    }
+    if (media.featureDisabled) {
+      return { ok: false, error: media.error };
+    }
+  }
+
   if (headerImage) {
     for (const templateName of [
       resolvePendingPaymentLetterImageTemplateName(brand),
@@ -150,6 +189,17 @@ export async function sendPayQrWhatsApp(
     }
   }
 
+  // IMAGE templates pending/failed — still try session QR (works inside 24h).
+  if (headerImage) {
+    const media = await sendSessionQr();
+    if (media.ok) {
+      return { ok: true, payLink, viaTemplate: false };
+    }
+    if (media.featureDisabled) {
+      return { ok: false, error: media.error };
+    }
+  }
+
   const textCold = await sendAdminWhatsAppTemplate({
     to,
     templateName: resolvePendingPaymentLetterTemplateName(brand, {
@@ -168,35 +218,6 @@ export async function sendPayQrWhatsApp(
   }
   if (textCold.featureDisabled) {
     return { ok: false, error: textCold.error };
-  }
-
-  if (headerImage) {
-    const caption = buildPendingPaymentWhatsAppMessage(
-      customerName,
-      amount,
-      dueYmd,
-      brand,
-      { label: payeeName, upiId, phone: payPhone, httpsLink: payLink },
-      jobRef,
-      { withQrImage: true, ctaButton: false }
-    );
-    const media = await sendAdminWhatsAppMedia({
-      to,
-      fileBase64: headerImage.imageBase64,
-      filename: headerImage.filename,
-      mimeType: headerImage.mimeType,
-      caption,
-      customerId: input.customerId,
-      source,
-      ...watch,
-    });
-    if (media.ok) {
-      return { ok: true, payLink, viaTemplate: false };
-    }
-    if (media.featureDisabled) {
-      return { ok: false, error: media.error };
-    }
-    return { ok: false, error: media.error || 'Could not send pay QR on WhatsApp' };
   }
 
   return {
