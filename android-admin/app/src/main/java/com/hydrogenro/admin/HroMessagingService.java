@@ -46,6 +46,12 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             DevicePrefsPlugin.applyCallAlertsEnabled(getApplicationContext(), enabled);
             return;
         }
+        if ("whatsapp_tray_clear".equals(data.get("type"))) {
+            String phone = data.get("phone");
+            if (phone == null || phone.isEmpty()) phone = data.get("phone_e164");
+            DevicePrefsPlugin.clearWhatsAppTrayNotification(getApplicationContext(), phone);
+            return;
+        }
         // Foreground: FCM won't auto-display notification payloads — show ourselves.
         ForegroundPushNotifier.showIfPresent(getApplicationContext(), remoteMessage);
         super.onMessageReceived(remoteMessage);

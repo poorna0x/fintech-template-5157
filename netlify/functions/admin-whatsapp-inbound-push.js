@@ -109,4 +109,42 @@ async function pushWhatsAppInboundToAdmins(db, details) {
   return { sent: res.successCount };
 }
 
-module.exports = { pushWhatsAppInboundToAdmins, previewInboundBody };
+/**
+ * Data-only FCM: cancel WhatsApp tray on admin APKs after the team opened the chat
+ * (desktop / another phone). No notification payload — otherwise Android would
+ * post a new shade item instead of clearing.
+ */
+async function pushWhatsAppTrayClearToAdmins(db, phoneE164) {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone) return { sent: 0, reason: 'no_phone' };
+
+  const tokens = await getAdminFcmTokens(db, 'whatsapp_inbound');
+  if (tokens.length === 0) return { sent: 0, reason: 'no_tokens' };
+
+  const messaging = await getMessaging(db);
+  const res = await messaging.sendEachForMulticast({
+    tokens,
+    data: {
+      type: 'whatsapp_tray_clear',
+      phone,
+      tag: `wa_inbound_${phone}`,
+    },
+    android: { priority: 'high' },
+  });
+
+  const stale = [];
+  res.responses.forEach((r, i) => {
+    if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
+  });
+  if (stale.length > 0) {
+    await pruneAdminFcmTokens(db, stale);
+  }
+
+  return { sent: res.successCount };
+}
+
+module.exports = {
+  pushWhatsAppInboundToAdmins,
+  pushWhatsAppTrayClearToAdmins,
+  previewInboundBody,
+};

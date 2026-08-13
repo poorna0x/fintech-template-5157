@@ -184,6 +184,11 @@ export async function registerAdminPushToken(): Promise<void> {
       await PushNotifications.addListener('pushNotificationReceived', (notification) => {
         const data = (notification?.data || {}) as Record<string, unknown>;
         const type = String(data.type || '').trim();
+        if (type === 'whatsapp_tray_clear') {
+          const inbound = String(data.phone || data.phone_e164 || '').replace(/\D/g, '');
+          if (inbound) dismissWhatsAppTrayForPhone(inbound);
+          return;
+        }
         if (type === 'whatsapp_inbound') {
           const act = getWhatsAppInboxActivity();
           const inbound = String(data.phone || data.phone_e164 || '').replace(/\D/g, '');

@@ -1,6 +1,7 @@
 /** WhatsApp inbox helpers — slim selects, 24h window, send via Cloud API function. */
 
 import { clearNativeWhatsAppTrayNotification } from '@/lib/devicePrefs';
+import { supabase } from '@/lib/supabaseClient';
 import { escapeForLike, normalizePhoneForSearch } from '@/lib/utils';
 import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
 
@@ -173,6 +174,24 @@ export function markWhatsAppThreadRead(phoneE164: string, lastAt: string): void 
 
 const lastPersistedRead = new Map<string, string>();
 
+async function pushWhatsAppTrayClearToAdminApks(phone: string): Promise<void> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) return;
+    await fetch('/.netlify/functions/whatsapp-tray-clear-push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ phone }),
+    });
+  } catch {
+    /* tray clear is best-effort */
+  }
+}
+
 /** In-memory throttle — avoid re-downloading the same slim map on soft reload / resume. */
 let readMapFetchCache: { at: number; map: Record<string, string> } | null = null;
 const READ_MAP_FETCH_TTL_MS = 45_000;
@@ -259,6 +278,8 @@ export async function persistWhatsAppThreadRead(
     });
     if (error) {
       lastPersistedRead.delete(phone);
+    } else {
+      void pushWhatsAppTrayClearToAdminApks(phone);
     }
   } catch {
     lastPersistedRead.delete(phone);
