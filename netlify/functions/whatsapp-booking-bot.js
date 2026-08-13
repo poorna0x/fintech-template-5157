@@ -212,6 +212,27 @@ const RECENT_SERVICE_DAYS = 15;
 
 const GREETING_RE =
   /^(hi+|hii+|hello|hey|hola|namaste|book|booking|service|start|menu|help)\b/i;
+/** Short acknowledgements after a PDF / QR — must not open the booking menu. */
+const ACK_RE =
+  /^(ok+|okay|okey|thanks|thank\s*you|thanku|thx|tysm|received|recieved|got\s*it|done|noted|👍|🙏|ok\s*thanks)\s*[!.]*$/i;
+const INBOUND_MEDIA_TYPES = new Set([
+  'image',
+  'video',
+  'audio',
+  'document',
+  'sticker',
+  'voice',
+  'reaction',
+]);
+/** Do not run the booking bot against our own company lines. */
+const OWN_BUSINESS_LAST10 = new Set([
+  '9880693311',
+  '8792467611',
+  '8884944288',
+  '9886944288',
+]);
+const BOOKING_MENU_COOLDOWN_MS = 3 * 60 * 1000;
+const CRM_MEDIA_QUIET_MS = 2 * 60 * 60 * 1000;
 const EDIT_RE = /^(edit|change|update|modify)\b/i;
 
 /** Clear booking intents in free-form first messages (no need to tap Hi). */
@@ -1086,6 +1107,70 @@ function formatLastServiceLine(lastIso) {
   return `Last service: ${label} (${days} days ago)`;
 }
 
+function isOwnBusinessPhone(phoneE164) {
+  const last10 = String(phoneE164 || '').replace(/\D/g, '').slice(-10);
+  return last10.length === 10 && OWN_BUSINESS_LAST10.has(last10);
+}
+
+async function recentlySentBookingBotMenu(db, phoneE164, withinMs = BOOKING_MENU_COOLDOWN_MS) {
+  if (!db || !phoneE164) return false;
+  const phone = normalizePhoneE164(phoneE164);
+  if (!phone) return false;
+  try {
+    const since = new Date(Date.now() - Math.max(30_000, withinMs)).toISOString();
+    const { data } = await db
+      .from('whatsapp_messages')
+      .select('id')
+      .eq('phone_e164', phone)
+      .eq('direction', 'outbound')
+      .like('body', '[Booking bot]%')
+      .gte('created_at', since)
+      .limit(1)
+      .maybeSingle();
+    return Boolean(data?.id);
+  } catch {
+    return false;
+  }
+}
+
+/** AMC / bill / QR / any CRM file we just sent — do not auto-open booking menus. */
+async function recentlySentCrmDocOrPay(db, phoneE164, withinMs = CRM_MEDIA_QUIET_MS) {
+  if (!db || !phoneE164) return false;
+  const phone = normalizePhoneE164(phoneE164);
+  if (!phone) return false;
+  try {
+    const since = new Date(Date.now() - Math.max(60_000, withinMs)).toISOString();
+    const { data } = await db
+      .from('whatsapp_messages')
+      .select('id, filename, template_name, body, msg_type')
+      .eq('phone_e164', phone)
+      .eq('direction', 'outbound')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(25);
+    return (data || []).some((row) => {
+      const file = String(row.filename || '');
+      const tpl = String(row.template_name || '');
+      const body = String(row.body || '');
+      const type = String(row.msg_type || '');
+      if (String(body).startsWith('[Booking bot]') || String(body).startsWith('[Unsolicited')) {
+        return false;
+      }
+      if (type === 'document' || type === 'image') return true;
+      if (/^AMC_/i.test(file) || /amc/i.test(file)) return true;
+      if (/doc_amc|amc_document|balance_due|pending_payment/i.test(tpl)) return true;
+      if (/AMC agreement|upi qr|pending payment/i.test(body)) return true;
+      return false;
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function recentlySentAmcDocument(db, phoneE164) {
+  return recentlySentCrmDocOrPay(db, phoneE164, 24 * 60 * 60 * 1000);
+}
+
 async function lookupActiveAmc(db, customerId) {
   if (!db || !customerId) return null;
   try {
@@ -1405,6 +1490,13 @@ async function startInboundIdentityFlow(ctx) {
     hasAmc: Boolean(amc?.id),
   };
 
+  if (await recentlySentBookingBotMenu(ctx.db, ctx.to)) {
+    return { ok: true, skipped: true, reason: 'menu_cooldown' };
+  }
+  if (await recentlySentCrmDocOrPay(ctx.db, ctx.to)) {
+    return { ok: true, skipped: true, reason: 'recent_crm_media' };
+  }
+
   if (amc?.id) {
     await sendAmcCheckin(ctx, base);
     return { ok: true, known: true, amc: true };
@@ -1440,6 +1532,9 @@ async function continueAfterLinkedConfirm(ctx, state = {}) {
     hasAmc: Boolean(amc?.id),
   };
 
+  if (await recentlySentCrmDocOrPay(ctx.db, ctx.to) || (await recentlySentBookingBotMenu(ctx.db, ctx.to))) {
+    return;
+  }
   if (amc?.id) {
     await sendAmcCheckin(ctx, base);
     return;
@@ -3313,6 +3408,7 @@ async function handleBookingBotInbound({
 
   const to = normalizePhoneE164(msg.from);
   if (!to) return { handled: false };
+  if (isOwnBusinessPhone(to)) return { handled: false };
 
   const ctx = { db, accessToken, phoneNumberId, to };
   const interactive = extractInteractiveReply(msg);
@@ -3320,6 +3416,33 @@ async function handleBookingBotInbound({
   const state =
     preloadedState !== undefined ? preloadedState : await getBookingState(db, to);
   const msgType = String(msg.type || '');
+
+  // Payment screenshots / PDFs must not open the AMC / booking menu.
+  // Meta also retries the same inbound; a photo must not restart identity flow.
+  const pendingWantsMedia =
+    state?.step === 'admin_pending' &&
+    /photo|media/i.test(String(state.pendingAction || ''));
+  if (
+    INBOUND_MEDIA_TYPES.has(msgType) &&
+    !interactive &&
+    !stateAwaitingMedia(state) &&
+    !pendingWantsMedia
+  ) {
+    return { handled: false };
+  }
+
+  const midActiveEarly =
+    Boolean(state?.editing) ||
+    (state?.step && ACTIVE_BOOKING_STEPS.has(state.step));
+  if (
+    msgType === 'text' &&
+    text &&
+    ACK_RE.test(text.trim()) &&
+    !interactive &&
+    !midActiveEarly
+  ) {
+    return { handled: false };
+  }
 
   // Plain Hi / Hello / Menu → always restart identity gate (works inside open 24h window)
   if (
