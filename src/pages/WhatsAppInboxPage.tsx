@@ -135,15 +135,15 @@ function dayKey(iso: string): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
-/** Soft dark chat wallpaper — lower contrast to reduce eye strain. */
+/** Soft charcoal chat wallpaper — warm, low contrast. */
 const CHAT_THREAD_BG_DARK: CSSProperties = {
   backgroundColor: '#14181c',
   backgroundImage: [
-    'radial-gradient(ellipse at 18% 0%, rgba(28, 48, 56, 0.55) 0%, transparent 55%)',
-    'radial-gradient(ellipse at 82% 100%, rgba(22, 40, 48, 0.45) 0%, transparent 50%)',
+    'radial-gradient(ellipse at 18% 0%, rgba(48, 44, 40, 0.45) 0%, transparent 55%)',
+    'radial-gradient(ellipse at 82% 100%, rgba(36, 40, 48, 0.4) 0%, transparent 50%)',
     `url("data:image/svg+xml,${encodeURIComponent(
       `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'>
-        <g fill='%23ffffff' fill-opacity='0.022'>
+        <g fill='%23f2efe9' fill-opacity='0.025'>
           <path d='M20 40c8-14 28-14 36 0 8 14-4 32-18 32s-26-18-18-32z'/>
           <path d='M78 78c6-10 20-10 26 0 6 10-3 24-13 24s-19-14-13-24z'/>
           <circle cx='96' cy='28' r='3'/>
