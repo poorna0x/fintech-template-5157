@@ -106,7 +106,7 @@ export function WhatsAppQuickContextFields({
         />
       </div>
       {onSkipBrandLabelChange ? (
-        <label className="flex cursor-pointer items-center gap-2 text-[11px] text-[#857f78]">
+        <label className="flex cursor-pointer items-center gap-2 text-[11px] text-[#7a746c]">
           <input
             type="checkbox"
             className="h-3.5 w-3.5 cursor-pointer accent-[#008069]"
