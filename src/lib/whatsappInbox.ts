@@ -1057,10 +1057,13 @@ export function previewMessageBody(
 
   if (row.body?.trim()) {
     const formatted = formatAdminWhatsAppBody(row.body, { compact: true });
-    if (row.media_url && (isDoc || isImage)) {
+    if (row.media_url && (isDoc || isImage) && !String(row.media_url).startsWith('local:')) {
       const snippet =
         formatted.length > 72 ? `${formatted.slice(0, 69).trim()}…` : formatted;
       return isDoc ? `📄 ${snippet}` : `📷 ${snippet}`;
+    }
+    if (row.media_url && (isDoc || isImage) && file) {
+      return isDoc ? `📄 ${file}` : `📷 ${file}`;
     }
     return formatted;
   }
@@ -1213,9 +1216,39 @@ export function formatAdminWhatsAppBody(
   // WhatsApp bold *like this*
   text = text.replace(/\*([^*]+)\*/g, '$1');
 
+  // Meta template / bot slug stored as body (e.g. svc_wfs_ask_name_ero_v2)
+  if (/^svc_[a-z0-9_]+$/i.test(text.trim())) {
+    text = humanizeWhatsAppTemplateSlug(text.trim());
+  }
+
   // Collapse leftover blank lines
   text = text.replace(/\n{3,}/g, '\n\n').trim();
   return text;
+}
+
+/** svc_wfs_ask_name_ero_v2 → Ask name */
+function humanizeWhatsAppTemplateSlug(slug: string): string {
+  let s = slug.replace(/^svc_/i, '').replace(/_(ero|hro)_v\d+$/i, '').replace(/_v\d+$/i, '');
+  const stepHints: Record<string, string> = {
+    ask_name: 'Ask name',
+    await_name: 'Ask name',
+    wfs_ask_name: 'Ask name',
+    ask_location: 'Ask location',
+    await_location: 'Ask location',
+    pick_date: 'Pick date',
+    await_date: 'Pick date',
+    pick_time: 'Pick time',
+    await_time: 'Pick time slot',
+  };
+  if (stepHints[s]) return stepHints[s];
+  for (const [k, label] of Object.entries(stepHints)) {
+    if (s.endsWith(k) || s.includes(`_${k}`)) return label;
+  }
+  return s
+    .split('_')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }
 
 /** True when the row is an internal booking-bot state dump (not a customer-facing text). */

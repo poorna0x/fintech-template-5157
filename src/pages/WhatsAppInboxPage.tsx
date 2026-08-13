@@ -458,11 +458,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     const rangeKey = inboxListRangeKey(listRangeRef.current);
     const cached = peekWhatsAppInboxThreadsCache({ rangeKey });
     const cacheFresh = isWhatsAppInboxListCacheFresh(cached);
-    if (cached?.threads?.length && !opts?.force) {
+    // Soft refresh must NOT paint stale cache over live/optimistic patches.
+    if (cached?.threads?.length && !opts?.force && !opts?.soft) {
       setThreads(cached.threads);
-      if (!opts?.soft) setLoading(false);
+      setLoading(false);
     }
-    // Fresh cache + not forced → skip network (realtime / soft still refresh periodically)
+    // Fresh cache + not forced → skip network (realtime / soft still refresh)
     if (cacheFresh && !opts?.force && !opts?.soft) {
       setLoading(false);
       return;
@@ -533,10 +534,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     const seq = ++loadThreadSeqRef.current;
     const cached = peekWhatsAppThreadMessagesCache(phone);
     const cacheFresh = isWhatsAppThreadCacheFresh(cached);
-    if (cached?.messages?.length && !opts?.force) {
+    // Soft refresh must not wipe newer optimistic/realtime messages with stale cache.
+    if (cached?.messages?.length && !opts?.force && !opts?.soft) {
       setThreadMessages(cached.messages);
       setThreadHasMoreOlder(Boolean(cached.hasMoreOlder));
-      if (!opts?.soft) setThreadLoading(false);
+      setThreadLoading(false);
     }
     if (cacheFresh && !opts?.force && !opts?.soft) {
       setThreadLoading(false);
@@ -948,6 +950,58 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
   }, []);
 
+  /** Instantly update chat-list preview after an outbound send (don't wait for refresh). */
+  const bumpThreadAfterOutbound = useCallback(
+    (opts: {
+      phone: string;
+      body?: string | null;
+      msgType?: string;
+      filename?: string | null;
+      mimeType?: string | null;
+      messageId?: string | null;
+      customerId?: string | null;
+      templateName?: string | null;
+    }) => {
+      const phone = String(opts.phone || '').replace(/\D/g, '');
+      if (!phone) return;
+      const now = new Date().toISOString();
+      const mime = opts.mimeType || null;
+      const filename = opts.filename || null;
+      let msgType = opts.msgType || 'text';
+      if (!opts.msgType && mime) {
+        if (mime.startsWith('image/')) msgType = 'image';
+        else if (mime.includes('pdf') || /\.pdf$/i.test(filename || '')) msgType = 'document';
+        else msgType = 'document';
+      }
+      if (opts.templateName && !opts.body) msgType = 'template';
+      const row: WhatsAppMessageRow = {
+        id: opts.messageId || `local-${Date.now()}`,
+        wa_message_id: null,
+        direction: 'outbound',
+        phone_e164: phone,
+        customer_id: opts.customerId || null,
+        msg_type: msgType,
+        body:
+          opts.body?.trim() ||
+          (opts.templateName ? String(opts.templateName) : null) ||
+          null,
+        media_url: filename || mime ? `local:${filename || 'file'}` : null,
+        media_mime: mime,
+        filename,
+        status: 'sent',
+        template_name: opts.templateName || null,
+        error_message: null,
+        created_at: now,
+      };
+      upsertMessageLocal(row);
+      void loadInbox({ soft: true, force: true });
+      if (phone === selectedPhoneRef.current) {
+        void loadThread(phone, { soft: true });
+      }
+    },
+    [upsertMessageLocal, loadInbox, loadThread]
+  );
+
   useEffect(() => {
     void loadInbox();
   }, [loadInbox]);
@@ -1239,7 +1293,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         setDraft('');
         clearAttach();
         toast.success(parsed.mimeType.startsWith('image/') ? 'Image sent' : 'File sent');
-        void loadInbox({ soft: true });
+        bumpThreadAfterOutbound({
+          phone,
+          body: text || null,
+          filename: parsed.filename,
+          mimeType: parsed.mimeType,
+          messageId: result.messageId,
+          customerId: activeThread?.customer_id,
+        });
         return;
       }
 
@@ -1256,11 +1317,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       }
       setDraft('');
       toast.success('Sent');
-      void loadInbox({ soft: true });
+      bumpThreadAfterOutbound({
+        phone,
+        body: text,
+        msgType: 'text',
+        messageId: result.messageId,
+        customerId: activeThread?.customer_id,
+      });
     } finally {
       setSending(false);
     }
-  }, [activeThread?.customer_id, loadInbox]);
+  }, [activeThread?.customer_id, bumpThreadAfterOutbound]);
 
   const copyBookLink = useCallback(async () => {
     const url = quickReplyBookingUrl(quickReplyContext);
@@ -1296,7 +1363,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       toast.success('Template sent');
       setSelectedTemplateKey('');
       setTemplateParams([]);
-      void loadInbox({ soft: true });
+      bumpThreadAfterOutbound({
+        phone: selectedPhone,
+        body: selectedTemplate.name,
+        msgType: 'template',
+        templateName: selectedTemplate.name,
+        messageId: result.messageId,
+        customerId: activeThread?.customer_id,
+      });
     } finally {
       setSending(false);
     }
@@ -1324,9 +1398,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         toast.success(`${QUICK_ACTION_LABELS[action]} started on WhatsApp`);
       }
       setQuickActionConfirm(null);
-      void loadInbox({ soft: true });
-      // Soft refresh thread so bot steps appear even if realtime is slow
-      void loadThread(selectedPhone, { soft: true });
+      bumpThreadAfterOutbound({
+        phone: selectedPhone,
+        body: result.templateName || QUICK_ACTION_LABELS[action],
+        msgType: result.via === 'template' ? 'template' : 'interactive',
+        templateName: result.templateName || null,
+        customerId: activeThread?.customer_id,
+      });
+      void loadThread(selectedPhone, { soft: true, force: true });
     } finally {
       setQuickActionBusy(false);
     }

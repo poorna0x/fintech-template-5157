@@ -28,6 +28,8 @@ export type AdminWhatsAppSendResult = {
   ok: boolean;
   via?: AdminWhatsAppSendVia;
   error?: string;
+  /** DB row id when Cloud API persist succeeded. */
+  messageId?: string | null;
   /** True when API failed because Meta requires an open session / template. */
   needsWindowOrTemplate?: boolean;
   /** True when Settings → WhatsApp toggled this surface off. */
@@ -117,7 +119,11 @@ export async function sendAdminWhatsAppText(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      return { ok: true, via: 'api' };
+      return {
+        ok: true,
+        via: 'api',
+        messageId: data?.messageId ? String(data.messageId) : null,
+      };
     }
 
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
@@ -414,7 +420,11 @@ export async function sendAdminWhatsAppTemplate(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      return { ok: true, via: 'api' };
+      return {
+        ok: true,
+        via: 'api',
+        messageId: data?.messageId ? String(data.messageId) : null,
+      };
     }
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
     if (isFeatureDisabledResponse(data)) {
