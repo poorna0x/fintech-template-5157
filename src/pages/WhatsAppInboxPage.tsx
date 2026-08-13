@@ -128,11 +128,26 @@ import {
 } from '@/lib/sendAdminWhatsAppApi';
 import { quickReplyBookingUrl } from '@/lib/whatsappQuickMessages';
 import { registerNativeBackHandler, tryNativeBackHandlers } from '@/lib/nativeBackButton';
+import { Capacitor } from '@capacitor/core';
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/** Mobile / APK: Enter inserts a newline. Desktop: Enter sends (Shift+Enter = newline). */
+function isMobileWhatsAppComposer(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    if (Capacitor.isNativePlatform()) return true;
+  } catch {
+    /* ignore */
+  }
+  return (
+    window.matchMedia('(max-width: 767px)').matches ||
+    window.matchMedia('(pointer: coarse)').matches
+  );
 }
 
 /** Soft charcoal chat wallpaper — warm, low contrast. */
@@ -436,7 +451,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
     attachFileRef.current = file;
     setAttachFile(file);
-    // After drag/drop or picker, focus composer so Enter sends
+    // After drag/drop or picker, focus composer for caption / typing
     requestAnimationFrame(() => {
       composerRef.current?.focus();
     });
@@ -2397,15 +2412,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 {windowOpen ? (
                   <div className="space-y-2">
                     {attachFile ? (
-                      <div
-                        className="flex items-center gap-2 rounded-xl bg-[#252b32] px-2 py-1.5 shadow-sm"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                            e.preventDefault();
-                            void handleSend();
-                          }
-                        }}
-                      >
+                      <div className="flex items-center gap-2 rounded-xl bg-[#252b32] px-2 py-1.5 shadow-sm">
                         {attachPreviewUrl ? (
                           <img
                             src={attachPreviewUrl}
@@ -2422,7 +2429,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                             {attachFile.name}
                           </p>
                           <p className="text-[10px] text-[#857f78]">
-                            {(attachFile.size / 1024).toFixed(0)} KB · Enter to send
+                            {(attachFile.size / 1024).toFixed(0)} KB · tap send
                           </p>
                         </div>
                         <button
@@ -2461,17 +2468,20 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           ref={composerRef}
                           value={draft}
                           onChange={(e) => setDraft(e.target.value)}
-                          placeholder={attachFile ? 'Add a caption (Enter to send)' : 'Message'}
+                          placeholder={attachFile ? 'Add a caption' : 'Message'}
                           disabled={sending}
                           rows={1}
                           className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#f2efe9] shadow-none outline-none ring-0 ring-offset-0 placeholder:text-[#857f78] focus:border-0 focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                           style={{ WebkitTapHighlightColor: 'transparent' }}
                           onKeyDown={(e) => {
                             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              void handleSend();
-                            }
+                            if (e.key !== 'Enter') return;
+                            // Mobile / APK: Enter = new line (send via button).
+                            if (isMobileWhatsAppComposer()) return;
+                            // Desktop: Enter sends; Shift+Enter keeps newline.
+                            if (e.shiftKey) return;
+                            e.preventDefault();
+                            void handleSend();
                           }}
                           onPaste={(e) => {
                             const item = Array.from(e.clipboardData?.items || []).find((i) =>
