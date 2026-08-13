@@ -2464,7 +2464,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           placeholder={attachFile ? 'Add a caption (Enter to send)' : 'Message'}
                           disabled={sending}
                           rows={1}
-                          className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#e4eaec] shadow-none placeholder:text-[#7d8f99] focus-visible:ring-0"
+                          className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#e4eaec] shadow-none outline-none ring-0 ring-offset-0 placeholder:text-[#7d8f99] focus:border-0 focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                           onKeyDown={(e) => {
                             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                             if (e.key === 'Enter' && !e.shiftKey) {
