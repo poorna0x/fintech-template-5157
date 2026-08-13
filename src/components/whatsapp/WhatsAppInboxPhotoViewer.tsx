@@ -345,7 +345,7 @@ export function WhatsAppInboxPhotoViewer({
               {current?.alt || 'Photo'}
             </p>
             {hasNav ? (
-              <p className="text-xs text-[#8696a0]">
+              <p className="text-xs text-[#667781]">
                 {index + 1} / {slides.length}
               </p>
             ) : null}
@@ -366,7 +366,7 @@ export function WhatsAppInboxPhotoViewer({
 
         {!ready ? (
           <div className="pointer-events-none flex flex-1 items-center justify-center bg-[#0b141a]">
-            <Loader2 className="h-8 w-8 animate-spin text-[#8696a0]" />
+            <Loader2 className="h-8 w-8 animate-spin text-[#667781]" />
           </div>
         ) : null}
 

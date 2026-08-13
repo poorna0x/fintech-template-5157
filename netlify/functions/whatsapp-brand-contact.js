@@ -59,8 +59,9 @@ function authenticityLine(brand, code) {
 
 /** Post-Accept original PDF — valid doc + save + company footer + authenticity (24h free-form). */
 function buildOriginalDocumentDeliveryBody(customerName, documentLabel, brand, verifyCode) {
+  const { whatsappGreetingName } = require('./whatsapp-greeting-name');
   const label = String(documentLabel || 'document').trim() || 'document';
-  const name = String(customerName || '').trim();
+  const name = whatsappGreetingName(customerName, '');
   const lines = [
     name ? `Hi ${name},` : 'Hi there,',
     '',

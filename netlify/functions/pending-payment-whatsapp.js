@@ -117,16 +117,7 @@ function buildPendingPaymentWhatsAppMessage({
   });
   const dueLabel = formatDueLabel(dueDateYmd);
   const link = String(payLink || '').trim();
-  const vpa = String(upiId || '').trim();
   const ref = String(invoiceRef || '').trim();
-
-  const labeledValue = (emoji, label, value) => {
-    const v = String(value || '').trim();
-    const l = String(label || '').trim() || 'Info';
-    const e = String(emoji || '').trim();
-    if (!v) return e ? `${e} *${l}*` : `*${l}*`;
-    return e ? `${e} *${l}*:\n${v}` : `*${l}*:\n${v}`;
-  };
 
   const labeledLink = (emoji, label, url) => {
     const u = String(url || '').trim();
@@ -145,36 +136,13 @@ function buildPendingPaymentWhatsAppMessage({
   ];
   if (ref) lines.push(`🧾 Invoice / Job: ${ref}`);
 
-  if (link || vpa) {
+  if (link) {
     lines.push('');
-    lines.push('*Pay now*');
-    if (link) {
-      lines.push(labeledLink('💳', 'UPI pay link (GPay / PhonePe / UPI)', link));
-    }
-    if (vpa) {
-      lines.push(labeledValue('📱', 'UPI ID', vpa));
-    }
-    if (upiLabel) {
-      lines.push(labeledValue('🏦', 'Pay to', upiLabel));
-    }
-    if (link) {
-      lines.push(`Amount ₹${formattedAmount} is pre-filled when you use the UPI pay link.`);
-    }
-    if (upiPhone) {
-      lines.push(labeledValue('📞', 'UPI mobile', upiPhone));
-    }
+    lines.push(labeledLink('💳', 'Pay now', link));
   }
 
   lines.push('');
-  lines.push(`Thank you for choosing ${contact.label}.`);
-  lines.push(`Call:\n${contact.phone}`);
-  lines.push(`Email:\n${contact.email}`);
-  const webHost = String(contact.website || '')
-    .replace(/^https?:\/\//i, '')
-    .replace(/\/$/, '');
-  lines.push(`Website:\n${webHost}`);
-  lines.push('');
-  if (link || vpa) {
+  if (link) {
     lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');
   } else {
     lines.push('💬 Reply on this chat if you need any help or if you have already paid.');

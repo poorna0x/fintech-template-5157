@@ -60,6 +60,7 @@ import CallingPage from '@/pages/CallingPage';
 import WhatsAppInboxPage from '@/pages/WhatsAppInboxPage';
 import WhatsAppSettingsPage from '@/pages/WhatsAppSettingsPage';
 import LeadCatalogSettingsPage from '@/pages/LeadCatalogSettingsPage';
+import { WhatsAppLogo } from '@/components/whatsapp/WhatsAppLogo';
 import { tryNativeBackHandlers } from '@/lib/nativeBackButton';
 import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
@@ -2410,31 +2411,26 @@ const Settings = () => {
     const exitWhatsAppInboxToHome = () => {
       navigate('/admin', { replace: true });
     };
+    // Header Back always goes to admin home (not chat list / settings).
     const handleWhatsAppChromeBack = () => {
-      if (tryNativeBackHandlers()) return;
       exitWhatsAppInboxToHome();
     };
     return (
-      <div className="admin-page flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#121a1f]">
-        <div className="flex shrink-0 items-center gap-2 border-b border-[#253038] bg-[#1a242c] px-3 py-2.5 sm:px-4">
+      <div className="admin-page flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#0b141a]">
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#2a3942] bg-[#111b21] px-3 py-2.5 sm:px-4">
           <Button
             variant="ghost"
             size="sm"
             onClick={handleWhatsAppChromeBack}
-            className="h-9 shrink-0 cursor-pointer text-[#9aaeb8] hover:bg-white/5 hover:text-[#e4eaec]"
+            className="h-9 shrink-0 cursor-pointer text-[#8696a0] hover:bg-white/5 hover:text-[#e9edef]"
           >
             <ArrowLeft className="mr-1 h-4 w-4" />
             Back
           </Button>
-          <div className="min-w-0 flex-1" />
-          <img
-            src="/whatsapp.png"
-            alt=""
-            className="h-6 w-6 rounded-md object-contain opacity-90"
-            width={24}
-            height={24}
-          />
-          <span className="text-sm font-semibold tracking-tight text-[#e4eaec]">WhatsApp</span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <WhatsAppLogo size={18} className="text-[#e9edef]" />
+            <span className="text-sm font-semibold tracking-tight text-[#e9edef]">Inbox</span>
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           <WhatsAppInboxPage

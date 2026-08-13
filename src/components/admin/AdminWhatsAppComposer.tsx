@@ -43,10 +43,8 @@ import {
   WHATSAPP_ATTACH_ACCEPT,
 } from '@/lib/sendAdminWhatsAppApi';
 import {
-  formatComposerColdPreview,
   resolveComposerColdTemplate,
 } from '@/lib/composerColdWhatsApp';
-import { WhatsAppQuickRepliesBar, WhatsAppQuickContextFields } from '@/components/whatsapp/WhatsAppQuickRepliesBar';
 import { normalizePhoneDigits } from '@/lib/whatsappPhoneTarget';
 import {
   fetchLastInboundAt,
@@ -68,6 +66,7 @@ interface SentWhatsAppSummary {
 }
 
 const TEMPLATE_ORDER: AdminEmailTemplateType[] = [
+  'general',
   'booking_confirmation',
   'service_bill',
   'invoice',
@@ -75,7 +74,6 @@ const TEMPLATE_ORDER: AdminEmailTemplateType[] = [
   'quotation',
   'service_reminder',
   'tech_running_late',
-  'general',
 ];
 
 export interface AdminWhatsAppComposerPanelProps {
@@ -179,7 +177,13 @@ export function AdminWhatsAppComposerPanel({
     previewMode === 'mobile' ? 'min(68dvh, 620px)' : 'min(72dvh, 880px)';
 
   const isPreviewEmpty = useMemo(() => {
-    if (sourceMode === 'crm' && (!crmDataLoaded || customerLoading)) return true;
+    if (attachFile) return false;
+    if (sourceMode === 'crm' && (!crmDataLoaded || customerLoading) && templateType !== 'general') {
+      return true;
+    }
+    if (templateType === 'general') {
+      return !documentForm.message.trim() && !documentForm.customerName.trim();
+    }
     if (templateType === 'booking_confirmation') {
       return (
         !bookingForm.customerName.trim() &&
@@ -189,7 +193,7 @@ export function AdminWhatsAppComposerPanel({
       );
     }
     return !documentForm.customerName.trim() && !documentForm.message.trim() && !documentForm.documentRef.trim();
-  }, [sourceMode, crmDataLoaded, customerLoading, templateType, bookingForm, documentForm]);
+  }, [sourceMode, crmDataLoaded, customerLoading, templateType, bookingForm, documentForm, attachFile]);
 
   const showChatPreview = !isPreviewEmpty || Boolean(attachFile);
 
@@ -388,6 +392,14 @@ export function AdminWhatsAppComposerPanel({
   const handleReviewSend = () => {
     if (!sendTo.trim()) {
       toast.error('Enter a recipient phone number');
+      return;
+    }
+    if (deliveryMode === 'api' && !whatsappPreview.text.trim() && !attachFile) {
+      toast.error('Write a message or attach a PDF / photo');
+      return;
+    }
+    if (deliveryMode === 'wa_me' && !whatsappPreview.text.trim()) {
+      toast.error('Write a message to open in WhatsApp');
       return;
     }
     setMobilePanel('compose');
@@ -602,8 +614,8 @@ export function AdminWhatsAppComposerPanel({
         <CardHeader className="pb-3">
           <CardTitle className="text-base sm:text-lg">Send WhatsApp</CardTitle>
           <CardDescription className="text-xs sm:text-sm">
-            Choose Cloud API (business line) or phone WhatsApp (wa.me). Attachments and template PDFs
-            only work with Cloud API.
+            Cloud API = free-form text + optional PDF/photo on the business line. Phone WhatsApp opens
+            wa.me on this device (text only).
           </CardDescription>
         </CardHeader>
       )}
@@ -684,7 +696,7 @@ export function AdminWhatsAppComposerPanel({
                   >
                     <span className="block">Cloud API</span>
                     <span className="block text-[11px] font-normal opacity-80">
-                      Business line · logs in inbox
+                      Free-form · attachments · inbox
                     </span>
                   </button>
                   <button
@@ -725,7 +737,7 @@ export function AdminWhatsAppComposerPanel({
                 </div>
               )}
               <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-700 whitespace-pre-wrap max-h-32 overflow-y-auto">
-                {whatsappPreview.text}
+                {whatsappPreview.text.trim() || (attachFile ? '(attachment only — no caption)' : '')}
               </div>
             </div>
 
@@ -831,51 +843,8 @@ export function AdminWhatsAppComposerPanel({
               {hasAlternate && (
                 <p className="text-xs text-slate-500">Alternate on file: {alternatePhone}</p>
               )}
-              {deliveryMode === 'api' && (
-                <p className="text-xs text-slate-500">
-                  Cold (24h closed):{' '}
-                  {formatComposerColdPreview(templateType, activeBrand, {
-                    customerName:
-                      (templateType === 'booking_confirmation'
-                        ? bookingForm.customerName
-                        : documentForm.customerName
-                      ).trim() || 'Customer',
-                    freeformMessage: whatsappPreview.text,
-                    bookingForm:
-                      templateType === 'booking_confirmation' ? bookingForm : undefined,
-                    documentForm:
-                      templateType !== 'booking_confirmation' ? documentForm : undefined,
-                  }) || 'Free-form or PDF template'}
-                </p>
-              )}
-              {templateType !== 'booking_confirmation' ? (
-                <>
-                  <WhatsAppQuickContextFields
-                    amount={documentForm.amount}
-                    whenLabel={documentForm.dueDate || ''}
-                    onAmountChange={(v) => updateDocumentField('amount', v)}
-                    onWhenChange={(v) => updateDocumentField('dueDate', v)}
-                    className="pt-1"
-                  />
-                  <WhatsAppQuickRepliesBar
-                    context={{
-                      customerName: documentForm.customerName.trim() || 'Customer',
-                      brand: activeBrand,
-                      amount: documentForm.amount,
-                      whenLabel: documentForm.dueDate || undefined,
-                    }}
-                    windowOpen
-                    showTemplates={false}
-                    disabled={sending}
-                    onInsertText={(text) => {
-                      const prev = documentForm.message.trim();
-                      updateDocumentField('message', prev ? `${prev}\n\n${text}` : text);
-                    }}
-                    className="pt-1"
-                  />
-                </>
-              ) : null}
             </div>
+
             <div className="space-y-1.5">
               <Label className="text-sm">How to send</Label>
               <div className="grid grid-cols-2 gap-2">
@@ -889,7 +858,9 @@ export function AdminWhatsAppComposerPanel({
                   onClick={() => setDeliveryModeSafe('api')}
                 >
                   <span className="block">Cloud API</span>
-                  <span className="block text-[11px] font-normal opacity-80">Business line</span>
+                  <span className="block text-[11px] font-normal opacity-80">
+                    Free-form + attachments
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -901,14 +872,34 @@ export function AdminWhatsAppComposerPanel({
                   onClick={() => setDeliveryModeSafe('wa_me')}
                 >
                   <span className="block">Phone WhatsApp</span>
-                  <span className="block text-[11px] font-normal opacity-80">wa.me</span>
+                  <span className="block text-[11px] font-normal opacity-80">wa.me · text only</span>
                 </button>
               </div>
             </div>
 
+            {deliveryMode === 'api' && templateType !== 'booking_confirmation' ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-whatsapp-freeform" className="text-sm">
+                  Message
+                </Label>
+                <Textarea
+                  id="admin-whatsapp-freeform"
+                  rows={compact ? 3 : 4}
+                  placeholder="Type your free-form WhatsApp message…"
+                  value={documentForm.message}
+                  onChange={(e) => updateDocumentField('message', e.target.value)}
+                  className="resize-y min-h-[72px]"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Sent as typed when using Free-form. Other templates wrap this with branding in the
+                  preview.
+                </p>
+              </div>
+            ) : null}
+
             {deliveryMode === 'api' ? (
               <div className="space-y-1.5">
-                <Label className="text-sm">Attach PDF or image</Label>
+                <Label className="text-sm">Attach PDF or image (optional)</Label>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -988,26 +979,25 @@ export function AdminWhatsAppComposerPanel({
                       </Button>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center gap-1 py-4 text-center cursor-pointer">
+                    <div className="flex flex-col items-center justify-center gap-1 py-3 text-center cursor-pointer">
                       <Paperclip className="h-5 w-5 text-emerald-600" />
                       <p className="text-sm font-medium text-slate-800">
                         {attachDragOver ? 'Drop to attach' : 'Drop PDF or photo here'}
                       </p>
                       <p className="text-[11px] text-slate-500">
-                        or click to browse · JPEG / PNG / WebP / PDF · max 4MB
+                        or click · JPEG / PNG / WebP / PDF · max 4MB
                       </p>
                     </div>
                   )}
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Message text is sent as the caption. Manual attach replaces auto template PDF for
-                  this send.
+                  Message text is the caption when a file is attached.
                 </p>
               </div>
             ) : (
               <p className="text-xs text-slate-500 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2">
-                Attachments aren’t available with phone WhatsApp — switch to Cloud API to send a PDF
-                or image.
+                Attachments aren’t available with phone WhatsApp — switch to Cloud API for PDF or
+                image.
               </p>
             )}
 
@@ -1161,7 +1151,11 @@ export function AdminWhatsAppComposerPanel({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base sm:text-lg">Template</CardTitle>
-          <CardDescription className="text-xs sm:text-sm">{templateMeta.description}</CardDescription>
+          <CardDescription className="text-xs sm:text-sm">
+            {templateType === 'general'
+              ? 'Free-form message with optional attachments.'
+              : templateMeta.description}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Select value={templateType} onValueChange={(v) => handleTemplateChange(v as AdminEmailTemplateType)}>
@@ -1171,7 +1165,7 @@ export function AdminWhatsAppComposerPanel({
             <SelectContent>
               {TEMPLATE_ORDER.map((key) => (
                 <SelectItem key={key} value={key}>
-                  {ADMIN_EMAIL_TEMPLATE_META[key].label}
+                  {key === 'general' ? 'Free-form message' : ADMIN_EMAIL_TEMPLATE_META[key].label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1375,27 +1369,23 @@ export function AdminWhatsAppComposerPanel({
                   )}
 
                   <div className="space-y-2">
-                    <Label>Message</Label>
-                    <WhatsAppQuickRepliesBar
-                      context={{
-                        customerName: documentForm.customerName.trim() || 'Customer',
-                        brand: activeBrand,
-                        amount: documentForm.amount,
-                        whenLabel: documentForm.dueDate || undefined,
-                      }}
-                      windowOpen
-                      showTemplates={false}
-                      disabled={sending}
-                      onInsertText={(text) => {
-                        const prev = documentForm.message.trim();
-                        updateDocumentField('message', prev ? `${prev}\n\n${text}` : text);
-                      }}
-                    />
+                    <Label>{templateType === 'general' ? 'Free-form message' : 'Message'}</Label>
                     <Textarea
-                      rows={5}
+                      rows={templateType === 'general' ? 7 : 5}
+                      placeholder={
+                        templateType === 'general'
+                          ? 'Type exactly what to send on WhatsApp…'
+                          : 'Optional note included in the message'
+                      }
                       value={documentForm.message}
                       onChange={(e) => updateDocumentField('message', e.target.value)}
                     />
+                    {templateType === 'general' ? (
+                      <p className="text-xs text-slate-500">
+                        Sent as typed via Cloud API. Attach a PDF or photo in the send panel if
+                        needed.
+                      </p>
+                    ) : null}
                   </div>
                 </>
               )}
@@ -1418,7 +1408,7 @@ export function AdminWhatsAppComposerPanel({
               Send WhatsApp
             </h2>
             <p className="hidden sm:block text-sm text-slate-500 mt-0.5">
-              Compose branded WhatsApp messages — booking, AMC, invoice, quotation, reminders, and more.
+              Cloud API free-form text + optional PDF/photo, or open phone WhatsApp (wa.me).
             </p>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">

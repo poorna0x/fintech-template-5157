@@ -3,8 +3,9 @@ import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-bra
 import { isJobPendingPaymentOpen, parseJobPendingPayment } from '@/lib/jobPendingPayment';
 import { formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
 import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
-import { waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
+import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import type { PendingPaymentWhatsAppUpiOptions } from '@/lib/pendingPaymentReminder';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export interface JobCompletionMessageInput {
   customerName: string;
@@ -117,7 +118,7 @@ export function buildJobCompletionMessage(input: JobCompletionMessageInput): str
  * Call = voice main line (Hydrogen 8884944288 / Eleven 9880693311), not Cloud API WA.
  */
 export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInput): string {
-  const customerName = input.customerName.trim() || 'Customer';
+  const customerName = whatsappGreetingName(input.customerName, 'there');
   const collected = Math.max(0, Number(input.amountCollected) || 0);
   const pending = Math.max(0, Number(input.amountPending) || 0);
   const due = pendingDueLabel(input.pendingDueDate);
@@ -138,24 +139,13 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
   if (jobRef) amountLines.push(`Invoice / Job: ${jobRef}`);
 
   const payLink = (input.upi?.httpsLink || '').trim();
-  const upiId = (input.upi?.upiId || '').trim();
   if (pending > 0 && input.withQrImage) {
     amountLines.push('');
-    amountLines.push('*Pay with UPI QR*');
-    amountLines.push('📱 Scan or tap the QR code above to pay directly (GPay / PhonePe / WhatsApp Pay).');
+    amountLines.push('📱 Scan the QR above, or tap Pay now / open the link below.');
   }
-  if (pending > 0 && (payLink || upiId)) {
+  if (pending > 0 && payLink) {
     amountLines.push('');
-    amountLines.push('*Pay now*');
-    if (payLink) {
-      amountLines.push(waLabeledLink('💳', 'UPI pay link (GPay / PhonePe / UPI)', payLink));
-    }
-    if (upiId) {
-      amountLines.push(waLabeledValue('📱', 'UPI ID', upiId));
-    }
-    if (input.upi?.label) {
-      amountLines.push(waLabeledValue('🏦', 'Pay to', input.upi.label));
-    }
+    amountLines.push(waLabeledLink('💳', 'Pay now', payLink));
   }
 
   return [
@@ -198,7 +188,7 @@ export function buildJobCompletionColdPaymentLine(input: {
 export function buildJobCompletionColdBodyParams(
   input: JobCompletionMessageInput
 ): [string, string, string] {
-  const name = input.customerName.trim() || 'Customer';
+  const name = whatsappGreetingName(input.customerName, 'there');
   const completionLine = buildJobCompletionLine(
     input.serviceType || '',
     input.serviceSubType || ''
@@ -219,7 +209,7 @@ function cleanAmountDigits(amount: number | string): string {
 export function buildJobCompletionLetterBodyParams(
   input: JobCompletionMessageInput
 ): [string, string, string] {
-  const name = input.customerName.trim() || 'Customer';
+  const name = whatsappGreetingName(input.customerName, 'there');
   const amount = cleanAmountDigits(input.amountCollected ?? 0);
   const jobRef = String(input.jobRef || '').trim() || 'your service visit';
   return [name, amount, jobRef];
@@ -297,7 +287,10 @@ export function buildJobCompletionMessageFromJob(job: Record<string, unknown>): 
   amountPendingValue: number;
 } {
   const customer = (job.customer as Record<string, unknown> | undefined) || {};
-  const customerName = String(customer.full_name || customer.fullName || 'Customer');
+  const customerName = whatsappGreetingName(
+    customer.full_name || customer.fullName,
+    'there'
+  );
   const serviceType = String(job.service_type || job.serviceType || '');
   const serviceSubType = String(job.service_sub_type || job.serviceSubType || '');
   const bill = resolveBillAmount(job);

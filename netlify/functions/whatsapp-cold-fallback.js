@@ -25,8 +25,8 @@ function isTemplateMetaError(result) {
 }
 
 function customerNameFrom(params) {
-  const n = String(params?.[0] || '').trim();
-  return n || 'there';
+  const { whatsappGreetingName } = require('./whatsapp-greeting-name');
+  return whatsappGreetingName(params?.[0], 'there');
 }
 
 function buildTemplatePayload(to, templateName, languageCode, bodyParams, headerComponents = [], buttonUrlParams = []) {
@@ -60,6 +60,12 @@ function buildTemplatePayload(to, templateName, languageCode, bodyParams, header
   };
 }
 
+/** Balance-due letter v4+ / IMAGE — dynamic Pay now URL `/p/{{1}}`. */
+function templateUsesDynamicPayNowUrl(name) {
+  return /svc_balance_due_letter_(ero|hro)_(img_v?\d*|v[4-9])$/i.test(String(name || ''))
+    || /svc_balance_due_letter_(ero|hro)_img_/i.test(String(name || ''));
+}
+
 /**
  * @returns {Array<{ name: string, params: string[], headerComponents: object[] }>}
  */
@@ -74,14 +80,29 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     attempts.push({ name, params, headerComponents });
   };
 
-  // Balance-due IMAGE header (QR) → older img (keep QR) → text letter v6…
+  // Balance-due IMAGE header (QR) → older img (keep QR) → text letter v7…
   if (/^svc_balance_due_letter_(ero|hro)_img_/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
     const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
     const imgHeaders = Array.isArray(headerComponents) ? headerComponents : [];
-    if (/_img_v2$/i.test(primaryName)) {
+    if (/_img_v5$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_img_v4`, bodyParams.slice(0, 4).map(String), imgHeaders);
+      push(`svc_balance_due_letter_${suffix}_img_v3`, bodyParams.slice(0, 4).map(String), imgHeaders);
+      push(`svc_balance_due_letter_${suffix}_img_v2`, bodyParams.slice(0, 4).map(String), imgHeaders);
+      push(`svc_balance_due_letter_${suffix}_img_v1`, bodyParams.slice(0, 4).map(String), imgHeaders);
+    } else if (/_img_v4$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_img_v3`, bodyParams.slice(0, 4).map(String), imgHeaders);
+      push(`svc_balance_due_letter_${suffix}_img_v2`, bodyParams.slice(0, 4).map(String), imgHeaders);
+      push(`svc_balance_due_letter_${suffix}_img_v1`, bodyParams.slice(0, 4).map(String), imgHeaders);
+    } else if (/_img_v3$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_img_v2`, bodyParams.slice(0, 4).map(String), imgHeaders);
+      push(`svc_balance_due_letter_${suffix}_img_v1`, bodyParams.slice(0, 4).map(String), imgHeaders);
+    } else if (/_img_v2$/i.test(primaryName)) {
       push(`svc_balance_due_letter_${suffix}_img_v1`, bodyParams.slice(0, 4).map(String), imgHeaders);
     }
+    push(`svc_balance_due_letter_${suffix}_v9`, bodyParams.slice(0, 4).map(String));
+    push(`svc_balance_due_letter_${suffix}_v8`, bodyParams.slice(0, 4).map(String));
+    push(`svc_balance_due_letter_${suffix}_v7`, bodyParams.slice(0, 4).map(String));
     push(`svc_balance_due_letter_${suffix}_v6`, bodyParams.slice(0, 4).map(String));
     push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
     push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
@@ -91,13 +112,24 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push('svc_balance_due', [name, amount]);
   }
 
-  // DOCUMENT-header cold PDF — v3 letter → direct (any label) → v2 → svc_doc_pdf_v2
-  if (/^svc_doc_accept_preview_/i.test(primaryName)) {
-    const label = String(bodyParams?.[1] || '').trim() || 'document';
-    push(SMOKE, [name, label]);
+  // Accept-preview DOCUMENT + I Accept QR only (v8/v7). Do NOT fall back to v4–v1
+  // (those use a web /c/{token} Accept URL that is not shipped).
+  if (/^svc_doc_accept_preview_(ero|hro)_v/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    const params = bodyParams.slice(0, 2).map(String);
+    const headers = Array.isArray(headerComponents) ? headerComponents : [];
+    if (/_v8$/i.test(primaryName)) {
+      push(`svc_doc_accept_preview_${suffix}_v7`, params, headers);
+    }
+    // No SMOKE / URL-button legacy accept templates — wrong UX for WhatsApp-only Accept.
   }
 
-  if (hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName)) {
+  // DOCUMENT-header cold PDF — v3 letter → direct (any label) → v2 → svc_doc_pdf_v2
+  // Skip accept-preview here (handled above — WhatsApp I Accept only, no web URL templates).
+  if (
+    (hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName)) &&
+    !/^svc_doc_accept_preview_/i.test(primaryName)
+  ) {
     const labelMap = {
       bill: 'service bill',
       invoice: 'tax invoice',
@@ -173,11 +205,35 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(`svc_job_done_letter_${suffix}_v4`, bodyParams.slice(0, 3).map(String));
   }
 
-  // Balance-due letter v6 (emoji) → v5 → v4 → v3 → v2 → v1 → short svc_balance_due
-  if (/^svc_balance_due_letter_(ero|hro)(_v6|_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
+  // Balance-due letter v9 → v8 → v7 → …
+  if (/^svc_balance_due_letter_(ero|hro)(_v9|_v8|_v7|_v6|_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
     const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
-    if (/_v6$/i.test(primaryName)) {
+    if (/_v9$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_v8`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v7`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v6`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
+    } else if (/_v8$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_v7`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v6`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
+    } else if (/_v7$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_v6`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
+    } else if (/_v6$/i.test(primaryName)) {
       push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
       push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
       push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
@@ -221,6 +277,7 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     }
     push(`svc_service_due_${suffix}_cta_v2`, [name, when]);
     push(`svc_service_due_${suffix}_cta`, [name, when]);
+    push(`existing_service_schedule_${suffix}_cta_v3`, [name]);
     push(`existing_service_schedule_${suffix}_cta_v2`, [name]);
     push(`existing_service_schedule_${suffix}_cta`, [name]);
     push(VISIT, [name, when]);
@@ -235,20 +292,52 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     } else {
       push(`svc_service_due_${suffix}_cta_v2`, bodyParams.slice(0, 2).map(String));
     }
+    push(`existing_service_schedule_${suffix}_cta_v3`, [name]);
     push(`existing_service_schedule_${suffix}_cta_v2`, [name]);
     push(`existing_service_schedule_${suffix}_cta`, [name]);
     push(VISIT, [name, when]);
   }
 
-  // Existing-customer schedule CTA v2 → v1 → visit reminder
-  if (/^existing_service_schedule_(ero|hro)_cta(_v2)?$/i.test(primaryName)) {
+  // Existing-customer schedule CTA v3 (Call us + Book) → v2 (Book only) → v1 → visit reminder
+  if (/^existing_service_schedule_(ero|hro)_cta(_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
-    if (/_v2$/i.test(primaryName)) {
+    if (/_v3$/i.test(primaryName)) {
+      push(`existing_service_schedule_${suffix}_cta_v2`, [name]);
       push(`existing_service_schedule_${suffix}_cta`, [name]);
+    } else if (/_v2$/i.test(primaryName)) {
+      push(`existing_service_schedule_${suffix}_cta`, [name]);
+      push(`existing_service_schedule_${suffix}_cta_v3`, [name]);
     } else {
+      push(`existing_service_schedule_${suffix}_cta_v3`, [name]);
       push(`existing_service_schedule_${suffix}_cta_v2`, [name]);
     }
     push(VISIT, [name, 'your upcoming service visit']);
+  }
+
+  // Missed-call / unregistered / reschedule CTA v2 (correct Call us) → v1
+  if (/^missed_call_callback_(ero|hro)_cta(_v2)?$/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    if (/_v2$/i.test(primaryName)) {
+      push(`missed_call_callback_${suffix}_cta`, [name]);
+    } else {
+      push(`missed_call_callback_${suffix}_cta_v2`, [name]);
+    }
+  }
+  if (/^unregistered_number_service_(ero|hro)_cta(_v2)?$/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    if (/_v2$/i.test(primaryName)) {
+      push(`unregistered_number_service_${suffix}_cta`, [name]);
+    } else {
+      push(`unregistered_number_service_${suffix}_cta_v2`, [name]);
+    }
+  }
+  if (/^reschedule_visit_(ero|hro)_cta(_v2)?$/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    if (/_v2$/i.test(primaryName)) {
+      push(`reschedule_visit_${suffix}_cta`, bodyParams.slice(0, 2).map(String));
+    } else {
+      push(`reschedule_visit_${suffix}_cta_v2`, bodyParams.slice(0, 2).map(String));
+    }
   }
 
   // Booking confirm letter v4 emoji → v3 → v2 → v1 → phone-only / visit confirmed
@@ -529,10 +618,11 @@ async function sendTemplateWithColdFallbacks({
     return String(p?.type || '').toLowerCase() === 'document' || Boolean(p?.document);
   });
   for (const fb of buildFallbackAttempts(templateName, params, hasDocHeader, headers)) {
+    const fbButtons = templateUsesDynamicPayNowUrl(fb.name) ? urlButtons : [];
     const fbResult = await callWhatsAppApi(
       phoneNumberId,
       accessToken,
-      buildTemplatePayload(to, fb.name, languageCode, fb.params, fb.headerComponents, [])
+      buildTemplatePayload(to, fb.name, languageCode, fb.params, fb.headerComponents, fbButtons)
     );
     if (fbResult.ok) {
       return {
@@ -541,7 +631,7 @@ async function sendTemplateWithColdFallbacks({
         templateName: fb.name,
         bodyParams: fb.params,
         headerComponents: fb.headerComponents,
-        buttonUrlParams: [],
+        buttonUrlParams: fbButtons,
         usedFallback: true,
         primaryTemplate: templateName,
       };
@@ -566,5 +656,6 @@ module.exports = {
   isTemplateMetaError,
   buildTemplatePayload,
   buildFallbackAttempts,
+  templateUsesDynamicPayNowUrl,
   sendTemplateWithColdFallbacks,
 };

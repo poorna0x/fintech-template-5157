@@ -35,6 +35,7 @@ import { formatPhoneForWhatsApp } from '@/lib/utils';
 import {
   openWhatsAppMeDeepLink,
   readFileAsBase64,
+  sendAdminWhatsAppCtaUrl,
   sendAdminWhatsAppMedia,
   sendAdminWhatsAppTemplate,
   sendAdminWhatsAppText,
@@ -595,26 +596,10 @@ export function SettingsPendingPaymentsDialogV2({
         opts?.invoiceRef
       );
 
-      // Image attached: 24h → media+caption; cold → IMAGE-header balance-due template
+      // QR / image: prefer IMAGE-header template with Pay now (works in and out of 24h).
+      // Freeform media alone has no Pay now button — that looked broken to customers.
       if (headerImage && opts?.coldTemplateKind !== 'payment_received') {
-        const mediaResult = await sendAdminWhatsAppMedia({
-          to: phone,
-          fileBase64: headerImage.imageBase64,
-          filename: headerImage.filename,
-          mimeType: headerImage.mimeType,
-          caption: trimmed,
-          customerId: opts?.customerId,
-          source: 'pending_payment',
-        });
-        if (mediaResult.ok) {
-          toast.success('WhatsApp reminder sent with image');
-          return;
-        }
-        if (mediaResult.featureDisabled) {
-          toast.error(mediaResult.error || 'WhatsApp pending payment is disabled in Settings');
-          return;
-        }
-        if (mediaResult.needsWindowOrTemplate && opts?.coldPendingTemplate !== false) {
+        if (opts?.coldPendingTemplate !== false) {
           const coldResult = await sendAdminWhatsAppTemplate({
             to: phone,
             templateName: resolvePendingPaymentLetterImageTemplateName(brand),
@@ -626,14 +611,17 @@ export function SettingsPendingPaymentsDialogV2({
             source: 'pending_payment',
           });
           if (coldResult.ok) {
-            toast.success('Cold balance-due template sent with image');
+            toast.success(
+              payButtonParams.length > 0
+                ? 'Sent with UPI QR and Pay now button'
+                : 'Sent with UPI QR'
+            );
             return;
           }
           if (coldResult.featureDisabled) {
             toast.error(coldResult.error || 'WhatsApp pending payment is disabled in Settings');
             return;
           }
-          // Image template not ready — fall back to text letter (no image)
           const textCold = await sendAdminWhatsAppTemplate({
             to: phone,
             templateName: resolvePendingPaymentLetterTemplateName(brand, {
@@ -646,11 +634,59 @@ export function SettingsPendingPaymentsDialogV2({
             source: 'pending_payment',
           });
           if (textCold.ok) {
-            toast.message('Image template unavailable — sent text balance-due template');
+            toast.message(
+              payButtonParams.length > 0
+                ? 'Image template unavailable — sent text with Pay now'
+                : 'Image template unavailable — sent text balance-due template'
+            );
             return;
           }
-          openWhatsAppMeDeepLink(phone, trimmed);
-          toast.message('24h window closed — opened WhatsApp (image not included)');
+        }
+
+        const mediaResult = await sendAdminWhatsAppMedia({
+          to: phone,
+          fileBase64: headerImage.imageBase64,
+          filename: headerImage.filename,
+          mimeType: headerImage.mimeType,
+          caption: trimmed,
+          customerId: opts?.customerId,
+          source: 'pending_payment',
+        });
+        if (mediaResult.ok) {
+          if (payHttpsLink) {
+            const ctaBody = buildPendingPaymentWhatsAppMessage(
+              opts?.customerName || 'Customer',
+              opts?.amount ?? 0,
+              opts?.dueDateYmd,
+              brand,
+              { httpsLink: payHttpsLink },
+              opts?.invoiceRef,
+              { withQrImage: true, ctaButton: true }
+            );
+            const cta = await sendAdminWhatsAppCtaUrl({
+              to: phone,
+              text: ctaBody,
+              url: payHttpsLink,
+              displayText: 'Pay now',
+              customerId: opts?.customerId,
+              customerName: opts?.customerName,
+              source: 'pending_payment',
+              fallbackWaMe: false,
+            });
+            if (cta.ok) {
+              toast.success('Sent QR + Pay now button');
+              return;
+            }
+          }
+          toast.success(
+            payHttpsLink
+              ? 'WhatsApp reminder sent with QR (Pay now button unavailable — check 24h window)'
+              : 'WhatsApp reminder sent with image'
+          );
+          return;
+        }
+        if (mediaResult.featureDisabled) {
+          toast.error(mediaResult.error || 'WhatsApp pending payment is disabled in Settings');
           return;
         }
         openWhatsAppMeDeepLink(phone, trimmed);
@@ -659,6 +695,68 @@ export function SettingsPendingPaymentsDialogV2({
       }
 
       if (hasPayLink && opts?.coldPendingTemplate !== false) {
+        // 24h: interactive Pay now button. Outside 24h: cold template with Pay now URL button.
+        if (payHttpsLink) {
+          const ctaBody = buildPendingPaymentWhatsAppMessage(
+            opts?.customerName || 'Customer',
+            opts?.amount ?? 0,
+            opts?.dueDateYmd,
+            brand,
+            { httpsLink: payHttpsLink },
+            opts?.invoiceRef,
+            { ctaButton: true }
+          );
+          const ctaResult = await sendAdminWhatsAppCtaUrl({
+            to: phone,
+            text: ctaBody,
+            url: payHttpsLink,
+            displayText: 'Pay now',
+            customerId: opts?.customerId,
+            customerName: opts?.customerName,
+            source: 'pending_payment',
+            fallbackWaMe: false,
+          });
+          if (ctaResult.ok) {
+            toast.success('Sent with Pay now button');
+            return;
+          }
+          if (ctaResult.featureDisabled) {
+            toast.error(ctaResult.error || 'WhatsApp pending payment is disabled in Settings');
+            return;
+          }
+          if (ctaResult.needsWindowOrTemplate) {
+            const coldResult = await sendAdminWhatsAppTextWithOptionalTemplate({
+              to: phone,
+              text: trimmed,
+              customerId: opts?.customerId,
+              source: 'pending_payment',
+              fallbackWaMe: true,
+              coldTemplate: {
+                name: resolvePendingPaymentLetterTemplateName(brand, {
+                  withPayButton: payButtonParams.length > 0,
+                }),
+                languageCode: 'en',
+                bodyParams: letterBodyParams,
+                buttonUrlParams: payButtonParams,
+              },
+            });
+            if (coldResult.ok && coldResult.usedTemplate) {
+              toast.success('Cold balance-due template sent with Pay now button');
+              return;
+            }
+            if (coldResult.ok && coldResult.via === 'wa_me') {
+              toast.message('24h window closed — opened WhatsApp with pay link');
+              return;
+            }
+            openWhatsAppMeDeepLink(phone, trimmed);
+            toast.message('24h window closed — opened WhatsApp with pay link');
+            return;
+          }
+          openWhatsAppMeDeepLink(phone, trimmed);
+          toast.error(ctaResult.error || 'API send failed — opened phone WhatsApp with pay link');
+          return;
+        }
+
         const result = await sendAdminWhatsAppText({
           to: phone,
           text: trimmed,
@@ -826,7 +924,7 @@ export function SettingsPendingPaymentsDialogV2({
       brandForCustomer(payment.entity_id as string | undefined),
       upiOpts,
       payment.job_number || payment.job_id || null,
-      { withQrImage: opts?.withQrImage ?? Boolean(whatsappAttachImage) }
+      { withQrImage: opts?.withQrImage ?? Boolean(whatsappAttachImage), ctaButton: true }
     );
   };
 

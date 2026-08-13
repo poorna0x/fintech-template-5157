@@ -3,6 +3,7 @@ import { getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   brandLetterClosingLines,
 } from '@/lib/whatsappBrandContact';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export type DocumentPdfWhatsAppKind =
   | 'service_bill'
@@ -53,7 +54,7 @@ export interface DocumentPdfWhatsAppCaptionInput {
  */
 export function buildDocumentPdfWhatsAppCaption(input: DocumentPdfWhatsAppCaptionInput): string {
   const brandName = getDocumentBrandLabel(input.brand);
-  const customerName = String(input.customerName || '').trim() || 'Customer';
+  const customerName = whatsappGreetingName(input.customerName, 'there');
   const kind = String(input.kind || 'generic').toLowerCase() as DocumentPdfWhatsAppKind;
 
   const lines = [
@@ -75,7 +76,7 @@ export function formatDocumentPdfColdPreview(
   customerName: string
 ): string {
   const brandName = getDocumentBrandLabel(brand);
-  const name = String(customerName || 'Customer').trim() || 'Customer';
+  const name = whatsappGreetingName(customerName, 'there');
   const k = String(kind || 'generic').toLowerCase() as DocumentPdfWhatsAppKind;
   const footer = brandLetterClosingLines(brand, {
     skipChatHint: true,

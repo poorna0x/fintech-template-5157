@@ -16,6 +16,7 @@ import {
 } from '@/lib/pendingPaymentReminder';
 import { waBrandBookingUrl, waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
 import { brandLetterClosingLines } from '@/lib/whatsappBrandContact';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export type WhatsAppQuickReplyContext = {
   customerName?: string;
@@ -62,7 +63,7 @@ export type WhatsAppQuickTemplateSend = {
 };
 
 function cleanName(ctx: WhatsAppQuickReplyContext): string {
-  return String(ctx.customerName || 'Customer').trim() || 'Customer';
+  return whatsappGreetingName(ctx.customerName, 'there');
 }
 
 function cleanAmount(ctx: WhatsAppQuickReplyContext): string {
@@ -731,7 +732,7 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_balance_due',
     label: 'Balance due',
     group: 'payment',
-    templateName: 'svc_balance_due_letter_hro_v6',
+    templateName: 'svc_balance_due_letter_hro_v9',
     language: 'en',
     resolveTemplateName: (ctx) =>
       resolvePendingPaymentLetterTemplateName(ctx.brand || 'hydrogenro', { withPayButton: true }),

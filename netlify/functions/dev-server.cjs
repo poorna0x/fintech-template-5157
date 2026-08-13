@@ -199,9 +199,9 @@ const server = http.createServer((req, res) => {
       try {
         const parsedUrl = url.parse(req.url, true);
         
-        // Read request body for POST requests
+        // Read request body for mutating methods
         let body = '';
-        if (req.method === 'POST') {
+        if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE') {
           try {
             for await (const chunk of req) {
               body += chunk.toString();

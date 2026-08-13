@@ -1229,6 +1229,216 @@ function buildBalanceDueLetterImgTemplates() {
 
 const BALANCE_DUE_LETTER_IMG_TEMPLATES = buildBalanceDueLetterImgTemplates();
 
+/** Call / Email / Website — no thank-you (v7 / img_v3). */
+function letterFooterBlockContactOnly(brand) {
+  return [
+    `Call:\n${brand.phone}`,
+    `Email:\n${brand.email}`,
+    `Website:\n${brand.webHost}`,
+  ].join('\n');
+}
+
+/** Call only — no thank-you / email / website (v8 / img_v4). */
+function letterFooterBlockCallOnly(brand) {
+  return `Call:\n${brand.phone}`;
+}
+
+/** Balance-due v7 — kept for Meta fallbacks (has email/website). */
+function buildBalanceDueLetterV7Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockContactOnly(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      name: `svc_balance_due_letter_${suffix}_v7`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your pending payment for water purifier service. 💧`,
+        ``,
+        `💰 Amount pending: INR {{2}}`,
+        `📅 Due date: {{3}}`,
+        `🧾 Invoice / Job: {{4}}`,
+        ``,
+        footer,
+        ``,
+        `💳 Tap Pay now below or reply on this chat if you have already paid.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_V7_TEMPLATES = buildBalanceDueLetterV7Templates();
+
+function buildBalanceDueLetterImgV3Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockContactOnly(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      imageHeader: true,
+      name: `svc_balance_due_letter_${suffix}_img_v3`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `Pending payment for your water purifier service — ${b.label}. 💧`,
+        ``,
+        `💰 Amount: INR {{2}}`,
+        `📅 Due: {{3}}`,
+        `🧾 Ref: {{4}}`,
+        ``,
+        `📱 Scan the QR above, or tap Pay now below.`,
+        ``,
+        footer,
+        ``,
+        `Reply on this chat if you have already paid.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_IMG_V3_TEMPLATES = buildBalanceDueLetterImgV3Templates();
+
+/**
+ * Balance-due letter v8 — Call us + Pay now; Call only in body (no email / website).
+ */
+function buildBalanceDueLetterV8Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockCallOnly(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      name: `svc_balance_due_letter_${suffix}_v8`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your pending payment for water purifier service. 💧`,
+        ``,
+        `💰 Amount pending: INR {{2}}`,
+        `📅 Due date: {{3}}`,
+        `🧾 Invoice / Job: {{4}}`,
+        ``,
+        footer,
+        ``,
+        `💳 Tap Pay now below or reply on this chat if you have already paid.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_V8_TEMPLATES = buildBalanceDueLetterV8Templates();
+
+/**
+ * Balance-due IMAGE header v4 — lean QR + Pay now; Call only (no email / website).
+ */
+function buildBalanceDueLetterImgV4Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockCallOnly(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      imageHeader: true,
+      name: `svc_balance_due_letter_${suffix}_img_v4`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `Pending payment for your water purifier service — ${b.label}. 💧`,
+        ``,
+        `💰 Amount: INR {{2}}`,
+        `📅 Due: {{3}}`,
+        `🧾 Ref: {{4}}`,
+        ``,
+        `📱 Scan the QR above, or tap Pay now below.`,
+        ``,
+        footer,
+        ``,
+        `Reply on this chat if you have already paid.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_IMG_V4_TEMPLATES = buildBalanceDueLetterImgV4Templates();
+
+/**
+ * Balance-due letter v9 — Call us + Pay now buttons only; no Call/Email/Website in body.
+ */
+function buildBalanceDueLetterV9Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      name: `svc_balance_due_letter_${suffix}_v9`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your pending payment for water purifier service. 💧`,
+        ``,
+        `💰 Amount pending: INR {{2}}`,
+        `📅 Due date: {{3}}`,
+        `🧾 Invoice / Job: {{4}}`,
+        ``,
+        `💳 Tap Pay now below or reply on this chat if you have already paid.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_V9_TEMPLATES = buildBalanceDueLetterV9Templates();
+
+/**
+ * Balance-due IMAGE header v5 — lean QR + Pay now; no Call/Email/Website in body.
+ */
+function buildBalanceDueLetterImgV5Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      imageHeader: true,
+      name: `svc_balance_due_letter_${suffix}_img_v5`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `Pending payment for your water purifier service — ${b.label}. 💧`,
+        ``,
+        `💰 Amount: INR {{2}}`,
+        `📅 Due: {{3}}`,
+        `🧾 Ref: {{4}}`,
+        ``,
+        `📱 Scan the QR above, or tap Pay now below.`,
+        ``,
+        `Reply on this chat if you have already paid.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_IMG_V5_TEMPLATES = buildBalanceDueLetterImgV5Templates();
+
 /** Existing-customer schedule — Book online button only (no Call). */
 const EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES = [
   {
@@ -1359,9 +1569,9 @@ function buildDocPdfV3Templates() {
 const DOC_PDF_V3_TEMPLATES = buildDocPdfV3Templates();
 
 /**
- * Preview PDF → Accept → original PDF (DOCUMENT header).
- * v6 rejected INCORRECT_CATEGORY (long legal block + URL + emojis).
- * v7 pending — no explicit terms. v8: one transactional terms sentence (UTILITY).
+ * Preview PDF → Accept → original PDF (DOCUMENT header). WhatsApp-only I Accept QR.
+ * v6 rejected INCORRECT_CATEGORY. v7/v8 pending Meta approval (Call + I Accept).
+ * Do not use v1–v4 (web /c/ Accept URL — not used).
  */
 function buildDocAcceptPreviewTemplates() {
   const out = [];
@@ -1391,52 +1601,52 @@ function buildDocAcceptPreviewTemplates() {
 
 const DOC_ACCEPT_PREVIEW_TEMPLATES = buildDocAcceptPreviewTemplates();
 
-/** UTILITY schedule / callback CTAs — no booking_confirmed_*_cta (use svc_booking_confirmed_* phone-only). */
+/** UTILITY schedule / callback CTAs — Call us (brand phone) + Book online. */
 const BOOKING_TEMPLATES = [
   {
-    name: 'existing_service_schedule_ero_cta',
+    name: 'existing_service_schedule_ero_cta_v3',
     bookUrl: 'https://elevenro.com/book',
     body: 'Hi {{1}}, this is Eleven RO. Our records show your RO service visit can be scheduled. Please reply BOOK on this chat to confirm a convenient time, or use Call / Book below for assistance.',
     examples: ['Rahul'],
   },
   {
-    name: 'unregistered_number_service_ero_cta',
+    name: 'unregistered_number_service_ero_cta_v2',
     bookUrl: 'https://elevenro.com/book',
     body: 'Hi {{1}}, this is Eleven RO. This WhatsApp number is not linked to a service account in our system. Reply BOOK on this chat with your name and service address to register your request, or use Call / Book below for assistance.',
     examples: ['there'],
   },
   {
-    name: 'missed_call_callback_ero_cta',
+    name: 'missed_call_callback_ero_cta_v2',
     bookUrl: 'https://elevenro.com/book',
     body: 'Hi {{1}}, this is Eleven RO. We tried to reach you and could not connect. Please reply on this chat so we can assist with your RO service, or use Call / Book below.',
     examples: ['Rahul'],
   },
   {
-    name: 'reschedule_visit_ero_cta',
+    name: 'reschedule_visit_ero_cta_v2',
     bookUrl: 'https://elevenro.com/book',
     body: 'Hi {{1}}, your Eleven RO visit is set for {{2}}. To reschedule, reply on this chat or use Call / Book online below.',
     examples: ['Rahul', 'Mon 12 Aug, 10:00 AM'],
   },
   {
-    name: 'existing_service_schedule_hro_cta',
+    name: 'existing_service_schedule_hro_cta_v3',
     bookUrl: 'https://hydrogenro.com/book',
     body: 'Hi {{1}}, this is Hydrogen RO. Our records show your RO service visit can be scheduled. Please reply BOOK on this chat to confirm a convenient time, or use Call / Book below for assistance.',
     examples: ['Rahul'],
   },
   {
-    name: 'unregistered_number_service_hro_cta',
+    name: 'unregistered_number_service_hro_cta_v2',
     bookUrl: 'https://hydrogenro.com/book',
     body: 'Hi {{1}}, this is Hydrogen RO. This WhatsApp number is not linked to a service account in our system. Reply BOOK on this chat with your name and service address to register your request, or use Call / Book below for assistance.',
     examples: ['there'],
   },
   {
-    name: 'missed_call_callback_hro_cta',
+    name: 'missed_call_callback_hro_cta_v2',
     bookUrl: 'https://hydrogenro.com/book',
     body: 'Hi {{1}}, this is Hydrogen RO. We tried to reach you and could not connect. Please reply on this chat so we can assist with your RO service, or use Call / Book below.',
     examples: ['Rahul'],
   },
   {
-    name: 'reschedule_visit_hro_cta',
+    name: 'reschedule_visit_hro_cta_v2',
     bookUrl: 'https://hydrogenro.com/book',
     body: 'Hi {{1}}, your Hydrogen RO visit is set for {{2}}. To reschedule, reply on this chat or use Call / Book online below.',
     examples: ['Rahul', 'Mon 12 Aug, 10:00 AM'],
@@ -1802,17 +2012,12 @@ function bookOnlyPayload(t) {
 }
 
 function bookingPayload(t) {
-  const callPhone = callPhoneForTemplate(t.name);
-  const chatUrl = `https://wa.me/${String(callPhone).replace(/\D/g, '')}`;
+  const callPhone = t.callPhone || callPhoneForTemplate(t.name);
   const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }];
   if (t.bookUrl) {
-    buttons.push({ type: 'URL', text: 'Text us', url: chatUrl });
     buttons.push({ type: 'URL', text: 'Book online', url: t.bookUrl });
-  } else {
-    if (t.websiteUrl) {
-      buttons.push({ type: 'URL', text: 'Website', url: t.websiteUrl });
-    }
-    buttons.push({ type: 'URL', text: 'Text us', url: chatUrl });
+  } else if (t.websiteUrl) {
+    buttons.push({ type: 'URL', text: 'Website', url: t.websiteUrl });
   }
   return {
     name: t.name,
@@ -1946,8 +2151,32 @@ function collectAllTemplatePreviewEntries() {
   for (const t of BALANCE_DUE_LETTER_V6_TEMPLATES) {
     push('Balance due letter v6 (Pay now + emoji)', t, balanceDueLetterPayload);
   }
+  for (const t of BALANCE_DUE_LETTER_V7_TEMPLATES) {
+    push('Balance due letter v7 (Pay now, no thank-you)', t, balanceDueLetterPayload);
+  }
+  for (const t of BALANCE_DUE_LETTER_V8_TEMPLATES) {
+    push('Balance due letter v8 (Pay now, Call only)', t, balanceDueLetterPayload);
+  }
+  for (const t of BALANCE_DUE_LETTER_V9_TEMPLATES) {
+    push('Balance due letter v9 (Pay now, no contact footer)', t, balanceDueLetterPayload);
+  }
   for (const t of BALANCE_DUE_LETTER_IMG_TEMPLATES) {
     push('Balance due letter IMAGE header (Pay now)', t, (x) =>
+      balanceDueLetterImagePayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
+    );
+  }
+  for (const t of BALANCE_DUE_LETTER_IMG_V3_TEMPLATES) {
+    push('Balance due letter IMAGE v3 (lean + Pay now)', t, (x) =>
+      balanceDueLetterImagePayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
+    );
+  }
+  for (const t of BALANCE_DUE_LETTER_IMG_V4_TEMPLATES) {
+    push('Balance due letter IMAGE v4 (Call only + Pay now)', t, (x) =>
+      balanceDueLetterImagePayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
+    );
+  }
+  for (const t of BALANCE_DUE_LETTER_IMG_V5_TEMPLATES) {
+    push('Balance due letter IMAGE v5 (no contact footer + Pay now)', t, (x) =>
       balanceDueLetterImagePayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
     );
   }
@@ -2261,7 +2490,64 @@ async function main() {
     }
     queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
   }
+  for (const t of BALANCE_DUE_LETTER_V7_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
+  }
+  for (const t of BALANCE_DUE_LETTER_V8_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
+  }
+  for (const t of BALANCE_DUE_LETTER_V9_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
+  }
   for (const t of BALANCE_DUE_LETTER_IMG_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({
+      label: t.name,
+      payload: await balanceDueLetterImagePayload(t, doSubmit ? token : ''),
+    });
+  }
+  for (const t of BALANCE_DUE_LETTER_IMG_V3_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({
+      label: t.name,
+      payload: await balanceDueLetterImagePayload(t, doSubmit ? token : ''),
+    });
+  }
+  for (const t of BALANCE_DUE_LETTER_IMG_V4_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({
+      label: t.name,
+      payload: await balanceDueLetterImagePayload(t, doSubmit ? token : ''),
+    });
+  }
+  for (const t of BALANCE_DUE_LETTER_IMG_V5_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
       console.log(`SKIP ${t.name} — ${skip}`);
@@ -2490,9 +2776,36 @@ async function main() {
     }
   }
 
+  const onlyBalanceDueV7 = process.argv.includes('--only-balance-due-v7');
+  if (onlyBalanceDueV7) {
+    const keep = new Set(BALANCE_DUE_LETTER_V7_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
   const onlyBalanceDueImg = process.argv.includes('--only-balance-due-img');
   if (onlyBalanceDueImg) {
     const keep = new Set(BALANCE_DUE_LETTER_IMG_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyBalanceDueImgV3 = process.argv.includes('--only-balance-due-img-v3');
+  if (onlyBalanceDueImgV3) {
+    const keep = new Set(BALANCE_DUE_LETTER_IMG_V3_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyBalanceDueLean = process.argv.includes('--only-balance-due-lean');
+  if (onlyBalanceDueLean) {
+    const keep = new Set([
+      ...BALANCE_DUE_LETTER_V9_TEMPLATES.map((t) => t.name),
+      ...BALANCE_DUE_LETTER_IMG_V5_TEMPLATES.map((t) => t.name),
+    ]);
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }
@@ -2544,6 +2857,14 @@ async function main() {
   const onlyBookingCancelledV4 = process.argv.includes('--only-booking-cancelled-v4');
   if (onlyBookingCancelledV4) {
     const keep = new Set(BOOKING_CANCELLED_LETTER_V4_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyBookingCtaV3 = process.argv.includes('--only-booking-cta-v3');
+  if (onlyBookingCtaV3) {
+    const keep = new Set(BOOKING_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

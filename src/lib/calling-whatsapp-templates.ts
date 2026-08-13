@@ -9,6 +9,7 @@ import {
   waLabeledLink,
   waLabeledValue,
 } from '@/lib/whatsappMessageFormat';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export type CallingWhatsAppTemplate =
   | 'service_due'
@@ -107,7 +108,7 @@ export function callingContextFromCustomer(customer: {
   lastServiceSubType?: string | null;
 }): CallingMessageContext {
   return {
-    fullName: customer.fullName?.trim() || 'Customer',
+    fullName: whatsappGreetingName(customer.fullName, 'there'),
     daysSinceService: customer.daysSinceService ?? null,
     lastServiceSubType: customer.lastServiceSubType ?? null,
     deviceBrand: firstEquipmentPart(customer.brand),
@@ -282,7 +283,7 @@ export function callingColdTemplateFor(
   documentBrand: DocumentBrand = 'elevenro',
   whenLabel?: string
 ): { name: string; languageCode: string; bodyParams: string[] } {
-  const name = String(customerName || 'Customer').trim() || 'Customer';
+  const name = whatsappGreetingName(customerName, 'there');
   const when =
     String(whenLabel || '').trim() ||
     'your upcoming visit';

@@ -91,6 +91,137 @@ export function countUnreadWhatsAppThreads(
   return threads.reduce((n, t) => n + (isWhatsAppThreadUnread(t, readMap) ? 1 : 0), 0);
 }
 
+const UNREAD_COUNTS_STORAGE_KEY = 'wa_inbox_unread_counts_v1';
+
+export function loadWhatsAppUnreadCounts(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(UNREAD_COUNTS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const out: Record<string, number> = {};
+    for (const [phone, n] of Object.entries(parsed)) {
+      const p = String(phone || '').replace(/\D/g, '');
+      const count = Math.floor(Number(n));
+      if (p && count > 0) out[p] = Math.min(count, 999);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function saveWhatsAppUnreadCounts(counts: Record<string, number>): void {
+  try {
+    const trimmed = Object.fromEntries(
+      Object.entries(counts)
+        .filter(([, n]) => Number(n) > 0)
+        .sort((a, b) => Number(b[1]) - Number(a[1]))
+        .slice(0, 200)
+    );
+    localStorage.setItem(UNREAD_COUNTS_STORAGE_KEY, JSON.stringify(trimmed));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Inbound messages after the thread's read watermark (or all listed if never read). */
+export function countInboundUnreadInMessages(
+  messages: Pick<WhatsAppMessageRow, 'direction' | 'created_at'>[],
+  readAt: string | null | undefined
+): number {
+  const readMs = readAt ? new Date(readAt).getTime() : 0;
+  let n = 0;
+  for (const m of messages) {
+    if (m.direction !== 'inbound') continue;
+    const t = new Date(m.created_at).getTime();
+    if (!Number.isFinite(t)) continue;
+    if (readMs && t <= readMs) continue;
+    n += 1;
+  }
+  return n;
+}
+
+export function unreadMessageCountForThread(
+  thread: Pick<WhatsAppThread, 'phone_e164' | 'last_at' | 'last_direction'>,
+  readMap: Record<string, string>,
+  counts: Record<string, number>
+): number {
+  if (!isWhatsAppThreadUnread(thread, readMap)) return 0;
+  const phone = String(thread.phone_e164 || '').replace(/\D/g, '');
+  const n = counts[phone];
+  return n && n > 0 ? n : 1;
+}
+
+/** Sum of per-chat unread message counts (fallback 1 per unread chat). */
+export function countUnreadWhatsAppMessages(
+  threads: WhatsAppThread[],
+  readMap: Record<string, string>,
+  counts: Record<string, number>
+): number {
+  return threads.reduce(
+    (sum, t) => sum + unreadMessageCountForThread(t, readMap, counts),
+    0
+  );
+}
+
+/**
+ * One slim query: inbound rows for currently-unread chats, then count per phone
+ * after each chat's read watermark. Soft-fail → {}.
+ */
+export async function fetchWhatsAppUnreadMessageCounts(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseClient: { from: (table: string) => any },
+  threads: WhatsAppThread[],
+  readMap: Record<string, string>
+): Promise<Record<string, number>> {
+  const targets = threads.filter((t) => isWhatsAppThreadUnread(t, readMap)).slice(0, 80);
+  if (!targets.length) return {};
+
+  const phones = targets.map((t) => String(t.phone_e164 || '').replace(/\D/g, '')).filter(Boolean);
+  let sinceMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  for (const t of targets) {
+    const phone = String(t.phone_e164 || '').replace(/\D/g, '');
+    const readAt = readMap[phone];
+    if (readAt) {
+      const tMs = new Date(readAt).getTime();
+      if (Number.isFinite(tMs)) sinceMs = Math.min(sinceMs, tMs);
+    }
+  }
+
+  const { data, error } = await supabaseClient
+    .from('whatsapp_messages')
+    .select('phone_e164, created_at')
+    .in('phone_e164', phones)
+    .eq('direction', 'inbound')
+    .gt('created_at', new Date(sinceMs).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(800);
+
+  if (error) return {};
+
+  const counts: Record<string, number> = {};
+  for (const phone of phones) counts[phone] = 0;
+
+  for (const row of data || []) {
+    const phone = String(row.phone_e164 || '').replace(/\D/g, '');
+    if (!phone || !(phone in counts)) continue;
+    const readAt = readMap[phone];
+    const createdMs = new Date(row.created_at).getTime();
+    if (!Number.isFinite(createdMs)) continue;
+    if (readAt) {
+      const readMs = new Date(readAt).getTime();
+      if (Number.isFinite(readMs) && createdMs <= readMs) continue;
+    }
+    counts[phone] += 1;
+  }
+
+  for (const phone of phones) {
+    if (!counts[phone]) counts[phone] = 1;
+  }
+  return counts;
+}
+
 /** In-memory + sessionStorage cache for 24h-window checks (cuts repeat egress). */
 const WINDOW_CACHE_TTL_MS = 60_000;
 const WINDOW_CACHE_KEY = 'wa_inbound_at_cache_v1';
@@ -184,13 +315,14 @@ export function invalidateInboundWindowCache(phoneE164?: string | null): void {
 
 const INBOX_LIST_CACHE_KEY = 'wa_inbox_threads_cache_v2';
 const THREAD_MSGS_CACHE_KEY = 'wa_thread_msgs_cache_v1';
-/** Skip network if list fetched within this window (soft refresh still updates). */
+/** Soft refresh / pull can still update; open-from-cache never expires by time. */
 export const WHATSAPP_INBOX_LIST_CACHE_TTL_MS = 45_000;
-/** Open chat: show cache instantly; background refresh if older than this. */
-export const WHATSAPP_THREAD_CACHE_TTL_MS = 90_000;
-/** APK cold start: still paint from localStorage within this window, then soft-refresh. */
-export const WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS = 30 * 60_000;
-const THREAD_CACHE_MAX_PHONES = 12;
+/** @deprecated Kept for callers; local chat cache no longer expires by age. */
+export const WHATSAPP_THREAD_CACHE_TTL_MS = Number.POSITIVE_INFINITY;
+/** @deprecated Local cache paints forever until cleared/exported-overwritten. */
+export const WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS = Number.POSITIVE_INFINITY;
+/** Max distinct chats kept in on-device message cache. */
+const THREAD_CACHE_MAX_PHONES = 200;
 
 /** How far back the inbox thread list loads (sidebar). */
 export type WhatsAppInboxListRange = 'today' | '7d' | '30d' | 'all' | { custom: string };
@@ -268,15 +400,15 @@ export function fetchOptsForInboxListRange(
   return { since: sinceIsoForInboxListRange(range), todayOnly: false };
 }
 
-type InboxListCacheEntry = {
-  rangeKey: string;
-  threads: WhatsAppThread[];
+export type ThreadMsgsCacheEntry = {
+  messages: WhatsAppMessageRow[];
+  hasMoreOlder: boolean;
   fetchedAt: number;
 };
 
-type ThreadMsgsCacheEntry = {
-  messages: WhatsAppMessageRow[];
-  hasMoreOlder: boolean;
+type InboxListCacheEntry = {
+  rangeKey: string;
+  threads: WhatsAppThread[];
   fetchedAt: number;
 };
 
@@ -370,17 +502,17 @@ export function peekWhatsAppInboxThreadsCache(opts?: {
 
 export function isWhatsAppInboxListCacheFresh(
   entry: InboxListCacheEntry | null | undefined,
-  ttlMs = WHATSAPP_INBOX_LIST_CACHE_TTL_MS
+  _ttlMs = WHATSAPP_INBOX_LIST_CACHE_TTL_MS
 ): boolean {
-  if (!entry?.fetchedAt) return false;
-  return Date.now() - entry.fetchedAt < ttlMs;
+  // Forever until cleared — any cached list skips network on normal open.
+  return Boolean(entry?.threads?.length);
 }
 
-/** True when cache is old for soft-refresh skip, but still worth painting on APK open. */
+/** True when on-device list cache can paint (survives APK kill until cleared). */
 export function isWhatsAppInboxListCachePaintable(
   entry: InboxListCacheEntry | null | undefined
 ): boolean {
-  return isWhatsAppInboxListCacheFresh(entry, WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS);
+  return Boolean(entry?.threads?.length);
 }
 
 export function writeWhatsAppInboxThreadsCache(
@@ -422,16 +554,16 @@ export function peekWhatsAppThreadMessagesCache(
 
 export function isWhatsAppThreadCacheFresh(
   entry: ThreadMsgsCacheEntry | null | undefined,
-  ttlMs = WHATSAPP_THREAD_CACHE_TTL_MS
+  _ttlMs = WHATSAPP_THREAD_CACHE_TTL_MS
 ): boolean {
-  if (!entry?.fetchedAt) return false;
-  return Date.now() - entry.fetchedAt < ttlMs;
+  // Forever until cleared — any cached messages count as fresh for skip-network.
+  return Boolean(entry?.messages?.length);
 }
 
 export function isWhatsAppThreadCachePaintable(
   entry: ThreadMsgsCacheEntry | null | undefined
 ): boolean {
-  return isWhatsAppThreadCacheFresh(entry, WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS);
+  return Boolean(entry?.messages?.length);
 }
 
 export function writeWhatsAppThreadMessagesCache(
@@ -477,6 +609,92 @@ export function upsertWhatsAppThreadMessageCache(
   writeWhatsAppThreadMessagesCache(phone, capped, prev.hasMoreOlder);
 }
 
+/**
+ * After any CRM Cloud API send (pending payment, PDF, template, etc.):
+ * update list preview + invalidate that chat’s message cache so the next open
+ * loads the full thread including this outbound (forever-cache safe).
+ */
+export function noteWhatsAppOutboundInLocalCaches(opts: {
+  phoneE164: string;
+  body?: string | null;
+  msgType?: string | null;
+  filename?: string | null;
+  mediaMime?: string | null;
+  mediaUrl?: string | null;
+  messageId?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  templateName?: string | null;
+}): void {
+  const phone = String(opts.phoneE164 || '').replace(/\D/g, '');
+  if (!phone) return;
+
+  const now = new Date().toISOString();
+  const mime = opts.mediaMime || null;
+  const filename = opts.filename || null;
+  let msgType = String(opts.msgType || 'text').trim() || 'text';
+  if (!opts.msgType && mime) {
+    if (mime.startsWith('image/')) msgType = 'image';
+    else if (mime.includes('pdf') || /\.pdf$/i.test(filename || '')) msgType = 'document';
+  }
+  if (opts.templateName && !opts.body && msgType === 'text') msgType = 'template';
+
+  const body =
+    String(opts.body || '').trim() ||
+    (opts.templateName ? String(opts.templateName) : '') ||
+    (filename ? filename : '') ||
+    (msgType === 'image' ? 'Photo' : msgType === 'document' ? 'Document' : 'Message');
+
+  const row: WhatsAppMessageRow = {
+    id: opts.messageId || `local-${Date.now()}`,
+    wa_message_id: null,
+    direction: 'outbound',
+    phone_e164: phone,
+    customer_id: opts.customerId || null,
+    msg_type: msgType,
+    body,
+    media_url: opts.mediaUrl || null,
+    media_mime: mime,
+    filename,
+    status: 'sent',
+    template_name: opts.templateName || null,
+    error_message: null,
+    created_at: now,
+  };
+
+  const prevThread = peekWhatsAppThreadMessagesCache(phone);
+  if (prevThread?.messages?.length) {
+    upsertWhatsAppThreadMessageCache(phone, row);
+  } else {
+    // No local history yet — don't seed a 1-message cache (would hide older history
+    // under forever skip-network). Force a network load next open.
+    invalidateWhatsAppThreadMessagesCache(phone);
+  }
+
+  const list = peekWhatsAppInboxThreadsCache();
+  if (!list?.threads?.length) {
+    invalidateWhatsAppInboxThreadsCache();
+    return;
+  }
+  const preview = previewMessageBody(row);
+  const existing = list.threads.find((t) => String(t.phone_e164).replace(/\D/g, '') === phone);
+  const nextThread: WhatsAppThread = {
+    phone_e164: phone,
+    customer_id: opts.customerId || existing?.customer_id || null,
+    customer_name: opts.customerName || existing?.customer_name || null,
+    last_at: now,
+    last_direction: 'outbound',
+    last_body: preview,
+    last_status: 'sent',
+    last_error: null,
+    last_msg_type: msgType,
+    inbound_at: existing?.inbound_at || null,
+    has_failed: false,
+  };
+  const others = list.threads.filter((t) => String(t.phone_e164).replace(/\D/g, '') !== phone);
+  writeWhatsAppInboxThreadsCache([nextThread, ...others], { rangeKey: list.rangeKey });
+}
+
 export function invalidateWhatsAppThreadMessagesCache(phoneE164?: string | null): void {
   const phone = String(phoneE164 || '').replace(/\D/g, '');
   if (phone) {
@@ -488,6 +706,46 @@ export function invalidateWhatsAppThreadMessagesCache(phoneE164?: string | null)
   }
   threadMsgsCacheMem.clear();
   removeJsonCached(THREAD_MSGS_CACHE_KEY);
+}
+
+/** Snapshot of all on-device thread message caches (for local backup). */
+export function dumpWhatsAppThreadMessagesCache(): Record<string, ThreadMsgsCacheEntry> {
+  const store = readJsonCached<Record<string, ThreadMsgsCacheEntry>>(THREAD_MSGS_CACHE_KEY) || {};
+  for (const [phone, entry] of threadMsgsCacheMem.entries()) {
+    store[phone] = entry;
+  }
+  return store;
+}
+
+export function restoreWhatsAppThreadMessagesCache(
+  store: Record<string, ThreadMsgsCacheEntry> | null | undefined
+): number {
+  threadMsgsCacheMem.clear();
+  if (!store || typeof store !== 'object') {
+    removeJsonCached(THREAD_MSGS_CACHE_KEY);
+    return 0;
+  }
+  let n = 0;
+  const next: Record<string, ThreadMsgsCacheEntry> = {};
+  for (const [phone, entry] of Object.entries(store)) {
+    if (!entry || !Array.isArray(entry.messages)) continue;
+    const digits = String(phone).replace(/\D/g, '');
+    if (!digits) continue;
+    next[digits] = {
+      messages: entry.messages,
+      hasMoreOlder: Boolean(entry.hasMoreOlder),
+      fetchedAt: Number(entry.fetchedAt) || Date.now(),
+    };
+    threadMsgsCacheMem.set(digits, next[digits]);
+    n += 1;
+  }
+  writeJsonCached(THREAD_MSGS_CACHE_KEY, next);
+  return n;
+}
+
+export function clearAllWhatsAppLocalTextCache(): void {
+  invalidateWhatsAppInboxThreadsCache();
+  invalidateWhatsAppThreadMessagesCache();
 }
 
 /** People list via RPC — not full message dump. */
@@ -1100,6 +1358,15 @@ export function previewMessageBody(
 const BOOKING_BOT_STATE_PREFIX = '[Booking bot state]';
 const AWAITING_MEDIA_MARKER = '[Awaiting customer media]';
 const POST_BOOKING_REDIRECT_MARKER = '[Post-booking human redirect]';
+export const NEEDS_HUMAN_MARKER = '[Needs human reply]';
+
+/** Thread preview / last_body indicates admin should reply on this chat. */
+export function threadNeedsHumanReply(body: string | null | undefined): boolean {
+  const raw = String(body || '');
+  if (!raw.trim()) return false;
+  if (raw.includes(NEEDS_HUMAN_MARKER)) return true;
+  return /needs human reply/i.test(raw);
+}
 
 const BOOKING_STEP_LABELS: Record<string, string> = {
   idle: 'Idle',
@@ -1199,6 +1466,7 @@ export function formatAdminWhatsAppBody(
   text = text
     .replace(AWAITING_MEDIA_MARKER, '')
     .replace(POST_BOOKING_REDIRECT_MARKER, '')
+    .replace(NEEDS_HUMAN_MARKER, 'Needs human reply —')
     .trim();
 
   // WhatsApp interactive button footer: [Yes | No | …]
@@ -1219,6 +1487,13 @@ export function formatAdminWhatsAppBody(
   // Meta template / bot slug stored as body (e.g. svc_wfs_ask_name_ero_v2)
   if (/^svc_[a-z0-9_]+$/i.test(text.trim())) {
     text = humanizeWhatsAppTemplateSlug(text.trim());
+  } else {
+    // Template slug + params: "svc_balance_due_letter_hro_v6: Poorna · 1500 · …"
+    const tplWithParams = text.trim().match(/^(svc_[a-z0-9_]+)\s*:\s*(.+)$/i);
+    if (tplWithParams) {
+      const label = humanizeWhatsAppTemplateSlug(tplWithParams[1]);
+      text = `${label}\n${tplWithParams[2].trim()}`;
+    }
   }
 
   // Collapse leftover blank lines
@@ -1229,6 +1504,11 @@ export function formatAdminWhatsAppBody(
 /** svc_wfs_ask_name_ero_v2 → Ask name */
 function humanizeWhatsAppTemplateSlug(slug: string): string {
   let s = slug.replace(/^svc_/i, '').replace(/_(ero|hro)_v\d+$/i, '').replace(/_v\d+$/i, '');
+  s = s.replace(/_img$/i, '').replace(/_letter$/i, '_letter');
+  if (/balance_due/i.test(slug) || /balance_due/i.test(s)) {
+    return /_img/i.test(slug) ? 'Pending payment (UPI QR)' : 'Pending payment';
+  }
+  if (/job_done|job_completion/i.test(slug)) return 'Job completed';
   const stepHints: Record<string, string> = {
     ask_name: 'Ask name',
     await_name: 'Ask name',

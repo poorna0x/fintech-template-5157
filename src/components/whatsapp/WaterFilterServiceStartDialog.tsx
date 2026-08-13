@@ -14,11 +14,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LeadSourceSelect } from '@/components/admin/LeadSourceSelect';
-import {
-  startWaterFilterServiceBooking,
-} from '@/lib/whatsappBookingStart';
+import { startWhatsAppBookingQuickAction } from '@/lib/whatsappBookingStart';
 import { isLeadSourceAllowCustomText, leadSourceValueForSave } from '@/lib/leadCatalog';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import type { DocumentBrand } from '@/lib/service-brands';
 
 type Props = {
   open: boolean;
@@ -26,14 +25,20 @@ type Props = {
   /** Prefill from open thread */
   defaultPhone?: string;
   defaultName?: string;
+  brand?: DocumentBrand | null;
   onStarted?: (phoneE164: string) => void;
 };
 
+/**
+ * Inbox “Water Filter Service” — collect name / lead, then ask for location only.
+ * Does NOT start the full book flow (date/time). Use Book service for that.
+ */
 export default function WaterFilterServiceStartDialog({
   open,
   onOpenChange,
   defaultPhone = '',
   defaultName = '',
+  brand = 'hydrogenro',
   onStarted,
 }: Props) {
   const [name, setName] = useState('');
@@ -81,22 +86,24 @@ export default function WaterFilterServiceStartDialog({
 
     setBusy(true);
     try {
-      const result = await startWaterFilterServiceBooking({
+      const result = await startWhatsAppBookingQuickAction({
         phone: phoneE164,
+        action: 'request_location',
         customerName,
+        brand: brand === 'elevenro' ? 'elevenro' : 'hydrogenro',
         leadSource: resolvedLead,
         whatsappLeadLine: showLeadOnWhatsApp ? whatsappLeadLine.trim() : '',
       });
       if (!result.ok) {
-        toast.error(result.error || 'Could not start Water Filter Service');
+        toast.error(result.error || 'Could not ask for location');
         return;
       }
       if (result.via === 'template') {
         toast.success(
-          `Invite sent${result.templateName ? ` (${result.templateName})` : ''}. When they reply, bot asks for location first.`
+          `Location ask sent${result.templateName ? ` (${result.templateName})` : ''}. Does not start booking.`
         );
       } else {
-        toast.success('Asked for location on WhatsApp — booking continues step by step.');
+        toast.success('Asked for location only — booking is not started.');
       }
       onStarted?.(phoneE164);
       syncOpen(false);
@@ -114,92 +121,69 @@ export default function WaterFilterServiceStartDialog({
             Water Filter Service
           </DialogTitle>
           <DialogDescription>
-            Enter name, phone, and CRM lead source. We ask the customer for{' '}
-            <strong>location first</strong>, then date → time → purifier photo. Optionally show a
-            custom intro line on WhatsApp.
+            Saves name / lead for CRM, then asks the customer for their{' '}
+            <strong>location pin only</strong>. Does not start date/time booking — use{' '}
+            <strong>Book service</strong> for that.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 py-1">
           <div className="space-y-1.5">
-            <Label htmlFor="wfs-name">Customer name *</Label>
+            <Label htmlFor="wfs-name">Customer name</Label>
             <Input
               id="wfs-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Full name"
-              autoFocus
+              placeholder="Customer name"
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="wfs-phone">Phone *</Label>
+            <Label htmlFor="wfs-phone">Phone</Label>
             <Input
               id="wfs-phone"
-              type="tel"
-              inputMode="numeric"
               value={phone}
               onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
               placeholder="10-digit mobile"
+              inputMode="numeric"
             />
           </div>
-          <LeadSourceSelect
-            id="wfs-lead"
-            required
-            value={leadSource}
-            customValue={leadCustom}
-            onChange={(v) => {
-              setLeadSource(v);
-              if (!isLeadSourceAllowCustomText(v)) {
-                setLeadCustom('');
-                if (showLeadOnWhatsApp) setWhatsappLeadLine(v);
-              }
-            }}
-            onCustomChange={(v) => {
-              setLeadCustom(v);
-              if (showLeadOnWhatsApp) setWhatsappLeadLine(v);
-            }}
-          />
-          <div className="flex items-start gap-2 rounded-md border border-border/60 px-3 py-2">
+          <div className="space-y-1.5">
+            <Label>Lead source (CRM)</Label>
+            <LeadSourceSelect
+              value={leadSource}
+              customValue={leadCustom}
+              onChange={setLeadSource}
+              onCustomChange={setLeadCustom}
+            />
+          </div>
+          <div className="flex items-start gap-2 rounded-lg border border-border/60 p-2.5">
             <Checkbox
-              id="wfs-wa-lead"
+              id="wfs-show-lead"
               checked={showLeadOnWhatsApp}
-              onCheckedChange={(v) => {
-                const on = v === true;
-                setShowLeadOnWhatsApp(on);
-                if (on && !whatsappLeadLine.trim()) setWhatsappLeadLine(resolvedLead);
-              }}
+              onCheckedChange={(v) => setShowLeadOnWhatsApp(v === true)}
             />
             <div className="min-w-0 flex-1 space-y-1.5">
-              <Label htmlFor="wfs-wa-lead" className="cursor-pointer font-normal leading-snug">
-                Show intro on WhatsApp (optional)
+              <Label htmlFor="wfs-show-lead" className="cursor-pointer text-sm font-medium">
+                Show intro on WhatsApp
               </Label>
-              <p className="text-xs text-muted-foreground">
-                Off = skip. On = “from Direct call - Hydrogen RO Water Filter Service” (edit lead text).
-              </p>
               {showLeadOnWhatsApp ? (
                 <Input
                   value={whatsappLeadLine}
-                  onChange={(e) => setWhatsappLeadLine(e.target.value.slice(0, 80))}
-                  placeholder="e.g. Direct call, Google-Leads, or any text"
+                  onChange={(e) => setWhatsappLeadLine(e.target.value)}
+                  placeholder="e.g. Google-Leads"
                 />
               ) : null}
             </div>
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter>
           <Button type="button" variant="outline" disabled={busy} onClick={() => syncOpen(false)}>
             Cancel
           </Button>
           <Button type="button" disabled={busy} onClick={() => void handleStart()}>
-            {busy ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Starting…
-              </>
-            ) : (
-              'Ask location & start'
-            )}
+            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MapPin className="mr-2 h-4 w-4" />}
+            Ask location
           </Button>
         </DialogFooter>
       </DialogContent>

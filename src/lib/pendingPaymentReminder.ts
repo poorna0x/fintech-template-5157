@@ -1,9 +1,10 @@
 import { addMonths, format } from 'date-fns';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
-import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
-import { waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
+import { brandContactLines, brandLetterClosingLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import { extractUpiPayShortCode } from '@/lib/upiPaymentAccounts';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 /** Must match reminders created from Settings → Pending payments. */
 export const PENDING_PAYMENT_REMINDER_TITLE = 'Pending payment';
@@ -98,30 +99,30 @@ function cleanAmountDigits(amount: number | string): string {
   );
 }
 
-/** Letter cold template name — v6 = Pay now + light emoji; fallback v5 → v4. */
+/** Letter cold template name — v9 = Pay now, no contact footer; fallback v8 → v7. */
 export function resolvePendingPaymentLetterTemplateName(
   brand: DocumentBrand,
   opts?: { withPayButton?: boolean }
 ): string {
   if (opts?.withPayButton) {
-    return resolveBrandLetterTemplateName('balance_due', brand, 'v6');
+    return resolveBrandLetterTemplateName('balance_due', brand, 'v9');
   }
   return resolveBrandLetterTemplateName('balance_due', brand, 'v3');
 }
 
-/** Same letter as v6 with IMAGE header (QR / receipt / photo). */
+/** IMAGE header lean QR — no Call/Email/Website in body. */
 export function resolvePendingPaymentLetterImageTemplateName(brand: DocumentBrand): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
-  return `svc_balance_due_letter_${suffix}_img_v2`;
+  return `svc_balance_due_letter_${suffix}_img_v5`;
 }
 
 export function resolvePendingPaymentLetterImageTemplateFallbackName(brand: DocumentBrand): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
-  return `svc_balance_due_letter_${suffix}_img_v1`;
+  return `svc_balance_due_letter_${suffix}_img_v4`;
 }
 
 export function resolvePendingPaymentLetterTemplateFallbackName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('balance_due', brand, 'v5');
+  return resolveBrandLetterTemplateName('balance_due', brand, 'v8');
 }
 
 export function resolvePendingPaymentLetterTemplateLegacyName(brand: DocumentBrand): string {
@@ -133,8 +134,14 @@ export function pendingPaymentTemplateFallbackNames(brand?: DocumentBrand | stri
   const resolved = resolvePendingPaymentMessageBrand(brand);
   const suffix = resolved === 'elevenro' ? 'ero' : 'hro';
   return [
+    `svc_balance_due_letter_${suffix}_img_v5`,
+    `svc_balance_due_letter_${suffix}_img_v4`,
+    `svc_balance_due_letter_${suffix}_img_v3`,
     `svc_balance_due_letter_${suffix}_img_v2`,
     `svc_balance_due_letter_${suffix}_img_v1`,
+    `svc_balance_due_letter_${suffix}_v9`,
+    `svc_balance_due_letter_${suffix}_v8`,
+    `svc_balance_due_letter_${suffix}_v7`,
     `svc_balance_due_letter_${suffix}_v6`,
     `svc_balance_due_letter_${suffix}_v5`,
     `svc_balance_due_letter_${suffix}_v4`,
@@ -153,7 +160,7 @@ export function buildPendingPaymentLetterBodyParams(
   invoiceRef?: string | null
 ): [string, string, string, string] {
   return [
-    String(customerName || 'Customer').trim() || 'Customer',
+    whatsappGreetingName(customerName, 'there'),
     cleanAmountDigits(amountPending),
     formatPendingPaymentDueLabel(dueDateYmd) || 'at your earliest convenience',
     String(invoiceRef || '').trim() || 'your service visit',
@@ -167,20 +174,22 @@ export function buildPendingPaymentWhatsAppMessage(
   brand?: DocumentBrand | string | null,
   upi?: PendingPaymentWhatsAppUpiOptions | null,
   invoiceRef?: string | null,
-  opts?: { withQrImage?: boolean }
+  opts?: { withQrImage?: boolean; /** Body for interactive Pay now CTA (no inline link). */ ctaButton?: boolean }
 ): string {
   const resolved = resolvePendingPaymentMessageBrand(brand);
   const contact = brandContactLines(resolved);
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
   const dueLabel = formatPendingPaymentDueLabel(dueDateYmd);
   const payLink = (upi?.httpsLink || '').trim();
-  const upiId = (upi?.upiId || '').trim();
   const ref = String(invoiceRef || '').trim();
   const withQr = Boolean(opts?.withQrImage);
+  const ctaButton = Boolean(opts?.ctaButton);
 
   const lines: string[] = [
-    `Hi ${customerName}, 👋`,
-    `This is an update from ${contact.brandLabel} regarding your pending payment for water purifier service. 💧`,
+    `Hi ${whatsappGreetingName(customerName, 'there')}, 👋`,
+    withQr
+      ? `Pending payment for your water purifier service — ${contact.brandLabel}. 💧`
+      : `This is an update from ${contact.brandLabel} regarding your pending payment for water purifier service. 💧`,
     '',
     `💰 Amount pending: ₹${formattedAmount}`,
     `📅 Due date: ${dueLabel || 'At your earliest convenience'}`,
@@ -189,40 +198,24 @@ export function buildPendingPaymentWhatsAppMessage(
 
   if (withQr) {
     lines.push('');
-    lines.push('*Pay with UPI QR*');
-    lines.push('📱 Scan or tap the QR code above to pay directly (GPay / PhonePe / WhatsApp Pay).');
-  }
-
-  if (payLink || upiId) {
-    lines.push('');
-    lines.push('*Pay now*');
-    if (payLink) {
-      lines.push(waLabeledLink('💳', 'UPI pay link (GPay / PhonePe / UPI)', payLink));
-    }
-    if (upiId) {
-      lines.push(waLabeledValue('📱', 'UPI ID', upiId));
-    }
-    if (upi?.label) {
-      lines.push(waLabeledValue('🏦', 'Pay to', upi.label));
-    }
-    if (payLink) {
-      lines.push(`Amount ₹${formattedAmount} is pre-filled when you use the UPI pay link.`);
-    }
-    if (upi?.phone) {
-      lines.push(waLabeledValue('📞', 'UPI mobile', upi.phone));
-    }
-  }
-
-  lines.push('');
-  lines.push(...brandLetterClosingLines(resolved, { skipChatHint: true, includeTextUs: false }));
-  lines.push('');
-  if (withQr && (payLink || upiId)) {
     lines.push(
-      '💳 Or tap *Pay now* below. Reply on this chat if you have already paid.'
+      ctaButton
+        ? '📱 Scan the QR above, or tap Pay now below.'
+        : '📱 Scan the QR above, or tap Pay now / open the link below.'
     );
-  } else if (withQr) {
-    lines.push('💬 Reply on this chat if you need any help or if you have already paid.');
-  } else if (payLink || upiId) {
+  }
+
+  // Pay page already has UPI ID / payee / phone — don't repeat in chat.
+  // When ctaButton: Pay now is a real WhatsApp button — skip inline URL.
+  if (payLink && !ctaButton) {
+    lines.push('');
+    lines.push(waLabeledLink('💳', 'Pay now', payLink));
+  }
+
+  lines.push('');
+  if (ctaButton && (withQr || payLink)) {
+    lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');
+  } else if (withQr || payLink) {
     lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');
   } else {
     lines.push('💬 Reply on this chat if you need any help or if you have already paid.');
@@ -241,7 +234,7 @@ export function buildPendingPaymentReceivedWhatsAppMessage(
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
   return [
-    `Hi ${customerName},`,
+    `Hi ${whatsappGreetingName(customerName, 'there')},`,
     `This is an update from ${contact.brandLabel} regarding your payment.`,
     '',
     `We have received your payment of ₹${formattedAmount}. Thank you.`,

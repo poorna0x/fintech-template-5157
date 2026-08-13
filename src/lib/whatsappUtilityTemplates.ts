@@ -10,6 +10,7 @@ import { resolveWaTemplateName } from '@/lib/whatsappTemplateResolve';
 import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
 import type { AdminWhatsAppSendResult } from '@/lib/sendAdminWhatsAppApi';
 import { brandLetterClosingLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export type ColdTemplatePayload = {
   name: string;
@@ -18,7 +19,7 @@ export type ColdTemplatePayload = {
 };
 
 function cleanName(name: string): string {
-  return String(name || 'Customer').trim() || 'Customer';
+  return whatsappGreetingName(name, 'there');
 }
 
 function cleanAmount(amount: number | string): string {

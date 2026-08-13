@@ -9,7 +9,7 @@
  *       15-day problem path (explain + photo/video) → fast date/time book
  *
  * Legacy greeting buttons (Service/Repair | Reinstallation | Chat) still work mid-flow.
- * Chat with us / post-book free-form → Eleven RO main line 9880693311
+ * Chat with us / post-book free-form → stay on this chat (optional Contact team CTA)
  *
  * Customer messages stay simple (no lead source / CRM jargon).
  * Admin-started Water Filter Service can set lead_source; default remains Direct call.
@@ -20,6 +20,7 @@ const {
   normalizePhoneE164,
   ensurePublicCrmPhotoUrl,
 } = require('./whatsapp-helper');
+const { whatsappGreetingName } = require('./whatsapp-greeting-name');
 const {
   ELEVEN_SUPPORT_DISPLAY,
   ELEVEN_SUPPORT_E164_PLUS,
@@ -27,6 +28,7 @@ const {
   sendElevenSupportContactCard,
   sendElevenSupportWhatsAppCta,
   sendElevenSupportDialCta,
+  sendElevenSupportContactTeamCta,
   handleElevenSupportButton,
 } = require('./whatsapp-eleven-support');
 const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
@@ -53,7 +55,7 @@ function brandShortLabelForWfs(brand) {
 
 /** Body for native WhatsApp *Send location* button (24h interactive only). */
 function buildAskLocationBodyText(customerName, fromLabel) {
-  const name = String(customerName || 'there').trim() || 'there';
+  const name = whatsappGreetingName(customerName, 'there');
   const who = String(fromLabel || WATER_FILTER_SERVICE_LABEL).trim() || WATER_FILTER_SERVICE_LABEL;
   return [
     `Hi ${name}, 👋`,
@@ -71,7 +73,7 @@ function buildAskLocationBodyText(customerName, fromLabel) {
  * With lead → from Direct call - Hydrogen RO Water Filter Service.
  */
 function buildQuickCustomerLocationBodyText(customerName, whatsappLeadLine, brand) {
-  const name = String(customerName || 'there').trim() || 'there';
+  const name = whatsappGreetingName(customerName, 'there');
   const intro = String(whatsappLeadLine || '').trim();
   const brandShort = brandShortLabelForWfs(brand);
   const lines = [`Hi ${name}, 👋`, ''];
@@ -124,6 +126,8 @@ const STATE_PREFIX = '[Booking bot state]';
 /** Must match whatsapp-unsolicited-media.js so photo step is allowed. */
 const AWAITING_CUSTOMER_MEDIA_MARKER = '[Awaiting customer media]';
 const POST_BOOKING_REDIRECT_MARKER = '[Post-booking human redirect]';
+/** CRM inbox badge — customer wants a human on this chat (not wa.me hop). */
+const NEEDS_HUMAN_MARKER = '[Needs human reply]';
 
 /**
  * Session (24h) greeting — interactive reply buttons.
@@ -200,6 +204,7 @@ const ACTIVE_BOOKING_STEPS = new Set([
   'await_time',
   'await_custom_time',
   'await_model_or_photo',
+  'await_optional_photo',
   'await_service_type',
   'await_custom_note',
   'await_confirm',
@@ -623,6 +628,7 @@ function stateAwaitingMedia(state) {
   const step = String(state?.step || '').trim();
   return (
     step === 'await_model_or_photo' ||
+    step === 'await_optional_photo' ||
     step === 'await_issue_media' ||
     Boolean(state?.awaitingMedia)
   );
@@ -878,7 +884,7 @@ async function lookupCustomerFull(db, phoneE164) {
   const { data: customer } = await db
     .from('customers')
     .select(
-      'id,full_name,phone,alternate_phone,address,location,visible_address,alternate_address,alternate_location,alternate_visible_address,brand,model,service_type,last_service_date'
+      'id,full_name,phone,alternate_phone,address,location,visible_address,alternate_address,alternate_location,alternate_visible_address,brand,model,service_type,last_service_date,photos'
     )
     .or(`phone.like.%${phone},alternate_phone.like.%${phone}`)
     .limit(1)
@@ -887,7 +893,96 @@ async function lookupCustomerFull(db, phoneE164) {
 }
 
 const CUSTOMER_BOOKING_SELECT =
-  'id,full_name,phone,alternate_phone,address,location,visible_address,alternate_address,alternate_location,alternate_visible_address,brand,model,service_type,last_service_date';
+  'id,full_name,phone,alternate_phone,address,location,visible_address,alternate_address,alternate_location,alternate_visible_address,brand,model,service_type,last_service_date,photos';
+
+/** First usable unit photo URL from customer.photos JSON. */
+function firstCustomerPhotoUrl(photos) {
+  if (!Array.isArray(photos)) return '';
+  for (const p of photos) {
+    const url = typeof p === 'string' ? p : p?.url;
+    if (url && /^https?:\/\//i.test(String(url).trim())) return String(url).trim();
+  }
+  return '';
+}
+
+async function resolveCustomerPhotoUrl(db, customer) {
+  const fromRow = firstCustomerPhotoUrl(customer?.photos);
+  if (fromRow) return fromRow;
+  if (!db || !customer?.id) return '';
+  try {
+    const { data } = await db.from('customers').select('photos').eq('id', customer.id).maybeSingle();
+    return firstCustomerPhotoUrl(data?.photos);
+  } catch {
+    return '';
+  }
+}
+
+/** Mark thread for admin inbox — customer needs a human on this chat. */
+async function flagNeedsHumanReply(ctx, { customerId = null, reason = 'Customer asked for team' } = {}) {
+  if (!ctx?.db || !ctx?.to) return;
+  await insertWhatsAppMessage(ctx.db, {
+    direction: 'outbound',
+    phone_e164: ctx.to,
+    msg_type: 'text',
+    body: slimInboxBody(`${NEEDS_HUMAN_MARKER} ${String(reason || '').trim() || 'Customer asked for team'}`),
+    status: 'sent',
+    customer_id: customerId || null,
+  });
+}
+
+/**
+ * Prefer staying on this WhatsApp chat; optional Contact team CTA for main line.
+ */
+async function sendStayInChatHumanHandoff(
+  ctx,
+  { customer = null, state = {}, bodyText, offerContactTeam = true, reason = 'Chat with us' } = {}
+) {
+  const st = state || {};
+  const prefill = buildAdminHandoffPrefill({
+    customer,
+    state: st,
+    phoneE164: ctx.to,
+  });
+  const nextStep =
+    st.jobNumber || st.step === 'await_post_book' || st.step === 'booking_complete'
+      ? 'booking_complete'
+      : st.step || 'booking_complete';
+  await setBookingState(ctx.db, ctx.to, {
+    ...st,
+    step: nextStep,
+    needsHuman: true,
+    needsHumanAt: new Date().toISOString(),
+    supportPrefill: prefill,
+  });
+  const text = String(
+    bodyText ||
+      [
+        'Got it — our team will reply *on this chat* shortly.',
+        '',
+        'Please keep this chat open; no need to message another number.',
+      ].join('\n')
+  );
+  await sendText({
+    ...ctx,
+    text,
+    inboxLabel: slimInboxBody(`${NEEDS_HUMAN_MARKER} ${reason}`),
+  });
+  if (offerContactTeam) {
+    await sendElevenSupportContactTeamCta({
+      phoneNumberId: ctx.phoneNumberId,
+      accessToken: ctx.accessToken,
+      db: ctx.db,
+      to: ctx.to,
+      bodyText: [
+        `Prefer the main Eleven RO line (*${SUPPORT_PHONE_DISPLAY}*)?`,
+        '',
+        'Tap *Contact team* below (optional).',
+      ].join('\n'),
+      prefill,
+    });
+  }
+  return { handled: true };
+}
 
 async function lookupCustomerById(db, customerId) {
   if (!db || !customerId) return null;
@@ -1033,9 +1128,10 @@ async function sendChatHandoff(ctx, customer = null, state = {}) {
     bodyText: [
       `Chat with us on WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
       '',
-      'Tap below to open the chat with our team.',
+      'Tap *Contact team* below to open the chat with our team.',
     ].join('\n'),
     prefill,
+    displayText: 'Contact team',
   });
 }
 
@@ -1134,7 +1230,7 @@ async function sendRecentProblemPrompt(ctx, state = {}) {
 }
 
 async function sendKnownMenu(ctx, state = {}) {
-  const name = String(state.name || 'there').trim() || 'there';
+  const name = whatsappGreetingName(state.name, 'there');
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_known_menu' });
   return sendButtons({
     ...ctx,
@@ -1149,7 +1245,7 @@ async function sendKnownMenu(ctx, state = {}) {
 }
 
 async function sendAmcCheckin(ctx, state = {}) {
-  const name = String(state.name || 'there').trim() || 'there';
+  const name = whatsappGreetingName(state.name, 'there');
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_amc_checkin' });
   return sendButtons({
     ...ctx,
@@ -1213,7 +1309,7 @@ async function askOtherPhone(ctx, state = {}) {
 }
 
 async function sendLinkedIdentityConfirm(ctx, state, customer, lastInfo) {
-  const name = String(customer?.full_name || 'Customer').trim() || 'Customer';
+  const name = whatsappGreetingName(customer?.full_name, 'there');
   const next = {
     ...state,
     step: 'await_linked_identity_confirm',
@@ -1250,7 +1346,7 @@ async function startInboundIdentityFlow(ctx) {
     return { ok: true, known: false };
   }
 
-  const name = String(customer.full_name || 'there').trim() || 'there';
+  const name = whatsappGreetingName(customer.full_name, 'there');
   const lastInfo = await lookupLastServiceInfo(ctx.db, customer.id, customer);
   const amc = await lookupActiveAmc(ctx.db, customer.id);
   const base = {
@@ -1485,7 +1581,7 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
 
   if (act === 'request_location') {
     const customer = await lookupCustomerFull(ctx.db, ctx.to);
-    const name = String(opts.customerName || customer?.full_name || 'there').trim() || 'there';
+    const name = whatsappGreetingName(opts.customerName || customer?.full_name, 'there');
     const fromLabel = waterFilterServiceLabelForBrand(opts.brand);
     await setBookingState(ctx.db, ctx.to, {
       step: 'await_location',
@@ -1597,7 +1693,7 @@ async function startBookLocationPhoto(ctx, opts = {}) {
       '',
       'First, please share your *service location*.',
       '',
-      'Tap *Send location* below — we’ll ask for building/flat next, then a purifier photo.',
+      'Tap *Send location* below — next we’ll pick a date & time.',
     ].join('\n'),
   });
   return { ok: true, started: 'book_location_photo', mode: 'location_then_photo' };
@@ -1992,23 +2088,11 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
   }
   if (intent === 'talk_team' || pending === 'talk_team') {
     const customer = await lookupCustomerFull(ctx.db, ctx.to);
-    const prefill = buildAdminHandoffPrefill({
+    await sendStayInChatHumanHandoff(ctx, {
       customer,
       state: {},
-      phoneE164: ctx.to,
-    });
-    await setBookingState(ctx.db, ctx.to, {
-      step: 'booking_complete',
-      supportPrefill: prefill,
-    });
-    await sendElevenSupportButtons({
-      ...ctx,
-      bodyText: [
-        `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
-        '',
-        'Tap *Call us* to open the dialer, or *WhatsApp team* to message us.',
-      ].join('\n'),
-      footer: BRAND_LABEL,
+      reason: 'Chat with us',
+      offerContactTeam: true,
     });
     return { ok: true };
   }
@@ -2074,7 +2158,26 @@ async function continueAfterTimeSelected(ctx, next, customer) {
     await sendNewCustomerConfirm(ctx, next);
     return;
   }
-  await askPurifierPhoto(ctx, next);
+  if (next?.photoUrl) {
+    await sendNewCustomerConfirm(ctx, next);
+    return;
+  }
+  const crmPhoto = await resolveCustomerPhotoUrl(ctx.db, customer);
+  if (crmPhoto) {
+    await sendNewCustomerConfirm(ctx, {
+      ...next,
+      photoUrl: crmPhoto,
+      photoFromCrm: true,
+    });
+    return;
+  }
+  // Admin paths that explicitly collect photo before date still require it.
+  if (next?.waterFilterService || next?.locationThenPhoto) {
+    await askPurifierPhoto(ctx, next);
+    return;
+  }
+  // New / reinstall: confirm booking first; optional photo after confirm.
+  await sendNewCustomerConfirm(ctx, { ...next, photoDeferred: true });
 }
 
 /** Start Service/Repair or Reinstallation from greeting (or admin). */
@@ -2284,8 +2387,8 @@ async function askLocConfirm(ctx, state, locSummary) {
   await sendButtons({
     ...ctx,
     bodyText: mapsUrl
-      ? 'Is this location correct?'
-      : `${detailBody}\n\nIs this correct?`,
+      ? 'Is this location correct?\n\n(You can add building/flat later via *Edit details*.)'
+      : `${detailBody}\n\nIs this correct?\n\n(You can add building/flat later via *Edit details*.)`,
     footer: 'Confirm location',
     buttons: [
       { id: 'loc_yes', title: 'Yes, correct' },
@@ -2298,7 +2401,7 @@ async function askLocConfirm(ctx, state, locSummary) {
 /** After location confirm — building / flat / house no (skippable). */
 async function askBuildingFlat(ctx, state = {}) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_building_flat' });
-  let name = String(state.name || state.customerName || '').trim();
+  let name = whatsappGreetingName(state.name || state.customerName, '');
   if (!name) {
     const customer = await lookupCustomerFull(ctx.db, ctx.to);
     name = String(customer?.full_name || '').trim();
@@ -2482,7 +2585,7 @@ async function sendDatePicker(ctx, state) {
     ...ctx,
     bodyText: existingFast
       ? 'Pick a date for your service visit:'
-      : 'Step 2 of 5 · Pick a date for the visit:',
+      : 'Pick a date for your service visit:',
     buttonText: 'Choose date',
     sectionTitle: 'Next 7 days',
     footer: BRAND_LABEL,
@@ -2516,7 +2619,7 @@ async function sendPeriodPicker(ctx, dateIso, state) {
 
   return sendList({
     ...ctx,
-    bodyText: `Step 3 of 5 · Date: *${formatDateIsoLabel(dateIso)}*\n\nChoose a time of day (9 AM – 6 PM):`,
+    bodyText: `Date: *${formatDateIsoLabel(dateIso)}*\n\nChoose a time of day (9 AM – 6 PM):`,
     buttonText: 'Choose period',
     sectionTitle: 'Time of day',
     footer: 'Past times hidden',
@@ -2531,15 +2634,34 @@ async function sendTimePicker(ctx, dateIso, state) {
 
 async function askPurifierPhoto(ctx, state) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_model_or_photo' });
-  const stepLabel = state?.locationThenPhoto
-    ? 'Next'
-    : 'Step 5 of 5';
   await sendText({
     ...ctx,
     text:
-      `${stepLabel} · Please *send a photo of your purifier* to continue.\n\n` +
-      'Clear photo of the purifier label / unit.\n\n(Photo is required — saved to your customer profile.)\n\n' +
+      'Please *send a photo of your purifier* to continue.\n\n' +
+      'Clear photo of the purifier label / unit.\n\n(Saved to your customer profile.)\n\n' +
       AWAITING_CUSTOMER_MEDIA_MARKER,
+  });
+}
+
+/** After booking — optional photo (does not block the visit). */
+async function askOptionalPurifierPhoto(ctx, state) {
+  await setBookingState(ctx.db, ctx.to, {
+    ...state,
+    step: 'await_optional_photo',
+    editReturn: 'post_book',
+  });
+  return sendButtons({
+    ...ctx,
+    bodyText: [
+      'Optional: send a *purifier photo* so our technician can prepare.',
+      '',
+      'Or tap *Skip* — you can still send one later.',
+    ].join('\n'),
+    footer: BRAND_LABEL,
+    buttons: [
+      { id: 'skip_optional_photo', title: 'Skip' },
+      { id: 'talk_team', title: 'Chat with us' },
+    ],
   });
 }
 
@@ -2550,7 +2672,7 @@ function buildBookingSummaryLines(state, customer) {
   const existing = Boolean(state?.existingCustomerId || customer?.id);
   const lines = [
     existing
-      ? 'Please confirm — we’ll add this *job* to your existing account:'
+      ? 'Please confirm — we’ll schedule your *visit* on your existing account:'
       : 'Please confirm your booking details:',
     '',
   ];
@@ -2585,7 +2707,7 @@ async function sendNewCustomerConfirm(ctx, state) {
   return sendButtons({
     ...ctx,
     bodyText,
-    footer: state?.existingCustomerId ? 'Add job only' : 'Almost done',
+    footer: state?.existingCustomerId ? 'Confirm booking' : 'Almost done',
     buttons: [
       { id: 'confirm_new', title: 'Yes, book now' },
       { id: 'edit_details', title: 'Edit details' },
@@ -2654,7 +2776,7 @@ function customerBookedMessage({
   jobNumber,
   updated,
 }) {
-  const who = String(name || 'there').trim() || 'there';
+  const who = whatsappGreetingName(name, 'there');
   const ref = String(jobNumber || '').trim() || 'your booking';
   const when = [dateIso ? formatDateIsoLabel(dateIso) : '', timeLabel || '']
     .filter(Boolean)
@@ -2712,7 +2834,7 @@ async function sendBookedConfirmation(ctx, state, { updated } = {}) {
     }),
     inboxLabel: `[Booking bot] ${updated ? 'Updated' : 'Confirmed'} · ${ref}${when ? ` · ${when}` : ''}`,
   });
-  return sendButtons({
+  const buttonsResult = await sendButtons({
     ...ctx,
     bodyText: updated
       ? 'Need to change anything else?'
@@ -2724,6 +2846,10 @@ async function sendBookedConfirmation(ctx, state, { updated } = {}) {
       { id: 'talk_team', title: 'Chat with us' },
     ],
   });
+  if (!updated && next.photoDeferred && !next.photoUrl) {
+    await askOptionalPurifierPhoto(ctx, { ...next, step: 'await_optional_photo' });
+  }
+  return buttonsResult;
 }
 
 async function sendEditMenu(ctx, state) {
@@ -2973,41 +3099,18 @@ function buildAdminHandoffPrefill({ customer, state, phoneE164 }) {
 async function sendPostBookingHumanRedirect(ctx, state = null) {
   const st = state || (await getBookingState(ctx.db, ctx.to)) || {};
   const customer = await lookupCustomerFull(ctx.db, ctx.to);
-  const prefill = buildAdminHandoffPrefill({
+  return sendStayInChatHumanHandoff(ctx, {
     customer,
     state: st,
-    phoneE164: ctx.to,
+    reason: 'Post-booking message',
+    offerContactTeam: true,
+    bodyText: [
+      'Thanks for your message.',
+      '',
+      'Your booking on this number is already in progress.',
+      'Our team will reply *on this chat* shortly.',
+    ].join('\n'),
   });
-
-  const bodyText = [
-    'Thanks for your message.',
-    '',
-    'Your booking on this number is already in progress.',
-    `Message our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
-    '',
-    'Tap *Call us* to open the dialer, or *WhatsApp team* to chat (your details will be attached).',
-  ].join('\n');
-
-  await sendElevenSupportButtons({
-    ...ctx,
-    bodyText,
-    footer: BRAND_LABEL,
-  });
-  // Keep prefill on state for WhatsApp button tap — stay on booking_complete
-  await setBookingState(ctx.db, ctx.to, {
-    ...st,
-    step: 'booking_complete',
-    supportPrefill: prefill,
-  });
-  await insertWhatsAppMessage(ctx.db, {
-    direction: 'outbound',
-    phone_e164: ctx.to,
-    msg_type: 'text',
-    body: slimInboxBody(`${POST_BOOKING_REDIRECT_MARKER} Handoff to team`),
-    status: 'sent',
-    customer_id: customer?.id || st.customerId || null,
-  });
-  return { handled: true };
 }
 
 /**
@@ -3428,6 +3531,61 @@ async function handleBookingBotInbound({
     }
   }
 
+  if (state?.step === 'await_optional_photo') {
+    if (msgType === 'image' || msgType === 'document') {
+      const rawUrl = inboundMedia?.media_url || null;
+      if (!rawUrl) {
+        await sendText({
+          ...ctx,
+          text: 'We couldn’t save that photo. Please send it again, or tap *Skip*.',
+        });
+        return { handled: true };
+      }
+      const photoUrl =
+        (await ensurePublicCrmPhotoUrl(rawUrl, {
+          mime: inboundMedia?.media_mime,
+          filename: inboundMedia?.filename || 'purifier.jpg',
+        })) || rawUrl;
+      const next = {
+        ...state,
+        photoUrl,
+        photoDeferred: false,
+        model: state.model || 'See photo',
+        step: 'await_post_book',
+      };
+      await setBookingState(db, to, next);
+      try {
+        await persistBookingEditsToCrm(db, next);
+      } catch (err) {
+        console.warn('[whatsapp-booking-bot] optional photo save skipped', err?.message || err);
+      }
+      await sendText({
+        ...ctx,
+        text: 'Photo received — thank you. We’ll keep it on your booking.',
+      });
+      return { handled: true };
+    }
+    if (msgType === 'text' && text && !GREETING_RE.test(text) && !EDIT_RE.test(text)) {
+      if (/^skip$/i.test(text.trim())) {
+        await setBookingState(db, to, {
+          ...state,
+          step: 'await_post_book',
+          photoDeferred: false,
+        });
+        await sendText({
+          ...ctx,
+          text: 'No problem — booking stays as confirmed.',
+        });
+        return { handled: true };
+      }
+      await sendText({
+        ...ctx,
+        text: 'Send a *purifier photo*, or tap *Skip*.',
+      });
+      return { handled: true };
+    }
+  }
+
   // Customer shared a location pin
   if (msgType === 'location' && msg.location) {
     const { latitude, longitude, name, address } = msg.location;
@@ -3645,16 +3803,11 @@ async function handleBookingBotInbound({
     // Legacy greeting button — redirect to Chat with us (Eleven 3311)
     if (id === 'call_back') {
       const customer = await lookupCustomerFull(db, to);
-      const prefill = buildAdminHandoffPrefill({ customer, state: {}, phoneE164: to });
-      await setBookingState(db, to, { step: 'booking_complete', supportPrefill: prefill });
-      await sendElevenSupportButtons({
-        ...ctx,
-        bodyText: [
-          `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
-          '',
-          'Tap *Call us* to open the dialer, or *WhatsApp team* to message us.',
-        ].join('\n'),
-        footer: BRAND_LABEL,
+      await sendStayInChatHumanHandoff(ctx, {
+        customer,
+        state: {},
+        reason: 'Call back / chat',
+        offerContactTeam: true,
       });
       return { handled: true };
     }
@@ -3716,17 +3869,25 @@ async function handleBookingBotInbound({
         phoneE164: to,
       });
       await setBookingState(db, to, { ...doneState, supportPrefill: prefill });
-      await sendElevenSupportButtons({
+      await sendText({
         ...ctx,
-        bodyText: [
+        text: [
           'Perfect — thank you.',
           '',
           'Your booking is confirmed. We’ll update you here once a technician is assigned.',
           '',
-          `Need anything else? Message our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
-          'Tap *Call us* or *WhatsApp team* (details attached).',
+          'Reply on this chat anytime if you need help.',
         ].join('\n'),
-        footer: BRAND_LABEL,
+      });
+      await sendElevenSupportContactTeamCta({
+        phoneNumberId: ctx.phoneNumberId,
+        accessToken: ctx.accessToken,
+        db: ctx.db,
+        to: ctx.to,
+        bodyText: [
+          `Optional: tap *Contact team* for the main Eleven RO line (*${SUPPORT_PHONE_DISPLAY}*).`,
+        ].join('\n'),
+        prefill,
       });
       return { handled: true };
     }
@@ -3785,7 +3946,34 @@ async function handleBookingBotInbound({
 
     if (id === 'loc_yes') {
       const st = state?.step === 'await_loc_confirm' ? state : await getBookingState(db, to);
-      await askBuildingFlat(ctx, { ...(st || {}) });
+      const session = { ...(st || {}) };
+      // Admin location-only / location→photo still collect building/flat.
+      const needBuilding =
+        Boolean(session.locationThenPhoto) ||
+        (Boolean(session.startedByAdmin) &&
+          !session.serviceSubType &&
+          !session.waterFilterService &&
+          !session.dateIso);
+      if (needBuilding) {
+        await askBuildingFlat(ctx, session);
+      } else {
+        // Shorter funnel: skip building step; customer can add via Edit.
+        await continueAfterBuildingFlat(ctx, { ...session, buildingFlat: session.buildingFlat || '' });
+      }
+      return { handled: true };
+    }
+
+    if (id === 'skip_optional_photo') {
+      const st = (await getBookingState(db, to)) || state || {};
+      await setBookingState(db, to, {
+        ...st,
+        step: 'await_post_book',
+        photoDeferred: false,
+      });
+      await sendText({
+        ...ctx,
+        text: 'No problem — booking stays as confirmed.',
+      });
       return { handled: true };
     }
 
@@ -3843,16 +4031,24 @@ async function handleBookingBotInbound({
         return { handled: true };
       }
       if (!st.photoUrl && !isExistingCustomerFastBook(st, existingByPhone)) {
-        await sendText({
-          ...ctx,
-          text: 'A *purifier photo is required* before we can book.',
-        });
-        await askPurifierPhoto(ctx, {
-          ...st,
-          existingCustomerId: st.existingCustomerId || existingByPhone?.id || null,
-          name: st.name || existingByPhone?.full_name || null,
-        });
-        return { handled: true };
+        const crmPhoto = await resolveCustomerPhotoUrl(db, existingByPhone);
+        if (crmPhoto) {
+          st.photoUrl = crmPhoto;
+          st.photoFromCrm = true;
+        } else if (st.waterFilterService || st.locationThenPhoto) {
+          await sendText({
+            ...ctx,
+            text: 'A *purifier photo is required* before we can book.',
+          });
+          await askPurifierPhoto(ctx, {
+            ...st,
+            existingCustomerId: st.existingCustomerId || existingByPhone?.id || null,
+            name: st.name || existingByPhone?.full_name || null,
+          });
+          return { handled: true };
+        } else {
+          st.photoDeferred = true;
+        }
       }
 
       let customer = null;
@@ -3933,10 +4129,15 @@ async function handleBookingBotInbound({
               ...ctx,
               text: `We couldn’t complete booking right now. Our team will help you shortly.`,
             });
-            await sendElevenSupportButtons({
-              ...ctx,
-              bodyText: `Reach Eleven RO on ${SUPPORT_PHONE_DISPLAY}:`,
-              footer: BRAND_LABEL,
+            await sendElevenSupportContactTeamCta({
+              phoneNumberId: ctx.phoneNumberId,
+              accessToken: ctx.accessToken,
+              db: ctx.db,
+              to: ctx.to,
+              bodyText: [
+                `We couldn’t complete booking right now.`,
+                `Tap *Contact team* to WhatsApp Eleven RO (*${SUPPORT_PHONE_DISPLAY}*).`,
+              ].join('\n'),
             });
             return { handled: true };
           }
@@ -3993,10 +4194,14 @@ async function handleBookingBotInbound({
           ...ctx,
           text: `Booking didn’t go through. Our team will finish it for you.`,
         });
-        await sendElevenSupportButtons({
-          ...ctx,
-          bodyText: `Reach Eleven RO on ${SUPPORT_PHONE_DISPLAY}:`,
-          footer: BRAND_LABEL,
+        await sendElevenSupportContactTeamCta({
+          phoneNumberId: ctx.phoneNumberId,
+          accessToken: ctx.accessToken,
+          db: ctx.db,
+          to: ctx.to,
+          bodyText: [
+            `Tap *Contact team* to WhatsApp Eleven RO (*${SUPPORT_PHONE_DISPLAY}*).`,
+          ].join('\n'),
         });
         await clearBookingState(db, to);
         return { handled: true };
@@ -4107,25 +4312,16 @@ async function handleBookingBotInbound({
 
     if (id === 'talk_team') {
       const customer = await lookupCustomerFull(db, to);
-      const prefill = buildAdminHandoffPrefill({
+      await sendStayInChatHumanHandoff(ctx, {
         customer,
         state: state || {},
-        phoneE164: to,
-      });
-      await setBookingState(db, to, {
-        ...(state || {}),
-        step: state?.jobNumber ? 'booking_complete' : state?.step || 'idle',
-        supportPrefill: prefill,
-      });
-      await sendElevenSupportButtons({
-        ...ctx,
+        reason: 'Chat with us',
+        offerContactTeam: true,
         bodyText: [
-          `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+          'Got it — our team will reply *on this chat* shortly.',
           '',
-          `*Call us* opens your phone dialer.`,
-          `*WhatsApp team* opens chat with details attached when available.`,
+          'Please keep this chat open.',
         ].join('\n'),
-        footer: BRAND_LABEL,
       });
       return { handled: true };
     }
@@ -4214,12 +4410,20 @@ async function handleBookingBotInbound({
       const st = (await getBookingState(db, to)) || state || {};
       const customerForConfirm = await resolveCustomerForState(db, to, st);
       if (!st.photoUrl && !isExistingCustomerFastBook(st, customerForConfirm)) {
-        await sendText({
-          ...ctx,
-          text: 'A *purifier photo is required* before we can book.',
-        });
-        await askPurifierPhoto(ctx, { ...st, dateIso: date, slotKey });
-        return { handled: true };
+        const crmPhoto = await resolveCustomerPhotoUrl(db, customerForConfirm);
+        if (crmPhoto) {
+          st.photoUrl = crmPhoto;
+          st.photoFromCrm = true;
+        } else if (st.waterFilterService || st.locationThenPhoto) {
+          await sendText({
+            ...ctx,
+            text: 'A *purifier photo is required* before we can book.',
+          });
+          await askPurifierPhoto(ctx, { ...st, dateIso: date, slotKey });
+          return { handled: true };
+        } else {
+          st.photoDeferred = true;
+        }
       }
       const customer = customerForConfirm;
       const locOverride = st.loc
@@ -4272,10 +4476,15 @@ async function handleBookingBotInbound({
           ...ctx,
           text: `We couldn’t complete booking right now. Our team will help shortly.`,
         });
-        await sendElevenSupportButtons({
-          ...ctx,
-          bodyText: `Reach Eleven RO on ${SUPPORT_PHONE_DISPLAY}:`,
-          footer: BRAND_LABEL,
+        await sendElevenSupportContactTeamCta({
+          phoneNumberId: ctx.phoneNumberId,
+          accessToken: ctx.accessToken,
+          db: ctx.db,
+          to: ctx.to,
+          bodyText: [
+            `We couldn’t complete booking right now.`,
+            `Tap *Contact team* to WhatsApp Eleven RO (*${SUPPORT_PHONE_DISPLAY}*).`,
+          ].join('\n'),
         });
         await insertWhatsAppMessage(db, {
           direction: 'outbound',
@@ -4373,15 +4582,11 @@ async function handleBookingBotInbound({
         state: {},
         phoneE164: to,
       });
-      await setBookingState(db, to, { step: 'booking_complete', supportPrefill: prefill });
-      await sendElevenSupportButtons({
-        ...ctx,
-        bodyText: [
-          `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
-          '',
-          'Tap *Call us* to open the dialer, or *WhatsApp team* to message us.',
-        ].join('\n'),
-        footer: BRAND_LABEL,
+      await sendStayInChatHumanHandoff(ctx, {
+        customer,
+        state: { step: 'booking_complete', supportPrefill: prefill },
+        reason: 'Asked for human',
+        offerContactTeam: true,
       });
       return { handled: true };
     }

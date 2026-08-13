@@ -17,6 +17,7 @@
 const { getServiceClient } = require('./booking-guard');
 const { sendBookingAdminNotification } = require('./booking-notify');
 const { getMessaging, getAdminFcmTokens, pruneAdminFcmTokens, isStaleTokenError } = require('./fcm-helper');
+const { maybeSendOnlineBookingConfirmationWhatsApp } = require('./booking-confirmation-whatsapp-helper');
 
 /** Instant push to all admin phones (HRO Admin app) — best-effort. */
 async function pushBookingToAdmins(db, details) {
@@ -122,10 +123,23 @@ exports.handler = async (event) => {
       jobNumber: (job && (job.job_number || job.jobNumber)) || row.job_number,
     };
 
-    // App push first (instant), then the owner email (slow SMTP).
+    // App push first (instant), then customer WhatsApp confirmation + owner email.
     if (!client.error) {
       await pushBookingToAdmins(client.admin, details).catch((err) =>
         console.error('[booking-notify-background] admin push failed:', err && err.message)
+      );
+      await maybeSendOnlineBookingConfirmationWhatsApp(client.admin, {
+        phone: phoneNorm,
+        customerName,
+        customerId,
+        jobNumber: details.jobNumber,
+        scheduledDate: details.scheduledDate,
+        scheduledTimeSlot: details.scheduledTimeSlot,
+        customTime: details.customTime,
+        bookingSource: row.booking_source,
+        bookingDomain: row.booking_domain,
+      }).catch((err) =>
+        console.error('[booking-notify-background] customer WA failed:', err && err.message)
       );
     }
 

@@ -68,13 +68,17 @@ import {
   WHATSAPP_THREAD_COLUMNS,
   WHATSAPP_THREAD_LIMIT,
   WHATSAPP_THREAD_PAGE_SIZE,
-  countUnreadWhatsAppThreads,
+  countUnreadWhatsAppMessages,
+  countInboundUnreadInMessages,
   displayPhone,
   fetchWhatsAppInboxThreads,
+  fetchWhatsAppUnreadMessageCounts,
   inboxListRangeKey,
   inboxListRangeLabel,
   loadWhatsAppInboxListRange,
+  loadWhatsAppUnreadCounts,
   saveWhatsAppInboxListRange,
+  saveWhatsAppUnreadCounts,
   searchWhatsAppInboxThreads,
   formatBubbleTime,
   formatThreadTime,
@@ -96,6 +100,9 @@ import {
   previewMessageBody,
   formatAdminWhatsAppBody,
   isBookingBotStateMessage,
+  threadNeedsHumanReply,
+  toWhatsAppPhoneDigits,
+  unreadMessageCountForThread,
   upsertWhatsAppThreadMessageCache,
   writeWhatsAppInboxThreadsCache,
   writeWhatsAppThreadMessagesCache,
@@ -113,6 +120,7 @@ import {
   type InboxPhotoSlide,
 } from '@/components/whatsapp/WhatsAppInboxPhotoViewer';
 import { WhatsAppAvatar, WhatsAppTicks } from '@/components/whatsapp/WhatsAppTicks';
+import { WhatsAppLogo, WhatsAppUnreadBadge } from '@/components/whatsapp/WhatsAppLogo';
 import {
   fetchApprovedWhatsAppTemplates,
   getWhatsAppMediaBytesCached,
@@ -126,8 +134,20 @@ import {
   WHATSAPP_ATTACH_ACCEPT,
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
-import { quickReplyBookingUrl } from '@/lib/whatsappQuickMessages';
+import {
+  buildQuickHelloTemplate,
+  quickReplyBookingUrl,
+  waterFilterServiceFromLabel,
+} from '@/lib/whatsappQuickMessages';
+import {
+  clearWhatsAppLocalDeviceData,
+  buildWhatsAppLocalBackup,
+  readWhatsAppLocalBackupFile,
+  restoreWhatsAppLocalBackup,
+  saveWhatsAppLocalBackupFile,
+} from '@/lib/whatsappLocalBackup';
 import { registerNativeBackHandler, tryNativeBackHandlers } from '@/lib/nativeBackButton';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -135,15 +155,29 @@ function dayKey(iso: string): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
-/** Soft dark chat wallpaper — lower contrast to reduce eye strain. */
+/** Mobile / APK: Enter inserts a newline. Desktop: Enter sends (Shift+Enter = newline). */
+function isMobileWhatsAppComposer(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    if (Capacitor.isNativePlatform()) return true;
+  } catch {
+    /* ignore */
+  }
+  return (
+    window.matchMedia('(max-width: 767px)').matches ||
+    window.matchMedia('(pointer: coarse)').matches
+  );
+}
+
+/** Soft charcoal chat wallpaper — warm, low contrast. */
 const CHAT_THREAD_BG_DARK: CSSProperties = {
-  backgroundColor: '#0e1519',
+  backgroundColor: '#0b141a',
   backgroundImage: [
-    'radial-gradient(ellipse at 18% 0%, rgba(28, 48, 56, 0.55) 0%, transparent 55%)',
-    'radial-gradient(ellipse at 82% 100%, rgba(22, 40, 48, 0.45) 0%, transparent 50%)',
+    'radial-gradient(ellipse at 18% 0%, rgba(17, 27, 33, 0.9) 0%, transparent 55%)',
+    'radial-gradient(ellipse at 82% 100%, rgba(11, 20, 26, 0.85) 0%, transparent 50%)',
     `url("data:image/svg+xml,${encodeURIComponent(
       `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'>
-        <g fill='%23ffffff' fill-opacity='0.022'>
+        <g fill='%23e9edef' fill-opacity='0.03'>
           <path d='M20 40c8-14 28-14 36 0 8 14-4 32-18 32s-26-18-18-32z'/>
           <path d='M78 78c6-10 20-10 26 0 6 10-3 24-13 24s-19-14-13-24z'/>
           <circle cx='96' cy='28' r='3'/>
@@ -194,13 +228,59 @@ type Props = {
 
 const QUICK_ACTION_LABELS: Record<WhatsAppBookingQuickAction, string> = {
   book_service: 'Book service',
-  request_location: 'Request location',
-  request_photo: 'Request photo',
+  request_location: 'Ask location',
+  request_photo: 'Ask photo',
   request_building_flat: 'Ask flat / building',
   request_name: 'Ask name',
   water_filter_service: 'Water Filter Service',
   book_location_photo: 'Book · location + photo',
 };
+
+const BOOK_FLOW_ACTIONS = new Set<WhatsAppBookingQuickAction>([
+  'book_service',
+  'book_location_photo',
+  'water_filter_service',
+]);
+
+type InboxQuickMessageAction = 'send_hello' | 'call_shortly' | 'thanks_reply';
+
+const QUICK_MESSAGE_LABELS: Record<InboxQuickMessageAction, string> = {
+  send_hello: 'Send hello',
+  call_shortly: 'We’ll call you shortly',
+  thanks_reply: 'Thanks — noted',
+};
+
+function quickActionConfirmCopy(
+  action: WhatsAppBookingQuickAction,
+  windowIsOpen: boolean
+): { title: string; description: string; confirm: string } {
+  const title = QUICK_ACTION_LABELS[action];
+  if (action === 'book_service') {
+    return {
+      title,
+      description: windowIsOpen
+        ? 'Starts the booking flow on WhatsApp (date / time / details). Customer replies in this chat.'
+        : '24h window closed — sends a cold book template; booking continues when they reply.',
+      confirm: windowIsOpen ? 'Start booking' : 'Send book template',
+    };
+  }
+  if (BOOK_FLOW_ACTIONS.has(action)) {
+    return {
+      title,
+      description: windowIsOpen
+        ? 'Starts a guided WhatsApp flow for this customer.'
+        : '24h window closed — sends a cold template and continues when they reply.',
+      confirm: windowIsOpen ? 'Start on WhatsApp' : 'Send template & wait',
+    };
+  }
+  return {
+    title,
+    description: windowIsOpen
+      ? 'Asks the customer for this info only — does not start booking. Use Book service to book.'
+      : '24h window closed — sends an ask template only (no booking). Continues when they reply.',
+    confirm: windowIsOpen ? 'Send ask' : 'Send template',
+  };
+}
 
 function InboxChatPhoto({
   row,
@@ -251,11 +331,11 @@ function InboxChatPhoto({
           loading="lazy"
         />
       ) : failed ? (
-        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#7d8f99]">
+        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#667781]">
           Could not load photo
         </span>
       ) : (
-        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#7d8f99]">
+        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#667781]">
           <Loader2 className="mr-1 h-4 w-4 animate-spin" />
           Loading photo…
         </span>
@@ -306,7 +386,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [templatesHint, setTemplatesHint] = useState<string | null>(null);
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('');
   const [templateParams, setTemplateParams] = useState<string[]>([]);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [readMap, setReadMap] = useState<Record<string, string>>(() => loadWhatsAppReadMap());
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>(() =>
+    loadWhatsAppUnreadCounts()
+  );
   const [listRange, setListRange] = useState<WhatsAppInboxListRange>(() =>
     loadWhatsAppInboxListRange()
   );
@@ -336,8 +420,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newChatPhone, setNewChatPhone] = useState('');
   const [waterFilterOpen, setWaterFilterOpen] = useState(false);
-  const [quickActionConfirm, setQuickActionConfirm] =
-    useState<WhatsAppBookingQuickAction | null>(null);
+  const [quickActionConfirm, setQuickActionConfirm] = useState<
+    WhatsAppBookingQuickAction | InboxQuickMessageAction | null
+  >(null);
   const [quickActionBusy, setQuickActionBusy] = useState(false);
 
   /** Android back / header Back: close overlay → leave chat → exit inbox. */
@@ -370,6 +455,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       }
       if (selectedPhone) {
         setSelectedPhone(null);
+        // Drop keyboard focus so Esc does not leave a white focus ring on a chat row.
+        queueMicrotask(() => {
+          const el = document.activeElement;
+          if (el instanceof HTMLElement) el.blur();
+        });
         return true;
       }
       return false;
@@ -384,6 +474,20 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     selectedPhone,
   ]);
 
+  /** Esc → same as Android back: close overlay, else leave chat to Chats list (not exit inbox). */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (tryNativeBackHandlers()) {
+        e.preventDefault();
+        const el = document.activeElement;
+        if (el instanceof HTMLElement) el.blur();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const handleChromeBack = useCallback(() => {
     if (tryNativeBackHandlers()) return;
     onBack?.();
@@ -395,6 +499,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const stickToBottomRef = useRef(true);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const backupImportInputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedPhoneRef = useRef(selectedPhone);
   selectedPhoneRef.current = selectedPhone;
@@ -436,7 +541,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
     attachFileRef.current = file;
     setAttachFile(file);
-    // After drag/drop or picker, focus composer so Enter sends
+    // After drag/drop or picker, focus composer for caption / typing
     requestAnimationFrame(() => {
       composerRef.current?.focus();
     });
@@ -457,15 +562,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const loadInbox = useCallback(async (opts?: { soft?: boolean; force?: boolean }) => {
     const rangeKey = inboxListRangeKey(listRangeRef.current);
     const cached = peekWhatsAppInboxThreadsCache({ rangeKey });
-    const cacheFresh = isWhatsAppInboxListCacheFresh(cached);
     // Soft refresh must NOT paint stale cache over live/optimistic patches.
     if (cached?.threads?.length && !opts?.force && !opts?.soft) {
       setThreads(cached.threads);
       setLoading(false);
-    }
-    // Fresh cache + not forced → skip network (realtime / soft still refresh)
-    if (cacheFresh && !opts?.force && !opts?.soft) {
-      setLoading(false);
+      // Forever on-device — skip network until Refresh / range change / soft realtime.
       return;
     }
     if (!opts?.soft && !(cached?.threads?.length)) setLoading(true);
@@ -481,10 +582,91 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       }
       setThreads(result.threads);
       writeWhatsAppInboxThreadsCache(result.threads, { rangeKey });
+      if (!opts?.soft) {
+        const map = loadWhatsAppReadMap();
+        void fetchWhatsAppUnreadMessageCounts(supabase, result.threads, map).then((counts) => {
+          if (!counts || !Object.keys(counts).length) return;
+          setUnreadCounts((prev) => {
+            const next = { ...prev, ...counts };
+            for (const t of result.threads) {
+              if (!isWhatsAppThreadUnread(t, map)) {
+                delete next[t.phone_e164];
+              }
+            }
+            saveWhatsAppUnreadCounts(next);
+            return next;
+          });
+        });
+      }
     } finally {
       if (!opts?.soft) setLoading(false);
     }
   }, []);
+
+  const runLocalBackupExport = useCallback(async (includeMedia: boolean) => {
+    const toastId = toast.loading(includeMedia ? 'Exporting chats + media…' : 'Exporting chats…');
+    try {
+      const backup = await buildWhatsAppLocalBackup({ includeMedia });
+      const saved = await saveWhatsAppLocalBackupFile(backup);
+      if (!saved.ok) throw new Error(saved.error || 'Export failed');
+      const phones = Object.keys(backup.messagesByPhone || {}).length;
+      toast.success(
+        includeMedia
+          ? `Exported ${backup.threads.length} chats · ${phones} threads · ${backup.media?.length || 0} files`
+          : `Exported ${backup.threads.length} chats · ${phones} threads (text)`,
+        { id: toastId }
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Export failed', { id: toastId });
+    }
+  }, []);
+
+  const runLocalBackupImport = useCallback(async (file: File) => {
+    const toastId = toast.loading('Importing local backup…');
+    try {
+      const backup = await readWhatsAppLocalBackupFile(file);
+      const result = await restoreWhatsAppLocalBackup(backup);
+      const rangeKey = inboxListRangeKey(listRangeRef.current);
+      const cached = peekWhatsAppInboxThreadsCache({ rangeKey });
+      if (cached?.threads?.length) setThreads(cached.threads);
+      if (selectedPhoneRef.current) {
+        const msgs = peekWhatsAppThreadMessagesCache(selectedPhoneRef.current);
+        if (msgs?.messages?.length) {
+          setThreadMessages(msgs.messages);
+          setThreadHasMoreOlder(Boolean(msgs.hasMoreOlder));
+        }
+      }
+      setReadMap(loadWhatsAppReadMap());
+      toast.success(
+        `Imported ${result.threads} chats · ${result.phones} threads` +
+          (result.media ? ` · ${result.media} files` : ''),
+        { id: toastId }
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Import failed', { id: toastId });
+    }
+  }, []);
+
+  const runClearLocalCache = useCallback(async () => {
+    if (
+      !window.confirm(
+        'Clear all on-device WhatsApp cache (chats + saved photos/PDFs)?\n\nServer data is unchanged. You can export a backup first.'
+      )
+    ) {
+      return;
+    }
+    const toastId = toast.loading('Clearing local cache…');
+    try {
+      await clearWhatsAppLocalDeviceData({ includeMedia: true });
+      setThreads([]);
+      setThreadMessages([]);
+      setSelectedPhone(null);
+      toast.success('Local cache cleared', { id: toastId });
+      void loadInbox({ force: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Clear failed', { id: toastId });
+    }
+  }, [loadInbox]);
 
   const applyListRange = useCallback(
     (range: WhatsAppInboxListRange) => {
@@ -532,7 +714,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   const loadThread = useCallback(async (phone: string, opts?: { soft?: boolean; force?: boolean }) => {
     const seq = ++loadThreadSeqRef.current;
-    const cached = peekWhatsAppThreadMessagesCache(phone);
+    const phoneDigits = toWhatsAppPhoneDigits(phone);
+    if (!phoneDigits) return;
+    const cached = peekWhatsAppThreadMessagesCache(phoneDigits);
     const cacheFresh = isWhatsAppThreadCacheFresh(cached);
     // Soft refresh must not wipe newer optimistic/realtime messages with stale cache.
     if (cached?.messages?.length && !opts?.force && !opts?.soft) {
@@ -549,7 +733,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       const { data, error } = await supabase
         .from('whatsapp_messages')
         .select(WHATSAPP_THREAD_COLUMNS)
-        .eq('phone_e164', phone)
+        .eq('phone_e164', phoneDigits)
         .order('created_at', { ascending: false })
         .limit(WHATSAPP_THREAD_PAGE_SIZE);
       if (seq !== loadThreadSeqRef.current) return;
@@ -580,14 +764,27 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       threadHasMoreOlderRef.current = hasMore;
       setThreadMessages(next);
       setThreadHasMoreOlder(hasMore);
-      writeWhatsAppThreadMessagesCache(phone, next, hasMore);
+      writeWhatsAppThreadMessagesCache(phoneDigits, next, hasMore);
+      if (next.length) {
+        const readAt = loadWhatsAppReadMap()[phoneDigits];
+        const exact = countInboundUnreadInMessages(next, readAt);
+        setUnreadCounts((prev) => {
+          const cur = prev[phoneDigits] || 0;
+          if (cur === exact) return prev;
+          const updated = { ...prev };
+          if (exact > 0) updated[phoneDigits] = exact;
+          else delete updated[phoneDigits];
+          saveWhatsAppUnreadCounts(updated);
+          return updated;
+        });
+      }
     } finally {
       if (seq === loadThreadSeqRef.current && !opts?.soft) setThreadLoading(false);
     }
   }, []);
 
   const loadOlderMessages = useCallback(async () => {
-    const phone = selectedPhoneRef.current;
+    const phone = toWhatsAppPhoneDigits(selectedPhoneRef.current);
     if (!phone || threadLoadingOlderRef.current || !threadHasMoreOlderRef.current) return;
     const oldest = threadMessagesRef.current[0];
     if (!oldest?.created_at) return;
@@ -917,6 +1114,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   );
 
   const upsertMessageLocal = useCallback((row: WhatsAppMessageRow) => {
+    const rowPhone = toWhatsAppPhoneDigits(row.phone_e164);
+    const selected = toWhatsAppPhoneDigits(selectedPhoneRef.current);
     setThreads((prev) => {
       const next = patchThreadFromMessage(prev, row);
       writeWhatsAppInboxThreadsCache(next, {
@@ -924,7 +1123,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       });
       return next;
     });
-    if (row.phone_e164 === selectedPhoneRef.current) {
+    if (rowPhone && rowPhone === selected) {
       setThreadMessages((prev) => {
         const idx = prev.findIndex((m) => m.id === row.id);
         let next: WhatsAppMessageRow[];
@@ -934,19 +1133,26 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         } else {
           next = [...prev, row].slice(-WHATSAPP_THREAD_LIMIT);
         }
-        const cached = peekWhatsAppThreadMessagesCache(row.phone_e164);
+        const cached = peekWhatsAppThreadMessagesCache(rowPhone);
         writeWhatsAppThreadMessagesCache(
-          row.phone_e164,
+          rowPhone,
           next,
           cached?.hasMoreOlder ?? false
         );
         return next;
       });
       if (row.direction === 'inbound') {
-        invalidateInboundWindowCache(row.phone_e164);
+        invalidateInboundWindowCache(rowPhone);
       }
-    } else {
-      upsertWhatsAppThreadMessageCache(row.phone_e164, row);
+    } else if (rowPhone) {
+      upsertWhatsAppThreadMessageCache(rowPhone, row);
+      if (row.direction === 'inbound') {
+        setUnreadCounts((prev) => {
+          const next = { ...prev, [rowPhone]: (prev[rowPhone] || 0) + 1 };
+          saveWhatsAppUnreadCounts(next);
+          return next;
+        });
+      }
     }
   }, []);
 
@@ -1012,21 +1218,21 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       setThreadHasMoreOlder(false);
       return;
     }
+    const phoneDigits = toWhatsAppPhoneDigits(selectedPhone);
     stickToBottomRef.current = true;
     setShowJumpToLatest(false);
-    const cached = peekWhatsAppThreadMessagesCache(selectedPhone);
+    const cached = peekWhatsAppThreadMessagesCache(phoneDigits);
     if (cached?.messages?.length) {
+      // Paint cache immediately, then soft-fetch so sidebar preview can't drift from empty thread.
       setThreadMessages(cached.messages);
       setThreadHasMoreOlder(Boolean(cached.hasMoreOlder));
-      void loadThread(selectedPhone, {
-        soft: true,
-        force: !isWhatsAppThreadCacheFresh(cached),
-      });
-    } else {
-      setThreadHasMoreOlder(false);
-      setThreadMessages([]);
-      void loadThread(selectedPhone);
+      setThreadLoading(false);
+      void loadThread(phoneDigits, { soft: true });
+      return;
     }
+    setThreadHasMoreOlder(false);
+    setThreadMessages([]);
+    void loadThread(phoneDigits, { force: true });
   }, [selectedPhone, loadThread]);
 
   const lastThreadMessageId = threadMessages[threadMessages.length - 1]?.id ?? null;
@@ -1142,8 +1348,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, [threads, searchThreads, selectedPhone]);
 
   const unreadCount = useMemo(
-    () => countUnreadWhatsAppThreads(threads, readMap),
-    [threads, readMap]
+    () => countUnreadWhatsAppMessages(threads, readMap, unreadCounts),
+    [threads, readMap, unreadCounts]
   );
 
   useEffect(() => {
@@ -1153,8 +1359,18 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   useEffect(() => {
     if (!selectedPhone || !activeThread) return;
     if (activeThread.last_direction !== 'inbound') return;
+    const phone = toWhatsAppPhoneDigits(selectedPhone);
     markWhatsAppThreadRead(selectedPhone, activeThread.last_at);
     setReadMap(loadWhatsAppReadMap());
+    if (phone) {
+      setUnreadCounts((prev) => {
+        if (!prev[phone]) return prev;
+        const next = { ...prev };
+        delete next[phone];
+        saveWhatsAppUnreadCounts(next);
+        return next;
+      });
+    }
   }, [selectedPhone, activeThread?.last_at, activeThread?.last_direction]);
 
   const filteredThreads = useMemo(() => {
@@ -1177,12 +1393,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   const rangeMenuItem = (label: string, range: WhatsAppInboxListRange) => (
     <DropdownMenuItem
-      className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]"
+      className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
       onClick={() => applyListRange(range)}
     >
       <span className="flex-1">{label}</span>
       {isListRangeActive(range) ? (
-        <Check className="ml-2 h-4 w-4 shrink-0 text-[#2d9f78]" />
+        <Check className="ml-2 h-4 w-4 shrink-0 text-[#8696a0]" />
       ) : null}
     </DropdownMenuItem>
   );
@@ -1256,11 +1472,27 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   useEffect(() => {
     const count = selectedTemplate?.bodyParamCount ?? 0;
+    const defaultName = whatsappGreetingName(activeThread?.customer_name, 'there');
     setTemplateParams((prev) => {
-      if (prev.length === count) return prev;
-      return Array.from({ length: count }, (_, i) => prev[i] || '');
+      const next = Array.from({ length: count }, (_, i) => {
+        if (prev[i]?.trim()) return prev[i];
+        // Prefill first body var with customer name; leave the rest blank for custom entry.
+        if (i === 0) return defaultName;
+        return '';
+      });
+      if (prev.length === count && prev.every((v, i) => v === next[i])) return prev;
+      return next;
     });
-  }, [selectedTemplate?.bodyParamCount, selectedTemplateKey]);
+  }, [
+    selectedTemplate?.bodyParamCount,
+    selectedTemplateKey,
+    activeThread?.customer_name,
+  ]);
+
+  const openTemplatePicker = useCallback(() => {
+    setTemplatePickerOpen(true);
+    void loadTemplates(false);
+  }, [loadTemplates]);
 
   const handleSend = useCallback(async () => {
     const phone = selectedPhoneRef.current;
@@ -1268,7 +1500,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     const file = attachFileRef.current;
     if (!phone || sendingRef.current) return;
     if (!windowOpenRef.current) {
-      toast.error('24-hour window closed — use an approved template below');
+      toast.error('24-hour window closed — use Quick actions → Select template');
       return;
     }
     if (!file && !text) return;
@@ -1343,7 +1575,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     if (!selectedPhone || !selectedTemplate || sending) return;
     const needed = selectedTemplate.bodyParamCount;
     if (needed > 0 && templateParams.some((p) => !String(p).trim())) {
-      toast.error('Fill all template variables');
+      toast.error('Fill all template fields');
       return;
     }
     setSending(true);
@@ -1363,6 +1595,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       toast.success('Template sent');
       setSelectedTemplateKey('');
       setTemplateParams([]);
+      setTemplatePickerOpen(false);
       bumpThreadAfterOutbound({
         phone: selectedPhone,
         body: selectedTemplate.name,
@@ -1376,7 +1609,83 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
   };
 
-  const runQuickAction = async (action: WhatsAppBookingQuickAction) => {
+  const runQuickMessage = async (action: InboxQuickMessageAction) => {
+    if (!selectedPhone || quickActionBusy) return;
+    setQuickActionBusy(true);
+    try {
+      const name = whatsappGreetingName(activeThread?.customer_name, 'there');
+      const who = waterFilterServiceFromLabel({
+        customerName: name,
+        brand: threadBrand,
+      });
+      const bodies: Record<InboxQuickMessageAction, string> = {
+        send_hello: `Hi ${name}, this is ${who}. Please reply on this chat if you need help with your water purifier.`,
+        call_shortly: `Hi ${name}, thanks for reaching out. We’ll call you shortly.`,
+        thanks_reply: `Hi ${name}, thanks — we’ve noted your message. We’ll update you here.`,
+      };
+
+      if (!windowOpen && action === 'send_hello') {
+        const payload = buildQuickHelloTemplate(quickReplyContext);
+        const result = await sendAdminWhatsAppTemplate({
+          to: selectedPhone,
+          templateName: payload.templateName,
+          languageCode: payload.language || 'en',
+          bodyParams: payload.bodyParams,
+          customerId: activeThread?.customer_id,
+          source: 'inbox',
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Could not send hello');
+          return;
+        }
+        toast.success('Hello template sent');
+        setQuickActionConfirm(null);
+        bumpThreadAfterOutbound({
+          phone: selectedPhone,
+          body: payload.templateName,
+          msgType: 'template',
+          templateName: payload.templateName,
+          customerId: activeThread?.customer_id,
+        });
+        void loadThread(selectedPhone, { soft: true, force: true });
+        return;
+      }
+
+      if (!windowOpen) {
+        toast.error('24h window closed — open with Hello / Book service, or wait for a customer reply.');
+        return;
+      }
+
+      const text = bodies[action];
+      const result = await sendAdminWhatsAppText({
+        to: selectedPhone,
+        text,
+        customerId: activeThread?.customer_id,
+        source: 'inbox',
+      });
+      if (!result.ok) {
+        toast.error(result.error || 'Could not send message');
+        return;
+      }
+      toast.success(`${QUICK_MESSAGE_LABELS[action]} sent`);
+      setQuickActionConfirm(null);
+      bumpThreadAfterOutbound({
+        phone: selectedPhone,
+        body: text,
+        msgType: 'text',
+        customerId: activeThread?.customer_id,
+      });
+      void loadThread(selectedPhone, { soft: true, force: true });
+    } finally {
+      setQuickActionBusy(false);
+    }
+  };
+
+  const runQuickAction = async (action: WhatsAppBookingQuickAction | InboxQuickMessageAction) => {
+    if (action === 'send_hello' || action === 'call_shortly' || action === 'thanks_reply') {
+      await runQuickMessage(action);
+      return;
+    }
     if (!selectedPhone || quickActionBusy) return;
     setQuickActionBusy(true);
     try {
@@ -1385,17 +1694,25 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         action,
         customerId: activeThread?.customer_id,
         customerName: activeThread?.customer_name,
+        brand: threadBrand === 'elevenro' ? 'elevenro' : 'hydrogenro',
       });
       if (!result.ok) {
         toast.error(result.error || 'Quick action failed');
         return;
       }
+      const isBook = action === 'book_service';
       if (result.via === 'template') {
         toast.success(
-          `Cold template sent${result.templateName ? ` (${result.templateName})` : ''}. Bot continues when they reply.`
+          isBook
+            ? `Book template sent${result.templateName ? ` (${result.templateName})` : ''}. Booking continues when they reply.`
+            : `Ask template sent${result.templateName ? ` (${result.templateName})` : ''} — not a booking.`
         );
       } else {
-        toast.success(`${QUICK_ACTION_LABELS[action]} started on WhatsApp`);
+        toast.success(
+          isBook
+            ? 'Booking started on WhatsApp'
+            : `${QUICK_ACTION_LABELS[action]} sent — booking not started`
+        );
       }
       setQuickActionConfirm(null);
       bumpThreadAfterOutbound({
@@ -1490,25 +1807,28 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   };
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#121a1f]">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0b141a]">
       {!hideHeader ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-[#253038] bg-[#1a242c] px-3 py-2">
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#2a3942] bg-[#111b21] px-3 py-2">
           {onBack ? (
             <button
               type="button"
               onClick={handleChromeBack}
-              className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-[#9aaeb8] transition hover:bg-white/5"
+              className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-[#8696a0] transition hover:bg-white/5"
             >
               <ArrowLeft className="h-4 w-4" />
               Back
             </button>
           ) : null}
-          <h1 className="text-base font-semibold text-[#e4eaec]">WhatsApp</h1>
-          {unreadCount > 0 ? (
-            <span className="rounded-full bg-[#2d9f78] px-2 py-0.5 text-[11px] font-semibold text-white">
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
-          ) : null}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <WhatsAppLogo size={18} className="text-[#e9edef]" />
+            <h1 className="text-base font-semibold text-[#e9edef]">Inbox</h1>
+            {unreadCount > 0 ? (
+              <span className="rounded-full bg-[#2a3942] px-2 py-0.5 text-[11px] font-semibold text-[#e9edef]">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -1516,36 +1836,36 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         {/* Chat list — dark WhatsApp sidebar */}
         <aside
           className={cn(
-            'relative flex min-h-0 w-full flex-col border-[#253038] bg-[#121a1f] md:w-[360px] md:shrink-0 md:border-r',
+            'relative flex min-h-0 w-full flex-col border-[#2a3942] bg-[#0b141a] md:w-[360px] md:shrink-0 md:border-r',
             showChat ? 'hidden md:flex' : 'flex'
           )}
         >
-          <div className="shrink-0 border-b border-[#253038] bg-[#1a242c] px-3 pb-3 pt-2.5 md:px-3.5 md:pt-3">
+          <div className="shrink-0 border-b border-[#2a3942] bg-[#111b21] px-3 pb-3 pt-2.5 md:px-3.5 md:pt-3">
             <div className="mb-2.5 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 {!hideHeader ? (
-                  <h2 className="text-[20px] font-semibold tracking-tight text-[#e4eaec] md:hidden">
-                    WhatsApp
+                  <h2 className="text-[20px] font-semibold tracking-tight text-[#e9edef] md:hidden">
+                    Chats
                     {unreadCount > 0 ? (
-                      <span className="ml-2 align-middle text-[12px] font-semibold text-[#2d9f78]">
+                      <span className="ml-2 align-middle text-[12px] font-semibold text-[#8696a0]">
                         {unreadCount > 99 ? '99+' : unreadCount} new
                       </span>
                     ) : null}
                   </h2>
                 ) : (
-                  <h2 className="text-[15px] font-medium tracking-tight text-[#e4eaec] md:hidden">
+                  <h2 className="text-[15px] font-medium tracking-tight text-[#e9edef] md:hidden">
                     Chats
                     {unreadCount > 0 ? (
-                      <span className="ml-2 align-middle text-[12px] font-semibold text-[#2d9f78]">
+                      <span className="ml-2 align-middle text-[12px] font-semibold text-[#8696a0]">
                         {unreadCount > 99 ? '99+' : unreadCount} new
                       </span>
                     ) : null}
                   </h2>
                 )}
-                <h2 className="hidden text-[17px] font-semibold tracking-tight text-[#e4eaec] md:block">
+                <h2 className="hidden text-[17px] font-semibold tracking-tight text-[#e9edef] md:block">
                   Chats
                 </h2>
-                <p className="mt-0.5 hidden text-[11px] text-[#7d8f99] md:block">
+                <p className="mt-0.5 hidden text-[11px] text-[#667781] md:block">
                   {appliedSearch
                     ? `Search · ${filteredThreads.length}`
                     : unreadCount > 0
@@ -1558,7 +1878,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-[#9aaeb8] transition hover:bg-[#2c3840] hover:text-[#e4eaec] disabled:opacity-50"
+                      className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-[#8696a0] transition hover:bg-[#202c33] hover:text-[#e9edef] disabled:opacity-50"
                       disabled={purging}
                       title="More"
                     >
@@ -1569,51 +1889,97 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       )}
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64 border-[#2c3840] bg-[#243038] text-[#e4eaec]">
+                  <DropdownMenuContent align="end" className="w-64 border-[#202c33] bg-[#202c33] text-[#e9edef]">
                     <DropdownMenuItem
-                      className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]"
+                      className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
                       onClick={() => setNewChatOpen(true)}
                     >
                       <MessageSquarePlus className="mr-2 h-4 w-4" />
                       New chat
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]"
+                      className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
                       onClick={() => setWaterFilterOpen(true)}
                     >
                       <MapPin className="mr-2 h-4 w-4" />
                       Water Filter Service
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator className="bg-[#2c3840]" />
+                    <DropdownMenuSeparator className="bg-[#202c33]" />
                     <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]">
+                      <DropdownMenuSubTrigger className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]">
                         <Calendar className="mr-2 h-4 w-4" />
                         Show chats
                       </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-56 border-[#2c3840] bg-[#243038] text-[#e4eaec]">
+                      <DropdownMenuSubContent className="w-56 border-[#202c33] bg-[#202c33] text-[#e9edef]">
                         {rangeMenuItem("Today", 'today')}
                         {rangeMenuItem('Last 7 days', '7d')}
                         {rangeMenuItem('Last 30 days', '30d')}
                         {rangeMenuItem('All chats', 'all')}
                         <DropdownMenuItem
-                          className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]"
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
                           onClick={() => setCustomRangeOpen(true)}
                         >
                           <span className="flex-1">Custom date…</span>
                           {typeof listRange === 'object' ? (
-                            <Check className="ml-2 h-4 w-4 shrink-0 text-[#2d9f78]" />
+                            <Check className="ml-2 h-4 w-4 shrink-0 text-[#8696a0]" />
                           ) : null}
                         </DropdownMenuItem>
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
                     <DropdownMenuSub>
-                      <DropdownMenuSubTrigger className="cursor-pointer focus:bg-[#2c3840] focus:text-[#e4eaec]">
+                      <DropdownMenuSubTrigger className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]">
                         <Settings className="mr-2 h-4 w-4" />
                         Chat settings
                       </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-56 border-[#2c3840] bg-[#243038] text-[#e4eaec]">
+                      <DropdownMenuSubContent className="w-56 border-[#202c33] bg-[#202c33] text-[#e9edef]">
                         <DropdownMenuItem
-                          className="cursor-pointer text-red-400 focus:bg-[#2c3840] focus:text-red-400"
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
+                          onClick={() => void loadInbox({ force: true })}
+                        >
+                          Refresh chat list
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
+                          disabled={!selectedPhone}
+                          onClick={() =>
+                            selectedPhone
+                              ? void loadThread(selectedPhone, { force: true })
+                              : undefined
+                          }
+                        >
+                          Refresh open chat
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="bg-[#2a3942]" />
+                        <DropdownMenuItem
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
+                          onClick={() => void runLocalBackupExport(false)}
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          Export chats (text)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
+                          onClick={() => void runLocalBackupExport(true)}
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          Export chats + media
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
+                          onClick={() => backupImportInputRef.current?.click()}
+                        >
+                          Import local backup
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="cursor-pointer text-red-400 focus:bg-[#202c33] focus:text-red-400"
+                          onClick={() => void runClearLocalCache()}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Clear on-device cache
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="bg-[#2a3942]" />
+                        <DropdownMenuItem
+                          className="cursor-pointer text-red-400 focus:bg-[#202c33] focus:text-red-400"
                           disabled={!selectedPhone}
                           onClick={() =>
                             selectedPhone
@@ -1625,7 +1991,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           Delete chat (keep files)
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          className="cursor-pointer text-red-400 focus:bg-[#2c3840] focus:text-red-400"
+                          className="cursor-pointer text-red-400 focus:bg-[#202c33] focus:text-red-400"
                           disabled={!selectedPhone}
                           onClick={() =>
                             selectedPhone ? void runPurge({ phoneE164: selectedPhone }) : undefined
@@ -1642,12 +2008,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             </div>
             <div className="flex items-center gap-1.5">
               <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#7d8f99]" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#667781]" />
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search name, phone, email…"
-                  className="h-9 rounded-xl border-0 bg-[#2c3840] pl-9 pr-8 text-[13px] text-[#e4eaec] shadow-none placeholder:text-[#7d8f99] focus-visible:ring-1 focus-visible:ring-[#2d9f78]/40"
+                  className="h-9 rounded-xl border-0 bg-[#202c33] pl-9 pr-8 text-[13px] text-[#e9edef] shadow-none placeholder:text-[#667781] focus-visible:ring-1 focus-visible:ring-[#8696a0]/40"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -1662,7 +2028,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 {query || appliedSearch ? (
                   <button
                     type="button"
-                    className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-[#7d8f99] hover:bg-[#121a1f] hover:text-[#e4eaec]"
+                    className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-[#667781] hover:bg-[#0b141a] hover:text-[#e9edef]"
                     title="Clear search"
                     onClick={clearSearch}
                   >
@@ -1673,7 +2039,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               <Button
                 type="button"
                 size="sm"
-                className="h-9 shrink-0 cursor-pointer rounded-xl bg-[#2d9f78] px-3.5 text-[12px] font-semibold text-white shadow-sm hover:bg-[#268a68]"
+                className="h-9 shrink-0 cursor-pointer rounded-xl bg-[#2a3942] px-3.5 text-[12px] font-semibold text-[#e9edef] shadow-sm hover:bg-[#3b4a54]"
                 disabled={searchLoading || query.trim().length < 2}
                 onClick={() => void runSearch()}
               >
@@ -1685,11 +2051,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               </Button>
             </div>
             {appliedSearch ? (
-              <p className="mt-2 truncate px-0.5 text-[11px] text-[#7d8f99]">
+              <p className="mt-2 truncate px-0.5 text-[11px] text-[#667781]">
                 Results for “{appliedSearch}” ·{' '}
                 <button
                   type="button"
-                  className="cursor-pointer font-medium text-[#2d9f78] underline-offset-2 hover:underline"
+                  className="cursor-pointer font-medium text-[#e9edef] underline-offset-2 hover:underline"
                   onClick={clearSearch}
                 >
                   {listRangeSubtitle}
@@ -1700,13 +2066,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 py-1.5 md:px-2">
             {listBusy ? (
-              <div className="flex items-center justify-center gap-2 p-8 text-sm text-[#7d8f99]">
+              <div className="flex items-center justify-center gap-2 p-8 text-sm text-[#667781]">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {searchLoading ? 'Searching…' : 'Loading…'}
               </div>
             ) : filteredThreads.length === 0 ? (
               <div className="space-y-3 p-8 text-center">
-                <p className="text-sm text-[#7d8f99]">
+                <p className="text-sm text-[#667781]">
                   {appliedSearch.trim()
                     ? 'No matching customers or chats'
                     : listRange === 'today'
@@ -1716,7 +2082,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 {!appliedSearch.trim() ? (
                   <Button
                     type="button"
-                    className="cursor-pointer rounded-xl bg-[#2d9f78] text-white hover:bg-[#268a68]"
+                    className="cursor-pointer rounded-xl bg-[#2a3942] text-[#e9edef] hover:bg-[#3b4a54]"
                     onClick={() => setNewChatOpen(true)}
                   >
                     <MessageSquarePlus className="mr-2 h-4 w-4" />
@@ -1730,6 +2096,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   const active = t.phone_e164 === selectedPhone;
                   const open = isWithinCustomerServiceWindow(t.inbound_at);
                   const unread = isWhatsAppThreadUnread(t, readMap);
+                  const needsHuman = threadNeedsHumanReply(t.last_body);
                   const failed =
                     t.has_failed ||
                     isFailedDeliveryStatus(t.last_status) ||
@@ -1741,28 +2108,25 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         type="button"
                         onClick={() => setSelectedPhone(t.phone_e164)}
                         className={cn(
-                          'group relative flex w-full cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors',
-                          active ? 'bg-[#2c3840]' : 'hover:bg-[#1e2a31]'
+                          'group relative flex w-full cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0',
+                          active ? 'bg-[#202c33]' : 'hover:bg-[#202c33]'
                         )}
                       >
                         {active ? (
                           <span
-                            className="absolute left-0 top-1/2 h-8 w-[3px] -translate-y-1/2 rounded-r-full bg-[#2d9f78]"
+                            className="absolute left-0 top-1/2 h-8 w-[3px] -translate-y-1/2 rounded-r-full bg-[#8696a0]"
                             aria-hidden
                           />
                         ) : null}
                         <WhatsAppAvatar
                           name={t.customer_name}
-                          className={cn(
-                            'ring-2 ring-[#121a1f]',
-                            active ? 'bg-[#1a5c4e] text-[#e4eaec]' : null
-                          )}
+                          className="ring-2 ring-[#0b141a]"
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-baseline justify-between gap-2">
                             <p
                               className={cn(
-                                'truncate text-[14.5px] tracking-tight text-[#e4eaec]',
+                                'truncate text-[14.5px] tracking-tight text-[#e9edef]',
                                 unread ? 'font-semibold' : 'font-medium'
                               )}
                             >
@@ -1771,7 +2135,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                             <span
                               className={cn(
                                 'shrink-0 text-[11px] tabular-nums',
-                                unread ? 'font-semibold text-[#2d9f78]' : 'text-[#7d8f99]'
+                                unread ? 'font-semibold text-[#e9edef]' : 'text-[#667781]'
                               )}
                             >
                               {formatThreadTime(t.last_at)}
@@ -1784,8 +2148,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                 failed
                                   ? 'text-red-400'
                                   : unread
-                                    ? 'font-medium text-[#9aaeb8]'
-                                    : 'text-[#7d8f99]'
+                                    ? 'font-medium text-[#8696a0]'
+                                    : 'text-[#667781]'
                               )}
                             >
                               {failed ? 'Not delivered · ' : ''}
@@ -1797,8 +2161,16 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               {t.last_body}
                             </p>
                             {unread ? (
-                              <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[#2d9f78] px-1 text-[10px] font-bold text-[#121a1f] shadow-sm">
-                                1
+                              <WhatsAppUnreadBadge
+                                count={unreadMessageCountForThread(t, readMap, unreadCounts)}
+                              />
+                            ) : null}
+                            {needsHuman ? (
+                              <span
+                                className="shrink-0 rounded-md bg-[#3b2f1a] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#f0c27a]"
+                                title="Customer asked for a human reply on this chat"
+                              >
+                                Needs reply
                               </span>
                             ) : null}
                             {!open && !failed ? (
@@ -1823,7 +2195,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           <button
             type="button"
             onClick={() => setNewChatOpen(true)}
-            className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-10 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-[#2d9f78] text-white shadow-lg transition active:scale-95 md:hidden"
+            className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-10 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-[#2a3942] text-[#e9edef] shadow-lg transition hover:bg-[#3b4a54] active:scale-95 md:hidden"
             title="New chat"
             aria-label="New chat"
           >
@@ -1834,7 +2206,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         {/* Chat pane — sticky header + scroll messages + sticky composer */}
         <section
           className={cn(
-            'relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#0e1519]',
+            'relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#0b141a]',
             showList && !showChat ? 'hidden md:flex' : 'flex'
           )}
           onDragEnter={(e) => {
@@ -1863,31 +2235,25 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         >
           {dragOver && windowOpen ? (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/30 px-4">
-              <div className="rounded-2xl border-2 border-dashed border-[#3cb87a] bg-white px-8 py-10 text-center shadow-xl">
-                <Paperclip className="mx-auto mb-2 h-8 w-8 text-[#3cb87a]" />
-                <p className="text-sm font-semibold text-[#121a1f]">Drop photo or PDF</p>
+              <div className="rounded-2xl border-2 border-dashed border-[#00a884] bg-[#e9edef] px-8 py-10 text-center shadow-xl">
+                <Paperclip className="mx-auto mb-2 h-8 w-8 text-[#00a884]" />
+                <p className="text-sm font-semibold text-[#0b141a]">Drop photo or PDF</p>
                 <p className="mt-1 text-xs text-[#6b7c86]">JPEG, PNG, WebP, PDF · max 4MB</p>
               </div>
             </div>
           ) : null}
 
           {!selectedPhone ? (
-            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#0e1519] p-8 text-center">
-              <img
-                src="/whatsapp.png"
-                alt=""
-                className="h-20 w-20 object-contain opacity-90"
-                width={80}
-                height={80}
-              />
-              <p className="text-[28px] font-light text-[#e4eaec]">WhatsApp CRM</p>
-              <p className="max-w-md text-sm text-[#7d8f99]">
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#0b141a] p-8 text-center">
+              <WhatsAppLogo size={48} className="text-[#e9edef]" />
+              <p className="text-[28px] font-light tracking-tight text-[#e9edef]">Messages</p>
+              <p className="max-w-md text-sm text-[#667781]">
                 Select a chat on the left, or start a new one.
               </p>
               <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
                 <Button
                   type="button"
-                  className="cursor-pointer bg-[#2d9f78] text-white hover:bg-[#268a68]"
+                  className="cursor-pointer bg-[#2a3942] text-[#e9edef] hover:bg-[#3b4a54]"
                   onClick={() => setNewChatOpen(true)}
                 >
                   <MessageSquarePlus className="mr-2 h-4 w-4" />
@@ -1897,10 +2263,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             </div>
           ) : (
             <>
-              <div className="flex shrink-0 items-center gap-1 border-b border-[#253038] bg-[#1a242c] px-1.5 py-2 sm:gap-2 sm:px-4">
+              <div className="flex shrink-0 items-center gap-1 border-b border-[#2a3942] bg-[#111b21] px-1.5 py-2 sm:gap-2 sm:px-4">
                 <button
                   type="button"
-                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5 md:hidden"
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/5 md:hidden"
                   onClick={() => setSelectedPhone(null)}
                   aria-label="Back to chats"
                 >
@@ -1909,13 +2275,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 <WhatsAppAvatar
                   name={activeThread?.customer_name}
                   size="sm"
-                  className="bg-[#6a7175] text-white"
+                  className="bg-[#5c636a] text-white"
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[16px] font-medium text-[#e4eaec]">
+                  <p className="truncate text-[16px] font-medium text-[#e9edef]">
                     {activeThread?.customer_name || displayPhone(selectedPhone)}
                   </p>
-                  <p className="truncate text-[12px] text-[#7d8f99]">
+                  <p className="truncate text-[12px] text-[#667781]">
                     {activeThread?.customer_name ? `${displayPhone(selectedPhone)} · ` : ''}
                     {getDocumentBrandLabel(threadBrand)}
                     {' · '}
@@ -1926,7 +2292,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 </div>
                 <button
                   type="button"
-                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5"
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/5"
                   title="Copy number"
                   onClick={() => void copyPhone()}
                 >
@@ -1936,8 +2302,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5 disabled:opacity-40"
+                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/5 disabled:opacity-40"
                       title="Quick actions"
+                      aria-label="Quick actions"
                       disabled={quickActionBusy}
                     >
                       {quickActionBusy ? (
@@ -1947,16 +2314,20 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       )}
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuContent align="end" className="w-56">
                     <DropdownMenuLabel>Quick actions</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       className="cursor-pointer"
-                      disabled={quickActionBusy}
-                      onClick={() => setWaterFilterOpen(true)}
+                      disabled={quickActionBusy || sending || !selectedPhone}
+                      onClick={() => openTemplatePicker()}
                     >
-                      Water Filter Service
+                      Select template…
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                      Booking
+                    </DropdownMenuLabel>
                     <DropdownMenuItem
                       className="cursor-pointer"
                       disabled={quickActionBusy}
@@ -1964,19 +2335,16 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     >
                       Book service
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                      Ask only
+                    </DropdownMenuLabel>
                     <DropdownMenuItem
                       className="cursor-pointer"
                       disabled={quickActionBusy}
-                      onClick={() => setQuickActionConfirm('request_location')}
+                      onClick={() => setWaterFilterOpen(true)}
                     >
-                      Request location
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="cursor-pointer"
-                      disabled={quickActionBusy}
-                      onClick={() => setQuickActionConfirm('request_photo')}
-                    >
-                      Request photo
+                      WFS · ask location
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="cursor-pointer"
@@ -1985,13 +2353,59 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     >
                       Ask name
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('request_location')}
+                    >
+                      Ask location
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('request_building_flat')}
+                    >
+                      Ask flat / building
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('request_photo')}
+                    >
+                      Ask photo
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                      Messages
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('send_hello')}
+                    >
+                      Send hello
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('call_shortly')}
+                    >
+                      We’ll call you shortly
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('thanks_reply')}
+                    >
+                      Thanks — noted
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5 disabled:opacity-40 md:text-[#7d8f99] md:hover:bg-white/5"
+                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/5 disabled:opacity-40 md:text-[#667781] md:hover:bg-white/5"
                       title="Customer"
                       disabled={!activeThread?.customer_id || reportLoading}
                     >
@@ -2025,7 +2439,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5 md:text-[#7d8f99] md:hover:bg-white/5"
+                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/5 md:text-[#667781] md:hover:bg-white/5"
                       title="More"
                     >
                       <MoreVertical className="h-4 w-4" />
@@ -2080,12 +2494,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   style={CHAT_THREAD_BG_DARK}
                 >
                 {threadLoading ? (
-                  <div className="flex justify-center py-10 text-sm text-[#7d8f99]">
+                  <div className="flex justify-center py-10 text-sm text-[#667781]">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Loading chat…
                   </div>
                 ) : threadMessages.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-[#7d8f99]">
+                  <p className="py-10 text-center text-sm text-[#667781]">
                     No messages in this chat
                   </p>
                 ) : (
@@ -2097,7 +2511,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         aria-hidden={!threadLoadingOlder}
                       >
                         {threadLoadingOlder ? (
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#7d8f99]">
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#667781]">
                             <Loader2 className="h-3 w-3 animate-spin" />
                             Loading older…
                           </span>
@@ -2126,7 +2540,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         <div key={`m-${m.id}`}>
                           {showDay ? (
                             <div className="my-3 flex justify-center">
-                              <span className="rounded-lg bg-[#161e24] px-3 py-1 text-[12px] font-medium text-[#7d8f99] shadow-sm">
+                              <span className="rounded-lg bg-[#0b141a] px-3 py-1 text-[12px] font-medium text-[#667781] shadow-sm">
                                 {formatDaySeparator(m.created_at)}
                               </span>
                             </div>
@@ -2136,10 +2550,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#f59e0b]">
                                 Booking bot (internal)
                               </p>
-                              <p className="whitespace-pre-wrap break-words text-[13px] leading-[18px] text-[#e4eaec]">
+                              <p className="whitespace-pre-wrap break-words text-[13px] leading-[18px] text-[#e9edef]">
                                 {formatAdminWhatsAppBody(m.body, { compact: false })}
                               </p>
-                              <p className="mt-1 text-right text-[10px] text-[#7d8f99]">
+                              <p className="mt-1 text-right text-[10px] text-[#667781]">
                                 {formatBubbleTime(m.created_at)}
                               </p>
                             </div>
@@ -2152,7 +2566,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       <div key={`m-${m.id}`}>
                         {showDay ? (
                           <div className="my-3.5 flex justify-center">
-                            <span className="rounded-lg bg-[#161e24] px-3 py-1 text-[12px] font-medium text-[#7d8f99] shadow-sm">
+                            <span className="rounded-lg bg-[#0b141a] px-3 py-1 text-[12px] font-medium text-[#667781] shadow-sm">
                               {formatDaySeparator(m.created_at)}
                             </span>
                           </div>
@@ -2166,8 +2580,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               failed
                                 ? 'rounded-br-sm border border-red-500/40 bg-[#3b1818] text-[#fecaca]'
                                 : outbound
-                                  ? 'rounded-br-sm bg-[#1a5c4e] text-[#e4eaec]'
-                                  : 'rounded-bl-sm bg-[#1e2a31] text-[#e4eaec]'
+                                  ? 'rounded-br-sm bg-[#005c4b] text-[#e9edef]'
+                                  : 'rounded-bl-sm bg-[#202c33] text-[#e9edef]'
                             )}
                           >
                             {failed ? (
@@ -2223,7 +2637,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                       <span className="block truncate text-sm font-medium">
                                         {m.filename || 'Document'}
                                       </span>
-                                      <span className="text-[11px] text-[#7d8f99]">
+                                      <span className="text-[11px] text-[#667781]">
                                         Tap to open
                                       </span>
                                     </span>
@@ -2231,7 +2645,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                   <button
                                     type="button"
                                     onClick={() => void downloadMedia(m)}
-                                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8]"
+                                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0]"
                                     title="Download"
                                     aria-label="Download file"
                                   >
@@ -2266,17 +2680,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               }
                               if (!text?.trim()) return null;
                               return (
-                                <p className="whitespace-pre-wrap break-words px-1 text-[14.2px] leading-[19px] text-[#e4eaec]">
+                                <p className="whitespace-pre-wrap break-words px-1 text-[14.2px] leading-[19px] text-[#e9edef]">
                                   {text}
                                 </p>
                               );
                             })()}
                             <div className="mt-0.5 flex items-center justify-end gap-1 px-1">
-                              <span className="text-[11px] leading-none text-[#7d8f99]">
+                              <span className="text-[11px] leading-none text-[#667781]">
                                 {formatBubbleTime(m.created_at)}
                               </span>
                               {outbound ? (
-                                <WhatsAppTicks status={m.status} failed={failed} className="text-[#7d8f99]" />
+                                <WhatsAppTicks status={m.status} failed={failed} className="text-[#667781]" />
                               ) : null}
                             </div>
                             {m.error_message ? (
@@ -2297,7 +2711,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <button
                     type="button"
                     onClick={scrollChatToLatest}
-                    className="absolute bottom-3 right-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-[#1a242c] text-[#9aaeb8] shadow-md ring-1 ring-white/10 transition hover:bg-[#2c3840] sm:right-6"
+                    className="absolute bottom-3 right-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-[#111b21] text-[#8696a0] shadow-md ring-1 ring-white/10 transition hover:bg-[#202c33] sm:right-6"
                     title="Jump to latest"
                     aria-label="Jump to latest messages"
                   >
@@ -2306,106 +2720,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 ) : null}
               </div>
 
-              <div className="shrink-0 border-t border-[#253038] bg-[#1a242c] px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-3">
-                {!windowOpen ? (
-                  <div className="mb-2 max-h-[36vh] space-y-2 overflow-y-auto overscroll-contain rounded-xl bg-[#121a1f] p-3 shadow-sm ring-1 ring-white/5 sm:max-h-none">
-                    <p className="text-xs text-[#f59e0b]">
-                      Free-form reply needs an open 24h window. Send an approved template to reopen.
-                    </p>
-                    {templatesLoading ? (
-                      <p className="flex items-center gap-2 text-xs text-[#7d8f99]">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Loading templates…
-                      </p>
-                    ) : null}
-                    {templatesError ? (
-                      <p className="text-xs text-red-400">{templatesError}</p>
-                    ) : null}
-                    {templatesHint ? (
-                      <p className="text-xs text-[#7d8f99]">{templatesHint}</p>
-                    ) : null}
-                    {templates.length > 0 ? (
-                      <>
-                        <Select
-                          value={selectedTemplateKey || undefined}
-                          onValueChange={(v) => setSelectedTemplateKey(v)}
-                          disabled={sending}
-                        >
-                          <SelectTrigger className="h-10 w-full border-[#2c3840] bg-[#2c3840] text-[#e4eaec]">
-                            <SelectValue placeholder="Choose template" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {templates.map((t) => (
-                              <SelectItem
-                                key={`${t.name}::${t.language}`}
-                                value={`${t.name}::${t.language}`}
-                              >
-                                {t.name} ({t.language})
-                                {t.category ? ` · ${t.category}` : ''}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {selectedTemplate?.bodyPreview ? (
-                          <p className="rounded-md bg-[#0e1519] px-2 py-1.5 text-[11px] text-[#7d8f99] whitespace-pre-wrap">
-                            {selectedTemplate.bodyPreview}
-                          </p>
-                        ) : null}
-                        {(selectedTemplate?.bodyParamCount ?? 0) > 0
-                          ? templateParams.map((val, i) => (
-                              <Input
-                                key={i}
-                                value={val}
-                                onChange={(e) => {
-                                  const next = [...templateParams];
-                                  next[i] = e.target.value;
-                                  setTemplateParams(next);
-                                }}
-                                placeholder={`Variable {{${i + 1}}}`}
-                                className="h-9 border-[#2c3840] bg-[#2c3840] text-[#e4eaec] placeholder:text-[#7d8f99]"
-                                disabled={sending}
-                              />
-                            ))
-                          : null}
-                        <Button
-                          type="button"
-                          className="h-10 w-full cursor-pointer bg-[#2d9f78] text-white hover:bg-[#268a68]"
-                          disabled={!selectedTemplate || sending}
-                          onClick={() => void handleSendTemplate()}
-                        >
-                          {sending ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Send className="mr-2 h-4 w-4" />
-                          )}
-                          Send template
-                        </Button>
-                      </>
-                    ) : !templatesLoading && !templatesError ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="cursor-pointer border-[#2c3840] bg-transparent text-[#e4eaec] hover:bg-[#2c3840]"
-                        onClick={() => void loadTemplates(true)}
-                      >
-                        Refresh templates
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-                {windowOpen ? (
+              {windowOpen ? (
+              <div className="shrink-0 border-t border-[#2a3942] bg-[#111b21] px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-3">
                   <div className="space-y-2">
                     {attachFile ? (
-                      <div
-                        className="flex items-center gap-2 rounded-xl bg-[#2c3840] px-2 py-1.5 shadow-sm"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                            e.preventDefault();
-                            void handleSend();
-                          }
-                        }}
-                      >
+                      <div className="flex items-center gap-2 rounded-xl bg-[#202c33] px-2 py-1.5 shadow-sm">
                         {attachPreviewUrl ? (
                           <img
                             src={attachPreviewUrl}
@@ -2413,21 +2732,21 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                             className="h-11 w-11 rounded-lg object-cover"
                           />
                         ) : (
-                          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#121a1f] text-[10px] font-semibold uppercase text-[#9aaeb8]">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#0b141a] text-[10px] font-semibold uppercase text-[#8696a0]">
                             PDF
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-medium text-[#e4eaec]">
+                          <p className="truncate text-xs font-medium text-[#e9edef]">
                             {attachFile.name}
                           </p>
-                          <p className="text-[10px] text-[#7d8f99]">
-                            {(attachFile.size / 1024).toFixed(0)} KB · Enter to send
+                          <p className="text-[10px] text-[#667781]">
+                            {(attachFile.size / 1024).toFixed(0)} KB · tap send
                           </p>
                         </div>
                         <button
                           type="button"
-                          className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5"
+                          className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/5"
                           disabled={sending}
                           onClick={clearAttach}
                           aria-label="Remove attachment"
@@ -2447,31 +2766,45 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           e.target.value = '';
                         }}
                       />
+                      <input
+                        ref={backupImportInputRef}
+                        type="file"
+                        accept="application/json,.json"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = '';
+                          if (f) void runLocalBackupImport(f);
+                        }}
+                      />
                       <button
                         type="button"
-                        className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#9aaeb8] transition hover:bg-white/5 disabled:opacity-50"
+                        className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/5 disabled:opacity-50"
                         disabled={sending}
                         title="Attach image or PDF"
                         onClick={() => fileInputRef.current?.click()}
                       >
                         <Paperclip className="h-5 w-5 rotate-45" />
                       </button>
-                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] border border-white/[0.04] bg-[#2c3840] px-3 py-1.5 shadow-sm transition-[border-color,background-color,box-shadow] duration-150 focus-within:border-white/18 focus-within:bg-[#33434d] focus-within:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
+                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] border border-white/[0.04] bg-[#202c33] px-3 py-1.5 shadow-sm transition-[border-color,background-color,box-shadow] duration-150 focus-within:border-white/18 focus-within:bg-[#2a3942] focus-within:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
                         <Textarea
                           ref={composerRef}
                           value={draft}
                           onChange={(e) => setDraft(e.target.value)}
-                          placeholder={attachFile ? 'Add a caption (Enter to send)' : 'Message'}
+                          placeholder={attachFile ? 'Add a caption' : 'Message'}
                           disabled={sending}
                           rows={1}
-                          className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#e4eaec] shadow-none outline-none ring-0 ring-offset-0 placeholder:text-[#7d8f99] focus:border-0 focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                          className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#e9edef] shadow-none outline-none ring-0 ring-offset-0 placeholder:text-[#667781] focus:border-0 focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                           style={{ WebkitTapHighlightColor: 'transparent' }}
                           onKeyDown={(e) => {
                             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              void handleSend();
-                            }
+                            if (e.key !== 'Enter') return;
+                            // Mobile / APK: Enter = new line (send via button).
+                            if (isMobileWhatsAppComposer()) return;
+                            // Desktop: Enter sends; Shift+Enter keeps newline.
+                            if (e.shiftKey) return;
+                            e.preventDefault();
+                            void handleSend();
                           }}
                           onPaste={(e) => {
                             const item = Array.from(e.clipboardData?.items || []).find((i) =>
@@ -2488,7 +2821,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       </div>
                       <button
                         type="button"
-                        className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#2d9f78] text-white shadow transition hover:bg-[#268a68] disabled:opacity-40"
+                        className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#00a884] text-white shadow transition hover:bg-[#008f72] disabled:opacity-40"
                         disabled={sending || (!draft.trim() && !attachFile)}
                         onClick={() => void handleSend()}
                         aria-label="Send"
@@ -2501,8 +2834,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       </button>
                     </div>
                   </div>
-                ) : null}
               </div>
+              ) : null}
             </>
           )}
         </section>
@@ -2529,7 +2862,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             </Button>
             <Button
               type="button"
-              className="bg-[#2d9f78] text-white hover:bg-[#268a68]"
+              className="bg-[#00a884] text-white hover:bg-[#008f72]"
               onClick={() => {
                 if (!/^\d{4}-\d{2}-\d{2}$/.test(customRangeDate)) {
                   toast.error('Pick a valid date');
@@ -2572,7 +2905,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             </Button>
             <Button
               type="button"
-              className="bg-[#3cb87a] text-white hover:bg-[#1da851]"
+              className="bg-[#00a884] text-white hover:bg-[#008f72]"
               onClick={openNewChat}
             >
               Open chat
@@ -2586,12 +2919,151 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         onOpenChange={setWaterFilterOpen}
         defaultPhone={selectedPhone || ''}
         defaultName={activeThread?.customer_name || ''}
+        brand={threadBrand}
         onStarted={(phoneE164) => {
           setSelectedPhone(phoneE164);
           void loadInbox({ soft: true });
           void loadThread(phoneE164, { soft: true });
         }}
       />
+
+      <Dialog
+        open={templatePickerOpen}
+        onOpenChange={(open) => {
+          if (sending) return;
+          setTemplatePickerOpen(open);
+          if (!open) {
+            setSelectedTemplateKey('');
+            setTemplateParams([]);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Send cold template</DialogTitle>
+            <DialogDescription>
+              Pick an approved Meta template and fill each field with custom values before sending.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {templatesLoading ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading templates…
+              </p>
+            ) : null}
+            {templatesError ? (
+              <p className="text-sm text-red-600">{templatesError}</p>
+            ) : null}
+            {templatesHint ? (
+              <p className="text-xs text-muted-foreground">{templatesHint}</p>
+            ) : null}
+            {templates.length > 0 ? (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Template</label>
+                  <Select
+                    value={selectedTemplateKey || undefined}
+                    onValueChange={(v) => {
+                      setSelectedTemplateKey(v);
+                      setTemplateParams([]);
+                    }}
+                    disabled={sending}
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Choose template" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {templates.map((t) => (
+                        <SelectItem
+                          key={`${t.name}::${t.language}`}
+                          value={`${t.name}::${t.language}`}
+                        >
+                          {t.name} ({t.language})
+                          {t.category ? ` · ${t.category}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedTemplate?.bodyPreview ? (
+                  <div className="rounded-lg border bg-muted/40 px-3 py-2 text-[12px] leading-snug text-muted-foreground whitespace-pre-wrap">
+                    {selectedTemplate.bodyPreview}
+                  </div>
+                ) : null}
+                {(selectedTemplate?.bodyParamCount ?? 0) > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Custom fields — edit each value as needed
+                    </p>
+                    {templateParams.map((val, i) => (
+                      <div key={i} className="space-y-1">
+                        <label className="text-[11px] font-medium text-muted-foreground">
+                          Field {`{{${i + 1}}}`}
+                          {i === 0 ? ' · usually name' : ''}
+                        </label>
+                        <Input
+                          value={val}
+                          onChange={(e) => {
+                            const next = [...templateParams];
+                            next[i] = e.target.value;
+                            setTemplateParams(next);
+                          }}
+                          placeholder={`Enter value for {{${i + 1}}}`}
+                          className="h-10"
+                          disabled={sending}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : selectedTemplate ? (
+                  <p className="text-xs text-muted-foreground">
+                    This template has no body variables.
+                  </p>
+                ) : null}
+              </>
+            ) : !templatesLoading ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="cursor-pointer"
+                onClick={() => void loadTemplates(true)}
+              >
+                Refresh templates
+              </Button>
+            ) : null}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={sending}
+              onClick={() => setTemplatePickerOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#00a884] text-white hover:bg-[#008f72]"
+              disabled={!selectedTemplate || sending}
+              onClick={() => void handleSendTemplate()}
+            >
+              {sending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending…
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  Send template
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(quickActionConfirm)}
@@ -2603,13 +3075,24 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           <DialogHeader>
             <DialogTitle>
               {quickActionConfirm
-                ? QUICK_ACTION_LABELS[quickActionConfirm]
+                ? quickActionConfirm in QUICK_MESSAGE_LABELS
+                  ? QUICK_MESSAGE_LABELS[quickActionConfirm as InboxQuickMessageAction]
+                  : QUICK_ACTION_LABELS[quickActionConfirm as WhatsAppBookingQuickAction]
                 : 'Quick action'}
             </DialogTitle>
             <DialogDescription>
-              {windowOpen
-                ? 'Starts the booking bot on WhatsApp (step-by-step). Customer replies in this chat.'
-                : '24h window is closed — sends an approved cold template and resumes the bot when they reply.'}
+              {quickActionConfirm && quickActionConfirm in QUICK_MESSAGE_LABELS
+                ? windowOpen
+                  ? 'Sends a short message in this chat. Does not start booking.'
+                  : quickActionConfirm === 'send_hello'
+                    ? '24h window closed — sends a Hello cold template only.'
+                    : '24h window is closed — open with Hello / Book service first, or wait for a reply.'
+                : quickActionConfirm
+                  ? quickActionConfirmCopy(
+                      quickActionConfirm as WhatsAppBookingQuickAction,
+                      Boolean(windowOpen)
+                    ).description
+                  : ''}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -2623,7 +3106,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             </Button>
             <Button
               type="button"
-              className="bg-[#3cb87a] text-white hover:bg-[#1da851]"
+              className="bg-[#00a884] text-white hover:bg-[#008f72]"
               disabled={!quickActionConfirm || quickActionBusy}
               onClick={() =>
                 quickActionConfirm ? void runQuickAction(quickActionConfirm) : undefined
@@ -2632,12 +3115,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               {quickActionBusy ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Starting…
+                  Sending…
                 </>
-              ) : windowOpen ? (
-                'Start on WhatsApp'
+              ) : quickActionConfirm && quickActionConfirm in QUICK_MESSAGE_LABELS ? (
+                'Send'
+              ) : quickActionConfirm ? (
+                quickActionConfirmCopy(
+                  quickActionConfirm as WhatsAppBookingQuickAction,
+                  Boolean(windowOpen)
+                ).confirm
               ) : (
-                'Send template & wait'
+                'Send'
               )}
             </Button>
           </DialogFooter>

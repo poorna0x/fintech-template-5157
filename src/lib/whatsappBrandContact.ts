@@ -85,14 +85,17 @@ const LETTER_TEMPLATE_BASE: Record<BrandLetterTemplateKind, string> = {
   booking_cancelled: 'svc_booking_cancelled_letter',
 };
 
-/** Meta letter cold template — v6 = balance due emoji; v5 = Pay now no Text us; v4 = Book now / older Pay now. */
+/** Meta letter cold template — v9 = Pay now, no contact footer; v8 = Call-only. */
 export function resolveBrandLetterTemplateName(
   kind: BrandLetterTemplateKind,
   brand: DocumentBrand,
-  version: 'v6' | 'v5' | 'v4' | 'v3' | 'v2' | 'v1' = 'v3'
+  version: 'v9' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2' | 'v1' = 'v3'
 ): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
   const base = LETTER_TEMPLATE_BASE[kind];
+  if (version === 'v9') return `${base}_${suffix}_v9`;
+  if (version === 'v8') return `${base}_${suffix}_v8`;
+  if (version === 'v7') return `${base}_${suffix}_v7`;
   if (version === 'v6') return `${base}_${suffix}_v6`;
   if (version === 'v5') return `${base}_${suffix}_v5`;
   if (version === 'v4') return `${base}_${suffix}_v4`;
@@ -127,11 +130,23 @@ export function letterLabelValue(label: string, value: string): string {
 /** Letter footer + optional Text us link (24h free-form; cold templates use Call us + Text us buttons). */
 export function brandLetterClosingLines(
   brand: DocumentBrand,
-  opts?: { includeReview?: boolean; includeTextUs?: boolean; skipChatHint?: boolean }
+  opts?: {
+    includeReview?: boolean;
+    includeTextUs?: boolean;
+    skipChatHint?: boolean;
+    skipThankYou?: boolean;
+    skipCall?: boolean;
+    skipEmail?: boolean;
+    skipWebsite?: boolean;
+  }
 ): string[] {
   const lines = brandLetterFooterLines(brand, {
     includeReview: opts?.includeReview,
     skipChatHint: opts?.skipChatHint ?? true,
+    skipThankYou: opts?.skipThankYou,
+    skipCall: opts?.skipCall,
+    skipEmail: opts?.skipEmail,
+    skipWebsite: opts?.skipWebsite,
   });
   if (opts?.includeTextUs !== false) {
     lines.push(letterLabelValue('Text us', brandWhatsAppChatUrl(brand)));
@@ -142,15 +157,29 @@ export function brandLetterClosingLines(
 /** Shared letter footer for 24h free-form messages (label / value on separate lines). */
 export function brandLetterFooterLines(
   brand: DocumentBrand,
-  opts?: { includeReview?: boolean; skipChatHint?: boolean }
+  opts?: {
+    includeReview?: boolean;
+    skipChatHint?: boolean;
+    skipThankYou?: boolean;
+    skipCall?: boolean;
+    skipEmail?: boolean;
+    skipWebsite?: boolean;
+  }
 ): string[] {
   const c = brandContactLines(brand);
-  const lines = [
-    `Thank you for choosing ${c.brandLabel}.`,
-    letterLabelValue('Call', c.voice.display),
-    letterLabelValue('Email', c.email),
-    letterLabelValue('Website', brandLetterWebsiteHost(brand)),
-  ];
+  const lines: string[] = [];
+  if (!opts?.skipThankYou) {
+    lines.push(`Thank you for choosing ${c.brandLabel}.`);
+  }
+  if (!opts?.skipCall) {
+    lines.push(letterLabelValue('Call', c.voice.display));
+  }
+  if (!opts?.skipEmail) {
+    lines.push(letterLabelValue('Email', c.email));
+  }
+  if (!opts?.skipWebsite) {
+    lines.push(letterLabelValue('Website', brandLetterWebsiteHost(brand)));
+  }
   if (opts?.includeReview) {
     lines.push(letterLabelValue('Review', c.reviewUrl));
   }

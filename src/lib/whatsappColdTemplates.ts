@@ -12,6 +12,7 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
 import { formatDocumentPdfColdPreview } from '@/lib/document-pdf-whatsapp-caption';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 export const WA_COLD = {
   /** @deprecated Meta marked svc_booking_menu MARKETING — use resolveBookingCta() instead. */
   booking_menu: {
@@ -20,8 +21,8 @@ export const WA_COLD = {
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
   pending_payment: {
-    /** Prefer resolvePendingPaymentLetterTemplateName / Image — HRO v6 is default alias target. */
-    name: 'svc_balance_due_letter_hro_v6',
+    /** Prefer resolvePendingPaymentLetterTemplateName / Image — HRO v7 is default alias target. */
+    name: 'svc_balance_due_letter_hro_v9',
     language: 'en',
     /** {{1}}=name, {{2}}=amount, {{3}}=due, {{4}}=invoice/job */
     bodyParams: (
@@ -123,9 +124,8 @@ export const WA_COLD = {
     ],
   },
   /**
-   * Preview PDF (DOCUMENT) + Accept URL → /c/{token}.
-   * After terms accept, CRM sends the original PDF on WhatsApp.
-   * Meta: svc_doc_accept_preview_{ero|hro}_v8 (DOCUMENT + Call + I Accept + terms line)
+   * Preview PDF (DOCUMENT) + WhatsApp I Accept quick reply → original on same chat.
+   * Meta: svc_doc_accept_preview_{ero|hro}_v8 (no web /c/ URL).
    */
   document_accept_preview: {
     name: 'svc_doc_accept_preview_hro_v8',
@@ -292,7 +292,7 @@ export const WA_COLD = {
   },
   // —— Booking flows: use resolveBookingCta(kind, brand) at send time (UTILITY *_cta templates) ——
   book_existing_customer: {
-    name: 'existing_service_schedule_ero_cta_v2',
+    name: 'existing_service_schedule_ero_cta_v3',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
@@ -539,7 +539,7 @@ export function formatColdDocTemplatePreview(
 }
 
 function cleanName(customerName: string): string {
-  return String(customerName || 'Customer').trim() || 'Customer';
+  return whatsappGreetingName(customerName, 'there');
 }
 
 function cleanAmount(amount: number | string): string {
@@ -554,7 +554,7 @@ function cleanAmount(amount: number | string): string {
 export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   booking_menu: 'Service request (svc_smoke_update — booking menu deprecated)',
   pending_payment:
-    'Balance due (svc_balance_due_letter_*_img_v2 QR → img_v1 → *_v6 → v5 → svc_balance_due)',
+    'Balance due (svc_balance_due_letter_*_img_v5 no contact footer → img_v4 → *_v9 → v8 → svc_balance_due)',
   service_reminder: 'Visit reminder (svc_visit_reminder)',
   service_due_cta: 'Service due letter v4 Book now (svc_service_due_letter_*_v4 → v3 → CTA)',
   amc_renewal: 'AMC expiry (svc_amc_expiry_notice)',
@@ -587,7 +587,7 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   ask_name_long: 'Ask name long (svc_wfs_ask_name_*_v2 UTILITY)',
   crm_notice: 'CRM notice → visit reminder',
   crm_update_details: 'CRM update → visit reminder',
-  book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta_v2 → v1)',
+  book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta_v3 → v2 → v1)',
   book_new_customer: 'Unregistered number (unregistered_number_service_*_cta)',
   missed_call: 'Missed call (svc_missed_call)',
   missed_call_book: 'Missed call (svc_missed_call / missed_call_callback_*_cta)',
