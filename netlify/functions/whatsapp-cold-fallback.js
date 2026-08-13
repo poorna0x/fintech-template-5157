@@ -60,6 +60,12 @@ function buildTemplatePayload(to, templateName, languageCode, bodyParams, header
   };
 }
 
+/** Balance-due letter v4+ / IMAGE — dynamic Pay now URL `/p/{{1}}`. */
+function templateUsesDynamicPayNowUrl(name) {
+  return /svc_balance_due_letter_(ero|hro)_(img_v?\d*|v[4-6])$/i.test(String(name || ''))
+    || /svc_balance_due_letter_(ero|hro)_img_/i.test(String(name || ''));
+}
+
 /**
  * @returns {Array<{ name: string, params: string[], headerComponents: object[] }>}
  */
@@ -529,10 +535,11 @@ async function sendTemplateWithColdFallbacks({
     return String(p?.type || '').toLowerCase() === 'document' || Boolean(p?.document);
   });
   for (const fb of buildFallbackAttempts(templateName, params, hasDocHeader, headers)) {
+    const fbButtons = templateUsesDynamicPayNowUrl(fb.name) ? urlButtons : [];
     const fbResult = await callWhatsAppApi(
       phoneNumberId,
       accessToken,
-      buildTemplatePayload(to, fb.name, languageCode, fb.params, fb.headerComponents, [])
+      buildTemplatePayload(to, fb.name, languageCode, fb.params, fb.headerComponents, fbButtons)
     );
     if (fbResult.ok) {
       return {
@@ -541,7 +548,7 @@ async function sendTemplateWithColdFallbacks({
         templateName: fb.name,
         bodyParams: fb.params,
         headerComponents: fb.headerComponents,
-        buttonUrlParams: [],
+        buttonUrlParams: fbButtons,
         usedFallback: true,
         primaryTemplate: templateName,
       };
@@ -566,5 +573,6 @@ module.exports = {
   isTemplateMetaError,
   buildTemplatePayload,
   buildFallbackAttempts,
+  templateUsesDynamicPayNowUrl,
   sendTemplateWithColdFallbacks,
 };

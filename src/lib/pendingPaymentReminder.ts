@@ -218,7 +218,9 @@ export function buildPendingPaymentWhatsAppMessage(
   lines.push('');
   if (withQr && (payLink || upiId)) {
     lines.push(
-      '💳 Or tap *Pay now* below. Reply on this chat if you have already paid.'
+      payLink
+        ? '💳 Or open the UPI pay link above if you prefer not to scan. Reply on this chat if you have already paid.'
+        : '💬 Reply on this chat if you need any help or if you have already paid.'
     );
   } else if (withQr) {
     lines.push('💬 Reply on this chat if you need any help or if you have already paid.');

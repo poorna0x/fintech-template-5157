@@ -595,26 +595,10 @@ export function SettingsPendingPaymentsDialogV2({
         opts?.invoiceRef
       );
 
-      // Image attached: 24h → media+caption; cold → IMAGE-header balance-due template
+      // QR / image: prefer IMAGE-header template with Pay now (works in and out of 24h).
+      // Freeform media alone has no Pay now button — that looked broken to customers.
       if (headerImage && opts?.coldTemplateKind !== 'payment_received') {
-        const mediaResult = await sendAdminWhatsAppMedia({
-          to: phone,
-          fileBase64: headerImage.imageBase64,
-          filename: headerImage.filename,
-          mimeType: headerImage.mimeType,
-          caption: trimmed,
-          customerId: opts?.customerId,
-          source: 'pending_payment',
-        });
-        if (mediaResult.ok) {
-          toast.success('WhatsApp reminder sent with image');
-          return;
-        }
-        if (mediaResult.featureDisabled) {
-          toast.error(mediaResult.error || 'WhatsApp pending payment is disabled in Settings');
-          return;
-        }
-        if (mediaResult.needsWindowOrTemplate && opts?.coldPendingTemplate !== false) {
+        if (opts?.coldPendingTemplate !== false) {
           const coldResult = await sendAdminWhatsAppTemplate({
             to: phone,
             templateName: resolvePendingPaymentLetterImageTemplateName(brand),
@@ -626,14 +610,17 @@ export function SettingsPendingPaymentsDialogV2({
             source: 'pending_payment',
           });
           if (coldResult.ok) {
-            toast.success('Cold balance-due template sent with image');
+            toast.success(
+              payButtonParams.length > 0
+                ? 'Sent with UPI QR and Pay now button'
+                : 'Sent with UPI QR'
+            );
             return;
           }
           if (coldResult.featureDisabled) {
             toast.error(coldResult.error || 'WhatsApp pending payment is disabled in Settings');
             return;
           }
-          // Image template not ready — fall back to text letter (no image)
           const textCold = await sendAdminWhatsAppTemplate({
             to: phone,
             templateName: resolvePendingPaymentLetterTemplateName(brand, {
@@ -646,11 +633,34 @@ export function SettingsPendingPaymentsDialogV2({
             source: 'pending_payment',
           });
           if (textCold.ok) {
-            toast.message('Image template unavailable — sent text balance-due template');
+            toast.message(
+              payButtonParams.length > 0
+                ? 'Image template unavailable — sent text with Pay now'
+                : 'Image template unavailable — sent text balance-due template'
+            );
             return;
           }
-          openWhatsAppMeDeepLink(phone, trimmed);
-          toast.message('24h window closed — opened WhatsApp (image not included)');
+        }
+
+        const mediaResult = await sendAdminWhatsAppMedia({
+          to: phone,
+          fileBase64: headerImage.imageBase64,
+          filename: headerImage.filename,
+          mimeType: headerImage.mimeType,
+          caption: trimmed,
+          customerId: opts?.customerId,
+          source: 'pending_payment',
+        });
+        if (mediaResult.ok) {
+          toast.success(
+            payHttpsLink
+              ? 'WhatsApp reminder sent with QR (open the pay link in the message)'
+              : 'WhatsApp reminder sent with image'
+          );
+          return;
+        }
+        if (mediaResult.featureDisabled) {
+          toast.error(mediaResult.error || 'WhatsApp pending payment is disabled in Settings');
           return;
         }
         openWhatsAppMeDeepLink(phone, trimmed);

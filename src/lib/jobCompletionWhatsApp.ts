@@ -131,8 +131,30 @@ export async function sendJobCompletionWhatsApp(opts: {
     return { ok: true, via: 'wa_me' };
   }
 
-  // Balance due + QR: 24h media+caption, else IMAGE-header letter template
+  // Balance due + QR: prefer IMAGE letter + Pay now (works in/out of 24h).
   if (useBalanceDueCold && headerImage) {
+    for (const templateName of [
+      resolvePendingPaymentLetterImageTemplateName(opts.documentBrand),
+      resolvePendingPaymentLetterImageTemplateFallbackName(opts.documentBrand),
+    ]) {
+      const cold = await sendAdminWhatsAppTemplate({
+        to: opts.to,
+        templateName,
+        languageCode: 'en',
+        bodyParams: letterParams,
+        buttonUrlParams: payButtonParams,
+        headerImage,
+        customerId: opts.customerId,
+        source: 'job_completion',
+      });
+      if (cold.ok) {
+        return { ...cold, usedTemplate: true, usedRichColdTemplate: true };
+      }
+      if (cold.featureDisabled) {
+        return cold;
+      }
+    }
+
     const mediaResult = await sendAdminWhatsAppMedia({
       to: opts.to,
       fileBase64: headerImage.imageBase64,
@@ -148,30 +170,12 @@ export async function sendJobCompletionWhatsApp(opts: {
     if (mediaResult.featureDisabled) {
       return mediaResult;
     }
-    if (mediaResult.needsWindowOrTemplate) {
-      for (const templateName of [
-        resolvePendingPaymentLetterImageTemplateName(opts.documentBrand),
-        resolvePendingPaymentLetterImageTemplateFallbackName(opts.documentBrand),
-      ]) {
-        const cold = await sendAdminWhatsAppTemplate({
-          to: opts.to,
-          templateName,
-          languageCode: 'en',
-          bodyParams: letterParams,
-          buttonUrlParams: payButtonParams,
-          headerImage,
-          customerId: opts.customerId,
-          source: 'job_completion',
-        });
-        if (cold.ok) {
-          return { ...cold, usedTemplate: true, usedRichColdTemplate: true };
-        }
+    // Image templates failed and freeform needs window — fall through to text letter below
+    if (!mediaResult.needsWindowOrTemplate) {
+      if (opts.fallbackWaMe !== false) {
+        openWhatsAppMeDeepLink(opts.to, opts.text);
+        return { ok: true, via: 'wa_me', error: mediaResult.error };
       }
-      // fall through to text letter templates below
-    } else if (opts.fallbackWaMe !== false) {
-      openWhatsAppMeDeepLink(opts.to, opts.text);
-      return { ok: true, via: 'wa_me', error: mediaResult.error };
-    } else {
       return mediaResult;
     }
   }
