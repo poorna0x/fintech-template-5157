@@ -133,6 +133,24 @@ function verifyWhatsAppSignature(rawBody, signatureHeader, appSecret) {
 }
 
 async function callWhatsAppApi(phoneNumberId, accessToken, payload) {
+  if (!phoneNumberId || !accessToken) {
+    console.warn('[whatsapp-helper] callWhatsAppApi missing credentials', {
+      hasPhoneNumberId: Boolean(phoneNumberId),
+      hasAccessToken: Boolean(accessToken),
+    });
+    return {
+      ok: false,
+      status: 401,
+      data: {
+        error: {
+          message:
+            'WhatsApp credentials missing on server (set app_secrets.whatsapp_access_token + phone id; Netlify needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY)',
+          type: 'OAuthException',
+          code: 190,
+        },
+      },
+    };
+  }
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`;
   const res = await fetch(url, {
     method: 'POST',
