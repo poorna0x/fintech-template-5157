@@ -734,9 +734,9 @@ function stateAwaitingMedia(state) {
 }
 
 async function upsertBookingBotRow(db, phone, patch) {
-  if (!db || !phone) return;
+  if (!db || !phone) return { ok: false };
   const phoneE164 = normalizePhoneE164(phone);
-  if (!phoneE164) return;
+  if (!phoneE164) return { ok: false };
   try {
     const { data: existing, error: selErr } = await db
       .from('whatsapp_booking_bot_state')
@@ -753,28 +753,36 @@ async function upsertBookingBotRow(db, phone, patch) {
     if (patch.state !== undefined) row.state = patch.state;
     if (patch.remembered_location !== undefined) row.remembered_location = patch.remembered_location;
     if (patch.awaiting_media !== undefined) row.awaiting_media = patch.awaiting_media;
-    // Must key off row presence — select used to omit phone_e164 so updates always
-    // attempted INSERT, failed unique, and left step stuck (e.g. identity gate loop).
+
+    // Key off row presence (not phone_e164 on the select payload). If insert races /
+    // unique-conflicts, fall through to update so steps never stick forever.
     if (!existing) {
       const { error: insErr } = await db.from('whatsapp_booking_bot_state').insert({
         ...row,
         state: row.state || {},
         awaiting_media: row.awaiting_media ?? false,
       });
-      if (insErr) {
-        console.warn('[whatsapp-booking-bot] bot state insert failed', insErr.message || insErr);
+      if (!insErr) return { ok: true };
+      const msg = String(insErr.message || insErr);
+      const isConflict = /duplicate|unique|23505/i.test(msg);
+      if (!isConflict) {
+        console.warn('[whatsapp-booking-bot] bot state insert failed', msg);
+        return { ok: false, error: msg };
       }
-      return;
     }
+
     const { error: updErr } = await db
       .from('whatsapp_booking_bot_state')
       .update(row)
       .eq('phone_e164', phoneE164);
     if (updErr) {
       console.warn('[whatsapp-booking-bot] bot state update failed', updErr.message || updErr);
+      return { ok: false, error: updErr.message || String(updErr) };
     }
+    return { ok: true };
   } catch (err) {
     console.warn('[whatsapp-booking-bot] bot state upsert failed', err?.message || err);
+    return { ok: false, error: err?.message || String(err) };
   }
 }
 
@@ -3521,6 +3529,73 @@ async function sendPostBookingHumanRedirect(ctx, state = null) {
  * Handle one inbound WhatsApp message for the booking bot.
  * @param {{ inboundMedia?: { media_url?: string|null } }} [extra]
  */
+/**
+ * Different-number / typed prior-mobile lookup.
+ * Shared by await_other_phone and identity-gate phone paste (stuck-state recovery).
+ */
+async function processOtherPhoneReply(ctx, state, text) {
+  const attempts = Number(state?.otherPhoneAttempts || 0);
+  if (attempts >= OTHER_PHONE_LOOKUP_MAX) {
+    await sendText({
+      ...ctx,
+      text: 'Too many tries. Please tap *First time* to book as new, or *Call us*.',
+    });
+    await sendIdentityGate(ctx, { otherPhoneAttempts: attempts });
+    return { handled: true };
+  }
+  const mobile = parseStrictIndianMobile(text);
+  if (!mobile) {
+    await setBookingState(ctx.db, ctx.to, {
+      ...(state || {}),
+      otherPhoneAttempts: attempts + 1,
+      step: 'await_other_phone',
+    });
+    await sendText({
+      ...ctx,
+      text: 'That doesn’t look like a valid Indian mobile. Reply with a *10-digit* number starting 6–9.',
+    });
+    return { handled: true };
+  }
+  if (mobile === phone10FromE164(ctx.to)) {
+    await sendText({
+      ...ctx,
+      text: 'That’s this WhatsApp number. If you’re new here, tap *First time*.',
+    });
+    await sendIdentityGate(ctx, { otherPhoneAttempts: attempts });
+    return { handled: true };
+  }
+  const found = await lookupCustomerFull(ctx.db, `91${mobile}`);
+  const nextAttempts = attempts + 1;
+  if (!found?.id) {
+    if (nextAttempts >= OTHER_PHONE_LOOKUP_MAX) {
+      await sendText({
+        ...ctx,
+        text: 'We couldn’t find that number after several tries. Tap *First time* to book as new, or *Call us*.',
+      });
+      await sendIdentityGate(ctx, { otherPhoneAttempts: nextAttempts });
+      return { handled: true };
+    }
+    await setBookingState(ctx.db, ctx.to, {
+      ...(state || {}),
+      otherPhoneAttempts: nextAttempts,
+      step: 'await_other_phone',
+    });
+    await sendText({
+      ...ctx,
+      text: `No customer found for *${mobile}*. Please check and reply again (${OTHER_PHONE_LOOKUP_MAX - nextAttempts} tries left), or go back and tap *First time*.`,
+    });
+    return { handled: true };
+  }
+  const lastInfo = await lookupLastServiceInfo(ctx.db, found.id, found);
+  await sendLinkedIdentityConfirm(
+    ctx,
+    { ...(state || {}), otherPhoneAttempts: nextAttempts, lookedUpPhone10: mobile },
+    found,
+    lastInfo
+  );
+  return { handled: true };
+}
+
 async function handleBookingBotInbound({
   db,
   accessToken,
@@ -3685,71 +3760,21 @@ async function handleBookingBotInbound({
   }
 
   // —— Stateful text / photo steps ——
-  if (state?.step === 'await_other_phone' && msgType === 'text' && text && !GREETING_RE.test(text)) {
-    const attempts = Number(state.otherPhoneAttempts || 0);
-    if (attempts >= OTHER_PHONE_LOOKUP_MAX) {
-      await sendText({
-        ...ctx,
-        text: 'Too many tries. Please tap *First time* to book as new, or *Call us*.',
-      });
-      await sendIdentityGate(ctx, { otherPhoneAttempts: attempts });
-      return { handled: true };
-    }
-    const mobile = parseStrictIndianMobile(text);
-    if (!mobile) {
-      await setBookingState(db, to, {
-        ...state,
-        otherPhoneAttempts: attempts + 1,
-        step: 'await_other_phone',
-      });
-      await sendText({
-        ...ctx,
-        text: 'That doesn’t look like a valid Indian mobile. Reply with a *10-digit* number starting 6–9.',
-      });
-      return { handled: true };
-    }
-    // Block looking up the same WA number as “other”
-    if (mobile === phone10FromE164(to)) {
-      await sendText({
-        ...ctx,
-        text: 'That’s this WhatsApp number. If you’re new here, tap *First time*.',
-      });
-      await sendIdentityGate(ctx, { otherPhoneAttempts: attempts });
-      return { handled: true };
-    }
-    const found = await lookupCustomerFull(db, `91${mobile}`);
-    const nextAttempts = attempts + 1;
-    if (!found?.id) {
-      if (nextAttempts >= OTHER_PHONE_LOOKUP_MAX) {
-        await sendText({
-          ...ctx,
-          text: 'We couldn’t find that number after several tries. Tap *First time* to book as new, or *Call us*.',
-        });
-        await sendIdentityGate(ctx, { otherPhoneAttempts: nextAttempts });
-        return { handled: true };
-      }
-      await setBookingState(db, to, {
-        ...state,
-        otherPhoneAttempts: nextAttempts,
-        step: 'await_other_phone',
-      });
-      await sendText({
-        ...ctx,
-        text: `No customer found for *${mobile}*. Please check and reply again (${OTHER_PHONE_LOOKUP_MAX - nextAttempts} tries left), or go back and tap *First time*.`,
-      });
-      return { handled: true };
-    }
-    const lastInfo = await lookupLastServiceInfo(db, found.id, found);
-    await sendLinkedIdentityConfirm(
-      ctx,
-      { ...state, otherPhoneAttempts: nextAttempts, lookedUpPhone10: mobile },
-      found,
-      lastInfo
-    );
-    return { handled: true };
+  if (state?.step === 'await_other_phone' && msgType === 'text' && text) {
+    return processOtherPhoneReply(ctx, state, text);
   }
 
-  if (state?.step === 'await_issue_text' && msgType === 'text' && text && !GREETING_RE.test(text)) {
+  // Recovery: identity gate + pasted 10-digit number (stuck-state / skipped button)
+  if (
+    state?.step === 'await_identity_gate' &&
+    msgType === 'text' &&
+    text &&
+    parseStrictIndianMobile(text)
+  ) {
+    return processOtherPhoneReply(ctx, { ...(state || {}), step: 'await_other_phone' }, text);
+  }
+
+  if (state?.step === 'await_issue_text' && msgType === 'text' && text) {
     const note = text.trim().slice(0, 200);
     if (note.length < 3) {
       await sendText({
@@ -3793,7 +3818,7 @@ async function handleBookingBotInbound({
       });
       return { handled: true };
     }
-    if (msgType === 'text' && text && !GREETING_RE.test(text)) {
+    if (msgType === 'text' && text) {
       if (/^(skip|no photo|no video|later|skip media)$/i.test(text.trim())) {
         await continueAfterIssueMediaSkipped(ctx, state);
         return { handled: true };
@@ -3847,7 +3872,7 @@ async function handleBookingBotInbound({
     }
   }
 
-  if (state?.step === 'await_alt_phone' && msgType === 'text' && text && !GREETING_RE.test(text)) {
+  if (state?.step === 'await_alt_phone' && msgType === 'text' && text) {
     const raw = text.trim();
     let next = { ...state, useSecondarySite: true };
     if (/^skip$/i.test(raw)) {
@@ -3867,7 +3892,7 @@ async function handleBookingBotInbound({
     return { handled: true };
   }
 
-  if (state?.step === 'await_custom_note' && msgType === 'text' && text && !GREETING_RE.test(text)) {
+  if (state?.step === 'await_custom_note' && msgType === 'text' && text) {
     const next = {
       ...state,
       customNote: text.trim().slice(0, 200),
@@ -3891,7 +3916,7 @@ async function handleBookingBotInbound({
     return { handled: true };
   }
 
-  if (state?.step === 'await_name' && msgType === 'text' && text && !GREETING_RE.test(text) && !EDIT_RE.test(text)) {
+  if (state?.step === 'await_name' && msgType === 'text' && text && !EDIT_RE.test(text)) {
     if (!isValidPersonName(text)) {
       await sendText({
         ...ctx,
@@ -3912,7 +3937,7 @@ async function handleBookingBotInbound({
     return { handled: true };
   }
 
-  if (state?.step === 'await_building_flat' && msgType === 'text' && text && !GREETING_RE.test(text) && !EDIT_RE.test(text)) {
+  if (state?.step === 'await_building_flat' && msgType === 'text' && text && !EDIT_RE.test(text)) {
     const flat = text.trim().slice(0, 80);
     if (/^skip$/i.test(flat)) {
       await continueAfterBuildingFlat(ctx, { ...state, buildingFlat: '' });
@@ -3975,7 +4000,7 @@ async function handleBookingBotInbound({
       await sendNewCustomerConfirm(ctx, next);
       return { handled: true };
     }
-    if (msgType === 'text' && text && !GREETING_RE.test(text) && !EDIT_RE.test(text)) {
+    if (msgType === 'text' && text && !EDIT_RE.test(text)) {
       await sendText({
         ...ctx,
         text: 'A *purifier photo is required* to continue. Please send a photo now.',
@@ -4018,7 +4043,7 @@ async function handleBookingBotInbound({
       });
       return { handled: true };
     }
-    if (msgType === 'text' && text && !GREETING_RE.test(text) && !EDIT_RE.test(text)) {
+    if (msgType === 'text' && text && !EDIT_RE.test(text)) {
       if (/^skip$/i.test(text.trim())) {
         await setBookingState(db, to, {
           ...state,
@@ -4043,7 +4068,6 @@ async function handleBookingBotInbound({
     (state?.step === 'await_location' || state?.step === 'await_loc_confirm') &&
     msgType === 'text' &&
     text &&
-    !GREETING_RE.test(text) &&
     !EDIT_RE.test(text) &&
     !isEndFlowTyped(text)
   ) {
@@ -5111,6 +5135,9 @@ module.exports = {
   clearBookingState,
   setBookingState,
   getBookingState,
+  upsertBookingBotRow,
+  processOtherPhoneReply,
+  ACTIVE_BOOKING_STEPS,
   askServiceType,
   sendIdentityConfirm,
   askPurifierPhoto,
