@@ -41,8 +41,21 @@ export type CreateWhatsAppTemplateInput = {
   callButtonText?: string;
   urlButtonUrl?: string;
   urlButtonText?: string;
+  /** Sample suffix when URL contains {{1}} (e.g. paytest01 for /p/{{1}}). */
+  urlButtonExample?: string;
   quickReply?: string;
 };
+
+/** Detect {{1}}… indexes in body text (sorted unique). */
+export function listTemplatePlaceholders(body: string): number[] {
+  const indexes = new Set<number>();
+  const re = /\{\{(\d+)\}\}/g;
+  let m;
+  while ((m = re.exec(String(body || ''))) !== null) {
+    indexes.add(Number(m[1]));
+  }
+  return [...indexes].sort((a, b) => a - b);
+}
 
 async function authHeaders(): Promise<HeadersInit | null> {
   const accessToken = await resolveSupabaseAccessTokenForApi();

@@ -226,6 +226,19 @@ function placeholderIndexes(body) {
   return [...indexes].sort((a, b) => a - b);
 }
 
+function validatePlaceholders(idxs) {
+  if (!idxs.length) return null;
+  for (let i = 0; i < idxs.length; i += 1) {
+    if (idxs[i] !== i + 1) {
+      return `Body variables must be sequential starting at {{1}} (found {{${idxs.join('}}, {{')}}})`;
+    }
+  }
+  if (idxs.length > 10) {
+    return 'Max 10 body variables ({{1}}…{{10}})';
+  }
+  return null;
+}
+
 function buildCreatePayload(body) {
   const name = sanitizeTemplateName(body.name);
   const text = String(body.body || '').trim();
@@ -244,20 +257,35 @@ function buildCreatePayload(body) {
   }
 
   const idxs = placeholderIndexes(text);
-  const examplesIn = Array.isArray(body.examples) ? body.examples.map((x) => String(x ?? '')) : [];
-  const examples = idxs.map((n, i) => {
-    const fromIndex = examplesIn[n - 1];
-    const fromPos = examplesIn[i];
-    return String(fromIndex || fromPos || `Sample${n}`).slice(0, 60) || `Sample${n}`;
+  const phErr = validatePlaceholders(idxs);
+  if (phErr) return { error: phErr };
+
+  const examplesIn = Array.isArray(body.examples) ? body.examples.map((x) => String(x ?? '').trim()) : [];
+  const examples = idxs.map((n) => {
+    const v = String(examplesIn[n - 1] || '').trim();
+    return (v || `Sample${n}`).slice(0, 60);
   });
+  if (idxs.length && examples.some((e) => !e)) {
+    return { error: 'Provide a sample value for each {{n}} variable' };
+  }
+
+  // Meta rejects bodies that are mostly variables (words/vars ratio).
+  const plainWords = text
+    .replace(/\{\{\d+\}\}/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean).length;
+  if (idxs.length >= 2 && plainWords < idxs.length * 3) {
+    return {
+      error:
+        'Too many variables for this short body. Add more fixed text, or use fewer {{n}} placeholders (Meta limit).',
+    };
+  }
 
   const components = [
     {
       type: 'BODY',
       text,
-      ...(examples.length
-        ? { example: { body_text: [examples] } }
-        : {}),
+      ...(examples.length ? { example: { body_text: [examples] } } : {}),
     },
   ];
 
@@ -284,11 +312,23 @@ function buildCreatePayload(body) {
     if (!/^https:\/\//i.test(urlButton)) {
       return { error: 'URL button must be an https:// link' };
     }
-    buttons.push({
+    const urlVars = placeholderIndexes(urlButton);
+    if (urlVars.length > 1) {
+      return { error: 'URL button supports at most one {{1}} variable' };
+    }
+    if (urlVars.length === 1 && urlVars[0] !== 1) {
+      return { error: 'URL button variable must be {{1}} (suffix only)' };
+    }
+    const urlBtn = {
       type: 'URL',
       text: String(body.urlButtonText || 'Open').slice(0, 25),
       url: urlButton.slice(0, 2000),
-    });
+    };
+    if (urlVars.length) {
+      const ex = String(body.urlButtonExample || '').trim() || 'sample';
+      urlBtn.example = [ex.slice(0, 50)];
+    }
+    buttons.push(urlBtn);
   }
 
   const quickReply = String(body.quickReply || '').trim();
@@ -441,7 +481,10 @@ exports.handler = async (event) => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         return json(res.status >= 400 && res.status < 600 ? res.status : 502, headers, {
-          error: data?.error?.message || 'Failed to create template',
+          error:
+            data?.error?.error_user_msg ||
+            data?.error?.message ||
+            'Failed to create template',
           meta: data,
         });
       }

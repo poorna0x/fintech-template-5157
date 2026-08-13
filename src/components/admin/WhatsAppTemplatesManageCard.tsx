@@ -38,6 +38,7 @@ import {
   deleteWhatsAppTemplate,
   fetchManagedWhatsAppTemplates,
   fillWhatsAppTemplatePreview,
+  listTemplatePlaceholders,
   type WhatsAppManagedTemplate,
   type WhatsAppTemplateCounts,
 } from '@/lib/whatsappTemplateManage';
@@ -63,13 +64,7 @@ function brandHint(name: string): string {
   return '';
 }
 
-function countPlaceholders(body: string): number {
-  const set = new Set<number>();
-  const re = /\{\{(\d+)\}\}/g;
-  let m;
-  while ((m = re.exec(body)) !== null) set.add(Number(m[1]));
-  return set.size;
-}
+const DEFAULT_VAR_SAMPLES = ['Rahul', '500', '15 Aug 2026', 'RO2608121234', '10:30 AM', 'Tech'];
 
 export default function WhatsAppTemplatesManageCard() {
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -86,12 +81,18 @@ export default function WhatsAppTemplatesManageCard() {
 
   const [formName, setFormName] = useState('');
   const [formBody, setFormBody] = useState(
-    'Hi {{1}}, this is an update from Hydrogen RO regarding your service.'
+    'Hi {{1}}, this is an update from Hydrogen RO regarding your pending payment for water purifier service.\n\nAmount pending: INR {{2}}\nDue date: {{3}}\nInvoice / Job: {{4}}\n\nTap Pay now below or reply on this chat if you have already paid.'
   );
-  const [formExamples, setFormExamples] = useState('Rahul');
+  const [formExamples, setFormExamples] = useState<string[]>([
+    'Rahul',
+    '500',
+    '15 Aug 2026',
+    'RO2608121234',
+  ]);
   const [formCallPhone, setFormCallPhone] = useState('8884944288');
-  const [formUrl, setFormUrl] = useState('');
-  const [formUrlText, setFormUrlText] = useState('Website');
+  const [formUrl, setFormUrl] = useState('https://hydrogenro.com/p/{{1}}');
+  const [formUrlText, setFormUrlText] = useState('Pay now');
+  const [formUrlExample, setFormUrlExample] = useState('pay123456');
   const [formQuickReply, setFormQuickReply] = useState('');
 
   const load = useCallback(async () => {
@@ -130,17 +131,14 @@ export default function WhatsAppTemplatesManageCard() {
   const handleCreate = async () => {
     setBusy(true);
     try {
-      const examples = formExamples
-        .split('|')
-        .map((s) => s.trim())
-        .filter(Boolean);
       const result = await createWhatsAppTemplate({
         name: formName,
         body: formBody,
-        examples,
+        examples: syncedExamples,
         callPhone: formCallPhone.trim() || undefined,
         urlButtonUrl: formUrl.trim() || undefined,
-        urlButtonText: formUrlText.trim() || 'Website',
+        urlButtonText: formUrlText.trim() || 'Open',
+        urlButtonExample: formUrlExample.trim() || undefined,
         quickReply: formQuickReply.trim() || undefined,
       });
       if (!result.ok) {
@@ -174,7 +172,25 @@ export default function WhatsAppTemplatesManageCard() {
     }
   };
 
-  const placeholderCount = countPlaceholders(formBody);
+  const placeholderIndexes = useMemo(() => listTemplatePlaceholders(formBody), [formBody]);
+  const urlHasVar = /\{\{\s*1\s*\}\}/.test(formUrl);
+  const buttonPreview = useMemo(() => {
+    const bits: string[] = [];
+    if (formCallPhone.replace(/\D/g, '').length >= 10) bits.push('Call us');
+    if (formUrl.trim()) bits.push(formUrlText.trim() || 'Open');
+    if (formQuickReply.trim()) bits.push(formQuickReply.trim());
+    return bits;
+  }, [formCallPhone, formUrl, formUrlText, formQuickReply]);
+
+  // Keep example slots aligned with detected {{n}} count.
+  const syncedExamples = useMemo(() => {
+    const max = Math.max(...placeholderIndexes, 0);
+    const next = [...formExamples];
+    while (next.length < max) {
+      next.push(DEFAULT_VAR_SAMPLES[next.length] || `Sample${next.length + 1}`);
+    }
+    return next;
+  }, [formExamples, placeholderIndexes]);
 
   return (
     <>
@@ -449,76 +465,124 @@ export default function WhatsAppTemplatesManageCard() {
                 id="wa-tpl-body"
                 value={formBody}
                 onChange={(e) => setFormBody(e.target.value)}
-                rows={7}
+                rows={8}
                 className="rounded-xl text-sm"
               />
+              <p className="text-[11px] text-slate-500">
+                Use {'{{1}}'}, {'{{2}}'}… in order. Keep enough fixed text — Meta rejects short bodies
+                with many variables.
+              </p>
             </div>
-            {placeholderCount > 0 ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="wa-tpl-ex">
-                  Sample values ({placeholderCount} vars, separate with |)
-                </Label>
-                <Input
-                  id="wa-tpl-ex"
-                  value={formExamples}
-                  onChange={(e) => setFormExamples(e.target.value)}
-                  placeholder="Rahul|500|15 Aug 2026"
-                  className="h-10 rounded-xl"
-                />
+            {placeholderIndexes.length > 0 ? (
+              <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                <p className="text-xs font-medium text-slate-700">
+                  Sample values ({placeholderIndexes.length} variables)
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {placeholderIndexes.map((n) => (
+                    <div key={n} className="space-y-1">
+                      <Label htmlFor={`wa-tpl-ex-${n}`} className="text-[11px] text-slate-500">
+                        {`{{${n}}}`}
+                      </Label>
+                      <Input
+                        id={`wa-tpl-ex-${n}`}
+                        value={syncedExamples[n - 1] || ''}
+                        onChange={(e) => {
+                          const next = [...syncedExamples];
+                          next[n - 1] = e.target.value;
+                          setFormExamples(next);
+                        }}
+                        placeholder={DEFAULT_VAR_SAMPLES[n - 1] || `Sample ${n}`}
+                        className="h-9 rounded-lg"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : null}
-            <div className="space-y-1.5">
-              <Label htmlFor="wa-tpl-call">Call us phone (optional)</Label>
-              <Input
-                id="wa-tpl-call"
-                value={formCallPhone}
-                onChange={(e) => setFormCallPhone(e.target.value)}
-                placeholder="8884944288 or 9880693311"
-                className="h-10 rounded-xl"
-              />
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
+
+            <div className="space-y-2 rounded-xl border border-slate-200 p-3">
+              <p className="text-xs font-medium text-slate-700">Buttons (optional, max 3)</p>
               <div className="space-y-1.5">
-                <Label htmlFor="wa-tpl-url-text">URL button label</Label>
+                <Label htmlFor="wa-tpl-call">Call us phone</Label>
                 <Input
-                  id="wa-tpl-url-text"
-                  value={formUrlText}
-                  onChange={(e) => setFormUrlText(e.target.value)}
-                  placeholder="Website"
+                  id="wa-tpl-call"
+                  value={formCallPhone}
+                  onChange={(e) => setFormCallPhone(e.target.value)}
+                  placeholder="8884944288 or 9880693311"
                   className="h-10 rounded-xl"
                 />
               </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="wa-tpl-url-text">URL button label</Label>
+                  <Input
+                    id="wa-tpl-url-text"
+                    value={formUrlText}
+                    onChange={(e) => setFormUrlText(e.target.value)}
+                    placeholder="Pay now / Website"
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="wa-tpl-url">URL (https)</Label>
+                  <Input
+                    id="wa-tpl-url"
+                    value={formUrl}
+                    onChange={(e) => setFormUrl(e.target.value)}
+                    placeholder="https://hydrogenro.com or …/p/{{1}}"
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+              </div>
+              {urlHasVar ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="wa-tpl-url-ex">URL sample for {'{{1}}'}</Label>
+                  <Input
+                    id="wa-tpl-url-ex"
+                    value={formUrlExample}
+                    onChange={(e) => setFormUrlExample(e.target.value)}
+                    placeholder="pay123456"
+                    className="h-10 rounded-xl font-mono text-sm"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    Required when the URL ends with {'{{1}}'} (e.g. /p/{'{{1}}'}).
+                  </p>
+                </div>
+              ) : null}
               <div className="space-y-1.5">
-                <Label htmlFor="wa-tpl-url">URL (https)</Label>
+                <Label htmlFor="wa-tpl-qr">Quick reply</Label>
                 <Input
-                  id="wa-tpl-url"
-                  value={formUrl}
-                  onChange={(e) => setFormUrl(e.target.value)}
-                  placeholder="https://hydrogenro.com"
+                  id="wa-tpl-qr"
+                  value={formQuickReply}
+                  onChange={(e) => setFormQuickReply(e.target.value)}
+                  placeholder="Book now"
+                  maxLength={25}
                   className="h-10 rounded-xl"
                 />
               </div>
+              {buttonPreview.length ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {buttonPreview.map((b) => (
+                    <span
+                      key={b}
+                      className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-700"
+                    >
+                      {b}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-400">No buttons</p>
+              )}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="wa-tpl-qr">Quick reply (optional)</Label>
-              <Input
-                id="wa-tpl-qr"
-                value={formQuickReply}
-                onChange={(e) => setFormQuickReply(e.target.value)}
-                placeholder="Book now"
-                maxLength={25}
-                className="h-10 rounded-xl"
-              />
-            </div>
+
             <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                 Preview
               </p>
               <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-slate-800">
-                {fillWhatsAppTemplatePreview(
-                  formBody,
-                  formExamples.split('|').map((s) => s.trim())
-                )}
+                {fillWhatsAppTemplatePreview(formBody, syncedExamples)}
               </pre>
             </div>
           </div>
