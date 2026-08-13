@@ -204,6 +204,91 @@ export async function sendAdminWhatsAppText(
   }
 }
 
+export type SendAdminWhatsAppCtaUrlOptions = {
+  to: string;
+  text: string;
+  url: string;
+  displayText?: string;
+  customerId?: string | null;
+  customerName?: string | null;
+  source?: WhatsAppSendSource;
+  fallbackWaMe?: boolean;
+};
+
+/** 24h interactive Pay now (or any HTTPS CTA) button. */
+export async function sendAdminWhatsAppCtaUrl(
+  options: SendAdminWhatsAppCtaUrlOptions
+): Promise<AdminWhatsAppSendResult> {
+  const to = String(options.to || '').trim();
+  const text = String(options.text || '').trim();
+  const url = String(options.url || '').trim();
+  const displayText = String(options.displayText || 'Pay now').trim().slice(0, 20) || 'Pay now';
+  if (!to) return { ok: false, error: 'Phone required' };
+  if (!text) return { ok: false, error: 'Message required' };
+  if (!url || !/^https:\/\//i.test(url)) return { ok: false, error: 'HTTPS URL required' };
+
+  const accessToken = await resolveSupabaseAccessTokenForApi();
+  if (!accessToken) {
+    return { ok: false, error: 'Not signed in' };
+  }
+
+  try {
+    const res = await fetch('/.netlify/functions/whatsapp-send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        to,
+        type: 'cta_url',
+        text,
+        url,
+        displayText,
+        ...(options.customerId ? { customerId: options.customerId } : {}),
+        ...(options.customerName ? { customerName: options.customerName } : {}),
+        ...(options.source ? { source: options.source } : {}),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      noteApiSendInInboxCaches(to, data, {
+        body: `${text}\n\n[${displayText}]`,
+        msgType: 'interactive',
+        customerId: options.customerId,
+        customerName: options.customerName,
+      });
+      return {
+        ok: true,
+        via: 'api',
+        messageId: data?.messageId ? String(data.messageId) : null,
+      };
+    }
+    const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
+    if (isFeatureDisabledResponse(data)) {
+      return { ok: false, error: errMsg, featureDisabled: true };
+    }
+    const needsWindow = isWindowOrTemplateError(errMsg);
+    if (options.fallbackWaMe !== false) {
+      openWhatsAppMeDeepLink(to, `${text}\n\n${url}`);
+      return {
+        ok: true,
+        via: 'wa_me',
+        needsWindowOrTemplate: needsWindow,
+        error: errMsg,
+      };
+    }
+    return { ok: false, error: errMsg, needsWindowOrTemplate: needsWindow };
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : 'Send failed';
+    if (options.fallbackWaMe !== false) {
+      openWhatsAppMeDeepLink(to, `${text}\n\n${url}`);
+      return { ok: true, via: 'wa_me', error: errMsg };
+    }
+    return { ok: false, error: errMsg };
+  }
+}
+
 export type SendAdminWhatsAppDocumentOptions = {
   to: string;
   pdfBase64: string;

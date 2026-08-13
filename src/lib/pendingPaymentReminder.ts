@@ -169,7 +169,7 @@ export function buildPendingPaymentWhatsAppMessage(
   brand?: DocumentBrand | string | null,
   upi?: PendingPaymentWhatsAppUpiOptions | null,
   invoiceRef?: string | null,
-  opts?: { withQrImage?: boolean }
+  opts?: { withQrImage?: boolean; /** Body for interactive Pay now CTA (no inline link). */ ctaButton?: boolean }
 ): string {
   const resolved = resolvePendingPaymentMessageBrand(brand);
   const contact = brandContactLines(resolved);
@@ -178,6 +178,7 @@ export function buildPendingPaymentWhatsAppMessage(
   const payLink = (upi?.httpsLink || '').trim();
   const ref = String(invoiceRef || '').trim();
   const withQr = Boolean(opts?.withQrImage);
+  const ctaButton = Boolean(opts?.ctaButton);
 
   const lines: string[] = [
     `Hi ${customerName}, 👋`,
@@ -192,11 +193,16 @@ export function buildPendingPaymentWhatsAppMessage(
 
   if (withQr) {
     lines.push('');
-    lines.push('📱 Scan the QR above, or tap Pay now / open the link below.');
+    lines.push(
+      ctaButton
+        ? '📱 Scan the QR above, or tap Pay now below.'
+        : '📱 Scan the QR above, or tap Pay now / open the link below.'
+    );
   }
 
-  // Pay page already has UPI ID / payee / phone — don't repeat them in the chat body.
-  if (payLink) {
+  // Pay page already has UPI ID / payee / phone — don't repeat in chat.
+  // When ctaButton: Pay now is a real WhatsApp button — skip inline URL.
+  if (payLink && !ctaButton) {
     lines.push('');
     lines.push(waLabeledLink('💳', 'Pay now', payLink));
   }
@@ -210,7 +216,9 @@ export function buildPendingPaymentWhatsAppMessage(
     })
   );
   lines.push('');
-  if (withQr || payLink) {
+  if (ctaButton && (withQr || payLink)) {
+    lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');
+  } else if (withQr || payLink) {
     lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');
   } else {
     lines.push('💬 Reply on this chat if you need any help or if you have already paid.');

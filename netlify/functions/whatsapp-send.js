@@ -240,7 +240,10 @@ exports.handler = async (event) => {
           error: 'Media / document send is disabled in WhatsApp settings',
         });
       }
-      if (sendType === 'text' && waSettings.allow_freeform === false) {
+      if (
+        (sendType === 'text' || sendType === 'cta_url' || sendType === 'interactive') &&
+        waSettings.allow_freeform === false
+      ) {
         return json(403, headers, {
           code: 'WHATSAPP_FEATURE_DISABLED',
           feature: 'freeform',
@@ -286,6 +289,35 @@ exports.handler = async (event) => {
     // Keep customer-facing text clean; stamp ask-marker only on DB row for webhook allow-list.
     persist.body = stampAwaitingMediaIfAsking(text);
     persist.msg_type = 'text';
+  } else if (type === 'cta_url' || type === 'interactive_cta') {
+    const text = String(body.text || body.message || body.bodyText || '').trim();
+    const displayText = String(body.displayText || body.buttonText || 'Pay now').trim().slice(0, 20) || 'Pay now';
+    const ctaUrl = String(body.url || body.ctaUrl || body.link || '').trim();
+    if (!text) {
+      return json(400, headers, { error: 'text required for CTA message' });
+    }
+    if (!ctaUrl || !/^https:\/\//i.test(ctaUrl)) {
+      return json(400, headers, { error: 'https url required for CTA Pay now button' });
+    }
+    payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'cta_url',
+        body: { text: text.slice(0, 1024) },
+        action: {
+          name: 'cta_url',
+          parameters: {
+            display_text: displayText,
+            url: ctaUrl,
+          },
+        },
+      },
+    };
+    persist.msg_type = 'interactive';
+    persist.body = `${text}\n\n[Pay now → ${ctaUrl}]`;
   } else if (type === 'document' || type === 'pdf' || type === 'image') {
     let link = String(body.link || body.pdfUrl || body.url || '').trim();
     let mediaId = String(body.mediaId || body.documentId || body.imageId || '').trim();
@@ -593,7 +625,7 @@ exports.handler = async (event) => {
           : templateName;
     }
   } else {
-    return json(400, headers, { error: 'type must be text, document, image, or template' });
+    return json(400, headers, { error: 'type must be text, cta_url, document, image, or template' });
   }
 
   const customerIdRaw =
