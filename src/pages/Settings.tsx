@@ -2411,8 +2411,8 @@ const Settings = () => {
     const exitWhatsAppInboxToHome = () => {
       navigate('/admin', { replace: true });
     };
+    // Header Back always goes to admin home (not chat list / settings).
     const handleWhatsAppChromeBack = () => {
-      if (tryNativeBackHandlers()) return;
       exitWhatsAppInboxToHome();
     };
     return (
