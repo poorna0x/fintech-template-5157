@@ -198,7 +198,12 @@ function DeviceCard({
           className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-muted/40 transition-colors"
           onClick={() => setExpanded((v) => !v)}
         >
-          <span className="text-sm font-medium">Notification types for this phone</span>
+          <span className="text-sm font-medium">
+            Notification types for this phone
+            <span className="ml-1.5 font-normal text-muted-foreground">
+              (WhatsApp, jobs, calls, reminders…)
+            </span>
+          </span>
           {expanded ? <ChevronUp className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
         </button>
         {expanded ? (
@@ -232,6 +237,7 @@ function DeviceCard({
 
 /** Settings section — manage admin & technician phones and per-type push controls. */
 export function DeviceTrackerSettings() {
+  const [sectionOpen, setSectionOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('admin');
   const [loading, setLoading] = useState(false);
   const [adminDevices, setAdminDevices] = useState<AdminDeviceRow[]>(() => readDeviceTrackerCache()?.adminDevices ?? []);
@@ -420,24 +426,48 @@ export function DeviceTrackerSettings() {
   return (
     <>
       <Card id="section-device-tracker" className="scroll-mt-24">
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <CardHeader className="space-y-0 p-0">
+          <button
+            type="button"
+            className="flex w-full flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 text-left hover:bg-muted/30 transition-colors rounded-t-lg"
+            onClick={() => setSectionOpen((v) => !v)}
+            aria-expanded={sectionOpen}
+          >
             <div>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <Smartphone className="w-5 h-5" />
                 Device Tracker
+                {sectionOpen ? (
+                  <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                )}
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                Every admin and technician phone — auto-detected name (or a fallback you can rename). List is cached for this session; tap Refresh when someone registers a new phone.
+                {sectionOpen
+                  ? 'Every admin and technician phone — rename, mute all push, or turn individual types on/off (WhatsApp inbox, job status, calls, cash check, etc.). List is cached for this session; tap Refresh when someone registers a new phone.'
+                  : 'Admin and technician phones — push types, WhatsApp, calls. Tap to open.'}
               </CardDescription>
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={() => void refresh({ force: true })} disabled={loading}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 self-start sm:self-center"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!sectionOpen) setSectionOpen(true);
+                void refresh({ force: true });
+              }}
+              disabled={loading}
+            >
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-          </div>
+          </button>
         </CardHeader>
-        <CardContent className="p-4 sm:p-6 space-y-4">
+        {sectionOpen ? (
+        <CardContent className="p-4 sm:p-6 space-y-4 border-t border-border">
           <div className="flex gap-2 p-1 rounded-lg bg-muted/50 w-full sm:w-auto">
             <Button
               type="button"
@@ -571,6 +601,7 @@ export function DeviceTrackerSettings() {
             </div>
           )}
         </CardContent>
+        ) : null}
       </Card>
 
       <AlertDialog open={Boolean(removeTarget)} onOpenChange={(open) => !open && setRemoveTarget(null)}>

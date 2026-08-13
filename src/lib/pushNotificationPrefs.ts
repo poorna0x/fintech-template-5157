@@ -1,4 +1,5 @@
 export const ADMIN_PUSH_CATEGORIES = [
+  'whatsapp_inbound',
   'job_status',
   'customer_calls',
   'wrong_line',
@@ -10,7 +11,6 @@ export const ADMIN_PUSH_CATEGORIES = [
   'day_summary',
   'new_booking',
   'parts_reminder',
-  'whatsapp_inbound',
 ] as const;
 
 export const TECH_PUSH_CATEGORIES = [
@@ -33,6 +33,11 @@ export type AdminPushPrefs = Record<AdminPushCategory, boolean>;
 export type TechPushPrefs = Record<TechPushCategory, boolean>;
 
 export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; description: string }> = {
+  whatsapp_inbound: {
+    label: 'WhatsApp inbox',
+    description:
+      'When a customer sends a WhatsApp message (Admin APK push). Off = this phone stays quiet for WhatsApp; other phones still get it if their toggle is on.',
+  },
   job_status: {
     label: 'Job status updates',
     description: 'On the way, completed, OTP entered, bill missing, tech-created jobs.',
@@ -80,10 +85,6 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
   parts_reminder: {
     label: 'Parts entry reminder',
     description: 'Reminder to verify parts logged for completed jobs.',
-  },
-  whatsapp_inbound: {
-    label: 'WhatsApp inbox',
-    description: 'When a customer sends a message on WhatsApp (admin app, even when CRM is closed).',
   },
 };
 

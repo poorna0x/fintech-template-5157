@@ -4,6 +4,7 @@
 /** @typedef {import('./push-prefs-helper').TechPushCategory} TechPushCategory */
 
 const ADMIN_PUSH_CATEGORIES = [
+  'whatsapp_inbound',
   'job_status',
   'customer_calls',
   'wrong_line',
@@ -15,7 +16,6 @@ const ADMIN_PUSH_CATEGORIES = [
   'day_summary',
   'new_booking',
   'parts_reminder',
-  'whatsapp_inbound',
 ];
 
 const TECH_PUSH_CATEGORIES = [
