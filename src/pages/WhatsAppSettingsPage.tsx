@@ -38,6 +38,7 @@ import {
   TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES,
   normalizeTechPushWhatsAppGlobal,
 } from '@/lib/techWhatsAppPrefs';
+import WhatsAppTemplatesManageCard from '@/components/admin/WhatsAppTemplatesManageCard';
 
 type Props = {
   hideHeader?: boolean;
@@ -285,6 +286,8 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
           />
         </CardContent>
       </Card>
+
+      <WhatsAppTemplatesManageCard />
 
       {/* Per-surface toggles */}
       <Card>
