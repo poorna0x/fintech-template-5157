@@ -7,7 +7,9 @@ import {
 } from '@/lib/devicePrefs';
 import {
   dismissWhatsAppTraysFromReadMap,
+  fetchWhatsAppInboxReadMap,
   loadWhatsAppReadMap,
+  mergeWhatsAppReadMap,
 } from '@/lib/whatsappInbox';
 
 export type WhatsAppInboxActivity = {
@@ -86,8 +88,13 @@ export function startWhatsAppViewingPresence(): () => void {
           return;
         }
         void syncViewingWhatsAppPresence(viewingPhoneFromActivity());
-        // Local only — Realtime already syncs reads while connected; avoid full map download on every resume.
+        // Local first (no network), then slim catch-up for reads missed while backgrounded.
         dismissWhatsAppTraysFromReadMap(loadWhatsAppReadMap());
+        void fetchWhatsAppInboxReadMap(supabase, { sinceHours: 6, force: true }).then((remote) => {
+          if (!Object.keys(remote).length) return;
+          const map = mergeWhatsAppReadMap(remote);
+          dismissWhatsAppTraysFromReadMap(map);
+        });
       });
     } catch {
       pauseListenerAttached = false;

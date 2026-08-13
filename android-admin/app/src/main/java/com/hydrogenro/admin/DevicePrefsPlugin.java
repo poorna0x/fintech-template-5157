@@ -57,11 +57,25 @@ public class DevicePrefsPlugin extends Plugin {
         return "wa_inbound_" + digits;
     }
 
-    /** Remove WhatsApp inbound tray alert for this customer (team read sync / open chat). */
+    /** India numbers may be stored as 10 digits or 91XXXXXXXXXX — cancel every likely tag. */
     static void clearWhatsAppTrayNotification(Context context, String phoneDigits) {
-        String tag = whatsAppTrayTag(phoneDigits);
+        String digits = phoneDigits == null ? "" : phoneDigits.replaceAll("\\D", "");
+        if (digits.isEmpty()) return;
+        java.util.LinkedHashSet<String> tags = new java.util.LinkedHashSet<>();
+        tags.add(whatsAppTrayTag(digits));
+        if (digits.length() == 10) {
+            tags.add(whatsAppTrayTag("91" + digits));
+        }
+        if (digits.length() >= 12 && digits.startsWith("91")) {
+            tags.add(whatsAppTrayTag(digits.substring(digits.length() - 10)));
+        }
         try {
-            NotificationManagerCompat.from(context).cancel(tag, 0);
+            NotificationManagerCompat nm = NotificationManagerCompat.from(context);
+            for (String tag : tags) {
+                nm.cancel(tag, 0);
+                // Some FCM / OEM paths use hashCode as the notification id.
+                nm.cancel(tag, Math.abs(tag.hashCode()));
+            }
         } catch (Throwable ignored) {
             /* notifications disabled */
         }

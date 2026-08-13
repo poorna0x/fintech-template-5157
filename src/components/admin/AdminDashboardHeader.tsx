@@ -201,14 +201,25 @@ export function AdminDashboardHeader({
                   <Button
                     variant="outline"
                     className={cn(
-                      'flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3',
+                      'relative flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3',
                       hasWhatsAppUnread &&
                         'border-2 border-emerald-500 bg-emerald-50/60 text-emerald-900 hover:bg-emerald-50 hover:text-emerald-900'
                     )}
                     title={hasWhatsAppUnread ? `${whatsAppUnreadCount} unread WhatsApp` : 'Tools'}
+                    aria-label={
+                      hasWhatsAppUnread
+                        ? `Tools, ${whatsAppUnreadCount} unread WhatsApp`
+                        : 'Tools'
+                    }
                   >
                     <Wrench className="w-4 h-4" />
                     <span className="hidden sm:inline">Tools</span>
+                    {hasWhatsAppUnread ? (
+                      <WhatsAppUnreadBadge
+                        count={whatsAppUnreadCount}
+                        className="absolute -right-1.5 -top-1.5 ml-0 shadow-sm ring-2 ring-white"
+                      />
+                    ) : null}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent

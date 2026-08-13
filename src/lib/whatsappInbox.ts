@@ -80,11 +80,31 @@ export function shouldDismissWhatsAppTrayForRead(phoneE164: string, readAt: stri
   const phone = String(phoneE164 || '').replace(/\D/g, '');
   if (!phone || !readAt) return false;
   const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
-  const thread = cached?.threads?.find((t) => t.phone_e164 === phone);
+  const thread = cached?.threads?.find((t) => {
+    const p = String(t.phone_e164 || '').replace(/\D/g, '');
+    return p === phone || (p.length >= 10 && phone.length >= 10 && p.slice(-10) === phone.slice(-10));
+  });
   if (!thread) return true;
   const inbound = threadLastInboundAt(thread);
   if (!inbound) return true;
-  return new Date(readAt).getTime() >= new Date(inbound).getTime();
+  const readMs = new Date(readAt).getTime();
+  const inboundMs = new Date(inbound).getTime();
+  if (!Number.isFinite(readMs) || !Number.isFinite(inboundMs)) return true;
+  // 2s skew: mark-read vs Realtime patch ordering can differ by a few ms.
+  return readMs + 2000 >= inboundMs;
+}
+
+/** Cancel native tray for this phone (always — used on explicit Realtime read events). */
+export function dismissWhatsAppTrayForPhone(phoneE164: string): void {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone) return;
+  void clearNativeWhatsAppTrayNotification(phone);
+  // Also try the alternate India form so tag always matches FCM.
+  if (phone.length === 10) {
+    void clearNativeWhatsAppTrayNotification(`91${phone}`);
+  } else if (phone.length >= 12 && phone.startsWith('91')) {
+    void clearNativeWhatsAppTrayNotification(phone.slice(-10));
+  }
 }
 
 /** Cancel native tray alerts for phones the team has read (mobile catch-up / Realtime). */
@@ -93,14 +113,8 @@ export function dismissWhatsAppTraysFromReadMap(readMap: Record<string, string>)
     const phone = String(rawPhone || '').replace(/\D/g, '');
     if (!phone || !readAt) continue;
     if (!shouldDismissWhatsAppTrayForRead(phone, readAt)) continue;
-    void clearNativeWhatsAppTrayNotification(phone);
+    dismissWhatsAppTrayForPhone(phone);
   }
-}
-
-export function dismissWhatsAppTrayForPhone(phoneE164: string): void {
-  const phone = String(phoneE164 || '').replace(/\D/g, '');
-  if (!phone) return;
-  void clearNativeWhatsAppTrayNotification(phone);
 }
 
 function laterIso(a: string | undefined, b: string | undefined): string | undefined {
@@ -135,9 +149,9 @@ export function mergeWhatsAppReadMap(incoming: Record<string, string>): Record<s
     for (const [rawPhone, at] of Object.entries(incoming)) {
       const phone = String(rawPhone || '').replace(/\D/g, '');
       if (!phone || !at) continue;
-      if (shouldDismissWhatsAppTrayForRead(phone, at)) {
-        void clearNativeWhatsAppTrayNotification(phone);
-      }
+      // Explicit read upsert from another device — always clear that customer's tray.
+      // (Bulk resume still uses shouldDismiss via dismissWhatsAppTraysFromReadMap.)
+      dismissWhatsAppTrayForPhone(phone);
     }
   }
   return map;
@@ -159,21 +173,27 @@ const READ_MAP_FETCH_TTL_MS = 45_000;
 export async function fetchWhatsAppInboxReadMap(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabaseClient: { from: (table: string) => any },
-  opts?: { force?: boolean }
+  opts?: { force?: boolean; sinceHours?: number }
 ): Promise<Record<string, string>> {
   const now = Date.now();
   if (
     !opts?.force &&
+    !opts?.sinceHours &&
     readMapFetchCache &&
     now - readMapFetchCache.at < READ_MAP_FETCH_TTL_MS
   ) {
     return readMapFetchCache.map;
   }
-  const { data, error } = await supabaseClient
+  let query = supabaseClient
     .from('whatsapp_inbox_read')
     .select('phone_e164, read_at')
     .order('updated_at', { ascending: false })
-    .limit(200);
+    .limit(opts?.sinceHours ? 80 : 200);
+  if (opts?.sinceHours && opts.sinceHours > 0) {
+    const since = new Date(now - opts.sinceHours * 60 * 60 * 1000).toISOString();
+    query = query.gte('updated_at', since);
+  }
+  const { data, error } = await query;
   if (error) return readMapFetchCache?.map ?? {};
   const out: Record<string, string> = {};
   for (const row of data || []) {
@@ -181,7 +201,14 @@ export async function fetchWhatsAppInboxReadMap(
     const at = String(row.read_at || '');
     if (phone && at) out[phone] = at;
   }
-  readMapFetchCache = { at: now, map: out };
+  if (!opts?.sinceHours) {
+    readMapFetchCache = { at: now, map: out };
+  } else if (Object.keys(out).length) {
+    readMapFetchCache = {
+      at: now,
+      map: { ...(readMapFetchCache?.map || {}), ...out },
+    };
+  }
   return out;
 }
 
@@ -347,6 +374,40 @@ export function countUnreadWhatsAppMessages(
     (sum, t) => sum + unreadMessageCountForThread(t, readMap, counts),
     0
   );
+}
+
+/**
+ * Header / Tools badge total — prefers cached threads + per-phone message counts.
+ * Soft-fail to stored counts only when the thread list is not in memory.
+ */
+export function resolveWhatsAppHeaderUnreadCount(
+  threads?: WhatsAppThread[] | null,
+  readMap?: Record<string, string>
+): number {
+  const map = readMap ?? loadWhatsAppReadMap();
+  const counts = loadWhatsAppUnreadCounts();
+  const list =
+    threads && threads.length
+      ? threads
+      : peekWhatsAppInboxThreadsCache({ rangeKey: 'today' })?.threads ?? [];
+  if (list.length) {
+    return countUnreadWhatsAppMessages(list, map, counts);
+  }
+  let sum = 0;
+  for (const n of Object.values(counts)) {
+    if (n > 0) sum += n;
+  }
+  return sum;
+}
+
+/** Bump local per-phone unread message count (Tools badge) on new inbound. */
+export function bumpWhatsAppUnreadCountForPhone(phoneE164: string, by = 1): number {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone || by <= 0) return 0;
+  const prev = loadWhatsAppUnreadCounts();
+  const next = { ...prev, [phone]: Math.min(999, (prev[phone] || 0) + by) };
+  saveWhatsAppUnreadCounts(next);
+  return next[phone];
 }
 
 /**
@@ -1718,6 +1779,17 @@ function humanizeWhatsAppTemplateSlug(slug: string): string {
 /** True when the row is an internal booking-bot state dump (not a customer-facing text). */
 export function isBookingBotStateMessage(body: string | null | undefined): boolean {
   return String(body || '').startsWith(BOOKING_BOT_STATE_PREFIX);
+}
+
+/** Inbound marker from webhook — booking CTA / mid-flow (no admin push/toast). */
+export const BOOKING_FLOW_ALERT_MARKER = 'crm_bot_flow';
+
+export function isBotFlowAdminAlertSkip(
+  row: Pick<WhatsAppMessageRow, 'msg_type' | 'template_name'>
+): boolean {
+  const type = String(row.msg_type || '').toLowerCase();
+  if (type === 'interactive' || type === 'button') return true;
+  return String(row.template_name || '') === BOOKING_FLOW_ALERT_MARKER;
 }
 
 /** Free-form text/PDF allowed if last inbound was within 24 hours. */

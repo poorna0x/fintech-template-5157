@@ -605,6 +605,34 @@ function extractInteractiveReply(msg) {
   return null;
 }
 
+/** Marker on inbound rows so CRM/APK skip admin alerts without extra fetches. */
+const BOOKING_FLOW_ALERT_MARKER = 'crm_bot_flow';
+
+function isCtaInboundMsg(msg) {
+  const t = String(msg?.type || '');
+  return t === 'interactive' || t === 'button';
+}
+
+function isFreshStartGreeting(msg) {
+  if (String(msg?.type || '') !== 'text') return false;
+  const text = String(msg.text?.body || '').trim();
+  return /^(hi+|hii+|hello|hey|hola|namaste|menu|start|help)\s*$/i.test(text);
+}
+
+/**
+ * Skip admin FCM / toast for booking-bot CTA taps and mid-flow replies.
+ * First free-text (Hi / new chat, no button) still alerts.
+ */
+function shouldSuppressAdminInboundAlert(msg, priorState) {
+  if (isCtaInboundMsg(msg)) return true;
+  const step = String(priorState?.step || '');
+  const midFlow =
+    Boolean(priorState?.editing) || (step !== '' && ACTIVE_BOOKING_STEPS.has(step));
+  if (!midFlow) return false;
+  if (isFreshStartGreeting(msg)) return false;
+  return true;
+}
+
 function slimInboxBody(text, max = 220) {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
   if (!t) return '';
@@ -3162,6 +3190,7 @@ async function handleBookingBotInbound({
   phoneNumberId,
   msg,
   inboundMedia = null,
+  preloadedState,
 }) {
   const enabled = await isBookingBotEnabled(db);
   if (!enabled) return { handled: false };
@@ -3172,7 +3201,8 @@ async function handleBookingBotInbound({
   const ctx = { db, accessToken, phoneNumberId, to };
   const interactive = extractInteractiveReply(msg);
   const text = String(msg.text?.body || '').trim();
-  const state = await getBookingState(db, to);
+  const state =
+    preloadedState !== undefined ? preloadedState : await getBookingState(db, to);
   const msgType = String(msg.type || '');
 
   // Plain Hi / Hello / Menu → always restart identity gate (works inside open 24h window)
@@ -4683,6 +4713,8 @@ async function handleBookingBotInbound({
 module.exports = {
   handleBookingBotInbound,
   extractInteractiveReply,
+  shouldSuppressAdminInboundAlert,
+  BOOKING_FLOW_ALERT_MARKER,
   isBookingBotEnabled,
   sendLocationRequest,
   sendCtaUrl,

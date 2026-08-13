@@ -15,7 +15,12 @@ const {
   extractInboundBody,
   normalizePhoneE164,
 } = require('./whatsapp-helper');
-const { handleBookingBotInbound } = require('./whatsapp-booking-bot');
+const {
+  handleBookingBotInbound,
+  getBookingState,
+  shouldSuppressAdminInboundAlert,
+  BOOKING_FLOW_ALERT_MARKER,
+} = require('./whatsapp-booking-bot');
 const { handleUnsolicitedInboundMedia } = require('./whatsapp-unsolicited-media');
 const { handlePdfAuthenticityOtpInbound } = require('./whatsapp-pdf-authenticity-otp');
 const { handleDocumentAcceptInbound } = require('./document-accept-inbound');
@@ -48,6 +53,13 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
 
     const customerId = await findCustomerIdByPhone(db, phone);
     const body = extractInboundBody(msg);
+    let priorBotState = null;
+    try {
+      priorBotState = await getBookingState(db, phone);
+    } catch {
+      priorBotState = null;
+    }
+    const skipBotFlowAlert = shouldSuppressAdminInboundAlert(msg, priorBotState);
 
     await insertWhatsAppMessage(db, {
       wa_message_id: msg.id || null,
@@ -61,21 +73,8 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       filename: media.filename || msg.document?.filename || null,
       status: 'received',
       created_at: tsToIso(msg.timestamp),
+      ...(skipBotFlowAlert ? { template_name: BOOKING_FLOW_ALERT_MARKER } : {}),
     });
-
-    const { pushWhatsAppInboundToAdmins } = require('./admin-whatsapp-inbound-push');
-    void pushWhatsAppInboundToAdmins(db, {
-      phoneE164: phone,
-      body,
-      msgType,
-      filename: media.filename || msg.document?.filename || null,
-      mediaUrl: media.media_url,
-      mediaMime: media.media_mime,
-      customerId,
-      waMessageId: msg.id || null,
-    }).catch((err) =>
-      console.warn('[whatsapp-webhook] admin inbound push failed', err?.message || err)
-    );
 
     summaries.push({
       from: phone,
@@ -146,10 +145,29 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
           phoneNumberId,
           msg,
           inboundMedia: media,
+          preloadedState: priorBotState,
         });
       } catch (err) {
         console.warn('[whatsapp-webhook] booking bot error', err?.message || err);
       }
+    }
+
+    const skipAdminPush =
+      authenticityOtpHandled || documentAcceptHandled || skipBotFlowAlert;
+    if (!skipAdminPush) {
+      const { pushWhatsAppInboundToAdmins } = require('./admin-whatsapp-inbound-push');
+      void pushWhatsAppInboundToAdmins(db, {
+        phoneE164: phone,
+        body,
+        msgType,
+        filename: media.filename || msg.document?.filename || null,
+        mediaUrl: media.media_url,
+        mediaMime: media.media_mime,
+        customerId,
+        waMessageId: msg.id || null,
+      }).catch((err) =>
+        console.warn('[whatsapp-webhook] admin inbound push failed', err?.message || err)
+      );
     }
   }
 }

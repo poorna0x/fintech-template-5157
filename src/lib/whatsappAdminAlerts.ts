@@ -5,23 +5,24 @@ import {
   showWhatsAppInboundToast,
 } from '@/lib/showWhatsAppAdminToast';
 import {
+  bumpWhatsAppUnreadCountForPhone,
   clearWhatsAppUnreadCountForPhone,
-  countUnreadWhatsAppThreads,
   dismissWhatsAppTrayForPhone,
   displayPhone,
+  isBotFlowAdminAlertSkip,
   isWhatsAppThreadUnread,
   loadWhatsAppReadMap,
   mergeWhatsAppReadMap,
   patchThreadFromMessage,
   peekWhatsAppInboxThreadsCache,
   previewMessageBody,
+  resolveWhatsAppHeaderUnreadCount,
   writeWhatsAppInboxThreadsCache,
   type WhatsAppMessageRow,
 } from '@/lib/whatsappInbox';
 import {
   dispatchWhatsAppUnreadChanged,
   getWhatsAppInboxActivity,
-  readWhatsAppUnreadCount,
   startWhatsAppViewingPresence,
 } from '@/lib/whatsappInboxActivity';
 import { playWhatsAppAlertSound } from '@/lib/whatsappAlertSound';
@@ -71,23 +72,18 @@ function bumpUnreadFromInbound(row: WhatsAppMessageRow): WhatsAppThreadNameHint 
   const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
   const prevThreads = cached?.threads ?? [];
   const phone = normalizePhone(row.phone_e164);
-  const prevThread = prevThreads.find((t) => t.phone_e164 === phone);
   const readMap = loadWhatsAppReadMap();
-  const wasUnreadBefore = prevThread ? isWhatsAppThreadUnread(prevThread, readMap) : false;
 
   const threads = patchThreadFromMessage(prevThreads, row);
   writeWhatsAppInboxThreadsCache(threads, { rangeKey: 'today' });
 
   const thread = threads.find((t) => t.phone_e164 === phone);
-  const isUnreadNow = thread ? isWhatsAppThreadUnread(thread, readMap) : false;
+  const isUnreadNow = thread ? isWhatsAppThreadUnread(thread, readMap) : true;
 
-  if (isUnreadNow && !wasUnreadBefore) {
-    dispatchWhatsAppUnreadChanged(readWhatsAppUnreadCount() + 1);
-  } else if (prevThreads.length > 0) {
-    dispatchWhatsAppUnreadChanged(countUnreadWhatsAppThreads(threads, readMap));
-  } else if (isUnreadNow) {
-    dispatchWhatsAppUnreadChanged(1);
+  if (isUnreadNow) {
+    bumpWhatsAppUnreadCountForPhone(phone, 1);
   }
+  dispatchWhatsAppUnreadChanged(resolveWhatsAppHeaderUnreadCount(threads, readMap));
 
   return { customerName: thread?.customer_name || null, phone };
 }
@@ -182,6 +178,13 @@ function handleInboundInsert(row: Partial<WhatsAppMessageRow> | null): void {
     return;
   }
 
+  if (isBotFlowAdminAlertSkip(row as WhatsAppMessageRow)) {
+    const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
+    const threads = patchThreadFromMessage(cached?.threads ?? [], row as WhatsAppMessageRow);
+    writeWhatsAppInboxThreadsCache(threads, { rangeKey: 'today' });
+    return;
+  }
+
   const hint = bumpUnreadFromInbound(row as WhatsAppMessageRow);
   notifyInbound(row as WhatsAppMessageRow, hint);
 }
@@ -213,13 +216,8 @@ export function startWhatsAppAdminAlerts(): () => void {
         if (!phone || !readAt) return;
         const map = mergeWhatsAppReadMap({ [phone]: readAt });
         clearWhatsAppUnreadCountForPhone(phone);
-        const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
-        if (cached?.threads?.length) {
-          dispatchWhatsAppUnreadChanged(countUnreadWhatsAppThreads(cached.threads, map));
-        } else {
-          const cur = readWhatsAppUnreadCount();
-          if (cur > 0) dispatchWhatsAppUnreadChanged(Math.max(0, cur - 1));
-        }
+        // Keep Tools / header badge aligned with inbox (message counts, not stale +1/-1).
+        dispatchWhatsAppUnreadChanged(resolveWhatsAppHeaderUnreadCount(null, map));
       }
     )
     .subscribe();
