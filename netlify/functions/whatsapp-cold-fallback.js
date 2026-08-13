@@ -60,10 +60,14 @@ function buildTemplatePayload(to, templateName, languageCode, bodyParams, header
   };
 }
 
-/** Balance-due letter v4+ / IMAGE — dynamic Pay now URL `/p/{{1}}`. */
+/** Balance-due letter v4+ / IMAGE / overdue notice — dynamic Pay now URL `/p/{{1}}`. */
 function templateUsesDynamicPayNowUrl(name) {
-  return /svc_balance_due_letter_(ero|hro)_(img_v?\d*|v[4-9])$/i.test(String(name || ''))
-    || /svc_balance_due_letter_(ero|hro)_img_/i.test(String(name || ''));
+  const n = String(name || '');
+  return (
+    /svc_balance_due_letter_(ero|hro)_(img_v?\d*|v[4-9])$/i.test(n) ||
+    /svc_balance_due_letter_(ero|hro)_img_/i.test(n) ||
+    /svc_payment_overdue_notice_(ero|hro)_v\d+$/i.test(n)
+  );
 }
 
 /**
@@ -562,21 +566,10 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(SMOKE, [name || 'there']);
   }
 
-  if (bodyParams.length >= 3) {
-    push(VISIT_CONFIRMED, bodyParams.slice(0, 3).map(String));
-  }
-
-  if (bodyParams.length >= 2) {
-    const detail =
-      String(bodyParams.slice(1).join(' · ')).trim().slice(0, 160) ||
-      'Please reply on this chat for details.';
-    push(VISIT, [name, detail]);
-
-    const amountRaw = String(bodyParams[1] || '').replace(/[^\d.]/g, '');
-    const amount = amountRaw || '0';
-    push(JOB_DONE, [name, amount]);
-  }
-
+  // Last-resort smoke only. Do NOT map arbitrary 3-param templates (e.g. balance-due
+  // name/amount/due) onto svc_visit_confirmed — that produced "booking 10 is confirmed
+  // for <due date>" when pending-payment cold templates fell through.
+  // Booking-confirm → visit_confirmed is handled in the booking_confirmed blocks above.
   push(SMOKE, [name]);
   return attempts;
 }
