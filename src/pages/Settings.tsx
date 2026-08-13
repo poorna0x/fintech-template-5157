@@ -424,6 +424,7 @@ const Settings = () => {
     pushNotificationsEnabled: true,
     pushPrefs: defaultTechPushPrefs() as TechPushPrefs,
     whatsappPrefs: defaultTechWhatsAppPrefs() as TechWhatsAppPrefs,
+    salarySlipAutoSend: false,
     visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
     commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
   });
@@ -645,6 +646,7 @@ const Settings = () => {
           pushNotificationsEnabled: tech.push_notifications_enabled !== false,
           pushPrefs: normalizeTechPushPrefs((tech as any).push_prefs),
           whatsappPrefs: normalizeTechWhatsAppPrefs((tech as any).whatsapp_prefs),
+          salarySlipAutoSend: (tech as any).salary_slip_auto_send === true,
         });
         setNewlyCreatedTechnicianId(null);
       }
@@ -803,6 +805,7 @@ const Settings = () => {
     push_prefs: tech.push_prefs && typeof tech.push_prefs === 'object' ? tech.push_prefs : {},
     whatsapp_prefs:
       tech.whatsapp_prefs && typeof tech.whatsapp_prefs === 'object' ? tech.whatsapp_prefs : {},
+    salary_slip_auto_send: tech.salary_slip_auto_send === true,
     skills: tech.skills,
     serviceAreas: tech.service_areas,
     status: tech.status,
@@ -924,6 +927,7 @@ const Settings = () => {
       pushNotificationsEnabled: true,
       pushPrefs: defaultTechPushPrefs(),
       whatsappPrefs: defaultTechWhatsAppPrefs(),
+      salarySlipAutoSend: false,
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('add-technician');
@@ -958,6 +962,7 @@ const Settings = () => {
       pushNotificationsEnabled: technician.push_notifications_enabled !== false,
       pushPrefs: normalizeTechPushPrefs((technician as any).push_prefs),
       whatsappPrefs: normalizeTechWhatsAppPrefs((technician as any).whatsapp_prefs),
+      salarySlipAutoSend: (technician as any).salary_slip_auto_send === true,
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('edit-technician', { id: technician.id });
@@ -1059,6 +1064,7 @@ const Settings = () => {
           technicianFormData.pushNotificationsEnabled !== false;
         technicianData.push_prefs = normalizeTechPushPrefs(technicianFormData.pushPrefs);
         technicianData.whatsapp_prefs = normalizeTechWhatsAppPrefs(technicianFormData.whatsappPrefs);
+        technicianData.salary_slip_auto_send = technicianFormData.salarySlipAutoSend === true;
       } else {
         technicianData.status = 'OFFLINE';
         technicianData.performance = {
@@ -1073,6 +1079,7 @@ const Settings = () => {
         technicianData.push_notifications_enabled = true;
         technicianData.push_prefs = defaultTechPushPrefs();
         technicianData.whatsapp_prefs = defaultTechWhatsAppPrefs();
+        technicianData.salary_slip_auto_send = technicianFormData.salarySlipAutoSend === true;
       }
 
       const password = technicianFormData.password?.trim() || '';
@@ -2510,6 +2517,11 @@ const Settings = () => {
                 Push off
               </Badge>
             ) : null}
+            {technician.salary_slip_auto_send === true ? (
+              <Badge variant="outline" className="text-[10px] text-emerald-800 border-emerald-300">
+                Salary slip WA
+              </Badge>
+            ) : null}
           </div>
         </div>
 
@@ -3945,6 +3957,27 @@ const Settings = () => {
                   <p className="text-xs text-muted-foreground mt-1">
                     If basic salary changes, old months keep the old amount.
                   </p>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 sm:col-span-2">
+                  <div className="min-w-0 space-y-0.5">
+                    <Label htmlFor="salarySlipAutoSend" className="text-sm font-medium">
+                      Auto-send salary slip (WhatsApp)
+                    </Label>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      Last calendar day of each month at about 9:00 PM IST, WhatsApp this technician
+                      the salary-slip PDF for that full month.
+                    </p>
+                  </div>
+                  <Switch
+                    id="salarySlipAutoSend"
+                    checked={technicianFormData.salarySlipAutoSend === true}
+                    onCheckedChange={(checked) =>
+                      setTechnicianFormData((prev) => ({
+                        ...prev,
+                        salarySlipAutoSend: checked,
+                      }))
+                    }
+                  />
                 </div>
               </div>
               {editTechnicianDialogOpen && (

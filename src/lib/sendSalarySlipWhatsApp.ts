@@ -60,10 +60,9 @@ export async function sendSalarySlipWhatsApp(opts: {
     caption,
     source: 'composer',
     cold: {
-      kind: 'generic',
+      kind: 'salary',
       brand: 'hydrogenro',
       customerName: opts.breakdown.technicianName,
-      documentLabel: 'Salary slip',
     },
   });
 }

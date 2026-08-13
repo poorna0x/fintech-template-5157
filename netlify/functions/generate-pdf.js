@@ -319,6 +319,9 @@ async function renderHtmlToPdf(html, requestOrigin) {
   }
 }
 
+/** Shared HTML→PDF for scheduled/internal callers (e.g. salary-slip-month-end). */
+exports.renderHtmlToPdf = renderHtmlToPdf;
+
 exports.handler = async (event) => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
   const corsHeaders = getCorsHeaders(requestOrigin);

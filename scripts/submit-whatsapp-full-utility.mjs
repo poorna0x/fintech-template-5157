@@ -1483,6 +1483,7 @@ const DOC_PDF_ATTACHED_LINES = [
   { slug: 'warranty', line: 'Your warranty card is attached.', label: 'warranty card' },
   { slug: 'receipt', line: 'Your payment receipt is attached.', label: 'payment receipt' },
   { slug: 'generic', line: 'Your document is attached.', label: 'document' },
+  { slug: 'salary', line: 'Your salary slip is attached.', label: 'salary slip' },
 ];
 
 function buildDocPdfV2Templates() {
@@ -2728,6 +2729,18 @@ async function main() {
       ...DOC_DIRECT_LETTER_TEMPLATES.map((t) => t.name),
       ...DOC_PDF_V3_TEMPLATES.map((t) => t.name),
     ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlySalarySlip = process.argv.includes('--only-salary-slip');
+  if (onlySalarySlip) {
+    const keep = new Set(
+      [...DOC_PDF_V3_TEMPLATES, ...DOC_PDF_V2_TEMPLATES]
+        .filter((t) => /svc_doc_salary_/i.test(t.name))
+        .map((t) => t.name)
+    );
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

@@ -28,6 +28,15 @@
 [functions."daily-cash-check"]
   schedule = "30 15 * * *"
 
+# Month-end salary slip WhatsApp: 9:00 PM IST on days 28-31 only (Netlify has
+# no last-day "L"). Handler still exits unless today is last day in IST.
+[functions."salary-slip-month-end"]
+  schedule = "30 15 28-31 * *"
+  timeout = 26
+  memory = 2048
+  node_bundler = "esbuild"
+  external_node_modules = ["@sparticuz/chromium"]
+
 # Daily expense review: 9:15 PM IST = 15:45 UTC. Asks admins if technician
 # and business expenses were all added; No opens Payments → Add expense.
 [functions."daily-expense-review"]

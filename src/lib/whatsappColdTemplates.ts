@@ -364,7 +364,9 @@ export type WaColdDocKind =
   | 'warranty'
   | 'warranty_document'
   | 'receipt'
-  | 'generic';
+  | 'generic'
+  | 'salary'
+  | 'salary_slip';
 
 export type WaColdDocSlug =
   | 'bill'
@@ -373,7 +375,8 @@ export type WaColdDocSlug =
   | 'quotation'
   | 'warranty'
   | 'receipt'
-  | 'generic';
+  | 'generic'
+  | 'salary';
 
 /** CRM doc kind → Meta template slug (svc_doc_{slug}_{ero|hro}_v2). */
 export function coldDocTemplateSlug(kind: WaColdDocKind | string): WaColdDocSlug {
@@ -384,6 +387,7 @@ export function coldDocTemplateSlug(kind: WaColdDocKind | string): WaColdDocSlug
   if (k === 'quotation') return 'quotation';
   if (k === 'warranty' || k === 'warranty_document') return 'warranty';
   if (k === 'receipt') return 'receipt';
+  if (k === 'salary' || k === 'salary_slip') return 'salary';
   return 'generic';
 }
 
@@ -407,6 +411,8 @@ export function coldDocDocumentLabel(
       return 'warranty card';
     case 'receipt':
       return 'payment receipt';
+    case 'salary':
+      return 'salary slip';
     default:
       return 'document';
   }

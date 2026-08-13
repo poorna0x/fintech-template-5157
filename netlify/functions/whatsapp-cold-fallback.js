@@ -138,6 +138,7 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
       warranty: 'warranty card',
       receipt: 'payment receipt',
       generic: 'document',
+      salary: 'salary slip',
     };
     const v3Match = String(primaryName || '').match(/^svc_doc_([a-z]+)_(ero|hro)_v3$/i);
     const v2Match = String(primaryName || '').match(/^svc_doc_([a-z]+)_(ero|hro)_v2$/i);

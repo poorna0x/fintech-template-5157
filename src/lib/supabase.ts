@@ -401,6 +401,7 @@ const TECHNICIAN_ROW_COLUMNS = [
   'push_notifications_enabled',
   'push_prefs',
   'whatsapp_prefs',
+  'salary_slip_auto_send',
   'created_at',
   'updated_at',
 ].join(',');

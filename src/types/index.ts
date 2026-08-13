@@ -234,6 +234,8 @@ export interface Technician {
   push_prefs?: Record<string, boolean> | null;
   /** Per-category WhatsApp job-notify toggles (assign/unassign / customer share). */
   whatsapp_prefs?: Record<string, boolean> | null;
+  /** Month-end salary-slip WhatsApp (last calendar day ~9 PM IST). Default false. */
+  salary_slip_auto_send?: boolean;
 
   /** When true, this technician sees visit-order stop numbers on their app. Default false. */
   visit_order_visible?: boolean;
