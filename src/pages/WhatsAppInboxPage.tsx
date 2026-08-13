@@ -441,10 +441,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [locationDialogMessage, setLocationDialogMessage] = useState<WhatsAppMessageRow | null>(
     null
   );
+  const [locationDialogKey, setLocationDialogKey] = useState(0);
 
   const openInboxLocationDialog = useCallback((message: WhatsAppMessageRow) => {
     toast.loading('Opening map…', { id: 'wa-inbox-location' });
-    window.setTimeout(() => setLocationDialogMessage(message), 80);
+    window.setTimeout(() => {
+      setLocationDialogKey((n) => n + 1);
+      setLocationDialogMessage(message);
+    }, 80);
   }, []);
 
   /** Android back / header Back: close overlay → leave chat → exit inbox. */
@@ -2293,7 +2297,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                   <WhatsAppTicks status={t.last_status} failed={failed} />
                                 </span>
                               ) : null}
-                              {t.last_body}
+                              {previewMessageBody({
+                                body: t.last_body,
+                                msg_type: t.last_msg_type,
+                                filename: null,
+                                media_url: null,
+                                media_mime: null,
+                              })}
                             </p>
                             {unread ? (
                               <WhatsAppUnreadBadge
@@ -3285,6 +3295,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
       {locationDialogMessage ? (
         <WhatsAppInboxLocationDialog
+          key={locationDialogKey}
           open
           onOpenChange={(open) => {
             if (!open) {

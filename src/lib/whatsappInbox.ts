@@ -1235,7 +1235,13 @@ function inboxRowToThread(
     phone_e164: phone,
     customer_id: customerId,
     customer_name: customerName,
-    last_body: formatAdminWhatsAppBody(r.last_body, { compact: true }) || r.last_body,
+    last_body: previewMessageBody({
+      body: r.last_body,
+      msg_type: r.last_msg_type,
+      filename: null,
+      media_url: null,
+      media_mime: null,
+    }),
     last_at: r.last_at,
     last_direction: (r.last_direction === 'inbound' ? 'inbound' : 'outbound') as
       | 'inbound'
@@ -1703,6 +1709,28 @@ export function patchThreadFromMessage(
   return [next, ...copy];
 }
 
+function looksLikeWhatsAppLocationPreview(body: string, msgType?: string | null): boolean {
+  if (String(msgType || '').toLowerCase() === 'location') return true;
+  const raw = String(body || '').trim();
+  if (!raw) return false;
+  if (
+    /maps\.app\.goo\.gl|goo\.gl\/maps|share\.google\/|\/\/g\.co\/|google\.[^\s]+\/maps|maps\.google\./i.test(
+      raw
+    )
+  ) {
+    return true;
+  }
+  const m = raw.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (!m) return false;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false;
+  const rest = raw.replace(m[0], '').replace(/https?:\/\/\S+/gi, '').trim();
+  const precise = /\.\d{3,}/.test(m[1]) || /\.\d{3,}/.test(m[2]);
+  return precise || rest.length === 0;
+}
+
 export function previewMessageBody(
   row: Pick<WhatsAppMessageRow, 'body' | 'msg_type' | 'filename' | 'media_url' | 'media_mime'>
 ): string {
@@ -1715,19 +1743,17 @@ export function previewMessageBody(
   const isImage =
     row.msg_type === 'image' || Boolean(row.media_mime?.startsWith('image/'));
   const bodyRaw = String(row.body || '');
-  const isLocationType = String(row.msg_type || '').toLowerCase() === 'location';
-  const isMapsShare =
-    /maps\.app\.goo\.gl|goo\.gl\/maps/i.test(bodyRaw) ||
-    /^\s*https?:\/\/\S*(?:google\.[^\s]+\/maps|maps\.google\.)\S*\s*$/i.test(bodyRaw);
-  const isLocation = isLocationType || isMapsShare;
+  const isLocation = looksLikeWhatsAppLocationPreview(bodyRaw, row.msg_type);
 
   if (isLocation) {
     const formatted = formatAdminWhatsAppBody(row.body, { compact: true });
     const withoutCoords = formatted
+      .replace(/📍/g, '')
       .replace(/-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?/g, '')
       .replace(/https?:\/\/\S+/gi, '')
       .trim();
-    return withoutCoords ? `📍 ${withoutCoords}` : '📍 Location';
+    if (!withoutCoords || /^location$/i.test(withoutCoords)) return '📍 Location';
+    return `📍 ${withoutCoords}`;
   }
 
   if (row.body?.trim()) {

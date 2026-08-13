@@ -340,12 +340,16 @@ export function collectPlaceHints(...texts: Array<string | null | undefined>): s
 
 let googleMapsScriptPromise: Promise<void> | null = null;
 
+function mapsScriptAlreadyUsable(): boolean {
+  return Boolean(window.google?.maps?.Map || window.google?.maps?.Geocoder || window.google?.maps?.importLibrary);
+}
+
 /** Load Maps JS for client geocoder (works on mobile without staff API token). */
 export function loadGoogleMapsGeocoderScript(): Promise<void> {
   if (typeof window === 'undefined') {
     return Promise.reject(new Error('Google Maps is only available in the browser'));
   }
-  if (window.google?.maps?.Geocoder) {
+  if (mapsScriptAlreadyUsable()) {
     return Promise.resolve();
   }
 
@@ -356,12 +360,36 @@ export function loadGoogleMapsGeocoderScript(): Promise<void> {
 
   if (!googleMapsScriptPromise) {
     googleMapsScriptPromise = new Promise((resolve, reject) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const fail = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        googleMapsScriptPromise = null;
+        reject(err);
+      };
+
       const existing = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
       if (existing) {
-        existing.addEventListener('load', () => resolve(), { once: true });
-        existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), {
+        if (mapsScriptAlreadyUsable()) {
+          done();
+          return;
+        }
+        existing.addEventListener('load', () => done(), { once: true });
+        existing.addEventListener('error', () => fail(new Error('Failed to load Google Maps')), {
           once: true,
         });
+        const poll = window.setInterval(() => {
+          if (mapsScriptAlreadyUsable()) {
+            window.clearInterval(poll);
+            done();
+          }
+        }, 50);
+        window.setTimeout(() => window.clearInterval(poll), 12000);
         return;
       }
 
@@ -369,13 +397,43 @@ export function loadGoogleMapsGeocoderScript(): Promise<void> {
       script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
       script.async = true;
       script.defer = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Failed to load Google Maps'));
+      script.onload = () => done();
+      script.onerror = () => fail(new Error('Failed to load Google Maps'));
       document.head.appendChild(script);
     });
   }
 
   return googleMapsScriptPromise;
+}
+
+/** Script tag can fire onload before Map/Geocoder exist (`loading=async`). */
+export async function ensureGoogleMapsApi(): Promise<void> {
+  await loadGoogleMapsGeocoderScript();
+  const maps = window.google?.maps;
+  if (!maps) {
+    throw new Error('Google Maps failed to load');
+  }
+  if (typeof maps.importLibrary === 'function') {
+    await maps.importLibrary('maps');
+    try {
+      await maps.importLibrary('places');
+    } catch {
+      /* places optional */
+    }
+    try {
+      await maps.importLibrary('geocoding');
+    } catch {
+      /* geocoding optional */
+    }
+  }
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    if (window.google?.maps?.Map) return;
+    await new Promise((r) => window.setTimeout(r, 40));
+  }
+  if (!window.google?.maps?.Map) {
+    throw new Error('Google Maps Map is not available');
+  }
 }
 
 /** Forward-geocode via browser Google Maps JS — no login token (mobile-safe). */
@@ -386,7 +444,7 @@ export async function geocodePlaceHintWithGoogleMapsJs(
   if (!q) return null;
 
   try {
-    await loadGoogleMapsGeocoderScript();
+    await ensureGoogleMapsApi();
   } catch {
     return null;
   }

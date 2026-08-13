@@ -150,18 +150,20 @@ export function WhatsAppInboxLocationDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="relative min-h-[240px] overflow-hidden rounded-lg">
-          <DraggableMap
-            center={center}
-            onLocationChange={onLocationChange}
-            zoom={17}
-            height="min(50vh, 320px)"
-          />
           {finding ? (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-background/70">
+            <div className="flex h-[240px] flex-col items-center justify-center gap-2 rounded-lg bg-muted sm:h-[320px]">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               <p className="text-sm font-medium text-foreground">Finding this place…</p>
             </div>
-          ) : null}
+          ) : (
+            <DraggableMap
+              key={message.id}
+              center={center}
+              onLocationChange={onLocationChange}
+              zoom={17}
+              height="320px"
+            />
+          )}
         </div>
         <p className="text-center text-[12px] tabular-nums text-muted-foreground">
           {center.lat.toFixed(6)}, {center.lng.toFixed(6)}
