@@ -2427,7 +2427,7 @@ const Settings = () => {
             <ArrowLeft className="mr-1 h-4 w-4" />
             Back
           </Button>
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <WhatsAppLogo size={18} className="text-[#e9edef]" />
             <span className="text-sm font-semibold tracking-tight text-[#e9edef]">Inbox</span>
           </div>

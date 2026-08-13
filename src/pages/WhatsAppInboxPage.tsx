@@ -1597,13 +1597,15 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               Back
             </button>
           ) : null}
-          <WhatsAppLogo size={18} className="text-[#e9edef]" />
-          <h1 className="text-base font-semibold text-[#e9edef]">Inbox</h1>
-          {unreadCount > 0 ? (
-            <span className="rounded-full bg-[#2a3942] px-2 py-0.5 text-[11px] font-semibold text-[#e9edef]">
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
-          ) : null}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <WhatsAppLogo size={18} className="text-[#e9edef]" />
+            <h1 className="text-base font-semibold text-[#e9edef]">Inbox</h1>
+            {unreadCount > 0 ? (
+              <span className="rounded-full bg-[#2a3942] px-2 py-0.5 text-[11px] font-semibold text-[#e9edef]">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -2011,6 +2013,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
           {!selectedPhone ? (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#0b141a] p-8 text-center">
+              <WhatsAppLogo size={48} className="text-[#e9edef]" />
               <p className="text-[28px] font-light tracking-tight text-[#e9edef]">Messages</p>
               <p className="max-w-md text-sm text-[#667781]">
                 Select a chat on the left, or start a new one.
@@ -2018,7 +2021,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
                 <Button
                   type="button"
-                  className="cursor-pointer bg-[#00a884] text-white hover:bg-[#008f72]"
+                  className="cursor-pointer bg-[#2a3942] text-[#e9edef] hover:bg-[#3b4a54]"
                   onClick={() => setNewChatOpen(true)}
                 >
                   <MessageSquarePlus className="mr-2 h-4 w-4" />
