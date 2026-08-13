@@ -53,11 +53,14 @@ import {
   PENDING_PAYMENT_REMINDER_TITLE,
   parseReminderAtLocalDate,
   buildPendingPaymentWhatsAppMessage,
+  buildPendingPaymentOverdueWhatsAppMessage,
   buildPendingPaymentReceivedWhatsAppMessage,
   buildPendingPaymentLetterBodyParams,
   buildPendingPaymentLetterButtonUrlParams,
   resolvePendingPaymentLetterTemplateName,
   resolvePendingPaymentLetterImageTemplateName,
+  resolvePendingPaymentOverdueTemplateName,
+  isPendingPaymentPastDueForOverdueNotice,
   parsePendingPaymentReminderNotes,
   formatPendingPaymentDueLabel,
   resolvePendingPaymentMessageBrand,
@@ -479,9 +482,13 @@ export function SettingsPendingPaymentsDialogV2({
   const [whatsappUpiAccountId, setWhatsappUpiAccountId] = useState<string>('');
   /** Checkbox: include UPI ID + pay link in the WhatsApp message. */
   const [whatsappIncludeUpi, setWhatsappIncludeUpi] = useState(true);
+  /** When due date has passed: send overdue notice (warranty/agreements void) instead of normal reminder. */
+  const [whatsappUseOverdueNotice, setWhatsappUseOverdueNotice] = useState(false);
   const [whatsappManageUpiOpen, setWhatsappManageUpiOpen] = useState(false);
   const [whatsappDraftMessage, setWhatsappDraftMessage] = useState('');
   const [whatsappDraftLoading, setWhatsappDraftLoading] = useState(false);
+  /** Short /p/… link for Pay now button (not always inlined in draft when ctaButton). */
+  const [whatsappPayHttpsLink, setWhatsappPayHttpsLink] = useState<string | null>(null);
   /** Optional image (QR / receipt) for IMAGE-header cold template or 24h media send. */
   const [whatsappAttachImage, setWhatsappAttachImage] = useState<{
     base64: string;
@@ -547,7 +554,7 @@ export function SettingsPendingPaymentsDialogV2({
       /** Use pending_payment Meta template when 24h window is closed (default true). */
       coldPendingTemplate?: boolean;
       /** Cold Meta template when 24h window is closed (default pending_payment). */
-      coldTemplateKind?: 'pending_payment' | 'payment_received';
+      coldTemplateKind?: 'pending_payment' | 'payment_overdue' | 'payment_received';
       /** When true, keep the pay link in the message (wa.me fallback if window closed). */
       includePayLink?: boolean;
       /** UPI pay HTTPS link — used for cold Pay now button (v4 template). */
@@ -582,6 +589,8 @@ export function SettingsPendingPaymentsDialogV2({
         /https?:\/\/[^\s]+/i.test(trimmed);
 
       const brand = resolvePendingPaymentMessageBrand(opts?.brand);
+      // Only when Pending Payments checkbox chose overdue notice (not merely past due date).
+      const isOverdue = opts?.coldTemplateKind === 'payment_overdue';
       const headerImage = opts?.headerImage?.imageBase64
         ? {
             imageBase64: opts.headerImage.imageBase64,
@@ -595,10 +604,43 @@ export function SettingsPendingPaymentsDialogV2({
         opts?.dueDateYmd,
         opts?.invoiceRef
       );
+      const overdueTemplateName = resolvePendingPaymentOverdueTemplateName(brand);
+      const balanceDueTemplateName = resolvePendingPaymentLetterTemplateName(brand, {
+        withPayButton: payButtonParams.length > 0,
+      });
+      const coldTextTemplateName = isOverdue ? overdueTemplateName : balanceDueTemplateName;
+
+      // Overdue + Pay now: prefer cold overdue template (Call us + Pay now) whenever we have a /p/ code.
+      if (
+        isOverdue &&
+        opts?.coldTemplateKind !== 'payment_received' &&
+        opts?.coldPendingTemplate !== false &&
+        payButtonParams.length > 0
+      ) {
+        const coldOverdue = await sendAdminWhatsAppTemplate({
+          to: phone,
+          templateName: overdueTemplateName,
+          languageCode: 'en',
+          bodyParams: letterBodyParams,
+          buttonUrlParams: payButtonParams,
+          customerId: opts?.customerId,
+          source: 'pending_payment',
+        });
+        if (coldOverdue.ok) {
+          toast.success('Overdue notice sent with Pay now button');
+          return;
+        }
+        if (coldOverdue.featureDisabled) {
+          toast.error(coldOverdue.error || 'WhatsApp pending payment is disabled in Settings');
+          return;
+        }
+        // Template not approved yet — fall through to 24h CTA / freeform with Pay now.
+      }
 
       // QR / image: prefer IMAGE-header template with Pay now (works in and out of 24h).
+      // Overdue notice uses text cold template (legal copy) — skip IMAGE balance-due.
       // Freeform media alone has no Pay now button — that looked broken to customers.
-      if (headerImage && opts?.coldTemplateKind !== 'payment_received') {
+      if (headerImage && opts?.coldTemplateKind !== 'payment_received' && !isOverdue) {
         if (opts?.coldPendingTemplate !== false) {
           const coldResult = await sendAdminWhatsAppTemplate({
             to: phone,
@@ -624,9 +666,7 @@ export function SettingsPendingPaymentsDialogV2({
           }
           const textCold = await sendAdminWhatsAppTemplate({
             to: phone,
-            templateName: resolvePendingPaymentLetterTemplateName(brand, {
-              withPayButton: payButtonParams.length > 0,
-            }),
+            templateName: balanceDueTemplateName,
             languageCode: 'en',
             bodyParams: letterBodyParams,
             buttonUrlParams: payButtonParams,
@@ -694,21 +734,52 @@ export function SettingsPendingPaymentsDialogV2({
         return;
       }
 
+      // Overdue + QR (template above failed or no pay code): session image + Pay now CTA when possible.
+      if (headerImage && isOverdue && opts?.coldTemplateKind !== 'payment_received') {
+        const mediaResult = await sendAdminWhatsAppMedia({
+          to: phone,
+          fileBase64: headerImage.imageBase64,
+          filename: headerImage.filename,
+          mimeType: headerImage.mimeType,
+          caption: trimmed,
+          customerId: opts?.customerId,
+          source: 'pending_payment',
+        });
+        if (mediaResult.ok) {
+          if (payHttpsLink) {
+            const cta = await sendAdminWhatsAppCtaUrl({
+              to: phone,
+              text: trimmed,
+              url: payHttpsLink,
+              displayText: 'Pay now',
+              customerId: opts?.customerId,
+              customerName: opts?.customerName,
+              source: 'pending_payment',
+              fallbackWaMe: false,
+            });
+            if (cta.ok) {
+              toast.success('Overdue notice sent with QR + Pay now');
+              return;
+            }
+          }
+          toast.success('Overdue notice sent with QR');
+          return;
+        }
+        if (mediaResult.featureDisabled) {
+          toast.error(mediaResult.error || 'WhatsApp pending payment is disabled in Settings');
+          return;
+        }
+        openWhatsAppMeDeepLink(phone, trimmed);
+        toast.error(mediaResult.error || 'API send failed — opened phone WhatsApp');
+        return;
+      }
+
       if (hasPayLink && opts?.coldPendingTemplate !== false) {
         // 24h: interactive Pay now button. Outside 24h: cold template with Pay now URL button.
         if (payHttpsLink) {
-          const ctaBody = buildPendingPaymentWhatsAppMessage(
-            opts?.customerName || 'Customer',
-            opts?.amount ?? 0,
-            opts?.dueDateYmd,
-            brand,
-            { httpsLink: payHttpsLink },
-            opts?.invoiceRef,
-            { ctaButton: true }
-          );
           const ctaResult = await sendAdminWhatsAppCtaUrl({
             to: phone,
-            text: ctaBody,
+            text: trimmed,
             url: payHttpsLink,
             displayText: 'Pay now',
             customerId: opts?.customerId,
@@ -717,7 +788,7 @@ export function SettingsPendingPaymentsDialogV2({
             fallbackWaMe: false,
           });
           if (ctaResult.ok) {
-            toast.success('Sent with Pay now button');
+            toast.success(isOverdue ? 'Overdue notice sent with Pay now' : 'Sent with Pay now button');
             return;
           }
           if (ctaResult.featureDisabled) {
@@ -732,16 +803,18 @@ export function SettingsPendingPaymentsDialogV2({
               source: 'pending_payment',
               fallbackWaMe: true,
               coldTemplate: {
-                name: resolvePendingPaymentLetterTemplateName(brand, {
-                  withPayButton: payButtonParams.length > 0,
-                }),
+                name: coldTextTemplateName,
                 languageCode: 'en',
                 bodyParams: letterBodyParams,
                 buttonUrlParams: payButtonParams,
               },
             });
             if (coldResult.ok && coldResult.usedTemplate) {
-              toast.success('Cold balance-due template sent with Pay now button');
+              toast.success(
+                isOverdue
+                  ? 'Cold overdue notice sent with Pay now button'
+                  : 'Cold balance-due template sent with Pay now button'
+              );
               return;
             }
             if (coldResult.ok && coldResult.via === 'wa_me') {
@@ -765,7 +838,9 @@ export function SettingsPendingPaymentsDialogV2({
           fallbackWaMe: false,
         });
         if (result.ok) {
-          toast.success('WhatsApp reminder sent (with pay link)');
+          toast.success(
+            isOverdue ? 'Overdue payment notice sent (with pay link)' : 'WhatsApp reminder sent (with pay link)'
+          );
           return;
         }
         if (result.featureDisabled) {
@@ -780,16 +855,18 @@ export function SettingsPendingPaymentsDialogV2({
             source: 'pending_payment',
             fallbackWaMe: true,
             coldTemplate: {
-              name: resolvePendingPaymentLetterTemplateName(brand, {
-                withPayButton: payButtonParams.length > 0,
-              }),
+              name: coldTextTemplateName,
               languageCode: 'en',
               bodyParams: letterBodyParams,
               buttonUrlParams: payButtonParams,
             },
           });
           if (coldResult.ok && coldResult.usedTemplate) {
-            toast.success('Cold balance-due template sent with Pay now button');
+            toast.success(
+              isOverdue
+                ? 'Cold overdue notice sent with Pay now button'
+                : 'Cold balance-due template sent with Pay now button'
+            );
             return;
           }
           if (coldResult.ok && coldResult.via === 'wa_me') {
@@ -806,14 +883,13 @@ export function SettingsPendingPaymentsDialogV2({
       }
 
       const allowColdTpl = opts?.coldPendingTemplate !== false;
-      const coldKind = opts?.coldTemplateKind || 'pending_payment';
+      const coldKind =
+        opts?.coldTemplateKind || (isOverdue ? 'payment_overdue' : 'pending_payment');
       const coldTemplate = allowColdTpl
         ? coldKind === 'payment_received'
           ? resolveColdPaymentReceived(opts?.customerName || 'Customer', opts?.amount ?? 0)
           : {
-              name: resolvePendingPaymentLetterTemplateName(brand, {
-                withPayButton: payButtonParams.length > 0,
-              }),
+              name: coldTextTemplateName,
               languageCode: 'en',
               bodyParams: letterBodyParams,
               buttonUrlParams: payButtonParams,
@@ -831,11 +907,15 @@ export function SettingsPendingPaymentsDialogV2({
 
       if (result.ok) {
         if (result.usedTemplate) {
-          toast.success('Cold balance-due template sent (24h window was closed)');
+          toast.success(
+            isOverdue
+              ? 'Cold overdue notice sent (24h window was closed)'
+              : 'Cold balance-due template sent (24h window was closed)'
+          );
         } else if (result.via === 'wa_me') {
           toast.message('Opened phone WhatsApp');
         } else {
-          toast.success('WhatsApp reminder sent');
+          toast.success(isOverdue ? 'Overdue payment notice sent' : 'WhatsApp reminder sent');
         }
         return;
       }
@@ -877,6 +957,8 @@ export function SettingsPendingPaymentsDialogV2({
     const preferred = resolvePreferredUpiAccount(accounts);
     setWhatsappUpiAccountId(preferred?.id ?? accounts[0]?.id ?? '');
     setWhatsappIncludeUpi(Boolean(preferred || accounts[0]));
+    // Past due → show overdue option; leave unchecked so admin opts in.
+    setWhatsappUseOverdueNotice(false);
     setWhatsappManageUpiOpen(false);
     clearWhatsappAttachImage();
     setWhatsappQrMode(preferred || accounts[0] ? 'auto' : 'off');
@@ -888,7 +970,7 @@ export function SettingsPendingPaymentsDialogV2({
     payment: PendingPaymentReminder,
     customer: CustomerLabel,
     opts?: { includeUpi?: boolean; upiAccountId?: string; withQrImage?: boolean }
-  ) => {
+  ): Promise<{ text: string; payHttpsLink: string | null }> => {
     const includeUpi = opts?.includeUpi ?? whatsappIncludeUpi;
     let upiAccountId = opts?.upiAccountId ?? whatsappUpiAccountId;
     if (includeUpi && !upiAccountId && upiAccounts.length > 0) {
@@ -917,20 +999,46 @@ export function SettingsPendingPaymentsDialogV2({
         }
       }
     }
-    return buildPendingPaymentWhatsAppMessage(
-      customer.name,
-      Number(payment.amount_pending) || 0,
-      payment.reminder_at ? String(payment.reminder_at).slice(0, 10) : null,
-      brandForCustomer(payment.entity_id as string | undefined),
-      upiOpts,
-      payment.job_number || payment.job_id || null,
-      { withQrImage: opts?.withQrImage ?? Boolean(whatsappAttachImage), ctaButton: true }
-    );
+    const dueYmd = payment.reminder_at ? String(payment.reminder_at).slice(0, 10) : null;
+    const brand = brandForCustomer(payment.entity_id as string | undefined);
+    const amount = Number(payment.amount_pending) || 0;
+    const invoiceRef = payment.job_number || payment.job_id || null;
+    const withQrImage = opts?.withQrImage ?? Boolean(whatsappAttachImage);
+    const payHttpsLink = (upiOpts?.httpsLink || '').trim() || null;
+
+    if (whatsappUseOverdueNotice && isPendingPaymentPastDueForOverdueNotice(dueYmd)) {
+      return {
+        text: buildPendingPaymentOverdueWhatsAppMessage(
+          customer.name,
+          amount,
+          dueYmd,
+          brand,
+          upiOpts,
+          invoiceRef,
+          { ctaButton: true }
+        ),
+        payHttpsLink,
+      };
+    }
+
+    return {
+      text: buildPendingPaymentWhatsAppMessage(
+        customer.name,
+        amount,
+        dueYmd,
+        brand,
+        upiOpts,
+        invoiceRef,
+        { withQrImage, ctaButton: true }
+      ),
+      payHttpsLink,
+    };
   };
 
   useEffect(() => {
     if (!whatsappDialogOpen || !whatsappTarget) {
       setWhatsappDraftMessage('');
+      setWhatsappPayHttpsLink(null);
       setWhatsappDraftLoading(false);
       return;
     }
@@ -939,18 +1047,22 @@ export function SettingsPendingPaymentsDialogV2({
       : undefined;
     if (!customer) {
       setWhatsappDraftMessage('');
+      setWhatsappPayHttpsLink(null);
       return;
     }
     let cancelled = false;
     setWhatsappDraftLoading(true);
     void (async () => {
       try {
-        const msg = await buildPendingPaymentMessage(whatsappTarget, customer, {
+        const built = await buildPendingPaymentMessage(whatsappTarget, customer, {
           includeUpi: whatsappIncludeUpi,
           upiAccountId: whatsappUpiAccountId,
           withQrImage: Boolean(whatsappAttachImage),
         });
-        if (!cancelled) setWhatsappDraftMessage(msg);
+        if (!cancelled) {
+          setWhatsappDraftMessage(built.text);
+          setWhatsappPayHttpsLink(whatsappIncludeUpi ? built.payHttpsLink : null);
+        }
       } finally {
         if (!cancelled) setWhatsappDraftLoading(false);
       }
@@ -963,6 +1075,7 @@ export function SettingsPendingPaymentsDialogV2({
     whatsappDialogOpen,
     whatsappTarget,
     whatsappIncludeUpi,
+    whatsappUseOverdueNotice,
     whatsappUpiAccountId,
     whatsappAttachImage,
     upiAccounts,
@@ -1991,6 +2104,8 @@ export function SettingsPendingPaymentsDialogV2({
               setWhatsappTarget(null);
               setWhatsappManageUpiOpen(false);
               setWhatsappIncludeUpi(false);
+              setWhatsappUseOverdueNotice(false);
+              setWhatsappPayHttpsLink(null);
               if (whatsappAttachImage?.previewUrl) {
                 URL.revokeObjectURL(whatsappAttachImage.previewUrl);
               }
@@ -2019,7 +2134,14 @@ export function SettingsPendingPaymentsDialogV2({
                     whatsappIncludeUpi &&
                     Boolean(resolvedUpiAccountId) &&
                     upiAccounts.some((a) => a.id === resolvedUpiAccountId);
-                  const messageHasPayLink = /https?:\/\/[^\s]+/i.test(message);
+                  const messageHasPayLink =
+                    Boolean(whatsappPayHttpsLink) || /https?:\/\/[^\s]+/i.test(message);
+
+                  const dueYmd = whatsappTarget.reminder_at
+                    ? String(whatsappTarget.reminder_at).slice(0, 10)
+                    : null;
+                  const canSendOverdueNotice = isPendingPaymentPastDueForOverdueNotice(dueYmd);
+                  const sendOverdue = canSendOverdueNotice && whatsappUseOverdueNotice;
 
                   const sendWithPhone = (phone: string) => {
                     if (!phone) return;
@@ -2027,12 +2149,16 @@ export function SettingsPendingPaymentsDialogV2({
                       toast.error('Select a UPI account, or uncheck “Include UPI pay details”');
                       return;
                     }
-                    if (whatsappIncludeUpi && canIncludeUpi && !messageHasPayLink) {
+                    if (whatsappIncludeUpi && canIncludeUpi && whatsappDraftLoading) {
                       toast.error('Pay link still generating — wait a moment and try again');
                       return;
                     }
+                    if (whatsappIncludeUpi && canIncludeUpi && !messageHasPayLink) {
+                      toast.error('Pay link unavailable — try again or uncheck UPI details');
+                      return;
+                    }
                     if (whatsappDraftLoading || !message.trim()) {
-                      toast.error('Preparing pay link… try again in a moment');
+                      toast.error('Preparing message… try again in a moment');
                       return;
                     }
                     if (canIncludeUpi) {
@@ -2042,12 +2168,12 @@ export function SettingsPendingPaymentsDialogV2({
                       customerName: customer?.name,
                       amount: Number(whatsappTarget.amount_pending) || 0,
                       customerId: whatsappTarget.entity_id as string | undefined,
-                      dueDateYmd: whatsappTarget.reminder_at
-                        ? String(whatsappTarget.reminder_at).slice(0, 10)
-                        : null,
+                      dueDateYmd: dueYmd,
                       invoiceRef: whatsappTarget.job_number || whatsappTarget.job_id || null,
                       brand: brandForCustomer(whatsappTarget.entity_id as string | undefined),
                       includePayLink: canIncludeUpi || messageHasPayLink,
+                      payHttpsLink: whatsappPayHttpsLink,
+                      coldTemplateKind: sendOverdue ? 'payment_overdue' : 'pending_payment',
                       headerImage: whatsappAttachImage
                         ? {
                             imageBase64: whatsappAttachImage.base64,
@@ -2067,7 +2193,9 @@ export function SettingsPendingPaymentsDialogV2({
                           Notify via WhatsApp
                         </DialogTitle>
                         <DialogDescription>
-                          Message includes amount due, due date, and UPI pay link when enabled.
+                          {sendOverdue
+                            ? 'Overdue notice: promises / warranty / agreements no longer valid; advance not returned. Reply here for help.'
+                            : 'Message includes amount due, due date, and UPI pay link when enabled.'}
                         </DialogDescription>
                       </DialogHeader>
 
@@ -2095,9 +2223,10 @@ export function SettingsPendingPaymentsDialogV2({
                               <strong>Pay link:</strong>{' '}
                               {whatsappDraftLoading
                                 ? 'Generating…'
-                                : (() => {
+                                : whatsappPayHttpsLink ||
+                                  (() => {
                                     const match = message.match(/https?:\/\/[^\s]+/);
-                                    return match ? match[0] : 'Included in message below';
+                                    return match ? match[0] : 'Pay now button (link ready)';
                                   })()}
                             </div>
                           ) : null}
@@ -2110,6 +2239,32 @@ export function SettingsPendingPaymentsDialogV2({
                             </div>
                           )}
                         </div>
+
+                        {canSendOverdueNotice ? (
+                          <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30 p-3">
+                            <div className="flex items-start gap-3">
+                              <Checkbox
+                                id="send-overdue-notice"
+                                checked={whatsappUseOverdueNotice}
+                                onCheckedChange={(v) => setWhatsappUseOverdueNotice(v === true)}
+                                className="mt-0.5"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <label
+                                  htmlFor="send-overdue-notice"
+                                  className="text-sm font-medium cursor-pointer leading-snug"
+                                >
+                                  Send overdue notice
+                                </label>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  Due date has passed. Says promises, warranty, and service agreements are
+                                  no longer valid; advance will not be returned. Uncheck to send the normal
+                                  balance-due reminder instead.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
 
                         <div className="rounded-md border p-3 space-y-3">
                           <div className="flex items-start gap-3">

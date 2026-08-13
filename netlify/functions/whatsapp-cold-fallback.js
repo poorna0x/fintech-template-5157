@@ -206,6 +206,29 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(`svc_job_done_letter_${suffix}_v4`, bodyParams.slice(0, 3).map(String));
   }
 
+  // Payment overdue notice v3 → v2 → v1 → balance-due letter chain (same 4 body params + Pay now).
+  if (/^svc_payment_overdue_notice_(ero|hro)_v/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
+    const params = bodyParams.slice(0, 4).map(String);
+    if (/_v3$/i.test(primaryName)) {
+      push(`svc_payment_overdue_notice_${suffix}_v2`, params);
+      push(`svc_payment_overdue_notice_${suffix}_v1`, params);
+    } else if (/_v2$/i.test(primaryName)) {
+      push(`svc_payment_overdue_notice_${suffix}_v1`, params);
+    }
+    push(`svc_balance_due_letter_${suffix}_v9`, params);
+    push(`svc_balance_due_letter_${suffix}_v8`, params);
+    push(`svc_balance_due_letter_${suffix}_v7`, params);
+    push(`svc_balance_due_letter_${suffix}_v6`, params);
+    push(`svc_balance_due_letter_${suffix}_v5`, params);
+    push(`svc_balance_due_letter_${suffix}_v4`, params);
+    push(`svc_balance_due_letter_${suffix}_v3`, params);
+    push(`svc_balance_due_letter_${suffix}_v2`, params);
+    push(`svc_balance_due_letter_${suffix}`, params);
+    push('svc_balance_due', [name, amount]);
+  }
+
   // Balance-due letter v9 → v8 → v7 → …
   if (/^svc_balance_due_letter_(ero|hro)(_v9|_v8|_v7|_v6|_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';

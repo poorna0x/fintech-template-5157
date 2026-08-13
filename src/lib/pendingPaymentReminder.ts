@@ -134,6 +134,9 @@ export function pendingPaymentTemplateFallbackNames(brand?: DocumentBrand | stri
   const resolved = resolvePendingPaymentMessageBrand(brand);
   const suffix = resolved === 'elevenro' ? 'ero' : 'hro';
   return [
+    `svc_payment_overdue_notice_${suffix}_v3`,
+    `svc_payment_overdue_notice_${suffix}_v2`,
+    `svc_payment_overdue_notice_${suffix}_v1`,
     `svc_balance_due_letter_${suffix}_img_v5`,
     `svc_balance_due_letter_${suffix}_img_v4`,
     `svc_balance_due_letter_${suffix}_img_v3`,
@@ -241,6 +244,74 @@ export function buildPendingPaymentReceivedWhatsAppMessage(
     '',
     ...brandLetterClosingLines(resolved, { includeTextUs: true }),
   ].join('\n');
+}
+
+/**
+ * True when the promised due date is strictly before today (local calendar) —
+ * i.e. at least one full day past due. Used for overdue notice copy / cold template.
+ */
+export function isPendingPaymentPastDueForOverdueNotice(
+  dueDateYmd: string | null | undefined,
+  todayYmd: string = getLocalCalendarDateYmd()
+): boolean {
+  const due = String(dueDateYmd || '')
+    .trim()
+    .slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return false;
+  return due < todayYmd;
+}
+
+/** Cold overdue notice — Call us + Pay now. Fallback: balance-due letter via cold-fallback. */
+export function resolvePendingPaymentOverdueTemplateName(brand: DocumentBrand): string {
+  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
+  return `svc_payment_overdue_notice_${suffix}_v3`;
+}
+
+/** Overdue free-form (24h) — unpaid after due; prior promise void; advance not returned. */
+export function buildPendingPaymentOverdueWhatsAppMessage(
+  customerName: string,
+  amountPending: number,
+  dueDateYmd?: string | null,
+  brand?: DocumentBrand | string | null,
+  upi?: PendingPaymentWhatsAppUpiOptions | null,
+  invoiceRef?: string | null,
+  opts?: { ctaButton?: boolean }
+): string {
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  const contact = brandContactLines(resolved);
+  const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  const dueLabel = formatPendingPaymentDueLabel(dueDateYmd);
+  const payLink = (upi?.httpsLink || '').trim();
+  const ref = String(invoiceRef || '').trim();
+  const ctaButton = Boolean(opts?.ctaButton);
+
+  const lines: string[] = [
+    `Hi ${whatsappGreetingName(customerName, 'there')}, 👋`,
+    `This is a payment notice from ${contact.brandLabel} — the balance for your water purifier service is still unpaid. 💧`,
+    '',
+    `💰 Amount still unpaid: ₹${formattedAmount}`,
+    `📅 Due date (passed): ${dueLabel || 'As agreed'}`,
+  ];
+  if (ref) lines.push(`🧾 Invoice / Job: ${ref}`);
+
+  lines.push('');
+  lines.push(
+    'The promised payment date has passed and this amount remains unpaid. Any earlier promise, warranty, AMC or service agreement, or extension linked to this visit is no longer valid because payment was not completed. Any advance already paid will *not* be returned.'
+  );
+
+  if (payLink && !ctaButton) {
+    lines.push('');
+    lines.push(waLabeledLink('💳', 'Pay now', payLink));
+  }
+
+  lines.push('');
+  if (ctaButton || payLink) {
+    lines.push('Tap *Pay now* below to clear dues. If you need any help, reply on this chat.');
+  } else {
+    lines.push('If you need any help, reply on this chat.');
+  }
+
+  return lines.join('\n');
 }
 
 /** Pay-now URL button param for balance-due v4 cold template. */

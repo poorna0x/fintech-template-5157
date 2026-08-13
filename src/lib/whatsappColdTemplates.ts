@@ -37,6 +37,23 @@ export const WA_COLD = {
       String(invoiceRef || '').trim() || 'your service visit',
     ],
   },
+  /** Due + 1 day overdue notice — prior arrangements void; advance non-refundable. */
+  payment_overdue: {
+    name: 'svc_payment_overdue_notice_hro_v3',
+    language: 'en',
+    /** {{1}}=name, {{2}}=amount, {{3}}=due, {{4}}=invoice/job */
+    bodyParams: (
+      customerName: string,
+      amount: number | string,
+      dueDateLabel?: string,
+      invoiceRef?: string
+    ) => [
+      cleanName(customerName),
+      cleanAmount(amount),
+      String(dueDateLabel || '').trim() || 'as agreed',
+      String(invoiceRef || '').trim() || 'your service visit',
+    ],
+  },
   /** Prefer this name — Meta reclassified service_reminder_cta as MARKETING. */
   service_reminder: {
     name: 'svc_visit_reminder',
@@ -564,6 +581,8 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   booking_menu: 'Service request (svc_smoke_update — booking menu deprecated)',
   pending_payment:
     'Balance due (svc_balance_due_letter_*_img_v5 no contact footer → img_v4 → *_v9 → v8 → svc_balance_due)',
+  payment_overdue:
+    'Still unpaid after due (svc_payment_overdue_notice_*_v3 → v2 → v1 → balance-due; Call us + Pay now)',
   service_reminder: 'Visit reminder (svc_visit_reminder)',
   service_due_cta: 'Service due letter v4 Book now (svc_service_due_letter_*_v4 → v3 → CTA)',
   amc_renewal: 'AMC expiry (svc_amc_expiry_notice)',

@@ -11,6 +11,7 @@
  *   node scripts/submit-whatsapp-full-utility.mjs --preview-md  # write docs/whatsapp-cold-template-previews.md
  *   node scripts/submit-whatsapp-full-utility.mjs --submit       # submit missing only
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-tech-customer-photo
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-overdue
  */
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -1440,6 +1441,40 @@ function buildBalanceDueLetterImgV5Templates() {
 const BALANCE_DUE_LETTER_IMG_V5_TEMPLATES = buildBalanceDueLetterImgV5Templates();
 
 /**
+ * Payment overdue — still unpaid after due date (customer delayed / not clearing).
+ * Prior promise / warranty / agreements void; advance will not be returned.
+ * Buttons: Call us + Pay now.
+ */
+function buildPaymentOverdueNoticeV3Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      name: `svc_payment_overdue_notice_${suffix}_v3`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is a payment notice from ${b.label} — the balance for your water purifier service is still unpaid. 💧`,
+        ``,
+        `💰 Amount still unpaid: INR {{2}}`,
+        `📅 Due date (passed): {{3}}`,
+        `🧾 Invoice / Job: {{4}}`,
+        ``,
+        `The promised payment date has passed and this amount remains unpaid. Any earlier promise, warranty, AMC or service agreement, or extension linked to this visit is no longer valid because payment was not completed. Any advance already paid will not be returned.`,
+        ``,
+        `Tap Pay now below to clear dues. If you need any help, reply on this chat.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const PAYMENT_OVERDUE_NOTICE_V1_TEMPLATES = buildPaymentOverdueNoticeV3Templates();
+
+/**
  * Technician-only: forward a customer payment photo when the 24h session is closed.
  * IMAGE header + "{{1}}" name. No customer-facing buttons.
  */
@@ -2202,6 +2237,9 @@ function collectAllTemplatePreviewEntries() {
   for (const t of BALANCE_DUE_LETTER_V9_TEMPLATES) {
     push('Balance due letter v9 (Pay now, no contact footer)', t, balanceDueLetterPayload);
   }
+  for (const t of PAYMENT_OVERDUE_NOTICE_V1_TEMPLATES) {
+    push('Payment overdue notice v1 (Pay now)', t, balanceDueLetterPayload);
+  }
   for (const t of BALANCE_DUE_LETTER_IMG_TEMPLATES) {
     push('Balance due letter IMAGE header (Pay now)', t, (x) =>
       balanceDueLetterImagePayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
@@ -2561,6 +2599,14 @@ async function main() {
     }
     queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
   }
+  for (const t of PAYMENT_OVERDUE_NOTICE_V1_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
+  }
   for (const t of BALANCE_DUE_LETTER_IMG_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
@@ -2876,6 +2922,14 @@ async function main() {
       ...BALANCE_DUE_LETTER_V9_TEMPLATES.map((t) => t.name),
       ...BALANCE_DUE_LETTER_IMG_V5_TEMPLATES.map((t) => t.name),
     ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyPaymentOverdue = process.argv.includes('--only-payment-overdue');
+  if (onlyPaymentOverdue) {
+    const keep = new Set(PAYMENT_OVERDUE_NOTICE_V1_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }
