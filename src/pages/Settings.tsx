@@ -2415,19 +2415,19 @@ const Settings = () => {
       exitWhatsAppInboxToHome();
     };
     return (
-      <div className="admin-page flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#1a1f24]">
-        <div className="flex shrink-0 items-center gap-2 border-b border-[#333a42] bg-[#22282e] px-3 py-2.5 sm:px-4">
+      <div className="admin-page flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#0b141a]">
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#2a3942] bg-[#111b21] px-3 py-2.5 sm:px-4">
           <Button
             variant="ghost"
             size="sm"
             onClick={handleWhatsAppChromeBack}
-            className="h-9 shrink-0 cursor-pointer text-[#9e9890] hover:bg-white/5 hover:text-[#e8e4dc]"
+            className="h-9 shrink-0 cursor-pointer text-[#8696a0] hover:bg-white/5 hover:text-[#e9edef]"
           >
             <ArrowLeft className="mr-1 h-4 w-4" />
             Back
           </Button>
           <div className="min-w-0 flex-1" />
-          <span className="text-sm font-semibold tracking-tight text-[#e8e4dc]">Inbox</span>
+          <span className="text-sm font-semibold tracking-tight text-[#e9edef]">Inbox</span>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           <WhatsAppInboxPage
