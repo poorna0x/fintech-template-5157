@@ -50,6 +50,7 @@ import {
   type DocumentBrand,
 } from '@/lib/service-brands';
 import type { Bill, BillItem } from '@/types';
+import { formatDirectSaleBillTermsForPdf } from '@/lib/service-document-terms';
 import {
   buildOfficeSaleUpiShareMessage,
   DEFAULT_OFFICE_SALE_UPI_BRAND,
@@ -592,7 +593,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       paymentMethod:
         draft.paymentMode === 'ONLINE' ? 'UPI' : draft.paymentMode === 'PARTIAL' ? 'PARTIAL' : 'CASH',
       notes: '',
-      terms: '',
+      terms: formatDirectSaleBillTermsForPdf(),
       hideGstInHeader: !brandHasGst(brand),
       documentBrand: brand,
       createdAt: new Date().toISOString(),

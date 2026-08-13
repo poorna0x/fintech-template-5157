@@ -34,6 +34,19 @@ export const OPTIONAL_WARRANTY_DOCUMENT_TERMS: readonly string[] = [
   'The customer must inspect the product at the time of installation. Any installation-related issues should be reported within 24 hours.',
 ];
 
+/** Short terms for Direct Sale / office bill PDFs (goods + warranty + jurisdiction). */
+export const DIRECT_SALE_BILL_TERMS: readonly string[] = [
+  'Parts and goods are considered sold only after full payment is received by the company.',
+  'Once payment is received, goods sold will not be taken back or exchanged.',
+  'Warranty, if any, starts only after payment and covers manufacturing defects for the period stated on this bill. Consumables and spare parts have no warranty unless specifically mentioned in writing.',
+  'Original invoice is mandatory for all warranty and service claims. Warranty is void in case of misuse, physical damage, unauthorized repair or service, voltage fluctuations, dry run, insect infestation, or water TDS beyond the product\'s operating limit.',
+  "The company's liability is limited to the invoice value only. All disputes are subject to the jurisdiction of Bengaluru, Karnataka.",
+];
+
+export function formatDirectSaleBillTermsForPdf(): string {
+  return DIRECT_SALE_BILL_TERMS.map((text, index) => `${index + 1}. ${text}`).join('\n');
+}
+
 export function createDefaultServiceDocumentTerms(): ServiceDocumentTermItem[] {
   const standard = STANDARD_SERVICE_DOCUMENT_TERMS.map((text, index) => ({
     id: `standard-${index + 1}`,
