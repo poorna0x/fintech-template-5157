@@ -287,8 +287,6 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
         </CardContent>
       </Card>
 
-      <WhatsAppTemplatesManageCard />
-
       {/* Per-surface toggles */}
       <Card>
         <CardHeader className="pb-2">
@@ -701,6 +699,8 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
           />
         </CardContent>
       </Card>
+
+      <WhatsAppTemplatesManageCard />
     </div>
   );
 }
