@@ -5,7 +5,7 @@
  * Persists outbound rows to whatsapp_messages (long retention; manual timeline delete).
  * Media previews on private Cloudflare R2 (r2: keys).
  */
-const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
+const { getCorsHeaders, shouldRejectMissingOrigin, isLocalDev } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
 const {
   digitsOnly,
@@ -101,6 +101,8 @@ function json(statusCode, headers, payload) {
 }
 
 function isLocalPocAuthorized(body) {
+  // Never honor POC secret on Netlify production/preview — admin JWT only.
+  if (!isLocalDev()) return false;
   const pocSecret = (process.env.WHATSAPP_POC_SECRET || '').trim();
   if (!pocSecret) return false;
   return String(body.pocSecret || '').trim() === pocSecret;

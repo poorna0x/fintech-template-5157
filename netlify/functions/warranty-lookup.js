@@ -16,7 +16,7 @@
 // OTP can be toggled off for the testing phase (OTP_ENFORCED unset) without weakening
 // the ALTCHA + rate-limit layers.
 const { createClient } = require('@supabase/supabase-js');
-const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 const {
   checkRateLimit,
@@ -127,7 +127,15 @@ exports.handler = async (event) => {
   // When enforced, the Firebase ID token's phone must equal the looked-up number, so a
   // caller can only reveal warranty details for a SIM they actually control. Done after
   // rate limits so the Firebase verify endpoint can't be hammered.
-  if (isOtpEnforced()) {
+  const wantOtp = process.env.OTP_ENFORCED === 'true';
+  const otpEnforced = await isOtpEnforced();
+  if (wantOtp && !otpEnforced && isProduction()) {
+    console.error(
+      '[warranty-lookup] OTP_ENFORCED=true but Firebase Admin is not ready — refusing lookup'
+    );
+    return json(503, corsHeaders, { error: 'Phone verification unavailable', otpRequired: true });
+  }
+  if (otpEnforced) {
     const otpCheck = await verifyFirebasePhoneToken(body.phoneToken, norm);
     if (!otpCheck.ok) {
       return json(403, corsHeaders, {

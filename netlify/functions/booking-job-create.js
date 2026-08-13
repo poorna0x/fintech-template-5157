@@ -13,6 +13,7 @@ const {
 const { sendBookingAdminNotification } = require('./booking-notify');
 const { maybeSendOnlineBookingConfirmationWhatsApp } = require('./booking-confirmation-whatsapp-helper');
 const { isOtpEnforced, verifyFirebasePhoneToken, warmFirebaseAdmin } = require('./otp-guard');
+const { isProduction } = require('./cors-helper');
 
 // Trigger the owner notification as a Netlify background function so the booking
 // response returns immediately — the (slow) SMTP send no longer blocks the
@@ -165,15 +166,19 @@ exports.handler = async (event) => {
   const altcha = verifyAltcha(body, corsHeaders);
   if (!altcha.ok) return altcha.response;
 
-  const otpEnforced = isOtpEnforced();
-  // Fail-open detector: the client completed OTP (sent a token) but the server
-  // is not configured to verify it. This means anyone could skip OTP. Surfaces
-  // in Netlify function logs so the misconfig is caught quickly.
+  const wantOtp = process.env.OTP_ENFORCED === 'true';
+  const otpEnforced = await isOtpEnforced();
+  if (wantOtp && !otpEnforced && isProduction()) {
+    console.error(
+      '[booking-job-create] OTP_ENFORCED=true but Firebase Admin is not ready — refusing booking'
+    );
+    return jsonResponse(503, corsHeaders, {
+      error: 'Phone verification unavailable',
+    });
+  }
   if (body.phoneToken && !otpEnforced) {
     console.warn(
-      '[booking-job-create] SECURITY: received an OTP phone token but server ' +
-        'enforcement is OFF. Set OTP_ENFORCED=true and FIREBASE_SERVICE_ACCOUNT_JSON ' +
-        'on this site so the phone token is actually verified.'
+      '[booking-job-create] received an OTP phone token but server enforcement is OFF'
     );
   }
   if (otpEnforced) {

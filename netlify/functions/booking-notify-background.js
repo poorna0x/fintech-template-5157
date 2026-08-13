@@ -12,8 +12,9 @@
 // Security:
 //   - The recipient is FIXED server-side (BOOKING_NOTIFY_EMAIL / default), so it
 //     can never be used to send mail to an attacker-chosen address.
-//   - When BOOKING_NOTIFY_SECRET is set, a matching `X-Notify-Secret` header is
-//     required, so the endpoint cannot be hit directly to spam the owner inbox.
+//   - Production requires BOOKING_NOTIFY_SECRET + matching X-Notify-Secret.
+//     Local may omit the secret for easier testing.
+const { isLocalDev } = require('./cors-helper');
 const { getServiceClient } = require('./booking-guard');
 const { sendBookingAdminNotification } = require('./booking-notify');
 const { getMessaging, getAdminFcmTokens, pruneAdminFcmTokens, isStaleTokenError } = require('./fcm-helper');
@@ -77,7 +78,11 @@ exports.handler = async (event) => {
     return { statusCode: 405, body: 'Method not allowed' };
   }
 
-  const requiredSecret = process.env.BOOKING_NOTIFY_SECRET;
+  const requiredSecret = String(process.env.BOOKING_NOTIFY_SECRET || '').trim();
+  if (!isLocalDev() && !requiredSecret) {
+    console.error('[booking-notify-background] BOOKING_NOTIFY_SECRET missing — refusing');
+    return { statusCode: 503, body: 'Server misconfigured' };
+  }
   if (requiredSecret) {
     const provided =
       event.headers['x-notify-secret'] || event.headers['X-Notify-Secret'];

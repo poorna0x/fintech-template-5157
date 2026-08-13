@@ -3,7 +3,7 @@
  * Auth: WHATSAPP_POC_SECRET via ?secret= or x-wa-poc-secret, or admin JWT.
  * Returns in-memory webhook buffer + last 50 DB rows (long retention).
  */
-const { getCorsHeaders } = require('./cors-helper');
+const { getCorsHeaders, isLocalDev } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
 const { listEvents, clearEvents } = require('./whatsapp-event-store');
 const {
@@ -12,7 +12,7 @@ const {
 } = require('./whatsapp-helper');
 
 async function isAuthorized(event) {
-  const pocSecret = (process.env.WHATSAPP_POC_SECRET || '').trim();
+  const pocSecret = isLocalDev() ? (process.env.WHATSAPP_POC_SECRET || '').trim() : '';
   if (pocSecret) {
     const q = event.queryStringParameters || {};
     const provided =

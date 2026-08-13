@@ -108,7 +108,10 @@ async function getWhatsAppCredentials(db = getServiceSupabase()) {
   return { accessToken, phoneNumberId, verifyToken, appSecret, wabaId };
 }
 
-/** Optional Meta webhook signature check. If no app secret configured, allow (local POC). */
+/**
+ * Meta webhook HMAC. Callers must refuse unsigned POSTs in production when
+ * app secret is missing — skip is local POC only.
+ */
 function verifyWhatsAppSignature(rawBody, signatureHeader, appSecret) {
   if (!appSecret) return { ok: true, skipped: true };
   const header = String(signatureHeader || '').trim();
