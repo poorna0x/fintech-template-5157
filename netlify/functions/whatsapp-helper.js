@@ -1,6 +1,6 @@
 /**
  * WhatsApp Cloud API shared helpers (credentials, phone normalize, message persist).
- * Credentials: env (local) first, then app_secrets (production).
+ * Credentials: app_secrets first (production source of truth), env as local fallback.
  */
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
@@ -68,29 +68,41 @@ async function readAppSecret(db, key) {
 
 /**
  * Resolve Cloud API credentials.
- * Local: WHATSAPP_ACCESS_TOKEN + PHONE_NUMBER_ID (+ VERIFY_TOKEN).
- * Prod: app_secrets keys (same names as SECRET_KEYS).
+ * Prefer app_secrets (avoids stale Netlify env tokens causing "Authentication Error").
+ * Fall back to WHATSAPP_* / PHONE_NUMBER_ID / VERIFY_TOKEN env for local POC.
  */
 async function getWhatsAppCredentials(db = getServiceSupabase()) {
-  let accessToken = (process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
-  let phoneNumberId = (process.env.PHONE_NUMBER_ID || '').trim();
-  let verifyToken = (process.env.VERIFY_TOKEN || '').trim();
-  let appSecret = (process.env.WHATSAPP_APP_SECRET || '').trim();
-  let wabaId = (process.env.WHATSAPP_WABA_ID || '').trim();
+  const envAccessToken = (process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
+  const envPhoneNumberId = (process.env.PHONE_NUMBER_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || '').trim();
+  const envVerifyToken = (process.env.VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN || '').trim();
+  const envAppSecret = (process.env.WHATSAPP_APP_SECRET || '').trim();
+  const envWabaId = (process.env.WHATSAPP_WABA_ID || '').trim();
 
-  if ((!accessToken || !phoneNumberId || !verifyToken || !appSecret || !wabaId) && db) {
+  let accessToken = '';
+  let phoneNumberId = '';
+  let verifyToken = '';
+  let appSecret = '';
+  let wabaId = '';
+
+  if (db) {
     const [secretToken, secretPhoneId, secretVerify, secretApp, secretWaba] = await Promise.all([
-      accessToken ? Promise.resolve(accessToken) : readAppSecret(db, SECRET_KEYS.accessToken),
-      phoneNumberId ? Promise.resolve(phoneNumberId) : readAppSecret(db, SECRET_KEYS.phoneNumberId),
-      verifyToken ? Promise.resolve(verifyToken) : readAppSecret(db, SECRET_KEYS.verifyToken),
-      appSecret ? Promise.resolve(appSecret) : readAppSecret(db, SECRET_KEYS.appSecret),
-      wabaId ? Promise.resolve(wabaId) : readAppSecret(db, SECRET_KEYS.wabaId),
+      readAppSecret(db, SECRET_KEYS.accessToken),
+      readAppSecret(db, SECRET_KEYS.phoneNumberId),
+      readAppSecret(db, SECRET_KEYS.verifyToken),
+      readAppSecret(db, SECRET_KEYS.appSecret),
+      readAppSecret(db, SECRET_KEYS.wabaId),
     ]);
-    accessToken = accessToken || secretToken;
-    phoneNumberId = phoneNumberId || secretPhoneId;
-    verifyToken = verifyToken || secretVerify;
-    appSecret = appSecret || secretApp;
-    wabaId = wabaId || secretWaba;
+    accessToken = secretToken || envAccessToken;
+    phoneNumberId = secretPhoneId || envPhoneNumberId;
+    verifyToken = secretVerify || envVerifyToken;
+    appSecret = secretApp || envAppSecret;
+    wabaId = secretWaba || envWabaId;
+  } else {
+    accessToken = envAccessToken;
+    phoneNumberId = envPhoneNumberId;
+    verifyToken = envVerifyToken;
+    appSecret = envAppSecret;
+    wabaId = envWabaId;
   }
 
   return { accessToken, phoneNumberId, verifyToken, appSecret, wabaId };
@@ -121,6 +133,24 @@ function verifyWhatsAppSignature(rawBody, signatureHeader, appSecret) {
 }
 
 async function callWhatsAppApi(phoneNumberId, accessToken, payload) {
+  if (!phoneNumberId || !accessToken) {
+    console.warn('[whatsapp-helper] callWhatsAppApi missing credentials', {
+      hasPhoneNumberId: Boolean(phoneNumberId),
+      hasAccessToken: Boolean(accessToken),
+    });
+    return {
+      ok: false,
+      status: 401,
+      data: {
+        error: {
+          message:
+            'WhatsApp credentials missing on server (set app_secrets.whatsapp_access_token + phone id; Netlify needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY)',
+          type: 'OAuthException',
+          code: 190,
+        },
+      },
+    };
+  }
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`;
   const res = await fetch(url, {
     method: 'POST',
@@ -293,19 +323,26 @@ const {
 } = require('./r2-helper');
 
 /**
- * Upload inbound media to private R2 (preferred for inbox). Falls back to Cloudinary if R2 unset.
- * Returns { url, mime, filename } where url is r2:key or https Cloudinary URL.
+ * Upload inbound media to private R2 (preferred for inbox).
+ * Public Cloudinary fallback is opt-in only (WHATSAPP_ALLOW_PUBLIC_CLOUDINARY_FALLBACK=1).
+ * Returns { url, mime, filename } where url is r2:key (or https if fallback allowed).
  */
 async function uploadWhatsAppMediaToCloudinary(buffer, mime, filename) {
   const r2 = await uploadWhatsAppMediaToR2(buffer, mime, filename, 'inbound');
   if (r2?.url) {
     return { url: r2.url, mime: r2.mime || mime || null, filename: r2.filename };
   }
-  return uploadBufferToCloudinaryOnly(buffer, mime, filename, 'whatsapp/inbound');
+  if (String(process.env.WHATSAPP_ALLOW_PUBLIC_CLOUDINARY_FALLBACK || '').trim() === '1') {
+    return uploadBufferToCloudinaryOnly(buffer, mime, filename, 'whatsapp/inbound');
+  }
+  console.warn(
+    '[whatsapp-helper] R2 unavailable for inbound media — refusing public Cloudinary fallback'
+  );
+  return null;
 }
 
 /**
- * Force Cloudinary HTTPS URL (CRM customer/job photos — R2 private keys break CRM image views).
+ * Force Cloudinary HTTPS URL (legacy / explicit public re-host only).
  */
 async function uploadBufferToCloudinaryOnly(buffer, mime, filename, folder = 'whatsapp/customer-photos') {
   const config = getCloudinaryConfig();
@@ -338,52 +375,37 @@ async function uploadBufferToCloudinaryOnly(buffer, mime, filename, folder = 'wh
 }
 
 /**
- * Ensure a public Cloudinary (or other https) URL for CRM photos.
- * Re-uploads from R2 when inbox stored a private r2: key.
+ * CRM photo ref for booking-bot / customer gallery.
+ * Prefer private r2: keys (gallery uses signed URLs). Do NOT re-host to public Cloudinary.
  */
 async function ensurePublicCrmPhotoUrl(mediaUrl, opts = {}) {
   const raw = String(mediaUrl || '').trim();
   if (!raw) return null;
-  if (/^https:\/\//i.test(raw) && /res\.cloudinary\.com/i.test(raw)) return raw;
-  // Prefer Cloudinary even if we already have some other https (re-host for CRM).
-  try {
-    let buffer = null;
-    let mime = opts.mime || 'image/jpeg';
-    let filename = opts.filename || 'purifier.jpg';
-
-    if (isR2MediaRef(raw) || parseR2ObjectKey(raw)) {
-      const obj = await getR2ObjectBytes(raw);
-      if (!obj?.buffer?.length) return /^https:\/\//i.test(raw) ? raw : null;
-      buffer = obj.buffer;
-      mime = obj.contentType || mime;
-    } else if (/^https:\/\//i.test(raw)) {
-      const res = await fetch(raw);
-      if (!res.ok) return raw;
-      buffer = Buffer.from(await res.arrayBuffer());
-      mime = res.headers.get('content-type') || mime;
-    } else {
-      return null;
-    }
-
-    const uploaded = await uploadBufferToCloudinaryOnly(
-      buffer,
-      mime,
-      filename,
-      'whatsapp/customer-photos'
-    );
-    return uploaded?.url || (/^https:\/\//i.test(raw) ? raw : null);
-  } catch (err) {
-    console.warn('[whatsapp-helper] ensurePublicCrmPhotoUrl failed', err?.message || err);
-    return /^https:\/\//i.test(raw) ? raw : null;
+  const r2Key = parseR2ObjectKey(raw);
+  if (r2Key) {
+    return raw.startsWith('r2:') ? raw : `r2:${r2Key}`;
   }
+  if (/^https:\/\//i.test(raw)) {
+    // Legacy already-public URL — keep as-is; do not copy again.
+    return raw;
+  }
+  void opts;
+  return null;
 }
 
-/** Upload PDF bytes for outbound — R2 first, Cloudinary fallback. */
+/** Upload PDF bytes for outbound — R2 first; public Cloudinary only if explicitly allowed. */
 async function uploadOutboundPdfToCloudinary(buffer, filename) {
   const name = String(filename || 'document.pdf').replace(/[^\w.\-]+/g, '_').slice(0, 80);
   const pdfName = name.toLowerCase().endsWith('.pdf') ? name : `${name}.pdf`;
   const r2 = await uploadOutboundMediaToR2(buffer, 'application/pdf', pdfName);
   if (r2?.url) return { url: r2.url, filename: r2.filename || pdfName };
+
+  if (String(process.env.WHATSAPP_ALLOW_PUBLIC_CLOUDINARY_FALLBACK || '').trim() !== '1') {
+    console.warn(
+      '[whatsapp-helper] R2 unavailable for outbound PDF — refusing public Cloudinary fallback'
+    );
+    return null;
+  }
 
   const config = getCloudinaryConfig();
   if (!config || !buffer?.length) return null;
@@ -534,10 +556,17 @@ function pdfBase64ToBuffer(pdfBase64) {
   return fileBase64ToBuffer(pdfBase64);
 }
 
-/** Optional CRM inbox preview copy — private R2 preferred, Cloudinary fallback. */
+/** Optional CRM inbox preview copy — private R2 preferred; public Cloudinary opt-in only. */
 async function uploadOutboundMediaToCloudinary(buffer, mime, filename) {
   const r2 = await uploadOutboundMediaToR2(buffer, mime, filename);
   if (r2?.url) return { url: r2.url, filename: r2.filename };
+
+  if (String(process.env.WHATSAPP_ALLOW_PUBLIC_CLOUDINARY_FALLBACK || '').trim() !== '1') {
+    console.warn(
+      '[whatsapp-helper] R2 unavailable for outbound preview — refusing public Cloudinary fallback'
+    );
+    return null;
+  }
 
   const config = getCloudinaryConfig();
   if (!config || !buffer?.length) return null;

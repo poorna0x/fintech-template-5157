@@ -3,6 +3,10 @@
  * Secrets: CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID,
  * CLOUDFLARE_R2_SECRET_ACCESS_KEY, CLOUDFLARE_R2_BUCKET_NAME
  * Optional: CLOUDFLARE_R2_SIGNED_URL_TTL_SECONDS (default 900)
+ *
+ * Ops (required): bucket must be private — disable r2.dev public access and
+ * public listing. Objects are referenced as r2:whatsapp/... and served only via
+ * short-lived signed GETs (whatsapp-r2-signed-url).
  */
 const crypto = require('crypto');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
