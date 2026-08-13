@@ -1,5 +1,6 @@
 /** WhatsApp inbox helpers — slim selects, 24h window, send via Cloud API function. */
 
+import { clearNativeWhatsAppTrayNotification } from '@/lib/devicePrefs';
 import { escapeForLike, normalizePhoneForSearch } from '@/lib/utils';
 import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
 
@@ -61,15 +62,170 @@ export function loadWhatsAppReadMap(): Record<string, string> {
   }
 }
 
-export function markWhatsAppThreadRead(phoneE164: string, lastAt: string): void {
+export const WA_INBOX_READ_SYNC_EVENT = 'wa-inbox-read-sync';
+
+/** FCM / Android tray tag — must match admin-whatsapp-inbound-push + ForegroundPushNotifier. */
+export function whatsAppInboundNotificationTag(phoneE164: string): string {
   const phone = String(phoneE164 || '').replace(/\D/g, '');
-  if (!phone || !lastAt) return;
+  return phone ? `wa_inbound_${phone}` : 'whatsapp_inbound';
+}
+
+function emitWhatsAppReadSync(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(WA_INBOX_READ_SYNC_EVENT));
+}
+
+/** True when team read watermark covers the latest customer inbound (safe to clear tray). */
+export function shouldDismissWhatsAppTrayForRead(phoneE164: string, readAt: string): boolean {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone || !readAt) return false;
+  const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
+  const thread = cached?.threads?.find((t) => t.phone_e164 === phone);
+  if (!thread) return true;
+  const inbound = threadLastInboundAt(thread);
+  if (!inbound) return true;
+  return new Date(readAt).getTime() >= new Date(inbound).getTime();
+}
+
+/** Cancel native tray alerts for phones the team has read (mobile catch-up / Realtime). */
+export function dismissWhatsAppTraysFromReadMap(readMap: Record<string, string>): void {
+  for (const [rawPhone, readAt] of Object.entries(readMap)) {
+    const phone = String(rawPhone || '').replace(/\D/g, '');
+    if (!phone || !readAt) continue;
+    if (!shouldDismissWhatsAppTrayForRead(phone, readAt)) continue;
+    void clearNativeWhatsAppTrayNotification(phone);
+  }
+}
+
+export function dismissWhatsAppTrayForPhone(phoneE164: string): void {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone) return;
+  void clearNativeWhatsAppTrayNotification(phone);
+}
+
+function laterIso(a: string | undefined, b: string | undefined): string | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return new Date(b).getTime() > new Date(a).getTime() ? b : a;
+}
+
+export function saveWhatsAppReadMap(map: Record<string, string>): void {
   try {
-    const map = loadWhatsAppReadMap();
-    map[phone] = lastAt;
     localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(map));
   } catch {
     /* ignore quota */
+  }
+}
+
+export function mergeWhatsAppReadMap(incoming: Record<string, string>): Record<string, string> {
+  const map = loadWhatsAppReadMap();
+  let changed = false;
+  for (const [rawPhone, at] of Object.entries(incoming)) {
+    const phone = String(rawPhone || '').replace(/\D/g, '');
+    if (!phone || !at) continue;
+    const next = laterIso(map[phone], at);
+    if (next && next !== map[phone]) {
+      map[phone] = next;
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveWhatsAppReadMap(map);
+    emitWhatsAppReadSync();
+    for (const [rawPhone, at] of Object.entries(incoming)) {
+      const phone = String(rawPhone || '').replace(/\D/g, '');
+      if (!phone || !at) continue;
+      if (shouldDismissWhatsAppTrayForRead(phone, at)) {
+        void clearNativeWhatsAppTrayNotification(phone);
+      }
+    }
+  }
+  return map;
+}
+
+export function markWhatsAppThreadRead(phoneE164: string, lastAt: string): void {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone || !lastAt) return;
+  mergeWhatsAppReadMap({ [phone]: lastAt });
+}
+
+const lastPersistedRead = new Map<string, string>();
+
+/** In-memory throttle — avoid re-downloading the same slim map on soft reload / resume. */
+let readMapFetchCache: { at: number; map: Record<string, string> } | null = null;
+const READ_MAP_FETCH_TTL_MS = 45_000;
+
+/** Slim fetch of team-shared read watermarks (phone + timestamp only). */
+export async function fetchWhatsAppInboxReadMap(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseClient: { from: (table: string) => any },
+  opts?: { force?: boolean }
+): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (
+    !opts?.force &&
+    readMapFetchCache &&
+    now - readMapFetchCache.at < READ_MAP_FETCH_TTL_MS
+  ) {
+    return readMapFetchCache.map;
+  }
+  const { data, error } = await supabaseClient
+    .from('whatsapp_inbox_read')
+    .select('phone_e164, read_at')
+    .order('updated_at', { ascending: false })
+    .limit(200);
+  if (error) return readMapFetchCache?.map ?? {};
+  const out: Record<string, string> = {};
+  for (const row of data || []) {
+    const phone = String(row.phone_e164 || '').replace(/\D/g, '');
+    const at = String(row.read_at || '');
+    if (phone && at) out[phone] = at;
+  }
+  readMapFetchCache = { at: now, map: out };
+  return out;
+}
+
+export function clearWhatsAppUnreadCountForPhone(phoneE164: string): void {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone) return;
+  const prev = loadWhatsAppUnreadCounts();
+  if (!prev[phone]) return;
+  const next = { ...prev };
+  delete next[phone];
+  saveWhatsAppUnreadCounts(next);
+}
+
+/**
+ * Persist that this chat was opened (inside the thread). Team-shared — no user id.
+ * Soft-fail: local unread still updates if the RPC is missing.
+ */
+export async function persistWhatsAppThreadRead(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseClient: {
+    rpc: (
+      name: string,
+      args: Record<string, unknown>
+    ) => Promise<{ error: { message?: string } | null }>;
+  },
+  phoneE164: string,
+  readAt: string
+): Promise<void> {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  if (!phone || !readAt) return;
+  markWhatsAppThreadRead(phone, readAt);
+  clearWhatsAppUnreadCountForPhone(phone);
+  if (lastPersistedRead.get(phone) === readAt) return;
+  lastPersistedRead.set(phone, readAt);
+  try {
+    const { error } = await supabaseClient.rpc('whatsapp_inbox_mark_read', {
+      p_phone: phone,
+      p_read_at: readAt,
+    });
+    if (error) {
+      lastPersistedRead.delete(phone);
+    }
+  } catch {
+    lastPersistedRead.delete(phone);
   }
 }
 
@@ -80,6 +236,24 @@ export function threadLastInboundAt(
   if (thread.inbound_at) return thread.inbound_at;
   if (thread.last_direction === 'inbound') return thread.last_at || null;
   return null;
+}
+
+/** Newest inbound timestamp from an open chat message list (fallback when thread row missing). */
+export function latestInboundAtFromMessages(
+  messages: Pick<WhatsAppMessageRow, 'direction' | 'created_at'>[]
+): string | null {
+  let latest: string | null = null;
+  let latestMs = 0;
+  for (const m of messages) {
+    if (m.direction !== 'inbound') continue;
+    const ms = new Date(m.created_at).getTime();
+    if (!Number.isFinite(ms)) continue;
+    if (ms >= latestMs) {
+      latestMs = ms;
+      latest = m.created_at;
+    }
+  }
+  return latest;
 }
 
 export function isWhatsAppThreadUnread(

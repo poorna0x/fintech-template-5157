@@ -5,10 +5,13 @@ import {
   showWhatsAppInboundToast,
 } from '@/lib/showWhatsAppAdminToast';
 import {
+  clearWhatsAppUnreadCountForPhone,
   countUnreadWhatsAppThreads,
+  dismissWhatsAppTrayForPhone,
   displayPhone,
   isWhatsAppThreadUnread,
   loadWhatsAppReadMap,
+  mergeWhatsAppReadMap,
   patchThreadFromMessage,
   peekWhatsAppInboxThreadsCache,
   previewMessageBody,
@@ -19,6 +22,7 @@ import {
   dispatchWhatsAppUnreadChanged,
   getWhatsAppInboxActivity,
   readWhatsAppUnreadCount,
+  startWhatsAppViewingPresence,
 } from '@/lib/whatsappInboxActivity';
 import { playWhatsAppAlertSound } from '@/lib/whatsappAlertSound';
 import {
@@ -171,6 +175,7 @@ function handleInboundInsert(row: Partial<WhatsAppMessageRow> | null): void {
 
   const phone = normalizePhone(row.phone_e164);
   if (shouldSuppressAlert(phone)) {
+    dismissWhatsAppTrayForPhone(phone);
     const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
     const threads = patchThreadFromMessage(cached?.threads ?? [], row as WhatsAppMessageRow);
     writeWhatsAppInboxThreadsCache(threads, { rangeKey: 'today' });
@@ -188,6 +193,7 @@ export function setWhatsAppAlertNavigator(navigate: (path: string) => void): voi
 
 /** Start global admin WhatsApp inbound alerts (one Realtime channel per session). */
 export function startWhatsAppAdminAlerts(): () => void {
+  const stopPresence = startWhatsAppViewingPresence();
   const channel = supabase
     .channel('whatsapp-admin-alerts')
     .on(
@@ -197,9 +203,29 @@ export function startWhatsAppAdminAlerts(): () => void {
         handleInboundInsert((payload.new || null) as Partial<WhatsAppMessageRow> | null);
       }
     )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'whatsapp_inbox_read' },
+      (payload) => {
+        const row = (payload.new || null) as { phone_e164?: string; read_at?: string } | null;
+        const phone = normalizePhone(row?.phone_e164);
+        const readAt = String(row?.read_at || '');
+        if (!phone || !readAt) return;
+        const map = mergeWhatsAppReadMap({ [phone]: readAt });
+        clearWhatsAppUnreadCountForPhone(phone);
+        const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
+        if (cached?.threads?.length) {
+          dispatchWhatsAppUnreadChanged(countUnreadWhatsAppThreads(cached.threads, map));
+        } else {
+          const cur = readWhatsAppUnreadCount();
+          if (cur > 0) dispatchWhatsAppUnreadChanged(Math.max(0, cur - 1));
+        }
+      }
+    )
     .subscribe();
 
   return () => {
+    stopPresence();
     void supabase.removeChannel(channel);
     navigateToInbox = null;
   };

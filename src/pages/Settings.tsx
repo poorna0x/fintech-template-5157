@@ -271,6 +271,12 @@ const DATABASE_EXPORT_TABLES: {
     optional: true,
   },
   { name: 'whatsapp_crm_settings', orderBy: 'id', label: 'WhatsApp CRM Settings', optional: true },
+  {
+    name: 'whatsapp_inbox_read',
+    orderBy: 'updated_at',
+    label: 'WhatsApp Inbox Read',
+    optional: true,
+  },
   { name: 'whatsapp_messages', orderBy: 'created_at', label: 'WhatsApp Messages', optional: true },
   {
     name: 'whatsapp_usage_monthly',

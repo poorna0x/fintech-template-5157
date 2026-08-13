@@ -9,6 +9,8 @@ import { supabase } from '@/lib/supabase';
 import { deliverAdminPushDeepLink } from '@/lib/adminPushDeepLink';
 import { registrationDeviceName } from '@/lib/deviceTracker';
 import { getNativeDeviceLabel, syncDevicePrefsToNative } from '@/lib/devicePrefs';
+import { dismissWhatsAppTrayForPhone } from '@/lib/whatsappInbox';
+import { getWhatsAppInboxActivity } from '@/lib/whatsappInboxActivity';
 
 let registered = false;
 let lastToken: string | null = null;
@@ -182,6 +184,15 @@ export async function registerAdminPushToken(): Promise<void> {
       await PushNotifications.addListener('pushNotificationReceived', (notification) => {
         const data = (notification?.data || {}) as Record<string, unknown>;
         const type = String(data.type || '').trim();
+        if (type === 'whatsapp_inbound') {
+          const act = getWhatsAppInboxActivity();
+          const inbound = String(data.phone || data.phone_e164 || '').replace(/\D/g, '');
+          const open = String(act.selectedPhone || '').replace(/\D/g, '');
+          if (act.open && inbound && inbound === open) {
+            dismissWhatsAppTrayForPhone(inbound);
+            return;
+          }
+        }
         if (
           type === 'tech_call' ||
           type === 'wrong_line_call' ||

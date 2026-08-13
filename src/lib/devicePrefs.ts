@@ -32,6 +32,8 @@ interface DevicePrefsPlugin {
     companyPhone?: string;
   }>;
   getDeviceLabel(): Promise<{ label: string }>;
+  setViewingWhatsAppPhone(options: { phone: string }): Promise<void>;
+  clearWhatsAppTrayNotification(options: { phone: string }): Promise<void>;
 }
 
 const DevicePrefs = registerPlugin<DevicePrefsPlugin>('DevicePrefs');
@@ -86,5 +88,32 @@ export async function syncCompanyPhoneToNative(phone: string | null | undefined)
     await DevicePrefs.setCompanyPhone({ phone: digits.slice(-10) });
   } catch {
     /* old APK */
+  }
+}
+
+/** Native SharedPreferences: which WhatsApp thread this Admin APK is looking at. */
+export async function setNativeViewingWhatsAppPhone(
+  phone: string | null | undefined
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const digits = String(phone || '').replace(/\D/g, '');
+  try {
+    await DevicePrefs.setViewingWhatsAppPhone({ phone: digits });
+  } catch {
+    /* old APK until updated */
+  }
+}
+
+/** Dismiss Admin APK tray notification for a WhatsApp thread (tag wa_inbound_{phone}). */
+export async function clearNativeWhatsAppTrayNotification(
+  phone: string | null | undefined
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return;
+  try {
+    await DevicePrefs.clearWhatsAppTrayNotification({ phone: digits });
+  } catch {
+    /* old APK until updated */
   }
 }

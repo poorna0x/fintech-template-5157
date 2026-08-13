@@ -40,6 +40,7 @@ import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
 } from '@/lib/equipment-suggestions';
+import { getDefaultNewJobScheduledDate } from '@/lib/adminDashboardDateHelpers';
 
 const EMPTY_PHOTO_LIST: string[] = [];
 
@@ -316,14 +317,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // Initialize scheduled_date when dialog opens and shouldCreateJob is true
   useEffect(() => {
     if (open && shouldCreateJob && !step5JobData.scheduled_date) {
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      const todayDateString = `${year}-${month}-${day}`;
       setStep5JobData(prev => ({
         ...prev,
-        scheduled_date: todayDateString,
+        scheduled_date: getDefaultNewJobScheduledDate(),
         service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
       }));
     }
@@ -2041,15 +2037,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       checked={shouldCreateJob === true}
                       onChange={() => {
                         setShouldCreateJob(true);
-                        // Get today's date in local timezone
-                        const today = new Date();
-                        const year = today.getFullYear();
-                        const month = String(today.getMonth() + 1).padStart(2, '0');
-                        const day = String(today.getDate()).padStart(2, '0');
-                        const todayDateString = `${year}-${month}-${day}`;
                         setStep5JobData(prev => ({
                           ...prev,
-                          scheduled_date: todayDateString,
+                          scheduled_date: getDefaultNewJobScheduledDate(),
                           service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
                         }));
                       }}

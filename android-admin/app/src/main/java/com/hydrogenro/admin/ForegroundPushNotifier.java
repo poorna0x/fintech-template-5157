@@ -59,9 +59,18 @@ public final class ForegroundPushNotifier {
         String event = data != null ? data.get("event") : null;
         String channelId = NotificationChannels.channelForPushData(event);
 
+        boolean isWhatsApp = "whatsapp_inbound".equals(type);
+        String inboundPhone = isWhatsApp && data != null
+            ? firstNonEmpty(data.get("phone"), data.get("phone_e164"))
+            : null;
+
         String tag = data != null ? data.get("tag") : null;
         if (tag == null || tag.isEmpty()) {
-            tag = type != null && !type.isEmpty() ? type : "admin_push";
+            if (isWhatsApp) {
+                tag = DevicePrefsPlugin.whatsAppTrayTag(inboundPhone);
+            } else {
+                tag = type != null && !type.isEmpty() ? type : "admin_push";
+            }
         }
 
         int color = Color.parseColor("#0369A1");
@@ -74,7 +83,12 @@ public final class ForegroundPushNotifier {
             }
         }
 
-        boolean isWhatsApp = "whatsapp_inbound".equals(type);
+        if (isWhatsApp) {
+            if (DevicePrefsPlugin.isViewingWhatsAppPhone(context, inboundPhone)) {
+                Log.i(TAG, "Skip WhatsApp tray — already in that chat");
+                return;
+            }
+        }
         int smallIcon = isWhatsApp ? R.drawable.ic_stat_whatsapp : R.drawable.ic_stat_notify;
         if (isWhatsApp && (colorHex == null || colorHex.isEmpty())) {
             color = Color.parseColor("#25D366");

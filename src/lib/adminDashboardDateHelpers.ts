@@ -14,6 +14,30 @@ export function getTomorrowLocalDate(): string {
   return `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
 }
 
+/** Calendar date in Asia/Kolkata as YYYY-MM-DD. */
+export function getIstCalendarDate(now: Date = new Date()): string {
+  return now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+/**
+ * Admin new-job default: today until 7:00 PM IST, then tomorrow.
+ * After hours, new jobs are almost always for the next working day.
+ */
+export function getDefaultNewJobScheduledDate(now: Date = new Date()): string {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).format(now)
+  );
+  const today = getIstCalendarDate(now);
+  if (!Number.isFinite(hour) || hour < 19) return today;
+  const [year, month, day] = today.split('-').map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
+}
+
 export function followUpDateToStr(
   followUpDate: string | null | undefined
 ): string | null {

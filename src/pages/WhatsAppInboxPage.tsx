@@ -93,13 +93,16 @@ import {
   invalidateWhatsAppInboxThreadsCache,
   invalidateWhatsAppThreadMessagesCache,
   loadWhatsAppReadMap,
-  markWhatsAppThreadRead,
+  mergeWhatsAppReadMap,
+  persistWhatsAppThreadRead,
+  fetchWhatsAppInboxReadMap,
   patchThreadFromMessage,
   peekWhatsAppInboxThreadsCache,
   peekWhatsAppThreadMessagesCache,
   previewMessageBody,
   formatAdminWhatsAppBody,
   isBookingBotStateMessage,
+  latestInboundAtFromMessages,
   threadLastInboundAt,
   threadNeedsHumanReply,
   toWhatsAppPhoneDigits,
@@ -107,6 +110,8 @@ import {
   upsertWhatsAppThreadMessageCache,
   writeWhatsAppInboxThreadsCache,
   writeWhatsAppThreadMessagesCache,
+  clearWhatsAppUnreadCountForPhone,
+  WA_INBOX_READ_SYNC_EVENT,
   type WhatsAppMessageRow,
   type WhatsAppInboxListRange,
   type WhatsAppThread,
@@ -506,6 +511,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   selectedPhoneRef.current = selectedPhone;
   const threadMessagesRef = useRef(threadMessages);
   threadMessagesRef.current = threadMessages;
+  const lastMarkedReadRef = useRef<Record<string, string>>({});
   const threadLoadingOlderRef = useRef(threadLoadingOlder);
   threadLoadingOlderRef.current = threadLoadingOlder;
   const threadHasMoreOlderRef = useRef(threadHasMoreOlder);
@@ -567,7 +573,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     if (cached?.threads?.length && !opts?.force && !opts?.soft) {
       setThreads(cached.threads);
       setLoading(false);
-      // Forever on-device — skip network until Refresh / range change / soft realtime.
+      void fetchWhatsAppInboxReadMap(supabase).then((remoteRead) => {
+        if (!Object.keys(remoteRead).length) return;
+        setReadMap(mergeWhatsAppReadMap(remoteRead));
+      });
       return;
     }
     if (!opts?.soft && !(cached?.threads?.length)) setLoading(true);
@@ -583,8 +592,28 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       }
       setThreads(result.threads);
       writeWhatsAppInboxThreadsCache(result.threads, { rangeKey });
-      if (!opts?.soft) {
+      // Soft reloads: Realtime already patches reads — don't re-download the map.
+      if (opts?.soft) {
         const map = loadWhatsAppReadMap();
+        setUnreadCounts((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          for (const t of result.threads) {
+            if (next[t.phone_e164] && !isWhatsAppThreadUnread(t, map)) {
+              delete next[t.phone_e164];
+              changed = true;
+            }
+          }
+          if (!changed) return prev;
+          saveWhatsAppUnreadCounts(next);
+          return next;
+        });
+      } else {
+        const remoteRead = await fetchWhatsAppInboxReadMap(supabase);
+        const map = Object.keys(remoteRead).length
+          ? mergeWhatsAppReadMap(remoteRead)
+          : loadWhatsAppReadMap();
+        setReadMap(map);
         void fetchWhatsAppUnreadMessageCounts(supabase, result.threads, map).then((counts) => {
           if (!counts || !Object.keys(counts).length) return;
           setUnreadCounts((prev) => {
@@ -1332,6 +1361,25 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           }
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'whatsapp_inbox_read' },
+        (payload) => {
+          const row = (payload.new || null) as { phone_e164?: string; read_at?: string } | null;
+          const phone = String(row?.phone_e164 || '').replace(/\D/g, '');
+          const readAt = String(row?.read_at || '');
+          if (!phone || !readAt) return;
+          const map = mergeWhatsAppReadMap({ [phone]: readAt });
+          setReadMap(map);
+          clearWhatsAppUnreadCountForPhone(phone);
+          setUnreadCounts((prev) => {
+            if (!prev[phone]) return prev;
+            const next = { ...prev };
+            delete next[phone];
+            return next;
+          });
+        }
+      )
       .subscribe();
     return () => {
       if (softReloadTimer != null) window.clearTimeout(softReloadTimer);
@@ -1358,22 +1406,46 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, [unreadCount]);
 
   useEffect(() => {
-    if (!selectedPhone || !activeThread) return;
-    const watermark = threadLastInboundAt(activeThread);
-    if (!watermark) return;
+    const onReadSync = () => setReadMap(loadWhatsAppReadMap());
+    window.addEventListener(WA_INBOX_READ_SYNC_EVENT, onReadSync);
+    return () => window.removeEventListener(WA_INBOX_READ_SYNC_EVENT, onReadSync);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPhone) return;
     const phone = toWhatsAppPhoneDigits(selectedPhone);
-    markWhatsAppThreadRead(selectedPhone, watermark);
-    setReadMap(loadWhatsAppReadMap());
-    if (phone) {
-      setUnreadCounts((prev) => {
-        if (!prev[phone]) return prev;
-        const next = { ...prev };
-        delete next[phone];
-        saveWhatsAppUnreadCounts(next);
-        return next;
-      });
-    }
-  }, [selectedPhone, activeThread?.inbound_at, activeThread?.last_at, activeThread?.last_direction]);
+    if (!phone) return;
+    const fromThread = activeThread ? threadLastInboundAt(activeThread) : null;
+    const fromMessages = latestInboundAtFromMessages(threadMessages);
+    const watermark =
+      fromThread && fromMessages
+        ? new Date(fromMessages).getTime() > new Date(fromThread).getTime()
+          ? fromMessages
+          : fromThread
+        : fromThread || fromMessages;
+    if (!watermark) return;
+    const prevMarked = lastMarkedReadRef.current[phone];
+    if (prevMarked === watermark) return;
+    lastMarkedReadRef.current[phone] = watermark;
+    setReadMap(mergeWhatsAppReadMap({ [phone]: watermark }));
+    setUnreadCounts((prev) => {
+      if (!prev[phone]) return prev;
+      const next = { ...prev };
+      delete next[phone];
+      saveWhatsAppUnreadCounts(next);
+      return next;
+    });
+    void persistWhatsAppThreadRead(supabase, phone, watermark);
+  }, [
+    selectedPhone,
+    activeThread?.inbound_at,
+    activeThread?.last_at,
+    activeThread?.last_direction,
+    // Only re-evaluate when the newest message changes (not every array identity).
+    threadMessages[threadMessages.length - 1]?.id,
+    threadMessages[threadMessages.length - 1]?.created_at,
+    threadMessages[threadMessages.length - 1]?.direction,
+  ]);
 
   const filteredThreads = useMemo(() => {
     if (appliedSearch.trim()) return searchThreads;

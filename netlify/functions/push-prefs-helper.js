@@ -49,21 +49,52 @@ function isPushEnabledRow(row) {
 
 /**
  * All FCM device tokens for admin phones, optionally filtered by notification category.
+ * @param skipIfViewingPhone digits — skip devices currently open on that WhatsApp chat (≤2 min).
  */
-async function getAdminFcmTokens(db, category = null) {
-  const { data: rows, error } = await db
-    .from('admin_push_tokens')
-    .select('token, push_enabled, push_prefs');
+async function getAdminFcmTokens(db, category = null, skipIfViewingPhone = null) {
+  const skipPhone = String(skipIfViewingPhone || '').replace(/\D/g, '');
+  let rows = [];
+  let error = null;
+  if (skipPhone) {
+    const first = await db
+      .from('admin_push_tokens')
+      .select('token, push_enabled, push_prefs, viewing_whatsapp_phone, viewing_whatsapp_at');
+    error = first.error;
+    rows = first.data || [];
+    if (error && /viewing_whatsapp/i.test(error.message || '')) {
+      const fallback = await db
+        .from('admin_push_tokens')
+        .select('token, push_enabled, push_prefs');
+      error = fallback.error;
+      rows = fallback.data || [];
+    }
+  } else {
+    const first = await db
+      .from('admin_push_tokens')
+      .select('token, push_enabled, push_prefs');
+    error = first.error;
+    rows = first.data || [];
+  }
   if (error) {
     console.warn('[fcm-helper] admin_push_tokens lookup failed:', error.message);
     return [];
   }
+  const now = Date.now();
+  const VIEWING_MAX_MS = 2 * 60 * 1000;
   // Unique tokens — duplicate rows (reinstall / race) were causing 2 alerts on one phone.
   return [...new Set(
     (rows || [])
-      .filter(
-        (r) => r.token && isPushEnabledRow(r) && isCategoryEnabled(r.push_prefs, category)
-      )
+      .filter((r) => {
+        if (!r.token || !isPushEnabledRow(r) || !isCategoryEnabled(r.push_prefs, category)) {
+          return false;
+        }
+        if (!skipPhone) return true;
+        const viewing = String(r.viewing_whatsapp_phone || '').replace(/\D/g, '');
+        if (viewing !== skipPhone) return true;
+        const at = r.viewing_whatsapp_at ? new Date(r.viewing_whatsapp_at).getTime() : 0;
+        if (Number.isFinite(at) && now - at < VIEWING_MAX_MS) return false;
+        return true;
+      })
       .map((r) => r.token)
   )];
 }

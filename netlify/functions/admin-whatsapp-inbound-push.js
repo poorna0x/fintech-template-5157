@@ -57,7 +57,7 @@ async function pushWhatsAppInboundToAdmins(db, details) {
   const phone = String(details.phoneE164 || '').replace(/\D/g, '');
   if (!phone) return { sent: 0, reason: 'no_phone' };
 
-  const tokens = await getAdminFcmTokens(db, 'whatsapp_inbound');
+  const tokens = await getAdminFcmTokens(db, 'whatsapp_inbound', phone);
   if (tokens.length === 0) return { sent: 0, reason: 'no_tokens' };
 
   const customerName = await lookupCustomerName(db, details.customerId);
@@ -80,6 +80,7 @@ async function pushWhatsAppInboundToAdmins(db, details) {
     data: {
       type: 'whatsapp_inbound',
       phone,
+      tag: `wa_inbound_${phone}`,
       panel: 'whatsapp-inbox',
       color: WA_GREEN,
       ...(details.waMessageId ? { waMessageId: String(details.waMessageId) } : {}),

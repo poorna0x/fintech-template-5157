@@ -37,6 +37,10 @@ import {
 } from '@/lib/customer-locations';
 import { isNativeApp } from '@/lib/isNativeApp';
 import { captureNativeCameraPhoto } from '@/lib/cameraUtils';
+import {
+  getDefaultNewJobScheduledDate,
+  getIstCalendarDate,
+} from '@/lib/adminDashboardDateHelpers';
 
 interface NewJobFormData {
   service_type: 'RO' | 'SOFTENER';
@@ -103,7 +107,9 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     brand: '',
     model: '',
     service_site: 'primary',
-    scheduled_date: new Date().toISOString().split('T')[0],
+    scheduled_date: technicianMode
+      ? getIstCalendarDate()
+      : getDefaultNewJobScheduledDate(),
     scheduled_time_slot: 'MORNING',
     scheduled_time_custom: '',
     description: '',
@@ -116,6 +122,16 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     photos: [],
     require_otp: false
   });
+
+  useEffect(() => {
+    if (!open) return;
+    setNewJobFormData((prev) => ({
+      ...prev,
+      scheduled_date: technicianMode
+        ? getIstCalendarDate()
+        : getDefaultNewJobScheduledDate(),
+    }));
+  }, [open, technicianMode]);
 
   // Initialize service type, brand, model from customer when dialog opens (supports Softener-only)
   useEffect(() => {
@@ -179,7 +195,9 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       brand: '',
       model: '',
       service_site: 'primary',
-      scheduled_date: new Date().toISOString().split('T')[0],
+      scheduled_date: technicianMode
+        ? getIstCalendarDate()
+        : getDefaultNewJobScheduledDate(),
       scheduled_time_slot: 'MORNING',
       scheduled_time_custom: '',
       description: '',
