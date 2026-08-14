@@ -1,4 +1,10 @@
 import JSZip from 'jszip';
+import { toast } from 'sonner';
+import type { Bill } from '@/types';
+import { generateAMCHTML, billToAmcPdfData } from '@/lib/amc-pdf-generator';
+import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
+import { generateDocumentPdfVerifyCode, todayYmdIst } from '@/lib/documentPdfAuthenticity';
+import { getCompanyInfoForBrand } from '@/lib/service-brands';
 
 type PrivacyExportPack = {
   exported_at: string;
@@ -19,6 +25,12 @@ type PrivacyExportPack = {
   summary?: Record<string, unknown>;
   privacy_request: Record<string, unknown> | null;
   notes?: string | null;
+  documents_note?: string | null;
+};
+
+type BundledFiles = {
+  photos: string[];
+  documents: string[];
 };
 
 function esc(s: unknown): string {
@@ -38,17 +50,18 @@ function fmtAddress(c: Record<string, unknown>): string {
   return String(c.address || '—');
 }
 
+/** Coords only — no Google Maps URL (safer when ZIP is forwarded). */
 function fmtLocation(c: Record<string, unknown>): string {
   const loc = c.location;
   if (!loc || typeof loc !== 'object') return '—';
   const L = loc as Record<string, unknown>;
+  const label = L.shortLocation || L.formattedAddress || '';
   const lat = L.latitude;
   const lng = L.longitude;
-  const link =
-    L.googleLocation ||
-    (lat != null && lng != null ? `https://www.google.com/maps/place/${lat},${lng}` : '');
-  const label = L.shortLocation || L.formattedAddress || `${lat}, ${lng}`;
-  return link ? `${label} (${link})` : String(label || '—');
+  if (lat != null && lng != null) {
+    return `${label ? `${label} · ` : ''}${lat}, ${lng}`;
+  }
+  return String(label || '—');
 }
 
 function trunc(s: unknown, n = 120): string {
@@ -56,10 +69,29 @@ function trunc(s: unknown, n = 120): string {
   return t.length > n ? `${t.slice(0, n)}…` : t;
 }
 
-function buildReadableHtml(pack: PrivacyExportPack): string {
+function safeFilePart(s: unknown): string {
+  return String(s || 'file')
+    .replace(/[^\w.-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+}
+
+function parseAmcInfo(raw: unknown): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === 'object') return raw as Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function buildReadableHtml(pack: PrivacyExportPack, bundled: BundledFiles): string {
   const c = pack.customer || {};
   const name = esc(c.full_name || pack.privacy_request?.requester_name || 'Customer');
-  const photos = Array.isArray(c.photos) ? (c.photos as string[]) : [];
   const summary = pack.summary || {};
   const waTotal = pack.whatsapp_message_total ?? (pack.whatsapp_messages || []).length;
 
@@ -71,17 +103,14 @@ function buildReadableHtml(pack: PrivacyExportPack): string {
     .join('');
   const amcRows = (pack.amc_contracts || [])
     .map((a) => {
-      const info =
-        a.additional_info && typeof a.additional_info === 'object'
-          ? (a.additional_info as Record<string, unknown>)
-          : {};
+      const info = parseAmcInfo(a.additional_info);
       return `<tr><td>${esc(info.agreement_number || a.id)}</td><td>${esc(a.status)}</td><td>${esc(a.start_date)}</td><td>${esc(a.end_date)}</td><td>${esc(info.amc_cost ?? info.total_amount)}</td></tr>`;
     })
     .join('');
-  const docRows = (pack.pdf_authenticity || [])
+  const docMetaRows = (pack.pdf_authenticity || [])
     .map(
       (d) =>
-        `<tr><td>${esc(d.doc_type)}</td><td>${esc(d.document_ref)}</td><td>${esc(d.verify_code)}</td><td>${esc(d.pdf_filename)}</td><td>${esc(d.generated_on || d.created_at)}</td></tr>`
+        `<tr><td>${esc(d.doc_type)}</td><td>${esc(d.document_ref)}</td><td>${esc(d.verify_code)}</td><td>${esc(d.generated_on || d.created_at)}</td></tr>`
     )
     .join('');
   const invRows = (pack.tax_invoices || [])
@@ -108,9 +137,13 @@ function buildReadableHtml(pack: PrivacyExportPack): string {
         `<tr><td>${esc(x.purpose)}</td><td>${esc(x.brand)}</td><td>${esc(x.granted)}</td><td>${esc(x.consented_at)}</td></tr>`
     )
     .join('');
-  const photoList = photos.length
-    ? `<ul>${photos.map((u) => `<li><a href="${esc(u)}">${esc(u)}</a></li>`).join('')}</ul>`
-    : '<p class="muted">None on file</p>';
+
+  const photoList = bundled.photos.length
+    ? `<ul>${bundled.photos.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
+    : '<p class="muted">None bundled</p>';
+  const docList = bundled.documents.length
+    ? `<ul>${bundled.documents.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
+    : '<p class="muted">No PDF files regenerated (open customer in CRM to download other doc types).</p>';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -131,16 +164,14 @@ function buildReadableHtml(pack: PrivacyExportPack): string {
 </style>
 </head>
 <body>
-  <p class="muted noprint">Open this file and use Print → Save as PDF if you need a PDF copy. Full raw data is also in the companion .json file.</p>
+  <p class="muted noprint">This ZIP includes real files under <code>photos/</code> and <code>documents/</code> — no public media links. Send the ZIP privately to the verified requester.</p>
   <h1>Personal data export</h1>
   <p class="muted">${esc(pack.export_purpose)} · ${esc(pack.brand)} · Exported ${esc(pack.exported_at)}</p>
   <div class="box chips">
-    <span>Photos ${esc(summary.photos ?? photos.length)}</span>
+    <span>Photo files ${esc(bundled.photos.length)}</span>
+    <span>PDF files ${esc(bundled.documents.length)}</span>
     <span>Jobs ${esc(summary.jobs ?? pack.jobs.length)}</span>
-    <span>AMC ${esc(summary.amc ?? (pack.amc_contracts || []).length)}</span>
-    <span>PDFs ${esc(summary.pdf_fingerprints ?? (pack.pdf_authenticity || []).length)}</span>
-    <span>Invoices ${esc(summary.tax_invoices ?? (pack.tax_invoices || []).length)}</span>
-    <span>Calls ${esc(summary.call_history ?? (pack.call_history || []).length)}</span>
+    <span>AMC rows ${esc(summary.amc ?? (pack.amc_contracts || []).length)}</span>
     <span>WhatsApp ${esc(waTotal)}</span>
   </div>
   <div class="box">
@@ -152,15 +183,17 @@ function buildReadableHtml(pack: PrivacyExportPack): string {
     Service: ${esc(c.service_type || '—')} · Brand/model: ${esc(c.brand || '—')} ${esc(c.model || '')}<br/>
     TDS: ${esc(c.raw_water_tds ?? '—')} · Prefilter: ${esc(c.has_prefilter ?? '—')}<br/>
     Last service: ${esc(c.last_service_date || '—')} · Member since: ${esc(c.customer_since || '—')}<br/>
-    Customer ID: <strong>${esc(c.customer_id || pack.customer_code || 'not found')}</strong> · Internal: ${esc(c.id || '—')}
+    Customer ID: <strong>${esc(c.customer_id || pack.customer_code || 'not found')}</strong>
   </div>
-  ${pack.notes ? `<p class="muted">${esc(pack.notes)}</p>` : ''}
-  <h2>Photos (${photos.length})</h2>
+  <h2>Bundled photos (${bundled.photos.length})</h2>
   ${photoList}
+  <h2>Bundled documents (${bundled.documents.length})</h2>
+  ${docList}
+  <p class="muted">Fresh AMC PDFs regenerated for this export (new verify code). Old fingerprint codes below are for records only — original PDF bytes were never stored.</p>
   <h2>Service / jobs (${pack.jobs.length})</h2>
   <table>
     <thead><tr><th>Job</th><th>Status</th><th>Type</th><th>Date</th><th>Amount</th><th>Payment</th></tr></thead>
-    <tbody>${jobsRows || '<tr><td colspan="6">None linked to this customer id</td></tr>'}</tbody>
+    <tbody>${jobsRows || '<tr><td colspan="6">None linked</td></tr>'}</tbody>
   </table>
   <h2>AMC contracts (${(pack.amc_contracts || []).length})</h2>
   <table>
@@ -170,13 +203,12 @@ function buildReadableHtml(pack: PrivacyExportPack): string {
   <h2>Tax invoices (${(pack.tax_invoices || []).length})</h2>
   <table>
     <thead><tr><th>Number</th><th>Date</th><th>Type</th><th>Amount</th><th>Service</th></tr></thead>
-    <tbody>${invRows || '<tr><td colspan="5">None</td></tr>'}</tbody>
+    <tbody>${invRows || '<tr><td colspan="5">None — regenerate from CRM if needed</td></tr>'}</tbody>
   </table>
-  <h2>Document fingerprints (${(pack.pdf_authenticity || []).length})</h2>
-  <p class="muted">These are authenticity records only (verify code + hash). PDF files are not stored for download. Regenerate from CRM and send a fresh copy if the customer needs the document. They can check a code at your authenticity page.</p>
+  <h2>Prior document fingerprints (${(pack.pdf_authenticity || []).length})</h2>
   <table>
-    <thead><tr><th>Type</th><th>Ref</th><th>Verify code</th><th>File</th><th>When</th></tr></thead>
-    <tbody>${docRows || '<tr><td colspan="5">None</td></tr>'}</tbody>
+    <thead><tr><th>Type</th><th>Ref</th><th>Verify code</th><th>When</th></tr></thead>
+    <tbody>${docMetaRows || '<tr><td colspan="4">None</td></tr>'}</tbody>
   </table>
   <h2>Call / contact history (${(pack.call_history || []).length})</h2>
   <table>
@@ -193,7 +225,7 @@ function buildReadableHtml(pack: PrivacyExportPack): string {
     <thead><tr><th>Purpose</th><th>Brand</th><th>Granted</th><th>When</th></tr></thead>
     <tbody>${consentRows || '<tr><td colspan="4">None</td></tr>'}</tbody>
   </table>
-  <p class="muted">This pack is for fulfilling a data-principal access request. Do not share beyond the verified requester.</p>
+  <p class="muted">Send only to the verified WhatsApp/email on the privacy request.</p>
 </body>
 </html>`;
 }
@@ -210,7 +242,130 @@ function triggerDownload(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 2_000);
 }
 
-/** Download ZIP containing data.json + readable.html (print to PDF). */
+function base64ToUint8Array(b64: string): Uint8Array {
+  const raw = b64.includes(',') ? b64.slice(b64.indexOf(',') + 1) : b64;
+  const binary = atob(raw.replace(/\s/g, ''));
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+async function fetchPhotoIntoZip(
+  zip: JSZip,
+  url: string,
+  index: number
+): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    let ext = 'bin';
+    if (ct.includes('jpeg') || ct.includes('jpg') || /\.jpe?g(\?|$)/i.test(url)) ext = 'jpg';
+    else if (ct.includes('png') || /\.png(\?|$)/i.test(url)) ext = 'png';
+    else if (ct.includes('webp') || /\.webp(\?|$)/i.test(url)) ext = 'webp';
+    else if (ct.includes('gif')) ext = 'gif';
+    const name = `photos/photo-${String(index + 1).padStart(2, '0')}.${ext}`;
+    zip.file(name, buf);
+    return name;
+  } catch {
+    return null;
+  }
+}
+
+function amcContractToBill(
+  contract: Record<string, unknown>,
+  customer: Record<string, unknown>,
+  brand: string
+): Bill {
+  const info = parseAmcInfo(contract.additional_info);
+  const addr =
+    customer.address && typeof customer.address === 'object'
+      ? (customer.address as Record<string, unknown>)
+      : {};
+  const amount = Number(info.amc_cost ?? info.total_amount ?? 0) || 0;
+  const agreement =
+    String(info.agreement_number || '').trim() ||
+    `AMC-${String(contract.id || '').slice(0, 8)}`;
+  const docBrand =
+    (info.document_brand as 'hydrogenro' | 'elevenro') ||
+    (brand === 'elevenro' ? 'elevenro' : 'hydrogenro');
+  const company = getCompanyInfoForBrand(docBrand);
+  const billDate = String(
+    info.agreement_date || contract.start_date || todayYmdIst()
+  ).slice(0, 10);
+
+  return {
+    id: String(contract.id || ''),
+    billNumber: agreement,
+    billDate,
+    company,
+    customer: {
+      id: String(customer.id || ''),
+      name: String(customer.full_name || info.customer_name || 'Customer'),
+      address: String(
+        (addr.street as string) ||
+          customer.visible_address ||
+          ''
+      ),
+      city: String(addr.city || ''),
+      state: String(addr.state || ''),
+      pincode: String(addr.pincode || ''),
+      phone: String(customer.phone || info.customer_phone || ''),
+      email: String(customer.email || info.customer_email || ''),
+      gstNumber: customer.gst_number ? String(customer.gst_number) : undefined,
+      ...( { roModel: String(info.ro_model || `${customer.brand || ''} ${customer.model || ''}`.trim()) } as {
+        roModel?: string;
+      }),
+    },
+    items: [
+      {
+        description: `AMC agreement ${agreement}`,
+        quantity: 1,
+        unitPrice: amount,
+        total: amount,
+        taxRate: 0,
+        taxAmount: 0,
+      },
+    ],
+    subtotal: amount,
+    totalTax: 0,
+    totalAmount: amount,
+    paymentStatus: 'PAID',
+    amountPaid: amount,
+    validity: String(info.validity_period || (contract.years ? `${contract.years} Years` : '')),
+    notes: info.notes ? String(info.notes) : undefined,
+    documentBrand: docBrand,
+    createdAt: String(contract.created_at || new Date().toISOString()),
+    updatedAt: String(contract.created_at || new Date().toISOString()),
+  } as Bill;
+}
+
+async function generateAmcPdfIntoZip(
+  zip: JSZip,
+  contract: Record<string, unknown>,
+  customer: Record<string, unknown>,
+  brand: string
+): Promise<string | null> {
+  try {
+    const bill = amcContractToBill(contract, customer, brand);
+    const verifyCode = generateDocumentPdfVerifyCode();
+    const html = generateAMCHTML(billToAmcPdfData(bill), {
+      authenticityVerifyCode: verifyCode,
+      authenticityGeneratedOnYmd: todayYmdIst(),
+    });
+    const filename = `AMC_${safeFilePart(bill.billNumber)}.pdf`;
+    const generated = await generateDocumentPdfBase64({ html, filename });
+    const path = `documents/${filename}`;
+    zip.file(path, base64ToUint8Array(generated.pdfBase64));
+    return path;
+  } catch (err) {
+    console.warn('[privacy-export] AMC PDF soft-fail', err);
+    return null;
+  }
+}
+
+/** Download ZIP with data.json + readable.html + photos/ + documents/ (no public links). */
 export async function downloadPrivacyDataPackZip(
   pack: PrivacyExportPack,
   requestId?: string
@@ -220,26 +375,78 @@ export async function downloadPrivacyDataPackZip(
   const phone = String(pack.lookup_phone || 'unknown').slice(-10);
   const code = String(pack.customer_code || pack.customer?.customer_id || 'unknown');
   const base = `privacy-export-${code}-${phone}-${stamp}`;
+  const bundled: BundledFiles = { photos: [], documents: [] };
 
-  zip.file(`${base}.json`, JSON.stringify(pack, null, 2));
-  zip.file(`${base}.html`, buildReadableHtml(pack));
-  if (requestId) {
+  const toastId = toast.loading('Building export ZIP (photos + AMC PDFs)…');
+
+  try {
+    const photoUrls = Array.isArray(pack.customer?.photos)
+      ? (pack.customer!.photos as string[]).filter((u) => typeof u === 'string' && u.startsWith('http'))
+      : [];
+    for (let i = 0; i < photoUrls.length; i++) {
+      const name = await fetchPhotoIntoZip(zip, photoUrls[i]!, i);
+      if (name) bundled.photos.push(name);
+    }
+
+    const customer = pack.customer || {};
+    const brand = String(pack.brand || 'hydrogenro');
+    for (const contract of pack.amc_contracts || []) {
+      const path = await generateAmcPdfIntoZip(zip, contract, customer, brand);
+      if (path) bundled.documents.push(path);
+    }
+
+    // Safer JSON for handoff — no live media URLs.
+    const safePack = {
+      ...pack,
+      customer: pack.customer
+        ? {
+            ...pack.customer,
+            photos: bundled.photos,
+            location:
+              pack.customer.location && typeof pack.customer.location === 'object'
+                ? {
+                    latitude: (pack.customer.location as Record<string, unknown>).latitude,
+                    longitude: (pack.customer.location as Record<string, unknown>).longitude,
+                    shortLocation: (pack.customer.location as Record<string, unknown>).shortLocation,
+                    formattedAddress: (pack.customer.location as Record<string, unknown>)
+                      .formattedAddress,
+                  }
+                : pack.customer.location,
+          }
+        : null,
+      bundled_files: bundled,
+      documents_note:
+        'AMC PDFs and photos are files inside this ZIP (documents/, photos/). No Cloudinary or Maps links included.',
+    };
+
+    zip.file(`${base}.json`, JSON.stringify(safePack, null, 2));
+    zip.file(`${base}.html`, buildReadableHtml(pack, bundled));
     zip.file(
       'README.txt',
       [
         'HydrogenRO / ElevenRO — privacy access export',
-        `Request id: ${requestId}`,
+        requestId ? `Request id: ${requestId}` : '',
         `Customer: ${code}`,
         `Phone: ${phone}`,
         '',
-        '1) Open the .html file and Print → Save as PDF if needed.',
-        '2) data.json has the full structured pack (photos URLs, WhatsApp, AMC, etc.).',
-        '3) Send the ZIP or PDF to the verified WhatsApp/email on the request.',
-        '4) Mark the Privacy Center request Complete (or Anonymize if erasure).',
-      ].join('\n')
+        `Photos bundled: ${bundled.photos.length}`,
+        `Documents bundled: ${bundled.documents.length}`,
+        '',
+        'Send this ZIP privately (WhatsApp / email) to the verified requester only.',
+        'Do not post folders online — files are the copies, not public links.',
+      ]
+        .filter(Boolean)
+        .join('\n')
     );
-  }
 
-  const blob = await zip.generateAsync({ type: 'blob' });
-  triggerDownload(blob, `${base}.zip`);
+    const blob = await zip.generateAsync({ type: 'blob' });
+    triggerDownload(blob, `${base}.zip`);
+    toast.success(
+      `ZIP ready · ${bundled.photos.length} photo(s) · ${bundled.documents.length} PDF(s)`,
+      { id: toastId }
+    );
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'Could not build export ZIP', { id: toastId });
+    throw e;
+  }
 }

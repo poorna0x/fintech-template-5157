@@ -261,7 +261,7 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
       await downloadPrivacyDataPackZip(data.pack, r.id);
       toast.success(
         data.pack?.customer_found
-          ? `Downloaded ZIP for ${data.pack.customer_code || 'customer'} — photos, AMC, docs, WhatsApp included`
+          ? `ZIP for ${data.pack.customer_code || 'customer'} — includes photo files + AMC PDFs (no public links)`
           : 'Downloaded ZIP (no CRM customer matched this phone — request + consents only)'
       );
       // Refresh so CRM linked badge updates after export back-fill.
