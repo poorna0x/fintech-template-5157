@@ -5,6 +5,7 @@ import { generateAMCHTML, billToAmcPdfData } from '@/lib/amc-pdf-generator';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
 import { generateDocumentPdfVerifyCode, todayYmdIst } from '@/lib/documentPdfAuthenticity';
 import { getCompanyInfoForBrand } from '@/lib/service-brands';
+import { fetchWhatsAppR2MediaBytes } from '@/lib/sendAdminWhatsAppApi';
 
 type PrivacyExportPack = {
   exported_at: string;
@@ -20,6 +21,15 @@ type PrivacyExportPack = {
   tax_invoices?: Record<string, unknown>[];
   call_history?: Record<string, unknown>[];
   whatsapp_messages?: Record<string, unknown>[];
+  whatsapp_documents?: Array<{
+    id: string;
+    filename: string;
+    media_url: string;
+    media_mime?: string;
+    direction?: string;
+    created_at?: string;
+    is_preview?: boolean;
+  }>;
   whatsapp_message_total?: number;
   consents: Record<string, unknown>[];
   summary?: Record<string, unknown>;
@@ -187,9 +197,9 @@ function buildReadableHtml(pack: PrivacyExportPack, bundled: BundledFiles): stri
   </div>
   <h2>Bundled photos (${bundled.photos.length})</h2>
   ${photoList}
+  <p class="muted">PDFs below are real files in this ZIP (from WhatsApp storage). Fingerprint table further down is history/metadata only.</p>
   <h2>Bundled documents (${bundled.documents.length})</h2>
   ${docList}
-  <p class="muted">Fresh AMC PDFs regenerated for this export (new verify code). Old fingerprint codes below are for records only — original PDF bytes were never stored.</p>
   <h2>Service / jobs (${pack.jobs.length})</h2>
   <table>
     <thead><tr><th>Job</th><th>Status</th><th>Type</th><th>Date</th><th>Amount</th><th>Payment</th></tr></thead>
@@ -377,7 +387,7 @@ export async function downloadPrivacyDataPackZip(
   const base = `privacy-export-${code}-${phone}-${stamp}`;
   const bundled: BundledFiles = { photos: [], documents: [] };
 
-  const toastId = toast.loading('Building export ZIP (photos + AMC PDFs)…');
+  const toastId = toast.loading('Building export ZIP (all linked PDFs + photos)…');
 
   try {
     const photoUrls = Array.isArray(pack.customer?.photos)
@@ -388,11 +398,53 @@ export async function downloadPrivacyDataPackZip(
       if (name) bundled.photos.push(name);
     }
 
+    // All WhatsApp-linked PDFs (quotations, bills, AMC, etc.) from private R2.
+    const usedDocNames = new Set<string>();
+    const waDocs = pack.whatsapp_documents || [];
+    for (let i = 0; i < waDocs.length; i++) {
+      const doc = waDocs[i]!;
+      toast.loading(`Downloading document ${i + 1}/${waDocs.length}…`, { id: toastId });
+      const fetched = await fetchWhatsAppR2MediaBytes({
+        mediaUrl: doc.media_url,
+        messageId: doc.id,
+      });
+      let bytes: ArrayBuffer | null = fetched.bytes || null;
+      if (!bytes && fetched.url) {
+        try {
+          const res = await fetch(fetched.url);
+          if (res.ok) bytes = await res.arrayBuffer();
+        } catch {
+          /* soft */
+        }
+      }
+      if (!bytes) continue;
+      let filename = safeFilePart(doc.filename || `document-${i + 1}.pdf`);
+      if (!/\.pdf$/i.test(filename)) filename = `${filename}.pdf`;
+      if (usedDocNames.has(filename.toLowerCase())) {
+        filename = `${filename.replace(/\.pdf$/i, '')}-${String(doc.id).slice(0, 6)}.pdf`;
+      }
+      usedDocNames.add(filename.toLowerCase());
+      const path = `documents/${filename}`;
+      zip.file(path, bytes);
+      bundled.documents.push(path);
+    }
+
+    // Regenerate AMC from CRM contracts if that agreement wasn't already pulled from WhatsApp.
     const customer = pack.customer || {};
     const brand = String(pack.brand || 'hydrogenro');
     for (const contract of pack.amc_contracts || []) {
+      const info = parseAmcInfo(contract.additional_info);
+      const agreement = String(info.agreement_number || '').trim();
+      const already = [...usedDocNames].some(
+        (n) => agreement && n.includes(agreement.toLowerCase().replace(/[^\w.-]+/g, '_'))
+      );
+      if (already) continue;
+      toast.loading('Generating AMC PDF from CRM…', { id: toastId });
       const path = await generateAmcPdfIntoZip(zip, contract, customer, brand);
-      if (path) bundled.documents.push(path);
+      if (path) {
+        bundled.documents.push(path);
+        usedDocNames.add(path.replace(/^documents\//, '').toLowerCase());
+      }
     }
 
     // Safer JSON for handoff — no live media URLs.
@@ -416,7 +468,7 @@ export async function downloadPrivacyDataPackZip(
         : null,
       bundled_files: bundled,
       documents_note:
-        'AMC PDFs and photos are files inside this ZIP (documents/, photos/). No Cloudinary or Maps links included.',
+        'PDFs under documents/ are copied from WhatsApp R2 (sent bills/quotations/AMC) plus any CRM AMC not already on chat. No public links.',
     };
 
     zip.file(`${base}.json`, JSON.stringify(safePack, null, 2));
@@ -431,9 +483,9 @@ export async function downloadPrivacyDataPackZip(
         '',
         `Photos bundled: ${bundled.photos.length}`,
         `Documents bundled: ${bundled.documents.length}`,
+        `WhatsApp PDF candidates: ${(pack.whatsapp_documents || []).length}`,
         '',
-        'Send this ZIP privately (WhatsApp / email) to the verified requester only.',
-        'Do not post folders online — files are the copies, not public links.',
+        'Send this ZIP privately to the verified requester only.',
       ]
         .filter(Boolean)
         .join('\n')
@@ -442,7 +494,7 @@ export async function downloadPrivacyDataPackZip(
     const blob = await zip.generateAsync({ type: 'blob' });
     triggerDownload(blob, `${base}.zip`);
     toast.success(
-      `ZIP ready · ${bundled.photos.length} photo(s) · ${bundled.documents.length} PDF(s)`,
+      `ZIP ready · ${bundled.documents.length} PDF(s) · ${bundled.photos.length} photo(s)`,
       { id: toastId }
     );
   } catch (e) {

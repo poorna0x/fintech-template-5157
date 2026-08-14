@@ -179,13 +179,60 @@ exports.handler = async (event) => {
   const whatsappMessages = await softSelect(
     db,
     'whatsapp_messages',
-    'id,direction,msg_type,body,filename,media_mime,status,template_name,created_at,phone_e164',
+    'id,direction,msg_type,body,filename,media_url,media_mime,status,template_name,created_at,phone_e164',
     (q) =>
       q
         .or(waFilterParts.join(','))
         .order('created_at', { ascending: false })
         .limit(100)
   );
+
+  // Linked PDFs / files that were actually sent or received on WhatsApp (R2).
+  const whatsappMediaRaw = await softSelect(
+    db,
+    'whatsapp_messages',
+    'id,direction,msg_type,filename,media_url,media_mime,created_at',
+    (q) =>
+      q
+        .or(waFilterParts.join(','))
+        .not('media_url', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(200)
+  );
+
+  const whatsappDocuments = [];
+  const byBase = new Map();
+  for (const row of whatsappMediaRaw) {
+    const mime = String(row.media_mime || '').toLowerCase();
+    const filename = String(row.filename || '').trim();
+    const isPdf =
+      mime.includes('pdf') ||
+      /\.pdf$/i.test(filename) ||
+      row.msg_type === 'document';
+    if (!isPdf || !row.media_url) continue;
+    const isPreview = /^PREVIEW_/i.test(filename);
+    const baseKey = (filename.replace(/^PREVIEW_/i, '') || String(row.id)).toLowerCase();
+    const prev = byBase.get(baseKey);
+    if (!prev) {
+      byBase.set(baseKey, { row, isPreview });
+      continue;
+    }
+    // Prefer non-preview; if both same class, keep newer (already sorted desc).
+    if (prev.isPreview && !isPreview) byBase.set(baseKey, { row, isPreview });
+  }
+  for (const { row, isPreview } of byBase.values()) {
+    const filename = String(row.filename || '').trim() || `document-${String(row.id).slice(0, 8)}.pdf`;
+    whatsappDocuments.push({
+      id: row.id,
+      direction: row.direction,
+      filename,
+      media_url: row.media_url,
+      media_mime: row.media_mime || 'application/pdf',
+      created_at: row.created_at,
+      is_preview: isPreview,
+    });
+    if (whatsappDocuments.length >= 60) break;
+  }
 
   const { count: whatsappTotal } = await db
     .from('whatsapp_messages')
@@ -223,6 +270,7 @@ exports.handler = async (event) => {
     tax_invoices: taxInvoices,
     call_history: callHistory,
     whatsapp_messages: whatsappMessages,
+    whatsapp_documents: whatsappDocuments,
     whatsapp_message_total: whatsappTotal ?? whatsappMessages.length,
     consents: consents || [],
     summary: {
@@ -233,14 +281,15 @@ exports.handler = async (event) => {
       tax_invoices: taxInvoices.length,
       call_history: callHistory.length,
       whatsapp_messages: whatsappTotal ?? whatsappMessages.length,
+      whatsapp_documents: whatsappDocuments.length,
       consents: (consents || []).length,
       has_location: Boolean(customer?.location),
     },
     notes: customer
-      ? 'Document fingerprints (verify codes) prove authenticity of PDFs already sent. PDF bytes are not stored — regenerate from CRM (AMC / invoice / bill) and send via WhatsApp or email when the customer needs a copy.'
+      ? 'Document files in the ZIP come from WhatsApp R2 copies (quotations, bills, AMC sent on chat) plus regenerated AMC from CRM contracts. Fingerprint rows are metadata only.'
       : 'No customer row matched this phone. Pack includes the privacy request and any consents for the number.',
     documents_note:
-      'Authenticity rows are metadata only (filename, verify code, SHA-256). Original PDF files are not kept on the server. To fulfill a document copy request: open the customer in CRM → regenerate AMC/invoice/bill → Download or WhatsApp.',
+      'Bundled PDFs are real files from WhatsApp storage and/or regenerated AMC. Authenticity fingerprint list is not a download catalog.',
   };
 
   await recordSecurityAudit(db, {
