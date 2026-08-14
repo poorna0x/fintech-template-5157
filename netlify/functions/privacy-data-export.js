@@ -6,6 +6,7 @@ const { getCorsHeaders } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
 const { createClient } = require('@supabase/supabase-js');
 const { recordSecurityAudit } = require('./privacy-consent-helper');
+const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
 
 function json(statusCode, headers, body) {
   return { statusCode, headers, body: JSON.stringify(body) };
@@ -18,11 +19,20 @@ function getServiceDb() {
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
-function phoneVariants(raw) {
-  const d = String(raw || '').replace(/\D/g, '');
-  const ten = d.slice(-10);
-  if (ten.length !== 10) return [];
-  return [...new Set([ten, `91${ten}`, `+91${ten}`])];
+const CUSTOMER_COLS =
+  'id,customer_id,full_name,phone,alternate_phone,email,address,location,visible_address,service_type,brand,model,installation_date,warranty_expiry,status,customer_since,last_service_date,photos,notes,created_at,updated_at,gst_number,alternate_address,alternate_location,alternate_visible_address';
+
+const JOB_COLS =
+  'id,job_number,status,service_type,service_sub_type,scheduled_date,scheduled_time_slot,completed_at,end_time,payment_amount,actual_cost,payment_method,payment_status,booking_source,created_at,service_address,service_location,service_brand,before_photos,after_photos,images';
+
+async function loadCustomerFull(db, customerId) {
+  if (!customerId) return null;
+  const { data, error } = await db.from('customers').select(CUSTOMER_COLS).eq('id', customerId).maybeSingle();
+  if (error) {
+    console.warn('[privacy-data-export] customer select', error.message);
+    return null;
+  }
+  return data;
 }
 
 exports.handler = async (event) => {
@@ -70,49 +80,64 @@ exports.handler = async (event) => {
     return json(400, headers, { error: '10-digit phone required to export' });
   }
 
-  const variants = phoneVariants(phone);
   let customer = null;
-  for (const p of variants) {
-    const { data } = await db
-      .from('customers')
-      .select(
-        'id,customer_id,full_name,phone,alternate_phone,email,address,location,visible_address,service_type,brand,model,installation_date,warranty_expiry,status,member_since,last_service_date,created_at,updated_at'
-      )
-      .eq('phone', p)
-      .maybeSingle();
-    if (data) {
-      customer = data;
-      break;
-    }
+  if (requestRow?.customer_id) {
+    customer = await loadCustomerFull(db, requestRow.customer_id);
   }
   if (!customer) {
-    for (const p of variants) {
-      const { data } = await db
-        .from('customers')
-        .select(
-          'id,customer_id,full_name,phone,alternate_phone,email,address,location,visible_address,service_type,brand,model,installation_date,warranty_expiry,status,member_since,last_service_date,created_at,updated_at'
-        )
-        .eq('alternate_phone', p)
-        .limit(1)
-        .maybeSingle();
-      if (data) {
-        customer = data;
-        break;
-      }
+    const hit = await findCustomerByPhoneDigits(db, phone, 'id');
+    if (hit?.id) customer = await loadCustomerFull(db, hit.id);
+  }
+
+  // Back-fill privacy_requests.customer_id when we resolve a CRM row.
+  if (customer?.id && requestId && !requestRow?.customer_id) {
+    try {
+      await db
+        .from('privacy_requests')
+        .update({ customer_id: customer.id, updated_at: new Date().toISOString() })
+        .eq('id', requestId);
+      if (requestRow) requestRow.customer_id = customer.id;
+    } catch (err) {
+      console.warn('[privacy-data-export] link customer soft-fail', err?.message || err);
     }
   }
 
   let jobs = [];
   if (customer?.id) {
-    const { data } = await db
+    const { data, error } = await db
       .from('jobs')
-      .select(
-        'id,job_number,status,service_type,scheduled_date,scheduled_time_slot,completed_at,total_amount,payment_method,payment_status,booking_source,created_at,address,visible_address'
-      )
+      .select(JOB_COLS)
       .eq('customer_id', customer.id)
       .order('created_at', { ascending: false })
       .limit(200);
-    jobs = data || [];
+    if (error) console.warn('[privacy-data-export] jobs', error.message);
+    else jobs = data || [];
+  }
+
+  let amcContracts = [];
+  if (customer?.id) {
+    const { data, error } = await db
+      .from('amc_contracts')
+      .select(
+        'id,status,start_date,end_date,years,service_period_months,service_brand,includes_prefilter,additional_info,created_at'
+      )
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) console.warn('[privacy-data-export] amc', error.message);
+    else amcContracts = data || [];
+  }
+
+  let pdfAuthenticity = [];
+  if (customer?.id) {
+    const { data, error } = await db
+      .from('document_pdf_authenticity')
+      .select('id,doc_type,document_ref,verify_code,pdf_filename,generated_on,created_at')
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) console.warn('[privacy-data-export] authenticity', error.message);
+    else pdfAuthenticity = data || [];
   }
 
   const { data: consents } = await db
@@ -123,6 +148,7 @@ exports.handler = async (event) => {
         customer?.id ? `customer_id.eq.${customer.id}` : null,
         `phone_e164.eq.91${phone}`,
         `phone_e164.eq.${phone}`,
+        `phone_e164.eq.+91${phone}`,
       ]
         .filter(Boolean)
         .join(',')
@@ -139,6 +165,8 @@ exports.handler = async (event) => {
     customer: customer || null,
     customer_found: Boolean(customer),
     jobs,
+    amc_contracts: amcContracts,
+    pdf_authenticity: pdfAuthenticity,
     consents: consents || [],
     notes: customer
       ? null
@@ -155,7 +183,10 @@ exports.handler = async (event) => {
     meta: {
       phone_tail: phone.slice(-4),
       customer_found: Boolean(customer),
+      customer_code: customer?.customer_id || null,
       jobs: jobs.length,
+      amc: amcContracts.length,
+      pdf_rows: pdfAuthenticity.length,
     },
   });
 

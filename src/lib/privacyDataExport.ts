@@ -8,6 +8,8 @@ type PrivacyExportPack = {
   customer_found: boolean;
   customer: Record<string, unknown> | null;
   jobs: Record<string, unknown>[];
+  amc_contracts?: Record<string, unknown>[];
+  pdf_authenticity?: Record<string, unknown>[];
   consents: Record<string, unknown>[];
   privacy_request: Record<string, unknown> | null;
   notes?: string | null;
@@ -21,13 +23,46 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
+function fmtAddress(c: Record<string, unknown>): string {
+  if (c.visible_address) return String(c.visible_address);
+  if (c.address && typeof c.address === 'object') {
+    const a = c.address as Record<string, unknown>;
+    return String(a.street || a.formattedAddress || JSON.stringify(a));
+  }
+  return String(c.address || '—');
+}
+
+function fmtLocation(c: Record<string, unknown>): string {
+  const loc = c.location;
+  if (!loc || typeof loc !== 'object') return '—';
+  const L = loc as Record<string, unknown>;
+  const lat = L.latitude;
+  const lng = L.longitude;
+  const link = L.googleLocation || (lat != null && lng != null ? `https://www.google.com/maps/place/${lat},${lng}` : '');
+  const label = L.shortLocation || L.formattedAddress || `${lat}, ${lng}`;
+  return link ? `${label} (${link})` : String(label || '—');
+}
+
 function buildReadableHtml(pack: PrivacyExportPack): string {
   const c = pack.customer || {};
   const name = esc(c.full_name || pack.privacy_request?.requester_name || 'Customer');
+  const photos = Array.isArray(c.photos) ? (c.photos as string[]) : [];
   const jobsRows = (pack.jobs || [])
     .map(
       (j) =>
-        `<tr><td>${esc(j.job_number)}</td><td>${esc(j.status)}</td><td>${esc(j.scheduled_date)}</td><td>${esc(j.total_amount)}</td><td>${esc(j.payment_status)}</td></tr>`
+        `<tr><td>${esc(j.job_number)}</td><td>${esc(j.status)}</td><td>${esc(j.scheduled_date || j.completed_at || j.created_at)}</td><td>${esc(j.payment_amount ?? j.actual_cost)}</td><td>${esc(j.payment_status)}</td></tr>`
+    )
+    .join('');
+  const amcRows = (pack.amc_contracts || [])
+    .map((a) => {
+      const info = a.additional_info && typeof a.additional_info === 'object' ? (a.additional_info as Record<string, unknown>) : {};
+      return `<tr><td>${esc(info.agreement_number || a.id)}</td><td>${esc(a.status)}</td><td>${esc(a.start_date)}</td><td>${esc(a.end_date)}</td><td>${esc(info.amc_cost ?? info.total_amount)}</td></tr>`;
+    })
+    .join('');
+  const docRows = (pack.pdf_authenticity || [])
+    .map(
+      (d) =>
+        `<tr><td>${esc(d.doc_type)}</td><td>${esc(d.document_ref)}</td><td>${esc(d.verify_code)}</td><td>${esc(d.pdf_filename)}</td><td>${esc(d.generated_on || d.created_at)}</td></tr>`
     )
     .join('');
   const consentRows = (pack.consents || [])
@@ -36,6 +71,9 @@ function buildReadableHtml(pack: PrivacyExportPack): string {
         `<tr><td>${esc(x.purpose)}</td><td>${esc(x.brand)}</td><td>${esc(x.granted)}</td><td>${esc(x.consented_at)}</td></tr>`
     )
     .join('');
+  const photoList = photos.length
+    ? `<ul>${photos.map((u) => `<li><a href="${esc(u)}">${esc(u)}</a></li>`).join('')}</ul>`
+    : '<p class="muted">None on file</p>';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -60,14 +98,27 @@ function buildReadableHtml(pack: PrivacyExportPack): string {
   <div class="box">
     <strong>${name}</strong><br/>
     Phone: ${esc(pack.lookup_phone)} · Email: ${esc(c.email || pack.privacy_request?.requester_email || '—')}<br/>
-    Address: ${esc(c.visible_address || (typeof c.address === 'object' ? JSON.stringify(c.address) : c.address) || '—')}<br/>
-    Customer ID: ${esc(c.customer_id || c.id || 'not found')}
+    Address: ${esc(fmtAddress(c))}<br/>
+    Location: ${esc(fmtLocation(c))}<br/>
+    Customer ID: ${esc(c.customer_id || 'not found')} · Internal: ${esc(c.id || '—')}
   </div>
   ${pack.notes ? `<p class="muted">${esc(pack.notes)}</p>` : ''}
+  <h2>Photos (${photos.length})</h2>
+  ${photoList}
   <h2>Service / jobs (${pack.jobs.length})</h2>
   <table>
     <thead><tr><th>Job</th><th>Status</th><th>Date</th><th>Amount</th><th>Payment</th></tr></thead>
     <tbody>${jobsRows || '<tr><td colspan="5">None</td></tr>'}</tbody>
+  </table>
+  <h2>AMC contracts (${(pack.amc_contracts || []).length})</h2>
+  <table>
+    <thead><tr><th>Agreement</th><th>Status</th><th>Start</th><th>End</th><th>Amount</th></tr></thead>
+    <tbody>${amcRows || '<tr><td colspan="5">None</td></tr>'}</tbody>
+  </table>
+  <h2>Document fingerprints (${(pack.pdf_authenticity || []).length})</h2>
+  <table>
+    <thead><tr><th>Type</th><th>Ref</th><th>Verify code</th><th>File</th><th>When</th></tr></thead>
+    <tbody>${docRows || '<tr><td colspan="5">None</td></tr>'}</tbody>
   </table>
   <h2>Consents (${pack.consents.length})</h2>
   <table>

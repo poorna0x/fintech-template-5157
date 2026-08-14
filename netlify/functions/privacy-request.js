@@ -181,6 +181,22 @@ exports.handler = async (event) => {
     return json(400, headers, { error: error.message || 'Could not submit request' });
   }
 
+  // Soft-link CRM customer when phone matches (export / Privacy Center).
+  let linkedCustomerId = null;
+  try {
+    const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
+    const hit = await findCustomerByPhoneDigits(db, phoneDigits, 'id');
+    if (hit?.id) {
+      linkedCustomerId = hit.id;
+      await db
+        .from('privacy_requests')
+        .update({ customer_id: hit.id, updated_at: new Date().toISOString() })
+        .eq('id', newId);
+    }
+  } catch (err) {
+    console.warn('[privacy-request] customer link soft-fail', err?.message || err);
+  }
+
   await recordSecurityAudit(db, {
     eventType: 'privacy',
     action: 'privacy_request_submit',
@@ -194,6 +210,7 @@ exports.handler = async (event) => {
       brand: body.brand,
       phone_verified_whatsapp: true,
       phone_e164: normalizePhoneE164(phoneDigits),
+      customer_linked: Boolean(linkedCustomerId),
     },
   });
 

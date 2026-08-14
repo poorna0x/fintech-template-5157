@@ -465,6 +465,13 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
                       <Mail className="h-3.5 w-3.5" />
                       {r.requester_email || '—'}
                     </span>
+                    {r.customer_id ? (
+                      <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
+                        CRM linked
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5">CRM not linked yet</span>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3 border-t bg-muted/10 pt-4">
