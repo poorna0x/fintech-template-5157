@@ -427,13 +427,13 @@ export function DeviceTrackerSettings() {
     <>
       <Card id="section-device-tracker" className="scroll-mt-24">
         <CardHeader className="space-y-0 p-0">
-          <button
-            type="button"
-            className="flex w-full flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6 text-left hover:bg-muted/30 transition-colors rounded-t-lg"
-            onClick={() => setSectionOpen((v) => !v)}
-            aria-expanded={sectionOpen}
-          >
-            <div>
+          <div className="flex w-full flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6">
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-left hover:opacity-90 transition-opacity rounded-md"
+              onClick={() => setSectionOpen((v) => !v)}
+              aria-expanded={sectionOpen}
+            >
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <Smartphone className="w-5 h-5" />
                 Device Tracker
@@ -448,14 +448,13 @@ export function DeviceTrackerSettings() {
                   ? 'Every admin and technician phone — rename, mute all push, or turn individual types on/off (WhatsApp inbox, job status, calls, cash check, etc.). List is cached for this session; tap Refresh when someone registers a new phone.'
                   : 'Admin and technician phones — push types, WhatsApp, calls. Tap to open.'}
               </CardDescription>
-            </div>
+            </button>
             <Button
               type="button"
               variant="outline"
               size="sm"
               className="shrink-0 self-start sm:self-center"
-              onClick={(e) => {
-                e.stopPropagation();
+              onClick={() => {
                 if (!sectionOpen) setSectionOpen(true);
                 void refresh({ force: true });
               }}
@@ -464,7 +463,7 @@ export function DeviceTrackerSettings() {
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-          </button>
+          </div>
         </CardHeader>
         {sectionOpen ? (
         <CardContent className="p-4 sm:p-6 space-y-4 border-t border-border">
