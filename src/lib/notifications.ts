@@ -62,26 +62,29 @@ export const showBrowserNotification = (
     return;
   }
 
+  // Never spread `options` into Notification() — onClick / navigateTo are functions
+  // and some browsers reject the constructor (desktop alerts silently fail).
+  const { onClick, navigateTo, body, icon, badge, tag, requireInteraction, silent, ...rest } =
+    options || {};
+  const restSafe: NotificationOptions = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (typeof value === 'function') continue;
+    (restSafe as Record<string, unknown>)[key] = value;
+  }
+
   const notificationOptions: NotificationOptions = {
-    body: options?.body || data.message,
-    icon:
-      options?.icon ||
-      (data.type === 'whatsapp_inbound' ? '/whatsapp.png' : '/favicon.ico'),
-    badge:
-      options?.badge ||
-      (data.type === 'whatsapp_inbound' ? '/whatsapp.png' : '/favicon.ico'),
-    tag: options?.tag || data.jobId || data.whatsappPhoneE164 || 'job-notification',
-    requireInteraction: data.type === 'job_assigned',
-    silent: false,
-    ...options,
+    body: body || data.message,
+    icon: icon || (data.type === 'whatsapp_inbound' ? '/whatsapp.png' : '/favicon.ico'),
+    badge: badge || (data.type === 'whatsapp_inbound' ? '/whatsapp.png' : '/favicon.ico'),
+    tag: tag || data.jobId || data.whatsappPhoneE164 || 'job-notification',
+    requireInteraction:
+      requireInteraction !== undefined ? requireInteraction : data.type === 'job_assigned',
+    silent: silent ?? false,
+    ...restSafe,
   };
 
   if (data.type === 'job_assigned') {
     notificationOptions.requireInteraction = true;
-    notificationOptions.vibrate = [200, 100, 200];
-    if ('urgency' in Notification.prototype) {
-      (notificationOptions as NotificationOptions & { urgency?: string }).urgency = 'high';
-    }
   }
 
   try {
@@ -91,19 +94,13 @@ export const showBrowserNotification = (
       window.focus();
       notification.close();
 
-      if (options?.onClick) {
-        options.onClick();
+      if (onClick) {
+        onClick();
         return;
       }
 
-      const navigateTo = options?.navigateTo;
       if (navigateTo) {
         window.location.assign(navigateTo);
-        return;
-      }
-
-      if (data.jobId && window.location.pathname.includes('/technician')) {
-        /* technician page — focus only */
       }
     };
 

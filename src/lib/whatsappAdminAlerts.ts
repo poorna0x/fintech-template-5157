@@ -94,19 +94,34 @@ function shouldSuppressAlert(phone: string): boolean {
   return isViewingWhatsAppPhone(phone);
 }
 
+/** OS tray: tab in background OR CRM window unfocused (macOS Chrome often stays !hidden). */
+function pageNeedsOsNotification(): boolean {
+  try {
+    if (typeof document.hidden === 'boolean' && document.hidden) return true;
+    if (typeof document.hasFocus === 'function' && !document.hasFocus()) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
 function maybePromptDesktopPermission(): void {
   if (!('Notification' in window)) return;
   if (Notification.permission === 'granted') return;
   if (Notification.permission === 'denied') return;
   try {
     if (localStorage.getItem(DESKTOP_NOTIFY_PROMPTED_KEY) === '1') return;
-    localStorage.setItem(DESKTOP_NOTIFY_PROMPTED_KEY, '1');
   } catch {
     /* ignore */
   }
   showWhatsAppDesktopPermissionToast({
     durationMs: 14_000,
     onEnable: () => {
+      try {
+        localStorage.setItem(DESKTOP_NOTIFY_PROMPTED_KEY, '1');
+      } catch {
+        /* ignore */
+      }
       void requestNotificationPermission().then((perm) => {
         if (perm === 'granted') {
           try {
@@ -135,10 +150,22 @@ function notifyInbound(row: WhatsAppMessageRow, hint: WhatsAppThreadNameHint): v
 
   playWhatsAppAlertSound();
 
-  if (document.hidden) {
-    if (!isDesktopNotifyEnabled()) return;
-    if (Notification.permission !== 'granted') {
+  if (pageNeedsOsNotification()) {
+    if (!isDesktopNotifyEnabled()) {
+      showWhatsAppInboundToast({
+        contactName: title,
+        preview: body,
+        onOpen: openChat,
+      });
+      return;
+    }
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
       maybePromptDesktopPermission();
+      showWhatsAppInboundToast({
+        contactName: title,
+        preview: body,
+        onOpen: openChat,
+      });
       return;
     }
     const data: NotificationData = {

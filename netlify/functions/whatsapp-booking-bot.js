@@ -691,8 +691,9 @@ function isFreshStartGreeting(msg) {
 }
 
 /**
- * Skip admin FCM / toast for booking-bot CTA taps and mid-flow replies.
- * First free-text (Hi / new chat, no button) still alerts.
+ * Skip admin FCM / desktop / toast only for booking-bot button taps.
+ * Free-form text, photos, and voice still alert — otherwise admins miss
+ * real customer messages while a bot session is mid-flow.
  */
 function isCallMeBackTap(interactive) {
   const title = String(interactive?.title || '').trim().toLowerCase();
@@ -709,12 +710,7 @@ function shouldSuppressAdminInboundAlert(msg, priorState) {
   const interactive = extractInteractiveReply(msg);
   if (isCallMeBackTap(interactive)) return false;
   if (isCtaInboundMsg(msg)) return true;
-  const step = String(priorState?.step || '');
-  const midFlow =
-    Boolean(priorState?.editing) || (step !== '' && ACTIVE_BOOKING_STEPS.has(step));
-  if (!midFlow) return false;
-  if (isFreshStartGreeting(msg)) return false;
-  return true;
+  return false;
 }
 
 function slimInboxBody(text, max = 220) {
