@@ -1,14 +1,18 @@
 /**
  * Public privacy / DSAR request intake + admin list/update.
- * POST (public, ALTCHA): submit request via submit_privacy_request RPC
+ * POST (public): WhatsApp VERIFY session + honeypot + rate limit
  * GET/PATCH (admin JWT): manage queue
  */
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
 const { checkRateLimit } = require('./rate-limiter');
 const { createClient } = require('@supabase/supabase-js');
-const { verifyAltchaPayload } = require('./altcha-guard');
 const { recordSecurityAudit } = require('./privacy-consent-helper');
+const {
+  getSessionSecret,
+  normalizePhoneE164,
+  verifySessionToken,
+} = require('./pdf-authenticity-helper');
 
 function json(statusCode, headers, body) {
   return { statusCode, headers, body: JSON.stringify(body) };
@@ -122,7 +126,6 @@ exports.handler = async (event) => {
     return json(400, headers, { error: 'Invalid JSON' });
   }
 
-  const altchaPayload = body.altcha || body.altchaPayload || body.captcha;
   // Honeypot — bots fill hidden fields; humans leave blank.
   if (String(body.website || body.company_url || '').trim()) {
     return json(200, headers, {
@@ -132,20 +135,35 @@ exports.handler = async (event) => {
     });
   }
 
-  const phoneDigits = String(body.phone || body.requester_phone || '').replace(/\D/g, '');
+  const phoneDigits = String(body.phone || body.requester_phone || '').replace(/\D/g, '').slice(-10);
   const email = String(body.email || body.requester_email || '').trim();
-  if (phoneDigits.length !== 10 && !email) {
-    return json(400, headers, { error: 'Enter a 10-digit mobile number or an email' });
-  }
-  if (phoneDigits && phoneDigits.length !== 10) {
-    return json(400, headers, { error: 'Enter a valid 10-digit Indian mobile number' });
+  if (phoneDigits.length !== 10) {
+    return json(400, headers, { error: 'Enter a valid 10-digit WhatsApp mobile number' });
   }
 
-  const altchaOk = await verifyAltchaPayload(altchaPayload);
-  if (!altchaOk?.verified) {
+  // Same WhatsApp VERIFY session as /authenticity — proves they control the number.
+  const sessionToken = String(body.sessionToken || body.session_token || '').trim();
+  if (!sessionToken) {
     return json(403, headers, {
-      error: 'Complete the security check and try again',
-      detail: altchaOk?.error || 'unverified',
+      error: 'Verify your WhatsApp number first (send VERIFY, then enter the 6-digit code)',
+    });
+  }
+  const secret = await getSessionSecret(db);
+  if (!secret) {
+    return json(503, headers, { error: 'Verification unavailable. Try again later.' });
+  }
+  const session = verifySessionToken(sessionToken, secret);
+  if (!session.ok) {
+    return json(403, headers, {
+      error: session.error === 'Session expired'
+        ? 'WhatsApp verification expired. Send VERIFY again and re-enter the code.'
+        : 'WhatsApp verification failed. Send VERIFY and enter the code again.',
+    });
+  }
+  const sessionPhone = String(session.phone || '').replace(/\D/g, '').slice(-10);
+  if (sessionPhone !== phoneDigits) {
+    return json(403, headers, {
+      error: 'Phone must match the WhatsApp number you verified',
     });
   }
 
@@ -153,7 +171,7 @@ exports.handler = async (event) => {
     p_request_type: body.requestType || body.request_type,
     p_brand: body.brand || 'hydrogenro',
     p_requester_name: body.name || body.requester_name || '',
-    p_requester_phone: phoneDigits || '',
+    p_requester_phone: phoneDigits,
     p_requester_email: email || '',
     p_details: body.details || '',
   });
@@ -171,7 +189,12 @@ exports.handler = async (event) => {
     targetId: String(newId),
     ip: clientIp(event),
     userAgent: event.headers?.['user-agent'] || '',
-    meta: { type: body.requestType || body.request_type, brand: body.brand },
+    meta: {
+      type: body.requestType || body.request_type,
+      brand: body.brand,
+      phone_verified_whatsapp: true,
+      phone_e164: normalizePhoneE164(phoneDigits),
+    },
   });
 
   return json(200, headers, {

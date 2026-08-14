@@ -14,9 +14,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import AltchaWidget from '@/components/AltchaWidget';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { toast } from 'sonner';
+import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import { getPublicSiteKey } from '@/lib/websiteSiteKey';
+import {
+  buildVerifyWhatsAppUrl,
+  formatWaDisplay,
+  getAuthenticityWhatsAppE164,
+  loadAuthSession,
+  verifyAuthenticityOtp,
+} from '@/lib/publicPdfAuthenticity';
 
 const PrivacyDataRequestPage = () => {
   useEffect(() => {
@@ -24,29 +34,75 @@ const PrivacyDataRequestPage = () => {
   }, []);
 
   const brand = getPublicSiteKey() === 'elevenro' ? 'elevenro' : 'hydrogenro';
+  const waE164 = getAuthenticityWhatsAppE164();
+  const waUrl = buildVerifyWhatsAppUrl(waE164);
+  const waDisplay = formatWaDisplay(waE164);
+
   const [requestType, setRequestType] = useState('access');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [otp, setOtp] = useState('');
   const [email, setEmail] = useState('');
   const [details, setDetails] = useState('');
   const [honeypot, setHoneypot] = useState('');
-  const [altcha, setAltcha] = useState('');
+  const [altchaPayload, setAltchaPayload] = useState('');
+  const [altchaLoginToken, setAltchaLoginToken] = useState('');
   const [altchaOk, setAltchaOk] = useState(false);
+  const [sessionToken, setSessionToken] = useState('');
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const existing = loadAuthSession();
+    if (existing?.sessionToken && existing.phone) {
+      setSessionToken(existing.sessionToken);
+      setPhone(existing.phone);
+      setPhoneVerified(true);
+    }
+  }, []);
+
+  const phoneDigits = phone.replace(/\D/g, '').slice(0, 10);
+  const phoneValid = phoneDigits.length === 10;
+  const otpValid = otp.replace(/\D/g, '').length === 6;
+
+  async function onVerifyPhone() {
+    if (!phoneValid) {
+      toast.error('Enter your 10-digit WhatsApp number');
+      return;
+    }
+    if (!otpValid) {
+      toast.error('Enter the 6-digit code from WhatsApp');
+      return;
+    }
+    if (!altchaOk) {
+      toast.error('Wait for the security check to finish');
+      return;
+    }
+    setVerifyingOtp(true);
+    try {
+      const res = await verifyAuthenticityOtp({
+        phone: phoneDigits,
+        otp: otp.replace(/\D/g, ''),
+        altchaLoginToken: altchaLoginToken || undefined,
+        altchaPayload: altchaPayload || undefined,
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      setSessionToken(res.session.sessionToken);
+      setPhoneVerified(true);
+      toast.success('WhatsApp number verified');
+    } finally {
+      setVerifyingOtp(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const phoneDigits = phone.replace(/\D/g, '');
-    if (phoneDigits.length !== 10 && !email.trim()) {
-      toast.error('Enter a 10-digit mobile number or an email');
-      return;
-    }
-    if (phoneDigits && phoneDigits.length !== 10) {
-      toast.error('Enter a valid 10-digit mobile number');
-      return;
-    }
-    if (!altchaOk || !altcha) {
-      toast.error('Wait for the security check to finish, then submit');
+    if (!phoneVerified || !sessionToken || !phoneValid) {
+      toast.error('Verify your WhatsApp number first');
       return;
     }
     setSubmitting(true);
@@ -61,7 +117,7 @@ const PrivacyDataRequestPage = () => {
           phone: phoneDigits,
           email,
           details,
-          altcha,
+          sessionToken,
           website: honeypot,
         }),
       });
@@ -72,8 +128,7 @@ const PrivacyDataRequestPage = () => {
       }
       toast.success(String(data.message || 'Request received. We aim to respond within 72 hours.'));
       setDetails('');
-      setAltcha('');
-      setAltchaOk(false);
+      setOtp('');
     } catch {
       toast.error('Network error — try again');
     } finally {
@@ -93,8 +148,8 @@ const PrivacyDataRequestPage = () => {
             <Link to="/privacy-policy" className="text-primary underline">
               Privacy Policy
             </Link>
-            . We may verify your phone before sharing personal data (same idea as authenticity
-            checks) — that is allowed and recommended under Indian privacy law.
+            . Phone is verified the same way as PDF authenticity (WhatsApp{' '}
+            <span className="font-mono text-xs">VERIFY</span>) so we know it is you.
           </p>
           <Card>
             <CardHeader>
@@ -102,7 +157,6 @@ const PrivacyDataRequestPage = () => {
             </CardHeader>
             <CardContent>
               <form className="space-y-4" onSubmit={onSubmit}>
-                {/* Honeypot — hidden from people, bots often fill it */}
                 <div className="absolute -left-[9999px] h-0 w-0 overflow-hidden" aria-hidden="true">
                   <Label htmlFor="pr-website">Website</Label>
                   <Input
@@ -113,70 +167,137 @@ const PrivacyDataRequestPage = () => {
                     onChange={(e) => setHoneypot(e.target.value)}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Request type</Label>
-                  <Select value={requestType} onValueChange={setRequestType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="access">Access / copy of my data</SelectItem>
-                      <SelectItem value="correction">Correct my information</SelectItem>
-                      <SelectItem value="erasure">Delete / erase (where applicable)</SelectItem>
-                      <SelectItem value="withdraw_consent">Withdraw optional consent</SelectItem>
-                      <SelectItem value="grievance">Privacy grievance</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pr-name">Name</Label>
-                  <Input id="pr-name" value={name} onChange={(e) => setName(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pr-phone">Phone</Label>
-                  <Input
-                    id="pr-phone"
-                    inputMode="numeric"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="10-digit mobile"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pr-email">Email (optional if phone given)</Label>
-                  <Input
-                    id="pr-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pr-details">Details</Label>
-                  <Textarea
-                    id="pr-details"
-                    value={details}
-                    onChange={(e) => setDetails(e.target.value)}
-                    rows={4}
-                    placeholder="What should we look up or change?"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    Quick anti-spam check (no CAPTCHA typing). Wait until it finishes before
-                    submit.
-                  </p>
-                  <AltchaWidget
-                    tokenPurpose="booking"
-                    onVerify={(ok, payload) => {
-                      setAltchaOk(Boolean(ok && payload));
-                      setAltcha(ok && payload ? payload : '');
-                    }}
-                  />
-                </div>
-                <Button type="submit" disabled={submitting || !altchaOk} className="w-full">
-                  {submitting ? 'Submitting…' : altchaOk ? 'Submit request' : 'Waiting for security check…'}
-                </Button>
+
+                {!phoneVerified ? (
+                  <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
+                    <p className="text-sm text-muted-foreground">
+                      1) Open WhatsApp to <strong>{waDisplay}</strong> and send{' '}
+                      <span className="font-mono text-xs font-semibold">VERIFY</span>
+                      <br />
+                      2) Enter that number + the 6-digit code here
+                    </p>
+                    <a
+                      href={waUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-[#25D366] px-4 text-sm font-semibold text-white hover:bg-[#1ebe57]"
+                    >
+                      <WhatsAppIcon className="h-5 w-5 text-white" />
+                      Open WhatsApp · send VERIFY
+                    </a>
+                    <div className="space-y-2">
+                      <Label htmlFor="pr-phone">WhatsApp number</Label>
+                      <Input
+                        id="pr-phone"
+                        inputMode="numeric"
+                        autoComplete="tel"
+                        value={phoneDigits}
+                        onChange={(e) => {
+                          setPhone(e.target.value.replace(/\D/g, '').slice(0, 10));
+                          setPhoneVerified(false);
+                          setSessionToken('');
+                        }}
+                        placeholder="10-digit mobile"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>6-digit code</Label>
+                      <InputOTP
+                        maxLength={6}
+                        pattern={REGEXP_ONLY_DIGITS}
+                        value={otp}
+                        onChange={setOtp}
+                        containerClassName="w-full justify-between gap-1.5"
+                      >
+                        <InputOTPGroup className="flex w-full justify-between gap-1.5">
+                          {[0, 1, 2, 3, 4, 5].map((i) => (
+                            <InputOTPSlot key={i} index={i} className="h-11 w-10 sm:w-11" />
+                          ))}
+                        </InputOTPGroup>
+                      </InputOTP>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">Quick anti-spam check</p>
+                      <AltchaWidget
+                        tokenPurpose="booking"
+                        onVerify={(ok, payload, loginToken) => {
+                          setAltchaOk(Boolean(ok && (payload || loginToken)));
+                          setAltchaPayload(payload || '');
+                          setAltchaLoginToken(loginToken || '');
+                        }}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      className="w-full"
+                      disabled={!phoneValid || !otpValid || !altchaOk || verifyingOtp}
+                      onClick={() => void onVerifyPhone()}
+                    >
+                      {verifyingOtp ? 'Verifying…' : 'Verify WhatsApp number'}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-100">
+                    Verified WhatsApp · {phoneDigits}{' '}
+                    <button
+                      type="button"
+                      className="ml-2 underline underline-offset-2"
+                      onClick={() => {
+                        setPhoneVerified(false);
+                        setSessionToken('');
+                        setOtp('');
+                      }}
+                    >
+                      Change
+                    </button>
+                  </div>
+                )}
+
+                {phoneVerified ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Request type</Label>
+                      <Select value={requestType} onValueChange={setRequestType}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="access">Access / copy of my data</SelectItem>
+                          <SelectItem value="correction">Correct my information</SelectItem>
+                          <SelectItem value="erasure">Delete / erase (where applicable)</SelectItem>
+                          <SelectItem value="withdraw_consent">Withdraw optional consent</SelectItem>
+                          <SelectItem value="grievance">Privacy grievance</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="pr-name">Name</Label>
+                      <Input id="pr-name" value={name} onChange={(e) => setName(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="pr-email">Email (optional)</Label>
+                      <Input
+                        id="pr-email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="pr-details">Details</Label>
+                      <Textarea
+                        id="pr-details"
+                        value={details}
+                        onChange={(e) => setDetails(e.target.value)}
+                        rows={4}
+                        placeholder="What should we look up or change?"
+                      />
+                    </div>
+                    <Button type="submit" disabled={submitting} className="w-full">
+                      {submitting ? 'Submitting…' : 'Submit request'}
+                    </Button>
+                  </>
+                ) : null}
               </form>
             </CardContent>
           </Card>
