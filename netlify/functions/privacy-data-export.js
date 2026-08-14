@@ -20,7 +20,7 @@ function getServiceDb() {
 }
 
 const CUSTOMER_COLS =
-  'id,customer_id,full_name,phone,alternate_phone,email,address,location,visible_address,service_type,brand,model,installation_date,warranty_expiry,status,customer_since,last_service_date,photos,notes,created_at,updated_at,gst_number,alternate_address,alternate_location,alternate_visible_address,alternate_brand,alternate_model,alternate_service_type,has_prefilter,raw_water_tds,preferred_time_slot,preferred_language,customer_tier,has_google_review';
+  'id,customer_id,full_name,phone,alternate_phone,email,address,location,visible_address,service_type,brand,model,installation_date,warranty_expiry,status,customer_since,last_service_date,photos,notes,created_at,updated_at,gst_number,alternate_address,alternate_location,alternate_visible_address,alternate_brand,alternate_model,alternate_service_type,has_prefilter,raw_water_tds,preferred_time_slot,preferred_language,has_google_review';
 
 const JOB_COLS =
   'id,job_number,status,service_type,service_sub_type,scheduled_date,scheduled_time_slot,completed_at,end_time,payment_amount,actual_cost,payment_method,payment_status,booking_source,created_at,service_address,service_location,service_brand,before_photos,after_photos,images,brand,model';

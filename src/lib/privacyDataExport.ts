@@ -150,7 +150,7 @@ function buildReadableHtml(pack: PrivacyExportPack): string {
     Address: ${esc(fmtAddress(c))}<br/>
     Location: ${esc(fmtLocation(c))}<br/>
     Service: ${esc(c.service_type || '—')} · Brand/model: ${esc(c.brand || '—')} ${esc(c.model || '')}<br/>
-    TDS: ${esc(c.raw_water_tds ?? '—')} · Prefilter: ${esc(c.has_prefilter ?? '—')} · Tier: ${esc(c.customer_tier || '—')}<br/>
+    TDS: ${esc(c.raw_water_tds ?? '—')} · Prefilter: ${esc(c.has_prefilter ?? '—')}<br/>
     Last service: ${esc(c.last_service_date || '—')} · Member since: ${esc(c.customer_since || '—')}<br/>
     Customer ID: <strong>${esc(c.customer_id || pack.customer_code || 'not found')}</strong> · Internal: ${esc(c.id || '—')}
   </div>
