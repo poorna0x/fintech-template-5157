@@ -301,12 +301,15 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
             </p>
           </div>
         </div>
-        <Button type="button" variant="outline" size="sm" className="sm:self-start" asChild>
-          <Link to="/privacy-request" target="_blank" rel="noreferrer">
-            Public form
-            <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
-          </Link>
-        </Button>
+        <Link
+          to="/privacy-request"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground sm:self-start"
+        >
+          Public form
+          <ExternalLink className="h-3.5 w-3.5" />
+        </Link>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
