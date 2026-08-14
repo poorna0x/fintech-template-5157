@@ -173,6 +173,7 @@ function buildReadableHtml(pack: PrivacyExportPack): string {
     <tbody>${invRows || '<tr><td colspan="5">None</td></tr>'}</tbody>
   </table>
   <h2>Document fingerprints (${(pack.pdf_authenticity || []).length})</h2>
+  <p class="muted">These are authenticity records only (verify code + hash). PDF files are not stored for download. Regenerate from CRM and send a fresh copy if the customer needs the document. They can check a code at your authenticity page.</p>
   <table>
     <thead><tr><th>Type</th><th>Ref</th><th>Verify code</th><th>File</th><th>When</th></tr></thead>
     <tbody>${docRows || '<tr><td colspan="5">None</td></tr>'}</tbody>

@@ -112,13 +112,14 @@ exports.handler = async (event) => {
     if (hit?.id) customer = await loadCustomerFull(db, hit.id);
   }
 
-  // Back-fill privacy_requests.customer_id when we resolve a CRM row.
-  if (customer?.id && requestId && !requestRow?.customer_id) {
+  // Back-fill this request + any other open/closed requests for the same phone.
+  if (customer?.id && phone.length === 10) {
     try {
       await db
         .from('privacy_requests')
         .update({ customer_id: customer.id, updated_at: new Date().toISOString() })
-        .eq('id', requestId);
+        .is('customer_id', null)
+        .or(`requester_phone.eq.${phone},requester_phone.eq.91${phone},requester_phone.eq.+91${phone}`);
       if (requestRow) requestRow.customer_id = customer.id;
     } catch (err) {
       console.warn('[privacy-data-export] link customer soft-fail', err?.message || err);
@@ -236,8 +237,10 @@ exports.handler = async (event) => {
       has_location: Boolean(customer?.location),
     },
     notes: customer
-      ? null
+      ? 'Document fingerprints (verify codes) prove authenticity of PDFs already sent. PDF bytes are not stored — regenerate from CRM (AMC / invoice / bill) and send via WhatsApp or email when the customer needs a copy.'
       : 'No customer row matched this phone. Pack includes the privacy request and any consents for the number.',
+    documents_note:
+      'Authenticity rows are metadata only (filename, verify code, SHA-256). Original PDF files are not kept on the server. To fulfill a document copy request: open the customer in CRM → regenerate AMC/invoice/bill → Download or WhatsApp.',
   };
 
   await recordSecurityAudit(db, {

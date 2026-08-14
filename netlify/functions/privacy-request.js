@@ -62,7 +62,34 @@ exports.handler = async (event) => {
       if (status) q = q.eq('status', status);
       const { data, error } = await q;
       if (error) return json(500, headers, { error: 'Could not load requests' });
-      return json(200, headers, { requests: data || [] });
+
+      const requests = data || [];
+      // Soft-link any unlinked rows whose phone matches a CRM customer.
+      try {
+        const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
+        const needLink = requests.filter((r) => !r.customer_id && r.requester_phone);
+        const phoneToId = new Map();
+        for (const r of needLink) {
+          const digits = String(r.requester_phone).replace(/\D/g, '').slice(-10);
+          if (digits.length !== 10) continue;
+          if (!phoneToId.has(digits)) {
+            const hit = await findCustomerByPhoneDigits(db, digits, 'id');
+            phoneToId.set(digits, hit?.id || null);
+          }
+          const cid = phoneToId.get(digits);
+          if (!cid) continue;
+          r.customer_id = cid;
+          await db
+            .from('privacy_requests')
+            .update({ customer_id: cid, updated_at: new Date().toISOString() })
+            .eq('id', r.id)
+            .is('customer_id', null);
+        }
+      } catch (err) {
+        console.warn('[privacy-request] soft-link on list', err?.message || err);
+      }
+
+      return json(200, headers, { requests });
     }
 
     let body = {};
