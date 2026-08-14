@@ -12,11 +12,22 @@ import {
   ScrollText,
   ShieldCheck,
   UserRound,
+  UserX,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { supabase } from '@/lib/supabaseClient';
@@ -30,6 +41,7 @@ type PrivacyRequest = {
   requester_name: string | null;
   requester_phone: string | null;
   requester_email: string | null;
+  customer_id: string | null;
   details: string | null;
   admin_notes: string | null;
   sla_due_at: string;
@@ -141,6 +153,9 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
   const [loading, setLoading] = useState(false);
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [anonymizeTarget, setAnonymizeTarget] = useState<PrivacyRequest | null>(null);
+  const [anonymizeConfirm, setAnonymizeConfirm] = useState('');
+  const [anonymizing, setAnonymizing] = useState(false);
 
   const authHeaders = useCallback(async () => {
     const token = await resolveSupabaseAccessTokenForApi();
@@ -249,10 +264,48 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
           ? 'Downloaded ZIP — open the HTML and Print → Save as PDF, then send via WhatsApp/email'
           : 'Downloaded ZIP (no CRM customer matched this phone — request + consents only)'
       );
+      // Refresh so CRM linked badge updates after export back-fill.
+      void loadRequests();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Export failed');
     } finally {
       setExportingId(null);
+    }
+  }
+
+  async function runAnonymize() {
+    if (!anonymizeTarget) return;
+    if (anonymizeConfirm.trim().toUpperCase() !== 'ANONYMIZE') {
+      toast.error('Type ANONYMIZE to confirm');
+      return;
+    }
+    setAnonymizing(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch('/.netlify/functions/privacy-customer-anonymize', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          requestId: anonymizeTarget.id,
+          phone: anonymizeTarget.requester_phone,
+          admin_notes: notesDraft[anonymizeTarget.id],
+          confirm: 'ANONYMIZE',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Anonymize failed');
+      toast.success(
+        data.already
+          ? 'Already anonymized'
+          : `Anonymized ${data.customer_id || 'customer'} — jobs/AMC kept`
+      );
+      setAnonymizeTarget(null);
+      setAnonymizeConfirm('');
+      await loadRequests();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Anonymize failed');
+    } finally {
+      setAnonymizing(false);
     }
   }
 
@@ -301,6 +354,7 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
   ];
 
   return (
+    <>
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex items-start gap-3">
         {onBack ? (
@@ -490,7 +544,9 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
                     className="bg-background"
                   />
                   <div className="flex flex-wrap gap-2">
-                    {(r.request_type === 'access' || r.request_type === 'correction') && (
+                    {(r.request_type === 'access' ||
+                      r.request_type === 'correction' ||
+                      r.request_type === 'erasure') && (
                       <Button
                         type="button"
                         size="sm"
@@ -506,6 +562,21 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
                         Export customer data
                       </Button>
                     )}
+                    {(r.request_type === 'erasure' || r.request_type === 'withdraw_consent') &&
+                      r.status !== 'completed' && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => {
+                            setAnonymizeConfirm('');
+                            setAnonymizeTarget(r);
+                          }}
+                        >
+                          <UserX className="mr-1.5 h-4 w-4" />
+                          Anonymize CRM data
+                        </Button>
+                      )}
                     <Button
                       type="button"
                       size="sm"
@@ -660,5 +731,59 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
         </Card>
       )}
     </div>
+
+      <AlertDialog
+        open={Boolean(anonymizeTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAnonymizeTarget(null);
+            setAnonymizeConfirm('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Anonymize CRM personal data?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2 text-left">
+              <span className="block">
+                For {anonymizeTarget?.requester_name || 'this requester'} (
+                {anonymizeTarget?.requester_phone || 'no phone'}). Export first if you still need a
+                copy to send them.
+              </span>
+              <span className="block">
+                Clears name, phone, email, address, location, and photos. Keeps jobs, AMC, and
+                document fingerprints for analytics / legal retention (not a hard delete).
+              </span>
+              <span className="block font-medium text-foreground">
+                Type ANONYMIZE to confirm.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            value={anonymizeConfirm}
+            onChange={(e) => setAnonymizeConfirm(e.target.value)}
+            placeholder="ANONYMIZE"
+            autoComplete="off"
+            className="font-mono"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={anonymizing}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={anonymizing || anonymizeConfirm.trim().toUpperCase() !== 'ANONYMIZE'}
+              onClick={() => void runAnonymize()}
+            >
+              {anonymizing ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <UserX className="mr-1.5 h-4 w-4" />
+              )}
+              Anonymize
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

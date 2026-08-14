@@ -99,6 +99,10 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/privacy-customer-anonymize': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Local Puppeteer — must not hit production (cannot load localhost/ngrok assets).
       '/.netlify/functions/generate-pdf': {
         target: 'http://localhost:8888',
