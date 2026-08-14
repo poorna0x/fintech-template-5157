@@ -21,10 +21,11 @@ function resolveBrandFromBookingSource(source, domain) {
 
 function bookingCtaTemplateName(kind, brand) {
   const suffix = brandSuffix(brand);
-  if (kind === 'book_existing_customer') return `existing_service_schedule_${suffix}_cta_v2`;
-  if (kind === 'missed_call_book') return `missed_call_callback_${suffix}_cta`;
-  if (kind === 'book_new_customer') return `unregistered_number_service_${suffix}_cta`;
+  if (kind === 'book_existing_customer') return `existing_service_schedule_${suffix}_cta_v3`;
+  if (kind === 'missed_call_book') return `missed_call_callback_${suffix}_cta_v4`;
+  if (kind === 'book_new_customer') return `unregistered_number_service_${suffix}_cta_v2`;
   if (kind === 'booking_confirmed') return `svc_booking_confirmed_letter_${suffix}_v4`;
+  if (kind === 'reschedule_visit') return `reschedule_visit_${suffix}_cta_v2`;
   return `${kind}_${suffix}_cta`;
 }
 
