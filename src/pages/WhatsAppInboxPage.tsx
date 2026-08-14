@@ -376,7 +376,8 @@ function InboxChatPhoto({
           src={src}
           alt=""
           className="max-h-72 w-full min-w-[180px] rounded-md object-contain bg-black/10"
-          loading="lazy"
+          loading="eager"
+          decoding="async"
           onError={handleImgError}
         />
       ) : failed ? (
@@ -546,6 +547,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const threadContentRef = useRef<HTMLDivElement | null>(null);
   const loadOlderSentinelRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
@@ -1420,11 +1422,30 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       return;
     }
     scrollChatToLatest();
-    const t = window.setTimeout(() => {
+    const t1 = window.setTimeout(() => {
       if (stickToBottomRef.current) scrollChatToLatest();
     }, 80);
-    return () => window.clearTimeout(t);
+    const t2 = window.setTimeout(() => {
+      if (stickToBottomRef.current) scrollChatToLatest();
+    }, 400);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
   }, [selectedPhone, threadLoading, lastThreadMessageId, scrollChatToLatest]);
+
+  // Photos/PDFs load after first paint and grow the thread — keep pinned to latest.
+  useEffect(() => {
+    const root = messagesScrollRef.current;
+    const content = threadContentRef.current;
+    if (!root || !content || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (!stickToBottomRef.current) return;
+      root.scrollTop = root.scrollHeight;
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [selectedPhone, threadLoading, lastThreadMessageId]);
 
   // Realtime: patch thread list + open chat; soft-reload people list at most every 12s
   useEffect(() => {
@@ -2688,9 +2709,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 <div
                   ref={messagesScrollRef}
                   onScroll={onMessagesScroll}
-                  className="absolute inset-0 space-y-1.5 overflow-y-auto overscroll-contain px-3 py-3 sm:px-8 md:px-12"
+                  className="absolute inset-0 overflow-y-auto overscroll-contain px-3 py-3 sm:px-8 md:px-12"
                   style={CHAT_THREAD_BG_DARK}
                 >
+                <div ref={threadContentRef} className="space-y-1.5">
                 {threadLoading ? (
                   <div className="flex justify-center py-10 text-sm text-[#667781]">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -2909,6 +2931,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   </>
                 )}
                 <div ref={bottomRef} />
+                </div>
                 </div>
                 {showJumpToLatest ? (
                   <button
