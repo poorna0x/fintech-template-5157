@@ -200,6 +200,9 @@ const PrivacyDataRequestPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [verifyError, setVerifyError] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [submittedRef, setSubmittedRef] = useState('');
+  const [submittedType, setSubmittedType] = useState('');
 
   useEffect(() => {
     const existing = loadAuthSession();
@@ -276,12 +279,85 @@ const PrivacyDataRequestPage = () => {
         return;
       }
       toast.success(String(data.message || 'Request received. We aim to respond within 72 hours.'));
+      setSubmittedRef(String(data.id || ''));
+      setSubmittedType(requestType);
+      setSubmitted(true);
       setDetails('');
     } catch {
       toast.error('Network error — try again');
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (submitted) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background text-foreground">
+        <Header />
+        <main className="flex-1 py-12">
+          <div className="container mx-auto px-4 max-w-xl">
+            <Card className="overflow-hidden border-emerald-200/80 shadow-none">
+              <CardContent className="space-y-4 p-6 sm:p-8">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-700">
+                  <ShieldCheck className="h-7 w-7" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold tracking-tight">Request received</h1>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    Thanks{name.trim() ? `, ${name.trim()}` : ''}. We got your{' '}
+                    <span className="font-medium text-foreground">
+                      {submittedType.replace(/_/g, ' ')}
+                    </span>{' '}
+                    request for WhatsApp <span className="font-medium text-foreground">{phoneDigits}</span>.
+                  </p>
+                </div>
+                <div className="rounded-xl border bg-muted/30 px-4 py-3 text-sm space-y-1.5">
+                  <p>
+                    We aim to <strong>acknowledge within 72 hours</strong> and resolve within 30 days
+                    where required.
+                  </p>
+                  {submittedRef ? (
+                    <p className="text-muted-foreground text-xs">
+                      Reference: <span className="font-mono">{submittedRef.slice(0, 8)}…</span>
+                    </p>
+                  ) : null}
+                  <p className="text-muted-foreground text-xs">
+                    We may contact you on the verified WhatsApp number if we need more details.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Link
+                    to="/"
+                    className="inline-flex h-10 flex-1 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    Back to home
+                  </Link>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      setSubmitted(false);
+                      setSubmittedRef('');
+                      setPhoneVerified(true);
+                    }}
+                  >
+                    Submit another request
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Policy:{' '}
+                  <Link to="/privacy-policy" className="underline underline-offset-2">
+                    Privacy Policy
+                  </Link>
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
   }
 
   return (
