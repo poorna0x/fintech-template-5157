@@ -62,6 +62,32 @@ async function technicianCanAccessCustomer(admin, technicianId, customerId) {
   return Boolean(requestRow);
 }
 
+/** Technician may WhatsApp a customer they are tied to via job, team, or AMC. */
+async function technicianCanMessageCustomer(admin, technicianId, customerId, jobIdHint) {
+  if (!technicianId || !customerId) return false;
+  if (jobIdHint) {
+    const canJob = await technicianCanAccessJob(admin, technicianId, jobIdHint);
+    if (canJob) {
+      const { data: job } = await admin
+        .from('jobs')
+        .select('customer_id')
+        .eq('id', jobIdHint)
+        .maybeSingle();
+      if (job && String(job.customer_id) === String(customerId)) return true;
+    }
+  }
+  if (await technicianCanAccessCustomer(admin, technicianId, customerId)) return true;
+
+  const { data: amc } = await admin
+    .from('amc_contracts')
+    .select('id')
+    .eq('customer_id', customerId)
+    .eq('given_by_technician_id', technicianId)
+    .limit(1)
+    .maybeSingle();
+  return Boolean(amc?.id);
+}
+
 /** Technician may save AMC only for customers on their assigned jobs. */
 async function verifyTechnicianAmcSaveAccess(admin, technicianId, { customerId, jobId }) {
   if (!technicianId || !customerId) {
@@ -101,5 +127,6 @@ async function verifyTechnicianAmcSaveAccess(admin, technicianId, { customerId, 
 module.exports = {
   technicianCanAccessJob,
   technicianCanAccessCustomer,
+  technicianCanMessageCustomer,
   verifyTechnicianAmcSaveAccess,
 };

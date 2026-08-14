@@ -7,10 +7,10 @@
 // The Yes/No reply is authenticated by an HMAC signature embedded in the
 // push payload — no state is stored anywhere.
 
-const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
+const { requireCashCheckSignSecret, signCashCheck } = require('./cash-check-hmac');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -24,13 +24,6 @@ function istToday() {
     startUtc: new Date(Date.UTC(y, m, d) - IST_OFFSET_MS),
     dateLabel: `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
   };
-}
-
-function signCashCheck(technicianId, date, amount, secret) {
-  return crypto
-    .createHmac('sha256', secret)
-    .update(`cash-check|${technicianId}|${date}|${amount}`)
-    .digest('hex');
 }
 
 /** Cash portion of a completed job (0 when paid online). Honors pending_payment.paid_today. */
@@ -84,6 +77,11 @@ exports.handler = async (event) => {
     console.error('[daily-cash-check] missing Supabase env');
     return { statusCode: 500, body: 'Server misconfigured' };
   }
+  const hmac = requireCashCheckSignSecret();
+  if (!hmac.ok) {
+    console.error('[daily-cash-check]', hmac.error);
+    return { statusCode: 500, body: 'Server misconfigured' };
+  }
   const db = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
@@ -135,7 +133,7 @@ exports.handler = async (event) => {
   for (const [technicianId, cash] of cashByTechnician) {
     const amount = String(Math.round(cash));
     const techName = nameById.get(technicianId) || 'Technician';
-    const sig = signCashCheck(technicianId, dateLabel, amount, serviceKey);
+    const sig = signCashCheck(technicianId, dateLabel, amount, hmac.secret);
 
     // Data-only push: the admin app's native HroMessagingService turns it
     // into a notification with Yes/No action buttons.

@@ -27,10 +27,18 @@ export async function calculateDistances(
   destinations: Array<{ lat: number; lng: number } | string>
 ): Promise<DistanceResult[][] | null> {
   try {
+    const { resolveSupabaseAccessTokenForApi } = await import('@/lib/ensureSupabaseSession');
+    const accessToken = await resolveSupabaseAccessTokenForApi();
+    if (!accessToken) {
+      console.error('Distance Matrix: not signed in');
+      return null;
+    }
+
     const response = await fetch('/.netlify/functions/distance-matrix', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
         origins,

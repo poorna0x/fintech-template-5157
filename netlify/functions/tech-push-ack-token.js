@@ -1,7 +1,7 @@
 // HMAC ack token for technician push dismiss / open acknowledgments.
 // No DB: token is signed into the FCM payload; submit-tech-push-ack verifies it.
 const crypto = require('crypto');
-const { requirePushHmacSecret } = require('./push-hmac-secret');
+const { requirePushHmacSecret, verifyPushHmacHex } = require('./push-hmac-secret');
 
 // Long enough for tray leftovers overnight / weekend; late dismiss still notifies.
 const ACK_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -97,14 +97,7 @@ function verifyTechPushAckToken(token) {
   const payload = aboutEnc
     ? `${technicianId}.${expStr}.${source}.${aboutEnc}`
     : `${technicianId}.${expStr}.${source}`;
-  const expected = crypto
-    .createHmac('sha256', got.secret)
-    .update(payload)
-    .digest('hex')
-    .slice(0, 32);
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+  if (!verifyPushHmacHex(payload, sig, 32)) {
     return { ok: false, error: 'Invalid token' };
   }
   return {

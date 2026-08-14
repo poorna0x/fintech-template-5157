@@ -108,12 +108,27 @@ async function getWhatsAppCredentials(db = getServiceSupabase()) {
   return { accessToken, phoneNumberId, verifyToken, appSecret, wabaId };
 }
 
+function isWhatsAppWebhookLocalSkipAllowed() {
+  if (process.env.CONTEXT === 'production') return false;
+  if (process.env.NETLIFY_DEV === 'true') return true;
+  if (process.env.CONTEXT === 'dev') return true;
+  if (process.env.CORS_PERMISSIVE === 'true') return true;
+  // Deployed Lambda / Netlify preview — never skip HMAC.
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.AWS_EXECUTION_ENV) return false;
+  if (process.env.NETLIFY && process.env.CONTEXT) return false;
+  return process.env.NODE_ENV !== 'production';
+}
+
 /**
- * Meta webhook HMAC. Callers must refuse unsigned POSTs in production when
- * app secret is missing — skip is local POC only.
+ * Meta webhook HMAC. Unsigned POSTs are refused unless local/dev POC.
  */
 function verifyWhatsAppSignature(rawBody, signatureHeader, appSecret) {
-  if (!appSecret) return { ok: true, skipped: true };
+  if (!appSecret) {
+    if (isWhatsAppWebhookLocalSkipAllowed()) {
+      return { ok: true, skipped: true };
+    }
+    return { ok: false, error: 'WhatsApp app secret not configured', skipped: false };
+  }
   const header = String(signatureHeader || '').trim();
   if (!header.startsWith('sha256=')) {
     return { ok: false, error: 'Missing signature' };

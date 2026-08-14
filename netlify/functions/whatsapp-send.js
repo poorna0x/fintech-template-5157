@@ -7,6 +7,8 @@
  */
 const { getCorsHeaders, shouldRejectMissingOrigin, isLocalDev } = require('./cors-helper');
 const { authorizeAdminRequest, authorizeStaffRequest } = require('./admin-auth-guard');
+const { checkRateLimit } = require('./rate-limiter');
+const { technicianCanMessageCustomer } = require('./staff-access');
 const {
   digitsOnly,
   normalizePhoneE164,
@@ -103,6 +105,29 @@ function json(statusCode, headers, payload) {
   return { statusCode, headers, body: JSON.stringify(payload) };
 }
 
+/** Client-safe Meta error — never return raw Graph API bodies. */
+function clientWhatsAppError(result) {
+  const msg =
+    result?.data?.error?.message ||
+    result?.data?.error?.error_user_msg ||
+    'WhatsApp API error';
+  return String(msg).slice(0, 280);
+}
+
+function slimWhatsAppSuccessMeta(data) {
+  if (!data || typeof data !== 'object') return undefined;
+  const messages = Array.isArray(data.messages)
+    ? data.messages.map((m) => ({ id: m?.id })).filter((m) => m.id)
+    : undefined;
+  const contacts = Array.isArray(data.contacts)
+    ? data.contacts.map((c) => ({ wa_id: c?.wa_id })).filter((c) => c.wa_id)
+    : undefined;
+  const out = {};
+  if (messages?.length) out.messages = messages;
+  if (contacts?.length) out.contacts = contacts;
+  return Object.keys(out).length ? out : undefined;
+}
+
 function isLocalPocAuthorized(body) {
   // Never honor POC secret on Netlify production/preview — admin JWT only.
   if (!isLocalDev()) return false;
@@ -186,6 +211,17 @@ exports.handler = async (event) => {
         via: admin.via || 'session',
       };
     }
+  }
+
+  const rateLimit = checkRateLimit(event, {
+    maxRequests: auth.role === 'technician' ? 20 : 60,
+    windowMs: 60_000,
+    endpoint: `whatsapp-send:${auth.role || 'staff'}:${auth.userId || 'anon'}`,
+  });
+  if (!rateLimit.allowed) {
+    return json(429, headers, {
+      error: 'Too many WhatsApp sends. Wait a minute and try again.',
+    });
   }
 
   const db = getServiceSupabase();
@@ -306,6 +342,25 @@ exports.handler = async (event) => {
   const to = normalizePhoneE164(body.to || body.phone);
   if (!to || to.length < 10) {
     return json(400, headers, { error: 'Phone required (E.164 digits, e.g. 9198XXXXXXXX)' });
+  }
+
+  if (auth.role === 'technician' && db && auth.userId) {
+    let customerId = String(body.customerId || body.customer_id || '').trim() || null;
+    if (!customerId) {
+      customerId = await findCustomerIdByPhone(db, to);
+    }
+    if (!customerId) {
+      return json(403, headers, {
+        error: 'Technicians can only message CRM customers on their jobs',
+      });
+    }
+    const jobId = String(body.jobId || body.job_id || '').trim() || null;
+    const allowed = await technicianCanMessageCustomer(db, auth.userId, customerId, jobId);
+    if (!allowed) {
+      return json(403, headers, {
+        error: 'Forbidden: customer is not on your assigned jobs',
+      });
+    }
   }
 
   const type = String(body.type || 'text').trim().toLowerCase();
@@ -735,7 +790,7 @@ exports.handler = async (event) => {
         }
       }
       if (!sendResult.ok) {
-        const errMsg = result.data?.error?.message || 'WhatsApp API error';
+        const errMsg = clientWhatsAppError(result);
         console.error('[whatsapp-send] Meta error', result.status, JSON.stringify(result.data));
         await insertWhatsAppMessage(db, {
           ...persist,
@@ -745,13 +800,12 @@ exports.handler = async (event) => {
         return json(result.status >= 400 && result.status < 600 ? result.status : 502, headers, {
           success: false,
           error: errMsg,
-          meta: result.data,
         });
       }
     } else {
       result = await callWhatsAppApi(phoneNumberId, accessToken, payload);
       if (!result.ok) {
-        const errMsg = result.data?.error?.message || 'WhatsApp API error';
+        const errMsg = clientWhatsAppError(result);
         console.error('[whatsapp-send] Meta error', result.status, JSON.stringify(result.data));
         await insertWhatsAppMessage(db, {
           ...persist,
@@ -761,7 +815,6 @@ exports.handler = async (event) => {
         return json(result.status >= 400 && result.status < 600 ? result.status : 502, headers, {
           success: false,
           error: errMsg,
-          meta: result.data,
         });
       }
     }
@@ -914,7 +967,7 @@ exports.handler = async (event) => {
 
     return json(200, headers, {
       success: true,
-      meta: result.data,
+      meta: slimWhatsAppSuccessMeta(result.data),
       phone: to,
       messageId: inserted?.id || null,
       customerId: persist.customer_id || null,

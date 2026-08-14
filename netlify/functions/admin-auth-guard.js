@@ -109,7 +109,7 @@ async function verifyAdminBearerToken(token) {
   return { ok: true, userId: user.id };
 }
 
-/** Admin or technician JWT — for AMC agreement emails from the field. */
+/** Admin or technician JWT — never default unknown users to admin. */
 async function verifyStaffBearerToken(token) {
   if (!token) {
     return { ok: false, error: 'Unauthorized' };
@@ -133,17 +133,18 @@ async function verifyStaffBearerToken(token) {
   }
 
   const user = userData.user;
+  const email = String(user.email || '').trim();
   const metaRole = user.app_metadata?.role ?? user.user_metadata?.role;
 
-  if (metaRole === 'technician') {
-    return { ok: true, userId: user.id, role: 'technician' };
-  }
-  if (metaRole === 'admin') {
-    return { ok: true, userId: user.id, role: 'admin' };
-  }
-
   if (!serviceKey) {
-    return { ok: false, error: 'Unauthorized' };
+    // Local misconfig — only trust explicit metadata, never invent admin.
+    if (metaRole === 'technician') {
+      return { ok: true, userId: user.id, role: 'technician' };
+    }
+    if (metaRole === 'admin') {
+      return { ok: true, userId: user.id, role: 'admin' };
+    }
+    return { ok: false, error: 'Server misconfigured' };
   }
 
   const adminClient = createClient(supabaseUrl, serviceKey, {
@@ -157,10 +158,35 @@ async function verifyStaffBearerToken(token) {
     .maybeSingle();
 
   if (techErr) {
+    console.error('[admin-auth-guard] staff technicians lookup failed', techErr.message);
     return { ok: false, error: 'Unauthorized' };
   }
-  if (techRow) {
-    return { ok: true, userId: user.id, role: 'technician' };
+  if (techRow || metaRole === 'technician') {
+    // Prefer DB row; metadata alone is OK only when row exists or was trusted above.
+    if (techRow) {
+      return { ok: true, userId: user.id, role: 'technician' };
+    }
+    // Metadata says technician but no row — deny (forged / stale claim).
+    return { ok: false, error: 'Forbidden' };
+  }
+
+  if (!email) {
+    return { ok: false, error: 'Unauthorized' };
+  }
+
+  const { data: adminRow, error: adminErr } = await adminClient
+    .from('admin_users')
+    .select('id')
+    .ilike('email', email)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (adminErr) {
+    console.error('[admin-auth-guard] staff admin_users lookup failed', adminErr.message);
+    return { ok: false, error: 'Unauthorized' };
+  }
+  if (!adminRow) {
+    return { ok: false, error: 'Forbidden' };
   }
 
   return { ok: true, userId: user.id, role: 'admin' };

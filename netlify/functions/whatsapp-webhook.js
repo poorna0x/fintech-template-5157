@@ -244,17 +244,18 @@ exports.handler = async (event) => {
       event.headers['x-hub-signature-256'] ||
       event.headers['X-Hub-Signature-256'] ||
       '';
-    // Prefer HMAC when app_secrets.whatsapp_app_secret is set. If it is missing,
-    // do not drop inbound — Meta still delivers; we just cannot verify the signature.
     if (!appSecret) {
       console.error(
-        '[whatsapp-webhook] whatsapp_app_secret missing — accepting inbound without HMAC (set app_secrets.whatsapp_app_secret)'
+        '[whatsapp-webhook] whatsapp_app_secret missing — refusing inbound (set app_secrets.whatsapp_app_secret)'
       );
     }
     const sig = verifyWhatsAppSignature(rawBody, sigHeader, appSecret);
     if (!sig.ok) {
       console.warn('[whatsapp-webhook] signature rejected', sig.error);
       return { statusCode: 401, body: 'Invalid signature' };
+    }
+    if (sig.skipped) {
+      console.warn('[whatsapp-webhook] HMAC skipped (local/dev only)');
     }
 
     let payload = {};

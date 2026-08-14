@@ -3,10 +3,12 @@
 // Optimized for free tier usage with caching
 const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
 const { checkRateLimit } = require('./rate-limiter');
+const { addSecurityHeaders } = require('./security-headers');
+const { authorizeStaffRequest } = require('./admin-auth-guard');
 
 const trim = (s) => (s && typeof s === 'string' ? s.trim() : '');
 
-/** Server-only Maps key — never accept apiKey from the client (quota theft / key scraping). */
+/** Prefer server-only Maps key; VITE_ fallback is last resort for older deploys. */
 function getGoogleMapsServerKey() {
   return (
     trim(process.env.GOOGLE_MAPS_API_KEY) ||
@@ -29,6 +31,14 @@ function isCacheValid(timestamp) {
   return Date.now() - timestamp < CACHE_TTL;
 }
 
+function jsonResponse(statusCode, corsHeaders, body) {
+  return {
+    statusCode,
+    headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  };
+}
+
 exports.handler = async (event, context) => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
   const corsHeaders = getCorsHeaders(requestOrigin);
@@ -37,42 +47,28 @@ exports.handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 200,
-      headers: corsHeaders,
+      headers: addSecurityHeaders(corsHeaders),
       body: '',
     };
   }
 
   if (isProduction() && !requestOrigin) {
-    return {
-      statusCode: 403,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'Forbidden' }),
-    };
+    return jsonResponse(403, {}, { error: 'Forbidden' });
   }
 
   // SECURITY: Check if origin is allowed
   if (requestOrigin && !isOriginAllowed(requestOrigin)) {
-    return {
-      statusCode: 403,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        error: 'Forbidden: Origin not allowed',
-      }),
-    };
+    return jsonResponse(403, corsHeaders, { error: 'Forbidden: Origin not allowed' });
   }
 
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    };
+    return jsonResponse(405, corsHeaders, { error: 'Method not allowed' });
+  }
+
+  const staff = await authorizeStaffRequest(event);
+  if (!staff.ok) {
+    return jsonResponse(401, corsHeaders, { error: 'Unauthorized' });
   }
 
   const rateLimit = checkRateLimit(event, {

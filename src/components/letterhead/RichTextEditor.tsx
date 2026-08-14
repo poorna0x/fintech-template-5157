@@ -358,6 +358,8 @@ export default function RichTextEditor({
               ],
               ALLOWED_ATTR: ['href', 'target', 'rel', 'style', 'class', 'colspan', 'rowspan'],
               ALLOW_DATA_ATTR: false,
+              FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'style'],
+              FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
             });
             if (clean.trim()) {
               document.execCommand('insertHTML', false, clean);

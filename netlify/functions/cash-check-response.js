@@ -6,10 +6,10 @@
 //
 // HMAC signature from the push authenticates the reply (no session).
 
-const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging } = require('./fcm-helper');
 const { sendCashHandoverReminder } = require('./cash-handover-push');
+const { verifyCashCheckSig } = require('./cash-check-hmac');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -50,13 +50,7 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server misconfigured' }) };
   }
 
-  const expected = crypto
-    .createHmac('sha256', serviceKey)
-    .update(`cash-check|${technicianId}|${date}|${amount}`)
-    .digest('hex');
-  const sigBuf = Buffer.from(sig);
-  const expBuf = Buffer.from(expected);
-  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+  if (!verifyCashCheckSig(technicianId, date, amount, sig)) {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Bad signature' }) };
   }
   // Night ask may be answered after midnight; morning ask uses yesterday's date.

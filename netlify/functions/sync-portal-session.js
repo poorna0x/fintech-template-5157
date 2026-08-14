@@ -16,16 +16,27 @@ function parseCookies(header) {
 
 async function resolveRole(admin, user) {
   const meta = user.app_metadata?.role || user.user_metadata?.role;
-  if (meta === 'technician') return 'technician';
-  if (meta === 'admin') return 'admin';
+  const email = String(user.email || '').trim();
 
-  const { data, error } = await admin
+  const { data: techRow, error: techErr } = await admin
     .from('technicians')
     .select('id')
     .eq('id', user.id)
     .maybeSingle();
 
-  if (!error && data) return 'technician';
+  if (!techErr && techRow) return 'technician';
+  if (meta === 'technician') return null; // forged/stale claim without DB row
+
+  if (!email) return null;
+
+  const { data: adminRow, error: adminErr } = await admin
+    .from('admin_users')
+    .select('id')
+    .ilike('email', email)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (adminErr || !adminRow) return null;
   return 'admin';
 }
 
@@ -102,6 +113,13 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const role = await resolveRole(admin, user);
+  if (!role) {
+    return {
+      statusCode: 403,
+      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ error: 'Forbidden' }),
+    };
+  }
   const maxAge = 60 * 60 * 12;
   const portalCookie = signPortalCookie(role, maxAge);
 

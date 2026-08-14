@@ -4,7 +4,6 @@
 //  2) Ask admins Yes/No: "Has he handed over yesterday's remaining cash?"
 // Yes clears technician_cash_pending; No re-pushes the technician.
 
-const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const {
   getMessaging,
@@ -14,6 +13,7 @@ const {
 } = require('./fcm-helper');
 const { sendCashHandoverReminder } = require('./cash-handover-push');
 const { assertScheduledInvoke } = require('./schedule-guard');
+const { requireCashCheckSignSecret, signCashCheck } = require('./cash-check-hmac');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -21,13 +21,6 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 function istYesterdayLabel() {
   const ist = new Date(Date.now() + IST_OFFSET_MS - 24 * 60 * 60 * 1000);
   return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
-}
-
-function signCashCheck(technicianId, date, amount, secret) {
-  return crypto
-    .createHmac('sha256', secret)
-    .update(`cash-check|${technicianId}|${date}|${amount}`)
-    .digest('hex');
 }
 
 exports.handler = async (event) => {
@@ -40,6 +33,11 @@ exports.handler = async (event) => {
   const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   if (!supabaseUrl || !serviceKey) {
     console.error('[morning-cash-reminder] missing Supabase env');
+    return { statusCode: 500, body: 'Server misconfigured' };
+  }
+  const hmac = requireCashCheckSignSecret();
+  if (!hmac.ok) {
+    console.error('[morning-cash-reminder]', hmac.error);
     return { statusCode: 500, body: 'Server misconfigured' };
   }
 
@@ -115,7 +113,7 @@ exports.handler = async (event) => {
     // 2) Ask admins Yes/No about yesterday's remaining cash.
     if (adminTokens.length > 0) {
       try {
-        const sig = signCashCheck(row.technician_id, yesterday, amount, serviceKey);
+        const sig = signCashCheck(row.technician_id, yesterday, amount, hmac.secret);
         const rupees = amount.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         const res = await messaging.sendEachForMulticast({
           tokens: adminTokens,

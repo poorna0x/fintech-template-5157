@@ -3,7 +3,7 @@
 // Optional "about" (nudge label) is embedded so admin formatting works even when
 // the technician APK does not echo originalTitle/originalBody.
 const crypto = require('crypto');
-const { requirePushHmacSecret } = require('./push-hmac-secret');
+const { requirePushHmacSecret, verifyPushHmacHex } = require('./push-hmac-secret');
 
 const REPLY_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -79,14 +79,7 @@ function verifyOfficeMessageReplyToken(token) {
   if (Date.now() > exp) return { ok: false, error: 'Reply expired' };
 
   const payload = aboutEnc ? `${technicianId}.${expStr}.${aboutEnc}` : `${technicianId}.${expStr}`;
-  const expected = crypto
-    .createHmac('sha256', got.secret)
-    .update(payload)
-    .digest('hex')
-    .slice(0, 32);
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+  if (!verifyPushHmacHex(payload, sig, 32)) {
     return { ok: false, error: 'Invalid token' };
   }
   return { ok: true, technicianId, about: decodeAbout(aboutEnc) };
