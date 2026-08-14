@@ -343,7 +343,7 @@ function InboxChatPhoto({
     return () => {
       cancelled = true;
     };
-  }, [cachedSrc, onResolve, row]);
+  }, [cachedSrc, onResolve, row.id, row.media_url]);
 
   const handleImgError = () => {
     if (retriedRef.current) {
