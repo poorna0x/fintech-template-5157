@@ -20,17 +20,40 @@ function getServiceDb() {
 }
 
 const CUSTOMER_COLS =
-  'id,customer_id,full_name,phone,alternate_phone,email,address,location,visible_address,service_type,brand,model,installation_date,warranty_expiry,status,customer_since,last_service_date,photos,notes,created_at,updated_at,gst_number,alternate_address,alternate_location,alternate_visible_address';
+  'id,customer_id,full_name,phone,alternate_phone,email,address,location,visible_address,service_type,brand,model,installation_date,warranty_expiry,status,customer_since,last_service_date,photos,notes,created_at,updated_at,gst_number,alternate_address,alternate_location,alternate_visible_address,alternate_brand,alternate_model,alternate_service_type,has_prefilter,raw_water_tds,preferred_time_slot,preferred_language,customer_tier,has_google_review';
 
 const JOB_COLS =
-  'id,job_number,status,service_type,service_sub_type,scheduled_date,scheduled_time_slot,completed_at,end_time,payment_amount,actual_cost,payment_method,payment_status,booking_source,created_at,service_address,service_location,service_brand,before_photos,after_photos,images';
+  'id,job_number,status,service_type,service_sub_type,scheduled_date,scheduled_time_slot,completed_at,end_time,payment_amount,actual_cost,payment_method,payment_status,booking_source,created_at,service_address,service_location,service_brand,before_photos,after_photos,images,brand,model';
+
+async function softSelect(db, table, columns, build) {
+  let q = db.from(table).select(columns);
+  q = build(q);
+  const { data, error } = await q;
+  if (error) {
+    console.warn(`[privacy-data-export] ${table}`, error.message);
+    return [];
+  }
+  return data || [];
+}
 
 async function loadCustomerFull(db, customerId) {
   if (!customerId) return null;
   const { data, error } = await db.from('customers').select(CUSTOMER_COLS).eq('id', customerId).maybeSingle();
   if (error) {
     console.warn('[privacy-data-export] customer select', error.message);
-    return null;
+    // Retry with a smaller column set if a column is missing.
+    const { data: fallback, error: err2 } = await db
+      .from('customers')
+      .select(
+        'id,customer_id,full_name,phone,alternate_phone,email,address,location,visible_address,service_type,brand,model,photos,notes,created_at,updated_at,last_service_date,status'
+      )
+      .eq('id', customerId)
+      .maybeSingle();
+    if (err2) {
+      console.warn('[privacy-data-export] customer fallback', err2.message);
+      return null;
+    }
+    return fallback;
   }
   return data;
 }
@@ -102,50 +125,78 @@ exports.handler = async (event) => {
     }
   }
 
-  let jobs = [];
-  if (customer?.id) {
-    const { data, error } = await db
-      .from('jobs')
-      .select(JOB_COLS)
-      .eq('customer_id', customer.id)
-      .order('created_at', { ascending: false })
-      .limit(200);
-    if (error) console.warn('[privacy-data-export] jobs', error.message);
-    else jobs = data || [];
-  }
+  const customerId = customer?.id || null;
 
-  let amcContracts = [];
-  if (customer?.id) {
-    const { data, error } = await db
-      .from('amc_contracts')
-      .select(
-        'id,status,start_date,end_date,years,service_period_months,service_brand,includes_prefilter,additional_info,created_at'
+  const jobs = customerId
+    ? await softSelect(db, 'jobs', JOB_COLS, (q) =>
+        q.eq('customer_id', customerId).order('created_at', { ascending: false }).limit(200)
       )
-      .eq('customer_id', customer.id)
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (error) console.warn('[privacy-data-export] amc', error.message);
-    else amcContracts = data || [];
-  }
+    : [];
 
-  let pdfAuthenticity = [];
-  if (customer?.id) {
-    const { data, error } = await db
-      .from('document_pdf_authenticity')
-      .select('id,doc_type,document_ref,verify_code,pdf_filename,generated_on,created_at')
-      .eq('customer_id', customer.id)
-      .order('created_at', { ascending: false })
-      .limit(100);
-    if (error) console.warn('[privacy-data-export] authenticity', error.message);
-    else pdfAuthenticity = data || [];
-  }
+  const amcContracts = customerId
+    ? await softSelect(
+        db,
+        'amc_contracts',
+        'id,status,start_date,end_date,years,service_period_months,service_brand,includes_prefilter,additional_info,created_at',
+        (q) => q.eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50)
+      )
+    : [];
+
+  const pdfAuthenticity = customerId
+    ? await softSelect(
+        db,
+        'document_pdf_authenticity',
+        'id,doc_type,document_ref,verify_code,pdf_filename,generated_on,created_at,sha256_hex,pdf_byte_length',
+        (q) => q.eq('customer_id', customerId).order('created_at', { ascending: false }).limit(100)
+      )
+    : [];
+
+  const taxInvoices = customerId
+    ? await softSelect(
+        db,
+        'tax_invoices',
+        'id,invoice_number,invoice_date,invoice_type,customer_name,customer_phone,customer_email,total_amount,total_tax,service_type,created_at',
+        (q) => q.eq('customer_id', customerId).order('created_at', { ascending: false }).limit(100)
+      )
+    : [];
+
+  const callHistory = customerId
+    ? await softSelect(
+        db,
+        'call_history',
+        'id,contact_type,contact_method,phone_number,message_sent,status,notes,contacted_at,created_at',
+        (q) => q.eq('customer_id', customerId).order('contacted_at', { ascending: false }).limit(100)
+      )
+    : [];
+
+  const waFilterParts = [
+    customerId ? `customer_id.eq.${customerId}` : null,
+    `phone_e164.eq.91${phone}`,
+    `phone_e164.eq.+91${phone}`,
+  ].filter(Boolean);
+
+  const whatsappMessages = await softSelect(
+    db,
+    'whatsapp_messages',
+    'id,direction,msg_type,body,filename,media_mime,status,template_name,created_at,phone_e164',
+    (q) =>
+      q
+        .or(waFilterParts.join(','))
+        .order('created_at', { ascending: false })
+        .limit(100)
+  );
+
+  const { count: whatsappTotal } = await db
+    .from('whatsapp_messages')
+    .select('id', { count: 'exact', head: true })
+    .or(waFilterParts.join(','));
 
   const { data: consents } = await db
     .from('customer_consents')
     .select('id,purpose,channel,brand,notice_version,granted,consented_at,withdrawn_at,policy_url')
     .or(
       [
-        customer?.id ? `customer_id.eq.${customer.id}` : null,
+        customerId ? `customer_id.eq.${customerId}` : null,
         `phone_e164.eq.91${phone}`,
         `phone_e164.eq.${phone}`,
         `phone_e164.eq.+91${phone}`,
@@ -164,10 +215,26 @@ exports.handler = async (event) => {
     lookup_phone: phone,
     customer: customer || null,
     customer_found: Boolean(customer),
+    customer_code: customer?.customer_id || null,
     jobs,
     amc_contracts: amcContracts,
     pdf_authenticity: pdfAuthenticity,
+    tax_invoices: taxInvoices,
+    call_history: callHistory,
+    whatsapp_messages: whatsappMessages,
+    whatsapp_message_total: whatsappTotal ?? whatsappMessages.length,
     consents: consents || [],
+    summary: {
+      photos: Array.isArray(customer?.photos) ? customer.photos.length : 0,
+      jobs: jobs.length,
+      amc: amcContracts.length,
+      pdf_fingerprints: pdfAuthenticity.length,
+      tax_invoices: taxInvoices.length,
+      call_history: callHistory.length,
+      whatsapp_messages: whatsappTotal ?? whatsappMessages.length,
+      consents: (consents || []).length,
+      has_location: Boolean(customer?.location),
+    },
     notes: customer
       ? null
       : 'No customer row matched this phone. Pack includes the privacy request and any consents for the number.',
@@ -184,9 +251,7 @@ exports.handler = async (event) => {
       phone_tail: phone.slice(-4),
       customer_found: Boolean(customer),
       customer_code: customer?.customer_id || null,
-      jobs: jobs.length,
-      amc: amcContracts.length,
-      pdf_rows: pdfAuthenticity.length,
+      ...pack.summary,
     },
   });
 

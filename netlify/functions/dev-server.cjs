@@ -132,12 +132,12 @@ const server = http.createServer((req, res) => {
     handler = bookingIntent;
   } else if (req.url.startsWith('/.netlify/functions/booking-job-create')) {
     handler = bookingJobCreate;
-  } else if (req.url.startsWith('/.netlify/functions/privacy-request')) {
-    handler = privacyRequest;
   } else if (req.url.startsWith('/.netlify/functions/privacy-data-export')) {
-    handler = privacyDataExport;
+    handler = loadFn('privacy-data-export');
   } else if (req.url.startsWith('/.netlify/functions/privacy-customer-anonymize')) {
-    handler = privacyCustomerAnonymize;
+    handler = loadFn('privacy-customer-anonymize');
+  } else if (req.url.startsWith('/.netlify/functions/privacy-request')) {
+    handler = loadFn('privacy-request');
   } else if (req.url.startsWith('/.netlify/functions/booking-customer-mutate')) {
     handler = bookingCustomerMutate;
   } else if (req.url.startsWith('/.netlify/functions/booking-customer-lookup')) {

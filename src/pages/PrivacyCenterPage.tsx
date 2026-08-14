@@ -261,7 +261,7 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
       await downloadPrivacyDataPackZip(data.pack, r.id);
       toast.success(
         data.pack?.customer_found
-          ? 'Downloaded ZIP — open the HTML and Print → Save as PDF, then send via WhatsApp/email'
+          ? `Downloaded ZIP for ${data.pack.customer_code || 'customer'} — photos, AMC, docs, WhatsApp included`
           : 'Downloaded ZIP (no CRM customer matched this phone — request + consents only)'
       );
       // Refresh so CRM linked badge updates after export back-fill.
@@ -546,7 +546,9 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
                   <div className="flex flex-wrap gap-2">
                     {(r.request_type === 'access' ||
                       r.request_type === 'correction' ||
-                      r.request_type === 'erasure') && (
+                      r.request_type === 'erasure' ||
+                      r.request_type === 'withdraw_consent' ||
+                      r.request_type === 'grievance') && (
                       <Button
                         type="button"
                         size="sm"
@@ -562,21 +564,20 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
                         Export customer data
                       </Button>
                     )}
-                    {(r.request_type === 'erasure' || r.request_type === 'withdraw_consent') &&
-                      r.status !== 'completed' && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => {
-                            setAnonymizeConfirm('');
-                            setAnonymizeTarget(r);
-                          }}
-                        >
-                          <UserX className="mr-1.5 h-4 w-4" />
-                          Anonymize CRM data
-                        </Button>
-                      )}
+                    {r.status !== 'rejected' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => {
+                          setAnonymizeConfirm('');
+                          setAnonymizeTarget(r);
+                        }}
+                      >
+                        <UserX className="mr-1.5 h-4 w-4" />
+                        Anonymize / erase data
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="sm"
@@ -591,7 +592,8 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
                     <Button
                       type="button"
                       size="sm"
-                      variant="destructive"
+                      variant="outline"
+                      className="text-destructive"
                       onClick={() => updateRequest(r.id, 'rejected')}
                     >
                       Reject
