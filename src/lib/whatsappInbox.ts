@@ -2062,11 +2062,16 @@ export function isBookingBotStateMessage(body: string | null | undefined): boole
 export const BOOKING_FLOW_ALERT_MARKER = 'crm_bot_flow';
 
 export function isBotFlowAdminAlertSkip(
-  row: Pick<WhatsAppMessageRow, 'msg_type' | 'template_name'>
+  row: Pick<WhatsAppMessageRow, 'msg_type' | 'template_name' | 'body'>
 ): boolean {
+  if (String(row.template_name || '') === BOOKING_FLOW_ALERT_MARKER) return true;
   const type = String(row.msg_type || '').toLowerCase();
-  if (type === 'interactive' || type === 'button') return true;
-  return String(row.template_name || '') === BOOKING_FLOW_ALERT_MARKER;
+  if (type !== 'interactive' && type !== 'button') return false;
+  const blob = `${row.body || ''}`.trim().toLowerCase();
+  if (blob.startsWith('doc_accept:')) return false;
+  if (blob === 'i accept' || blob.includes('i accept')) return false;
+  if (blob.includes('call me back') || blob.includes('request callback')) return false;
+  return true;
 }
 
 /** Free-form text/PDF allowed if last inbound was within 24 hours. */

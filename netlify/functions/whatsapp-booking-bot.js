@@ -705,9 +705,18 @@ function isCallMeBackTap(interactive) {
   );
 }
 
+function isDocAcceptTap(interactive) {
+  if (!interactive) return false;
+  const title = String(interactive.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const id = String(interactive.id || '').trim().toLowerCase();
+  if (id.startsWith('doc_accept:')) return true;
+  return title === 'i accept' || id === 'i accept';
+}
+
 function shouldSuppressAdminInboundAlert(msg, priorState) {
   const interactive = extractInteractiveReply(msg);
   if (isCallMeBackTap(interactive)) return false;
+  if (isDocAcceptTap(interactive)) return false;
   if (isCtaInboundMsg(msg)) return true;
   const step = String(priorState?.step || '');
   const midFlow =

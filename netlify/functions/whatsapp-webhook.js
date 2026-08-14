@@ -173,8 +173,7 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       }
     }
 
-    const skipAdminPush =
-      authenticityOtpHandled || documentAcceptHandled || skipBotFlowAlert;
+    const skipAdminPush = authenticityOtpHandled || skipBotFlowAlert;
     if (!skipAdminPush) {
       const { pushWhatsAppInboundToAdmins } = require('./admin-whatsapp-inbound-push');
       try {
@@ -182,7 +181,9 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
         // so a fire-and-forget FCM send often lands on the *next* inbound.
         await pushWhatsAppInboundToAdmins(db, {
           phoneE164: phone,
-          body,
+          body: documentAcceptHandled
+            ? 'I Accept — original document requested'
+            : body,
           msgType,
           filename: media.filename || msg.document?.filename || null,
           mediaUrl: media.media_url,
