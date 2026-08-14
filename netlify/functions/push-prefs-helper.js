@@ -16,6 +16,7 @@ const ADMIN_PUSH_CATEGORIES = [
   'day_summary',
   'new_booking',
   'parts_reminder',
+  'privacy_request',
 ];
 
 const TECH_PUSH_CATEGORIES = [

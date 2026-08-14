@@ -11,6 +11,7 @@ export const ADMIN_PUSH_CATEGORIES = [
   'day_summary',
   'new_booking',
   'parts_reminder',
+  'privacy_request',
 ] as const;
 
 export const TECH_PUSH_CATEGORIES = [
@@ -87,6 +88,11 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
   parts_reminder: {
     label: 'Parts entry reminder',
     description: 'Reminder to verify parts logged for completed jobs.',
+  },
+  privacy_request: {
+    label: 'Privacy / data requests',
+    description:
+      'When a customer submits access, delete, correction, or grievance via /privacy-request.',
   },
 };
 

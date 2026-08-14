@@ -80,6 +80,15 @@ export function parseAdminPushDeepLinkData(
     };
   }
 
+  if (String(raw.type || '').trim() === 'privacy_request') {
+    return {
+      kind: 'settings',
+      jobId: '',
+      event: 'privacy_request',
+      panel: 'privacy-center',
+    };
+  }
+
   if (String(raw.type || '').trim() === 'admin_reminder') {
     const reminderId = String(raw.reminderId || '').trim();
     const panelRaw = String(raw.panel || '').trim();

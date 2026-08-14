@@ -636,6 +636,11 @@ const AdminDashboard = () => {
           return;
         }
 
+        if (payload.kind === 'settings' && payload.panel === 'privacy-center') {
+          navigate(settingsPanelPath('privacy-center'));
+          return;
+        }
+
         if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
           navigate(
             settingsPanelPath(payload.panel, {

@@ -197,6 +197,20 @@ exports.handler = async (event) => {
     },
   });
 
+  // Soft-fail admin FCM — never block the customer confirmation.
+  try {
+    const { notifyAdminsPrivacyRequest } = require('./privacy-request-notify');
+    await notifyAdminsPrivacyRequest(db, {
+      id: String(newId),
+      requestType: body.requestType || body.request_type,
+      brand: body.brand || 'hydrogenro',
+      name: body.name || body.requester_name || '',
+      phone: phoneDigits,
+    });
+  } catch (err) {
+    console.warn('[privacy-request] admin notify soft-fail', err?.message || err);
+  }
+
   return json(200, headers, {
     ok: true,
     id: newId,
