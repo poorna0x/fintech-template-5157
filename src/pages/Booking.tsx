@@ -328,6 +328,7 @@ const Booking: React.FC = () => {
     ],
     'SOFTENER': [
       'Installation',
+      'New Softener Installation',
       'Reinstallation',
       'Un-Installation',
       'General Service',
@@ -2109,11 +2110,16 @@ const Booking: React.FC = () => {
               </div>
 
               {/* Installation policy note */}
-              {(formData.service === 'Installation' || formData.service === 'New Purifier Installation') && (
+              {(formData.service === 'Installation' ||
+                formData.service === 'New Purifier Installation' ||
+                formData.service === 'New Softener Installation') && (
                 <div className="flex items-start gap-2.5 rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-800/60 dark:bg-sky-950/40">
                   <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden="true" />
                   <p className="text-xs sm:text-sm leading-relaxed text-sky-800 dark:text-sky-200">
-                    <span className="font-medium">Please note:</span> We primarily install existing (previously used) purifiers. For brand-new purifiers not purchased from us, installation is taken up on a model-by-model basis — our team will review your model and confirm before the visit.
+                    <span className="font-medium">Please note:</span>{' '}
+                    {formData.serviceType === 'SOFTENER' || formData.service === 'New Softener Installation'
+                      ? 'We primarily install existing (previously used) softeners. For brand-new softeners not purchased from us, installation is taken up on a model-by-model basis — our team will review your model and confirm before the visit.'
+                      : 'We primarily install existing (previously used) purifiers. For brand-new purifiers not purchased from us, installation is taken up on a model-by-model basis — our team will review your model and confirm before the visit.'}
                   </p>
                 </div>
               )}

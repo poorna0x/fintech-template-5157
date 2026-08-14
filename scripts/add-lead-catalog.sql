@@ -103,6 +103,7 @@ VALUES
   ('return_service', 'Return Service', 50, false, '{}'),
   ('amc_service', 'AMC Service', 60, false, '{}'),
   ('new_purifier_installation', 'New Purifier Installation', 70, false, '{}'),
+  ('new_softener_installation', 'New Softener Installation', 75, false, '{}'),
   ('un_installation', 'Un-Installation', 80, false, '{}'),
   ('repair', 'Repair', 90, false, '{}'),
   ('maintenance', 'Maintenance', 100, false, '{}'),

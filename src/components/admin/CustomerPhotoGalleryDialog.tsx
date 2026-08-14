@@ -220,15 +220,11 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100vw-1.25rem)] max-w-7xl max-h-[95vh] overflow-x-hidden overflow-y-auto p-4 sm:w-[90vw] sm:p-6 md:w-[85vw] min-w-0">
-        <DialogHeader className="space-y-3 pr-10 sm:space-y-2">
+        <DialogHeader className="pr-10">
           <DialogTitle className="flex items-center gap-2">
             <span className="text-lg sm:text-xl font-semibold">Gallery</span>
           </DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm break-words">
-            {showDocumentsTab
-              ? 'Customer photos, plus WhatsApp PDFs and photos you sent (same Cloudflare files as the inbox).'
-              : 'Photos for this customer'}
-          </DialogDescription>
+          <DialogDescription className="sr-only">Customer gallery</DialogDescription>
         </DialogHeader>
 
         <Tabs

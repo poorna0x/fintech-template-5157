@@ -20,6 +20,7 @@ const {
   getBookingState,
   shouldSuppressAdminInboundAlert,
   BOOKING_FLOW_ALERT_MARKER,
+  isBookingBotEnabled,
 } = require('./whatsapp-booking-bot');
 const { handleUnsolicitedInboundMedia } = require('./whatsapp-unsolicited-media');
 const { handlePayQrWatchInbound } = require('./whatsapp-pay-qr-helper');
@@ -42,6 +43,7 @@ function tsToIso(unixSeconds) {
 
 async function persistInboundMessages(db, accessToken, phoneNumberId, value, summaries) {
   const messages = value?.messages || [];
+  const bookingBotOn = await isBookingBotEnabled(db);
   for (const msg of messages) {
     const phone = normalizePhoneE164(msg.from);
     const msgType = String(msg.type || 'unknown');
@@ -60,7 +62,8 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
     } catch {
       priorBotState = null;
     }
-    const skipBotFlowAlert = shouldSuppressAdminInboundAlert(msg, priorBotState);
+    const skipBotFlowAlert =
+      bookingBotOn && shouldSuppressAdminInboundAlert(msg, priorBotState);
 
     await insertWhatsAppMessage(db, {
       wa_message_id: msg.id || null,
@@ -174,18 +177,22 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       authenticityOtpHandled || documentAcceptHandled || skipBotFlowAlert;
     if (!skipAdminPush) {
       const { pushWhatsAppInboundToAdmins } = require('./admin-whatsapp-inbound-push');
-      void pushWhatsAppInboundToAdmins(db, {
-        phoneE164: phone,
-        body,
-        msgType,
-        filename: media.filename || msg.document?.filename || null,
-        mediaUrl: media.media_url,
-        mediaMime: media.media_mime,
-        customerId,
-        waMessageId: msg.id || null,
-      }).catch((err) =>
-        console.warn('[whatsapp-webhook] admin inbound push failed', err?.message || err)
-      );
+      try {
+        // Must await — Netlify freezes the isolate when the handler returns,
+        // so a fire-and-forget FCM send often lands on the *next* inbound.
+        await pushWhatsAppInboundToAdmins(db, {
+          phoneE164: phone,
+          body,
+          msgType,
+          filename: media.filename || msg.document?.filename || null,
+          mediaUrl: media.media_url,
+          mediaMime: media.media_mime,
+          customerId,
+          waMessageId: msg.id || null,
+        });
+      } catch (err) {
+        console.warn('[whatsapp-webhook] admin inbound push failed', err?.message || err);
+      }
     }
   }
 }

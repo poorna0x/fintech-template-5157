@@ -14,9 +14,14 @@
  */
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+} = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-const { GetObjectCommand } = require('@aws-sdk/client-s3');
 
 const R2_KEY_PREFIX = 'r2:';
 const APP_SECRET_KEY = 'cloudflare_r2';
@@ -270,6 +275,92 @@ async function getR2ObjectBytes(objectKeyOrRef) {
   }
 }
 
+function folderForObjectKey(key) {
+  const raw = String(key || '').replace(/^\/+/, '');
+  if (raw.startsWith('whatsapp/inbound/')) return 'inbound';
+  if (raw.startsWith('whatsapp/outbound/')) return 'outbound';
+  if (raw.startsWith('whatsapp/accept/')) return 'accept';
+  const slash = raw.indexOf('/');
+  if (slash > 0) return raw.slice(0, slash);
+  return 'other';
+}
+
+/**
+ * List the private R2 bucket and sum object sizes.
+ * Uses existing S3-compatible credentials (no Cloudflare API token).
+ */
+async function summarizeR2BucketUsage() {
+  const config = await getR2Config();
+  const client = getR2Client(config);
+  if (!config || !client) {
+    return { ok: false, error: 'Cloudflare R2 is not configured' };
+  }
+
+  const started = Date.now();
+  const TIME_BUDGET_MS = 8000;
+  const MAX_PAGES = 80;
+  const folders = Object.create(null);
+  let objectCount = 0;
+  let totalBytes = 0;
+  let oldest = null;
+  let newest = null;
+  let truncated = false;
+  let token;
+
+  try {
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      if (Date.now() - started > TIME_BUDGET_MS) {
+        truncated = true;
+        break;
+      }
+      const out = await client.send(
+        new ListObjectsV2Command({
+          Bucket: config.bucket,
+          ContinuationToken: token,
+          MaxKeys: 1000,
+        })
+      );
+      for (const obj of out.Contents || []) {
+        const size = Number(obj.Size) || 0;
+        const key = String(obj.Key || '');
+        objectCount += 1;
+        totalBytes += size;
+        const folder = folderForObjectKey(key);
+        if (!folders[folder]) folders[folder] = { bytes: 0, objects: 0 };
+        folders[folder].bytes += size;
+        folders[folder].objects += 1;
+        const lm = obj.LastModified ? new Date(obj.LastModified).toISOString() : null;
+        if (lm) {
+          if (!oldest || lm < oldest) oldest = lm;
+          if (!newest || lm > newest) newest = lm;
+        }
+      }
+      if (!out.IsTruncated) break;
+      token = out.NextContinuationToken;
+      if (!token) break;
+      if (page === MAX_PAGES - 1) truncated = true;
+    }
+  } catch (err) {
+    return { ok: false, error: err?.message || 'Could not list R2 objects' };
+  }
+
+  const prefixes = Object.entries(folders)
+    .map(([name, v]) => ({ name, bytes: v.bytes, objects: v.objects }))
+    .sort((a, b) => b.bytes - a.bytes);
+
+  return {
+    ok: true,
+    bucket: config.bucket,
+    total_bytes: totalBytes,
+    object_count: objectCount,
+    prefixes,
+    oldest_modified: oldest,
+    newest_modified: newest,
+    truncated,
+    generated_at: new Date().toISOString(),
+  };
+}
+
 module.exports = {
   R2_KEY_PREFIX,
   APP_SECRET_KEY,
@@ -284,4 +375,5 @@ module.exports = {
   deleteR2Object,
   createR2SignedGetUrl,
   getR2ObjectBytes,
+  summarizeR2BucketUsage,
 };

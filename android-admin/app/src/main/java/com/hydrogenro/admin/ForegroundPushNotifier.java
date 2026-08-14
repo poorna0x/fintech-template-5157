@@ -146,11 +146,19 @@ public final class ForegroundPushNotifier {
             }
         }
 
+        int notifId = 0;
+        String waMessageId = data != null ? data.get("waMessageId") : null;
+        if (waMessageId != null && !waMessageId.isEmpty()) {
+            notifId = Math.abs(waMessageId.hashCode());
+        } else if (tag != null) {
+            notifId = Math.abs(tag.hashCode());
+        }
+
         Notification notification = builder.build();
 
         try {
-            NotificationManagerCompat.from(context).notify(tag, 0, notification);
-            Log.i(TAG, "Posted foreground tray notification tag=" + tag);
+            NotificationManagerCompat.from(context).notify(tag, notifId, notification);
+            Log.i(TAG, "Posted foreground tray notification tag=" + tag + " id=" + notifId);
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }

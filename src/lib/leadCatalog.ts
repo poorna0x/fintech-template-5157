@@ -61,6 +61,7 @@ export const LEGACY_SERVICE_SUB_TYPE_LABELS = [
   'Return Service',
   'AMC Service',
   'New Purifier Installation',
+  'New Softener Installation',
   'Un-Installation',
   'Repair',
   'Maintenance',
@@ -68,6 +69,22 @@ export const LEGACY_SERVICE_SUB_TYPE_LABELS = [
   'Inspection',
   'Other',
 ] as const;
+
+export function filterSubTypeOptionsForServiceType<T extends { label: string }>(
+  options: T[],
+  serviceType?: string | null
+): T[] {
+  const t = String(serviceType || '').toUpperCase();
+  const isSoftenerOnly = t.includes('SOFTENER') && !t.includes('RO');
+  const isRoOnly = t.includes('RO') && !t.includes('SOFTENER');
+  if (isSoftenerOnly) {
+    return options.filter((o) => o.label !== 'New Purifier Installation');
+  }
+  if (isRoOnly) {
+    return options.filter((o) => o.label !== 'New Softener Installation');
+  }
+  return options;
+}
 
 const CACHE_KEY = 'lead_catalog_cache_v2';
 const CACHE_TTL_MS = 5 * 60 * 1000;

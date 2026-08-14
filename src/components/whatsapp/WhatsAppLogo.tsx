@@ -30,16 +30,20 @@ export function WhatsAppLogo({
   );
 }
 
-/** Circular unread count — single digits stay perfectly round. */
+/** Circular count badge — single digits stay perfectly round. */
 export function WhatsAppUnreadBadge({
   count,
   className,
+  maxDisplay = 99,
+  unit = 'unread',
 }: {
   count: number;
   className?: string;
+  maxDisplay?: number;
+  unit?: string;
 }) {
   if (count <= 0) return null;
-  const label = count > 99 ? '99+' : String(count);
+  const label = count > maxDisplay ? `${maxDisplay}+` : String(count);
   const wide = label.length > 1;
 
   return (
@@ -49,7 +53,7 @@ export function WhatsAppUnreadBadge({
         wide ? 'h-5 min-w-[1.25rem] px-1.5' : 'h-5 w-5',
         className
       )}
-      aria-label={`${count} unread`}
+      aria-label={`${count} ${unit}`}
     >
       {label}
     </span>

@@ -35,7 +35,10 @@ export function buildJobCompletionLine(serviceType: string, serviceSubType: stri
   const serviceTypeUpper = (serviceType || '').toUpperCase();
   const rawSubtypeText = serviceSubType ? capitalizeWord(serviceSubType) : '';
   const subtypeText =
-    (serviceSubType || '').trim() === 'New Purifier Installation' ? 'installation' : rawSubtypeText;
+    (serviceSubType || '').trim() === 'New Purifier Installation' ||
+    (serviceSubType || '').trim() === 'New Softener Installation'
+      ? 'installation'
+      : rawSubtypeText;
 
   if (serviceTypeUpper.includes('RO') && subtypeText) {
     return `Your Water Purifier ${subtypeText} is completed.`;

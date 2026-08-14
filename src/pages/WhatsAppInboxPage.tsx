@@ -665,7 +665,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         if (summary) {
           applyWhatsAppUnreadSummary(summary);
           setUnreadCounts(summary.perPhone);
-          dispatchWhatsAppUnreadChanged(summary.total);
+          dispatchWhatsAppUnreadChanged(summary.total, summary.chats);
         } else {
           void fetchWhatsAppUnreadMessageCounts(supabase, result.threads, map).then((counts) => {
             if (!counts || !Object.keys(counts).length) return;

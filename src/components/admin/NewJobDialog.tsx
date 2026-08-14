@@ -781,6 +781,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   customValue={newJobFormData.service_sub_type_custom}
                   onChange={(v) => handleFormChange('service_sub_type', v)}
                   onCustomChange={(v) => handleFormChange('service_sub_type_custom', v)}
+                  serviceType={newJobFormData.service_type}
                   required
                 />
               </div>

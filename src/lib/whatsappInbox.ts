@@ -484,6 +484,18 @@ export function resolveWhatsAppHeaderUnreadCount(
   return 0;
 }
 
+/** Distinct chats with unread inbound — Tools badge. */
+export function resolveWhatsAppUnreadChatCount(
+  extraCounts?: Record<string, number> | null
+): number {
+  const counts = extraCounts || loadWhatsAppUnreadCounts();
+  let n = 0;
+  for (const v of Object.values(counts)) {
+    if (v > 0) n += 1;
+  }
+  return Math.min(n, 9999);
+}
+
 /** Bump local per-phone unread message count (Tools badge) on new inbound. */
 export function bumpWhatsAppUnreadCountForPhone(phoneE164: string, by = 1): number {
   const phone = String(phoneE164 || '').replace(/\D/g, '');
@@ -496,6 +508,8 @@ export function bumpWhatsAppUnreadCountForPhone(phoneE164: string, by = 1): numb
 
 export type WhatsAppUnreadSummary = {
   total: number;
+  /** Distinct phones with unread inbound. Omitted if RPC is older than chats field. */
+  chats?: number;
   perPhone: Record<string, number>;
 };
 
@@ -515,7 +529,15 @@ function parseUnreadSummary(raw: unknown): WhatsAppUnreadSummary | null {
     Number.isFinite(totalRaw) && totalRaw >= 0
       ? Math.min(totalRaw, 999)
       : Math.min(summed, 999);
-  return { total, perPhone };
+  let chats: number | undefined;
+  if (o.chats !== undefined && o.chats !== null) {
+    const chatsRaw = Math.floor(Number(o.chats));
+    if (Number.isFinite(chatsRaw) && chatsRaw >= 0) chats = Math.min(chatsRaw, 9999);
+  }
+  if (chats === undefined) {
+    chats = Object.keys(perPhone).length;
+  }
+  return { total, chats, perPhone };
 }
 
 /** Team unread from DB — same number on every admin device. Soft-fail if RPC missing. */

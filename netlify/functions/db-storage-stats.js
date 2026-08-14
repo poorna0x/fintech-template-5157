@@ -38,14 +38,27 @@ exports.handler = async (event) => {
     return json(400, headers, { error: 'Invalid JSON' });
   }
 
-  const db = getServiceSupabase();
-  if (!db) {
-    return json(503, headers, { error: 'Database client unavailable' });
-  }
-
   const table = String(body.table || body.tableName || '').trim();
+  const source = String(body.source || '').trim().toLowerCase();
 
   try {
+    if (source === 'r2') {
+      const { summarizeR2BucketUsage } = require('./r2-helper');
+      const result = await summarizeR2BucketUsage();
+      if (!result?.ok) {
+        return json(200, headers, {
+          ok: false,
+          error: result?.error || 'Could not load R2 storage stats',
+        });
+      }
+      return json(200, headers, { ...result, ok: true });
+    }
+
+    const db = getServiceSupabase();
+    if (!db) {
+      return json(503, headers, { error: 'Database client unavailable' });
+    }
+
     if (table) {
       const { data, error } = await db.rpc('admin_db_table_column_stats', { p_table: table });
       if (error) {

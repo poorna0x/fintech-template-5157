@@ -35,7 +35,7 @@ import { hapticTap } from '@/lib/haptics';
 import { focusAndroidInputWithoutScroll } from '@/lib/isNativeApp';
 import { settingsPath } from '@/lib/settingsSections';
 import { settingsPanelPath } from '@/lib/settingsUrl';
-import { useWhatsAppUnreadCount } from '@/lib/whatsappInboxActivity';
+import { useWhatsAppChatCount } from '@/lib/whatsappInboxActivity';
 import { cn } from '@/lib/utils';
 import { WhatsAppLogo, WhatsAppUnreadBadge } from '@/components/whatsapp/WhatsAppLogo';
 import type { AdminDashboardView, AdminToolDialog } from '@/lib/adminDashboardUrl';
@@ -121,8 +121,8 @@ export function AdminDashboardHeader({
   unknownCallerPending = false,
 }: AdminDashboardHeaderProps) {
   const navigate = useNavigate();
-  const whatsAppUnreadCount = useWhatsAppUnreadCount();
-  const hasWhatsAppUnread = whatsAppUnreadCount > 0;
+  const whatsAppChatCount = useWhatsAppChatCount();
+  const hasWhatsAppUnread = whatsAppChatCount > 0;
 
   const trimSearchOnBlur: React.FocusEventHandler<HTMLInputElement> = (e) => {
     const trimmed = e.target.value.trim();
@@ -198,13 +198,19 @@ export function AdminDashboardHeader({
                   <Button
                     variant="outline"
                     className="relative flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                    title={hasWhatsAppUnread ? `${whatsAppUnreadCount} unread WhatsApp` : 'Tools'}
+                    title={
+                      hasWhatsAppUnread
+                        ? `${whatsAppChatCount} unread WhatsApp chat${whatsAppChatCount === 1 ? '' : 's'}`
+                        : 'Tools'
+                    }
                   >
                     <Wrench className="w-4 h-4" />
                     <span className="hidden sm:inline">Tools</span>
                     {hasWhatsAppUnread ? (
                       <WhatsAppUnreadBadge
-                        count={whatsAppUnreadCount}
+                        count={whatsAppChatCount}
+                        maxDisplay={999}
+                        unit="unread chats"
                         className="absolute -right-1.5 -top-1.5 ml-0 shadow-sm ring-2 ring-white"
                       />
                     ) : null}
@@ -252,7 +258,11 @@ export function AdminDashboardHeader({
                     <span className={hasWhatsAppUnread ? 'text-emerald-800' : undefined}>
                       WhatsApp
                     </span>
-                    <WhatsAppUnreadBadge count={whatsAppUnreadCount} />
+                    <WhatsAppUnreadBadge
+                      count={whatsAppChatCount}
+                      maxDisplay={999}
+                      unit="unread chats"
+                    />
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => {

@@ -150,7 +150,8 @@ function notifyInbound(row: WhatsAppMessageRow, hint: WhatsAppThreadNameHint): v
     };
     showBrowserNotification(data, {
       body,
-      tag: `wa-${phone}`,
+      tag: `wa-${phone}-${row.id || Date.now()}`,
+      renotify: true,
       icon: '/whatsapp.png',
       badge: '/whatsapp.png',
       onClick: openChat,
@@ -166,7 +167,7 @@ function notifyInbound(row: WhatsAppMessageRow, hint: WhatsAppThreadNameHint): v
 }
 
 function handleInboundInsert(row: Partial<WhatsAppMessageRow> | null): void {
-  if (!row?.id || !row.phone_e164 || !row.created_at) return;
+  if (!row?.id || !row.phone_e164) return;
   if (row.direction !== 'inbound') return;
   if (!rememberMessageId(row.id)) return;
 
@@ -198,6 +199,21 @@ export function setWhatsAppAlertNavigator(navigate: (path: string) => void): voi
 /** Start global admin WhatsApp inbound alerts (one Realtime channel per session). */
 export function startWhatsAppAdminAlerts(): () => void {
   const stopPresence = startWhatsAppViewingPresence();
+  let hydrateTimer: number | null = null;
+  const hydrateFromServer = () => {
+    void fetchWhatsAppInboxUnreadSummary().then((summary) => {
+      if (!summary) return;
+      dispatchWhatsAppUnreadChanged(applyWhatsAppUnreadSummary(summary), summary.chats);
+    });
+  };
+  const scheduleHydrate = (ms: number) => {
+    if (hydrateTimer != null) window.clearTimeout(hydrateTimer);
+    hydrateTimer = window.setTimeout(() => {
+      hydrateTimer = null;
+      hydrateFromServer();
+    }, ms);
+  };
+
   const channel = supabase
     .channel('whatsapp-admin-alerts')
     .on(
@@ -205,6 +221,7 @@ export function startWhatsAppAdminAlerts(): () => void {
       { event: 'INSERT', schema: 'public', table: 'whatsapp_messages' },
       (payload) => {
         handleInboundInsert((payload.new || null) as Partial<WhatsAppMessageRow> | null);
+        scheduleHydrate(1200);
       }
     )
     .on(
@@ -223,22 +240,11 @@ export function startWhatsAppAdminAlerts(): () => void {
     )
     .subscribe();
 
-  let hydrateTimer: number | null = null;
-  const hydrateFromServer = () => {
-    void fetchWhatsAppInboxUnreadSummary().then((summary) => {
-      if (!summary) return;
-      dispatchWhatsAppUnreadChanged(applyWhatsAppUnreadSummary(summary));
-    });
-  };
   hydrateFromServer();
 
   const onVisibility = () => {
     if (document.visibilityState !== 'visible') return;
-    if (hydrateTimer != null) window.clearTimeout(hydrateTimer);
-    hydrateTimer = window.setTimeout(() => {
-      hydrateTimer = null;
-      hydrateFromServer();
-    }, 400);
+    scheduleHydrate(400);
   };
   document.addEventListener('visibilitychange', onVisibility);
 

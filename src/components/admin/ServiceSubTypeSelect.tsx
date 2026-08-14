@@ -2,7 +2,10 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useLeadCatalog } from '@/hooks/useLeadCatalog';
-import { LEGACY_SERVICE_SUB_TYPE_LABELS } from '@/lib/leadCatalog';
+import {
+  filterSubTypeOptionsForServiceType,
+  LEGACY_SERVICE_SUB_TYPE_LABELS,
+} from '@/lib/leadCatalog';
 
 type Props = {
   id?: string;
@@ -14,6 +17,8 @@ type Props = {
   disabled?: boolean;
   required?: boolean;
   label?: string;
+  /** When RO or SOFTENER, hide the other product's "New … Installation" option. */
+  serviceType?: string | null;
 };
 
 export function ServiceSubTypeSelect({
@@ -26,15 +31,17 @@ export function ServiceSubTypeSelect({
   disabled,
   required,
   label = 'Service Sub Type',
+  serviceType,
 }: Props) {
   const { subTypes, loading } = useLeadCatalog();
-  const options = subTypes.length
+  const catalogOptions = subTypes.length
     ? subTypes
     : LEGACY_SERVICE_SUB_TYPE_LABELS.map((label, i) => ({
         id: String(i),
         label,
         allow_custom_text: label === 'Other',
       }));
+  const options = filterSubTypeOptionsForServiceType(catalogOptions, serviceType);
 
   const optionLabels = new Set(options.map((o) => o.label));
   const allOptions =

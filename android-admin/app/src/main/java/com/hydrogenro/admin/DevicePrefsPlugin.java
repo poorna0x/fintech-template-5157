@@ -109,11 +109,12 @@ public class DevicePrefsPlugin extends Plugin {
                             if (!tag.startsWith("wa_inbound_") && !"whatsapp_inbound".equals(tag)) {
                                 continue;
                             }
-                            String tagDigits = tag.startsWith("wa_inbound_")
-                                ? tag.substring("wa_inbound_".length()).replaceAll("\\D", "")
-                                : "";
+                            String rest = tag.substring("wa_inbound_".length());
+                            int cut = rest.indexOf('_');
+                            String phonePart = (cut > 0 ? rest.substring(0, cut) : rest).replaceAll("\\D", "");
                             if ("whatsapp_inbound".equals(tag)
-                                || phoneTagMatches(tagDigits, variants)) {
+                                || phoneTagMatches(phonePart, variants)
+                                || phoneTagMatches(rest.replaceAll("\\D", ""), variants)) {
                                 nm.cancel(tag, sbn.getId());
                             }
                         }

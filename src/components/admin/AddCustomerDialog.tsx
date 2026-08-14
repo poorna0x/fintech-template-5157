@@ -2093,6 +2093,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       id="step5_service_sub_type"
                       value={step5JobData.service_sub_type}
                       customValue={step5JobData.service_sub_type_custom}
+                      serviceType={step5JobData.service_type}
                       required
                       onChange={(value) =>
                         setStep5JobData((prev) => {

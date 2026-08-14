@@ -70,30 +70,37 @@ async function pushWhatsAppInboundToAdmins(db, details) {
     mediaMime: details.mediaMime,
   });
 
+  const waId = String(details.waMessageId || '').replace(/\W/g, '').slice(-20);
+  const tag = waId ? `wa_inbound_${phone}_${waId}` : `wa_inbound_${phone}`;
+  const titleText = `WhatsApp · ${title}`;
+
   const messaging = await getMessaging(db);
   const res = await messaging.sendEachForMulticast({
     tokens,
     notification: {
-      title: `WhatsApp · ${title}`,
+      title: titleText,
       body,
     },
     data: {
       type: 'whatsapp_inbound',
       phone,
-      tag: `wa_inbound_${phone}`,
+      tag,
       panel: 'whatsapp-inbox',
       color: WA_GREEN,
+      title: titleText,
+      body,
       ...(details.waMessageId ? { waMessageId: String(details.waMessageId) } : {}),
     },
     android: {
       priority: 'high',
+      // Unique per message so FCM does not hold/replace the first inbound.
+      collapseKey: tag.slice(0, 64),
       notification: {
         channelId: 'job_alerts_v2',
-        // Admin APK drawable — WhatsApp mark instead of HRO default ic_stat_notify
         icon: 'ic_stat_whatsapp',
         defaultSound: true,
         color: WA_GREEN,
-        tag: `wa_inbound_${phone}`,
+        tag,
       },
     },
   });

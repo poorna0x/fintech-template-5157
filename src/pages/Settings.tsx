@@ -134,161 +134,22 @@ function scheduleSettingsScrollRestore(y: number) {
   window.setTimeout(restore, 200);
 }
 
-/** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
-const isMissingTableError = (error: { message?: string; code?: string } | null): boolean => {
-  if (!error) return false;
-  const msg = error.message ?? '';
-  return (
-    error.code === 'PGRST205' ||
-    /could not find the table/i.test(msg) ||
-    /schema cache/i.test(msg)
-  );
-};
+function exportTableLabel(name: string): string {
+  if (name === 'app_secrets') return 'App Secrets (values redacted)';
+  return name
+    .replace(/_/g, ' ')
+    .replace(/\bwhatsapp\b/gi, 'WhatsApp')
+    .replace(/\bamc\b/gi, 'AMC')
+    .replace(/\bpdf\b/gi, 'PDF')
+    .replace(/\bqr\b/gi, 'QR')
+    .replace(/\bupi\b/gi, 'UPI')
+    .replace(/\bcrm\b/gi, 'CRM')
+    .replace(/\botp\b/gi, 'OTP')
+    .replace(/\brls\b/gi, 'RLS')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
-/** Tables included in Settings → Data Export (keep in sync with handleDownloadAllData). */
-const DATABASE_EXPORT_TABLES: {
-  name: string;
-  orderBy: string;
-  label: string;
-  /** If true, skip silently when the table is not in Supabase (optional migration). */
-  optional?: boolean;
-}[] = [
-  { name: 'admin_incoming_calls', orderBy: 'created_at', label: 'Admin Incoming Calls', optional: true },
-  { name: 'admin_push_tokens', orderBy: 'updated_at', label: 'Admin Push Tokens', optional: true },
-  { name: 'admin_todos', orderBy: 'created_at', label: 'Admin Todos' },
-  { name: 'admin_users', orderBy: 'id', label: 'Admin Users' },
-  { name: 'admin_audit_log', orderBy: 'created_at', label: 'Admin Audit Log', optional: true },
-  { name: 'amc_contracts', orderBy: 'created_at', label: 'AMC Contracts' },
-  {
-    name: 'amc_pdf_authenticity',
-    orderBy: 'created_at',
-    label: 'AMC PDF Authenticity',
-    optional: true,
-  },
-  { name: 'amount_trackers', orderBy: 'created_at', label: 'Amount Trackers' },
-  { name: 'app_crash_reports', orderBy: 'last_seen_at', label: 'App Crash Reports', optional: true },
-  { name: 'booking_abandonments', orderBy: 'created_at', label: 'Booking Abandonments', optional: true },
-  { name: 'business_expenses', orderBy: 'expense_date', label: 'Business Expenses' },
-  { name: 'call_history', orderBy: 'contacted_at', label: 'Call History' },
-  { name: 'common_qr_codes', orderBy: 'created_at', label: 'Common QR Codes' },
-  { name: 'crm_settings', orderBy: 'key', label: 'CRM Settings', optional: true },
-  { name: 'customers', orderBy: 'created_at', label: 'Customers' },
-  { name: 'document_drafts', orderBy: 'updated_at', label: 'Document Drafts' },
-  {
-    name: 'document_pdf_authenticity',
-    orderBy: 'created_at',
-    label: 'Document PDF Authenticity',
-    optional: true,
-  },
-  { name: 'follow_ups', orderBy: 'created_at', label: 'Follow-ups' },
-  { name: 'inventory', orderBy: 'created_at', label: 'Inventory' },
-  { name: 'inventory_bundle_items', orderBy: 'id', label: 'Inventory Bundle Items' },
-  { name: 'inventory_bundles', orderBy: 'updated_at', label: 'Inventory Bundles' },
-  { name: 'job_assignment_requests', orderBy: 'created_at', label: 'Job Assignment Requests' },
-  { name: 'job_parts_used', orderBy: 'created_at', label: 'Job Parts Used' },
-  { name: 'jobs', orderBy: 'created_at', label: 'Jobs' },
-  { name: 'notifications', orderBy: 'created_at', label: 'Notifications' },
-  { name: 'other_expenses', orderBy: 'expense_date', label: 'Other Expenses' },
-  { name: 'parts_inventory', orderBy: 'id', label: 'Parts Inventory' },
-  { name: 'product_qr_codes', orderBy: 'created_at', label: 'Product QR Codes' },
-  { name: 'reminders', orderBy: 'reminder_at', label: 'Reminders' },
-  { name: 'sent_email_logs', orderBy: 'sent_at', label: 'Sent Email Logs', optional: true },
-  { name: 'service_areas', orderBy: 'id', label: 'Service Areas' },
-  { name: 'storage_block_items', orderBy: 'created_at', label: 'Storage Block Items', optional: true },
-  { name: 'storage_blocks', orderBy: 'created_at', label: 'Storage Blocks', optional: true },
-  { name: 'storage_places', orderBy: 'created_at', label: 'Storage Places', optional: true },
-  { name: 'tax_invoices', orderBy: 'created_at', label: 'Tax Invoices' },
-  { name: 'tech_call_alert_events', orderBy: 'created_at', label: 'Tech Call Alert Events', optional: true },
-  { name: 'technician_advances', orderBy: 'created_at', label: 'Technician Advances' },
-  { name: 'technician_common_qr', orderBy: 'created_at', label: 'Technician Common QR' },
-  { name: 'technician_expenses', orderBy: 'created_at', label: 'Technician Expenses' },
-  { name: 'technician_extra_commissions', orderBy: 'created_at', label: 'Technician Extra Commissions' },
-  { name: 'technician_holidays', orderBy: 'created_at', label: 'Technician Holidays' },
-  { name: 'technician_inventory', orderBy: 'created_at', label: 'Technician Inventory' },
-  {
-    name: 'technician_job_sync',
-    orderBy: 'created_at',
-    label: 'Technician Job Sync',
-    optional: true,
-  },
-  {
-    name: 'technician_live_locations',
-    orderBy: 'updated_at',
-    label: 'Technician Live Locations',
-    optional: true,
-  },
-  {
-    name: 'technician_otp_requests',
-    orderBy: 'created_at',
-    label: 'Technician OTP Requests',
-    optional: true,
-  },
-  { name: 'technician_payments', orderBy: 'created_at', label: 'Technician Payments' },
-  {
-    name: 'technician_push_tokens',
-    orderBy: 'updated_at',
-    label: 'Technician Push Tokens',
-    optional: true,
-  },
-  { name: 'technicians', orderBy: 'created_at', label: 'Technicians' },
-  { name: 'upi_pay_links', orderBy: 'created_at', label: 'UPI Pay Links', optional: true },
-  { name: 'upi_payment_accounts', orderBy: 'created_at', label: 'UPI Payment Accounts', optional: true },
-  { name: 'warranties', orderBy: 'created_at', label: 'Warranties', optional: true },
-  { name: 'warranty_items', orderBy: 'created_at', label: 'Warranty Items', optional: true },
-  {
-    name: 'website_analytics_events',
-    orderBy: 'created_at',
-    label: 'Website Analytics Events',
-    optional: true,
-  },
-  { name: 'website_booking_intent', orderBy: 'updated_at', label: 'Website Booking Intent' },
-  {
-    name: 'website_booking_intent_archive',
-    orderBy: 'archived_at',
-    label: 'Website Booking Intent Archive',
-    optional: true,
-  },
-  { name: 'app_secrets', orderBy: 'key', label: 'App Secrets (values redacted)', optional: true },
-  {
-    name: 'auth_login_attempts',
-    orderBy: 'last_attempt_at',
-    label: 'Auth Login Attempts',
-    optional: true,
-  },
-  {
-    name: 'document_accept_invites',
-    orderBy: 'created_at',
-    label: 'Document Accept Invites',
-    optional: true,
-  },
-  {
-    name: 'pdf_authenticity_otp',
-    orderBy: 'created_at',
-    label: 'PDF Authenticity OTP',
-    optional: true,
-  },
-  { name: 'push_crm_settings', orderBy: 'id', label: 'Push CRM Settings', optional: true },
-  {
-    name: 'whatsapp_booking_bot_state',
-    orderBy: 'updated_at',
-    label: 'WhatsApp Booking Bot State',
-    optional: true,
-  },
-  { name: 'whatsapp_crm_settings', orderBy: 'id', label: 'WhatsApp CRM Settings', optional: true },
-  {
-    name: 'whatsapp_inbox_read',
-    orderBy: 'updated_at',
-    label: 'WhatsApp Inbox Read',
-    optional: true,
-  },
-  { name: 'whatsapp_messages', orderBy: 'created_at', label: 'WhatsApp Messages', optional: true },
-  {
-    name: 'whatsapp_usage_monthly',
-    orderBy: 'month_key',
-    label: 'WhatsApp Usage Monthly',
-    optional: true,
-  },
-];
+type ExportTableSpec = { name: string; orderBy: string; label: string };
 
 const Settings = () => {
   const { user, isAdmin, logout, authInitializing } = useAuth();
@@ -463,6 +324,8 @@ const Settings = () => {
 
   // Download data state
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState('');
+  const [exportTableCatalog, setExportTableCatalog] = useState<ExportTableSpec[]>([]);
 
   const [mergeCustomersOpen, setMergeCustomersOpen] = useState(false);
   const [warrantyDialogOpen, setWarrantyDialogOpen] = useState(false);
@@ -2162,37 +2025,49 @@ const Settings = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Paginate through a table (Supabase default max is 1000 per request) so we get ALL rows.
-  const fetchAllFromTable = async (tableName: string, orderBy = 'id'): Promise<{ data: any[]; error: any }> => {
-    // technicians: direct `select('*')` fails after column lockdown (salary, push_subscription).
-    // Use the same admin RPC as the rest of the app.
-    if (tableName === 'technicians') {
-      const { data, error } = await db.technicians.getAll(undefined, { activeRosterOnly: false });
-      if (error) return { data: [], error };
-      const rows = [...(data ?? [])].sort((a, b) => {
-        const aVal = a?.[orderBy];
-        const bVal = b?.[orderBy];
-        if (aVal == null && bVal == null) return 0;
-        if (aVal == null) return -1;
-        if (bVal == null) return 1;
-        return String(aVal).localeCompare(String(bVal));
-      });
-      return { data: rows, error: null };
-    }
+  const loadExportTableCatalog = useCallback(async (): Promise<ExportTableSpec[]> => {
+    const { data, error } = await supabase.rpc('admin_list_export_tables');
+    if (error) throw error;
+    const list = Array.isArray(data) ? data : [];
+    const catalog = list
+      .map((row: { name?: string; order_by?: string }) => {
+        const name = String(row?.name || '').trim();
+        if (!name) return null;
+        return {
+          name,
+          orderBy: String(row?.order_by || '').trim() || 'id',
+          label: exportTableLabel(name),
+        } satisfies ExportTableSpec;
+      })
+      .filter((row): row is ExportTableSpec => Boolean(row));
+    setExportTableCatalog(catalog);
+    return catalog;
+  }, []);
 
+  useEffect(() => {
+    if (isManager) return;
+    void loadExportTableCatalog().catch(() => {
+      /* listed on download */
+    });
+  }, [isManager, loadExportTableCatalog]);
+
+  const fetchAllFromTable = async (tableName: string, orderBy = 'id'): Promise<{ data: any[]; error: any }> => {
     const PAGE = 1000;
-    let from = 0;
+    let offset = 0;
     const all: any[] = [];
     while (true) {
-      const { data, error } = await supabase
-        .from(tableName)
-        .select('*')
-        .order(orderBy, { ascending: true })
-        .range(from, from + PAGE - 1);
+      const { data, error } = await supabase.rpc('admin_export_table_rows', {
+        p_table: tableName,
+        p_order_by: orderBy || null,
+        p_offset: offset,
+        p_limit: PAGE,
+      });
       if (error) return { data: [], error };
-      all.push(...(data || []));
-      if (!data || data.length < PAGE) break;
-      from += PAGE;
+      const payload = (data || {}) as { rows?: unknown[]; has_more?: boolean };
+      const rows = Array.isArray(payload.rows) ? payload.rows : Array.isArray(data) ? data : [];
+      all.push(...rows);
+      if (!payload.has_more || rows.length < PAGE) break;
+      offset += PAGE;
     }
     return { data: all, error: null };
   };
@@ -2204,39 +2079,30 @@ const Settings = () => {
       return;
     }
     setIsDownloading(true);
+    setDownloadProgress('');
 
     try {
+      const catalog =
+        exportTableCatalog.length > 0 ? exportTableCatalog : await loadExportTableCatalog();
+      if (catalog.length === 0) {
+        toast.error('Could not load the live table list for export');
+        return;
+      }
       const timestamp = new Date().toISOString().split('T')[0];
       const tables: { name: string; data: any[] }[] = [];
       const failedTables: string[] = [];
-      const skippedMissingTables: string[] = [];
+      const total = catalog.length;
 
-      for (const { name, orderBy } of DATABASE_EXPORT_TABLES) {
+      for (let i = 0; i < catalog.length; i++) {
+        const { name, orderBy } = catalog[i];
+        setDownloadProgress(`${i + 1}/${total} ${name}`);
         const { data, error } = await fetchAllFromTable(name, orderBy);
         if (error) {
-          if (isMissingTableError(error)) {
-            skippedMissingTables.push(name);
-            continue;
-          }
           failedTables.push(name);
           toast.error(`Failed to fetch ${name}: ${error.message}`);
           continue;
         }
-        // `technicians.password` column was dropped 2026-05-24; nothing to strip from the row anymore.
-        // Skip huge pdf_base64 blobs from legacy AMC authenticity rows (hash metadata stays).
-        const rows =
-          name === 'amc_pdf_authenticity'
-            ? (data || []).map((row: Record<string, unknown>) => {
-                const { pdf_base64: _omit, ...rest } = row;
-                return rest;
-              })
-            : name === 'app_secrets'
-              ? (data || []).map((row: Record<string, unknown>) => ({
-                  ...row,
-                  value: row.value != null ? '[REDACTED]' : row.value,
-                }))
-              : data;
-        tables.push({ name, data: rows });
+        tables.push({ name, data: data || [] });
       }
 
       // Create ZIP file with all CSV files
@@ -2268,10 +2134,6 @@ const Settings = () => {
         toast.warning(
           `Downloaded ${tables.length} table(s); failed: ${failedTables.join(', ')}`
         );
-      } else if (skippedMissingTables.length > 0) {
-        toast.success(
-          `Downloaded ${tables.length} table(s) in ${zipFilename}. Skipped (not in database): ${skippedMissingTables.join(', ')}`
-        );
       } else {
         toast.success(
           `Successfully downloaded ${tables.length} table(s) in ZIP file: ${zipFilename}`
@@ -2282,6 +2144,7 @@ const Settings = () => {
       toast.error('Failed to download data. Please try again.');
     } finally {
       setIsDownloading(false);
+      setDownloadProgress('');
     }
   };
 
@@ -2339,10 +2202,10 @@ const Settings = () => {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
-                    Database storage
+                    Storage
                   </h1>
                   <p className="text-xs text-muted-foreground truncate sm:hidden">
-                    Table and column sizes
+                    Postgres and Cloudflare R2
                   </p>
                 </div>
               </div>
@@ -3810,7 +3673,11 @@ const Settings = () => {
                   size="sm"
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  {isDownloading ? 'Downloading...' : 'Download All Data'}
+                  {isDownloading
+                    ? downloadProgress
+                      ? `Exporting ${downloadProgress}`
+                      : 'Downloading...'
+                    : 'Download All Data'}
                 </Button>
               </div>
             </CardHeader>
@@ -3820,14 +3687,18 @@ const Settings = () => {
                   <strong>What will be downloaded:</strong>
                 </p>
                   <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-disc list-inside columns-1 sm:columns-2">
-                    {DATABASE_EXPORT_TABLES.map((t) => (
+                    {(exportTableCatalog.length > 0
+                      ? exportTableCatalog
+                      : [{ name: '_loading', label: 'Loading live table list…' }]
+                    ).map((t) => (
                       <li key={t.name}>{t.label}</li>
                     ))}
                   </ul>
                 <p className="text-xs text-blue-700 dark:text-blue-400 mt-3">
-                  Up to {DATABASE_EXPORT_TABLES.length} tables as CSV in one ZIP. Optional tables are
-                  skipped if not created in Supabase. App secret values are redacted. Technician
-                  passwords are stored in Supabase Auth (not exported).
+                  One click downloads every public table as CSV in a ZIP (currently{' '}
+                  {exportTableCatalog.length || '…'} tables). New tables are included automatically.
+                  Empty tables still get a file. App secret values are redacted. Technician passwords
+                  live in Supabase Auth (not exported).
                 </p>
               </div>
             </CardContent>
@@ -3836,8 +3707,8 @@ const Settings = () => {
 
           {!isManager ? (
           <SettingsActionCard
-            title="Database storage"
-            description="See which Postgres tables and columns use the most space (R2 media is separate)"
+            title="Storage"
+            description="Postgres table sizes plus Cloudflare R2 media space used"
             icon={<Database />}
             actions={
               <Button

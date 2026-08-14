@@ -913,6 +913,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                     <SelectItem value="Return Service">Return Service</SelectItem>
                     <SelectItem value="AMC Service">AMC Service</SelectItem>
                     <SelectItem value="New Purifier Installation">New Purifier Installation</SelectItem>
+                    <SelectItem value="New Softener Installation">New Softener Installation</SelectItem>
                     <SelectItem value="Un-Installation">Un-Installation</SelectItem>
                     <SelectItem value="Repair">Repair</SelectItem>
                     <SelectItem value="Maintenance">Maintenance</SelectItem>

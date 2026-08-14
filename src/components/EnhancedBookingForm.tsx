@@ -50,7 +50,7 @@ const bookingSchema = z.object({
   
   // Service Details
   serviceType: z.enum(['RO', 'SOFTENER']),
-  serviceSubType: z.enum(['Service', 'Installation', 'Reinstallation', 'Return Complaint', 'Return Service', 'AMC Service', 'New Purifier Installation', 'Un-Installation', 'Repair', 'Maintenance', 'Inspection']),
+  serviceSubType: z.enum(['Service', 'Installation', 'Reinstallation', 'Return Complaint', 'Return Service', 'AMC Service', 'New Purifier Installation', 'New Softener Installation', 'Un-Installation', 'Repair', 'Maintenance', 'Inspection']),
   brand: z.string().min(1, 'Please enter brand name'),
   model: z.string().min(1, 'Please enter model name'),
   
@@ -653,6 +653,7 @@ const EnhancedBookingForm = () => {
                       <SelectItem value="Return Service">Return Service</SelectItem>
                       <SelectItem value="AMC Service">AMC Service</SelectItem>
                       <SelectItem value="New Purifier Installation">New Purifier Installation</SelectItem>
+                      <SelectItem value="New Softener Installation">New Softener Installation</SelectItem>
                       <SelectItem value="Un-Installation">Un-Installation</SelectItem>
                       <SelectItem value="Repair">Repair</SelectItem>
                       <SelectItem value="Maintenance">Maintenance</SelectItem>

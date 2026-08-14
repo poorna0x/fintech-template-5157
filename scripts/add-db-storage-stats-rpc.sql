@@ -8,8 +8,10 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-DECLARE
+  DECLARE
   v_db_bytes bigint;
+  v_public_bytes bigint;
+  v_instance_bytes bigint;
   v_tables jsonb;
 BEGIN
   IF auth.role() <> 'service_role' AND NOT public.is_admin_user() THEN
@@ -17,6 +19,11 @@ BEGIN
   END IF;
 
   SELECT pg_database_size(current_database()) INTO v_db_bytes;
+  SELECT coalesce(sum(pg_database_size(d.datname)), 0) INTO v_instance_bytes FROM pg_database d;
+  SELECT coalesce(sum(pg_total_relation_size(c.oid)), 0) INTO v_public_bytes
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND c.relkind = 'r';
 
   SELECT coalesce(
     jsonb_agg(
@@ -48,6 +55,8 @@ BEGIN
 
   RETURN jsonb_build_object(
     'database_bytes', v_db_bytes,
+    'public_bytes', v_public_bytes,
+    'instance_bytes', v_instance_bytes,
     'schema', 'public',
     'tables', v_tables,
     'generated_at', now()

@@ -694,7 +694,20 @@ function isFreshStartGreeting(msg) {
  * Skip admin FCM / toast for booking-bot CTA taps and mid-flow replies.
  * First free-text (Hi / new chat, no button) still alerts.
  */
+function isCallMeBackTap(interactive) {
+  const title = String(interactive?.title || '').trim().toLowerCase();
+  const id = String(interactive?.id || '').trim().toLowerCase();
+  return (
+    title === 'call me back' ||
+    title === 'request callback' ||
+    id === 'call_me_back' ||
+    id === 'call me back'
+  );
+}
+
 function shouldSuppressAdminInboundAlert(msg, priorState) {
+  const interactive = extractInteractiveReply(msg);
+  if (isCallMeBackTap(interactive)) return false;
   if (isCtaInboundMsg(msg)) return true;
   const step = String(priorState?.step || '');
   const midFlow =
@@ -3675,10 +3688,22 @@ async function handleBookingBotInbound({
   inboundMedia = null,
   preloadedState,
 }) {
+  const to = normalizePhoneE164(msg.from);
+  const interactiveEarly = extractInteractiveReply(msg);
+  if (to && accessToken && phoneNumberId && isCallMeBackTap(interactiveEarly)) {
+    await sendText({
+      db,
+      accessToken,
+      phoneNumberId,
+      to,
+      text: 'Thanks — we will call you back shortly. 📞',
+    });
+    return { handled: true };
+  }
+
   const enabled = await isBookingBotEnabled(db);
   if (!enabled) return { handled: false };
 
-  const to = normalizePhoneE164(msg.from);
   if (!to) return { handled: false };
   if (isOwnBusinessPhone(to)) return { handled: false };
 

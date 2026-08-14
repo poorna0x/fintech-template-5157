@@ -74,7 +74,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
     if (job && open) {
       // Determine if service sub type is custom
       const serviceSubType = job.service_sub_type || job.serviceSubType || 'Service';
-      const isCustomSubType = !['Service', 'Installation', 'Reinstallation', 'Return Complaint', 'Return Service', 'AMC Service', 'New Purifier Installation', 'Un-Installation', 'Repair', 'Maintenance', 'Replacement', 'Inspection', 'Other'].includes(serviceSubType);
+      const isCustomSubType = !['Service', 'Installation', 'Reinstallation', 'Return Complaint', 'Return Service', 'AMC Service', 'New Purifier Installation', 'New Softener Installation', 'Un-Installation', 'Repair', 'Maintenance', 'Replacement', 'Inspection', 'Other'].includes(serviceSubType);
       
       // Determine if time slot is custom
       const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot || 'MORNING';
@@ -519,6 +519,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
 
             <ServiceSubTypeSelect
               id="edit-service-subtype"
+              serviceType={editJobFormData.serviceType}
               value={editJobFormData.serviceSubType}
               customValue={editJobFormData.serviceSubTypeCustom}
               onChange={(value) =>

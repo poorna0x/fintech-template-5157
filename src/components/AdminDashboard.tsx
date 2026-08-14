@@ -5788,6 +5788,7 @@ const AdminDashboard = () => {
       'Return Service',
       'AMC Service',
       'New Purifier Installation',
+      'New Softener Installation',
       'Un-Installation',
       'Repair',
       'Maintenance',

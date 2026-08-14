@@ -72,7 +72,6 @@ const pdfAuthenticityCheck = require('./pdf-authenticity-check');
 const documentAcceptSend = require('./document-accept-send');
 const whatsappTrayClearPush = require('./whatsapp-tray-clear-push');
 const whatsappInboxApplyToCustomer = require('./whatsapp-inbox-apply-to-customer');
-const dbStorageStats = require('./db-storage-stats');
 const salarySlipMonthEnd = require('./salary-slip-month-end');
 
 function loadFn(name) {
@@ -209,7 +208,8 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/resolve-maps-link')) {
     handler = loadFn('resolve-maps-link');
   } else if (req.url.startsWith('/.netlify/functions/db-storage-stats')) {
-    handler = dbStorageStats;
+    delete require.cache[require.resolve('./r2-helper')];
+    handler = loadFn('db-storage-stats');
   } else if (req.url.startsWith('/.netlify/functions/salary-slip-month-end')) {
     handler = salarySlipMonthEnd;
   } else {
@@ -254,12 +254,19 @@ const server = http.createServer((req, res) => {
           }
         }
 
-        console.log('📥 Received request:', {
-          method: req.method,
-          url: req.url,
-          bodyLength: body.length,
-          handler: handler ? 'found' : 'not found'
-        });
+    console.log('📥 Received request:', {
+      method: req.method,
+      url: req.url,
+      bodyLength: body.length,
+      source: (() => {
+        try {
+          return JSON.parse(body || '{}').source || null;
+        } catch {
+          return null;
+        }
+      })(),
+      handler: handler ? 'found' : 'not found'
+    });
 
         // Convert to Netlify function event format
         const clientIp =

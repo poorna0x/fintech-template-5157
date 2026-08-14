@@ -82,7 +82,7 @@ async function getAdminFcmTokens(db, category = null, skipIfViewingPhone = null)
     return [];
   }
   const now = Date.now();
-  const VIEWING_MAX_MS = 10 * 60 * 1000;
+  const VIEWING_MAX_MS = 2 * 60 * 1000;
   // Unique tokens — duplicate rows (reinstall / race) were causing 2 alerts on one phone.
   return [...new Set(
     (rows || [])

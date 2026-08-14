@@ -31,6 +31,7 @@ REVOKE ALL ON TABLE public.whatsapp_pay_qr_watch FROM PUBLIC;
 REVOKE ALL ON TABLE public.whatsapp_pay_qr_watch FROM anon;
 REVOKE ALL ON TABLE public.whatsapp_pay_qr_watch FROM authenticated;
 GRANT ALL ON TABLE public.whatsapp_pay_qr_watch TO service_role;
+GRANT SELECT ON TABLE public.whatsapp_pay_qr_watch TO authenticated;
 
 -- Explicit service_role policy in case FORCE ROW LEVEL SECURITY is ever enabled.
 DROP POLICY IF EXISTS whatsapp_pay_qr_watch_service_all ON public.whatsapp_pay_qr_watch;
