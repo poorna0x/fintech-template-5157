@@ -3206,19 +3206,30 @@ const Settings = () => {
                   Settings
                 </Button>
                 ) : null}
-                {!isManager ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
-                  onClick={() => openSettingsPanel('privacy-center')}
-                >
-                  Privacy Center
-                </Button>
-                ) : null}
               </div>
             }
           />
+
+          {/* Privacy / DSAR (both brands — shared backend) */}
+          {!isManager ? (
+          <SettingsActionCard
+            sectionId="privacy-center"
+            title="Privacy Center"
+            description="Customer data requests (access / delete), consent register, and security audit — HydrogenRO + ElevenRO"
+            icon={<ShieldCheck />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('privacy-center')}
+              >
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                Open Privacy Center
+              </Button>
+            }
+          />
+          ) : null}
 
           {/* Merge duplicate customers */}
           {!isManager ? (
