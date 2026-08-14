@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ClipboardList,
   Clock3,
+  Download,
   FileCheck2,
   Loader2,
   Mail,
@@ -19,6 +20,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { supabase } from '@/lib/supabaseClient';
+import { downloadPrivacyDataPackZip } from '@/lib/privacyDataExport';
 
 type PrivacyRequest = {
   id: string;
@@ -138,6 +140,7 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
   const [audits, setAudits] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
+  const [exportingId, setExportingId] = useState<string | null>(null);
 
   const authHeaders = useCallback(async () => {
     const token = await resolveSupabaseAccessTokenForApi();
@@ -229,6 +232,30 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
     })();
   }, []);
 
+  async function exportAccessPack(r: PrivacyRequest) {
+    setExportingId(r.id);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch('/.netlify/functions/privacy-data-export', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ requestId: r.id, phone: r.requester_phone }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Export failed');
+      await downloadPrivacyDataPackZip(data.pack, r.id);
+      toast.success(
+        data.pack?.customer_found
+          ? 'Downloaded ZIP — open the HTML and Print → Save as PDF, then send via WhatsApp/email'
+          : 'Downloaded ZIP (no CRM customer matched this phone — request + consents only)'
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setExportingId(null);
+    }
+  }
+
   async function updateRequest(id: string, status: string) {
     try {
       const headers = await authHeaders();
@@ -251,14 +278,17 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
   }
 
   const openCount = useMemo(
-    () => requests.filter((r) => r.status === 'open' || r.status === 'in_progress').length,
+    () =>
+      requests.filter((r) =>
+        ['received', 'open', 'in_progress', 'waiting_on_customer'].includes(r.status)
+      ).length,
     [requests]
   );
   const overdueCount = useMemo(
     () =>
       requests.filter(
         (r) =>
-          (r.status === 'open' || r.status === 'in_progress') &&
+          ['received', 'open', 'in_progress', 'waiting_on_customer'].includes(r.status) &&
           new Date(r.sla_due_at).getTime() < Date.now()
       ).length,
     [requests]
@@ -453,6 +483,22 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
                     className="bg-background"
                   />
                   <div className="flex flex-wrap gap-2">
+                    {(r.request_type === 'access' || r.request_type === 'correction') && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={exportingId === r.id}
+                        onClick={() => void exportAccessPack(r)}
+                      >
+                        {exportingId === r.id ? (
+                          <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="mr-1.5 h-4 w-4" />
+                        )}
+                        Export customer data
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="sm"

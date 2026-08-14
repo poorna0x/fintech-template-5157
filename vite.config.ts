@@ -90,8 +90,12 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
-      // DPDP privacy intake — not on production until this branch is deployed.
+      // DPDP privacy intake / export — local until this branch is deployed.
       '/.netlify/functions/privacy-request': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/privacy-data-export': {
         target: 'http://localhost:8888',
         changeOrigin: true,
       },

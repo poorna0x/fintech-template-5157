@@ -42,6 +42,7 @@ const cloudinarySignedUrl = require('./cloudinary-signed-url');
 const bookingIntent = require('./booking-intent');
 const bookingJobCreate = require('./booking-job-create');
 const privacyRequest = require('./privacy-request');
+const privacyDataExport = require('./privacy-data-export');
 const bookingCustomerMutate = require('./booking-customer-mutate');
 const bookingCustomerLookup = require('./booking-customer-lookup');
 const bookingNotify = require('./booking-notify');
@@ -132,6 +133,8 @@ const server = http.createServer((req, res) => {
     handler = bookingJobCreate;
   } else if (req.url.startsWith('/.netlify/functions/privacy-request')) {
     handler = privacyRequest;
+  } else if (req.url.startsWith('/.netlify/functions/privacy-data-export')) {
+    handler = privacyDataExport;
   } else if (req.url.startsWith('/.netlify/functions/booking-customer-mutate')) {
     handler = bookingCustomerMutate;
   } else if (req.url.startsWith('/.netlify/functions/booking-customer-lookup')) {
