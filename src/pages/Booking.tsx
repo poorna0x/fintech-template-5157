@@ -1815,6 +1815,11 @@ const Booking: React.FC = () => {
           {
             consumeToken: false,
             phoneToken: OTP_ENABLED ? phoneTokenRef.current || phoneToken : undefined,
+            acceptLegal: acceptLegal === true,
+            brand:
+              bookingSource === 'elevenro' || bookingSource === 'hydrogenro'
+                ? bookingSource
+                : WEBSITE_BOOKING_SITE_KEY,
           }
         );
         job = result.data;

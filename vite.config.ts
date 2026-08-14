@@ -85,6 +85,23 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      // Booking create must hit local functions so DPDP consent writes run before main deploy.
+      '/.netlify/functions/booking-job-create': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/booking-customer-mutate': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/booking-customer-lookup': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/booking-intent': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // ALTCHA challenge/verify must share the same HMAC as local privacy/booking handlers.
       '/.netlify/functions/altcha-verify': {
         target: 'http://localhost:8888',

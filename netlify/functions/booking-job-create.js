@@ -257,12 +257,14 @@ exports.handler = async (event) => {
     const { recordCustomerConsent, recordSecurityAudit, PRIVACY_NOTICE_VERSION } = require('./privacy-consent-helper');
     const customerId =
       (data && (data.customer_id || data.customerId)) || row.customer_id || null;
-    const brand =
-      row.booking_source ||
-      row.booking_domain ||
+    const brandRaw =
       body.brand ||
+      (row.booking_source === 'elevenro' || row.booking_source === 'hydrogenro'
+        ? row.booking_source
+        : null) ||
       process.env.VITE_WEBSITE_BOOKING_SITE_KEY ||
       'hydrogenro';
+    const brand = brandRaw;
     const headers = event.headers || {};
     const ip = getClientIdentifier(event);
     const ua = headers['user-agent'] || headers['User-Agent'] || '';
@@ -292,6 +294,7 @@ exports.handler = async (event) => {
         source: 'booking-job-create',
         ip,
         userAgent: ua,
+        evidence: { job_number: row.job_number || null },
       });
     }
     await recordSecurityAudit(client.admin, {

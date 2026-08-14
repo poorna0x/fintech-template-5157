@@ -28,7 +28,7 @@ export async function createBookingJob(
         consumeToken: options?.consumeToken !== false,
         // Firebase ID token from Phone Auth; verified server-side when OTP is enforced.
         phoneToken: options?.phoneToken,
-        acceptLegal: options?.acceptLegal !== false,
+        acceptLegal: options?.acceptLegal === true,
         noticeVersion: options?.noticeVersion || '2026-08-14',
         brand: options?.brand,
         policyUrl: '/privacy-policy',
