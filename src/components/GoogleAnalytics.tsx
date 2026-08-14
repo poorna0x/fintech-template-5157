@@ -5,14 +5,17 @@ import {
   shouldEnableGoogleAnalytics,
   trackGaPageView,
 } from '@/lib/googleAnalytics';
+import { hasAcceptedAnalyticsCookies, useAnalyticsConsentAllowed } from '@/lib/cookieConsent';
 
-/** GA4 on public website pages only — not admin, technician, or settings. */
+/** GA4 on public website pages only — not admin, technician, or settings. Requires cookie consent. */
 const GoogleAnalytics = () => {
   const location = useLocation();
-  const enabled = shouldEnableGoogleAnalytics(location.pathname);
+  const consentOk = useAnalyticsConsentAllowed();
+  const enabled = shouldEnableGoogleAnalytics(location.pathname) && consentOk;
 
   useEffect(() => {
     if (!enabled) return;
+    if (!hasAcceptedAnalyticsCookies()) return;
 
     void initGoogleAnalytics().then((ready) => {
       if (ready) {

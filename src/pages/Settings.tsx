@@ -62,6 +62,7 @@ import { isValidUpiId, normalizeUpiId, normalizePaymentPhone } from '@/lib/upiPa
 import CallingPage from '@/pages/CallingPage';
 import WhatsAppInboxPage from '@/pages/WhatsAppInboxPage';
 import WhatsAppSettingsPage from '@/pages/WhatsAppSettingsPage';
+import PrivacyCenterPage from '@/pages/PrivacyCenterPage';
 import LeadCatalogSettingsPage from '@/pages/LeadCatalogSettingsPage';
 import { WhatsAppLogo } from '@/components/whatsapp/WhatsAppLogo';
 import { tryNativeBackHandlers } from '@/lib/nativeBackButton';
@@ -494,6 +495,9 @@ const Settings = () => {
   const [showWhatsAppSettingsPage, setShowWhatsAppSettingsPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'whatsapp-settings'
   );
+  const [showPrivacyCenterPage, setShowPrivacyCenterPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'privacy-center'
+  );
   const [showPdfAuthenticityPage, setShowPdfAuthenticityPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'pdf-authenticity'
   );
@@ -606,6 +610,7 @@ const Settings = () => {
     setShowCallingPage(panel === 'calling');
     setShowWhatsAppInboxPage(panel === 'whatsapp-inbox');
     setShowWhatsAppSettingsPage(panel === 'whatsapp-settings' && !isManager);
+    setShowPrivacyCenterPage(panel === 'privacy-center' && !isManager);
     setShowPdfAuthenticityPage(panel === 'pdf-authenticity' && !isManager);
     setShowDbStoragePage(panel === 'db-storage' && !isManager);
     setShowRecurringServicePage(panel === 'recurring-service');
@@ -2398,6 +2403,16 @@ const Settings = () => {
     );
   }
 
+  if (showPrivacyCenterPage) {
+    return (
+      <div className="admin-page">
+        <div className="container mx-auto px-4 py-5 sm:py-8 pb-10">
+          <PrivacyCenterPage onBack={closeSettingsPanel} />
+        </div>
+      </div>
+    );
+  }
+
   if (showWhatsAppSettingsPage) {
     return (
       <div className="admin-page">
@@ -3189,6 +3204,16 @@ const Settings = () => {
                   onClick={() => openSettingsPanel('whatsapp-settings')}
                 >
                   Settings
+                </Button>
+                ) : null}
+                {!isManager ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                  onClick={() => openSettingsPanel('privacy-center')}
+                >
+                  Privacy Center
                 </Button>
                 ) : null}
               </div>

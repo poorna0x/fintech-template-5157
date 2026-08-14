@@ -1,6 +1,6 @@
 /**
- * Manager role UI access control (admin_users.role = MANAGER).
- * UI-only — pair with server/RLS if you need hard enforcement later.
+ * Manager role access control (admin_users.role = MANAGER).
+ * UI panels are blocked here; WhatsApp inbox RLS also requires is_full_admin_user().
  */
 
 export const MANAGER_RESTRICTED_TITLE = 'Restricted for Manager role';
@@ -26,6 +26,8 @@ export const MANAGER_BLOCKED_ADMIN_TOOLS = new Set<string>([
  */
 export const MANAGER_BLOCKED_SETTINGS_PANELS = new Set<string>([
   'whatsapp-settings',
+  'whatsapp-inbox',
+  'privacy-center',
   'pdf-authenticity',
   'db-storage',
   'direct-sale',

@@ -30,7 +30,8 @@ const PrivacyPolicy = () => {
                 How we collect, use, and protect your information
               </p>
               <p className="text-sm text-muted-foreground mt-2">
-                Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                Last updated: 14 August 2026
+                <span className="sr-only"> (policy version 2026-08-14)</span>
               </p>
             </div>
 
@@ -248,7 +249,12 @@ const PrivacyPolicy = () => {
                   </ul>
                   <p>
                     We may need to verify your identity before fulfilling requests. Some requests cannot be honored
-                    if we must retain data for legal, accounting, or dispute-resolution reasons.
+                    if we must retain data for legal, accounting, or dispute-resolution reasons. You can start a
+                    request at{' '}
+                    <Link to="/privacy-request" className="text-primary underline hover:no-underline">
+                      /privacy-request
+                    </Link>
+                    .
                   </p>
                 </CardContent>
               </Card>

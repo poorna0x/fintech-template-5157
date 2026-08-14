@@ -5,7 +5,13 @@ export async function createBookingJob(
   phone: string,
   row: Record<string, unknown>,
   ctx: BookingAltchaContext,
-  options?: { consumeToken?: boolean; phoneToken?: string }
+  options?: {
+    consumeToken?: boolean;
+    phoneToken?: string;
+    acceptLegal?: boolean;
+    noticeVersion?: string;
+    brand?: string;
+  }
 ) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30_000);
@@ -22,6 +28,10 @@ export async function createBookingJob(
         consumeToken: options?.consumeToken !== false,
         // Firebase ID token from Phone Auth; verified server-side when OTP is enforced.
         phoneToken: options?.phoneToken,
+        acceptLegal: options?.acceptLegal !== false,
+        noticeVersion: options?.noticeVersion || '2026-08-14',
+        brand: options?.brand,
+        policyUrl: '/privacy-policy',
       }),
       signal: controller.signal,
     });

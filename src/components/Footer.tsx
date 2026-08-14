@@ -143,6 +143,7 @@ const Footer = () => {
           <div className="flex justify-center md:hidden mb-8">
             <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm w-full max-w-sm">
               <Link to="/privacy-policy" className="text-muted-foreground hover:text-foreground transition-colors text-center">Privacy Policy</Link>
+              <Link to="/privacy-request" className="text-muted-foreground hover:text-foreground transition-colors text-center">Privacy request</Link>
               <Link to="/terms-of-service" className="text-muted-foreground hover:text-foreground transition-colors text-center">Terms of Service</Link>
               <Link to="/refund-policy" className="text-muted-foreground hover:text-foreground transition-colors text-center">Refund Policy</Link>
               <Link to="/cookie-policy" className="text-muted-foreground hover:text-foreground transition-colors text-center">Cookie Policy</Link>
@@ -157,6 +158,7 @@ const Footer = () => {
             </div>
             <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-2">
               <Link to="/privacy-policy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
+              <Link to="/privacy-request" className="hover:text-foreground transition-colors">Privacy request</Link>
               <Link to="/terms-of-service" className="hover:text-foreground transition-colors">Terms of Service</Link>
               <Link to="/refund-policy" className="hover:text-foreground transition-colors">Refund Policy</Link>
               <Link to="/cookie-policy" className="hover:text-foreground transition-colors">Cookie Policy</Link>

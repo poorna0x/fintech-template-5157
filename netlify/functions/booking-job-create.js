@@ -252,5 +252,61 @@ exports.handler = async (event) => {
   // delays the customer's confirmation. Fully fault-tolerant.
   await triggerOwnerNotification(event, client, row, phoneNorm, data);
 
+  // DPDP: persist booking consent evidence (soft-fail).
+  try {
+    const { recordCustomerConsent, recordSecurityAudit, PRIVACY_NOTICE_VERSION } = require('./privacy-consent-helper');
+    const customerId =
+      (data && (data.customer_id || data.customerId)) || row.customer_id || null;
+    const brand =
+      row.booking_source ||
+      row.booking_domain ||
+      body.brand ||
+      process.env.VITE_WEBSITE_BOOKING_SITE_KEY ||
+      'hydrogenro';
+    const headers = event.headers || {};
+    const ip = getClientIdentifier(event);
+    const ua = headers['user-agent'] || headers['User-Agent'] || '';
+    if (body.acceptLegal === true || body.accept_legal === true) {
+      await recordCustomerConsent(client.admin, {
+        customerId,
+        phone: phoneNorm,
+        brand,
+        purpose: 'service_booking',
+        channel: 'website',
+        noticeVersion: body.noticeVersion || PRIVACY_NOTICE_VERSION,
+        policyUrl: body.policyUrl || null,
+        acceptLegal: true,
+        source: 'booking-job-create',
+        ip,
+        userAgent: ua,
+        evidence: { job_number: row.job_number || null },
+      });
+      await recordCustomerConsent(client.admin, {
+        customerId,
+        phone: phoneNorm,
+        brand,
+        purpose: 'service_comms',
+        channel: 'website',
+        noticeVersion: body.noticeVersion || PRIVACY_NOTICE_VERSION,
+        acceptLegal: true,
+        source: 'booking-job-create',
+        ip,
+        userAgent: ua,
+      });
+    }
+    await recordSecurityAudit(client.admin, {
+      eventType: 'booking',
+      action: 'job_create',
+      result: 'ok',
+      targetType: 'job',
+      targetId: String((data && (data.id || data.job_number)) || row.job_number || ''),
+      ip,
+      userAgent: ua,
+      meta: { phone_tail: phoneNorm.slice(-4), brand: String(brand).slice(0, 40) },
+    });
+  } catch (err) {
+    console.warn('[booking-job-create] consent/audit soft-fail', err?.message || err);
+  }
+
   return jsonResponse(200, corsHeaders, { data });
 };

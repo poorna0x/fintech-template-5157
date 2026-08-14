@@ -30,7 +30,7 @@ const RefundPolicy = () => {
                 Our refund terms and conditions
               </p>
               <p className="text-sm text-muted-foreground mt-2">
-                Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                Last updated: 14 August 2026
               </p>
             </div>
 

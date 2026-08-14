@@ -14,6 +14,7 @@ import NotFound from "./pages/NotFound";
 import PerformanceMonitor from "./components/PerformanceMonitor";
 import PublicSiteSeo from "./components/PublicSiteSeo";
 import GoogleAnalytics from "./components/GoogleAnalytics";
+import CookieConsentBanner from "./components/CookieConsentBanner";
 import { SEO_CITY_SERVICE_PAGES, SEO_LOCATION_PAGES, SEO_SERVICE_PAGES } from "@/lib/publicSeoPages";
 import { disablePWA } from "@/lib/pwa";
 import { isTechnicianPortalPath } from "@/lib/authPortal";
@@ -41,6 +42,7 @@ const TechnicianDashboard = lazy(() => import("./pages/TechnicianDashboard"));
 const EmailPreviewRedirect = lazy(() => import("./pages/EmailPreviewPage"));
 const WhatsAppPreviewRedirect = lazy(() => import("./pages/WhatsAppPreviewPage"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const PrivacyDataRequestPage = lazy(() => import("./pages/PrivacyDataRequestPage"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
 const CookiePolicy = lazy(() => import("./pages/CookiePolicy"));
@@ -179,6 +181,7 @@ const App = () => (
               <AuthPortalCoordinator />
               <PublicSiteSeo />
               <GoogleAnalytics />
+              <CookieConsentBanner />
               <PWARouteHandler />
               <Suspense fallback={<LoadingSpinner />}>
                 <Routes>
@@ -196,6 +199,7 @@ const App = () => (
                   <Route path="/technician/login" element={<TechnicianLogin />} />
                   <Route path="/technician" element={<TechnicianDashboard />} />
                   <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                  <Route path="/privacy-request" element={<PrivacyDataRequestPage />} />
                   <Route path="/terms-of-service" element={<TermsOfService />} />
                   <Route path="/refund-policy" element={<RefundPolicy />} />
                   <Route path="/cookie-policy" element={<CookiePolicy />} />

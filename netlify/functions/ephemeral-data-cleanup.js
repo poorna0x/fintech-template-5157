@@ -33,7 +33,19 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ ok: false, error: error.message }) };
   }
 
-  const report = data || {};
+  let compliance = null;
+  try {
+    const { data: cData, error: cErr } = await db.rpc('purge_compliance_retention');
+    if (cErr) {
+      console.warn('[ephemeral-data-cleanup] compliance purge', cErr.message);
+    } else {
+      compliance = cData;
+    }
+  } catch (err) {
+    console.warn('[ephemeral-data-cleanup] compliance purge', err?.message || err);
+  }
+
+  const report = { ...(data || {}), compliance };
   const verified = report.verified === true;
 
   if (!verified) {

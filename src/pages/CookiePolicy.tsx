@@ -28,7 +28,7 @@ const CookiePolicy: React.FC = () => {
                 How we use cookies and similar technologies
               </p>
               <p className="text-sm text-muted-foreground mt-2">
-                Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                Last updated: 14 August 2026
               </p>
             </div>
 
@@ -100,6 +100,7 @@ const CookiePolicy: React.FC = () => {
                     We may use third-party services that set their own cookies:
                   </p>
                   <ul className="list-disc list-inside space-y-2 text-muted-foreground">
+                    <li><strong>Google Analytics:</strong> Optional traffic analytics (only after you accept analytics cookies)</li>
                     <li><strong>Maps Services:</strong> Location services for service area mapping</li>
                     <li><strong>Payment Processors:</strong> Secure payment processing</li>
                     <li><strong>Social Media:</strong> Social sharing and integration features</li>

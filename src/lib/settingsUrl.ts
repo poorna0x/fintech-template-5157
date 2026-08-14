@@ -3,6 +3,7 @@ export const SETTINGS_PANELS = [
   'calling',
   'whatsapp-inbox',
   'whatsapp-settings',
+  'privacy-center',
   'reminders',
   'recurring-service',
   'pending-payments',
