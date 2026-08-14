@@ -1619,9 +1619,6 @@ async function continueAfterLinkedConfirm(ctx, state = {}) {
     hasAmc: Boolean(amc?.id),
   };
 
-  if (await recentlySentCrmDocOrPay(ctx.db, ctx.to) || (await recentlySentBookingBotMenu(ctx.db, ctx.to))) {
-    return;
-  }
   if (amc?.id) {
     await sendAmcCheckin(ctx, base);
     return;
@@ -3717,12 +3714,17 @@ async function handleBookingBotInbound({
     return { handled: false };
   }
 
-  // Plain Hi / Hello / Menu → always restart identity gate (works inside open 24h window)
+  // Plain Hi / Hello / Menu — restart identity unless we just sent a bot menu
+  // (Meta retries + double Hi). Never clear state and then skip: that leaves
+  // existing customers with no buttons.
   if (
     msgType === 'text' &&
     text &&
     /^(hi+|hii+|hello|hey|hola|namaste|menu|start|help)\s*$/i.test(text.trim())
   ) {
+    if (await recentlySentBookingBotMenu(db, to)) {
+      return { handled: true };
+    }
     await clearBookingState(db, to);
     await startInboundIdentityFlow(ctx);
     return { handled: true };
