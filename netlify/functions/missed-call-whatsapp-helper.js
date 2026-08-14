@@ -53,7 +53,19 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
       .select('id')
       .eq('phone_e164', phone)
       .eq('direction', 'outbound')
-      .in('template_name', ['svc_missed_call', 'missed_call_callback_ero_cta', 'missed_call_callback_hro_cta'])
+      .in('template_name', [
+        'svc_missed_call',
+        'svc_missed_call_v2',
+        'missed_call_callback_ero_cta',
+        'missed_call_callback_hro_cta',
+        'missed_call_callback_ero_cta_v2',
+        'missed_call_callback_hro_cta_v2',
+        'missed_call_callback_ero_cta_v3',
+        'missed_call_callback_hro_cta_v3',
+        'missed_call_callback_ero_cta_v4',
+        'missed_call_callback_hro_cta_v4',
+        'svc_missed_call_v3',
+      ])
       .gte('created_at', sinceIso)
       .limit(1)
       .maybeSingle();
@@ -101,7 +113,7 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
     }
 
     const name = customerName || 'there';
-    const templateName = 'svc_missed_call';
+    const templateName = `missed_call_callback_${brandSuffix(brand)}_cta_v4`;
     const primaryParams = [name];
 
     const { accessToken, phoneNumberId } = await getWhatsAppCredentials(db);

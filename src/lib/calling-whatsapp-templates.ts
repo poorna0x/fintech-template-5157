@@ -9,6 +9,7 @@ import {
   waLabeledLink,
   waLabeledValue,
 } from '@/lib/whatsappMessageFormat';
+import { resolveColdMissedCall } from '@/lib/whatsappUtilityTemplates';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export type CallingWhatsAppTemplate =
@@ -197,16 +198,14 @@ export function buildCallingWhatsAppMessage(
 
     case 'missed_call':
       return [
-        `Hi ${name},`,
+        `Hi ${name}, 👋`,
         '',
-        `This is ${brandName}. We tried to reach you and could not connect.`,
+        'Sorry we missed your call — our team was busy.',
         '',
-        'Please reply on this chat so we can assist with your RO service,',
-        'or call / book online below.',
+        'Please reply here to request a callback and we will call you back shortly.',
         '',
-        waLabeledValue('📞', 'Phone', info.phone),
-        waLabeledLink('📅', 'Book online', bookingUrl),
-        `💬 Reply here`,
+        waLabeledValue('📞', 'Call us', info.phone),
+        `💬 Reply on this chat`,
         '',
         brandFooter(documentBrand),
       ].join('\n');
@@ -312,10 +311,11 @@ export function callingColdTemplateFor(
     };
   }
   if (template === 'missed_call') {
+    const cold = resolveColdMissedCall(name, documentBrand);
     return {
-      name: WA_COLD.missed_call.name,
-      languageCode: WA_COLD.missed_call.language,
-      bodyParams: WA_COLD.missed_call.bodyParams(name),
+      name: cold.name,
+      languageCode: cold.languageCode,
+      bodyParams: cold.bodyParams,
     };
   }
   if (template === 'contact' || template === 'website') {

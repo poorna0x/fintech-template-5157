@@ -58,7 +58,7 @@ export function bookingCtaTemplateName(kind: BookingCtaKind, brand: DocumentBran
     return `existing_service_schedule_${suffix}_cta_v3`;
   }
   if (kind === 'missed_call_book') {
-    return `missed_call_callback_${suffix}_cta_v2`;
+    return `missed_call_callback_${suffix}_cta_v4`;
   }
   if (kind === 'book_new_customer') {
     return `unregistered_number_service_${suffix}_cta_v2`;
@@ -106,9 +106,8 @@ export function bookingCtaBody(
         bodyParams: (customerName: string) => [cleanName(customerName) || 'there'],
       };
     case 'missed_call_book':
-      // UTILITY framing — callback on missed contact, not a promo book blast.
       return {
-        text: `Hi {{1}}, this is ${label}. We tried to reach you and could not connect. Please reply on this chat so we can assist with your RO service, or use Call / Book below.`,
+        text: `Hi {{1}}, this is ${label}. We received your incoming call and could not answer. We will return your call to continue your water purifier service. Reply on this chat if you need to add any details before we call.`,
         sampleParams: ['Rahul'],
         bodyParams: (customerName: string) => [cleanName(customerName)],
       };

@@ -53,7 +53,7 @@ export async function sendMissedCallCallbackWhatsApp(opts: {
 
   const name = String(opts.customerName || '').trim() || 'there';
   const text = buildMissedCallWhatsAppMessage(name, brand);
-  const cold = resolveColdMissedCall(name);
+  const cold = resolveColdMissedCall(name, brand);
 
   const result = await sendUtilityWhatsAppWithColdFallback({
     to: phone,

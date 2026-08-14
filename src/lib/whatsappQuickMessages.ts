@@ -484,7 +484,8 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     instant: true,
     text: (ctx) => {
       const info = brandInfo(ctx);
-      return `Hi ${cleanName(ctx)}, sorry we missed your call. Please reply on this chat or call us on ${info.phone.split('&')[0].trim()}.`;
+      const label = getDocumentBrandLabel(ctx.brand || 'hydrogenro');
+      return `Hi ${cleanName(ctx)}, this is ${label}. We received your incoming call and could not answer. We will return your call to continue your water purifier service. Reply here if you need to add any details. Or call us on ${info.phone.split('&')[0].trim()}.`;
     },
   },
   {
@@ -833,7 +834,7 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     group: 'common',
     templateName: 'svc_missed_call',
     language: 'en',
-    bodyParams: (ctx) => resolveColdMissedCall(cleanName(ctx)).bodyParams,
+    bodyParams: (ctx) => resolveColdMissedCall(cleanName(ctx), ctx.brand).bodyParams,
   },
 ];
 
@@ -906,7 +907,7 @@ export function buildQuickBookVisitTemplate(
 export function buildQuickMissedCallTemplate(
   ctx: WhatsAppQuickReplyContext
 ): WhatsAppQuickTemplateSend {
-  const cold = resolveColdMissedCall(cleanName(ctx));
+  const cold = resolveColdMissedCall(cleanName(ctx), ctx.brand);
   return {
     templateName: cold.name,
     language: cold.languageCode,

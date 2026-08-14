@@ -219,9 +219,9 @@ export const WA_COLD = {
       String(jobRef || '').trim() || 'your service',
     ],
   },
-  /** Missed customer call — phone-only UTILITY (no CTA buttons). */
+  /** Customer missed-called us — callback (svc_missed_call_v3 / missed_call_callback_*_cta_v4). */
   missed_call: {
-    name: 'svc_missed_call',
+    name: 'svc_missed_call_v3',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
@@ -327,9 +327,9 @@ export const WA_COLD = {
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName) || 'there'],
   },
-  /** Prefer WA_COLD.missed_call (svc_missed_call). CTA variant when *_callback_*_cta is APPROVED. */
+  /** Prefer brand CTA v4 (Call us only, locked UTILITY). Falls back to svc_missed_call_v3. */
   missed_call_book: {
-    name: 'svc_missed_call',
+    name: 'missed_call_callback_hro_cta_v4',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
@@ -624,8 +624,8 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   crm_update_details: 'CRM update → visit reminder',
   book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta_v3 → v2 → v1)',
   book_new_customer: 'Unregistered number (unregistered_number_service_*_cta)',
-  missed_call: 'Missed call (svc_missed_call)',
-  missed_call_book: 'Missed call (svc_missed_call / missed_call_callback_*_cta)',
+  missed_call: 'Missed call (svc_missed_call_v3)',
+  missed_call_book: 'Missed call (missed_call_callback_*_cta_v4)',
   reschedule_visit: 'Reschedule (reschedule_visit_*_cta)',
   visit_cancelled: 'Visit cancelled (svc_booking_cancelled_letter_*_v5 no BOOK → v3 → svc_visit_cancelled_*)',
   parts_ready: 'Parts ready (svc_parts_ready)',

@@ -65,11 +65,15 @@ export function resolveColdRescheduleVisit(
   };
 }
 
-export function resolveColdMissedCall(customerName: string): ColdTemplatePayload {
+export function resolveColdMissedCall(
+  customerName: string,
+  brand: DocumentBrand = 'hydrogenro'
+): ColdTemplatePayload {
+  const cta = resolveBookingCta('missed_call_book', brand, customerName);
   return {
-    name: resolveWaTemplateName(WA_COLD.missed_call.name),
-    languageCode: WA_COLD.missed_call.language,
-    bodyParams: WA_COLD.missed_call.bodyParams(customerName),
+    name: resolveWaTemplateName(cta.name),
+    languageCode: cta.language,
+    bodyParams: cta.bodyParams,
   };
 }
 
@@ -142,10 +146,9 @@ export function buildMissedCallWhatsAppMessage(customerName: string, brand: Docu
   const label = getDocumentBrandLabel(brand);
   return [
     `Hi ${cleanName(customerName)},`,
-    '',
-    `This is ${label}. We tried to reach you and could not connect.`,
-    '',
-    'Please reply on this chat so we can assist with your water purifier service.',
+    `This is ${label}. We received your incoming call and could not answer.`,
+    'We will return your call to continue your water purifier service.',
+    'Reply on this chat if you need to add any details before we call.',
   ].join('\n');
 }
 

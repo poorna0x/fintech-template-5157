@@ -302,6 +302,21 @@ const CORE_TEMPLATES = [
     body: 'Hi {{1}}, we tried to reach you and could not connect. Please reply on this chat so we can assist with your water purifier service.',
     examples: ['Rahul'],
     noButtons: true,
+    skipSubmit: true,
+  },
+  {
+    name: 'svc_missed_call_v2',
+    body: 'Hi {{1}}, sorry we missed your call — our team was busy. Please reply on this chat to request a callback and we will call you back shortly.',
+    examples: ['Rahul'],
+    noButtons: true,
+    skipSubmit: true,
+  },
+  {
+    name: 'svc_missed_call_v3',
+    body: 'Hi {{1}}, we received your incoming call and could not answer. We will return your call to continue your water purifier service. Reply on this chat if you need to add any details.',
+    examples: ['Rahul'],
+    noButtons: true,
+    lockCategory: true,
   },
   {
     name: 'svc_amc_expiry_notice',
@@ -910,6 +925,29 @@ const LETTER_BRANDS = {
     reviewUrl: 'https://www.google.com/maps/search/?api=1&query=Hydrogen+RO+Seshadripuram+Bengaluru',
   },
 };
+
+/** Customer called us — UTILITY callback (no emoji / Book / Call me back — those went MARKETING). */
+function buildMissedCallCallbackV4Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    out.push({
+      callPhone,
+      lockCategory: true,
+      name: `missed_call_callback_${suffix}_cta_v4`,
+      body: [
+        `Hi {{1}}, this is ${b.label}.`,
+        `We received your incoming call and could not answer.`,
+        `We will return your call to continue your water purifier service.`,
+        `Reply on this chat if you need to add any details before we call.`,
+      ].join('\n'),
+      examples: ['Rahul'],
+    });
+  }
+  return out;
+}
+
+const MISSED_CALL_CALLBACK_V4_TEMPLATES = buildMissedCallCallbackV4Templates();
 
 function letterFooterBlock(brand, callPhone) {
   const chatUrl = `https://wa.me/${String(callPhone || brand.phone).replace(/\D/g, '')}`;
@@ -1845,7 +1883,7 @@ function corePayload(t) {
     name: t.aliasOf || t.name,
     language: 'en',
     category: 'UTILITY',
-    allow_category_change: true,
+    allow_category_change: t.lockCategory === true ? false : true,
     components,
   };
 }
@@ -1994,6 +2032,28 @@ function bodyOnlyPayload(t) {
         type: 'BODY',
         text: t.body,
         example: { body_text: [t.examples] },
+      },
+    ],
+  };
+}
+
+/** Missed-call v4: Call us only. lock UTILITY (Meta moved v3 to MARKETING). */
+function missedCallCallbackV4Payload(t) {
+  const callPhone = t.callPhone || callPhoneForTemplate(t.name);
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: false,
+    components: [
+      {
+        type: 'BODY',
+        text: t.body,
+        example: { body_text: [t.examples] },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }],
       },
     ],
   };
@@ -2251,6 +2311,9 @@ function collectAllTemplatePreviewEntries() {
     push('Core UTILITY', t, corePayload);
   }
   for (const t of BOOKING_TEMPLATES) push('Booking CTA', t, bookingPayload);
+  for (const t of MISSED_CALL_CALLBACK_V4_TEMPLATES) {
+    push('Missed call v4', t, missedCallCallbackV4Payload);
+  }
   for (const t of SERVICE_DUE_CTA_TEMPLATES) push('Service due CTA', t, bookingPayload);
   for (const t of BOOKING_STATUS_V2_TEMPLATES) push('Booking confirm / cancel v2', t, bookingPayload);
   for (const t of JOB_DONE_V2_TEMPLATES) push('Job done v2', t, jobDonePayload);
@@ -2523,6 +2586,14 @@ async function main() {
       continue;
     }
     queue.push({ label: t.name, payload: bookingPayload(t) });
+  }
+  for (const t of MISSED_CALL_CALLBACK_V4_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: missedCallCallbackV4Payload(t) });
   }
   for (const t of SERVICE_DUE_CTA_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
@@ -2877,6 +2948,19 @@ async function main() {
       label: t.name,
       payload: await docAcceptPreviewPayload(t, doSubmit ? token : ''),
     });
+  }
+
+  const onlyMissedCallV4 =
+    process.argv.includes('--only-missed-call-v4') ||
+    process.argv.includes('--only-missed-call-v3');
+  if (onlyMissedCallV4) {
+    const keep = new Set([
+      ...MISSED_CALL_CALLBACK_V4_TEMPLATES.map((t) => t.name),
+      'svc_missed_call_v3',
+    ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
   }
 
   const onlyDocAccept = process.argv.includes('--only-doc-accept');
