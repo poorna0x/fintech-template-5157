@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
   ClipboardList,
   Clock3,
-  ExternalLink,
   FileCheck2,
   Loader2,
   Mail,
@@ -274,42 +272,31 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          {onBack ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="mt-0.5 shrink-0"
-              onClick={onBack}
-              aria-label="Back to settings"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          ) : null}
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Privacy Center</h1>
+      <div className="flex items-start gap-3">
+        {onBack ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="mt-0.5 shrink-0"
+            onClick={onBack}
+            aria-label="Back to settings"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        ) : null}
+        <div>
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <ShieldCheck className="h-5 w-5" />
             </div>
-            <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
-              Customer data requests for HydrogenRO &amp; ElevenRO, consent evidence, and security
-              audit events.
-            </p>
+            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Privacy Center</h1>
           </div>
+          <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
+            Customer data requests for HydrogenRO &amp; ElevenRO, consent evidence, and security
+            audit events.
+          </p>
         </div>
-        <Link
-          to="/privacy-request"
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground sm:self-start"
-        >
-          Public form
-          <ExternalLink className="h-3.5 w-3.5" />
-        </Link>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
