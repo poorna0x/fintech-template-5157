@@ -10,6 +10,8 @@ import {
   clearWhatsAppUnreadCountForPhone,
   dismissWhatsAppTrayForPhone,
   displayPhone,
+  fetchWhatsAppInboxUnreadSummary,
+  applyWhatsAppUnreadSummary,
   isBotFlowAdminAlertSkip,
   isWhatsAppThreadUnread,
   loadWhatsAppReadMap,
@@ -221,8 +223,29 @@ export function startWhatsAppAdminAlerts(): () => void {
     )
     .subscribe();
 
+  let hydrateTimer: number | null = null;
+  const hydrateFromServer = () => {
+    void fetchWhatsAppInboxUnreadSummary().then((summary) => {
+      if (!summary) return;
+      dispatchWhatsAppUnreadChanged(applyWhatsAppUnreadSummary(summary));
+    });
+  };
+  hydrateFromServer();
+
+  const onVisibility = () => {
+    if (document.visibilityState !== 'visible') return;
+    if (hydrateTimer != null) window.clearTimeout(hydrateTimer);
+    hydrateTimer = window.setTimeout(() => {
+      hydrateTimer = null;
+      hydrateFromServer();
+    }, 400);
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+
   return () => {
     stopPresence();
+    document.removeEventListener('visibilitychange', onVisibility);
+    if (hydrateTimer != null) window.clearTimeout(hydrateTimer);
     void supabase.removeChannel(channel);
     navigateToInbox = null;
   };

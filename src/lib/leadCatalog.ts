@@ -120,13 +120,17 @@ function normalizeCatalog(raw: unknown): LeadCatalog {
   return { sources, subTypes, rules };
 }
 
-function readSessionCache(): { catalog: LeadCatalog; at: number } | null {
+function isCatalogFresh(at: number): boolean {
+  return Date.now() - at < CACHE_TTL_MS;
+}
+
+function readSessionCache(opts?: { allowStale?: boolean }): { catalog: LeadCatalog; at: number } | null {
   try {
     const raw = sessionStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { catalog?: LeadCatalog; at?: number };
     if (!parsed?.catalog || !parsed.at) return null;
-    if (Date.now() - parsed.at >= CACHE_TTL_MS) return null;
+    if (!opts?.allowStale && !isCatalogFresh(parsed.at)) return null;
     return { catalog: parsed.catalog, at: parsed.at };
   } catch {
     return null;
@@ -151,11 +155,10 @@ export function invalidateLeadCatalogCache(): void {
   }
 }
 
+/** Last snapshot even if TTL expired (stale-while-revalidate). */
 export function peekLeadCatalog(): LeadCatalog | null {
-  if (catalogMem && Date.now() - catalogMem.at < CACHE_TTL_MS) {
-    return catalogMem.catalog;
-  }
-  const stored = readSessionCache();
+  if (catalogMem) return catalogMem.catalog;
+  const stored = readSessionCache({ allowStale: true });
   if (stored) {
     catalogMem = stored;
     return stored.catalog;
@@ -167,17 +170,16 @@ export function isLeadCatalogCached(): boolean {
   return peekLeadCatalog() !== null;
 }
 
-export async function ensureLeadCatalogLoaded(opts?: {
+export function isLeadCatalogFresh(): boolean {
+  if (catalogMem && isCatalogFresh(catalogMem.at)) return true;
+  return readSessionCache() !== null;
+}
+
+async function fetchLeadCatalog(opts?: {
   force?: boolean;
   includeInactive?: boolean;
 }): Promise<LeadCatalog> {
-  if (!opts?.force) {
-    const cached = peekLeadCatalog();
-    if (cached && !opts?.includeInactive) return cached;
-  }
-
-  if (!opts?.force && loadPromise) return loadPromise;
-
+  if (!opts?.force && !opts?.includeInactive && loadPromise) return loadPromise;
   loadPromise = (async () => {
     const { data, error } = await supabase.rpc('get_lead_catalog', {
       p_include_inactive: Boolean(opts?.includeInactive),
@@ -226,6 +228,28 @@ export async function ensureLeadCatalogLoaded(opts?: {
   } finally {
     loadPromise = null;
   }
+}
+
+export async function ensureLeadCatalogLoaded(opts?: {
+  force?: boolean;
+  includeInactive?: boolean;
+}): Promise<LeadCatalog> {
+  if (opts?.force || opts?.includeInactive) {
+    return fetchLeadCatalog(opts);
+  }
+
+  const cached = peekLeadCatalog();
+  if (cached && isLeadCatalogFresh()) return cached;
+  if (cached) {
+    if (!loadPromise) {
+      void fetchLeadCatalog(opts).catch(() => {
+        /* keep stale snapshot */
+      });
+    }
+    return cached;
+  }
+  if (loadPromise) return loadPromise;
+  return fetchLeadCatalog(opts);
 }
 
 function legacyDefaultCostOnly(leadSource: string): number {
@@ -487,9 +511,9 @@ export function resolveLeadSourceForForm(
   return { label: raw, custom };
 }
 
-/** Preload on admin dashboard — one RPC per session. */
+/** Preload on admin/tech shells — uses cache immediately, refreshes if stale. */
 export function preloadLeadCatalog(): void {
-  if (isLeadCatalogCached()) return;
+  if (isLeadCatalogFresh()) return;
   void ensureLeadCatalogLoaded().catch(() => {
     /* soft-fail; legacy fallback */
   });

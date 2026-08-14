@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, Navigate } from 'react-router-dom';
+import { preloadLeadCatalog } from '@/lib/leadCatalog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -458,6 +459,10 @@ const TechnicianDashboard = () => {
     } catch {
       /* ignore */
     }
+  }, []);
+
+  useEffect(() => {
+    preloadLeadCatalog();
   }, []);
 
   const [jobs, setJobs] = useState<Job[]>([]);

@@ -22,6 +22,7 @@ import {
 } from '@/lib/leadCatalog';
 import { LeadSourceSelect } from '@/components/admin/LeadSourceSelect';
 import { ServiceSubTypeSelect } from '@/components/admin/ServiceSubTypeSelect';
+import { isJobCreateFormComplete } from '@/lib/jobCreateRequired';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
@@ -2090,8 +2091,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
                     <ServiceSubTypeSelect
                       id="step5_service_sub_type"
-                      value={step5JobData.service_sub_type || 'Service'}
+                      value={step5JobData.service_sub_type}
                       customValue={step5JobData.service_sub_type_custom}
+                      required
                       onChange={(value) =>
                         setStep5JobData((prev) => {
                           const next = {
@@ -2319,7 +2321,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             ) : (
               <Button 
                 onClick={handleCreateCustomer}
-                disabled={isCreating || (shouldCreateJob && (!step5JobData.scheduled_date || !step5JobData.service_sub_type || (isServiceSubTypeAllowCustomText(step5JobData.service_sub_type) && !step5JobData.service_sub_type_custom) || !step5JobData.lead_source || !step5JobData.lead_cost || (isLeadSourceAllowCustomText(step5JobData.lead_source) && !step5JobData.lead_source_custom) || (step5JobData.scheduled_time_slot === 'CUSTOM' && !step5JobData.scheduled_time_custom)))}
+                disabled={
+                  isCreating ||
+                  (shouldCreateJob && !isJobCreateFormComplete(step5JobData))
+                }
                 className="bg-green-600 hover:bg-green-700 w-full sm:w-auto text-sm"
               >
                 {isCreating ? (

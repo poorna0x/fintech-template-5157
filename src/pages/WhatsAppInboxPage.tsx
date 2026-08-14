@@ -76,6 +76,8 @@ import {
   countInboundUnreadInMessages,
   displayPhone,
   fetchWhatsAppInboxThreads,
+  fetchWhatsAppInboxUnreadSummary,
+  applyWhatsAppUnreadSummary,
   fetchWhatsAppUnreadMessageCounts,
   inboxListRangeKey,
   inboxListRangeLabel,
@@ -102,6 +104,7 @@ import {
   applyWhatsAppTeamRead,
   persistWhatsAppThreadRead,
   fetchWhatsAppInboxReadMap,
+  resolveWhatsAppHeaderUnreadCount,
   patchThreadFromMessage,
   peekWhatsAppInboxThreadsCache,
   peekWhatsAppThreadMessagesCache,
@@ -623,19 +626,26 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           ? mergeWhatsAppReadMap(remoteRead)
           : loadWhatsAppReadMap();
         setReadMap(map);
-        void fetchWhatsAppUnreadMessageCounts(supabase, result.threads, map).then((counts) => {
-          if (!counts || !Object.keys(counts).length) return;
-          setUnreadCounts((prev) => {
-            const next = { ...prev, ...counts };
-            for (const t of result.threads) {
-              if (!isWhatsAppThreadUnread(t, map)) {
-                delete next[t.phone_e164];
+        const summary = await fetchWhatsAppInboxUnreadSummary(supabase);
+        if (summary) {
+          applyWhatsAppUnreadSummary(summary);
+          setUnreadCounts(summary.perPhone);
+          dispatchWhatsAppUnreadChanged(summary.total);
+        } else {
+          void fetchWhatsAppUnreadMessageCounts(supabase, result.threads, map).then((counts) => {
+            if (!counts || !Object.keys(counts).length) return;
+            setUnreadCounts((prev) => {
+              const next = { ...prev, ...counts };
+              for (const t of result.threads) {
+                if (!isWhatsAppThreadUnread(t, map)) {
+                  delete next[t.phone_e164];
+                }
               }
-            }
-            saveWhatsAppUnreadCounts(next);
-            return next;
+              saveWhatsAppUnreadCounts(next);
+              return next;
+            });
           });
-        });
+        }
       }
     } finally {
       if (!opts?.soft) setLoading(false);
@@ -1438,8 +1448,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   );
 
   useEffect(() => {
-    dispatchWhatsAppUnreadChanged(unreadCount);
-  }, [unreadCount]);
+    dispatchWhatsAppUnreadChanged(resolveWhatsAppHeaderUnreadCount(null, readMap));
+  }, [unreadCounts, readMap]);
 
   useEffect(() => {
     const onReadSync = () => setReadMap(loadWhatsAppReadMap());

@@ -4,6 +4,7 @@ import {
   getActiveLeadSourceOptions,
   getActiveSubTypeOptions,
   getDefaultLeadCost,
+  isLeadCatalogFresh,
   isLeadSourceRequiresOtp,
   peekLeadCatalog,
   type LeadCatalog,
@@ -13,10 +14,11 @@ import {
 
 export function useLeadCatalog(opts?: { includeInactive?: boolean }) {
   const [catalog, setCatalog] = useState<LeadCatalog | null>(() => peekLeadCatalog());
-  const [loading, setLoading] = useState(!peekLeadCatalog());
+  const [loading, setLoading] = useState(() => !peekLeadCatalog());
 
   const reload = useCallback(async (force = false) => {
-    setLoading(true);
+    const existing = peekLeadCatalog();
+    if (!existing) setLoading(true);
     try {
       const next = await ensureLeadCatalogLoaded({
         force,
@@ -31,9 +33,11 @@ export function useLeadCatalog(opts?: { includeInactive?: boolean }) {
   }, [opts?.includeInactive]);
 
   useEffect(() => {
-    if (peekLeadCatalog() && !opts?.includeInactive) {
-      setCatalog(peekLeadCatalog());
+    const cached = peekLeadCatalog();
+    if (cached && !opts?.includeInactive) {
+      setCatalog(cached);
       setLoading(false);
+      if (!isLeadCatalogFresh()) void reload();
       return;
     }
     void reload();

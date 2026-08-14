@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminLogin from '@/components/AdminLogin';
 import { startAdminDashboardPrefetch } from '@/lib/adminDashboardCache';
+import { preloadLeadCatalog } from '@/lib/leadCatalog';
 import { markNativeBootReady } from '@/lib/nativeBootReady';
 import { AdminScreenLoader } from '@/components/admin/AdminLoaders';
 import { AdminBiometricLockScreen } from '@/components/admin/AdminBiometricLockScreen';
@@ -73,6 +74,7 @@ export default function AdminPortal() {
   useEffect(() => {
     if (user && isAdmin) {
       void startAdminDashboardPrefetch();
+      preloadLeadCatalog();
     }
   }, [user, isAdmin]);
 

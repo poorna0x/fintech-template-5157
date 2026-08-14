@@ -21,6 +21,7 @@ import {
 } from '@/lib/leadCatalog';
 import { LeadSourceSelect } from '@/components/admin/LeadSourceSelect';
 import { ServiceSubTypeSelect } from '@/components/admin/ServiceSubTypeSelect';
+import { isJobCreateFormComplete } from '@/lib/jobCreateRequired';
 import { db } from '@/lib/supabase';
 import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
 import { jobAssignPushText, notifyTechnicianJobPush } from '@/lib/adminTechPushNotify';
@@ -102,7 +103,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 
   const [newJobFormData, setNewJobFormData] = useState<NewJobFormData>({
     service_type: 'RO',
-    service_sub_type: 'Service',
+    service_sub_type: '',
     service_sub_type_custom: '',
     brand: '',
     model: '',
@@ -190,7 +191,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   const handleClose = () => {
     setNewJobFormData({
       service_type: 'RO',
-      service_sub_type: 'Service',
+      service_sub_type: '',
       service_sub_type_custom: '',
       brand: '',
       model: '',
@@ -351,6 +352,19 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       (!newJobFormData.scheduled_time_custom || !newJobFormData.scheduled_time_custom.trim())
     ) {
       toast.error('Please choose a visit time (list or exact time)', TOAST_VALIDATION);
+      return;
+    }
+
+    if (!newJobFormData.service_sub_type || newJobFormData.service_sub_type.trim() === '') {
+      toast.error('Please select a sub-service', TOAST_VALIDATION);
+      return;
+    }
+
+    if (
+      isServiceSubTypeAllowCustomText(newJobFormData.service_sub_type) &&
+      (!newJobFormData.service_sub_type_custom || newJobFormData.service_sub_type_custom.trim() === '')
+    ) {
+      toast.error('Please enter a custom sub-service', TOAST_VALIDATION);
       return;
     }
     
@@ -761,10 +775,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 
                 <ServiceSubTypeSelect
                   id="job_service_sub_type"
-                  value={newJobFormData.service_sub_type || 'Service'}
+                  value={newJobFormData.service_sub_type}
                   customValue={newJobFormData.service_sub_type_custom}
                   onChange={(v) => handleFormChange('service_sub_type', v)}
                   onCustomChange={(v) => handleFormChange('service_sub_type_custom', v)}
+                  required
                 />
               </div>
             </div>
@@ -1097,7 +1112,10 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           </Button>
           <Button
             onClick={handleCreateJob}
-            disabled={isCreatingJob}
+            disabled={
+              isCreatingJob ||
+              !isJobCreateFormComplete(newJobFormData, { requireLeadCost: !technicianMode })
+            }
             className=""
           >
             {isCreatingJob ? 'Creating...' : 'Create Job'}

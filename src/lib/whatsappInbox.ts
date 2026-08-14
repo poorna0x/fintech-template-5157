@@ -459,15 +459,21 @@ export function countUnreadWhatsAppMessages(
 }
 
 /**
- * Header / Tools badge total — prefers cached threads + per-phone message counts.
- * Soft-fail to stored counts only when the thread list is not in memory.
+ * Header / Tools badge total — team-wide per-phone maps (hydrated from DB).
+ * Falls back to the cached thread list only when maps are empty.
  */
 export function resolveWhatsAppHeaderUnreadCount(
   threads?: WhatsAppThread[] | null,
   readMap?: Record<string, string>
 ): number {
-  const map = readMap ?? loadWhatsAppReadMap();
   const counts = loadWhatsAppUnreadCounts();
+  let sum = 0;
+  for (const n of Object.values(counts)) {
+    if (n > 0) sum += n;
+  }
+  if (sum > 0) return Math.min(sum, 999);
+
+  const map = readMap ?? loadWhatsAppReadMap();
   const list =
     threads && threads.length
       ? threads
@@ -475,11 +481,7 @@ export function resolveWhatsAppHeaderUnreadCount(
   if (list.length) {
     return countUnreadWhatsAppMessages(list, map, counts);
   }
-  let sum = 0;
-  for (const n of Object.values(counts)) {
-    if (n > 0) sum += n;
-  }
-  return sum;
+  return 0;
 }
 
 /** Bump local per-phone unread message count (Tools badge) on new inbound. */
@@ -490,6 +492,57 @@ export function bumpWhatsAppUnreadCountForPhone(phoneE164: string, by = 1): numb
   const next = { ...prev, [phone]: Math.min(999, (prev[phone] || 0) + by) };
   saveWhatsAppUnreadCounts(next);
   return next[phone];
+}
+
+export type WhatsAppUnreadSummary = {
+  total: number;
+  perPhone: Record<string, number>;
+};
+
+function parseUnreadSummary(raw: unknown): WhatsAppUnreadSummary | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const perRaw = o.per_phone && typeof o.per_phone === 'object' ? o.per_phone : {};
+  const perPhone: Record<string, number> = {};
+  for (const [phoneRaw, nRaw] of Object.entries(perRaw as Record<string, unknown>)) {
+    const phone = String(phoneRaw || '').replace(/\D/g, '');
+    const n = Math.floor(Number(nRaw));
+    if (phone && n > 0) perPhone[phone] = Math.min(n, 999);
+  }
+  const totalRaw = Math.floor(Number(o.total));
+  const summed = Object.values(perPhone).reduce((s, n) => s + n, 0);
+  const total =
+    Number.isFinite(totalRaw) && totalRaw >= 0
+      ? Math.min(totalRaw, 999)
+      : Math.min(summed, 999);
+  return { total, perPhone };
+}
+
+/** Team unread from DB — same number on every admin device. Soft-fail if RPC missing. */
+export async function fetchWhatsAppInboxUnreadSummary(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseClient: { rpc: (fn: string) => any } = supabase
+): Promise<WhatsAppUnreadSummary | null> {
+  try {
+    const { data, error } = await supabaseClient.rpc('whatsapp_inbox_unread_summary');
+    if (error) {
+      if (/whatsapp_inbox_unread_summary|could not find|does not exist/i.test(error.message || '')) {
+        return null;
+      }
+      console.warn('[whatsapp] unread summary failed', error.message);
+      return null;
+    }
+    return parseUnreadSummary(data);
+  } catch (err) {
+    console.warn('[whatsapp] unread summary failed', (err as Error)?.message || err);
+    return null;
+  }
+}
+
+/** Overwrite local per-phone maps from the team summary (cache only). */
+export function applyWhatsAppUnreadSummary(summary: WhatsAppUnreadSummary): number {
+  saveWhatsAppUnreadCounts(summary.perPhone);
+  return summary.total;
 }
 
 /**
