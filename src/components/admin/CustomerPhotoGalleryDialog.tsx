@@ -219,12 +219,12 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[85vw] lg:max-w-7xl max-h-[95vh] overflow-y-auto p-4 sm:p-6">
-        <DialogHeader className="space-y-3 sm:space-y-2">
+      <DialogContent className="w-[calc(100vw-1.25rem)] max-w-7xl max-h-[95vh] overflow-x-hidden overflow-y-auto p-4 sm:w-[90vw] sm:p-6 md:w-[85vw] min-w-0">
+        <DialogHeader className="space-y-3 pr-10 sm:space-y-2">
           <DialogTitle className="flex items-center gap-2">
             <span className="text-lg sm:text-xl font-semibold">Gallery</span>
           </DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm">
+          <DialogDescription className="text-xs sm:text-sm break-words">
             {showDocumentsTab
               ? 'Customer photos, plus WhatsApp PDFs and photos you sent (same Cloudflare files as the inbox).'
               : 'Photos for this customer'}
@@ -234,7 +234,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
         <Tabs
           value={showDocumentsTab ? tab : 'photos'}
           onValueChange={setTab}
-          className="w-full"
+          className="w-full min-w-0"
         >
           {showDocumentsTab && (
             <TabsList
@@ -507,7 +507,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
           </TabsContent>
 
           {showDocumentsTab && (
-          <TabsContent value="documents" className="mt-4">
+          <TabsContent value="documents" className="mt-4 min-w-0 overflow-x-hidden">
             {docsLoading ? (
               <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -516,22 +516,23 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
             ) : docsError ? (
               <p className="py-8 text-center text-sm text-red-600">{docsError}</p>
             ) : (
-              <div className="space-y-2">
+              <div className="min-w-0 space-y-2">
                 <p className="text-sm font-medium text-foreground">
                   {docs.length} file{docs.length !== 1 ? 's' : ''} sent on WhatsApp
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground break-words">
                   Photos and PDFs stored on Cloudflare. Same as the inbox — delete the chat
                   message and it leaves here too.
                 </p>
-                <ul className="divide-y divide-border rounded-lg border border-border">
+                <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
                   {docs.map((row) => {
                     const isImage = isWhatsAppOutboundImageMessage(row);
                     return (
                     <li
                       key={row.id}
-                      className="flex items-center gap-3 px-3 py-3"
+                      className="flex min-w-0 flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:gap-3"
                     >
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
                       <span
                         className={cn(
                           'flex h-10 w-10 shrink-0 items-center justify-center rounded-md',
@@ -560,12 +561,13 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                           })}
                         </p>
                       </div>
-                      <div className="flex shrink-0 gap-1">
+                      </div>
+                      <div className="grid w-full grid-cols-3 gap-1 sm:flex sm:w-auto sm:shrink-0">
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="min-h-[40px] cursor-pointer"
+                          className="min-h-[40px] w-full cursor-pointer sm:w-auto"
                           disabled={busyDocId === row.id}
                           onClick={() => void openDoc(row)}
                         >
@@ -578,8 +580,8 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                         <Button
                           type="button"
                           variant="ghost"
-                          size="icon"
-                          className="h-10 w-10 cursor-pointer"
+                          size="sm"
+                          className="h-10 w-full cursor-pointer sm:w-10 sm:px-0"
                           disabled={busyDocId === row.id}
                           onClick={() => void downloadDoc(row)}
                           aria-label="Download"
@@ -589,8 +591,8 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                         <Button
                           type="button"
                           variant="ghost"
-                          size="icon"
-                          className="h-10 w-10 cursor-pointer text-destructive hover:text-destructive"
+                          size="sm"
+                          className="h-10 w-full cursor-pointer text-destructive hover:text-destructive sm:w-10 sm:px-0"
                           disabled={busyDocId === row.id}
                           onClick={() => void deleteDoc(row)}
                           aria-label="Delete"
