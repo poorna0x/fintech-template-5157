@@ -397,24 +397,11 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
 
   if (/^missed_call_callback_(ero|hro)_cta(_v4|_v3|_v2)?$/i.test(primaryName) || /^svc_missed_call(_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : /_ero/.test(primaryName) ? 'ero' : null;
-    if (/_v4$/i.test(primaryName) && suffix) {
-      push(`missed_call_callback_${suffix}_cta_v3`, [name]);
-      push(`missed_call_callback_${suffix}_cta_v2`, [name]);
-      push(`missed_call_callback_${suffix}_cta`, [name]);
-    } else if (/_v3$/i.test(primaryName) && suffix && /callback/.test(primaryName)) {
+    if (suffix && /callback/.test(primaryName) && !/_v4$/i.test(primaryName)) {
       push(`missed_call_callback_${suffix}_cta_v4`, [name]);
-      push(`missed_call_callback_${suffix}_cta_v2`, [name]);
-      push(`missed_call_callback_${suffix}_cta`, [name]);
-    } else if (/_v2$/i.test(primaryName) && suffix && /callback/.test(primaryName)) {
-      push(`missed_call_callback_${suffix}_cta_v4`, [name]);
-      push(`missed_call_callback_${suffix}_cta`, [name]);
-    } else if (suffix && /callback/.test(primaryName)) {
-      push(`missed_call_callback_${suffix}_cta_v4`, [name]);
-      push(`missed_call_callback_${suffix}_cta_v3`, [name]);
-      push(`missed_call_callback_${suffix}_cta_v2`, [name]);
     }
+    // Do not fall back to v3 (Meta recategorized as MARKETING).
     push('svc_missed_call_v3', [name]);
-    push('svc_missed_call_v2', [name]);
     push(MISSED_CALL, [name]);
   }
   if (/^unregistered_number_service_(ero|hro)_cta(_v2)?$/i.test(primaryName)) {
