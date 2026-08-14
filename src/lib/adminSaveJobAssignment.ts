@@ -65,6 +65,13 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
 
     if (error) throw error;
 
+    // Push immediately — do not wait for visit-order writes (those can add seconds).
+    notifyTechnicianJobPush({
+      technicianId: ctx.selectedTechnicianId,
+      jobId: ctx.jobToAssign.id,
+      ...jobAssignPushText({ job: ctx.jobToAssign as any }),
+    });
+
     // Clear any leftover unanswered Ask OTP from a previous technician.
     void clearPendingOtpAskForJob(ctx.jobToAssign.id);
 
@@ -77,12 +84,6 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
     });
 
     broadcastTechnicianJobListRefresh([ctx.selectedTechnicianId]);
-
-    notifyTechnicianJobPush({
-      technicianId: ctx.selectedTechnicianId,
-      jobId: ctx.jobToAssign.id,
-      ...jobAssignPushText({ job: ctx.jobToAssign as any }),
-    });
 
     const assignedTechnician = ctx.technicians.find((t) => t.id === ctx.selectedTechnicianId);
 

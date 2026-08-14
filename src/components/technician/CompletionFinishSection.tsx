@@ -121,6 +121,7 @@ interface CompletionPhotoStepProps {
   hint: string;
   images: string[];
   onImagesChange: (images: string[]) => void;
+  onCaptureSourcesChange?: (sources: Record<string, 'camera' | 'gallery'>) => void;
   onUploadStateChange: (uploading: boolean) => void;
   maxImages?: number;
   folder: string;
@@ -138,6 +139,7 @@ export const CompletionPhotoStep: React.FC<CompletionPhotoStepProps> = ({
   hint,
   images,
   onImagesChange,
+  onCaptureSourcesChange,
   onUploadStateChange,
   maxImages = 5,
   folder,
@@ -169,6 +171,7 @@ export const CompletionPhotoStep: React.FC<CompletionPhotoStepProps> = ({
     <ImageUpload
       compact
       onImagesChange={onImagesChange}
+      onCaptureSourcesChange={onCaptureSourcesChange}
       initialImages={images}
       onUploadStateChange={onUploadStateChange}
       maxImages={maxImages}

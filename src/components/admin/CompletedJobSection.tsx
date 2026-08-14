@@ -14,6 +14,7 @@ import {
 import { Job, Technician } from '@/types';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { extractPhotoUrls, findLeadSource, normalizePhotoUrl, isOfficeCompletedJob } from '@/lib/adminUtils';
+import { extractBillPhotoSources } from '@/lib/billPhotoCapture';
 import { toast } from 'sonner';
 import JobPartsUsedDialog from './JobPartsUsedDialog';
 import OfficeJobPartsDialog from './OfficeJobPartsDialog';
@@ -793,6 +794,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 completedDate: completedDate,
                 completedTime: completedTime,
                 billPhotos: Array.isArray(billPhotos) ? [...billPhotos] : [],
+                billPhotoSources: extractBillPhotoSources(requirements),
                 paymentScreenshots: paymentScreenshot ? [paymentScreenshot] : [],
               };
               setCompletedJobEditData(editData);

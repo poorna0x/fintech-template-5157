@@ -62,6 +62,19 @@ export async function submitAdminJobReassign(
       return;
     }
 
+    notifyTechnicianJobPush({
+      technicianId: ctx.selectedTechnicianForReassign,
+      jobId: ctx.jobToReassign.id,
+      ...jobAssignPushText({ job: ctx.jobToReassign as any, reassigned: true }),
+    });
+    if (previousTechnicianId && previousTechnicianId !== ctx.selectedTechnicianForReassign) {
+      notifyTechnicianJobPush({
+        technicianId: previousTechnicianId,
+        jobId: ctx.jobToReassign.id,
+        ...jobRemovedPushText({ job: ctx.jobToReassign as any, movedToAnother: true }),
+      });
+    }
+
     // Old tech must not keep an unanswered OTP card for a job they no longer own.
     if (previousTechnicianId && previousTechnicianId !== ctx.selectedTechnicianForReassign) {
       void clearPendingOtpAskForJob(ctx.jobToReassign.id);
@@ -76,20 +89,6 @@ export async function submitAdminJobReassign(
     });
 
     broadcastTechnicianJobListRefresh([previousTechnicianId, ctx.selectedTechnicianForReassign]);
-
-    notifyTechnicianJobPush({
-      technicianId: ctx.selectedTechnicianForReassign,
-      jobId: ctx.jobToReassign.id,
-      ...jobAssignPushText({ job: ctx.jobToReassign as any, reassigned: true }),
-    });
-    // Tell the technician who lost the job too (red accent).
-    if (previousTechnicianId && previousTechnicianId !== ctx.selectedTechnicianForReassign) {
-      notifyTechnicianJobPush({
-        technicianId: previousTechnicianId,
-        jobId: ctx.jobToReassign.id,
-        ...jobRemovedPushText({ job: ctx.jobToReassign as any, movedToAnother: true }),
-      });
-    }
 
     ctx.setJobs((prev) =>
       prev.map((job) =>

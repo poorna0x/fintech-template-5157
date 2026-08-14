@@ -18,6 +18,7 @@ import {
   updatePendingPaymentReminderFromJob,
   completePendingPaymentReminder,
 } from '@/lib/jobPendingPayment';
+import { billPhotosRequirement } from '@/lib/billPhotoCapture';
 
 export type SaveAdminCompletedJobEditParams = {
   selectedCompletedJob: Job | null;
@@ -216,7 +217,12 @@ try {
     requirements.length = 0;
     requirements.push(...otherReqs);
     if (completedJobEditData.billPhotos.length > 0) {
-      requirements.push({ bill_photos: completedJobEditData.billPhotos });
+      requirements.push(
+        billPhotosRequirement(
+          completedJobEditData.billPhotos,
+          completedJobEditData.billPhotoSources || {}
+        )
+      );
     }
   }
 

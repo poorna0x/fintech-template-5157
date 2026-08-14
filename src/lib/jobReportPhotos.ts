@@ -1,5 +1,10 @@
 import { extractPhotoUrls, normalizePhotoUrl, parseJobRequirements } from '@/lib/adminUtils';
 import { db } from '@/lib/supabase';
+import {
+  billPhotosRequirement,
+  extractBillPhotoSources,
+  type PhotoCaptureSource,
+} from '@/lib/billPhotoCapture';
 
 /** True when requirements already has payment + bill URLs (no after_photos fetch needed). */
 export function jobHasPaymentAndBillPhotosInRequirements(job: {
@@ -181,6 +186,7 @@ export function mergeCompletedJobMissingPhotos(
   opts: {
     billPhotos?: string[];
     paymentScreenshots?: string[];
+    billPhotoSources?: Record<string, PhotoCaptureSource>;
   }
 ): { requirements: any[]; after_photos: string[] } {
   const requirements = parseJobRequirements(job.requirements);
@@ -202,8 +208,13 @@ export function mergeCompletedJobMissingPhotos(
         merged.push(url);
       }
     }
-    if (billIdx >= 0) requirements[billIdx] = { bill_photos: merged };
-    else requirements.push({ bill_photos: merged });
+    const mergedSources = {
+      ...extractBillPhotoSources(requirements),
+      ...(opts.billPhotoSources || {}),
+    };
+    const billReq = billPhotosRequirement(merged, mergedSources);
+    if (billIdx >= 0) requirements[billIdx] = billReq;
+    else requirements.push(billReq);
   }
 
   if (payUrls.length > 0) {

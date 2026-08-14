@@ -7,9 +7,12 @@ import { cloudinaryService, validateImageFile, compressImage } from '@/lib/cloud
 import { queuePhoto, isOnline, removeQueuedPhoto, getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
 import { isNativeApp } from '@/lib/isNativeApp';
 import { shouldUseFileInputFallback, requestCameraAccess, createVideoElement, filesToFileList, captureVideoFrameToFile, captureNativeCameraPhoto } from '@/lib/cameraUtils';
+import type { PhotoCaptureSource } from '@/lib/billPhotoCapture';
 
 interface ImageUploadProps {
   onImagesChange: (images: string[]) => void;
+  /** URL → camera/gallery for newly uploaded photos (http URLs only). */
+  onCaptureSourcesChange?: (sources: Record<string, PhotoCaptureSource>) => void;
   maxImages?: number;
   folder?: string;
   title?: string;
@@ -44,10 +47,12 @@ interface UploadedImage {
   url: string;
   publicId: string;
   name: string;
+  captureSource?: PhotoCaptureSource;
 }
 
 const ImageUpload: React.FC<ImageUploadProps> = ({
   onImagesChange,
+  onCaptureSourcesChange,
   maxImages = 5,
   folder = 'ro-service',
   title = 'Upload Images',
@@ -99,11 +104,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       if (resolvedInitialImages.length > 0) {
         const existingUrls = uploadedImagesRef.current.map((img) => img.url).sort().join(',');
         if (existingUrls !== currentUrls) {
+          const prevByUrl = new Map(
+            uploadedImagesRef.current.map((img) => [img.url, img.captureSource] as const)
+          );
           const syncedImages = resolvedInitialImages.map((url, index) => ({
             id: `img_${Date.now()}_${index}_${url.slice(-10)}`,
             url,
             publicId: '',
             name: `Image ${index + 1}`,
+            captureSource: prevByUrl.get(url),
           }));
           setUploadedImages(syncedImages);
         }
@@ -123,6 +132,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
   const notifyParent = (images: UploadedImage[]) => {
     onImagesChange(images.map((img) => img.url));
+    if (onCaptureSourcesChange) {
+      const sources: Record<string, PhotoCaptureSource> = {};
+      for (const img of images) {
+        if (img.captureSource && /^https?:\/\//i.test(img.url)) {
+          sources[img.url] = img.captureSource;
+        }
+      }
+      onCaptureSourcesChange(sources);
+    }
   };
 
   const uploadWithRetry = async (file: File, folder: string, useSecondaryAccount: boolean) => {
@@ -134,7 +152,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     }
   };
 
-  const handleFileSelect = async (files: FileList | null) => {
+  const handleFileSelect = async (
+    files: FileList | null,
+    captureSource: PhotoCaptureSource = 'gallery'
+  ) => {
     if (!files || files.length === 0) return;
 
     // iOS PWA fix: Filter out directory entries and invalid files
@@ -252,6 +273,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                 alreadyCompressed: true,
                 jobId,
                 photoType,
+                captureSource,
               });
               if (queuedPhotoId && !queuedPhotoId.startsWith('temp_')) {
                 console.log('✅ Photo saved to local storage:', file.name);
@@ -286,6 +308,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               url: uploadResult.secure_url,
               publicId: uploadResult.public_id,
               name: file.name,
+              captureSource,
             };
 
             setUploadedImages((prev) => {
@@ -337,10 +360,14 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     });
   };
 
-  const readFilesFromInput = (input: HTMLInputElement, attempt = 0): void => {
+  const readFilesFromInput = (
+    input: HTMLInputElement,
+    captureSource: PhotoCaptureSource,
+    attempt = 0
+  ): void => {
     const files = input.files;
     if (files && files.length > 0) {
-      handleFileSelect(files);
+      handleFileSelect(files, captureSource);
       setTimeout(() => {
         input.value = '';
       }, 100);
@@ -348,18 +375,21 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     }
     // Mobile browsers sometimes populate files asynchronously on first pick
     if (attempt < 4) {
-      setTimeout(() => readFilesFromInput(input, attempt + 1), attempt === 0 ? 50 : 150);
+      setTimeout(
+        () => readFilesFromInput(input, captureSource, attempt + 1),
+        attempt === 0 ? 50 : 150
+      );
       return;
     }
     toast.error('No file selected. Please try again.');
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    readFilesFromInput(e.target);
+    readFilesFromInput(e.target, 'gallery');
   };
 
   const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    readFilesFromInput(e.target);
+    readFilesFromInput(e.target, 'camera');
   };
 
   const openFileDialog = () => {
@@ -371,7 +401,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     if (isNativeApp()) {
       const result = await captureNativeCameraPhoto();
       if (result.status === 'ok') {
-        void handleFileSelect(filesToFileList([result.file]));
+        void handleFileSelect(filesToFileList([result.file]), 'camera');
         return;
       }
       if (result.status === 'cancelled') return;
@@ -585,7 +615,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             }
 
               cleanup();
-                handleFileSelect(filesToFileList([file]));
+                handleFileSelect(filesToFileList([file]), 'camera');
           } catch (error: any) {
             console.error('Error capturing photo:', error);
             toast.error(`Failed to capture photo: ${error?.message || 'Unknown error'}`);
@@ -661,7 +691,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      handleFileSelect(files);
+      handleFileSelect(files, 'gallery');
     }
   }, []);
 

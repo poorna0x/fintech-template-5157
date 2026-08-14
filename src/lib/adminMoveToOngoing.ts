@@ -194,18 +194,17 @@ export async function performAdminMoveToOngoing(ctx: AdminMoveToOngoingCtx) {
     if (shouldAssign) {
       broadcastTechnicianJobListRefresh([ctx.followUpAssignTechnicianId]);
 
-      // Same as the regular assign flow: place the job in the technician's
-      // visit order and push a notification to their phone.
-      await appendJobToTechnicianVisitOrder({
-        jobId: ctx.selectedJob.id,
-        technicianId: ctx.followUpAssignTechnicianId,
-        scheduledDate: ctx.moveToOngoingDate,
-      }).catch(() => {});
       notifyTechnicianJobPush({
         technicianId: ctx.followUpAssignTechnicianId,
         jobId: ctx.selectedJob.id,
         ...jobAssignPushText({ job: ctx.selectedJob as any }),
       });
+
+      void appendJobToTechnicianVisitOrder({
+        jobId: ctx.selectedJob.id,
+        technicianId: ctx.followUpAssignTechnicianId,
+        scheduledDate: ctx.moveToOngoingDate,
+      }).catch(() => {});
 
       const assignedTech = ctx.technicians.find((t) => t.id === ctx.followUpAssignTechnicianId);
       if (assignedTech && getTechnicianAdminWhatsAppPhone(assignedTech)) {

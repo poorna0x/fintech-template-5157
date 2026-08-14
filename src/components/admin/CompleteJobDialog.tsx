@@ -18,6 +18,7 @@ import { RefreshCw } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { broadcastTechnicianJobListRefreshForJob } from '@/lib/technicianJobListSync';
 import { parseJobRequirements } from '@/lib/adminUtils';
+import { billPhotosRequirement, type PhotoCaptureSource } from '@/lib/billPhotoCapture';
 import { getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
 import PendingPaymentFields from '@/components/job/PendingPaymentFields';
 import {
@@ -110,6 +111,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   const completeJobScrollRef = useRef<HTMLDivElement>(null);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
+  const [billPhotoSources, setBillPhotoSources] = useState<Record<string, PhotoCaptureSource>>({});
   const [amcDateGiven, setAmcDateGiven] = useState<string>('');
   const [amcEndDate, setAmcEndDate] = useState<string>('');
   const [amcYears, setAmcYears] = useState<number>(0);
@@ -220,6 +222,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       setCompleteJobStep(1);
       setBillAmount('');
       setBillPhotos([]);
+      setBillPhotoSources({});
       const today = getTodayLocalDate();
       setAmcDateGiven(today);
       setAmcYears(0);
@@ -325,6 +328,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     setCompleteJobStep(1);
     setBillAmount('');
     setBillPhotos([]);
+    setBillPhotoSources({});
     const today = getTodayLocalDate();
     setAmcDateGiven(today);
     setAmcEndDate('');
@@ -533,7 +537,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       }
 
       if (uploadedBillPhotos.length > 0) {
-        requirements.push({ bill_photos: uploadedBillPhotos });
+        requirements.push(billPhotosRequirement(uploadedBillPhotos, billPhotoSources));
       }
 
       const allAfterPhotos = [...uploadedBillPhotos];
@@ -1362,6 +1366,9 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     onImagesChange={(images) => {
                       setBillPhotos(images);
                     }}
+                    onCaptureSourcesChange={(sources) =>
+                      setBillPhotoSources((prev) => ({ ...prev, ...sources }))
+                    }
                     initialImages={billPhotos}
                     onUploadStateChange={setIsBillPhotosUploading}
                     maxImages={5}

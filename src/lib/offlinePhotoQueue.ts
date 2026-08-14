@@ -16,6 +16,7 @@ export interface QueuedPhoto {
   retryCount: number;
   jobId?: string; // Optional: associate with a job
   photoType?: 'bill' | 'before' | 'after' | 'payment' | 'other';
+  captureSource?: 'camera' | 'gallery';
   /** Cloudinary URL captured on a prior successful upload. If set, the retry
    *  worker can skip re-uploading bytes and only re-attempt the job-link step. */
   uploadedUrl?: string;
@@ -118,6 +119,7 @@ export const queuePhoto = async (
     useSecondaryAccount?: boolean;
     jobId?: string;
     photoType?: 'bill' | 'before' | 'after' | 'payment' | 'other';
+    captureSource?: 'camera' | 'gallery';
     /** Set true when queueing an already-compressed file (faster retry, no re-compress) */
     alreadyCompressed?: boolean;
   } = {}
@@ -151,6 +153,7 @@ export const queuePhoto = async (
         retryCount: 0,
         jobId: options.jobId,
         photoType: options.photoType || 'other',
+        captureSource: options.captureSource,
       };
 
       const existingQueue = getQueuedPhotos();

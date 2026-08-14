@@ -102,8 +102,21 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
-      // ALTCHA challenge/verify must share the same HMAC as local privacy/booking handlers.
+      // ALTCHA challenge + login must share the same HMAC. If login stays on the
+      // production catch-all, admin/technician get "Invalid login token signature".
       '/.netlify/functions/altcha-verify': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/secure-auth-login': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/sync-portal-session': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/clear-portal-session': {
         target: 'http://localhost:8888',
         changeOrigin: true,
       },

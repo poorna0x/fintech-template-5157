@@ -521,6 +521,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       }
 
       if (newJob?.id && newJobFormData.assigned_technician_id) {
+        notifyTechnicianJobPush({
+          technicianId: newJobFormData.assigned_technician_id,
+          jobId: newJob.id,
+          ...jobAssignPushText({ job: newJob as any, customer: customer as any }),
+        });
         const visitOrder = await appendJobToTechnicianVisitOrder({
           jobId: newJob.id,
           technicianId: newJobFormData.assigned_technician_id,
@@ -530,11 +535,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           (newJob as any).visit_order = visitOrder;
           (newJob as any).visitOrder = visitOrder;
         }
-        notifyTechnicianJobPush({
-          technicianId: newJobFormData.assigned_technician_id,
-          jobId: newJob.id,
-          ...jobAssignPushText({ job: newJob as any, customer: customer as any }),
-        });
         const assignedTech = technicians.find((t) => t.id === newJobFormData.assigned_technician_id);
         if (assignedTech) {
           void import('@/lib/jobTechnicianWhatsApp').then(({ notifyTechnicianJobWhatsApp }) =>

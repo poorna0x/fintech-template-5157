@@ -18,6 +18,7 @@ export type TechnicianCompleteJobDraft = {
   completionNotes: string;
   billAmount: string;
   billPhotos: string[];
+  billPhotoSources?: Record<string, 'camera' | 'gallery'>;
   optionalCompletionPhotos: string[];
   extraPhotosStep6: string[];
   dontSendMessageToCustomer: boolean;

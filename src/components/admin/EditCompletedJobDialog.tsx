@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { ImagePlus, X, ChevronDown, RotateCw } from 'lucide-react';
+import { ImagePlus, X, ChevronDown, RotateCw, Camera } from 'lucide-react';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { rotateImageUrlAndReupload } from '@/lib/imageRotate';
 import {
@@ -28,6 +28,13 @@ import PendingPaymentFields from '@/components/job/PendingPaymentFields';
 import {
   type PaidTodayMode,
 } from '@/lib/jobPendingPayment';
+import {
+  captureSourceLabel,
+  lookupCaptureSource,
+  type PhotoCaptureSource,
+} from '@/lib/billPhotoCapture';
+import { isNativeApp } from '@/lib/isNativeApp';
+import { captureNativeCameraPhoto, filesToFileList } from '@/lib/cameraUtils';
 
 function sanitizeMoneyInput(raw: string): string {
   if (raw == null) return '';
@@ -86,6 +93,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
   const [dragOverPayment, setDragOverPayment] = useState(false);
   const [dragOverBill, setDragOverBill] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const billCameraInputRef = useRef<HTMLInputElement>(null);
   const paymentInputRef = useRef<HTMLInputElement>(null);
   // Snapshot of editData when the dialog opened, to detect whether anything changed / discard on dismiss.
   const initialDataSnapshotRef = useRef<string | null>(null);
@@ -123,14 +131,25 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
     }
   }, [editData, onEditDataChange, uploadFiles]);
 
-  const handleBillFiles = useCallback(async (files: FileList | null) => {
+  const handleBillFiles = useCallback(async (
+    files: FileList | null,
+    captureSource: PhotoCaptureSource = 'gallery'
+  ) => {
     if (!files?.length) return;
     setUploadingPhotos(true);
     const baseList = editData.billPhotos || [];
     try {
       const urls = await uploadFiles(Array.from(files), false);
       if (urls.length > 0) {
-        onEditDataChange({ ...editData, billPhotos: [...baseList, ...urls] });
+        const nextSources: Record<string, PhotoCaptureSource> = {
+          ...(editData.billPhotoSources || {}),
+        };
+        for (const url of urls) nextSources[url] = captureSource;
+        onEditDataChange({
+          ...editData,
+          billPhotos: [...baseList, ...urls],
+          billPhotoSources: nextSources,
+        });
         toast.success(`${urls.length} bill photo(s) added`);
       }
     } catch (err: any) {
@@ -139,6 +158,17 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
       setUploadingPhotos(false);
     }
   }, [editData, onEditDataChange, uploadFiles]);
+
+  const openBillCamera = useCallback(async () => {
+    if (isNativeApp()) {
+      const result = await captureNativeCameraPhoto();
+      if (result.status === 'ok') {
+        void handleBillFiles(filesToFileList([result.file]), 'camera');
+      }
+      return;
+    }
+    billCameraInputRef.current?.click();
+  }, [handleBillFiles]);
 
   const handleRotatePhoto = useCallback(
     async (field: 'paymentScreenshots' | 'billPhotos', index: number) => {
@@ -151,7 +181,19 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
       try {
         const newUrl = await rotateImageUrlAndReupload(url);
         list[index] = newUrl;
-        onEditDataChange({ ...editData, [field]: list });
+        const next: Record<string, any> = { ...editData, [field]: list };
+        if (field === 'billPhotos') {
+          const sources: Record<string, PhotoCaptureSource> = {
+            ...(editData.billPhotoSources || {}),
+          };
+          const prevSource = lookupCaptureSource(sources, url);
+          if (prevSource) {
+            delete sources[url];
+            sources[newUrl] = prevSource;
+          }
+          next.billPhotoSources = sources;
+        }
+        onEditDataChange(next);
         toast.success('Photo rotated');
       } catch (err: any) {
         console.error('Rotate photo failed:', err);
@@ -171,6 +213,10 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
   ) => {
     const rotateKey = `${field}-${idx}`;
     const isRotating = rotatingPhotoKey === rotateKey;
+    const sourceLabel =
+      field === 'billPhotos'
+        ? captureSourceLabel(lookupCaptureSource(editData.billPhotoSources, url))
+        : null;
 
     return (
       <div key={`${field}-${idx}-${url}`} className="relative group">
@@ -179,6 +225,11 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           alt={options.alt}
           className={`w-20 h-20 object-cover rounded-lg ${options.borderClass} ${isRotating ? 'opacity-50' : ''}`}
         />
+        {sourceLabel ? (
+          <span className="absolute top-0 left-0 max-w-[calc(100%-1.25rem)] rounded-br bg-black/65 px-1 py-px text-[9px] font-medium leading-tight text-white">
+            {sourceLabel}
+          </span>
+        ) : null}
         <button
           type="button"
           onClick={() => void handleRotatePhoto(field, idx)}
@@ -802,7 +853,18 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               multiple
               className="hidden"
               onChange={(e) => {
-                handleBillFiles(e.target.files);
+                handleBillFiles(e.target.files, 'gallery');
+                e.target.value = '';
+              }}
+            />
+            <input
+              ref={billCameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                handleBillFiles(e.target.files, 'camera');
                 e.target.value = '';
               }}
             />
@@ -813,7 +875,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 e.preventDefault();
                 setDragOverBill(false);
                 const files = e.dataTransfer.files;
-                if (files?.length) handleBillFiles(files);
+                if (files?.length) handleBillFiles(files, 'gallery');
               }}
               onClick={() => photoInputRef.current?.click()}
               className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
@@ -822,9 +884,20 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             >
               <ImagePlus className="w-8 h-8 mx-auto text-muted-foreground/70 mb-1" />
               <p className="text-sm text-muted-foreground">
-                {uploadingPhotos ? 'Uploading...' : 'Drag & drop or click to add bill photos'}
+                {uploadingPhotos ? 'Uploading...' : 'Gallery — drag & drop or click'}
               </p>
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2 w-full"
+              disabled={uploadingPhotos}
+              onClick={() => void openBillCamera()}
+            >
+              <Camera className="w-4 h-4 mr-1.5" />
+              Camera
+            </Button>
           </div>
 
           {/* Completed By */}

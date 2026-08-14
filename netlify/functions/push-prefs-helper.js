@@ -135,6 +135,12 @@ async function getTechnicianFcmTokens(db, technicianId, category = null) {
     }
   }
 
+  // Already have multi-device rows — do not add a second round-trip for the
+  // legacy live_locations.fcm_token (it cannot bypass per-device mute anyway).
+  if (knownDeviceTokens.size > 0) {
+    return [...tokens];
+  }
+
   const { data: legacy, error: legacyErr } = await db
     .from('technician_live_locations')
     .select('fcm_token')

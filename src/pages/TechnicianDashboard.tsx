@@ -163,6 +163,10 @@ import {
   getCompletedJobMissingMedia,
 } from '@/lib/jobReportPhotos';
 import {
+  billPhotosRequirement,
+  type PhotoCaptureSource,
+} from '@/lib/billPhotoCapture';
+import {
   clearTechnicianCompleteJobDraft,
   friendlyCompletionErrorMessage,
   parseJobRequirementsArray,
@@ -589,6 +593,7 @@ const TechnicianDashboard = () => {
     kind: 'bill' | 'payment';
   } | null>(null);
   const [missingPhotoUrls, setMissingPhotoUrls] = useState<string[]>([]);
+  const [missingPhotoSources, setMissingPhotoSources] = useState<Record<string, PhotoCaptureSource>>({});
   const [missingPhotoUploading, setMissingPhotoUploading] = useState(false);
   const [missingPhotoSaving, setMissingPhotoSaving] = useState(false);
   // Customer search (Options menu) + technician job creation
@@ -685,6 +690,7 @@ const TechnicianDashboard = () => {
   const completeJobScrollRef = useRef<HTMLDivElement>(null);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
+  const [billPhotoSources, setBillPhotoSources] = useState<Record<string, PhotoCaptureSource>>({});
   const [otpInput, setOtpInput] = useState<string[]>(['', '', '', '']);
   const [otpError, setOtpError] = useState<string>('');
   const [serviceBrand, setServiceBrand] = useState<ServiceBrand | null>(null);
@@ -3901,6 +3907,7 @@ const TechnicianDashboard = () => {
     setCompleteJobStep(1);
     setBillAmount('');
     setBillPhotos([]);
+    setBillPhotoSources({});
     setOptionalCompletionPhotos([]);
     setCustomerHasZeroPhotosAltogether(false);
     setExtraPhotosStep6([]);
@@ -4051,6 +4058,7 @@ const TechnicianDashboard = () => {
       completionNotes,
       billAmount,
       billPhotos,
+      billPhotoSources,
       optionalCompletionPhotos,
       extraPhotosStep6,
       dontSendMessageToCustomer,
@@ -4089,6 +4097,7 @@ const TechnicianDashboard = () => {
     completionNotes,
     billAmount,
     billPhotos,
+    billPhotoSources,
     optionalCompletionPhotos,
     extraPhotosStep6,
     dontSendMessageToCustomer,
@@ -4126,6 +4135,7 @@ const TechnicianDashboard = () => {
     setCompletionNotes(draft.completionNotes);
     setBillAmount(draft.billAmount);
     setBillPhotos(draft.billPhotos);
+    setBillPhotoSources(draft.billPhotoSources || {});
     setOptionalCompletionPhotos(draft.optionalCompletionPhotos);
     setExtraPhotosStep6(draft.extraPhotosStep6);
     setDontSendMessageToCustomer(draft.dontSendMessageToCustomer);
@@ -4790,6 +4800,7 @@ const TechnicianDashboard = () => {
       const job = missingPhotoDialog.job;
       const merged = mergeCompletedJobMissingPhotos(job as any, {
         billPhotos: missingPhotoDialog.kind === 'bill' ? uploaded : undefined,
+        billPhotoSources: missingPhotoDialog.kind === 'bill' ? missingPhotoSources : undefined,
         paymentScreenshots:
           missingPhotoDialog.kind === 'payment' ? uploaded : undefined,
       });
@@ -4827,13 +4838,14 @@ const TechnicianDashboard = () => {
       );
       setMissingPhotoDialog(null);
       setMissingPhotoUrls([]);
+      setMissingPhotoSources({});
       setMissingPhotoUploading(false);
     } finally {
       setMissingPhotoSaving(false);
     }
     // isUploadedMediaUrl / hasPendingLocalOrUploadingPhoto are stable inline helpers in this render scope
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [missingPhotoDialog, missingPhotoSaving, missingPhotoUrls]);
+  }, [missingPhotoDialog, missingPhotoSaving, missingPhotoUrls, missingPhotoSources]);
 
   const hasPendingBillPhotosInState = () => billPhotos.some(hasPendingLocalOrUploadingPhoto);
   const hasPendingOptionalCompletionPhotos = () => optionalCompletionPhotos.some(hasPendingLocalOrUploadingPhoto);
@@ -5638,7 +5650,7 @@ const TechnicianDashboard = () => {
 
         // Add bill photos (all should be uploaded Cloudinary URLs at this point)
         if (uploadedBillPhotos.length > 0) {
-          requirements.push({ bill_photos: uploadedBillPhotos });
+          requirements.push(billPhotosRequirement(uploadedBillPhotos, billPhotoSources));
           console.log('✅ Added bill photos to requirements:', uploadedBillPhotos);
         }
 
@@ -6467,6 +6479,7 @@ const TechnicianDashboard = () => {
         const openMissingPhoto = (kind: 'bill' | 'payment') => {
           markJobAsSeen(job.id);
           setMissingPhotoUrls([]);
+          setMissingPhotoSources({});
           setMissingPhotoDialog({ job, kind });
         };
         return (
@@ -9116,6 +9129,9 @@ const TechnicianDashboard = () => {
                   hint="Photo of the signed bill or handwritten invoice."
                   images={billPhotos}
                   onImagesChange={setBillPhotos}
+                  onCaptureSourcesChange={(sources) =>
+                    setBillPhotoSources((prev) => ({ ...prev, ...sources }))
+                  }
                   onUploadStateChange={setIsBillPhotosUploading}
                   maxImages={5}
                   folder="bills"
@@ -10675,6 +10691,7 @@ const TechnicianDashboard = () => {
                           setOptionsDialogOpen((prev) => ({ ...prev, [job.id]: false }));
                           setSelectedJobForOptions(null);
                           setMissingPhotoUrls([]);
+                          setMissingPhotoSources({});
                           setMissingPhotoDialog({ job, kind: 'bill' });
                         }}
                       >
@@ -10691,6 +10708,7 @@ const TechnicianDashboard = () => {
                           setOptionsDialogOpen((prev) => ({ ...prev, [job.id]: false }));
                           setSelectedJobForOptions(null);
                           setMissingPhotoUrls([]);
+                          setMissingPhotoSources({});
                           setMissingPhotoDialog({ job, kind: 'payment' });
                         }}
                       >
@@ -10738,6 +10756,7 @@ const TechnicianDashboard = () => {
           if (!open) {
             setMissingPhotoDialog(null);
             setMissingPhotoUrls([]);
+            setMissingPhotoSources({});
             setMissingPhotoUploading(false);
             setMissingPhotoSaving(false);
           }
@@ -10766,6 +10785,9 @@ const TechnicianDashboard = () => {
                 }
                 images={missingPhotoUrls}
                 onImagesChange={setMissingPhotoUrls}
+                onCaptureSourcesChange={(sources) =>
+                  setMissingPhotoSources((prev) => ({ ...prev, ...sources }))
+                }
                 onUploadStateChange={setMissingPhotoUploading}
                 maxImages={missingPhotoDialog.kind === 'bill' ? 5 : 3}
                 folder={missingPhotoDialog.kind === 'bill' ? 'bills' : 'payments'}
@@ -10781,6 +10803,7 @@ const TechnicianDashboard = () => {
               onClick={() => {
                 setMissingPhotoDialog(null);
                 setMissingPhotoUrls([]);
+                setMissingPhotoSources({});
                 setMissingPhotoUploading(false);
               }}
             >

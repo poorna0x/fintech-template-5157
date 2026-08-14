@@ -13,6 +13,7 @@ import {
 } from './offlinePhotoQueue';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { billPhotosRequirement, extractBillPhotoSources, isPhotoCaptureSource } from '@/lib/billPhotoCapture';
 
 let isProcessing = false;
 let retryInterval: NodeJS.Timeout | null = null;
@@ -141,12 +142,17 @@ const processQueuedPhoto = async (photo: QueuedPhoto): Promise<boolean> => {
               console.log(`⚠️ Bill photo already exists in job ${photo.jobId}: ${uploadResult.secure_url}`);
             }
             
+            const existingSources = extractBillPhotoSources(requirements);
             // Remove existing bill_photos entries
             requirements = requirements.filter((req: any) => !req.bill_photos);
             
             // Add updated bill_photos entry
             if (existingBillPhotos.length > 0) {
-              requirements.push({ bill_photos: existingBillPhotos });
+              const sources = { ...existingSources };
+              if (isPhotoCaptureSource(photo.captureSource)) {
+                sources[uploadResult.secure_url] = photo.captureSource;
+              }
+              requirements.push(billPhotosRequirement(existingBillPhotos, sources));
               console.log(`✅ Updated job ${photo.jobId} with ${existingBillPhotos.length} bill photo(s)`);
             }
           } else if (photo.photoType === 'payment') {
