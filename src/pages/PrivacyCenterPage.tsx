@@ -10,7 +10,6 @@ import {
   Loader2,
   Mail,
   Phone,
-  RefreshCw,
   ScrollText,
   ShieldCheck,
   UserRound,
@@ -273,12 +272,6 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
     { id: 'audit', label: 'Audit log', count: audits.length, icon: ScrollText },
   ];
 
-  function refresh() {
-    if (tab === 'requests') void loadRequests();
-    if (tab === 'consents') void loadConsents();
-    if (tab === 'audit') void loadAudit();
-  }
-
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -308,22 +301,12 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 sm:justify-end">
-          <Button type="button" variant="outline" size="sm" asChild>
-            <Link to="/privacy-request" target="_blank" rel="noreferrer">
-              Public form
-              <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
-            </Link>
-          </Button>
-          <Button type="button" variant="outline" size="sm" disabled={loading} onClick={refresh}>
-            {loading ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-1.5 h-4 w-4" />
-            )}
-            Refresh
-          </Button>
-        </div>
+        <Button type="button" variant="outline" size="sm" className="sm:self-start" asChild>
+          <Link to="/privacy-request" target="_blank" rel="noreferrer">
+            Public form
+            <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+          </Link>
+        </Button>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
