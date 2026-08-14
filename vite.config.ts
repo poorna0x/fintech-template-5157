@@ -85,12 +85,17 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      // DPDP privacy intake — not on production until this branch is deployed.
+      '/.netlify/functions/privacy-request': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Local Puppeteer — must not hit production (cannot load localhost/ngrok assets).
       '/.netlify/functions/generate-pdf': {
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
-      // Proxy Netlify functions to avoid CORS issues
+      // Proxy remaining Netlify functions to production (legacy default for undeclared routes).
       '/.netlify/functions': {
         // Use production functions so nudges like goingNow work without netlify:dev.
         target: 'https://hydrogenro.com',
