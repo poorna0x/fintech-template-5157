@@ -260,6 +260,11 @@ export const WA_COLD = {
       String(fromLabel || '').trim() || 'Water Filter Service',
     ],
   },
+  ask_loc_flat_photo: {
+    name: 'svc_wfs_ask_loc_flat_photo_hro_v1',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
   ask_photo: {
     name: 'svc_ask_photo',
     language: 'en',
@@ -609,6 +614,8 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   wfs_just_hi: 'Just Hi (svc_wfs_just_hi_{hro|ero|generic})',
   wfs_collect: 'WFS collect info (svc_wfs_collect_* → location + photo flow)',
   ask_location: 'Ask location (svc_ask_location → reply → Send location once)',
+  ask_loc_flat_photo:
+    'Ask loc + flat + front photo (svc_wfs_ask_loc_flat_photo_*_v1 → loc → flat → photo)',
   ask_photo: 'Ask photo (svc_ask_photo)',
   ask_flat: 'Ask flat (svc_ask_flat)',
   ask_name: 'Ask name short (svc_wfs_ask_name_simple_*_v2 — This is … WFS)',

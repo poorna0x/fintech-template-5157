@@ -1659,50 +1659,124 @@ function parseLatLngFromText(text) {
   return { lat, lng };
 }
 
-async function acceptSharedLocation(ctx, state, enriched) {
+/** WhatsApp often sends a live pin then a saved pin a few metres apart. */
+const SIMILAR_LOCATION_METERS = 80;
+
+function locationDistanceMeters(a, b) {
+  const lat1 = Number(a?.lat ?? a?.latitude);
+  const lng1 = Number(a?.lng ?? a?.longitude);
+  const lat2 = Number(b?.lat ?? b?.latitude);
+  const lng2 = Number(b?.lng ?? b?.longitude);
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return null;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const x =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(x)));
+}
+
+function isSimilarLocation(a, b) {
+  if (!a || !b) return false;
+  const meters = locationDistanceMeters(a, b);
+  if (meters != null) return meters <= SIMILAR_LOCATION_METERS;
+  const ua = preferMapsShareUrl(a);
+  const ub = preferMapsShareUrl(b);
+  return Boolean(ua && ub && ua === ub);
+}
+
+function shouldSkipDuplicateLocationConfirm(state, incoming) {
+  if (String(state?.step || '') !== 'await_loc_confirm') return false;
+  return isSimilarLocation(state?.loc, incoming);
+}
+
+function newLocConfirmNonce() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* fall through */
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function packIncomingLocation(enriched) {
   const mapsShareUrl = preferMapsShareUrl(enriched);
-  await rememberSharedLocation(ctx.db, ctx.to, {
-    latitude: enriched.lat,
-    longitude: enriched.lng,
+  return {
+    lat: enriched.lat ?? enriched.latitude ?? null,
+    lng: enriched.lng ?? enriched.longitude ?? null,
     name: enriched.name,
     address: enriched.address,
     shortLocation: enriched.shortLocation,
     formattedAddress: enriched.formattedAddress,
     mapsShareUrl,
     googleLocation: mapsShareUrl,
+  };
+}
+
+function isLocationCollectStep(step) {
+  return step === 'await_location' || step === 'await_loc_confirm';
+}
+
+async function acceptSharedLocation(ctx, state, enriched) {
+  const incoming = packIncomingLocation(enriched);
+  await rememberSharedLocation(ctx.db, ctx.to, {
+    latitude: incoming.lat,
+    longitude: incoming.lng,
+    name: incoming.name,
+    address: incoming.address,
+    shortLocation: incoming.shortLocation,
+    formattedAddress: incoming.formattedAddress,
+    mapsShareUrl: incoming.mapsShareUrl,
+    googleLocation: incoming.googleLocation,
   });
 
-  if (state?.step === 'await_location' || state?.step === 'await_loc_confirm') {
-    const next = {
-      ...state,
-      step: 'await_loc_confirm',
-      loc: {
-        lat: enriched.lat ?? null,
-        lng: enriched.lng ?? null,
-        name: enriched.name,
-        address: enriched.address,
-        shortLocation: enriched.shortLocation,
-        formattedAddress: enriched.formattedAddress,
-        mapsShareUrl,
-        googleLocation: mapsShareUrl,
-      },
-    };
-    await askLocConfirm(ctx, next, null);
+  const live = (await getBookingState(ctx.db, ctx.to)) || state || {};
+  const inLocFlow =
+    isLocationCollectStep(live.step) || isLocationCollectStep(state?.step);
+
+  if (!inLocFlow) {
+    const locSummary = [
+      incoming.shortLocation,
+      incoming.name,
+      incoming.address || incoming.formattedAddress,
+      incoming.mapsShareUrl ||
+        (incoming.lat != null && incoming.lng != null
+          ? `https://maps.google.com/?q=${incoming.lat},${incoming.lng}`
+          : null),
+    ]
+      .filter(Boolean)
+      .join('\n');
+    await afterLocationSharedLegacy(ctx, locSummary);
     return;
   }
 
-  const locSummary = [
-    enriched.shortLocation,
-    enriched.name,
-    enriched.address || enriched.formattedAddress,
-    mapsShareUrl ||
-      (enriched.lat != null && enriched.lng != null
-        ? `https://maps.google.com/?q=${enriched.lat},${enriched.lng}`
-        : null),
-  ]
-    .filter(Boolean)
-    .join('\n');
-  await afterLocationSharedLegacy(ctx, locSummary);
+  const prevLoc = live.loc || state?.loc;
+  if (
+    (live.step === 'await_loc_confirm' || state?.step === 'await_loc_confirm') &&
+    isSimilarLocation(prevLoc, incoming)
+  ) {
+    return;
+  }
+
+  const nonce = newLocConfirmNonce();
+  const next = {
+    ...(state && typeof state === 'object' ? state : {}),
+    ...live,
+    step: 'await_loc_confirm',
+    loc: incoming,
+    locConfirmNonce: nonce,
+  };
+  await setBookingState(ctx.db, ctx.to, next);
+
+  const claimed = await getBookingState(ctx.db, ctx.to);
+  if (claimed?.locConfirmNonce && claimed.locConfirmNonce !== nonce) {
+    return;
+  }
+
+  await askLocConfirm(ctx, { ...next, ...(claimed || {}) }, null);
 }
 
 async function tryAcceptLocationFromText(ctx, state, text) {
@@ -1963,7 +2037,6 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
       ...ctx,
       bodyText: locBody,
     });
-    await sendEndFlowOption(ctx);
     return { ok: Boolean(loc?.ok), started: 'request_location', error: loc?.error };
   }
 
@@ -2026,6 +2099,7 @@ async function startWaterFilterServiceBooking(ctx, opts = {}) {
     ...(existingId ? { existingCustomerId: existingId } : {}),
     ...(brand ? { brand } : {}),
     ...(opts.locationBodyOnly ? { locationBodyOnly: true } : {}),
+    ...(opts.skipLocationPrompt ? { skipLocationPrompt: true } : {}),
   };
 
   await askLocationForWaterFilterService(ctx, base);
@@ -2053,6 +2127,9 @@ async function startBookLocationPhoto(ctx, opts = {}) {
     ...(existing?.id ? { existingCustomerId: existing.id } : {}),
   };
   await setBookingState(ctx.db, ctx.to, { ...base, step: 'await_location' });
+  if (opts.skipLocationPrompt) {
+    return { ok: true, started: 'book_location_photo', mode: 'location_then_photo' };
+  }
   await sendLocationRequest({
     ...ctx,
     bodyText: [
@@ -2063,20 +2140,19 @@ async function startBookLocationPhoto(ctx, opts = {}) {
       'Tap *Send location* below — next we’ll pick a date & time.',
     ].join('\n'),
   });
-  await sendEndFlowOption(ctx);
   return { ok: true, started: 'book_location_photo', mode: 'location_then_photo' };
 }
 
 async function askLocationForWaterFilterService(ctx, state = {}) {
-  const { locationBodyOnly, ...persist } = state;
+  const { locationBodyOnly, skipLocationPrompt, ...persist } = state;
   await setBookingState(ctx.db, ctx.to, { ...persist, step: 'await_location' });
+  if (skipLocationPrompt) return;
   await sendLocationRequest({
     ...ctx,
     bodyText: locationBodyOnly
       ? 'Tap *Send location* below.'
       : buildLocationRequestBodyText(persist),
   });
-  await sendEndFlowOption(ctx);
 }
 
 /** Seed pending action for cold-template reopen; resumed on next inbound. */
@@ -2669,7 +2745,6 @@ async function askSecondaryLocation(ctx, state = {}) {
     bodyText:
       'Please share the *location for this visit* (secondary site).\n\nTap *Send location* below.',
   });
-  await sendEndFlowOption(ctx);
 }
 
 /** Reinstallation: always collect a pin and overwrite the saved (primary) address. */
@@ -2696,7 +2771,6 @@ async function askReinstallLocationUpdate(ctx, state = {}) {
       .filter(Boolean)
       .join('\n'),
   });
-  await sendEndFlowOption(ctx);
 }
 
 async function continueAfterServiceType(ctx, state) {
@@ -2747,7 +2821,6 @@ async function askLocationForNew(ctx, state) {
     bodyText:
       'Thanks! Please share your *service location*.\n\nTap *Send location* below.',
   });
-  await sendEndFlowOption(ctx);
 }
 
 async function askLocConfirm(ctx, state, locSummary) {
@@ -2795,7 +2868,6 @@ async function askLocConfirm(ctx, state, locSummary) {
     buttons: [
       { id: 'loc_yes', title: 'Yes, correct' },
       { id: 'loc_no', title: 'No, resend' },
-      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -3671,6 +3743,58 @@ async function handleBookingBotInbound({
   if (state?.step === 'admin_pending' && state?.pendingAction) {
     const pending = String(state.pendingAction || '').trim();
     const pendingSeed = { ...state };
+    const locPending =
+      pending === 'request_location' ||
+      pending === 'water_filter_service' ||
+      pending === 'book_location_photo';
+    const inboundPin = msgType === 'location' && msg.location;
+    const inboundMaps =
+      msgType === 'text' &&
+      text &&
+      (Boolean(extractMapsUrlFromText(text)) || Boolean(parseLatLngFromText(text)));
+
+    if (locPending && (inboundPin || inboundMaps)) {
+      await clearBookingState(db, to);
+      if (pending === 'book_location_photo') {
+        await startBookLocationPhoto(ctx, {
+          ...pendingSeed,
+          skipLocationPrompt: true,
+        });
+      } else if (pending === 'water_filter_service') {
+        await startWaterFilterServiceBooking(ctx, {
+          ...pendingSeed,
+          skipLocationPrompt: true,
+        });
+      } else {
+        await setBookingState(db, to, {
+          step: 'await_location',
+          needNewLocation: true,
+          startedByAdmin: true,
+          ...(pendingSeed.name || pendingSeed.customerName
+            ? { name: pendingSeed.name || pendingSeed.customerName }
+            : {}),
+          ...(pendingSeed.brand ? { brand: pendingSeed.brand } : {}),
+          ...(pendingSeed.existingCustomerId
+            ? { existingCustomerId: pendingSeed.existingCustomerId }
+            : {}),
+        });
+      }
+      const live = (await getBookingState(db, to)) || { step: 'await_location' };
+      if (inboundPin) {
+        const { latitude, longitude, name, address } = msg.location;
+        const enriched = await enrichWhatsAppLocation({
+          latitude,
+          longitude,
+          name,
+          address,
+        });
+        await acceptSharedLocation(ctx, live, enriched);
+      } else {
+        await tryAcceptLocationFromText(ctx, live, text);
+      }
+      return { handled: true };
+    }
+
     await clearBookingState(db, to);
     await resumeSessionStyleFromPending(ctx, pending, interactive, text, pendingSeed);
     return { handled: true };
@@ -4071,7 +4195,8 @@ async function handleBookingBotInbound({
     !EDIT_RE.test(text) &&
     !isEndFlowTyped(text)
   ) {
-    const fromText = await tryAcceptLocationFromText(ctx, state, text);
+    const live = (await getBookingState(db, to)) || state;
+    const fromText = await tryAcceptLocationFromText(ctx, live, text);
     if (fromText.handled) return { handled: true };
     await sendText({
       ...ctx,
@@ -4082,7 +4207,8 @@ async function handleBookingBotInbound({
 
   // Customer shared a location pin — only consume it while we asked for location.
   if (msgType === 'location' && msg.location) {
-    if (state?.step === 'await_location' || state?.step === 'await_loc_confirm') {
+    const live = (await getBookingState(db, to)) || state;
+    if (live?.step === 'await_location' || live?.step === 'await_loc_confirm') {
       const { latitude, longitude, name, address } = msg.location;
       const enriched = await enrichWhatsAppLocation({
         latitude,
@@ -4090,7 +4216,7 @@ async function handleBookingBotInbound({
         name,
         address,
       });
-      await acceptSharedLocation(ctx, state, enriched);
+      await acceptSharedLocation(ctx, live, enriched);
       return { handled: true };
     }
     // Idle / other steps: keep the pin in the inbox for admin (do not start a booking).
@@ -4384,7 +4510,6 @@ async function handleBookingBotInbound({
         ...ctx,
         bodyText: 'Please share the updated *service location*.',
       });
-      await sendEndFlowOption(ctx);
       return { handled: true };
     }
 
@@ -5137,6 +5262,10 @@ module.exports = {
   getBookingState,
   upsertBookingBotRow,
   processOtherPhoneReply,
+  isSimilarLocation,
+  locationDistanceMeters,
+  shouldSkipDuplicateLocationConfirm,
+  SIMILAR_LOCATION_METERS,
   ACTIVE_BOOKING_STEPS,
   askServiceType,
   sendIdentityConfirm,

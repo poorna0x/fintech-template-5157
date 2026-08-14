@@ -205,6 +205,10 @@ export function WhatsAppQuickRepliesBar({
       void onRequestPhoto();
       return;
     }
+    if (windowOpen && item.id === 'share_loc_photo' && onStartBookLocationPhoto) {
+      void onStartBookLocationPhoto();
+      return;
+    }
     if (windowOpen && item.id === 'share_flat' && onRequestBuildingFlat) {
       void onRequestBuildingFlat();
       return;
@@ -257,6 +261,10 @@ export function WhatsAppQuickRepliesBar({
     }
     if (windowOpen && reply.id === 'tpl_ask_photo' && onRequestPhoto) {
       await onRequestPhoto();
+      return;
+    }
+    if (windowOpen && reply.id === 'tpl_ask_loc_flat_photo' && onStartBookLocationPhoto) {
+      await onStartBookLocationPhoto();
       return;
     }
     if (windowOpen && reply.id === 'tpl_ask_flat' && onRequestBuildingFlat) {

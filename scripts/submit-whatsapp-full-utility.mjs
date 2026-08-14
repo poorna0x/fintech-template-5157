@@ -10,8 +10,9 @@
  *   node scripts/submit-whatsapp-full-utility.mjs --status     # list all on WABA
  *   node scripts/submit-whatsapp-full-utility.mjs --preview-md  # write docs/whatsapp-cold-template-previews.md
  *   node scripts/submit-whatsapp-full-utility.mjs --submit       # submit missing only
- *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-tech-customer-photo
+   *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-tech-customer-photo
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-overdue
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-ask-loc-flat-photo
  */
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -750,6 +751,55 @@ const WFS_ASK_LOC_FROM_TEMPLATES = [
       '📍 To serve you better we need your exact location. Please share your Google Maps location pin on this chat.',
       '',
       'Tap Share location below 👇',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+];
+
+/**
+ * Ask location + flat/house no + front photo of purifier.
+ * Call us + Share location QR. Generic + both brands.
+ */
+const WFS_ASK_LOC_FLAT_PHOTO_TEMPLATES = [
+  {
+    name: 'svc_wfs_ask_loc_flat_photo_v1',
+    body: [
+      'Hi {{1}}, 👋',
+      '',
+      'from Water Filter Service or Installation.',
+      '',
+      'Please share all of these on this chat:',
+      '1) Your Google Maps location pin',
+      '2) Your flat / house number',
+      '3) A photo of the front of the purifier',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_flat_photo_hro_v1',
+    body: [
+      'Hi {{1}}, 👋',
+      '',
+      'from Hydrogen RO Water Filter Service or Installation.',
+      '',
+      'Please share all of these on this chat:',
+      '1) Your Google Maps location pin',
+      '2) Your flat / house number',
+      '3) A photo of the front of the purifier',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_flat_photo_ero_v1',
+    body: [
+      'Hi {{1}}, 👋',
+      '',
+      'from Eleven RO Water Filter Service or Installation.',
+      '',
+      'Please share all of these on this chat:',
+      '1) Your Google Maps location pin',
+      '2) Your flat / house number',
+      '3) A photo of the front of the purifier',
     ].join('\n'),
     examples: ['Rahul'],
   },
@@ -2279,6 +2329,9 @@ function collectAllTemplatePreviewEntries() {
   for (const t of WFS_ASK_LOC_FROM_TEMPLATES) {
     push('WFS ask location from WFS (Share location)', t, askLocShareLocationPayload);
   }
+  for (const t of WFS_ASK_LOC_FLAT_PHOTO_TEMPLATES) {
+    push('WFS ask loc + flat + photo (Share location)', t, askLocShareLocationPayload);
+  }
   for (const t of WFS_ASK_LOC_V2_TEMPLATES) {
     push('WFS ask location v3 (Share location)', t, askLocShareLocationPayload);
   }
@@ -2782,6 +2835,14 @@ async function main() {
     }
     queue.push({ label: t.name, payload: askLocShareLocationPayload(t) });
   }
+  for (const t of WFS_ASK_LOC_FLAT_PHOTO_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: askLocShareLocationPayload(t) });
+  }
   for (const t of DOC_PDF_V2_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
@@ -2957,6 +3018,14 @@ async function main() {
   const onlyAskLocFrom = process.argv.includes('--only-ask-loc-from');
   if (onlyAskLocFrom) {
     const keep = new Set(WFS_ASK_LOC_FROM_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyAskLocFlatPhoto = process.argv.includes('--only-ask-loc-flat-photo');
+  if (onlyAskLocFlatPhoto) {
+    const keep = new Set(WFS_ASK_LOC_FLAT_PHOTO_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

@@ -59,6 +59,17 @@ function coldWfsCollectParams(brand, customerName) {
   return { name: templateName, languageCode: 'en', bodyParams: [name] };
 }
 
+function coldAskLocFlatPhotoParams(brand, customerName) {
+  const name = String(customerName || 'Customer').trim() || 'Customer';
+  const templateName =
+    brand === 'elevenro'
+      ? 'svc_wfs_ask_loc_flat_photo_ero_v1'
+      : brand === 'hydrogenro'
+        ? 'svc_wfs_ask_loc_flat_photo_hro_v1'
+        : 'svc_wfs_ask_loc_flat_photo_v1';
+  return { name: templateName, languageCode: 'en', bodyParams: [name] };
+}
+
 function coldAskLocationParams(brand, customerName) {
   const name = String(customerName || 'Customer').trim() || 'Customer';
   // No "Share location" quick-reply — that forced a 2nd step before the native
@@ -273,26 +284,18 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
   }
 
   if (action === 'book_location_photo') {
+    const locFlatPhoto = coldAskLocFlatPhotoParams(brand, name);
+    const ask = coldAskLocationParams(brand, name);
     return {
-      primary: {
-        name: 'svc_service_request',
-        languageCode: 'en',
-        bodyParams: [name],
-        seedPending: 'book_location_photo',
-      },
-      fallback: {
+      primary: { ...locFlatPhoto, seedPending: 'book_location_photo' },
+      fallback: { ...ask, seedPending: 'book_location_photo' },
+      fallback2: {
         name: 'svc_visit_reminder',
         languageCode: 'en',
         bodyParams: [
           name,
-          'reply here to book — we will ask location pin, then purifier photo',
+          'reply here to book — we will ask location pin, flat / house number, then a front photo of the purifier',
         ],
-        seedPending: 'book_location_photo',
-      },
-      fallback2: {
-        name: 'svc_smoke_update',
-        languageCode: 'en',
-        bodyParams: [name],
         seedPending: 'book_location_photo',
       },
     };

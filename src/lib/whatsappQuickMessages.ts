@@ -215,6 +215,7 @@ export function resolveWfsAskLocSimpleTemplateName(_ctx: WhatsAppQuickReplyConte
 
 export function isAskLocationTemplateName(name: string): boolean {
   const n = String(name || '').trim();
+  if (/ask_loc_flat_photo/i.test(n)) return false;
   return n === 'svc_ask_location' || /^svc_wfs_ask_loc/i.test(n);
 }
 
@@ -231,6 +232,39 @@ export function askLocationTemplateFallbackNames(): string[] {
     'svc_wfs_ask_loc_simple_hro_v3',
     'svc_wfs_ask_loc_simple_ero_v3',
   ];
+}
+
+export function resolveWfsAskLocFlatPhotoTemplateName(ctx: WhatsAppQuickReplyContext): string {
+  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_loc_flat_photo_v1';
+  return ctx.brand === 'elevenro'
+    ? 'svc_wfs_ask_loc_flat_photo_ero_v1'
+    : 'svc_wfs_ask_loc_flat_photo_hro_v1';
+}
+
+export function askLocFlatPhotoFallbackNames(): string[] {
+  return [
+    'svc_wfs_ask_loc_flat_photo_hro_v1',
+    'svc_wfs_ask_loc_flat_photo_ero_v1',
+    'svc_wfs_ask_loc_flat_photo_v1',
+    ...askLocationTemplateFallbackNames(),
+  ];
+}
+
+function waterFilterServiceOrInstallFromLabel(ctx: WhatsAppQuickReplyContext): string {
+  return `${waterFilterServiceFromLabel(ctx)} or Installation`;
+}
+
+export function wfsAskLocFlatPhotoText(ctx: WhatsAppQuickReplyContext): string {
+  return [
+    `Hi ${cleanName(ctx)}, 👋`,
+    '',
+    `from ${waterFilterServiceOrInstallFromLabel(ctx)}.`,
+    '',
+    'Please share all of these on this chat:',
+    '1) Your Google Maps location pin',
+    '2) Your flat / house number',
+    '3) A photo of the front of the purifier',
+  ].join('\n');
 }
 
 function brandInfo(ctx: WhatsAppQuickReplyContext) {
@@ -368,19 +402,10 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
   },
   {
     id: 'share_loc_photo',
-    label: 'Ask loc+photo',
+    label: 'Ask loc+flat+photo',
     group: 'request',
     instant: true,
-    text: (ctx) =>
-      [
-        `Hi ${cleanName(ctx)}, to book your service please send:`,
-        '',
-        '1) Your Google Maps location pin',
-        '2) Your building / flat number (or Skip)',
-        '3) A clear photo of the purifier',
-        '',
-        'You can send them one by one on this chat.',
-      ].join('\n'),
+    text: (ctx) => wfsAskLocFlatPhotoText(ctx),
   },
   {
     id: 'share_model',
@@ -641,6 +666,15 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     language: 'en',
     bodyParams: (ctx) => [cleanName(ctx), waterFilterServiceFromLabel(ctx)],
     resolveTemplateName: (ctx) => resolveWfsAskLocTemplateName(ctx),
+  },
+  {
+    id: 'tpl_ask_loc_flat_photo',
+    label: 'Ask loc+flat+photo',
+    group: 'request',
+    templateName: 'svc_wfs_ask_loc_flat_photo_hro_v1',
+    language: 'en',
+    bodyParams: (ctx) => [cleanName(ctx)],
+    resolveTemplateName: (ctx) => resolveWfsAskLocFlatPhotoTemplateName(ctx),
   },
   {
     id: 'tpl_ask_photo',
@@ -981,6 +1015,11 @@ export function filterQuickTemplatesByApproved(
     }
     if (r.id === 'tpl_ask_location') {
       return askLocationTemplateFallbackNames().some((n) =>
+        approvedNames.has(resolveWaTemplateName(n))
+      );
+    }
+    if (r.id === 'tpl_ask_loc_flat_photo') {
+      return askLocFlatPhotoFallbackNames().some((n) =>
         approvedNames.has(resolveWaTemplateName(n))
       );
     }

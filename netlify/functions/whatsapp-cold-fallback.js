@@ -522,6 +522,17 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push('svc_ask_location', [name]);
   }
 
+  if (/^svc_wfs_ask_loc_flat_photo_(hro|ero)_v1$/i.test(primaryName)) {
+    const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
+    push('svc_wfs_ask_loc_flat_photo_v1', [name]);
+    push(`svc_wfs_ask_loc_from_${suffix}_v1`, [name]);
+    push('svc_ask_location', [name]);
+  }
+  if (/^svc_wfs_ask_loc_flat_photo_v1$/i.test(primaryName)) {
+    push('svc_wfs_ask_loc_from_v1', [name]);
+    push('svc_ask_location', [name]);
+  }
+
   // Ask location v3 (Share location + emoji) → v2 → v1 → legacy
   if (/^svc_wfs_ask_loc_simple_(hro|ero)_v3$/i.test(primaryName)) {
     const suffix = /_hro_v3$/i.test(primaryName) ? 'hro' : 'ero';

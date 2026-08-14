@@ -9,6 +9,9 @@ const {
   upsertBookingBotRow,
   ACTIVE_BOOKING_STEPS,
   OTHER_PHONE_LOOKUP_MAX,
+  isSimilarLocation,
+  locationDistanceMeters,
+  shouldSkipDuplicateLocationConfirm,
 } = require('../netlify/functions/whatsapp-booking-bot.js');
 
 function createMockDb(initial = {}) {
@@ -182,6 +185,36 @@ async function testActiveStepsCoverTypedFlows() {
   console.log('ok ACTIVE_BOOKING_STEPS covers typed flows');
 }
 
+async function testDuplicateLocationPinsAreIgnored() {
+  const first = { lat: 12.893458366394, lng: 77.632431030273 };
+  const second = { lat: 12.89344674622, lng: 77.632454931736 };
+  const far = { lat: 13.0, lng: 77.6 };
+  const meters = locationDistanceMeters(first, second);
+  assert.ok(meters != null && meters < 20, `expected near pins, got ${meters}m`);
+  assert.strictEqual(isSimilarLocation(first, second), true);
+  assert.strictEqual(isSimilarLocation(first, far), false);
+  assert.strictEqual(
+    shouldSkipDuplicateLocationConfirm({ step: 'await_location', loc: first }, second),
+    false
+  );
+  assert.strictEqual(
+    shouldSkipDuplicateLocationConfirm({ step: 'await_loc_confirm', loc: first }, second),
+    true
+  );
+  assert.strictEqual(
+    shouldSkipDuplicateLocationConfirm({ step: 'await_loc_confirm', loc: first }, far),
+    false
+  );
+  assert.strictEqual(
+    isSimilarLocation(
+      { mapsShareUrl: 'https://maps.app.goo.gl/abc' },
+      { mapsShareUrl: 'https://maps.app.goo.gl/abc' }
+    ),
+    true
+  );
+  console.log('ok duplicate location pins are ignored');
+}
+
 async function testEveryEmittedButtonHasHandler() {
   const fs = require('fs');
   const path = require('path');
@@ -250,6 +283,7 @@ async function main() {
   await testUpsertAdvancesSteps();
   await testLegacyBugWouldFail();
   await testActiveStepsCoverTypedFlows();
+  await testDuplicateLocationPinsAreIgnored();
   await testEveryEmittedButtonHasHandler();
   console.log('\nAll booking-bot flow regressions passed.');
 }

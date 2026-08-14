@@ -822,6 +822,9 @@ exports.handler = async (event) => {
       svc_wfs_ask_loc_from_v1: 'request_location',
       svc_wfs_ask_loc_from_hro_v1: 'request_location',
       svc_wfs_ask_loc_from_ero_v1: 'request_location',
+      svc_wfs_ask_loc_flat_photo_v1: 'book_location_photo',
+      svc_wfs_ask_loc_flat_photo_hro_v1: 'book_location_photo',
+      svc_wfs_ask_loc_flat_photo_ero_v1: 'book_location_photo',
       svc_ask_photo: 'request_photo',
       svc_ask_flat: 'request_building_flat',
       svc_wfs_ask_name_v1: 'request_name',
@@ -881,6 +884,7 @@ exports.handler = async (event) => {
           whatsappLeadLine: '',
           ...(source === 'service_reminder' ? { serviceReminder: true } : {}),
           ...(resolvedSeed === 'water_filter_service' ? { waterFilterService: true } : {}),
+          ...(resolvedSeed === 'book_location_photo' ? { locationThenPhoto: true } : {}),
           ...(seedBrand ? { brand: seedBrand } : {}),
         });
       } catch (err) {
