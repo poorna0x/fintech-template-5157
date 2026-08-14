@@ -29,17 +29,24 @@ const PrivacyDataRequestPage = () => {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [details, setDetails] = useState('');
+  const [honeypot, setHoneypot] = useState('');
   const [altcha, setAltcha] = useState('');
+  const [altchaOk, setAltchaOk] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!phone.trim() && !email.trim()) {
-      toast.error('Phone or email is required');
+    const phoneDigits = phone.replace(/\D/g, '');
+    if (phoneDigits.length !== 10 && !email.trim()) {
+      toast.error('Enter a 10-digit mobile number or an email');
       return;
     }
-    if (!altcha) {
-      toast.error('Complete the security check');
+    if (phoneDigits && phoneDigits.length !== 10) {
+      toast.error('Enter a valid 10-digit mobile number');
+      return;
+    }
+    if (!altchaOk || !altcha) {
+      toast.error('Wait for the security check to finish, then submit');
       return;
     }
     setSubmitting(true);
@@ -51,10 +58,11 @@ const PrivacyDataRequestPage = () => {
           requestType,
           brand,
           name,
-          phone,
+          phone: phoneDigits,
           email,
           details,
           altcha,
+          website: honeypot,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -65,6 +73,7 @@ const PrivacyDataRequestPage = () => {
       toast.success(String(data.message || 'Request received. We aim to respond within 72 hours.'));
       setDetails('');
       setAltcha('');
+      setAltchaOk(false);
     } catch {
       toast.error('Network error — try again');
     } finally {
@@ -84,7 +93,8 @@ const PrivacyDataRequestPage = () => {
             <Link to="/privacy-policy" className="text-primary underline">
               Privacy Policy
             </Link>
-            .
+            . We may verify your phone before sharing personal data (same idea as authenticity
+            checks) — that is allowed and recommended under Indian privacy law.
           </p>
           <Card>
             <CardHeader>
@@ -92,6 +102,17 @@ const PrivacyDataRequestPage = () => {
             </CardHeader>
             <CardContent>
               <form className="space-y-4" onSubmit={onSubmit}>
+                {/* Honeypot — hidden from people, bots often fill it */}
+                <div className="absolute -left-[9999px] h-0 w-0 overflow-hidden" aria-hidden="true">
+                  <Label htmlFor="pr-website">Website</Label>
+                  <Input
+                    id="pr-website"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={honeypot}
+                    onChange={(e) => setHoneypot(e.target.value)}
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label>Request type</Label>
                   <Select value={requestType} onValueChange={setRequestType}>
@@ -115,13 +136,14 @@ const PrivacyDataRequestPage = () => {
                   <Label htmlFor="pr-phone">Phone</Label>
                   <Input
                     id="pr-phone"
+                    inputMode="numeric"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="10-digit mobile"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="pr-email">Email</Label>
+                  <Label htmlFor="pr-email">Email (optional if phone given)</Label>
                   <Input
                     id="pr-email"
                     type="email"
@@ -139,12 +161,21 @@ const PrivacyDataRequestPage = () => {
                     placeholder="What should we look up or change?"
                   />
                 </div>
-                <AltchaWidget
-                  tokenPurpose="booking"
-                  onVerify={(ok, payload) => setAltcha(ok && payload ? payload : '')}
-                />
-                <Button type="submit" disabled={submitting} className="w-full">
-                  {submitting ? 'Submitting…' : 'Submit request'}
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Quick anti-spam check (no CAPTCHA typing). Wait until it finishes before
+                    submit.
+                  </p>
+                  <AltchaWidget
+                    tokenPurpose="booking"
+                    onVerify={(ok, payload) => {
+                      setAltchaOk(Boolean(ok && payload));
+                      setAltcha(ok && payload ? payload : '');
+                    }}
+                  />
+                </div>
+                <Button type="submit" disabled={submitting || !altchaOk} className="w-full">
+                  {submitting ? 'Submitting…' : altchaOk ? 'Submit request' : 'Waiting for security check…'}
                 </Button>
               </form>
             </CardContent>

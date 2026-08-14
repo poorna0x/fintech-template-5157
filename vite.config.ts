@@ -85,6 +85,11 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      // ALTCHA challenge/verify must share the same HMAC as local privacy/booking handlers.
+      '/.netlify/functions/altcha-verify': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // DPDP privacy intake — not on production until this branch is deployed.
       '/.netlify/functions/privacy-request': {
         target: 'http://localhost:8888',

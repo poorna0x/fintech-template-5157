@@ -123,17 +123,38 @@ exports.handler = async (event) => {
   }
 
   const altchaPayload = body.altcha || body.altchaPayload || body.captcha;
+  // Honeypot — bots fill hidden fields; humans leave blank.
+  if (String(body.website || body.company_url || '').trim()) {
+    return json(200, headers, {
+      ok: true,
+      id: null,
+      message: 'Request received. We aim to respond within 72 hours.',
+    });
+  }
+
+  const phoneDigits = String(body.phone || body.requester_phone || '').replace(/\D/g, '');
+  const email = String(body.email || body.requester_email || '').trim();
+  if (phoneDigits.length !== 10 && !email) {
+    return json(400, headers, { error: 'Enter a 10-digit mobile number or an email' });
+  }
+  if (phoneDigits && phoneDigits.length !== 10) {
+    return json(400, headers, { error: 'Enter a valid 10-digit Indian mobile number' });
+  }
+
   const altchaOk = await verifyAltchaPayload(altchaPayload);
   if (!altchaOk?.verified) {
-    return json(403, headers, { error: 'Complete the security check and try again' });
+    return json(403, headers, {
+      error: 'Complete the security check and try again',
+      detail: altchaOk?.error || 'unverified',
+    });
   }
 
   const { data: newId, error } = await db.rpc('submit_privacy_request', {
     p_request_type: body.requestType || body.request_type,
     p_brand: body.brand || 'hydrogenro',
     p_requester_name: body.name || body.requester_name || '',
-    p_requester_phone: body.phone || body.requester_phone || '',
-    p_requester_email: body.email || body.requester_email || '',
+    p_requester_phone: phoneDigits || '',
+    p_requester_email: email || '',
     p_details: body.details || '',
   });
 
