@@ -976,6 +976,8 @@ export async function resolveWhatsAppMediaDisplayUrl(opts: {
   mediaUrl?: string | null;
   messageId?: string | null;
   mimeHint?: string | null;
+  /** Prefer downloading bytes into a blob URL (required for reliable mobile <img>). */
+  preferBlob?: boolean;
 }): Promise<{ ok: boolean; url?: string; error?: string; fromCache?: boolean }> {
   const mediaUrl = String(opts.mediaUrl || '').trim();
   if (!mediaUrl) return { ok: false, error: 'No media' };
@@ -1014,19 +1016,41 @@ export async function resolveWhatsAppMediaDisplayUrl(opts: {
     messageId: opts.messageId,
   });
   if (!fetched.ok) {
-    // Fall back to signed URL (may not persist on device)
+    // Fall back to signed URL, but always try to materialize a blob for <img>.
     const signed = await fetchWhatsAppR2SignedUrl({
       mediaUrl,
       messageId: opts.messageId,
     });
-    if (signed.ok && signed.url) return { ok: true, url: signed.url, fromCache: false };
-    return { ok: false, error: fetched.error || signed.error || 'Media failed' };
+    if (!signed.ok || !signed.url) {
+      return { ok: false, error: fetched.error || signed.error || 'Media failed' };
+    }
+    if (cacheKey) {
+      try {
+        const res = await fetch(signed.url);
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = await putCachedMediaBlob(
+            cacheKey,
+            blob,
+            blob.type || opts.mimeHint || undefined
+          );
+          return { ok: true, url, fromCache: false };
+        }
+      } catch {
+        /* signed URL may be unusable in WebView without CORS */
+      }
+    }
+    // Last resort — caller should not long-cache this (expires).
+    if (opts.preferBlob) {
+      return { ok: false, error: 'Could not load media bytes for display' };
+    }
+    return { ok: true, url: signed.url, fromCache: false };
   }
 
   if (fetched.bytes && cacheKey) {
     const mime =
       opts.mimeHint ||
-      (/\.pdf$/i.test(mediaUrl) ? 'application/pdf' : 'application/octet-stream');
+      (/\.pdf$/i.test(mediaUrl) ? 'application/pdf' : 'image/jpeg');
     const blob = new Blob([fetched.bytes], { type: mime });
     const url = await putCachedMediaBlob(cacheKey, blob, mime);
     return { ok: true, url, fromCache: false };
@@ -1047,10 +1071,24 @@ export async function resolveWhatsAppMediaDisplayUrl(opts: {
     } catch {
       /* use remote URL */
     }
+    if (opts.preferBlob) {
+      return { ok: false, error: 'Could not load media bytes for display' };
+    }
     return { ok: true, url: fetched.url, fromCache: false };
   }
 
-  if (fetched.url) return { ok: true, url: fetched.url, fromCache: false };
+  if (fetched.bytes) {
+    const mime = opts.mimeHint || 'application/octet-stream';
+    const url = URL.createObjectURL(new Blob([fetched.bytes], { type: mime }));
+    return { ok: true, url, fromCache: false };
+  }
+
+  if (fetched.url) {
+    if (opts.preferBlob) {
+      return { ok: false, error: 'Could not load media bytes for display' };
+    }
+    return { ok: true, url: fetched.url, fromCache: false };
+  }
   return { ok: false, error: 'No media bytes' };
 }
 

@@ -148,7 +148,12 @@ export function WhatsAppPdfThumbnail({
       setLoading(true);
       setThumbUrl(null);
       try {
-        const data = await loadPdfBytes(messageId, mediaUrl);
+        const data = await Promise.race([
+          loadPdfBytes(messageId, mediaUrl),
+          new Promise<Uint8Array>((_, reject) => {
+            window.setTimeout(() => reject(new Error('PDF load timeout')), 25000);
+          }),
+        ]);
         if (cancelled) return;
 
         const pdfjs = await loadPdfJs();

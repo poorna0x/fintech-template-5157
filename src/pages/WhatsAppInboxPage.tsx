@@ -308,17 +308,28 @@ function InboxChatPhoto({
   row: WhatsAppMessageRow;
   cachedSrc: string | null;
   onOpen: () => void;
-  onResolve: (row: WhatsAppMessageRow) => Promise<string | null>;
+  onResolve: (row: WhatsAppMessageRow, opts?: { bustCache?: boolean }) => Promise<string | null>;
 }) {
-  const [src, setSrc] = useState<string | null>(cachedSrc);
+  const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const retriedRef = useRef(false);
 
   useEffect(() => {
-    if (cachedSrc) {
-      setSrc(cachedSrc);
-      setFailed(false);
+    retriedRef.current = false;
+    setFailed(false);
+    // Only trust blob/data URLs in the session cache — signed https URLs expire
+    // and show as broken images with the Meta filename as alt text on mobile.
+    const stable =
+      cachedSrc &&
+      (cachedSrc.startsWith('blob:') || cachedSrc.startsWith('data:'))
+        ? cachedSrc
+        : null;
+    if (stable) {
+      setSrc(stable);
       return;
     }
+    setSrc(null);
     let cancelled = false;
     void onResolve(row).then((url) => {
       if (cancelled) return;
@@ -334,6 +345,26 @@ function InboxChatPhoto({
     };
   }, [cachedSrc, onResolve, row]);
 
+  const handleImgError = () => {
+    if (retriedRef.current) {
+      setSrc(null);
+      setFailed(true);
+      return;
+    }
+    retriedRef.current = true;
+    setRetrying(true);
+    setSrc(null);
+    void onResolve(row, { bustCache: true }).then((url) => {
+      setRetrying(false);
+      if (url) {
+        setSrc(url);
+        setFailed(false);
+      } else {
+        setFailed(true);
+      }
+    });
+  };
+
   return (
     <button
       type="button"
@@ -343,18 +374,20 @@ function InboxChatPhoto({
       {src ? (
         <img
           src={src}
-          alt={row.filename || 'Photo'}
+          alt=""
           className="max-h-72 w-full min-w-[180px] rounded-md object-contain bg-black/10"
           loading="lazy"
+          onError={handleImgError}
         />
       ) : failed ? (
-        <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#667781]">
+        <span className="flex h-32 w-48 flex-col items-center justify-center gap-1 rounded-md bg-black/20 px-2 text-center text-xs text-[#667781]">
           Could not load photo
+          <span className="text-[10px] opacity-80">Tap to retry open</span>
         </span>
       ) : (
         <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/20 text-xs text-[#667781]">
           <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-          Loading photo…
+          {retrying ? 'Retrying…' : 'Loading photo…'}
         </span>
       )}
     </button>
@@ -908,20 +941,39 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const loadOlderMessagesRef = useRef(loadOlderMessages);
   loadOlderMessagesRef.current = loadOlderMessages;
 
-  const resolveMediaHref = useCallback(async (row: WhatsAppMessageRow): Promise<string | null> => {
+  const resolveMediaHref = useCallback(async (
+    row: WhatsAppMessageRow,
+    opts?: { bustCache?: boolean }
+  ): Promise<string | null> => {
     const ref = row.media_url;
     if (!ref) return null;
+    if (opts?.bustCache) {
+      delete mediaUrlCacheRef.current[row.id];
+      setMediaUrlCache((prev) => {
+        if (!prev[row.id]) return prev;
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
+    }
     const cached = mediaUrlCacheRef.current[row.id];
-    if (cached) return cached;
+    // Signed https URLs expire — only reuse blob/data object URLs in-session.
+    if (cached && (cached.startsWith('blob:') || cached.startsWith('data:'))) {
+      return cached;
+    }
     const resolved = await resolveWhatsAppMediaDisplayUrl({
       mediaUrl: ref,
       messageId: row.id,
       mimeHint: row.media_mime,
+      preferBlob: true,
     });
     if (!resolved.ok || !resolved.url) return null;
-    mediaUrlCacheRef.current[row.id] = resolved.url;
-    setMediaUrlCache((prev) => (prev[row.id] ? prev : { ...prev, [row.id]: resolved.url! }));
-    return resolved.url;
+    const url = resolved.url;
+    if (url.startsWith('blob:') || url.startsWith('data:')) {
+      mediaUrlCacheRef.current[row.id] = url;
+      setMediaUrlCache((prev) => (prev[row.id] === url ? prev : { ...prev, [row.id]: url }));
+    }
+    return url;
   }, []);
 
   const openImageViewer = useCallback(
@@ -1079,8 +1131,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             mediaUrl: m.media_url!,
             messageId: m.id,
             mimeHint: m.media_mime,
+            preferBlob: true,
           });
-          return resolved.ok && resolved.url ? { id: m.id, url: resolved.url } : null;
+          // Only keep durable blob URLs in the session cache (signed https expires).
+          if (!resolved.ok || !resolved.url) return null;
+          if (!resolved.url.startsWith('blob:') && !resolved.url.startsWith('data:')) {
+            return null;
+          }
+          return { id: m.id, url: resolved.url };
         })
       );
       if (cancelled) return;
@@ -2668,12 +2726,20 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     const prev = threadMessages[i - 1];
                     const showDay = !prev || dayKey(prev.created_at) !== dayKey(m.created_at);
                     const botState = isBookingBotStateMessage(m.body);
-                    const imageSrc =
+                    const imageSrcRaw =
                       mediaUrlCache[m.id] ||
                       (!isR2MediaRef(m.media_url || '') &&
                       /^https:\/\//i.test(m.media_url || '')
                         ? m.media_url
                         : null);
+                    const imageSrc =
+                      imageSrcRaw &&
+                      (imageSrcRaw.startsWith('blob:') ||
+                        imageSrcRaw.startsWith('data:') ||
+                        (!isR2MediaRef(m.media_url || '') &&
+                          /^https:\/\//i.test(imageSrcRaw)))
+                        ? imageSrcRaw
+                        : null;
                     const showLocationCard = !m.media_url && isWhatsAppLocationMessage(m);
 
                     if (botState) {
