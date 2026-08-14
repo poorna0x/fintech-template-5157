@@ -1558,8 +1558,9 @@ async function sendLinkedIdentityConfirm(ctx, state, customer, lastInfo) {
 
 /**
  * Customer-initiated idle / first message — identity gate + known-customer context.
+ * @param {{ forceMenu?: boolean }} [opts] forceMenu: Hi / Menu always replies even after a CRM PDF/QR.
  */
-async function startInboundIdentityFlow(ctx) {
+async function startInboundIdentityFlow(ctx, opts = {}) {
   const customer = await lookupCustomerFull(ctx.db, ctx.to);
   if (!customer?.id) {
     await sendIdentityGate(ctx, {});
@@ -1577,10 +1578,11 @@ async function startInboundIdentityFlow(ctx) {
     hasAmc: Boolean(amc?.id),
   };
 
-  if (await recentlySentBookingBotMenu(ctx.db, ctx.to)) {
+  const forceMenu = opts.forceMenu === true;
+  if (!forceMenu && (await recentlySentBookingBotMenu(ctx.db, ctx.to))) {
     return { ok: true, skipped: true, reason: 'menu_cooldown' };
   }
-  if (await recentlySentCrmDocOrPay(ctx.db, ctx.to)) {
+  if (!forceMenu && (await recentlySentCrmDocOrPay(ctx.db, ctx.to))) {
     return { ok: true, skipped: true, reason: 'recent_crm_media' };
   }
 
@@ -3726,7 +3728,7 @@ async function handleBookingBotInbound({
       return { handled: true };
     }
     await clearBookingState(db, to);
-    await startInboundIdentityFlow(ctx);
+    await startInboundIdentityFlow(ctx, { forceMenu: true });
     return { handled: true };
   }
 
@@ -3863,7 +3865,7 @@ async function handleBookingBotInbound({
             });
             return { handled: true };
           }
-          await startInboundIdentityFlow(ctx);
+          await startInboundIdentityFlow(ctx, { forceMenu: true });
           return { handled: true };
         }
         if (REPAIR_INTENT_RE.test(text)) {
