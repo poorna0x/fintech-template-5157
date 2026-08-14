@@ -103,7 +103,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 
   const [newJobFormData, setNewJobFormData] = useState<NewJobFormData>({
     service_type: 'RO',
-    service_sub_type: '',
+    service_sub_type: 'Service',
     service_sub_type_custom: '',
     brand: '',
     model: '',
@@ -128,6 +128,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     if (!open) return;
     setNewJobFormData((prev) => ({
       ...prev,
+      service_sub_type: prev.service_sub_type || 'Service',
       scheduled_date: technicianMode
         ? getIstCalendarDate()
         : getDefaultNewJobScheduledDate(),
@@ -157,6 +158,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       ...prev,
       service_site: site,
       service_type: defaultServiceType as 'RO' | 'SOFTENER',
+      service_sub_type: prev.service_sub_type || 'Service',
       brand: brand || prev.brand || 'Not specified',
       model: model || prev.model || 'Not specified'
     }));
@@ -191,7 +193,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   const handleClose = () => {
     setNewJobFormData({
       service_type: 'RO',
-      service_sub_type: '',
+      service_sub_type: 'Service',
       service_sub_type_custom: '',
       brand: '',
       model: '',

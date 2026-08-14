@@ -82,7 +82,7 @@ const createDefaultAddFormData = () => ({
 
 const createDefaultStep5JobData = () => ({
   service_type: 'RO' as 'RO' | 'SOFTENER',
-  service_sub_type: '',
+  service_sub_type: 'Service',
   service_sub_type_custom: '',
   scheduled_date: '',
   scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM',

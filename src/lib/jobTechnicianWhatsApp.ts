@@ -163,11 +163,14 @@ async function autoSendJobTechWhatsApp(
 
 export type NotifyJobTechWhatsAppResult = 'auto' | 'dialog' | 'skipped';
 
-/** Per-tech WhatsApp off → silent skip (admin already chose that in Edit technician). */
+/** Per-tech WhatsApp off or Dashboard master off → silent skip (admin already chose that). */
 function shouldToastJobWhatsAppSkip(reason?: string): boolean {
   const r = String(reason || '');
+  if (!r.trim()) return false;
   if (/disabled for this technician/i.test(r)) return false;
-  return Boolean(r.trim());
+  if (/Job WhatsApp is off/i.test(r)) return false;
+  if (/Dashboard Settings/i.test(r)) return false;
+  return true;
 }
 
 /**
@@ -197,9 +200,6 @@ export async function notifyTechnicianJobWhatsApp(opts: {
   // Cache-first master + auto flags (0 egress when warm) so assign UI can close instantly.
   const prefs = await ensureJobWhatsAppNotifyPrefs();
   if (!prefs.enabled) {
-    if (opts.mode === 'assign') {
-      toast.message('Job WhatsApp is off (Dashboard Settings) — skipped');
-    }
     return 'skipped';
   }
 
@@ -264,9 +264,6 @@ export function queueTechnicianJobWhatsAppAutoMessage(opts: {
     try {
       const prefs = await ensureJobWhatsAppNotifyPrefs();
       if (!prefs.enabled) {
-        if (notify) {
-          toast.message('Job WhatsApp is off (Dashboard Settings) — edit notify skipped');
-        }
         return;
       }
 
