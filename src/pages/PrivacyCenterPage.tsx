@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -11,6 +11,7 @@ import {
   Phone,
   ScrollText,
   ShieldCheck,
+  Trash2,
   UserRound,
   UserX,
 } from 'lucide-react';
@@ -32,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { supabase } from '@/lib/supabaseClient';
 import { downloadPrivacyDataPackZip } from '@/lib/privacyDataExport';
+import { AnalyticsListPagination } from '@/components/admin/AnalyticsListPagination';
 
 type PrivacyRequest = {
   id: string;
@@ -70,6 +72,10 @@ type AuditRow = {
 };
 
 type TabId = 'requests' | 'consents' | 'audit';
+
+const CONSENT_SELECT =
+  'id,phone_e164,brand,purpose,notice_version,granted,consented_at,withdrawn_at';
+const AUDIT_SELECT = 'id,event_type,action,result,actor_email,created_at';
 
 function formatWhen(iso: string) {
   try {
@@ -156,6 +162,23 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
   const [anonymizeTarget, setAnonymizeTarget] = useState<PrivacyRequest | null>(null);
   const [anonymizeConfirm, setAnonymizeConfirm] = useState('');
   const [anonymizing, setAnonymizing] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<PrivacyRequest | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const [requestPage, setRequestPage] = useState(1);
+  const [requestPageSize, setRequestPageSize] = useState(10);
+  const [requestTotal, setRequestTotal] = useState(0);
+  const [openCount, setOpenCount] = useState(0);
+  const [overdueCount, setOverdueCount] = useState(0);
+  const [consentCount, setConsentCount] = useState(0);
+
+  const [consentPage, setConsentPage] = useState(1);
+  const [consentPageSize, setConsentPageSize] = useState(20);
+  const [consentTotal, setConsentTotal] = useState(0);
+
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPageSize, setAuditPageSize] = useState(20);
+  const [auditTotal, setAuditTotal] = useState(0);
 
   const authHeaders = useCallback(async () => {
     const token = await resolveSupabaseAccessTokenForApi();
@@ -170,82 +193,85 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
     setLoading(true);
     try {
       const headers = await authHeaders();
-      const res = await fetch('/.netlify/functions/privacy-request', { headers });
+      const qs = new URLSearchParams({
+        page: String(requestPage),
+        limit: String(requestPageSize),
+      });
+      const res = await fetch(`/.netlify/functions/privacy-request?${qs}`, { headers });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Failed to load');
       setRequests(data.requests || []);
+      setRequestTotal(Number(data.total) || 0);
+      setOpenCount(Number(data.openCount) || 0);
+      setOverdueCount(Number(data.overdueCount) || 0);
+      if (typeof data.consentCount === 'number') setConsentCount(data.consentCount);
+      const totalPages = Math.max(1, Math.ceil((Number(data.total) || 0) / requestPageSize));
+      if (requestPage > totalPages) setRequestPage(totalPages);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load requests');
     } finally {
       setLoading(false);
     }
-  }, [authHeaders]);
+  }, [authHeaders, requestPage, requestPageSize]);
 
   const loadConsents = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const from = (consentPage - 1) * consentPageSize;
+      const to = from + consentPageSize - 1;
+      const { data, error, count } = await supabase
         .from('customer_consents')
-        .select(
-          'id,phone_e164,brand,purpose,notice_version,granted,consented_at,withdrawn_at'
-        )
+        .select(CONSENT_SELECT, { count: 'exact' })
         .order('consented_at', { ascending: false })
-        .limit(100);
+        .range(from, to);
       if (error) throw error;
       setConsents((data as ConsentRow[]) || []);
+      const total = count || 0;
+      setConsentTotal(total);
+      setConsentCount(total);
+      const totalPages = Math.max(1, Math.ceil(total / consentPageSize));
+      if (consentPage > totalPages) setConsentPage(totalPages);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load consents');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [consentPage, consentPageSize]);
 
   const loadAudit = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const from = (auditPage - 1) * auditPageSize;
+      const to = from + auditPageSize - 1;
+      const { data, error, count } = await supabase
         .from('security_audit_events')
-        .select('id,event_type,action,result,actor_email,created_at')
+        .select(AUDIT_SELECT, { count: 'exact' })
         .order('created_at', { ascending: false })
-        .limit(100);
+        .range(from, to);
       if (error) throw error;
       setAudits((data as AuditRow[]) || []);
+      const total = count || 0;
+      setAuditTotal(total);
+      const totalPages = Math.max(1, Math.ceil(total / auditPageSize));
+      if (auditPage > totalPages) setAuditPage(totalPages);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load audit log');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [auditPage, auditPageSize]);
 
   useEffect(() => {
     if (tab === 'requests') void loadRequests();
-    if (tab === 'consents') void loadConsents();
-    if (tab === 'audit') void loadAudit();
-  }, [tab, loadRequests, loadConsents, loadAudit]);
+  }, [tab, loadRequests]);
 
-  // Prefetch counts for the summary cards when landing on Requests.
   useEffect(() => {
-    void (async () => {
-      try {
-        const [{ data: c }, { data: a }] = await Promise.all([
-          supabase
-            .from('customer_consents')
-            .select('id,phone_e164,brand,purpose,notice_version,granted,consented_at,withdrawn_at')
-            .order('consented_at', { ascending: false })
-            .limit(100),
-          supabase
-            .from('security_audit_events')
-            .select('id,event_type,action,result,actor_email,created_at')
-            .order('created_at', { ascending: false })
-            .limit(100),
-        ]);
-        if (c) setConsents(c as ConsentRow[]);
-        if (a) setAudits(a as AuditRow[]);
-      } catch {
-        /* soft */
-      }
-    })();
-  }, []);
+    if (tab === 'consents') void loadConsents();
+  }, [tab, loadConsents]);
+
+  useEffect(() => {
+    if (tab === 'audit') void loadAudit();
+  }, [tab, loadAudit]);
 
   async function exportAccessPack(r: PrivacyRequest) {
     setExportingId(r.id);
@@ -330,27 +356,39 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
     }
   }
 
-  const openCount = useMemo(
-    () =>
-      requests.filter((r) =>
-        ['received', 'open', 'in_progress', 'waiting_on_customer'].includes(r.status)
-      ).length,
-    [requests]
-  );
-  const overdueCount = useMemo(
-    () =>
-      requests.filter(
-        (r) =>
-          ['received', 'open', 'in_progress', 'waiting_on_customer'].includes(r.status) &&
-          new Date(r.sla_due_at).getTime() < Date.now()
-      ).length,
-    [requests]
-  );
+  async function runDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch('/.netlify/functions/privacy-request', {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ id: deleteTarget.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Delete failed');
+      toast.success('Request removed from the queue');
+      setDeleteTarget(null);
+      const nextTotal = Math.max(0, requestTotal - 1);
+      const lastPage = Math.max(1, Math.ceil(nextTotal / requestPageSize));
+      if (requestPage > lastPage) setRequestPage(lastPage);
+      else await loadRequests();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const requestTotalPages = Math.max(1, Math.ceil(requestTotal / requestPageSize));
+  const consentTotalPages = Math.max(1, Math.ceil(consentTotal / consentPageSize));
+  const auditTotalPages = Math.max(1, Math.ceil(auditTotal / auditPageSize));
 
   const tabs: { id: TabId; label: string; count?: number; icon: typeof ClipboardList }[] = [
-    { id: 'requests', label: 'Requests', count: requests.length, icon: ClipboardList },
-    { id: 'consents', label: 'Consents', count: consents.length, icon: FileCheck2 },
-    { id: 'audit', label: 'Audit log', count: audits.length, icon: ScrollText },
+    { id: 'requests', label: 'Requests', count: requestTotal, icon: ClipboardList },
+    { id: 'consents', label: 'Consents', count: consentTotal || consentCount, icon: FileCheck2 },
+    { id: 'audit', label: 'Audit log', count: auditTotal, icon: ScrollText },
   ];
 
   return (
@@ -419,7 +457,7 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Consents logged
               </p>
-              <p className="text-2xl font-semibold tabular-nums">{consents.length}</p>
+              <p className="text-2xl font-semibold tabular-nums">{consentCount}</p>
             </div>
           </CardContent>
         </Card>
@@ -473,7 +511,7 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
       ) : null}
 
       {tab === 'requests' && (
-        <div className="space-y-3">
+        <div id="privacy-requests-list-top" className="space-y-3">
           {!loading && requests.length === 0 ? (
             <EmptyState
               icon={ClipboardList}
@@ -505,6 +543,16 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
                         <span className="text-muted-foreground">· Opened {formatWhen(r.created_at)}</span>
                       </CardDescription>
                     </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 text-destructive"
+                      onClick={() => setDeleteTarget(r)}
+                    >
+                      <Trash2 className="mr-1.5 h-4 w-4" />
+                      Delete
+                    </Button>
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5">
@@ -603,10 +651,27 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
               </Card>
             );
           })}
+          {requestTotal > 0 ? (
+            <AnalyticsListPagination
+              currentPage={requestPage}
+              totalPages={requestTotalPages}
+              totalItems={requestTotal}
+              itemsPerPage={requestPageSize}
+              itemLabel="requests"
+              scrollAnchorId="privacy-requests-list-top"
+              loading={loading}
+              onPageChange={setRequestPage}
+              onItemsPerPageChange={(size) => {
+                setRequestPageSize(size);
+                setRequestPage(1);
+              }}
+            />
+          ) : null}
         </div>
       )}
 
       {tab === 'consents' && (
+        <div id="privacy-consents-list-top" className="space-y-3">
         <Card className="overflow-hidden border-border/80 shadow-none">
           {loading && consents.length === 0 ? (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
@@ -673,9 +738,27 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
             </div>
           )}
         </Card>
+          {consentTotal > 0 ? (
+            <AnalyticsListPagination
+              currentPage={consentPage}
+              totalPages={consentTotalPages}
+              totalItems={consentTotal}
+              itemsPerPage={consentPageSize}
+              itemLabel="consents"
+              scrollAnchorId="privacy-consents-list-top"
+              loading={loading}
+              onPageChange={setConsentPage}
+              onItemsPerPageChange={(size) => {
+                setConsentPageSize(size);
+                setConsentPage(1);
+              }}
+            />
+          ) : null}
+        </div>
       )}
 
       {tab === 'audit' && (
+        <div id="privacy-audit-list-top" className="space-y-3">
         <Card className="overflow-hidden border-border/80 shadow-none">
           {loading && audits.length === 0 ? (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
@@ -731,6 +814,23 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
             </div>
           )}
         </Card>
+          {auditTotal > 0 ? (
+            <AnalyticsListPagination
+              currentPage={auditPage}
+              totalPages={auditTotalPages}
+              totalItems={auditTotal}
+              itemsPerPage={auditPageSize}
+              itemLabel="events"
+              scrollAnchorId="privacy-audit-list-top"
+              loading={loading}
+              onPageChange={setAuditPage}
+              onItemsPerPageChange={(size) => {
+                setAuditPageSize(size);
+                setAuditPage(1);
+              }}
+            />
+          ) : null}
+        </div>
       )}
     </div>
 
@@ -782,6 +882,44 @@ export default function PrivacyCenterPage({ onBack }: { onBack?: () => void }) {
                 <UserX className="mr-1.5 h-4 w-4" />
               )}
               Anonymize
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this request?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2 text-left">
+              <span className="block">
+                Removes the queue card for {deleteTarget?.requester_name || 'this requester'} (
+                {deleteTarget?.requester_phone || 'no phone'}).
+              </span>
+              <span className="block">
+                This does not anonymize or erase CRM customer data — only the privacy request row.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void runDelete()}
+            >
+              {deleting ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1.5 h-4 w-4" />
+              )}
+              Delete request
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

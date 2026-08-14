@@ -1,7 +1,7 @@
 /**
  * Public privacy / DSAR request intake + admin list/update.
  * POST (public): WhatsApp VERIFY session + honeypot + rate limit
- * GET/PATCH (admin JWT): manage queue
+ * GET/PATCH/DELETE (admin JWT): manage queue (GET is paginated)
  */
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
@@ -34,6 +34,16 @@ function clientIp(event) {
   );
 }
 
+const OPEN_STATUSES = ['received', 'open', 'in_progress', 'waiting_on_customer'];
+const REQUEST_SELECT =
+  'id,request_type,status,brand,requester_name,requester_phone,requester_email,customer_id,details,admin_notes,sla_due_at,completed_at,created_at,updated_at';
+
+function parsePageLimit(query) {
+  const page = Math.max(1, parseInt(String(query?.page || '1'), 10) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(String(query?.limit || '10'), 10) || 10));
+  return { page, limit, from: (page - 1) * limit, to: page * limit - 1 };
+}
+
 exports.handler = async (event) => {
   const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
   const headers = { ...corsHeaders, 'Content-Type': 'application/json' };
@@ -46,24 +56,41 @@ exports.handler = async (event) => {
   if (!db) return json(500, headers, { error: 'Server misconfigured' });
 
   // ── Admin queue ───────────────────────────────────────────
-  if (event.httpMethod === 'GET' || event.httpMethod === 'PATCH') {
+  if (
+    event.httpMethod === 'GET' ||
+    event.httpMethod === 'PATCH' ||
+    event.httpMethod === 'DELETE'
+  ) {
     const admin = await authorizeAdminRequest(event);
     if (!admin.ok) return json(401, headers, { error: 'Unauthorized' });
 
     if (event.httpMethod === 'GET') {
-      const status = String(event.queryStringParameters?.status || '').trim();
-      let q = db
-        .from('privacy_requests')
-        .select(
-          'id,request_type,status,brand,requester_name,requester_phone,requester_email,customer_id,details,admin_notes,sla_due_at,completed_at,created_at,updated_at'
-        )
-        .order('created_at', { ascending: false })
-        .limit(100);
-      if (status) q = q.eq('status', status);
-      const { data, error } = await q;
-      if (error) return json(500, headers, { error: 'Could not load requests' });
+      const qparams = event.queryStringParameters || {};
+      const status = String(qparams.status || '').trim();
+      const { page, limit, from, to } = parsePageLimit(qparams);
+      const nowIso = new Date().toISOString();
 
-      const requests = data || [];
+      let listQ = db
+        .from('privacy_requests')
+        .select(REQUEST_SELECT, { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(from, to);
+      if (status) listQ = listQ.eq('status', status);
+
+      const [listRes, openRes, overdueRes, consentRes] = await Promise.all([
+        listQ,
+        db.from('privacy_requests').select('id', { count: 'exact', head: true }).in('status', OPEN_STATUSES),
+        db
+          .from('privacy_requests')
+          .select('id', { count: 'exact', head: true })
+          .in('status', OPEN_STATUSES)
+          .lt('sla_due_at', nowIso),
+        db.from('customer_consents').select('id', { count: 'exact', head: true }),
+      ]);
+
+      if (listRes.error) return json(500, headers, { error: 'Could not load requests' });
+
+      const requests = listRes.data || [];
       // Soft-link any unlinked rows whose phone matches a CRM customer.
       try {
         const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
@@ -89,7 +116,53 @@ exports.handler = async (event) => {
         console.warn('[privacy-request] soft-link on list', err?.message || err);
       }
 
-      return json(200, headers, { requests });
+      return json(200, headers, {
+        requests,
+        page,
+        pageSize: limit,
+        total: listRes.count || 0,
+        openCount: openRes.count || 0,
+        overdueCount: overdueRes.count || 0,
+        consentCount: consentRes.count || 0,
+      });
+    }
+
+    if (event.httpMethod === 'DELETE') {
+      let body = {};
+      try {
+        body = JSON.parse(event.body || '{}');
+      } catch {
+        body = {};
+      }
+      const id = String(body.id || event.queryStringParameters?.id || '').trim();
+      if (!id) return json(400, headers, { error: 'id required' });
+
+      const { data: existing, error: loadErr } = await db
+        .from('privacy_requests')
+        .select('id,request_type,status,brand,requester_phone')
+        .eq('id', id)
+        .maybeSingle();
+      if (loadErr) return json(500, headers, { error: 'Could not load request' });
+      if (!existing) return json(404, headers, { error: 'Request not found' });
+
+      const { error: delErr } = await db.from('privacy_requests').delete().eq('id', id);
+      if (delErr) return json(500, headers, { error: 'Delete failed' });
+
+      await recordSecurityAudit(db, {
+        eventType: 'privacy',
+        action: 'privacy_request_delete',
+        result: 'ok',
+        actorUserId: admin.userId,
+        targetType: 'privacy_request',
+        targetId: id,
+        meta: {
+          request_type: existing.request_type,
+          status: existing.status,
+          brand: existing.brand,
+        },
+      });
+
+      return json(200, headers, { ok: true, id });
     }
 
     let body = {};
