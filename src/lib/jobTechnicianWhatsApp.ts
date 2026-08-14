@@ -163,9 +163,17 @@ async function autoSendJobTechWhatsApp(
 
 export type NotifyJobTechWhatsAppResult = 'auto' | 'dialog' | 'skipped';
 
+/** Per-tech WhatsApp off → silent skip (admin already chose that in Edit technician). */
+function shouldToastJobWhatsAppSkip(reason?: string): boolean {
+  const r = String(reason || '');
+  if (/disabled for this technician/i.test(r)) return false;
+  return Boolean(r.trim());
+}
+
 /**
  * After assign/reassign/unassign:
  * - Dashboard master OFF → skipped (no popup)
+ * - Per-tech job_assigned / job_unassigned OFF → skipped silently (no dialog, no toast)
  * - Auto-send ON → return immediately; Cloud API runs in background (no dialog, no wa.me)
  * - Else if ctx → manual dialog (wa.me only on Send)
  * - Else → skipped
@@ -195,28 +203,22 @@ export async function notifyTechnicianJobWhatsApp(opts: {
     return 'skipped';
   }
 
+  // Check per-tech + master before dialog / auto-send — no WhatsApp UI when disabled.
+  const allowed = await isWhatsAppJobNotifyAllowed(category, techId || null);
+  if (!allowed.ok) {
+    if (opts.mode === 'assign' && shouldToastJobWhatsAppSkip(allowed.reason)) {
+      toast.message(allowed.reason || 'Job WhatsApp notify is off — skipped');
+    }
+    return 'skipped';
+  }
+
   const autoSend = opts.mode === 'unassign' ? prefs.autoUnassign : prefs.autoAssign;
   const payload = buildJobTechnicianWhatsAppPayload(opts.job, opts.mode);
 
   if (autoSend) {
     // Fire-and-forget: do not block assign/unassign dialogs on API latency.
-    void (async () => {
-      const allowed = await isWhatsAppJobNotifyAllowed(category, techId || null);
-      if (!allowed.ok) {
-        toast.message(allowed.reason || 'Job WhatsApp notify is off — skipped');
-        return;
-      }
-      await autoSendJobTechWhatsApp(phone, payload.message, opts.mode);
-    })();
+    void autoSendJobTechWhatsApp(phone, payload.message, opts.mode);
     return 'auto';
-  }
-
-  const allowed = await isWhatsAppJobNotifyAllowed(category, techId || null);
-  if (!allowed.ok) {
-    if (opts.mode === 'assign') {
-      toast.message(allowed.reason || 'Job WhatsApp notify is off — skipped');
-    }
-    return 'skipped';
   }
 
   if (!opts.ctx) {
@@ -270,7 +272,7 @@ export function queueTechnicianJobWhatsAppAutoMessage(opts: {
 
       const allowed = await isWhatsAppJobNotifyAllowed(category, opts.technicianId);
       if (!allowed.ok) {
-        if (notify) {
+        if (notify && shouldToastJobWhatsAppSkip(allowed.reason)) {
           toast.message(allowed.reason || 'WhatsApp notify skipped for this technician');
         }
         return;
