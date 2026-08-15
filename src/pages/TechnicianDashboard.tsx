@@ -21,6 +21,7 @@ import Logo from '@/components/Logo';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import TechnicianOtpRequestCard from '@/components/technician/TechnicianOtpRequestCard';
 import TechnicianReviewsDialog from '@/components/technician/TechnicianReviewsDialog';
+import TechnicianCallHistoryDialog from '@/components/technician/TechnicianCallHistoryDialog';
 import {
   buildAdminPhotoViewerSelection,
   resolveAdminPhotoViewerSources,
@@ -60,6 +61,7 @@ import {
   IndianRupee,
   Pencil,
   Search,
+  History,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
@@ -768,6 +770,7 @@ const TechnicianDashboard = () => {
   // Header 3-dot menu → centered options dialog
   const [headerOptionsDialogOpen, setHeaderOptionsDialogOpen] = useState(false);
   const [reviewsDialogOpen, setReviewsDialogOpen] = useState(false);
+  const [callHistoryDialogOpen, setCallHistoryDialogOpen] = useState(false);
   // Technician ID Card QR Code Dialog
   const [technicianIdCardDialogOpen, setTechnicianIdCardDialogOpen] = useState(false);
   const [selectedIdCardBrand, setSelectedIdCardBrand] = useState<DocumentBrand | null>(null);
@@ -6727,6 +6730,17 @@ const TechnicianDashboard = () => {
             </Button>
             <Button
               variant="ghost"
+              className="cursor-pointer justify-start h-12 px-4 text-base"
+              onClick={() => {
+                setHeaderOptionsDialogOpen(false);
+                setCallHistoryDialogOpen(true);
+              }}
+            >
+              <History className="w-5 h-5 mr-3" />
+              Customer Call History
+            </Button>
+            <Button
+              variant="ghost"
               className="justify-start h-12 px-4 text-base"
               onClick={() => window.location.reload()}
             >
@@ -6751,6 +6765,11 @@ const TechnicianDashboard = () => {
       <TechnicianReviewsDialog
         open={reviewsDialogOpen}
         onOpenChange={setReviewsDialogOpen}
+        technicianId={String(user?.technicianId || '')}
+      />
+      <TechnicianCallHistoryDialog
+        open={callHistoryDialogOpen}
+        onOpenChange={setCallHistoryDialogOpen}
         technicianId={String(user?.technicianId || '')}
       />
 

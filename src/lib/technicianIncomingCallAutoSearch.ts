@@ -60,7 +60,11 @@ export function initTechnicianIncomingCallBackgroundLookup(): () => void {
       if (hit.alreadyAlerted) return;
       if (alreadyHandled(hit.digits, hit.callAt)) return;
       markLastAuto(hit.digits, hit.callAt);
-      notifyAdminsTechnicianCall(hit.digits, { callId: hit.callId, callAt: hit.callAt });
+      notifyAdminsTechnicianCall(hit.digits, {
+        callId: hit.callId,
+        callAt: hit.callAt,
+        missed: hit.missed,
+      });
     } catch {
       /* next resume / poll retries */
     }

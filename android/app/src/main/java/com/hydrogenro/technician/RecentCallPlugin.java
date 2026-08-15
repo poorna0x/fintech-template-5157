@@ -2,6 +2,7 @@ package com.hydrogenro.technician;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.provider.CallLog;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -29,6 +30,12 @@ public class RecentCallPlugin extends Plugin {
         if (digits.length() >= 12 && digits.startsWith("91")) digits = digits.substring(2);
         digits = digits.replaceFirst("^0+", "");
         return digits.length() >= 10 ? digits.substring(digits.length() - 10) : digits;
+    }
+
+    private static boolean isMissed(CallLogHelper.Entry entry) {
+        return entry != null
+            && entry.type != CallLog.Calls.INCOMING_TYPE
+            && entry.type != 7; // ANSWERED_EXTERNALLY_TYPE
     }
 
     private JSObject readRecent(boolean consume) {
@@ -61,6 +68,7 @@ public class RecentCallPlugin extends Plugin {
                 ret.put("at", fromLog.dateMs);
                 ret.put("callLogDate", fromLog.dateMs);
                 ret.put("callId", callId);
+                ret.put("missed", isMissed(fromLog));
                 ret.put("source", "call_log_alerted");
                 return ret;
             }
@@ -80,6 +88,7 @@ public class RecentCallPlugin extends Plugin {
                 ret.put("at", now);
                 ret.put("callLogDate", fromLog.dateMs);
                 if (!callId.isEmpty()) ret.put("callId", callId);
+                ret.put("missed", isMissed(fromLog));
                 ret.put("source", "call_log");
                 return ret;
             }
@@ -108,6 +117,10 @@ public class RecentCallPlugin extends Plugin {
             ret.put("at", prefsAt);
             ret.put("callLogDate", stableAt);
             if (!callId.isEmpty()) ret.put("callId", callId);
+            ret.put(
+                "missed",
+                !prefs.getBoolean(CallAlertReceiver.KEY_INCOMING_ANSWERED, false)
+            );
             ret.put("source", "prefs");
         }
         return ret;
