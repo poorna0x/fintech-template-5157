@@ -6455,6 +6455,8 @@ const AdminDashboard = () => {
                     const next = {
                       ...followUpDisplaySettings,
                       hideAmcFollowUps: !showAmc,
+                      // Keep the Followup stats card in sync with the list.
+                      countOnlyNonAmcFollowUps: !showAmc,
                     };
                     setFollowUpDisplaySettings(next);
                     saveFollowUpDisplaySettings(next);
