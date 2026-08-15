@@ -16,6 +16,7 @@ interface StatsCardsProps {
   pendingJobs: Job[];
   inProgressJobs: Job[];
   allJobs?: Job[]; // All jobs to check for follow-up dates
+  excludeAmcFollowUps?: boolean;
 }
 
 export const StatsCards: React.FC<StatsCardsProps> = ({
@@ -25,6 +26,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
   pendingJobs,
   inProgressJobs,
   allJobs = [],
+  excludeAmcFollowUps = false,
 }) => {
   const followUpGlowEnabled = useFollowUpGlowEnabled();
 
@@ -44,6 +46,8 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
     
     const followUpJobs = allJobs.filter(job => {
       if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
+      const serviceSubType = job.serviceSubType || (job as any).service_sub_type;
+      if (excludeAmcFollowUps && serviceSubType === 'AMC Service') return false;
       const followUpDate = job.followUpDate || (job as any).follow_up_date;
       if (!followUpDate) return false;
       let dateStr: string;

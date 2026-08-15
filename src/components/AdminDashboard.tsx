@@ -93,6 +93,11 @@ import {
 } from '@/lib/adminDashboardCustomerFilters';
 import { loadFilteredJobsForAdmin } from '@/lib/adminLoadFilteredJobs';
 import {
+  FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT,
+  readFollowUpDisplaySettings,
+  type FollowUpDisplaySettings,
+} from '@/lib/followUpDisplaySettings';
+import {
   applyAdminDashboardSnapshot,
   loadAdminDashboardData,
   loadAdminDashboardSecondary,
@@ -369,6 +374,18 @@ const AdminDashboard = () => {
     restoredJobs.length > 0 ? restoredJobs : initialOngoingJobs
   );
   const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
+  const [followUpDisplaySettings, setFollowUpDisplaySettings] = useState(
+    readFollowUpDisplaySettings
+  );
+  useEffect(() => {
+    const onChanged = (event: Event) => {
+      const detail = (event as CustomEvent<FollowUpDisplaySettings>).detail;
+      setFollowUpDisplaySettings(detail ?? readFollowUpDisplaySettings());
+    };
+    window.addEventListener(FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT, onChanged);
+    return () =>
+      window.removeEventListener(FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT, onChanged);
+  }, []);
   const [technicians, setTechnicians] = useState<Technician[]>(() => {
     if (!initialDashboardCache?.technicianRows) return [];
     return (initialDashboardCache.technicianRows as any[]).map((tech) => ({
@@ -1669,7 +1686,9 @@ const AdminDashboard = () => {
   // Load job counts for stats cards (lightweight query)
   const loadJobCounts = useCallback(async () => {
     try {
-      const { data, error } = await db.jobs.getCounts();
+      const { data, error } = await db.jobs.getCounts({
+        countOnlyNonAmcFollowUps: followUpDisplaySettings.countOnlyNonAmcFollowUps,
+      });
       if (error) {
         // ignore
       } else if (data) {
@@ -1678,7 +1697,7 @@ const AdminDashboard = () => {
     } catch {
       // ignore
     }
-  }, []);
+  }, [followUpDisplaySettings.countOnlyNonAmcFollowUps]);
 
 
   const getJobsListCacheKey = useCallback((
@@ -1690,12 +1709,14 @@ const AdminDashboard = () => {
       completedDateFilter,
       completedRangeStartDate,
       completedRangeEndDate,
+      hideAmcFollowUps: followUpDisplaySettings.hideAmcFollowUps,
     });
   }, [
     completedDatePreset,
     completedDateFilter,
     completedRangeStartDate,
     completedRangeEndDate,
+    followUpDisplaySettings.hideAmcFollowUps,
   ]);
 
   const loadFilteredJobs = useCallback(
@@ -1714,6 +1735,7 @@ const AdminDashboard = () => {
         completedLeadTypeFilter,
         completedServiceSubTypeFilter,
         completedByFilter,
+        hideAmcFollowUps: followUpDisplaySettings.hideAmcFollowUps,
         loadJobsRequestRef,
         jobsListCacheRef,
         ongoingJobsSnapshotRef,
@@ -1737,6 +1759,7 @@ const AdminDashboard = () => {
       completedLeadTypeFilter,
       completedServiceSubTypeFilter,
       completedByFilter,
+      followUpDisplaySettings.hideAmcFollowUps,
     ]
   );
 
@@ -1854,8 +1877,9 @@ const AdminDashboard = () => {
         setTechniciansForReports,
         setAllFollowUpJobs,
         loadBrandsAndModels,
+        countOnlyNonAmcFollowUps: followUpDisplaySettings.countOnlyNonAmcFollowUps,
       }),
-    [loadBrandsAndModels]
+    [loadBrandsAndModels, followUpDisplaySettings.countOnlyNonAmcFollowUps]
   );
 
   const amcAutoCreateAttemptedRef = useRef(false);
@@ -1905,6 +1929,7 @@ const AdminDashboard = () => {
         setJobs,
         setTotalCount,
         setTotalPages,
+        countOnlyNonAmcFollowUps: followUpDisplaySettings.countOnlyNonAmcFollowUps,
       }),
     [
       statusFilter,
@@ -1913,6 +1938,7 @@ const AdminDashboard = () => {
       scheduleFollowUpPromotion,
       loadFilteredJobs,
       loadDashboardSecondary,
+      followUpDisplaySettings.countOnlyNonAmcFollowUps,
     ]
   );
 
@@ -2422,6 +2448,28 @@ const AdminDashboard = () => {
       loadJobCounts();
   }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad, getJobsListCacheKey, tabCachesStale]);
 
+  const previousFollowUpDisplaySettingsRef = useRef(followUpDisplaySettings);
+  useEffect(() => {
+    const previous = previousFollowUpDisplaySettingsRef.current;
+    previousFollowUpDisplaySettingsRef.current = followUpDisplaySettings;
+    if (
+      isInitialLoad ||
+      (previous.hideAmcFollowUps === followUpDisplaySettings.hideAmcFollowUps &&
+        previous.countOnlyNonAmcFollowUps ===
+          followUpDisplaySettings.countOnlyNonAmcFollowUps)
+    ) {
+      return;
+    }
+
+    clearModuleJobsListCache();
+    jobsListCacheRef.current.clear();
+    void loadJobCounts();
+    if (statusFilter === 'RESCHEDULED') {
+      setCurrentPage(1);
+      void loadFilteredJobs('RESCHEDULED', 1);
+    }
+  }, [followUpDisplaySettings, isInitialLoad, loadFilteredJobs, loadJobCounts, statusFilter]);
+
   const resumeAdminSync = useCallback(async (opts?: { invalidateTabCaches?: boolean }) => {
     if (isInitialLoad || !dashboardLoadedWithSessionRef.current) return;
 
@@ -2446,7 +2494,9 @@ const AdminDashboard = () => {
       await Promise.all([
         loadJobCounts(),
         loadFilteredJobs(statusFilter, currentPage, { silent: true }),
-        db.jobs.getFollowUpForGlow().then(({ data }) => {
+        db.jobs.getFollowUpForGlow({
+          excludeAmc: followUpDisplaySettings.countOnlyNonAmcFollowUps,
+        }).then(({ data }) => {
           if (data) setAllFollowUpJobs(data as Job[]);
         }).catch(() => {}),
       ]);
@@ -2455,7 +2505,14 @@ const AdminDashboard = () => {
         setIsResumeListSyncing(false);
       }
     }
-  }, [isInitialLoad, statusFilter, currentPage, loadJobCounts, loadFilteredJobs]);
+  }, [
+    isInitialLoad,
+    statusFilter,
+    currentPage,
+    loadJobCounts,
+    loadFilteredJobs,
+    followUpDisplaySettings.countOnlyNonAmcFollowUps,
+  ]);
 
   const resumeAdminSyncRef = useRef(resumeAdminSync);
   resumeAdminSyncRef.current = resumeAdminSync;
@@ -6249,6 +6306,7 @@ const AdminDashboard = () => {
           pendingJobs={pendingJobs}
           inProgressJobs={inProgressJobs}
           allJobs={allFollowUpJobs}
+          excludeAmcFollowUps={followUpDisplaySettings.countOnlyNonAmcFollowUps}
         />
 
         {searchTerm.trim() && displayedCustomers.length > 0 && !showJobsListLoader && (

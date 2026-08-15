@@ -47,6 +47,7 @@ export async function loadAdminDashboardSecondary(handlers: {
   setTechniciansForReports: Dispatch<SetStateAction<Technician[]>>;
   setAllFollowUpJobs: Dispatch<SetStateAction<Job[]>>;
   loadBrandsAndModels: () => void | Promise<void>;
+  countOnlyNonAmcFollowUps: boolean;
 }) {
   try {
     const [techniciansAllResult, amcContractsResult, priorCompletedMap] =
@@ -76,7 +77,7 @@ export async function loadAdminDashboardSecondary(handlers: {
 
     void handlers.loadBrandsAndModels();
     void db.jobs
-      .getFollowUpForGlow()
+      .getFollowUpForGlow({ excludeAmc: handlers.countOnlyNonAmcFollowUps })
       .then(({ data }) => {
         if (data) handlers.setAllFollowUpJobs(data as Job[]);
       })
@@ -107,6 +108,7 @@ export async function loadAdminDashboardData(
     setJobs: Dispatch<SetStateAction<Job[]>>;
     setTotalCount: Dispatch<SetStateAction<number>>;
     setTotalPages: Dispatch<SetStateAction<number>>;
+    countOnlyNonAmcFollowUps: boolean;
   }
 ) {
   const silent = options?.silent === true;
@@ -133,7 +135,9 @@ export async function loadAdminDashboardData(
       skipTechniciansFetch
         ? Promise.resolve({ data: null as Technician[] | null, error: null })
         : db.technicians.getAllForDashboard(100),
-      db.jobs.getCounts(),
+      db.jobs.getCounts({
+        countOnlyNonAmcFollowUps: ctx.countOnlyNonAmcFollowUps,
+      }),
       skipOngoingFetch && ctx.statusFilter === 'ONGOING'
         ? Promise.resolve({ data: null as Job[] | null, error: null })
         : ctx.statusFilter === 'ONGOING'

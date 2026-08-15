@@ -82,7 +82,7 @@ export function buildJobsListCacheKey(
   ui: Pick<
     AdminDashboardUiState,
     'completedDatePreset' | 'completedDateFilter' | 'completedRangeStartDate' | 'completedRangeEndDate'
-  >
+  > & { hideAmcFollowUps?: boolean }
 ): string {
   if (filter === 'COMPLETED') {
     if (ui.completedDatePreset === 'day') {
@@ -90,7 +90,7 @@ export function buildJobsListCacheKey(
     }
     return `COMPLETED:${ui.completedDatePreset}:${ui.completedRangeStartDate}:${ui.completedRangeEndDate}:p${page}`;
   }
-  return `RESCHEDULED:p${page}`;
+  return `RESCHEDULED:hide_amc_${ui.hideAmcFollowUps === true}:p${page}`;
 }
 
 export function getModuleDashboardSessionReady(): boolean {
@@ -185,6 +185,7 @@ export async function invalidateAdminDashboardCaches(): Promise<void> {
   try {
     const { cacheInvalidate } = await import('./supabaseQueryCache');
     cacheInvalidate('job_counts_v1');
+    cacheInvalidate('job_counts_v2');
     cacheInvalidate('completed_customers_map_v1');
   } catch {
     /* ignore */
@@ -196,11 +197,15 @@ async function fetchCriticalSnapshot(): Promise<AdminDashboardSnapshot | null> {
     const { ensureAdminSupabaseSession } = await import('@/lib/auth');
     if (!(await ensureAdminSupabaseSession(2_000))) return null;
 
-    const { db } = await import('@/lib/supabase');
+    const [{ db }, { readFollowUpDisplaySettings }] = await Promise.all([
+      import('@/lib/supabase'),
+      import('@/lib/followUpDisplaySettings'),
+    ]);
+    const { countOnlyNonAmcFollowUps } = readFollowUpDisplaySettings();
     const [jobsResult, techniciansResult, countsResult] = await Promise.all([
       db.jobs.getOngoing(100),
       db.technicians.getAllForDashboard(100),
-      db.jobs.getCounts(),
+      db.jobs.getCounts({ countOnlyNonAmcFollowUps }),
     ]);
 
     if (jobsResult.error && techniciansResult.error) return null;

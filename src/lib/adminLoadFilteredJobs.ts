@@ -21,6 +21,7 @@ export type LoadFilteredJobsDeps = {
   completedLeadTypeFilter: string;
   completedServiceSubTypeFilter: string;
   completedByFilter: string;
+  hideAmcFollowUps: boolean;
   loadJobsRequestRef: MutableRefObject<number>;
   jobsListCacheRef: MutableRefObject<Map<string, Job[]>>;
   ongoingJobsSnapshotRef: MutableRefObject<Job[]>;
@@ -236,7 +237,10 @@ export async function loadFilteredJobsForAdmin(
         page,
         deps.pageSize,
         undefined,
-        { includePhotoFields: true }
+        {
+          includePhotoFields: true,
+          excludeServiceSubType: deps.hideAmcFollowUps ? 'AMC Service' : undefined,
+        }
       );
       data = slimFu.data || [];
       error = slimFu.error;
@@ -246,7 +250,9 @@ export async function loadFilteredJobsForAdmin(
         const fallback = await db.jobs.getByStatusPaginated(
           ['FOLLOW_UP', 'RESCHEDULED'],
           page,
-          deps.pageSize
+          deps.pageSize,
+          undefined,
+          { excludeServiceSubType: deps.hideAmcFollowUps ? 'AMC Service' : undefined }
         );
         data = fallback.data || [];
         error = fallback.error;

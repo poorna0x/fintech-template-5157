@@ -92,6 +92,10 @@ import {
   setFollowUpGlowEnabled,
 } from '@/lib/followUpGlowSettings';
 import {
+  readFollowUpDisplaySettings,
+  saveFollowUpDisplaySettings,
+} from '@/lib/followUpDisplaySettings';
+import {
   JOB_WA_NOTIFY_CHANGED_EVENT,
   fetchJobWhatsAppNotifyPrefs,
   readJobWhatsAppNotifyPrefsCached,
@@ -315,6 +319,9 @@ const Settings = () => {
   });
 
   const [followUpGlowEnabled, setFollowUpGlowEnabledState] = useState<boolean>(isFollowUpGlowEnabled);
+  const [followUpDisplaySettings, setFollowUpDisplaySettingsState] = useState(
+    readFollowUpDisplaySettings
+  );
   const [jobWaNotifyPrefs, setJobWaNotifyPrefs] = useState<JobWhatsAppNotifyPrefs>(
     () =>
       readJobWhatsAppNotifyPrefsCached() || {
@@ -673,6 +680,16 @@ const Settings = () => {
         ? 'Follow-up glow enabled — today (red) and tomorrow (yellow) highlights are on'
         : 'Follow-up glow disabled — dashboard highlights turned off'
     );
+  };
+
+  const updateFollowUpDisplaySettings = (
+    patch: Partial<typeof followUpDisplaySettings>,
+    successMessage: string
+  ) => {
+    const next = { ...followUpDisplaySettings, ...patch };
+    setFollowUpDisplaySettingsState(next);
+    saveFollowUpDisplaySettings(next);
+    toast.success(successMessage);
   };
 
   const handleJobWaMasterToggle = async (enabled: boolean) => {
@@ -3678,7 +3695,7 @@ const Settings = () => {
                 Dashboard Settings
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                Dashboard visuals (this device) and job WhatsApp popup (all admins)
+                Follow-up display preferences (this device) and job WhatsApp popup (all admins)
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 space-y-3">
@@ -3696,6 +3713,54 @@ const Settings = () => {
                   checked={followUpGlowEnabled}
                   onCheckedChange={handleFollowUpGlowToggle}
                   className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4 p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
+                    Hide AMC follow-ups
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
+                    This device only. When enabled, the Followup section lists only non-AMC jobs.
+                  </p>
+                </div>
+                <Switch
+                  checked={followUpDisplaySettings.hideAmcFollowUps}
+                  onCheckedChange={(enabled) =>
+                    updateFollowUpDisplaySettings(
+                      { hideAmcFollowUps: enabled },
+                      enabled
+                        ? 'AMC follow-ups hidden from the Followup section'
+                        : 'AMC follow-ups shown in the Followup section'
+                    )
+                  }
+                  aria-label="Hide AMC follow-ups"
+                  className="ml-2 sm:ml-6 shrink-0 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4 p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
+                    Count only non-AMC follow-ups
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
+                    This device only. When enabled, the Followup stats card excludes AMC jobs.
+                  </p>
+                </div>
+                <Switch
+                  checked={followUpDisplaySettings.countOnlyNonAmcFollowUps}
+                  onCheckedChange={(enabled) =>
+                    updateFollowUpDisplaySettings(
+                      { countOnlyNonAmcFollowUps: enabled },
+                      enabled
+                        ? 'Followup count now excludes AMC jobs'
+                        : 'Followup count now includes AMC jobs'
+                    )
+                  }
+                  aria-label="Count only non-AMC follow-ups"
+                  className="ml-2 sm:ml-6 shrink-0 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>
 
