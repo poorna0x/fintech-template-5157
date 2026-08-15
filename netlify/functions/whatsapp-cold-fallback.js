@@ -68,10 +68,29 @@ function buildTemplatePayload(to, templateName, languageCode, bodyParams, header
 function templateUsesDynamicPayNowUrl(name) {
   const n = String(name || '');
   return (
-    /svc_balance_due_letter_(ero|hro)_(img_v?\d*|v[4-9])$/i.test(n) ||
+    /svc_balance_due_letter_(ero|hro)_(img_v?\d*|v(?:[4-9]|10))$/i.test(n) ||
     /svc_balance_due_letter_(ero|hro)_img_/i.test(n) ||
     /svc_payment_overdue_notice_(ero|hro)_v\d+$/i.test(n)
   );
+}
+
+function templateUsesDynamicReviewUrl(name) {
+  const n = String(name || '');
+  return (
+    /svc_job_done_letter_(ero|hro)_v5$/i.test(n) ||
+    /svc_balance_due_letter_(ero|hro)_v10$/i.test(n) ||
+    /svc_ask_review_(ero|hro)_v\d+$/i.test(n)
+  );
+}
+
+function urlButtonsForTemplate(name, urlButtons) {
+  const list = Array.isArray(urlButtons) ? urlButtons : [];
+  const pay = templateUsesDynamicPayNowUrl(name);
+  const review = templateUsesDynamicReviewUrl(name);
+  if (pay && review) return list;
+  if (pay) return list.filter((b) => String(b?.index ?? '1') === '1');
+  if (review) return list.filter((b) => String(b?.index ?? '1') === '1' || String(b?.index) === '2');
+  return [];
 }
 
 /**
@@ -233,11 +252,16 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(MISSED_CALL, [name]);
   }
 
-  // Job-done letter v4 (emoji) → v3 → v2 → v1 → short svc_job_done
-  if (/^svc_job_done_letter_(ero|hro)(_v4|_v3|_v2)?$/i.test(primaryName)) {
+  // Job-done letter v5 (Review us) → v4 → v3 → v2 → v1 → short svc_job_done
+  if (/^svc_job_done_letter_(ero|hro)(_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
     const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
-    if (/_v4$/i.test(primaryName)) {
+    if (/_v5$/i.test(primaryName)) {
+      push(`svc_job_done_letter_${suffix}_v4`, bodyParams.slice(0, 3).map(String));
+      push(`svc_job_done_letter_${suffix}_v3`, bodyParams.slice(0, 3).map(String));
+      push(`svc_job_done_letter_${suffix}_v2`, bodyParams.slice(0, 3).map(String));
+      push(`svc_job_done_letter_${suffix}`, bodyParams.slice(0, 3).map(String));
+    } else if (/_v4$/i.test(primaryName)) {
       push(`svc_job_done_letter_${suffix}_v3`, bodyParams.slice(0, 3).map(String));
       push(`svc_job_done_letter_${suffix}_v2`, bodyParams.slice(0, 3).map(String));
       push(`svc_job_done_letter_${suffix}`, bodyParams.slice(0, 3).map(String));
@@ -260,6 +284,11 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
       `Amount collected: INR ${amount}`,
     ]);
     push(JOB_DONE, [name, amount]);
+  }
+
+  if (/^svc_ask_review_(ero|hro)_v/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    push(`svc_ask_review_${suffix}_v1`, [name]);
   }
 
   // Job-done plain v2 (emoji, no buttons) → plain v1
@@ -292,11 +321,21 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push('svc_balance_due', [name, amount]);
   }
 
-  // Balance-due letter v9 → v8 → v7 → …
-  if (/^svc_balance_due_letter_(ero|hro)(_v9|_v8|_v7|_v6|_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
+  // Balance-due letter v10 → v9 → v8 → …
+  if (/^svc_balance_due_letter_(ero|hro)(_v10|_v9|_v8|_v7|_v6|_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
     const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
-    if (/_v9$/i.test(primaryName)) {
+    if (/_v10$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_v9`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v8`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v7`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v6`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
+    } else if (/_v9$/i.test(primaryName)) {
       push(`svc_balance_due_letter_${suffix}_v8`, bodyParams.slice(0, 4).map(String));
       push(`svc_balance_due_letter_${suffix}_v7`, bodyParams.slice(0, 4).map(String));
       push(`svc_balance_due_letter_${suffix}_v6`, bodyParams.slice(0, 4).map(String));
@@ -730,7 +769,7 @@ async function sendTemplateWithColdFallbacks({
       );
       continue;
     }
-    const fbButtons = templateUsesDynamicPayNowUrl(fb.name) ? urlButtons : [];
+    const fbButtons = urlButtonsForTemplate(fb.name, urlButtons);
     const fbResult = await callWhatsAppApi(
       phoneNumberId,
       accessToken,

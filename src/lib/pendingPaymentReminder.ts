@@ -102,8 +102,11 @@ function cleanAmountDigits(amount: number | string): string {
 /** Letter cold template name — v9 = Pay now, no contact footer; fallback v8 → v7. */
 export function resolvePendingPaymentLetterTemplateName(
   brand: DocumentBrand,
-  opts?: { withPayButton?: boolean }
+  opts?: { withPayButton?: boolean; withReview?: boolean }
 ): string {
+  if (opts?.withPayButton && opts?.withReview) {
+    return resolveBrandLetterTemplateName('balance_due', brand, 'v10');
+  }
   if (opts?.withPayButton) {
     return resolveBrandLetterTemplateName('balance_due', brand, 'v9');
   }
@@ -142,6 +145,7 @@ export function pendingPaymentTemplateFallbackNames(brand?: DocumentBrand | stri
     `svc_balance_due_letter_${suffix}_img_v3`,
     `svc_balance_due_letter_${suffix}_img_v2`,
     `svc_balance_due_letter_${suffix}_img_v1`,
+    `svc_balance_due_letter_${suffix}_v10`,
     `svc_balance_due_letter_${suffix}_v9`,
     `svc_balance_due_letter_${suffix}_v8`,
     `svc_balance_due_letter_${suffix}_v7`,
@@ -316,11 +320,17 @@ export function buildPendingPaymentOverdueWhatsAppMessage(
 
 /** Pay-now URL button param for balance-due v4 cold template. */
 export function buildPendingPaymentLetterButtonUrlParams(
-  httpsLink?: string | null
+  httpsLink?: string | null,
+  opts?: { reviewToken?: string | null }
 ): Array<{ index: number; text: string }> {
   const code = extractUpiPayShortCode(httpsLink);
   if (!code) return [];
-  return [{ index: 1, text: code }];
+  const out: Array<{ index: number; text: string }> = [{ index: 1, text: code }];
+  const review = String(opts?.reviewToken || '').trim();
+  if (review.length >= 12 && review.length <= 48) {
+    out.push({ index: 2, text: review });
+  }
+  return out;
 }
 
 export function parseReminderAtLocalDate(reminderAt: string | Date): Date {

@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { parseRequirements } from '@/lib/followUpToOngoing';
-import { jobHasSkipReview } from '@/lib/jobReviews';
+import { jobHasSkipReview, jobReviewColdUrlButtonParam, jobReviewTokenFromUrl } from '@/lib/jobReviews';
 import { getLeadSourceFromJob } from '@/lib/adminUtils';
 import { ensureLeadCatalogLoaded, isDirectCallOrCustomLeadSource } from '@/lib/leadCatalog';
 import { getCompletedJobMissingMedia } from '@/lib/jobReportPhotos';
@@ -83,12 +83,21 @@ export async function sendJobCompletionWhatsApp(opts: {
     filename?: string;
     mimeType?: string;
   } | null;
+  /** Public /review/{token} — 24h free-form + cold Review us button. */
+  reviewUrl?: string | null;
+  reviewToken?: string | null;
   fallbackWaMe?: boolean;
   forceWaMe?: boolean;
 }): Promise<JobCompletionWhatsAppSendResult> {
   const pending = Math.max(0, Number(opts.amountPending) || 0);
-  const payButtonParams = buildPendingPaymentLetterButtonUrlParams(opts.payHttpsLink);
+  const reviewToken =
+    String(opts.reviewToken || '').trim() || jobReviewTokenFromUrl(opts.reviewUrl) || '';
+  const reviewButton = jobReviewColdUrlButtonParam(reviewToken, pending > 0 ? 2 : 1);
+  const payButtonParams = buildPendingPaymentLetterButtonUrlParams(opts.payHttpsLink, {
+    reviewToken: pending > 0 ? reviewToken : null,
+  });
   const useBalanceDueCold = pending > 0;
+  const withReview = Boolean(reviewButton);
   const headerImage = opts.headerImage?.imageBase64
     ? {
         imageBase64: opts.headerImage.imageBase64,
@@ -99,9 +108,10 @@ export async function sendJobCompletionWhatsApp(opts: {
 
   const letterName = useBalanceDueCold
     ? resolvePendingPaymentLetterTemplateName(opts.documentBrand, {
-        withPayButton: payButtonParams.length > 0,
+        withPayButton: payButtonParams.some((b) => b.index === 1),
+        withReview: payButtonParams.some((b) => b.index === 2),
       })
-    : resolveJobCompletionLetterTemplateName(opts.documentBrand);
+    : resolveJobCompletionLetterTemplateName(opts.documentBrand, { withReview });
   const letterFallbackName = useBalanceDueCold
     ? resolvePendingPaymentLetterTemplateFallbackName(opts.documentBrand)
     : resolveJobCompletionLetterTemplateFallbackName(opts.documentBrand);
@@ -135,8 +145,9 @@ export async function sendJobCompletionWhatsApp(opts: {
     return { ok: true, via: 'wa_me' };
   }
 
-  // Balance due + QR: prefer IMAGE letter + Pay now (works in/out of 24h).
-  if (useBalanceDueCold && headerImage) {
+  // Balance due + QR: IMAGE Pay-now templates have no Review us button.
+  // Prefer 24h photo+caption (includes the review link) when we have a token.
+  if (useBalanceDueCold && headerImage && !withReview) {
     for (const templateName of [
       resolvePendingPaymentLetterImageTemplateName(opts.documentBrand),
       resolvePendingPaymentLetterImageTemplateFallbackName(opts.documentBrand),
@@ -174,7 +185,32 @@ export async function sendJobCompletionWhatsApp(opts: {
     if (mediaResult.featureDisabled) {
       return mediaResult;
     }
-    // Image templates failed and freeform needs window — fall through to text letter below
+    if (!mediaResult.needsWindowOrTemplate) {
+      if (opts.fallbackWaMe !== false) {
+        openWhatsAppMeDeepLink(opts.to, opts.text);
+        return { ok: true, via: 'wa_me', error: mediaResult.error };
+      }
+      return mediaResult;
+    }
+  }
+
+  // Pending + review: still attach QR in-window (caption has the review link).
+  if (useBalanceDueCold && headerImage && withReview) {
+    const mediaResult = await sendAdminWhatsAppMedia({
+      to: opts.to,
+      fileBase64: headerImage.imageBase64,
+      filename: headerImage.filename,
+      mimeType: headerImage.mimeType,
+      caption: opts.text,
+      customerId: opts.customerId,
+      source: 'job_completion',
+    });
+    if (mediaResult.ok) {
+      return { ...mediaResult, usedTemplate: false };
+    }
+    if (mediaResult.featureDisabled) {
+      return mediaResult;
+    }
     if (!mediaResult.needsWindowOrTemplate) {
       if (opts.fallbackWaMe !== false) {
         openWhatsAppMeDeepLink(opts.to, opts.text);
@@ -218,7 +254,11 @@ export async function sendJobCompletionWhatsApp(opts: {
       templateName,
       languageCode: 'en',
       bodyParams: letterParams,
-      buttonUrlParams: useBalanceDueCold ? payButtonParams : undefined,
+      buttonUrlParams: useBalanceDueCold
+        ? payButtonParams
+        : reviewButton
+          ? [reviewButton]
+          : undefined,
       customerId: opts.customerId,
       source: 'job_completion',
     });
@@ -426,6 +466,7 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
         const invite = await createJobReviewInvite({ jobId, technicianId });
         if (invite?.url) {
           job.reviewUrl = invite.url;
+          job.reviewToken = invite.token;
         }
       } catch (err) {
         console.warn('[job-completion-wa] review invite failed', err);
@@ -509,6 +550,7 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
             documentBrand: built.documentBrand,
             upi: upiOpts,
             withQrImage: Boolean(headerImage),
+            reviewUrl: typeof job.reviewUrl === 'string' ? job.reviewUrl : null,
           })
         : built.whatsappMessage;
 
@@ -526,6 +568,8 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       jobRef: built.jobNumber || null,
       payHttpsLink,
       headerImage,
+      reviewUrl: typeof job.reviewUrl === 'string' ? job.reviewUrl : null,
+      reviewToken: typeof job.reviewToken === 'string' ? job.reviewToken : null,
       fallbackWaMe: false,
     });
 

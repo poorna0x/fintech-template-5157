@@ -137,10 +137,6 @@ BEGIN
     RAISE EXCEPTION 'not authorized';
   END IF;
 
-  IF v_tech IS NULL THEN
-    RETURN jsonb_build_object('ok', true, 'skipped', true, 'reason', 'no_technician');
-  END IF;
-
   v_brand := CASE
     WHEN lower(trim(coalesce(v_job.service_brand, ''))) = 'elevenro' THEN 'elevenro'
     ELSE 'hydrogenro'
@@ -157,6 +153,7 @@ BEGIN
         'ok', true,
         'already_submitted', true,
         'id', v_existing.id,
+        'token', v_existing.token,
         'brand', v_brand
       );
     END IF;

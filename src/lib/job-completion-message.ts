@@ -2,7 +2,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { isJobPendingPaymentOpen, parseJobPendingPayment } from '@/lib/jobPendingPayment';
 import { formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
-import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, letterLabelValue, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import type { PendingPaymentWhatsAppUpiOptions } from '@/lib/pendingPaymentReminder';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
@@ -115,12 +115,9 @@ export function buildJobCompletionMessage(input: JobCompletionMessageInput): str
     `Thank you for choosing ${brandName}. We appreciate your trust and hope you're satisfied with our work.`,
     '',
     ...brandLetterFooterLines(input.documentBrand, {
-      includeReview: !input.reviewUrl,
+      reviewUrl: input.reviewUrl,
       skipChatHint: true,
     }),
-    ...(input.reviewUrl
-      ? ['', letterLabelValue('Review us', input.reviewUrl)]
-      : []),
   ].join('\n');
 }
 
@@ -174,14 +171,12 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
     ...brandLetterClosingLines(input.documentBrand, {
       skipChatHint: true,
       includeTextUs: false,
+      reviewUrl: input.reviewUrl,
     }),
     '',
-    pending > 0 && (payLink || upiId)
+    pending > 0 && (payLink || Boolean(input.upi?.upiId))
       ? '💬 Reply on this chat if you need any help or if you have already paid.'
       : '💬 Reply on this chat if you need any help.',
-    ...(input.reviewUrl
-      ? ['', waLabeledLink('⭐', 'Review us', input.reviewUrl)]
-      : []),
   ].join('\n');
 }
 
@@ -242,15 +237,21 @@ export function formatJobCompletionColdTemplatePreview(
     `💰 Amount collected: INR ${amount}`,
     `🧾 Invoice / Job: ${jobRef}`,
     '',
-    ...brandLetterClosingLines(input.documentBrand, { includeTextUs: false }),
+    ...brandLetterClosingLines(input.documentBrand, {
+      includeTextUs: false,
+      reviewUrl: input.reviewUrl,
+    }),
     '',
     '💬 Reply on this chat if you need any help.',
   ].join('\n');
 }
 
-/** Letter UTILITY (newline footer + Call us / Website). Prefer v4 when APPROVED. */
-export function resolveJobCompletionLetterTemplateName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('job_done', brand, 'v4');
+/** Letter UTILITY. v5 = Review us URL button; v4 = Call + Website. */
+export function resolveJobCompletionLetterTemplateName(
+  brand: DocumentBrand,
+  opts?: { withReview?: boolean }
+): string {
+  return resolveBrandLetterTemplateName('job_done', brand, opts?.withReview ? 'v5' : 'v4');
 }
 
 export function resolveJobCompletionLetterTemplateFallbackName(brand: DocumentBrand): string {
@@ -336,7 +337,10 @@ export function buildJobCompletionMessageFromJob(job: Record<string, unknown>): 
     pendingDueDate: pendingDueDate || null,
     jobRef: jobNumber || null,
     documentBrand,
-    reviewUrl: typeof job.reviewUrl === 'string' ? job.reviewUrl : null,
+    reviewUrl:
+      (typeof job.reviewUrl === 'string' && job.reviewUrl) ||
+      (typeof job.review_url === 'string' && job.review_url) ||
+      null,
   };
 
   return {

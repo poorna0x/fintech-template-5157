@@ -219,6 +219,12 @@ export const WA_COLD = {
       String(jobRef || '').trim() || 'your service',
     ],
   },
+  /** Inbox: ask review for last completed job — Review us URL button. */
+  ask_review: {
+    name: 'svc_ask_review_hro_v1',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
   /** Customer missed-called us — callback (svc_missed_call_v3 / missed_call_callback_*_cta_v4). */
   missed_call: {
     name: 'svc_missed_call_v3',
@@ -606,8 +612,9 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   appointment_reminder: 'Appointment reminder (svc_visit_reminder)',
   payment_received: 'Payment received (svc_payment_received)',
   tech_assigned: 'Technician assigned (svc_tech_assigned)',
-  job_completion: 'Service completed (svc_job_done_letter_*_v4 emoji → v3 → v2 / svc_job_done)',
+  job_completion: 'Service completed (svc_job_done_letter_*_v5 Review us → v4 → v3 / svc_job_done)',
   job_completion_plain: 'Job done letter no buttons (svc_job_done_letter_*_plain_v2 → v1)',
+  ask_review: 'Ask review (svc_ask_review_{hro|ero}_v1 — last completed job)',
   general_notice: 'General notice (svc_smoke_update)',
   hello: 'Hello (svc_wfs_hello_* → svc_hello)',
   wfs_hello: 'WFS Hi (svc_wfs_hello_{hro|ero|generic})',

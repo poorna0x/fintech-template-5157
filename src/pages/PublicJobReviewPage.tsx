@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { getDocumentBrandLabel, type DocumentBrand } from '@/lib/service-brands';
 import {
-  brandGoogleReviewUrl,
   fetchPublicJobReviewInvite,
   notifyAdminsJobReviewSubmitted,
   submitPublicJobReview,
@@ -61,16 +60,31 @@ function StarPicker({
 
 function tryCloseReviewTab() {
   try {
+    window.open('', '_self');
+  } catch {
+    /* ignore */
+  }
+  try {
     window.close();
   } catch {
     /* ignore */
   }
   try {
-    window.open('', '_self');
-    window.close();
+    if (window.history.length > 1) {
+      window.history.back();
+    }
   } catch {
     /* ignore */
   }
+  window.setTimeout(() => {
+    try {
+      if (!document.hidden) {
+        window.location.replace('about:blank');
+      }
+    } catch {
+      /* ignore */
+    }
+  }, 200);
 }
 
 const PublicJobReviewPage = () => {
@@ -112,10 +126,9 @@ const PublicJobReviewPage = () => {
 
   useEffect(() => {
     if (!justSubmitted) return;
-    const delay = rating >= 4 ? 8000 : 1800;
-    const id = window.setTimeout(() => tryCloseReviewTab(), delay);
+    const id = window.setTimeout(() => tryCloseReviewTab(), 1800);
     return () => window.clearTimeout(id);
-  }, [justSubmitted, rating]);
+  }, [justSubmitted]);
 
   const brand: DocumentBrand = invite?.brand || 'hydrogenro';
   const brandLabel = getDocumentBrandLabel(brand);
@@ -140,9 +153,7 @@ const PublicJobReviewPage = () => {
     if (!result.alreadySubmitted) {
       notifyAdminsJobReviewSubmitted(token);
     }
-    if (rating < 4) {
-      tryCloseReviewTab();
-    }
+    tryCloseReviewTab();
   };
 
   return (
@@ -169,21 +180,6 @@ const PublicJobReviewPage = () => {
                   Your review is in
                   {tech ? ` — including for ${tech}` : ''}. You can close this page.
                 </p>
-                {rating >= 4 && (
-                  <div className="pt-2">
-                    <p className="text-sm text-slate-600 mb-3">
-                      If you have a moment, a Google review also helps other families find us.
-                    </p>
-                    <a
-                      href={brandGoogleReviewUrl(brand)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex w-full h-11 items-center justify-center rounded-md bg-black text-white text-sm font-medium hover:bg-gray-800"
-                    >
-                      Review us on Google
-                    </a>
-                  </div>
-                )}
                 <Button
                   type="button"
                   variant="outline"

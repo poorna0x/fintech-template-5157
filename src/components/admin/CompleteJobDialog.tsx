@@ -776,15 +776,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       });
 
       toast.success('Job completed successfully');
-      if (askForReview && !isOfficeCompletion && completedByTechnicianId) {
-        void import('@/lib/jobReviews').then(({ createJobReviewInvite }) => {
-          void createJobReviewInvite({
-            jobId: job.id,
-            technicianId: String(completedByTechnicianId),
-          });
-        });
-      }
-      // Brand completion WhatsApp when auto-send is ON (skips AMC / dont_send).
+      // Brand completion WhatsApp when auto-send is ON (creates the review invite + link).
       // Refresh again after a successful send so "Message Sent" updates on the completed card.
       void import('@/lib/jobCompletionWhatsApp').then(({ queueJobCompletionWhatsAppAutoSend }) => {
         queueJobCompletionWhatsAppAutoSend(

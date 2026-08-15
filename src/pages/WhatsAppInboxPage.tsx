@@ -165,6 +165,7 @@ import {
 } from '@/lib/whatsappLocalBackup';
 import { registerNativeBackHandler, tryNativeBackHandlers } from '@/lib/nativeBackButton';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
+import { sendAskReviewForLastCompletedJob } from '@/lib/jobReviews';
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -259,12 +260,13 @@ const BOOK_FLOW_ACTIONS = new Set<WhatsAppBookingQuickAction>([
   'water_filter_service',
 ]);
 
-type InboxQuickMessageAction = 'send_hello' | 'call_shortly' | 'thanks_reply';
+type InboxQuickMessageAction = 'send_hello' | 'call_shortly' | 'thanks_reply' | 'ask_review';
 
 const QUICK_MESSAGE_LABELS: Record<InboxQuickMessageAction, string> = {
   send_hello: 'Send hello',
   call_shortly: 'We’ll call you shortly',
   thanks_reply: 'Thanks — noted',
+  ask_review: 'Ask review',
 };
 
 function quickActionConfirmCopy(
@@ -1824,6 +1826,36 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
     setSending(true);
     try {
+      if (/^svc_ask_review_/i.test(selectedTemplate.name)) {
+        const result = await sendAskReviewForLastCompletedJob({
+          to: selectedPhone,
+          customerId: String(activeThread?.customer_id || ''),
+          customerName: activeThread?.customer_name,
+          brand: threadBrand,
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Could not send review request');
+          return;
+        }
+        toast.success(
+          result.jobNumber
+            ? `Review request sent for ${result.jobNumber}`
+            : 'Review request sent'
+        );
+        setSelectedTemplateKey('');
+        setTemplateParams([]);
+        setTemplatePickerOpen(false);
+        bumpThreadAfterOutbound({
+          phone: selectedPhone,
+          body: selectedTemplate.name,
+          msgType: result.usedTemplate ? 'template' : 'text',
+          templateName: selectedTemplate.name,
+          customerId: activeThread?.customer_id,
+          skipLocalBubble: Boolean(result.usedTemplate),
+        });
+        void loadThread(selectedPhone, { soft: true, force: true });
+        return;
+      }
       const result = await sendAdminWhatsAppTemplate({
         to: selectedPhone,
         templateName: selectedTemplate.name,
@@ -1862,11 +1894,44 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         customerName: name,
         brand: threadBrand,
       });
-      const bodies: Record<InboxQuickMessageAction, string> = {
+      const bodies: Record<Exclude<InboxQuickMessageAction, 'ask_review'>, string> = {
         send_hello: `Hi ${name}, this is ${who}. Please reply on this chat if you need help with your water purifier.`,
         call_shortly: `Hi ${name}, thanks for reaching out. We’ll call you shortly.`,
         thanks_reply: `Hi ${name}, thanks — we’ve noted your message. We’ll update you here.`,
       };
+
+      if (action === 'ask_review') {
+        const result = await sendAskReviewForLastCompletedJob({
+          to: selectedPhone,
+          customerId: String(activeThread?.customer_id || ''),
+          customerName: activeThread?.customer_name,
+          brand: threadBrand,
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Could not send review request');
+          return;
+        }
+        toast.success(
+          result.jobNumber
+            ? result.usedTemplate
+              ? `Review request sent for ${result.jobNumber} (cold template)`
+              : `Review request sent for ${result.jobNumber}`
+            : result.usedTemplate
+              ? 'Review request sent (cold template)'
+              : 'Review request sent'
+        );
+        setQuickActionConfirm(null);
+        bumpThreadAfterOutbound({
+          phone: selectedPhone,
+          body: result.usedTemplate ? 'svc_ask_review' : 'Ask review',
+          msgType: result.usedTemplate ? 'template' : 'text',
+          templateName: result.usedTemplate ? 'svc_ask_review' : null,
+          customerId: activeThread?.customer_id,
+          skipLocalBubble: Boolean(result.usedTemplate),
+        });
+        void loadThread(selectedPhone, { soft: true, force: true });
+        return;
+      }
 
       if (!windowOpen && action === 'send_hello') {
         const payload = buildQuickHelloTemplate(quickReplyContext);
@@ -1927,7 +1992,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   };
 
   const runQuickAction = async (action: WhatsAppBookingQuickAction | InboxQuickMessageAction) => {
-    if (action === 'send_hello' || action === 'call_shortly' || action === 'thanks_reply') {
+    if (action === 'send_hello' || action === 'call_shortly' || action === 'thanks_reply' || action === 'ask_review') {
       await runQuickMessage(action);
       return;
     }
@@ -2639,6 +2704,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     <DropdownMenuLabel className="text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
                       Messages
                     </DropdownMenuLabel>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('ask_review')}
+                    >
+                      Ask review
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       className="cursor-pointer"
                       disabled={quickActionBusy}
@@ -3356,10 +3428,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             <DialogDescription>
               {quickActionConfirm && quickActionConfirm in QUICK_MESSAGE_LABELS
                 ? windowOpen
-                  ? 'Sends a short message in this chat. Does not start booking.'
+                  ? quickActionConfirm === 'ask_review'
+                    ? 'Sends a review request for this customer’s last completed job (stars + comment).'
+                    : 'Sends a short message in this chat. Does not start booking.'
                   : quickActionConfirm === 'send_hello'
                     ? '24h window closed — sends a Hello cold template only.'
-                    : '24h window is closed — open with Hello / Book service first, or wait for a reply.'
+                    : quickActionConfirm === 'ask_review'
+                      ? '24h window closed — sends a Review us cold template for the last completed job.'
+                      : '24h window is closed — open with Hello / Book service first, or wait for a reply.'
                 : quickActionConfirm
                   ? quickActionConfirmCopy(
                       quickActionConfirm as WhatsAppBookingQuickAction,

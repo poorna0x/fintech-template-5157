@@ -99,6 +99,16 @@ const RECOMMENDED = [
   { name: 'svc_tech_assigned', language: 'en', hint: 'Tech assigned ({{1}} name, {{2}} tech)' },
   { name: 'svc_job_done', language: 'en', hint: 'Service done ({{1}} name, {{2}} amount)' },
   {
+    name: 'svc_ask_review_hro_v1',
+    language: 'en',
+    hint: 'Ask review Hydrogen RO ({{1}} name + Review us button)',
+  },
+  {
+    name: 'svc_ask_review_ero_v1',
+    language: 'en',
+    hint: 'Ask review Eleven RO ({{1}} name + Review us button)',
+  },
+  {
     name: 'svc_payment_received',
     language: 'en',
     hint: 'Payment thanks ({{1}} name, {{2}} amount)',

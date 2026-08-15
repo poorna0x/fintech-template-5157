@@ -2031,6 +2031,7 @@ function humanizeWhatsAppTemplateSlug(slug: string): string {
     return /_img/i.test(slug) ? 'Pending payment (UPI QR)' : 'Pending payment';
   }
   if (/job_done|job_completion/i.test(slug)) return 'Job completed';
+  if (/ask_review/i.test(slug)) return 'Ask review';
   const stepHints: Record<string, string> = {
     ask_name: 'Ask name',
     await_name: 'Ask name',

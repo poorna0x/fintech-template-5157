@@ -4936,16 +4936,7 @@ const TechnicianDashboard = () => {
         notifyAdminsJobEvent(jobId, 'completed')
       );
 
-      if (askForReview && user?.id) {
-        void import('@/lib/jobReviews').then(({ createJobReviewInvite }) => {
-          void createJobReviewInvite({
-            jobId,
-            technicianId: String(user.id),
-          });
-        });
-      }
-
-      // Brand completion WhatsApp (Settings → auto-send). Soft-fail; skips AMC / dont_send.
+      // Brand completion WhatsApp (Settings → auto-send). Creates review invite when asked.
       void (async () => {
         try {
           const { queueJobCompletionWhatsAppAutoSend } = await import(

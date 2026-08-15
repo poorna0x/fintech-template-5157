@@ -1146,6 +1146,69 @@ function buildJobDoneLetterV4Templates() {
 const JOB_DONE_LETTER_V4_TEMPLATES = buildJobDoneLetterV4Templates();
 
 /**
+ * Job-done letter v5 — Call us + Review us (dynamic /review/{{1}}).
+ * Website stays in the body footer. Both brands.
+ */
+function buildJobDoneLetterV5Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      reviewUrl: `${b.website}/review/{{1}}`,
+      name: `svc_job_done_letter_${suffix}_v5`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your completed water purifier service. ✅`,
+        ``,
+        `💰 Amount collected: INR {{2}}`,
+        `🧾 Invoice / Job: {{3}}`,
+        ``,
+        footer,
+        ``,
+        `💬 Reply on this chat if you need any help.`,
+        ``,
+        `Tap Review us below if you have a minute.`,
+      ].join('\n'),
+      examples: ['Rahul', '2500', 'INV-2026-0815'],
+    });
+  }
+  return out;
+}
+
+const JOB_DONE_LETTER_V5_TEMPLATES = buildJobDoneLetterV5Templates();
+
+/**
+ * Inbox ask-review — Call us + Review us for the last completed job.
+ */
+function buildAskReviewTemplates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      reviewUrl: `${b.website}/review/{{1}}`,
+      name: `svc_ask_review_${suffix}_v1`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `Thank you for your recent water purifier service visit with ${b.label}.`,
+        ``,
+        `Tap Review us below to rate this visit. It takes less than a minute.`,
+        ``,
+        `💬 Reply on this chat if you need any help.`,
+      ].join('\n'),
+      examples: ['Rahul'],
+    });
+  }
+  return out;
+}
+
+const ASK_REVIEW_TEMPLATES = buildAskReviewTemplates();
+
+/**
  * Job-done letter — same copy as letter style, NO buttons (body only).
  * Footer: Call / Email / Website only (no wa.me — safer for UTILITY).
  */
@@ -1496,6 +1559,39 @@ function buildBalanceDueLetterV9Templates() {
 }
 
 const BALANCE_DUE_LETTER_V9_TEMPLATES = buildBalanceDueLetterV9Templates();
+
+/**
+ * Balance-due letter v10 — Call us + Pay now + Review us.
+ */
+function buildBalanceDueLetterV10Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      reviewUrl: `${b.website}/review/{{1}}`,
+      name: `svc_balance_due_letter_${suffix}_v10`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your pending payment for water purifier service. 💧`,
+        ``,
+        `💰 Amount pending: INR {{2}}`,
+        `📅 Due date: {{3}}`,
+        `🧾 Invoice / Job: {{4}}`,
+        ``,
+        `💳 Tap Pay now below or reply on this chat if you have already paid.`,
+        ``,
+        `Tap Review us below if you have a minute.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_V10_TEMPLATES = buildBalanceDueLetterV10Templates();
 
 /**
  * Balance-due IMAGE header v5 — lean QR + Pay now; no Call/Email/Website in body.
@@ -1927,6 +2023,18 @@ function websiteUrlForTemplate(name) {
 function balanceDueLetterPayload(t) {
   const callPhone = t.callPhone || callPhoneForTemplate(t.name);
   const payUrl = t.payUrl || `${(t.websiteUrl || websiteUrlForTemplate(t.name) || 'https://hydrogenro.com').replace(/\/$/, '')}/p/{{1}}`;
+  const buttons = [
+    { type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone },
+    { type: 'URL', text: 'Pay now', url: payUrl, example: ['pay123456'] },
+  ];
+  if (t.reviewUrl) {
+    buttons.push({
+      type: 'URL',
+      text: 'Review us',
+      url: t.reviewUrl,
+      example: ['a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6'],
+    });
+  }
   return {
     name: t.name,
     language: 'en',
@@ -1940,10 +2048,7 @@ function balanceDueLetterPayload(t) {
       },
       {
         type: 'BUTTONS',
-        buttons: [
-          { type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone },
-          { type: 'URL', text: 'Pay now', url: payUrl, example: ['pay123456'] },
-        ],
+        buttons,
       },
     ],
   };
@@ -2002,7 +2107,14 @@ function letterPayload(t) {
   const callPhone = t.callPhone || callPhoneForTemplate(t.name);
   const websiteUrl = t.websiteUrl || websiteUrlForTemplate(t.name);
   const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }];
-  if (websiteUrl) {
+  if (t.reviewUrl) {
+    buttons.push({
+      type: 'URL',
+      text: 'Review us',
+      url: t.reviewUrl,
+      example: ['a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6'],
+    });
+  } else if (websiteUrl) {
     buttons.push({ type: 'URL', text: 'Website', url: websiteUrl });
   }
   // Meta blocks wa.me on template URL buttons — Text us stays in the body footer.
@@ -2324,6 +2436,12 @@ function collectAllTemplatePreviewEntries() {
   for (const t of JOB_DONE_LETTER_V4_TEMPLATES) {
     push('Job done letter v4 (emoji)', t, letterPayload);
   }
+  for (const t of JOB_DONE_LETTER_V5_TEMPLATES) {
+    push('Job done letter v5 (Review us)', t, letterPayload);
+  }
+  for (const t of ASK_REVIEW_TEMPLATES) {
+    push('Ask review (last completed job)', t, letterPayload);
+  }
   for (const t of BOOKING_CONFIRMED_LETTER_V4_TEMPLATES) {
     push('Booking confirmed letter v4 (emoji)', t, letterPayload);
   }
@@ -2351,6 +2469,9 @@ function collectAllTemplatePreviewEntries() {
   }
   for (const t of BALANCE_DUE_LETTER_V9_TEMPLATES) {
     push('Balance due letter v9 (Pay now, no contact footer)', t, balanceDueLetterPayload);
+  }
+  for (const t of BALANCE_DUE_LETTER_V10_TEMPLATES) {
+    push('Balance due letter v10 (Pay now + Review us)', t, balanceDueLetterPayload);
   }
   for (const t of PAYMENT_OVERDUE_NOTICE_V1_TEMPLATES) {
     push('Payment overdue notice v1 (Pay now)', t, balanceDueLetterPayload);
@@ -2645,6 +2766,22 @@ async function main() {
     }
     queue.push({ label: t.name, payload: letterPayload(t) });
   }
+  for (const t of JOB_DONE_LETTER_V5_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
+  for (const t of ASK_REVIEW_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
   for (const t of BOOKING_CONFIRMED_LETTER_V4_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
@@ -2718,6 +2855,14 @@ async function main() {
     queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
   }
   for (const t of BALANCE_DUE_LETTER_V9_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
+  }
+  for (const t of BALANCE_DUE_LETTER_V10_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
       console.log(`SKIP ${t.name} — ${skip}`);
@@ -3010,6 +3155,26 @@ async function main() {
       ...JOB_DONE_LETTER_V4_TEMPLATES.map((t) => t.name),
       ...JOB_DONE_LETTER_PLAIN_TEMPLATES.filter((t) => /_plain_v2$/i.test(t.name)).map((t) => t.name),
     ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyJobReviewCta = process.argv.includes('--only-job-review-cta');
+  if (onlyJobReviewCta) {
+    const keep = new Set([
+      ...JOB_DONE_LETTER_V5_TEMPLATES.map((t) => t.name),
+      ...BALANCE_DUE_LETTER_V10_TEMPLATES.map((t) => t.name),
+      ...ASK_REVIEW_TEMPLATES.map((t) => t.name),
+    ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyAskReview = process.argv.includes('--only-ask-review');
+  if (onlyAskReview) {
+    const keep = new Set(ASK_REVIEW_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

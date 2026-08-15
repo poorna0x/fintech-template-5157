@@ -1,6 +1,10 @@
 import { supabase } from '@/lib/supabaseClient';
+import { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from '@/lib/supabaseConfig';
 import type { DocumentBrand } from '@/lib/service-brands';
-import { normalizeDocumentBrand } from '@/lib/service-brands';
+import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
+import { sendAdminWhatsAppTemplate, sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
+import { waLabeledLink } from '@/lib/whatsappMessageFormat';
+import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export type JobReviewInvite = {
   ok: true;
@@ -28,25 +32,240 @@ export function jobHasSkipReview(job: Record<string, unknown> | null | undefined
   return list.some((entry) => entry && typeof entry === 'object' && (entry as { skip_review?: unknown }).skip_review === true);
 }
 
+function isLocalReviewHost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.ngrok-free.dev') ||
+    host.endsWith('.ngrok-free.app') ||
+    host.endsWith('.ngrok.io')
+  );
+}
+
 export function jobReviewPublicUrl(token: string, brand: DocumentBrand): string {
   const t = String(token || '').trim();
   if (!t) return '';
-  const host = brand === 'elevenro' ? 'https://elevenro.com' : 'https://hydrogenro.com';
-  if (typeof window !== 'undefined' && /localhost|127\.0\.0\.1/.test(window.location.hostname)) {
-    return `${window.location.origin}/review/${encodeURIComponent(t)}`;
-  }
-  return `${host}/review/${encodeURIComponent(t)}`;
+  const origin = isLocalReviewHost()
+    ? window.location.origin.replace(/\/$/, '')
+    : brand === 'elevenro'
+      ? 'https://elevenro.com'
+      : 'https://hydrogenro.com';
+  return `${origin}/review/${encodeURIComponent(t)}`;
 }
 
-export function brandGoogleReviewUrl(brand: DocumentBrand): string {
-  if (brand === 'elevenro') {
-    return 'https://www.google.com/maps/search/?api=1&query=Eleven+RO+Anjanapura+Bengaluru';
+/** Public get/submit must send the anon JWT — the CRM fetch wrapper skips Data API fallbacks. */
+async function invokePublicJobReviewRpc(
+  fn: 'get_job_review_invite' | 'submit_job_review',
+  body: Record<string, unknown>
+): Promise<{ data: unknown; error: string | null }> {
+  if (!isSupabaseConfigured() || !supabaseUrl || !supabaseAnonKey) {
+    return { data: null, error: 'Supabase is not configured' };
   }
-  return 'https://www.google.com/maps/search/?api=1&query=Hydrogen+RO+Seshadripuram+Bengaluru';
+  try {
+    const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      const msg =
+        (json && typeof json === 'object' && (json as { message?: string }).message) ||
+        `HTTP ${res.status}`;
+      return { data: null, error: String(msg) };
+    }
+    return { data: json, error: null };
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err.message : 'failed' };
+  }
+}
+
+/** Token suffix for Meta URL buttons (`https://…/review/{{1}}`). */
+export function jobReviewTokenFromUrl(url: string | null | undefined): string {
+  const m = String(url || '')
+    .trim()
+    .match(/\/review\/([^/?#]+)/i);
+  return m ? decodeURIComponent(m[1]).trim() : '';
+}
+
+export function jobReviewColdUrlButtonParam(token: string, index = 1): { index: number; text: string } | null {
+  const t = String(token || '').trim();
+  if (t.length < 12 || t.length > 48) return null;
+  return { index, text: t };
+}
+
+export function resolveAskReviewTemplateName(brand: DocumentBrand): string {
+  return brand === 'elevenro' ? 'svc_ask_review_ero_v1' : 'svc_ask_review_hro_v1';
+}
+
+export function askReviewTemplateFallbackNames(): string[] {
+  return ['svc_ask_review_hro_v1', 'svc_ask_review_ero_v1'];
+}
+
+export function buildAskReviewWhatsAppMessage(opts: {
+  customerName?: string | null;
+  brand: DocumentBrand;
+  reviewUrl: string;
+  jobRef?: string | null;
+}): string {
+  const name = whatsappGreetingName(opts.customerName, 'there');
+  const brandLabel = getDocumentBrandLabel(opts.brand);
+  const jobRef = String(opts.jobRef || '').trim();
+  return [
+    `Hi ${name}, 👋`,
+    `Thank you for your recent water purifier service visit with ${brandLabel}.`,
+    ...(jobRef ? [`🧾 Visit: ${jobRef}`] : []),
+    '',
+    waLabeledLink('⭐', 'Review us', opts.reviewUrl),
+    '',
+    '💬 Reply on this chat if you need any help.',
+  ].join('\n');
+}
+
+export type LastCompletedJobForReview = {
+  id: string;
+  jobNumber: string;
+  technicianId: string | null;
+  brand: DocumentBrand;
+};
+
+export async function fetchLastCompletedJobForCustomer(
+  customerId: string
+): Promise<LastCompletedJobForReview | null> {
+  const id = String(customerId || '').trim();
+  if (!id) return null;
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('id, job_number, completed_by, assigned_technician_id, service_brand, completed_at')
+    .eq('customer_id', id)
+    .eq('status', 'COMPLETED')
+    .order('completed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.warn('[job-review] last completed job failed', error.message);
+    return null;
+  }
+  const row = data as Record<string, unknown>;
+  const jobId = String(row.id || '').trim();
+  if (!jobId) return null;
+  return {
+    id: jobId,
+    jobNumber: String(row.job_number || '').trim(),
+    technicianId: String(row.completed_by || row.assigned_technician_id || '').trim() || null,
+    brand: normalizeDocumentBrand(row.service_brand) || 'hydrogenro',
+  };
+}
+
+export async function sendAskReviewForLastCompletedJob(opts: {
+  to: string;
+  customerId: string;
+  customerName?: string | null;
+  brand?: DocumentBrand | null;
+}): Promise<{
+  ok: boolean;
+  error?: string;
+  via?: 'api' | 'template';
+  usedTemplate?: boolean;
+  jobNumber?: string;
+  alreadySubmitted?: boolean;
+}> {
+  const to = String(opts.to || '').trim();
+  const customerId = String(opts.customerId || '').trim();
+  if (!to) return { ok: false, error: 'Phone required' };
+  if (!customerId) return { ok: false, error: 'Link a CRM customer to this chat first' };
+
+  const job = await fetchLastCompletedJobForCustomer(customerId);
+  if (!job) return { ok: false, error: 'No completed job for this customer' };
+
+  const invite = await createJobReviewInvite({
+    jobId: job.id,
+    technicianId: job.technicianId,
+  });
+  if (invite?.alreadySubmitted) {
+    return {
+      ok: false,
+      alreadySubmitted: true,
+      jobNumber: job.jobNumber,
+      error: job.jobNumber
+        ? `Already reviewed (${job.jobNumber})`
+        : 'This visit was already reviewed',
+    };
+  }
+  if (!invite?.token || !invite.url) {
+    if (invite?.skipped) {
+      return { ok: false, error: 'Could not attach a technician to this job' };
+    }
+    return { ok: false, error: 'Could not create review link' };
+  }
+
+  const brand = invite.brand || job.brand || opts.brand || 'hydrogenro';
+  const text = buildAskReviewWhatsAppMessage({
+    customerName: opts.customerName,
+    brand,
+    reviewUrl: invite.url,
+    jobRef: job.jobNumber || null,
+  });
+
+  const textResult = await sendAdminWhatsAppText({
+    to,
+    text,
+    customerId,
+    source: 'inbox',
+    fallbackWaMe: false,
+  });
+  if (textResult.ok) {
+    return { ok: true, via: 'api', usedTemplate: false, jobNumber: job.jobNumber };
+  }
+  if (textResult.featureDisabled) {
+    return { ok: false, error: textResult.error || 'WhatsApp send is off' };
+  }
+  if (!textResult.needsWindowOrTemplate) {
+    return { ok: false, error: textResult.error || 'Could not send review request' };
+  }
+
+  const reviewButton = jobReviewColdUrlButtonParam(invite.token, 1);
+  if (!reviewButton) {
+    return { ok: false, error: 'Review link is invalid' };
+  }
+
+  const templateName = resolveAskReviewTemplateName(brand);
+  const cold = await sendAdminWhatsAppTemplate({
+    to,
+    templateName,
+    languageCode: 'en',
+    bodyParams: [whatsappGreetingName(opts.customerName, 'there')],
+    buttonUrlParams: [reviewButton],
+    customerId,
+    source: 'inbox',
+  });
+  if (cold.ok) {
+    return { ok: true, via: 'template', usedTemplate: true, jobNumber: job.jobNumber };
+  }
+  return {
+    ok: false,
+    error:
+      cold.error ||
+      '24h window closed and ask-review template is not approved yet.',
+  };
 }
 
 function parseInvitePayload(data: unknown): JobReviewInvite | null {
-  const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  let raw: unknown = data;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  const row = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
   if (!row || row.ok !== true) return null;
   if (row.skipped === true) {
     return {
@@ -76,10 +295,15 @@ export async function createJobReviewInvite(opts: {
 }): Promise<JobReviewInvite | null> {
   const jobId = String(opts.jobId || '').trim();
   if (!jobId) return null;
+  const technicianId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    String(opts.technicianId || '').trim()
+  )
+    ? String(opts.technicianId).trim()
+    : null;
   try {
     const { data, error } = await supabase.rpc('create_job_review_invite', {
       p_job_id: jobId,
-      p_technician_id: opts.technicianId || null,
+      p_technician_id: technicianId,
     });
     if (error) {
       console.warn('[job-review] create failed', error.message);
@@ -106,9 +330,9 @@ export async function fetchPublicJobReviewInvite(token: string): Promise<{
   const t = String(token || '').trim();
   if (!t) return { invite: null, error: 'invalid' };
   try {
-    const { data, error } = await supabase.rpc('get_job_review_invite', { p_token: t });
+    const { data, error } = await invokePublicJobReviewRpc('get_job_review_invite', { p_token: t });
     if (error) {
-      console.warn('[job-review] get failed', error.message);
+      console.warn('[job-review] get failed', error);
       return { invite: null, error: 'failed' };
     }
     const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
@@ -143,14 +367,14 @@ export async function submitPublicJobReview(opts: {
   const rating = Math.round(Number(opts.rating));
   if (!token || rating < 1 || rating > 5) return { ok: false, error: 'invalid' };
   try {
-    const { data, error } = await supabase.rpc('submit_job_review', {
+    const { data, error } = await invokePublicJobReviewRpc('submit_job_review', {
       p_token: token,
       p_rating: rating,
       p_comment: String(opts.comment || '').trim().slice(0, 1000),
     });
     if (error) {
-      console.warn('[job-review] submit failed', error.message);
-      return { ok: false, error: error.message };
+      console.warn('[job-review] submit failed', error);
+      return { ok: false, error };
     }
     const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
     if (!row || row.ok !== true) {

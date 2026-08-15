@@ -35,27 +35,17 @@ export function brandSupportEmail(brand: DocumentBrand): string {
   );
 }
 
-/** Google Maps search — customer can open the listing and leave a review. */
-export function brandReviewUrl(brand: DocumentBrand): string {
-  if (brand === 'elevenro') {
-    return 'https://www.google.com/maps/search/?api=1&query=Eleven+RO+Anjanapura+Bengaluru';
-  }
-  return 'https://www.google.com/maps/search/?api=1&query=Hydrogen+RO+Seshadripuram+Bengaluru';
-}
-
 export function brandContactLines(brand: DocumentBrand): {
   brandLabel: string;
   voice: ReturnType<typeof brandPrimaryVoicePhone>;
   website: string;
   email: string;
-  reviewUrl: string;
 } {
   return {
     brandLabel: getDocumentBrandLabel(brand),
     voice: brandPrimaryVoicePhone(brand),
     website: brandWebsiteUrl(brand),
     email: brandSupportEmail(brand),
-    reviewUrl: brandReviewUrl(brand),
   };
 }
 
@@ -89,10 +79,11 @@ const LETTER_TEMPLATE_BASE: Record<BrandLetterTemplateKind, string> = {
 export function resolveBrandLetterTemplateName(
   kind: BrandLetterTemplateKind,
   brand: DocumentBrand,
-  version: 'v9' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2' | 'v1' = 'v3'
+  version: 'v10' | 'v9' | 'v8' | 'v7' | 'v6' | 'v5' | 'v4' | 'v3' | 'v2' | 'v1' = 'v3'
 ): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
   const base = LETTER_TEMPLATE_BASE[kind];
+  if (version === 'v10') return `${base}_${suffix}_v10`;
   if (version === 'v9') return `${base}_${suffix}_v9`;
   if (version === 'v8') return `${base}_${suffix}_v8`;
   if (version === 'v7') return `${base}_${suffix}_v7`;
@@ -131,7 +122,8 @@ export function letterLabelValue(label: string, value: string): string {
 export function brandLetterClosingLines(
   brand: DocumentBrand,
   opts?: {
-    includeReview?: boolean;
+    /** Public CRM /review/{token} URL — never Google Maps. */
+    reviewUrl?: string | null;
     includeTextUs?: boolean;
     skipChatHint?: boolean;
     skipThankYou?: boolean;
@@ -141,7 +133,7 @@ export function brandLetterClosingLines(
   }
 ): string[] {
   const lines = brandLetterFooterLines(brand, {
-    includeReview: opts?.includeReview,
+    reviewUrl: opts?.reviewUrl,
     skipChatHint: opts?.skipChatHint ?? true,
     skipThankYou: opts?.skipThankYou,
     skipCall: opts?.skipCall,
@@ -158,7 +150,8 @@ export function brandLetterClosingLines(
 export function brandLetterFooterLines(
   brand: DocumentBrand,
   opts?: {
-    includeReview?: boolean;
+    /** Public CRM /review/{token} URL (elevenro.com or hydrogenro.com). */
+    reviewUrl?: string | null;
     skipChatHint?: boolean;
     skipThankYou?: boolean;
     skipCall?: boolean;
@@ -180,8 +173,9 @@ export function brandLetterFooterLines(
   if (!opts?.skipWebsite) {
     lines.push(letterLabelValue('Website', brandLetterWebsiteHost(brand)));
   }
-  if (opts?.includeReview) {
-    lines.push(letterLabelValue('Review', c.reviewUrl));
+  const reviewUrl = String(opts?.reviewUrl || '').trim();
+  if (reviewUrl) {
+    lines.push(letterLabelValue('Review us', reviewUrl));
   }
   if (!opts?.skipChatHint) {
     lines.push('', 'You can also reply on this WhatsApp chat anytime.');

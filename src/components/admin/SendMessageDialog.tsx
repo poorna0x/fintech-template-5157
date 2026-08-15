@@ -7,7 +7,7 @@ import { CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Job } from '@/types';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
-import { buildJobCompletionMessageFromJob } from '@/lib/job-completion-message';
+import { buildJobCompletionMessageFromJob, formatJobCompletionColdTemplatePreview } from '@/lib/job-completion-message';
 import {
   jobHasCompletionMessageSent,
   jobHasDontSendCompletionMessage,
@@ -19,7 +19,7 @@ import {
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
-import { jobHasSkipReview } from '@/lib/jobReviews';
+import { createJobReviewInvite } from '@/lib/jobReviews';
 
 type DeliveryMode = 'api' | 'wa_me';
 
@@ -56,6 +56,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   /** Cloud API only when Settings allow + auto-send completion are ON. */
   const [cloudApiAllowed, setCloudApiAllowed] = useState(false);
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
+  const [reviewLinkReady, setReviewLinkReady] = useState(false);
+  const jobId = job?.id ? String(job.id) : '';
 
   useEffect(() => {
     if (!open) {
@@ -64,45 +66,46 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       setDeliveryMode('wa_me');
       setCloudApiAllowed(false);
       setReviewUrl(null);
+      setReviewLinkReady(false);
       return;
     }
     let cancelled = false;
+    const rec = job as Record<string, unknown> | null;
+    const technicianRaw =
+      rec?.completed_by ||
+      rec?.completedBy ||
+      rec?.assigned_technician_id ||
+      rec?.assignedTechnicianId ||
+      '';
+    const technicianId = String(technicianRaw || '').trim() || null;
+
     void (async () => {
-      try {
-        const { settings } = await fetchWhatsAppCrmSettings();
-        const allowCloud =
-          settings.enabled !== false &&
-          settings.allow_job_completion_whatsapp !== false &&
-          settings.auto_send_job_completion_whatsapp === true;
-        if (cancelled) return;
-        setCloudApiAllowed(allowCloud);
-        setDeliveryMode(allowCloud ? 'api' : 'wa_me');
-      } catch {
-        if (!cancelled) {
-          setCloudApiAllowed(false);
-          setDeliveryMode('wa_me');
-        }
-      }
-      if (!job?.id || jobHasSkipReview(job as Record<string, unknown>)) return;
-      try {
-        const { createJobReviewInvite } = await import('@/lib/jobReviews');
-        const rec = job as Record<string, unknown>;
-        const technicianId =
-          String(rec.completed_by || rec.completedBy || rec.assigned_technician_id || rec.assignedTechnicianId || '') ||
-          null;
-        const invite = await createJobReviewInvite({
-          jobId: String(job.id),
-          technicianId,
-        });
-        if (!cancelled && invite?.url) setReviewUrl(invite.url);
-      } catch {
-        /* soft-fail */
-      }
+      const settingsTask = fetchWhatsAppCrmSettings()
+        .then(({ settings }) => {
+          const allowCloud =
+            settings.enabled !== false &&
+            settings.allow_job_completion_whatsapp !== false &&
+            settings.auto_send_job_completion_whatsapp === true;
+          return allowCloud;
+        })
+        .catch(() => false);
+
+      const inviteTask = jobId
+        ? createJobReviewInvite({ jobId, technicianId })
+        : Promise.resolve(null);
+
+      const [allowCloud, invite] = await Promise.all([settingsTask, inviteTask]);
+      if (cancelled) return;
+      setCloudApiAllowed(allowCloud);
+      setDeliveryMode(allowCloud ? 'api' : 'wa_me');
+      const url = String(invite?.url || '').trim();
+      setReviewUrl(url || null);
+      setReviewLinkReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, job]);
+  }, [open, jobId]);
 
   if (!job) return null;
 
@@ -181,6 +184,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
         amountPending: completion.amountPendingValue,
         pendingDueDate: completion.pendingDueDate || null,
         jobRef: completion.jobNumber || null,
+        reviewUrl,
         fallbackWaMe: false,
       });
 
@@ -302,6 +306,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
               </div>
 
               {cloudApiAllowed ? (
+                <>
                 <div className="space-y-1.5">
                   <Label>How to send</Label>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -335,19 +340,55 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                     </button>
                   </div>
                 </div>
-              ) : (
-                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                  Cloud API is off for completion (Settings → WhatsApp → Auto-send
-                  completion message). This will open Phone WhatsApp (wa.me).
-                </p>
-              )}
 
               <div>
-                <Label>Message preview</Label>
-                <div className="mt-2 max-h-52 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm text-foreground/90 sm:max-h-60">
-                  {whatsappMessage}
+                <Label>Message preview (24h chat)</Label>
+                <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+                  {reviewLinkReady ? (
+                    whatsappMessage
+                  ) : (
+                    <span className="inline-flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Preparing review link…
+                    </span>
+                  )}
                 </div>
               </div>
+              {completion.amountPendingValue <= 0 ? (
+                <div>
+                  <Label>If the 24h window is closed (cold template)</Label>
+                  <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+                    {formatJobCompletionColdTemplatePreview({
+                      customerName: completion.customerName,
+                      amountCollected: completion.amountCollected,
+                      jobRef: completion.jobNumber || null,
+                      documentBrand: completion.documentBrand,
+                      reviewUrl,
+                    })}
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    Cold send uses a Review us button (opens the same link) once Meta approves the
+                    new template. Until then, fallback is the older job-done letter without the
+                    button.
+                  </p>
+                </div>
+              ) : null}
+                </>
+              ) : (
+                <div>
+                  <Label>Message Preview</Label>
+                  <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+                    {reviewLinkReady ? (
+                      whatsappMessage
+                    ) : (
+                      <span className="inline-flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Preparing review link…
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -393,7 +434,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                   <Button
                     variant="default"
                     className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
-                    disabled={sending}
+                    disabled={sending || !reviewLinkReady}
                     onClick={() => void sendToPhone(customerPhone)}
                   >
                     {sending ? (
@@ -406,7 +447,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                   <Button
                     variant="default"
                     className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
-                    disabled={sending}
+                    disabled={sending || !reviewLinkReady}
                     onClick={() => void sendToPhone(alternatePhone)}
                   >
                     {sending ? (
@@ -421,7 +462,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 <Button
                   variant="default"
                   className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
-                  disabled={sending}
+                  disabled={sending || !reviewLinkReady}
                   onClick={() => void sendToPhone(customerPhone)}
                 >
                   {sending ? (
