@@ -716,11 +716,13 @@ export default function DocumentEmailSendDialog({
       }
 
       if (!emailResult.ok) return;
+      const emailTarget =
+        emailResult.recipients?.[0] || normalizedRecipients[0] || 'inbox';
       const emailNote = requireAccept
         ? emailResult.sent > 1
           ? `Accept email sent to ${emailResult.sent} recipients`
-          : 'Accept email sent'
-        : 'Email';
+          : `Accept email sent to ${emailTarget}`
+        : `Email sent to ${emailTarget}`;
       const emailFailNote =
         emailResult.failed > 0 ? ` (${emailResult.failed} email failed)` : '';
       const waNote =

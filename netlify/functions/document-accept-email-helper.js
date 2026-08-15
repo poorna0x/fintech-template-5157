@@ -80,7 +80,13 @@ function brandInfo(brand) {
 }
 
 function acceptOrigin(brand) {
-  const configured = String(process.env.DOCUMENT_ACCEPT_PUBLIC_ORIGIN || '').trim();
+  const configured = String(
+    process.env.DOCUMENT_ACCEPT_PUBLIC_ORIGIN ||
+      process.env.DOCUMENT_ACCEPT_PUBLIC_BASE_URL ||
+      ''
+  )
+    .trim()
+    .split(/\s+/)[0];
   if (/^https?:\/\//i.test(configured)) return configured.replace(/\/+$/, '');
   return brandInfo(brand).origin;
 }
@@ -154,6 +160,18 @@ async function sendPreviewEmail({ row, previewBuffer, previewFilename, acceptUrl
         contentType: 'application/pdf',
       }],
       headers: { 'X-Mailer': `${meta.mailer} Document Accept`, 'X-Priority': '3' },
+    });
+    console.log('[document-accept-email] preview sent', {
+      to: row.recipient_email,
+      inviteId: row.id || null,
+      messageId: info.messageId || null,
+      acceptHost: (() => {
+        try {
+          return new URL(acceptUrl).origin;
+        } catch {
+          return null;
+        }
+      })(),
     });
     return { ok: true, messageId: info.messageId || null };
   } catch (error) {
