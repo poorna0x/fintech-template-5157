@@ -257,38 +257,40 @@ exports.handler = async (event) => {
       const ack = ackDataFields(siteUrl, technicianId, 'job_alert', ackAbout || notifTitle);
       const overlayData = {
         type: 'job_alert_overlay',
-        event: overlayEvent,
-        msgTitle: notifTitle,
-        msgBody: message || '',
-        ...(jobId ? { jobId } : {}),
-        tag: overlayTag,
-        ...(color ? { color } : {}),
+        event: String(overlayEvent),
+        msgTitle: String(notifTitle),
+        msgBody: String(message || ''),
+        ...(jobId ? { jobId: String(jobId) } : {}),
+        tag: String(overlayTag),
+        ...(color ? { color: String(color) } : {}),
         ...ack,
       };
       buildMessage = (token) => ({
         token,
-        data: overlayData,
+        data: { ...overlayData },
         android: { priority: 'high' },
       });
       // Companion OS notification: same tag so it replaces, not duplicates.
       // Screen-off Doze delivers this immediately; the data-only banner follows.
+      const osBody = String(message || notifTitle || ' ');
       buildOsCompanion = (token) => ({
         token,
         notification: {
-          title: notifTitle,
-          body: message || '',
+          title: String(notifTitle),
+          body: osBody,
         },
         data: {
           type: 'job_alert_os',
-          tag: overlayTag,
+          tag: String(overlayTag),
         },
         android: {
           priority: 'high',
+          collapseKey: `os_${overlayTag}`.slice(0, 64),
           notification: {
             channelId: 'job_alerts_v2',
             defaultSound: true,
-            ...(color ? { color } : {}),
-            tag: overlayTag,
+            ...(color ? { color: String(color) } : {}),
+            tag: String(overlayTag),
             visibility: 'public',
           },
         },
@@ -356,9 +358,17 @@ exports.handler = async (event) => {
     const osSend = buildOsCompanion
       ? sendToTechnicianDevices(db, messaging, technicianId, buildOsCompanion, category)
       : Promise.resolve(null);
-    const [primary, companion] = await Promise.all([overlaySend, osSend]);
-    const sent = Math.max(primary.sent || 0, companion?.sent || 0);
-    const tokens = Math.max(primary.tokens || 0, companion?.tokens || 0);
+    const settled = await Promise.allSettled([overlaySend, osSend]);
+    const primary = settled[0].status === 'fulfilled' ? settled[0].value : null;
+    const companion = settled[1].status === 'fulfilled' ? settled[1].value : null;
+    if (settled[0].status === 'rejected') {
+      console.error('[send-tech-push] overlay send failed', settled[0].reason?.message || settled[0].reason);
+    }
+    if (settled[1].status === 'rejected') {
+      console.error('[send-tech-push] os companion send failed', settled[1].reason?.message || settled[1].reason);
+    }
+    const sent = Math.max(primary?.sent || 0, companion?.sent || 0);
+    const tokens = Math.max(primary?.tokens || 0, companion?.tokens || 0);
 
     // Mirror nudge/office messages to WhatsApp (not assign/unassign — CRM handles those).
     if (!clear && category) {
