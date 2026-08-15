@@ -1857,17 +1857,21 @@ const AdminDashboard = () => {
     return { ...cached, customer: mergedCustomer };
   };
 
-  const applyAdminSnapshot = useCallback((snap: AdminDashboardSnapshot) => {
-    applyAdminDashboardSnapshot(snap, {
-      setJobs,
-      setTotalCount,
-      setTotalPages,
-      setTechnicians,
-      setJobCounts,
-      ongoingJobsSnapshotRef,
-      techniciansRef,
-    });
-  }, []);
+  const applyAdminSnapshot = useCallback(
+    (snap: AdminDashboardSnapshot) => {
+      applyAdminDashboardSnapshot(snap, {
+        setJobs,
+        setTotalCount,
+        setTotalPages,
+        setTechnicians,
+        setJobCounts,
+        ongoingJobsSnapshotRef,
+        techniciansRef,
+        countOnlyNonAmcFollowUps: followUpDisplaySettings.countOnlyNonAmcFollowUps,
+      });
+    },
+    [followUpDisplaySettings.countOnlyNonAmcFollowUps]
+  );
 
   const loadDashboardSecondary = useCallback(
     () =>
@@ -2464,6 +2468,12 @@ const AdminDashboard = () => {
     clearModuleJobsListCache();
     jobsListCacheRef.current.clear();
     void loadJobCounts();
+    void db.jobs
+      .getFollowUpForGlow({ excludeAmc: followUpDisplaySettings.countOnlyNonAmcFollowUps })
+      .then(({ data }) => {
+        if (data) setAllFollowUpJobs(data as Job[]);
+      })
+      .catch(() => {});
     if (statusFilter === 'RESCHEDULED') {
       setCurrentPage(1);
       void loadFilteredJobs('RESCHEDULED', 1);

@@ -27,6 +27,7 @@ export function applyAdminDashboardSnapshot(
     setJobCounts: Dispatch<SetStateAction<any>>;
     ongoingJobsSnapshotRef: MutableRefObject<Job[]>;
     techniciansRef: MutableRefObject<Technician[]>;
+    countOnlyNonAmcFollowUps: boolean;
   }
 ) {
   const jobList = (snap.jobs as Job[]) ?? [];
@@ -38,7 +39,11 @@ export function applyAdminDashboardSnapshot(
   const transformed = (snap.technicianRows as any[]).map(transformTechnicianData);
   handlers.techniciansRef.current = transformed;
   handlers.setTechnicians(transformed);
-  handlers.setJobCounts(snap.jobCounts);
+  // Counts cached under the other follow-up preference would flash a wrong
+  // Followup number until the fresh fetch lands.
+  if ((snap.countsExcludeAmcFollowUps === true) === handlers.countOnlyNonAmcFollowUps) {
+    handlers.setJobCounts(snap.jobCounts);
+  }
 }
 
 export async function loadAdminDashboardSecondary(handlers: {
@@ -192,6 +197,7 @@ export async function loadAdminDashboardData(
           denied: 0,
           completed: 0,
         },
+        countsExcludeAmcFollowUps: ctx.countOnlyNonAmcFollowUps,
       });
     }
 

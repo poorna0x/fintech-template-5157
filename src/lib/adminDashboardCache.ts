@@ -15,6 +15,8 @@ export type AdminDashboardSnapshot = {
   jobs: unknown[];
   technicianRows: unknown[];
   jobCounts: AdminJobCounts;
+  /** Follow-up preference the cached counts were computed with. */
+  countsExcludeAmcFollowUps?: boolean;
 };
 
 let inflightPrefetch: Promise<AdminDashboardSnapshot | null> | null = null;
@@ -225,6 +227,7 @@ async function fetchCriticalSnapshot(): Promise<AdminDashboardSnapshot | null> {
       jobs,
       technicianRows: techniciansResult.data ?? [],
       jobCounts,
+      countsExcludeAmcFollowUps: countOnlyNonAmcFollowUps,
     };
   } catch {
     return null;
