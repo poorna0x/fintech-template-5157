@@ -1229,7 +1229,6 @@ const AdminDashboard = () => {
   const [draftOngoingAssignmentFilter, setDraftOngoingAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   const [draftOngoingAssignedTechnicianFilter, setDraftOngoingAssignedTechnicianFilter] = useState<string>('all');
   const [draftOngoingServiceSubTypeFilter, setDraftOngoingServiceSubTypeFilter] = useState<string>('all');
-  const [showAllFollowups, setShowAllFollowups] = useState<boolean>(false);
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(() => savedUi.currentPage);
   const [pageSize] = useState<number>(20);
@@ -5853,7 +5852,6 @@ const AdminDashboard = () => {
         jobs,
         baseCustomers,
         customersWithJobs,
-        showAllFollowups,
         completedDateFilter,
         currentPage,
         totalPages,
@@ -5866,7 +5864,6 @@ const AdminDashboard = () => {
       jobs,
       baseCustomers,
       customersWithJobs,
-      showAllFollowups,
       completedDateFilter,
       currentPage,
       totalPages,
@@ -6489,58 +6486,6 @@ const AdminDashboard = () => {
               </Button>
             )}
             
-            {/* Show all followups button */}
-            {statusFilter === 'RESCHEDULED' && (() => {
-              // Calculate total customers with followups (all dates)
-              const allCustomersWithFollowups = customersWithJobs.filter(({ allJobs }) => 
-                allJobs.some(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status))
-              );
-              
-              // Calculate customers with followups beyond 7 days
-              const now = new Date();
-              const weekFromNow = new Date(now);
-              weekFromNow.setDate(weekFromNow.getDate() + 7);
-              
-              const customersBeyondWeek = allCustomersWithFollowups.filter(({ allJobs }) => {
-                const followUpJobs = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
-                // Check if customer has ONLY followups beyond 7 days (no followups within 7 days)
-                const hasWithinWeek = followUpJobs.some((job: any) => {
-                  const followUpDate = job.follow_up_date || job.followUpDate;
-                  if (!followUpDate) return false;
-                  const followUpDateObj = new Date(followUpDate);
-                  if (isNaN(followUpDateObj.getTime())) return false;
-                  return followUpDateObj <= weekFromNow;
-                });
-                return !hasWithinWeek; // Only show if no followups within week
-              });
-              
-              const hiddenCount = customersBeyondWeek.length;
-              
-              if (hiddenCount === 0) return null;
-              
-              return (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAllFollowups(!showAllFollowups)}
-                  className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap"
-                >
-                  {showAllFollowups ? (
-                    <>
-                      <ChevronUp className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                      <span className="hidden sm:inline">Hide older followups</span>
-                      <span className="sm:hidden">Hide ({hiddenCount})</span>
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                      <span className="hidden sm:inline">Show all followups ({hiddenCount} more)</span>
-                      <span className="sm:hidden">Show all ({hiddenCount})</span>
-                    </>
-                  )}
-                </Button>
-              );
-            })()}
           </div>
           )}
           {!searchTerm.trim() && (
