@@ -95,8 +95,10 @@ import { loadFilteredJobsForAdmin } from '@/lib/adminLoadFilteredJobs';
 import {
   FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT,
   readFollowUpDisplaySettings,
+  saveFollowUpDisplaySettings,
   type FollowUpDisplaySettings,
 } from '@/lib/followUpDisplaySettings';
+import { Switch } from '@/components/ui/switch';
 import {
   applyAdminDashboardSnapshot,
   loadAdminDashboardData,
@@ -6436,6 +6438,31 @@ const AdminDashboard = () => {
                statusFilter === 'COMPLETED' ? 'Customers with Completed Jobs' :
                `Customers with ${statusFilter} Jobs`}
             </h2>
+
+            {statusFilter === 'RESCHEDULED' && (
+              <div className="flex items-center gap-2 ml-auto">
+                <Label
+                  htmlFor="followup-show-amc"
+                  className="text-xs sm:text-sm text-gray-600 cursor-pointer whitespace-nowrap"
+                >
+                  Show AMC
+                </Label>
+                <Switch
+                  id="followup-show-amc"
+                  checked={!followUpDisplaySettings.hideAmcFollowUps}
+                  onCheckedChange={(showAmc) => {
+                    const next = {
+                      ...followUpDisplaySettings,
+                      hideAmcFollowUps: !showAmc,
+                    };
+                    setFollowUpDisplaySettings(next);
+                    saveFollowUpDisplaySettings(next);
+                  }}
+                  aria-label="Show AMC follow-ups"
+                  className="border border-gray-300 data-[state=unchecked]:bg-gray-200"
+                />
+              </div>
+            )}
 
             {statusFilter === 'ONGOING' && (
               <Button
