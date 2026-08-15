@@ -67,7 +67,7 @@ export async function submitAdminFollowUp(
         parent_follow_up_id: followUpData.parentFollowUpId || null,
         follow_up_date: followUpData.followUpDate,
         follow_up_time: followUpData.followUpTime,
-        reason: followUpData.followUpReason?.trim() || '',
+        reason: followUpData.followUpReason?.trim() || 'Not confirmed',
         notes: null,
         scheduled_by: null,
         completed: false,
@@ -99,12 +99,13 @@ export async function submitAdminFollowUp(
         (existingJob as any)?.requirements,
         Boolean(followUpData.autoMoveToOngoingOnDate)
       );
+      const followUpReason = followUpData.followUpReason?.trim() || 'Not confirmed';
 
       const { error: jobError } = await db.jobs.update(jobId, {
         status: 'FOLLOW_UP',
         follow_up_date: followUpData.followUpDate,
         follow_up_time: followUpData.followUpTime,
-        follow_up_notes: followUpData.followUpReason,
+        follow_up_notes: followUpReason,
         follow_up_scheduled_by: null,
         follow_up_scheduled_at: new Date().toISOString(),
         requirements,
@@ -122,7 +123,7 @@ export async function submitAdminFollowUp(
                 status: 'FOLLOW_UP',
                 followUpDate: followUpData.followUpDate,
                 followUpTime: followUpData.followUpTime,
-                followUpNotes: followUpData.followUpReason,
+                followUpNotes: followUpReason,
                 followUpScheduledBy: 'admin',
                 followUpScheduledAt: new Date().toISOString(),
                 requirements,
@@ -142,7 +143,7 @@ export async function submitAdminFollowUp(
                   followUpDate: followUpData.followUpDate,
                   followUpTime: followUpData.followUpTime,
                   followUpNotes:
-                    followUpData.followUpReason +
+                    followUpReason +
                     ((followUpData as any).followUpNotes
                       ? ` - ${(followUpData as any).followUpNotes}`
                       : ''),

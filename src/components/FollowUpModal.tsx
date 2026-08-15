@@ -246,7 +246,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       const followUpData = {
         followUpDate: formattedDate,
         followUpTime: selectedTime,
-        followUpReason: reason.trim(),
+        followUpReason: reason.trim() || 'Not confirmed',
         parentFollowUpId: selectedParentFollowUp || undefined,
         rescheduleFollowUpId: rescheduleFollowUpId || undefined,
         autoMoveToOngoingOnDate: selectedParentFollowUp ? undefined : autoMoveToOngoingOnDate,
@@ -308,9 +308,11 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                   </Badge>
                 )}
               </div>
-              <div className="font-medium text-sm text-gray-900 mb-1">
-                {node.reason}
-              </div>
+              {node.reason?.trim() && (
+                <div className="font-medium text-sm text-gray-900 mb-1">
+                  {node.reason}
+                </div>
+              )}
               {node.notes && (
                 <div className="text-xs text-gray-600 mb-2">
                   {node.notes}
