@@ -105,6 +105,7 @@ import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingP
 import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
+import { SettingsSearch } from '@/components/admin/SettingsSearch';
 import PdfAuthenticityVerifyPage from '@/pages/PdfAuthenticityVerifyPage';
 import JobReviewsPage from '@/pages/JobReviewsPage';
 import DbStorageStatsPage from '@/pages/DbStorageStatsPage';
@@ -2514,15 +2515,19 @@ const Settings = () => {
       {/* Header - sticky so Back stays visible when scrolling */}
       <div className="sticky top-0 z-10 bg-card border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
+          <div className="flex flex-wrap items-center gap-3 py-3 sm:h-16 sm:flex-nowrap sm:py-0">
             <div className="flex items-center">
               <SettingsIcon className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 mr-2 sm:mr-3 shrink-0" />
               <div>
                 <h1 className="text-lg sm:text-xl font-bold text-foreground">Settings</h1>
               </div>
             </div>
-            
-            <div className="flex items-center">
+
+            <div className="order-3 w-full sm:order-none sm:ml-auto sm:w-auto">
+              <SettingsSearch isManager={isManager} openPanel={openSettingsPanel} />
+            </div>
+
+            <div className="ml-auto flex items-center sm:ml-0">
               <Button
                 variant="ghost"
                 size="sm"
@@ -2540,7 +2545,7 @@ const Settings = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         <div className="space-y-4 sm:space-y-6">
           {/* Technician Locations */}
-          <Card>
+          <Card id="section-technician-locations" className="scroll-mt-24">
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div>
@@ -2636,7 +2641,7 @@ const Settings = () => {
           </Card>
 
           {/* Todo Tasks */}
-          <Card ref={todosSectionRef}>
+          <Card id="section-todo-tasks" className="scroll-mt-24" ref={todosSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -3010,7 +3015,7 @@ const Settings = () => {
           ) : null}
 
           {/* Letterhead Documents / Service Reports */}
-          <Card>
+          <Card id="section-letterhead-documents" className="scroll-mt-24">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <FileText className="w-5 h-5" />
@@ -3244,7 +3249,7 @@ const Settings = () => {
 
           {/* Styled QR Image Generator — managers: hide (UPI/payment-adjacent) */}
           {!isManager ? (
-          <Card>
+          <Card id="section-qr-image-generator" className="scroll-mt-24">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <QrCode className="w-5 h-5" />
@@ -3296,7 +3301,7 @@ const Settings = () => {
           {/* Common QR Codes Management */}
           {!isManager ? (
           <>
-          <Card ref={commonQrSectionRef}>
+          <Card id="section-payment-qr-codes" className="scroll-mt-24" ref={commonQrSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -3390,7 +3395,7 @@ const Settings = () => {
           </Card>
 
           {/* UPI accounts for pending-payment WhatsApp pay links */}
-          <Card>
+          <Card id="section-upi-payment-accounts" className="scroll-mt-24">
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
@@ -3410,7 +3415,7 @@ const Settings = () => {
           </Card>
 
           {/* Common QR (non-payment) - shown below payment QR on technician app */}
-          <Card ref={techQrSectionRef}>
+          <Card id="section-common-qr-codes" className="scroll-mt-24" ref={techQrSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -3491,7 +3496,7 @@ const Settings = () => {
           </Card>
 
           {/* Product QR Codes Management */}
-          <Card ref={productQrSectionRef}>
+          <Card id="section-product-qr-codes" className="scroll-mt-24" ref={productQrSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -3635,7 +3640,7 @@ const Settings = () => {
             </Card>
 
           {!isManager ? (
-          <Card>
+          <Card id="section-location-tracking" className="scroll-mt-24">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <MapPin className="w-5 h-5" />
@@ -3722,7 +3727,7 @@ const Settings = () => {
           {!isManager ? <BookingIntentArchiveSettings /> : null}
 
 {!isManager ? (
-          <Card>
+          <Card id="section-data-export" className="scroll-mt-24">
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
