@@ -131,6 +131,11 @@ BEGIN
     ) THEN
     v_allowed := true;
     v_tech := auth.uid();
+  ELSIF auth.role() = 'service_role' THEN
+    v_allowed := true;
+    IF p_technician_id IS NOT NULL THEN
+      v_tech := p_technician_id;
+    END IF;
   END IF;
 
   IF NOT v_allowed THEN
@@ -157,7 +162,8 @@ BEGIN
         'brand', v_brand
       );
     END IF;
-    IF v_existing.expires_at > now() AND char_length(coalesce(v_existing.token, '')) >= 12 THEN
+    IF v_existing.expires_at > now()
+      AND char_length(coalesce(v_existing.token, '')) BETWEEN 12 AND 16 THEN
       UPDATE public.job_reviews
       SET technician_id = v_tech,
           customer_id = v_job.customer_id,
@@ -174,7 +180,8 @@ BEGIN
   END IF;
 
   LOOP
-    v_token := encode(gen_random_bytes(16), 'hex');
+    -- Short tidy token (12 hex). Unique index + retry on collision.
+    v_token := left(replace(gen_random_uuid()::text, '-', ''), 12);
 
     BEGIN
       IF v_existing.id IS NOT NULL THEN
@@ -333,6 +340,7 @@ REVOKE ALL ON FUNCTION public.get_job_review_invite(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.submit_job_review(text, integer, text) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.create_job_review_invite(uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.create_job_review_invite(uuid, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.get_job_review_invite(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) TO anon, authenticated;
 

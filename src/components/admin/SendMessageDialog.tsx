@@ -19,7 +19,7 @@ import {
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
-import { createJobReviewInvite } from '@/lib/jobReviews';
+import { createJobReviewInvite, jobHasSkipReview, jobReviewTokenFromUrl } from '@/lib/jobReviews';
 
 type DeliveryMode = 'api' | 'wa_me';
 
@@ -90,9 +90,11 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
         })
         .catch(() => false);
 
-      const inviteTask = jobId
-        ? createJobReviewInvite({ jobId, technicianId })
-        : Promise.resolve(null);
+      const skipReview = rec ? jobHasSkipReview(rec) : false;
+      const inviteTask =
+        jobId && !skipReview
+          ? createJobReviewInvite({ jobId, technicianId })
+          : Promise.resolve(null);
 
       const [allowCloud, invite] = await Promise.all([settingsTask, inviteTask]);
       if (cancelled) return;
@@ -101,6 +103,9 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       const url = String(invite?.url || '').trim();
       setReviewUrl(url || null);
       setReviewLinkReady(true);
+      if (!skipReview && !url) {
+        toast.error('Could not create the Review us link for this job.');
+      }
     })();
     return () => {
       cancelled = true;
@@ -153,10 +158,36 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     const mode: DeliveryMode = cloudApiAllowed ? deliveryMode : 'wa_me';
     setSending(true);
     try {
+      let url = String(reviewUrl || '').trim();
+      if (!jobHasSkipReview(jobRec) && !url) {
+        const technicianId =
+          String(
+            jobRec.completed_by ||
+              jobRec.completedBy ||
+              jobRec.assigned_technician_id ||
+              jobRec.assignedTechnicianId ||
+              ''
+          ).trim() || null;
+        const invite = await createJobReviewInvite({
+          jobId: String(job.id),
+          technicianId,
+        });
+        url = String(invite?.url || '').trim();
+        if (url) setReviewUrl(url);
+      }
+      if (!jobHasSkipReview(jobRec) && !url) {
+        toast.error('Could not add the Review us link. Try Send Message again.');
+        return;
+      }
+      const text = buildJobCompletionMessageFromJob({
+        ...jobRec,
+        reviewUrl: url || undefined,
+      }).whatsappMessage;
+
       if (mode === 'wa_me') {
         const result = await sendAdminWhatsAppText({
           to,
-          text: whatsappMessage,
+          text,
           customerId: customerId ? String(customerId) : null,
           source: 'job_completion',
           forceWaMe: true,
@@ -174,7 +205,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
       const result = await sendJobCompletionWhatsApp({
         to,
-        text: whatsappMessage,
+        text,
         customerId: customerId ? String(customerId) : null,
         customerName: completion.customerName,
         amountCollected: completion.amountCollected,
@@ -184,7 +215,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
         amountPending: completion.amountPendingValue,
         pendingDueDate: completion.pendingDueDate || null,
         jobRef: completion.jobNumber || null,
-        reviewUrl,
+        reviewUrl: url || null,
+        reviewToken: jobReviewTokenFromUrl(url),
         fallbackWaMe: false,
       });
 

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabaseClient';
 import { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from '@/lib/supabaseConfig';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { sendAdminWhatsAppTemplate, sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
@@ -32,26 +33,10 @@ export function jobHasSkipReview(job: Record<string, unknown> | null | undefined
   return list.some((entry) => entry && typeof entry === 'object' && (entry as { skip_review?: unknown }).skip_review === true);
 }
 
-function isLocalReviewHost(): boolean {
-  if (typeof window === 'undefined') return false;
-  const host = window.location.hostname;
-  return (
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host.endsWith('.ngrok-free.dev') ||
-    host.endsWith('.ngrok-free.app') ||
-    host.endsWith('.ngrok.io')
-  );
-}
-
 export function jobReviewPublicUrl(token: string, brand: DocumentBrand): string {
   const t = String(token || '').trim();
   if (!t) return '';
-  const origin = isLocalReviewHost()
-    ? window.location.origin.replace(/\/$/, '')
-    : brand === 'elevenro'
-      ? 'https://elevenro.com'
-      : 'https://hydrogenro.com';
+  const origin = brand === 'elevenro' ? 'https://elevenro.com' : 'https://hydrogenro.com';
   return `${origin}/review/${encodeURIComponent(t)}`;
 }
 
@@ -300,20 +285,102 @@ export async function createJobReviewInvite(opts: {
   )
     ? String(opts.technicianId).trim()
     : null;
+
+  const fromFn = await mintInviteViaFunction(jobId, technicianId);
+  if (fromFn?.url) return fromFn;
+
+  const fromRpc = await mintInviteViaBrowserRpc(jobId, technicianId);
+  if (fromRpc?.url) return fromRpc;
+
+  return fromFn || fromRpc;
+}
+
+async function mintInviteViaBrowserRpc(
+  jobId: string,
+  technicianId: string | null
+): Promise<JobReviewInvite | null> {
   try {
-    const { data, error } = await supabase.rpc('create_job_review_invite', {
-      p_job_id: jobId,
-      p_technician_id: technicianId,
-    });
-    if (error) {
-      console.warn('[job-review] create failed', error.message);
+    const access = await resolveSupabaseAccessTokenForApi();
+    if (!access || !isSupabaseConfigured() || !supabaseUrl || !supabaseAnonKey) {
       return null;
     }
-    return parseInvitePayload(data);
+    const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/rpc/create_job_review_invite`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${access}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        p_job_id: jobId,
+        p_technician_id: technicianId,
+      }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      console.warn('[job-review] create rpc http', res.status, json);
+      return null;
+    }
+    return parseInvitePayload(json);
   } catch (err) {
-    console.warn('[job-review] create error', err);
+    console.warn('[job-review] create rpc error', err);
     return null;
   }
+}
+
+async function mintInviteViaFunction(
+  jobId: string,
+  technicianId: string | null
+): Promise<JobReviewInvite | null> {
+  try {
+    const access = await resolveSupabaseAccessTokenForApi();
+    if (!access) return null;
+    const res = await fetch('/.netlify/functions/job-review-invite', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${access}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ jobId, technicianId }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      console.warn('[job-review] create function failed', res.status, json);
+      return null;
+    }
+    return parseInvitePayload(json);
+  } catch (err) {
+    console.warn('[job-review] create function error', err);
+    return null;
+  }
+}
+
+/** Attach a public review URL on a job row (retries). No-op when skip_review. */
+export async function ensureJobReviewInviteOnJob(
+  job: Record<string, unknown>,
+  opts?: { attempts?: number }
+): Promise<JobReviewInvite | null> {
+  if (jobHasSkipReview(job)) return null;
+  const jobId = String(job.id || '').trim();
+  if (!jobId) return null;
+  const technicianId =
+    String(
+      job.completed_by || job.completedBy || job.assigned_technician_id || job.assignedTechnicianId || ''
+    ).trim() || null;
+  const attempts = Math.max(1, Number(opts?.attempts) || 3);
+  let last: JobReviewInvite | null = null;
+  for (let i = 0; i < attempts; i++) {
+    last = await createJobReviewInvite({ jobId, technicianId });
+    if (last?.url) {
+      job.reviewUrl = last.url;
+      job.reviewToken = last.token;
+      return last;
+    }
+    if (i < attempts - 1) {
+      await new Promise((r) => setTimeout(r, 350));
+    }
+  }
+  return last;
 }
 
 export type PublicJobReviewInvite = {

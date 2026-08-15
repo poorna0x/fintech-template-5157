@@ -165,6 +165,11 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./fcm-helper')];
     delete require.cache[require.resolve('./push-prefs-helper')];
     handler = require('./notify-admins');
+  } else if (req.url.startsWith('/.netlify/functions/job-review-invite')) {
+    delete require.cache[require.resolve('./job-review-invite')];
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./cors-helper')];
+    handler = require('./job-review-invite');
   } else if (req.url.startsWith('/.netlify/functions/job-review-notify')) {
     delete require.cache[require.resolve('./job-review-notify')];
     delete require.cache[require.resolve('./fcm-helper')];
