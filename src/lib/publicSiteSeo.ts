@@ -96,14 +96,25 @@ export function getBrandSeoProfile(siteKey?: PublicSiteKey): BrandSeoProfile {
   return key === 'elevenro' ? ELEVEN_SEO : HYDROGEN_SEO;
 }
 
+function logoImageObject(profile: BrandSeoProfile) {
+  return {
+    '@type': 'ImageObject' as const,
+    url: profile.logoPath,
+    width: 512,
+    height: 512,
+    caption: profile.brandName,
+  };
+}
+
 /** Shared LocalBusiness fields for per-page JSON-LD on public marketing pages. */
 export function buildPublicLocalBusinessJsonLd(siteKey?: PublicSiteKey) {
   const profile = getBrandSeoProfile(siteKey);
   return {
-    '@type': 'LocalBusiness',
+    '@type': ['LocalBusiness', 'HomeAndConstructionBusiness'],
+    '@id': `${profile.origin}/#localbusiness`,
     name: profile.brandName,
     image: profile.ogImage,
-    logo: profile.logoPath,
+    logo: logoImageObject(profile),
     address: {
       '@type': 'PostalAddress',
       streetAddress: profile.streetAddress,
@@ -132,6 +143,8 @@ export const NO_INDEX_PREFIXES = [
   '/settings',
   '/calling',
   '/product-verify/',
+  '/review/',
+  '/c/',
 ];
 
 const NO_INDEX_EXACT_PATHS = new Set(['/technician']);
@@ -187,15 +200,16 @@ function buildAreaServed(profile: BrandSeoProfile) {
 export function buildLocalBusinessJsonLd(profile: BrandSeoProfile, pageUrl: string): object {
   return {
     '@context': 'https://schema.org',
-    '@type': 'LocalBusiness',
+    '@type': ['LocalBusiness', 'HomeAndConstructionBusiness'],
     name: `${profile.brandName} - RO Water Purifier Service in Bengaluru`,
     description: profile.defaultDescription,
     url: profile.origin,
     '@id': `${profile.origin}/#localbusiness`,
+    parentOrganization: { '@id': `${profile.origin}/#organization` },
     telephone: profile.primaryPhone,
     email: profile.email,
     image: profile.ogImage,
-    logo: profile.logoPath,
+    logo: logoImageObject(profile),
     priceRange: '₹₹',
     currenciesAccepted: 'INR',
     paymentAccepted: 'Cash, Credit Card, UPI, Net Banking',
@@ -271,10 +285,11 @@ export function buildOrganizationJsonLd(profile: BrandSeoProfile): object {
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
+    '@id': `${profile.origin}/#organization`,
     name: profile.brandName,
     legalName: profile.legalName,
     url: profile.origin,
-    logo: profile.logoPath,
+    logo: logoImageObject(profile),
     email: profile.email,
     telephone: profile.primaryPhone,
     address: {
@@ -303,7 +318,12 @@ export function buildWebSiteJsonLd(profile: BrandSeoProfile): object {
     name: profile.brandName,
     url: profile.origin,
     description: profile.defaultDescription,
-    publisher: { '@type': 'Organization', name: profile.brandName, logo: profile.logoPath },
+    publisher: {
+      '@type': 'Organization',
+      '@id': `${profile.origin}/#organization`,
+      name: profile.brandName,
+      logo: logoImageObject(profile),
+    },
     potentialAction: {
       '@type': 'SearchAction',
       target: {
@@ -402,7 +422,8 @@ export function buildServiceJsonLd(
     description,
     url: pageUrl,
     provider: {
-      '@type': 'LocalBusiness',
+      '@type': ['LocalBusiness', 'HomeAndConstructionBusiness'],
+      '@id': `${profile.origin}/#localbusiness`,
       name: profile.brandName,
       telephone: profile.primaryPhone,
       url: profile.origin,
@@ -433,7 +454,8 @@ export function buildLocationServiceJsonLd(
     description: `Professional RO installation, repair, filter replacement and AMC in ${placeName} by ${profile.brandName}.${nearbySnippet ? ` Also serving ${nearbySnippet}.` : ''}`,
     url: pageUrl,
     provider: {
-      '@type': 'LocalBusiness',
+      '@type': ['LocalBusiness', 'HomeAndConstructionBusiness'],
+      '@id': `${profile.origin}/#localbusiness`,
       name: profile.brandName,
       telephone: profile.primaryPhone,
       url: profile.origin,
@@ -485,7 +507,7 @@ export function buildArticleJsonLd(
     publisher: {
       '@type': 'Organization',
       name: profile.brandName,
-      logo: { '@type': 'ImageObject', url: profile.logoPath },
+      logo: logoImageObject(profile),
     },
     datePublished: article.datePublished,
     dateModified: article.datePublished,
@@ -502,7 +524,6 @@ export function buildPublicSiteJsonLd(siteKey: PublicSiteKey, pathname: string):
     buildLocalBusinessJsonLd(profile, pageUrl),
     buildOrganizationJsonLd(profile),
     buildWebSiteJsonLd(profile),
-    buildFaqJsonLd(profile),
   ];
   schemas.push(...buildRouteOnlyJsonLd(siteKey, pathname));
   return schemas;

@@ -51,7 +51,7 @@
   var pathSegment = (location.pathname || '/').replace(/\/$/, '') || '';
   var pageUrl = profile.origin + (pathSegment ? pathSegment : '');
   var isNoIndex =
-    /^\/(technician-id|technician\/|technician$|admin|dashboard|search|settings|calling|product-verify)(\/|$)/.test(
+    /^\/(technician-id|technician\/|technician$|admin|dashboard|search|settings|calling|product-verify|review|c)(\/|$)/.test(
       '/' + (pathSegment || '')
     );
 
