@@ -740,6 +740,7 @@ const TechnicianDashboard = () => {
   const [isOptionalCompletionPhotosUploading, setIsOptionalCompletionPhotosUploading] = useState(false);
   const [extraPhotosStep6, setExtraPhotosStep6] = useState<string[]>([]);
   const [dontSendMessageToCustomer, setDontSendMessageToCustomer] = useState(false);
+  const [askForReview, setAskForReview] = useState(true);
   const [isExtraPhotosStep6Uploading, setIsExtraPhotosStep6Uploading] = useState(false);
   const [completionSubmitError, setCompletionSubmitError] = useState<string | null>(null);
   const [completionRetryPhaseBOnly, setCompletionRetryPhaseBOnly] = useState(false);
@@ -3912,6 +3913,7 @@ const TechnicianDashboard = () => {
     setCustomerHasZeroPhotosAltogether(false);
     setExtraPhotosStep6([]);
     setDontSendMessageToCustomer(false);
+    setAskForReview(true);
     const today = new Date().toISOString().split('T')[0];
     setAmcDateGiven(today);
     setAmcYears(0);
@@ -4934,6 +4936,15 @@ const TechnicianDashboard = () => {
         notifyAdminsJobEvent(jobId, 'completed')
       );
 
+      if (askForReview && user?.id) {
+        void import('@/lib/jobReviews').then(({ createJobReviewInvite }) => {
+          void createJobReviewInvite({
+            jobId,
+            technicianId: String(user.id),
+          });
+        });
+      }
+
       // Brand completion WhatsApp (Settings → auto-send). Soft-fail; skips AMC / dont_send.
       void (async () => {
         try {
@@ -4955,11 +4966,14 @@ const TechnicianDashboard = () => {
               (selectedJobForComplete as any).service_brand ||
               (selectedJobForComplete as any).serviceBrand,
           };
-          if (dontSendMessageToCustomer) {
+          if (dontSendMessageToCustomer || !askForReview) {
             const prev = Array.isArray((jobForWa as any).requirements)
               ? ([...(jobForWa as any).requirements] as unknown[])
               : [];
-            jobForWa = { ...jobForWa, requirements: [...prev, { dont_send_message: true }] };
+            const extra: unknown[] = [];
+            if (dontSendMessageToCustomer) extra.push({ dont_send_message: true });
+            if (!askForReview) extra.push({ skip_review: true });
+            jobForWa = { ...jobForWa, requirements: [...prev, ...extra] };
           }
           try {
             const { data: fresh } = await db.jobs.getById(jobId);
@@ -5118,6 +5132,7 @@ const TechnicianDashboard = () => {
       customerHasPrefilter,
       rawWaterTds,
       user,
+      askForReview,
       resetCompleteJobFormState,
     ]
   );
@@ -5886,6 +5901,9 @@ const TechnicianDashboard = () => {
 
         if (dontSendMessageToCustomer) {
           requirements.push({ dont_send_message: true });
+        }
+        if (!askForReview) {
+          requirements.push({ skip_review: true });
         }
 
         const requirementsBeforeDraft = [...requirements];
@@ -9980,6 +9998,8 @@ const TechnicianDashboard = () => {
                     }}
                     dontSendMessage={dontSendMessageToCustomer}
                     onDontSendMessageChange={setDontSendMessageToCustomer}
+                    askForReview={askForReview}
+                    onAskForReviewChange={setAskForReview}
                   />
                 </div>
               )}
@@ -10040,6 +10060,8 @@ const TechnicianDashboard = () => {
                     }}
                     dontSendMessage={dontSendMessageToCustomer}
                     onDontSendMessageChange={setDontSendMessageToCustomer}
+                    askForReview={askForReview}
+                    onAskForReviewChange={setAskForReview}
                   />
                 </div>
               )}

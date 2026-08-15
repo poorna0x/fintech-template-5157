@@ -15,6 +15,8 @@ interface CompletionFinishSectionProps {
   onUpdateCustomerInfo: () => void;
   dontSendMessage: boolean;
   onDontSendMessageChange: (checked: boolean) => void;
+  askForReview: boolean;
+  onAskForReviewChange: (checked: boolean) => void;
 }
 
 const CompletionFinishSection: React.FC<CompletionFinishSectionProps> = ({
@@ -26,6 +28,8 @@ const CompletionFinishSection: React.FC<CompletionFinishSectionProps> = ({
   onUpdateCustomerInfo,
   dontSendMessage,
   onDontSendMessageChange,
+  askForReview,
+  onAskForReviewChange,
 }) => {
   const hasCustomer = Boolean(
     job?.customer || (job as { customer_id?: string })?.customer_id
@@ -77,6 +81,15 @@ const CompletionFinishSection: React.FC<CompletionFinishSectionProps> = ({
                 <WhatsAppIcon className="h-4 w-4 text-gray-900" />
               </span>
               <span className="text-sm text-gray-700">Don&apos;t send completion message to customer</span>
+            </label>
+            <label className="sm:col-span-2 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-3 cursor-pointer hover:bg-gray-50 transition-colors">
+              <input
+                type="checkbox"
+                checked={askForReview}
+                onChange={(e) => onAskForReviewChange(e.target.checked)}
+                className="h-4 w-4 shrink-0 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
+              />
+              <span className="text-sm text-gray-700">Ask customer to review us (linked to you)</span>
             </label>
           </div>
         </div>

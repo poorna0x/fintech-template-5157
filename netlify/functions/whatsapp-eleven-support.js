@@ -243,10 +243,12 @@ async function sendElevenSupportDialCta({
   db,
   to,
   bodyText,
+  displayText,
 }) {
   const phone = normalizePhoneE164(to);
   if (!phone || !phoneNumberId || !accessToken) return { ok: false };
   const url = resolveCallDialUrl();
+  const btn = String(displayText || `Call ${ELEVEN_SUPPORT_DISPLAY}`).trim().slice(0, 20) || 'Call us';
   const payload = {
     messaging_product: 'whatsapp',
     recipient_type: 'individual',
@@ -257,13 +259,13 @@ async function sendElevenSupportDialCta({
       body: {
         text: String(
           bodyText ||
-            `Call ${ELEVEN_SUPPORT_LABEL} on ${ELEVEN_SUPPORT_DISPLAY}.\n\nTap *Call us* below to open your phone dialer.`
+            `Call ${ELEVEN_SUPPORT_LABEL} on ${ELEVEN_SUPPORT_DISPLAY}.\n\nTap *${btn}* below to open your phone dialer.`
         ).slice(0, 1024),
       },
       action: {
         name: 'cta_url',
         parameters: {
-          display_text: 'Call us',
+          display_text: btn,
           url,
         },
       },

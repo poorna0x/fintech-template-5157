@@ -5,11 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Customer, Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
 import { getCustomerGstNumber } from '@/lib/customerGst';
-import { CheckCircle } from 'lucide-react';
+import { CheckCircle, Star } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { getJobEquipmentDisplay, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
+import { fetchSubmittedJobReviewRatingsByJobIds } from '@/lib/jobReviews';
 
 interface CustomerReportDialogProps {
   open: boolean;
@@ -37,12 +38,14 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
 }) => {
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
+  const [reviewRatings, setReviewRatings] = useState<Record<string, number>>({});
 
   const customerId = customer?.id;
 
   useEffect(() => {
     if (!open) {
       setCustomerReportJobs([]);
+      setReviewRatings({});
       return;
     }
     if (!customerId) return;
@@ -58,6 +61,13 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
           return;
         }
         setCustomerReportJobs(data || []);
+        const ids = (data || []).map((j: { id?: string }) => String(j.id || '')).filter(Boolean);
+        if (ids.length) {
+          const ratings = await fetchSubmittedJobReviewRatingsByJobIds(ids);
+          if (!cancelled) setReviewRatings(ratings);
+        } else if (!cancelled) {
+          setReviewRatings({});
+        }
       } catch (error) {
         if (!cancelled) {
           console.error('Error loading customer report jobs:', error);
@@ -546,7 +556,23 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           <div className="mt-3 pt-3 border-t border-border">
                             <div className="flex items-start gap-2">
                               <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">Completed By:</span>
-                              <span className="text-sm text-foreground flex-1 min-w-0 break-words">{completedByName}</span>
+                              <span className="text-sm text-foreground flex-1 min-w-0 break-words inline-flex items-center gap-2 flex-wrap">
+                                {completedByName}
+                                {typeof reviewRatings[job.id] === 'number' ? (
+                                  <span className="inline-flex items-center gap-0.5" title={`${reviewRatings[job.id]} of 5`}>
+                                    {[1, 2, 3, 4, 5].map((n) => (
+                                      <Star
+                                        key={n}
+                                        className={`h-3.5 w-3.5 ${
+                                          n <= reviewRatings[job.id]
+                                            ? 'fill-amber-400 text-amber-400'
+                                            : 'text-muted-foreground/30'
+                                        }`}
+                                      />
+                                    ))}
+                                  </span>
+                                ) : null}
+                              </span>
                             </div>
                           </div>
                         )}

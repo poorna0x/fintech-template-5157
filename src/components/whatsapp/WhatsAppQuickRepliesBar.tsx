@@ -323,8 +323,6 @@ export function WhatsAppQuickRepliesBar({
       approvedTemplateNames.has('svc_missed_call_v3') ||
       approvedTemplateNames.has('missed_call_callback_ero_cta') ||
       approvedTemplateNames.has('missed_call_callback_hro_cta') ||
-      approvedTemplateNames.has('missed_call_callback_ero_cta_v3') ||
-      approvedTemplateNames.has('missed_call_callback_hro_cta_v3') ||
       approvedTemplateNames.has('missed_call_callback_ero_cta_v4') ||
       approvedTemplateNames.has('missed_call_callback_hro_cta_v4');
     if (!ok) {
@@ -428,8 +426,6 @@ export function WhatsAppQuickRepliesBar({
     approvedTemplateNames.has('svc_missed_call_v3') ||
     approvedTemplateNames.has('missed_call_callback_ero_cta') ||
     approvedTemplateNames.has('missed_call_callback_hro_cta') ||
-    approvedTemplateNames.has('missed_call_callback_ero_cta_v3') ||
-    approvedTemplateNames.has('missed_call_callback_hro_cta_v3') ||
     approvedTemplateNames.has('missed_call_callback_ero_cta_v4') ||
     approvedTemplateNames.has('missed_call_callback_hro_cta_v4');
 

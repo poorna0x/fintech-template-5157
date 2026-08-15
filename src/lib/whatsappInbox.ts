@@ -2036,6 +2036,7 @@ function humanizeWhatsAppTemplateSlug(slug: string): string {
     await_name: 'Ask name',
     wfs_ask_name: 'Ask name',
     ask_location: 'Ask location',
+    ask_photo: 'Ask photo',
     await_location: 'Ask location',
     pick_date: 'Pick date',
     await_date: 'Pick date',

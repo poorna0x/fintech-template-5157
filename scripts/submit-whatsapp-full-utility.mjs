@@ -69,6 +69,8 @@ const MARKETING_DELETE_NAMES = [
   'missed_call_book_hro_cta',
   'new_customer_service_setup_ero_cta',
   'new_customer_service_setup_hro_cta',
+  'missed_call_callback_ero_cta_v3',
+  'missed_call_callback_hro_cta_v3',
   // WFS hello/hi flagged MARKETING by Meta — delete and resubmit as _v2 with neutral wording
   'svc_wfs_hello_ero',
   'svc_wfs_hello_hro',

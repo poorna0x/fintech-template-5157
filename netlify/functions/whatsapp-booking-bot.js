@@ -9,7 +9,7 @@
  *       15-day problem path (explain + photo/video) → fast date/time book
  *
  * Legacy greeting buttons (Service/Repair | Reinstallation | Chat) still work mid-flow.
- * Chat with us / post-book free-form → stay on this chat (optional Contact team CTA)
+ * Chat with us → stay on this chat (no hop to another number)
  *
  * Customer messages stay simple (no lead source / CRM jargon).
  * Admin-started Water Filter Service can set lead_source; default remains Direct call.
@@ -45,6 +45,9 @@ const SUPPORT_PHONE_DISPLAY = ELEVEN_SUPPORT_DISPLAY;
 const LEAD_SOURCE = 'Direct call';
 const BRAND_LABEL = 'Eleven RO';
 const WATER_FILTER_SERVICE_LABEL = 'Water Filter Service';
+/** Reply-button title max 20 chars (WhatsApp). */
+const BOOK_OR_INSTALL_BTN = 'Book / Installation';
+const CALL_ELEVEN_BTN = `Call ${SUPPORT_PHONE_DISPLAY}`;
 
 function waterFilterServiceLabelForBrand(brand) {
   const b = String(brand || '').toLowerCase();
@@ -930,22 +933,15 @@ async function sendLocationRequest({ phoneNumberId, accessToken, db, to, bodyTex
   return { ok: result.ok, error: result.data?.error?.message };
 }
 
-async function sendEndFlowOption(ctx) {
-  return sendButtons({
-    ...ctx,
-    bodyText: 'Need to stop? Tap *End flow* — you can start again anytime.',
-    footer: BRAND_LABEL,
-    buttons: [{ id: 'end_flow', title: 'End flow' }],
-  });
+async function sendEndFlowOption(_ctx) {
+  return { ok: true };
 }
 
-/** Text prompt that still needs a typed reply, plus an End flow button. */
+/** Text prompt that still needs a typed reply (no End flow button). */
 async function sendPromptWithEndFlow(ctx, bodyText) {
-  return sendButtons({
+  return sendText({
     ...ctx,
-    bodyText,
-    footer: BRAND_LABEL,
-    buttons: [{ id: 'end_flow', title: 'End flow' }],
+    text: bodyText,
   });
 }
 
@@ -1161,6 +1157,23 @@ async function sendStayInChatHumanHandoff(
   return { handled: true };
 }
 
+const CHAT_HELP_BODY = [
+  'Please let us know how we can help — reply here on this chat.',
+  '',
+  'Our team will read this conversation and get back to you here.',
+].join('\n');
+
+/** Chat with us — stay on this thread; do not send the customer to another number. */
+async function sendInChatHelpHandoff(ctx, customer = null, state = {}) {
+  return sendStayInChatHumanHandoff(ctx, {
+    customer,
+    state,
+    reason: 'Chat with us',
+    offerContactTeam: false,
+    bodyText: CHAT_HELP_BODY,
+  });
+}
+
 async function lookupCustomerById(db, customerId) {
   if (!db || !customerId) return null;
   const { data } = await db
@@ -1324,7 +1337,7 @@ async function lookupLastServiceInfo(db, customerId, _customerRow = null) {
   }
 }
 
-/** Call us → CTA that opens dialer (HTTPS redirect → tel:). */
+/** Call us → contact card (native Call) + optional dialer CTA. */
 async function sendCallUsHandoff(ctx, customer = null, state = {}) {
   const prefill = buildAdminHandoffPrefill({
     customer,
@@ -1336,44 +1349,29 @@ async function sendCallUsHandoff(ctx, customer = null, state = {}) {
     supportPrefill: prefill,
     ...(state.linkedCustomerId ? { linkedCustomerId: state.linkedCustomerId } : {}),
   });
+  await sendElevenSupportContactCard({
+    phoneNumberId: ctx.phoneNumberId,
+    accessToken: ctx.accessToken,
+    db: ctx.db,
+    to: ctx.to,
+  });
   await sendElevenSupportDialCta({
     phoneNumberId: ctx.phoneNumberId,
     accessToken: ctx.accessToken,
     db: ctx.db,
     to: ctx.to,
+    displayText: CALL_ELEVEN_BTN,
     bodyText: [
       `Call ${BRAND_LABEL} on *${SUPPORT_PHONE_DISPLAY}*.`,
       '',
-      'Tap *Call us* below to open your phone dialer.',
+      'Tap *Call* on the contact above, or the button below.',
     ].join('\n'),
   });
 }
 
-/** Chat with us → WhatsApp team CTA (optional Call us dialer still available via support buttons elsewhere). */
+/** Chat with us → stay on this chat (legacy name kept for callers). */
 async function sendChatHandoff(ctx, customer = null, state = {}) {
-  const prefill = buildAdminHandoffPrefill({
-    customer,
-    state,
-    phoneE164: ctx.to,
-  });
-  await setBookingState(ctx.db, ctx.to, {
-    step: 'booking_complete',
-    supportPrefill: prefill,
-    ...(state.linkedCustomerId ? { linkedCustomerId: state.linkedCustomerId } : {}),
-  });
-  await sendElevenSupportWhatsAppCta({
-    phoneNumberId: ctx.phoneNumberId,
-    accessToken: ctx.accessToken,
-    db: ctx.db,
-    to: ctx.to,
-    bodyText: [
-      `Chat with us on WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
-      '',
-      'Tap *Contact team* below to open the chat with our team.',
-    ].join('\n'),
-    prefill,
-    displayText: 'Contact team',
-  });
+  return sendInChatHelpHandoff(ctx, customer, state);
 }
 
 async function beginLinkedOrKnownBooking(ctx, state = {}) {
@@ -1421,7 +1419,6 @@ async function askIssueMedia(ctx, state = {}) {
     buttons: [
       { id: 'skip_issue_media', title: 'Skip' },
       { id: 'id_call_us', title: 'Call us' },
-      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -1471,18 +1468,41 @@ async function sendRecentProblemPrompt(ctx, state = {}) {
   });
 }
 
+function continueHowRows(chatButtonId) {
+  return [
+    {
+      id: 'svc_repair',
+      title: 'Service / Repair',
+      description: 'Book a service or repair visit',
+    },
+    {
+      id: 'svc_install',
+      title: 'Installation',
+      description: 'Book a new purifier installation',
+    },
+    {
+      id: chatButtonId,
+      title: 'Chat with us',
+      description: 'Ask on this chat — no other number',
+    },
+    {
+      id: 'id_call_us',
+      title: CALL_ELEVEN_BTN,
+      description: `Call ${BRAND_LABEL} on ${SUPPORT_PHONE_DISPLAY}`,
+    },
+  ];
+}
+
 async function sendKnownMenu(ctx, state = {}) {
   const name = whatsappGreetingName(state.name, 'there');
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_known_menu' });
-  return sendButtons({
+  return sendList({
     ...ctx,
     bodyText: `Hi ${name}! How can we help you today?`,
     footer: BRAND_LABEL,
-    buttons: [
-      { id: 'known_book', title: 'Book Service' },
-      { id: 'known_chat', title: 'Chat with us' },
-      { id: 'id_call_us', title: 'Call us' },
-    ],
+    buttonText: 'Choose',
+    sectionTitle: 'Continue',
+    rows: continueHowRows('known_chat'),
   });
 }
 
@@ -1528,17 +1548,28 @@ async function sendIdentityGate(ctx, state = {}) {
   });
 }
 
+async function sendBookOrInstallPicker(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_service_type' });
+  return sendButtons({
+    ...ctx,
+    bodyText: 'Would you like a *service / repair* visit, or a new *installation*?',
+    footer: BRAND_LABEL,
+    buttons: [
+      { id: 'svc_repair', title: 'Service/Repair' },
+      { id: 'svc_install', title: 'Installation' },
+    ],
+  });
+}
+
 async function sendFirstTimeMenu(ctx, state = {}) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_first_time_menu' });
-  return sendButtons({
+  return sendList({
     ...ctx,
     bodyText: 'Great — how would you like to continue?',
     footer: BRAND_LABEL,
-    buttons: [
-      { id: 'first_book', title: 'Book Service' },
-      { id: 'first_chat', title: 'Chat with us' },
-      { id: 'id_call_us', title: 'Call us' },
-    ],
+    buttonText: 'Choose',
+    sectionTitle: 'Continue',
+    rows: continueHowRows('first_chat'),
   });
 }
 
@@ -2590,7 +2621,8 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
       customer,
       state: {},
       reason: 'Chat with us',
-      offerContactTeam: true,
+      offerContactTeam: false,
+      bodyText: CHAT_HELP_BODY,
     });
     return { ok: true };
   }
@@ -2658,6 +2690,10 @@ async function continueAfterTimeSelected(ctx, next, customer) {
   }
   if (next?.photoUrl) {
     await sendNewCustomerConfirm(ctx, next);
+    return;
+  }
+  if (next?.loc && !next?.photoUrl) {
+    await askPurifierPhoto(ctx, next);
     return;
   }
   const crmPhoto = await resolveCustomerPhotoUrl(ctx.db, customer);
@@ -2883,8 +2919,8 @@ async function askLocConfirm(ctx, state, locSummary) {
   await sendButtons({
     ...ctx,
     bodyText: mapsUrl
-      ? 'Is this location correct?\n\n(You can add building/flat later via *Edit details*.)'
-      : `${detailBody}\n\nIs this correct?\n\n(You can add building/flat later via *Edit details*.)`,
+      ? 'Is this location correct?'
+      : `${detailBody}\n\nIs this correct?`,
     footer: 'Confirm location',
     buttons: [
       { id: 'loc_yes', title: 'Yes, correct' },
@@ -2913,7 +2949,6 @@ async function askBuildingFlat(ctx, state = {}) {
     buttons: [
       { id: 'skip_building', title: 'Skip' },
       { id: 'talk_team', title: 'Chat with us' },
-      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -3030,22 +3065,27 @@ async function continueAfterBuildingFlat(ctx, state) {
     await resumeAfterEdit(ctx, state);
     return;
   }
-  // Inbox quick: location → photo, then date/time
-  if (state?.locationThenPhoto) {
-    await askPurifierPhoto(ctx, state);
-    return;
-  }
   // Admin only asked for location (no booking)
   if (
     state?.startedByAdmin &&
     !state?.serviceSubType &&
     !state?.waterFilterService &&
-    !state?.dateIso
+    !state?.dateIso &&
+    !state?.locationThenPhoto
   ) {
     await finishAdminLocationOnly(ctx, state);
     return;
   }
-  await sendDatePicker(ctx, { ...state, step: 'await_date' });
+  // Location → flat → full purifier photo, then date/time (or confirm if date already set).
+  if (!state?.photoUrl) {
+    await askPurifierPhoto(ctx, state);
+    return;
+  }
+  if (!state?.dateIso) {
+    await sendDatePicker(ctx, { ...state, step: 'await_date' });
+    return;
+  }
+  await sendNewCustomerConfirm(ctx, state);
 }
 
 async function sendDatePicker(ctx, state) {
@@ -3068,11 +3108,6 @@ async function sendDatePicker(ctx, state) {
     });
     added += 1;
   }
-  rows.push({
-    id: 'end_flow',
-    title: 'End flow',
-    description: 'Stop this booking',
-  });
   return sendList({
     ...ctx,
     bodyText: existingFast
@@ -3109,12 +3144,6 @@ async function sendPeriodPicker(ctx, dateIso, state) {
     return { ok: false };
   }
 
-  rows.push({
-    id: 'end_flow',
-    title: 'End flow',
-    description: 'Stop this booking',
-  });
-
   return sendList({
     ...ctx,
     bodyText: `Date: *${formatDateIsoLabel(dateIso)}*\n\nChoose a time of day (9 AM – 6 PM):`,
@@ -3132,14 +3161,13 @@ async function sendTimePicker(ctx, dateIso, state) {
 
 async function askPurifierPhoto(ctx, state) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_model_or_photo' });
-  await sendButtons({
+  await sendText({
     ...ctx,
-    bodyText:
-      'Please *send a photo of your purifier* to continue.\n\n' +
-      'Clear photo of the purifier label / unit.\n\n(Saved to your customer profile.)\n\n' +
+    text:
+      'Please send a *full photo of your purifier* to continue.\n\n' +
+      'The whole unit from the front — not a close-up of only the label.\n\n' +
+      '(Saved to your customer profile.)\n\n' +
       AWAITING_CUSTOMER_MEDIA_MARKER,
-    footer: BRAND_LABEL,
-    buttons: [{ id: 'end_flow', title: 'End flow' }],
   });
 }
 
@@ -3161,7 +3189,6 @@ async function askOptionalPurifierPhoto(ctx, state) {
     buttons: [
       { id: 'skip_optional_photo', title: 'Skip' },
       { id: 'talk_team', title: 'Chat with us' },
-      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -3212,7 +3239,6 @@ async function sendNewCustomerConfirm(ctx, state) {
     buttons: [
       { id: 'confirm_new', title: 'Yes, book now' },
       { id: 'edit_details', title: 'Edit details' },
-      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -3232,7 +3258,6 @@ async function sendIdentityConfirm(ctx, customer) {
     buttons: [
       { id: 'identity_yes', title: "Yes, that's me" },
       { id: 'identity_no', title: 'Different location' },
-      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -3246,7 +3271,6 @@ async function sendConfirm(ctx, dateIso, slotKey, customer, state = {}) {
     buttons: [
       { id: `confirm__${dateIso}__${slotKey}`.slice(0, 256), title: 'Yes, book now' },
       { id: 'edit_details', title: 'Edit details' },
-      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -3263,7 +3287,6 @@ async function afterLocationSharedLegacy(ctx, locSummary) {
     buttons: [
       { id: 'pick_date', title: 'Pick date & time' },
       { id: 'talk_team', title: 'Chat with us' },
-      { id: 'end_flow', title: 'End flow' },
     ],
   });
 }
@@ -3377,7 +3400,6 @@ async function sendEditMenu(ctx, state) {
       { id: 'edit_datetime', title: 'Date & time', description: 'Reschedule the visit' },
       { id: 'edit_photo', title: 'Purifier photo', description: 'Send a new photo' },
       { id: 'edit_service', title: 'Service type', description: 'Repair, reinstall, custom' },
-      { id: 'end_flow', title: 'End flow', description: 'Stop this booking' },
     ],
   });
 }
@@ -4159,13 +4181,17 @@ async function handleBookingBotInbound({
         await sendDatePicker(ctx, { ...next, step: 'await_date', locationThenPhoto: false });
         return { handled: true };
       }
+      if (!state.dateIso) {
+        await sendDatePicker(ctx, { ...next, step: 'await_date' });
+        return { handled: true };
+      }
       await sendNewCustomerConfirm(ctx, next);
       return { handled: true };
     }
     if (msgType === 'text' && text && !EDIT_RE.test(text)) {
       await sendText({
         ...ctx,
-        text: 'A *purifier photo is required* to continue. Please send a photo now.',
+        text: 'A *full photo of your purifier* is required to continue. Please send a photo of the whole unit from the front.',
       });
       return { handled: true };
     }
@@ -4317,25 +4343,18 @@ async function handleBookingBotInbound({
 
     if (id === 'first_book') {
       await clearBookingState(db, to);
-      await beginServiceBooking(ctx, {
-        serviceSubType: 'Repair',
-        serviceLabel: 'Service / Repair',
-      });
+      await sendBookOrInstallPicker(ctx, {});
       return { handled: true };
     }
 
     if (id === 'first_chat' || id === 'known_chat') {
       const customer = await resolveCustomerForState(db, to, state || {});
-      await sendChatHandoff(ctx, customer, state || {});
+      await sendInChatHelpHandoff(ctx, customer, state || {});
       return { handled: true };
     }
 
     if (id === 'known_book' || id === 'amc_book') {
-      await beginLinkedOrKnownBooking(ctx, {
-        ...(state || {}),
-        serviceSubType: 'Repair',
-        serviceLabel: 'Service / Repair',
-      });
+      await sendBookOrInstallPicker(ctx, state || {});
       return { handled: true };
     }
 
@@ -4581,19 +4600,7 @@ async function handleBookingBotInbound({
     if (id === 'loc_yes') {
       const st = state?.step === 'await_loc_confirm' ? state : await getBookingState(db, to);
       const session = { ...(st || {}) };
-      // Admin location-only / location→photo still collect building/flat.
-      const needBuilding =
-        Boolean(session.locationThenPhoto) ||
-        (Boolean(session.startedByAdmin) &&
-          !session.serviceSubType &&
-          !session.waterFilterService &&
-          !session.dateIso);
-      if (needBuilding) {
-        await askBuildingFlat(ctx, session);
-      } else {
-        // Shorter funnel: skip building step; customer can add via Edit.
-        await continueAfterBuildingFlat(ctx, { ...session, buildingFlat: session.buildingFlat || '' });
-      }
+      await askBuildingFlat(ctx, session);
       return { handled: true };
     }
 
@@ -4972,12 +4979,8 @@ async function handleBookingBotInbound({
         customer,
         state: state || {},
         reason: 'Chat with us',
-        offerContactTeam: true,
-        bodyText: [
-          'Got it — our team will reply *on this chat* shortly.',
-          '',
-          'Please keep this chat open.',
-        ].join('\n'),
+        offerContactTeam: false,
+        bodyText: CHAT_HELP_BODY,
       });
       return { handled: true };
     }

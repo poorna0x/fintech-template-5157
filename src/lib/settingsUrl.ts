@@ -26,6 +26,7 @@ export const SETTINGS_PANELS = [
   'add-todo',
   'add-tracker',
   'lead-catalog',
+  'job-reviews',
 ] as const;
 
 export type SettingsPanelSlug = (typeof SETTINGS_PANELS)[number];

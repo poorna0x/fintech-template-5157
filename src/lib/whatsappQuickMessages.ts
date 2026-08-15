@@ -113,11 +113,8 @@ export function resolveWfsHiFromTemplateName(ctx: WhatsAppQuickReplyContext): st
 export function wfsJustHiFallbackNames(): string[] {
   return [
     'svc_wfs_just_hi_v3',
-    'svc_wfs_just_hi',
     'svc_wfs_just_hi_hro_v3',
     'svc_wfs_just_hi_ero_v3',
-    'svc_wfs_just_hi_hro',
-    'svc_wfs_just_hi_ero',
     'svc_hello',
     'svc_smoke_update',
   ];
@@ -140,18 +137,15 @@ export function wfsGreetingFallbackNames(): string[] {
 }
 
 export function wfsSimpleHiFallbackNames(): string[] {
-  // _hro_v2 and _ero_v2 are the resubmitted UTILITY names; keep old names for legacy APPROVED fallback
-  return ['svc_wfs_hi', 'svc_wfs_hi_hro_v2', 'svc_wfs_hi_ero_v2', 'svc_wfs_hi_hro', 'svc_wfs_hi_ero'];
+  return ['svc_wfs_hi_hro_v2', 'svc_wfs_hi_ero_v2', 'svc_wfs_hello_v3'];
 }
 
 export function wfsHelloFallbackNames(): string[] {
   return [
     ...wfsSimpleHiFallbackNames(),
-    'svc_wfs_hello',
     'svc_wfs_hello_hro_v2',
     'svc_wfs_hello_ero_v2',
-    'svc_wfs_hello_hro',
-    'svc_wfs_hello_ero',
+    'svc_wfs_hello_v3',
     'svc_hello',
     'svc_smoke_update',
   ];

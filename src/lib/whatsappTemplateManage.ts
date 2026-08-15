@@ -30,6 +30,7 @@ export type WhatsAppTemplateCounts = {
   pending: number;
   rejected: number;
   other: number;
+  marketing?: number;
 };
 
 export type CreateWhatsAppTemplateInput = {

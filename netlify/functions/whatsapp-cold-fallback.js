@@ -3,6 +3,10 @@
  * already-APPROVED UTILITY templates so CRM cold sends still work.
  */
 const { callWhatsAppApi } = require('./whatsapp-helper');
+const {
+  resolveWaTemplateName,
+  isBlockedMarketingTemplateName,
+} = require('./whatsapp-template-resolve');
 
 const SMOKE = 'svc_smoke_update';
 const VISIT = 'svc_visit_reminder';
@@ -131,10 +135,12 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
   const attempts = [];
   const seen = new Set([primaryName]);
 
-  const push = (name, params, headerComponents = []) => {
-    if (seen.has(name)) return;
-    seen.add(name);
-    attempts.push({ name, params, headerComponents });
+  const push = (tplName, params, headerComponents = []) => {
+    const resolved = resolveWaTemplateName(tplName);
+    if (!resolved || seen.has(resolved)) return;
+    if (isBlockedMarketingTemplateName(resolved)) return;
+    seen.add(resolved);
+    attempts.push({ name: resolved, params, headerComponents });
   };
 
   // Balance-due IMAGE header (QR) → older img (keep QR) → text letter v7…
@@ -400,7 +406,7 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     if (suffix && /callback/.test(primaryName) && !/_v4$/i.test(primaryName)) {
       push(`missed_call_callback_${suffix}_cta_v4`, [name]);
     }
-    // Do not fall back to v3 (Meta recategorized as MARKETING).
+    // Do not fall back to missed_call_callback_*_cta_v3 (Meta MARKETING).
     push('svc_missed_call_v3', [name]);
     push(MISSED_CALL, [name]);
   }
@@ -663,6 +669,21 @@ async function sendTemplateWithColdFallbacks({
   const params = Array.isArray(bodyParams) ? bodyParams : [];
   const headers = Array.isArray(headerComponents) ? headerComponents : [];
   const urlButtons = Array.isArray(buttonUrlParams) ? buttonUrlParams : [];
+  templateName = resolveWaTemplateName(templateName);
+  if (isBlockedMarketingTemplateName(templateName)) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        status: 400,
+        data: { error: { message: 'Marketing WhatsApp templates are not allowed' } },
+      },
+      templateName,
+      bodyParams: params,
+      headerComponents: headers,
+      buttonUrlParams: urlButtons,
+    };
+  }
 
   let result = await callWhatsAppApi(
     phoneNumberId,
@@ -699,6 +720,7 @@ async function sendTemplateWithColdFallbacks({
     return String(p?.type || '').toLowerCase() === 'document' || Boolean(p?.document);
   });
   for (const fb of buildFallbackAttempts(templateName, params, hasDocHeader, headers)) {
+    if (isBlockedMarketingTemplateName(fb.name)) continue;
     if (isUnsafeColdFallback(templateName, fb.name)) {
       console.warn(
         '[whatsapp-cold-fallback] skip unsafe fallback',

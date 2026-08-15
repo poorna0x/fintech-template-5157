@@ -481,6 +481,44 @@ export function isLeadSourceAllowCustomText(leadSource: string | undefined | nul
   return (leadSource || '').trim() === 'Other';
 }
 
+export function isDirectCallLeadSource(leadSource: string | undefined | null): boolean {
+  return compactKey(leadSource || '') === 'directcall';
+}
+
+/**
+ * True when the lead is a named row in the lead catalog (Website, Google-Leads, …),
+ * not a free-text value typed at job create. “Other” is the custom bucket.
+ */
+export function isCatalogLeadSource(
+  leadSource: string | undefined | null,
+  catalog?: LeadCatalog | null
+): boolean {
+  const raw = (leadSource || '').trim();
+  if (!raw) return false;
+  if (compactKey(raw) === 'other') return false;
+
+  const cat = catalog || peekLeadCatalog();
+  if (cat) {
+    return findSource(cat, raw) != null;
+  }
+
+  const compact = compactKey(raw);
+  if (LEGACY_LEAD_SOURCE_LABELS.some((label) => compactKey(label) === compact && compact !== 'other')) {
+    return true;
+  }
+  if (raw.toLowerCase().startsWith('website (')) return true;
+  return false;
+}
+
+/** Direct call, or a custom lead typed when creating the job (not a catalog row). */
+export function isDirectCallOrCustomLeadSource(
+  leadSource: string | undefined | null,
+  catalog?: LeadCatalog | null
+): boolean {
+  if (isDirectCallLeadSource(leadSource)) return true;
+  return !isCatalogLeadSource(leadSource, catalog);
+}
+
 export function isServiceSubTypeAllowCustomText(subType: string | undefined | null): boolean {
   const catalog = peekLeadCatalog();
   if (catalog) {

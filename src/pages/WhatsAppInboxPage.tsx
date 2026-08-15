@@ -424,6 +424,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [threadBrand, setThreadBrand] = useState<DocumentBrand>('hydrogenro');
   const [sending, setSending] = useState(false);
   const [purging, setPurging] = useState(false);
+  const [chatDeleteTarget, setChatDeleteTarget] = useState<{
+    phone: string;
+    name: string;
+  } | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const skipThreadClickRef = useRef(false);
   const [query, setQuery] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [searchThreads, setSearchThreads] = useState<WhatsAppThread[]>([]);
@@ -556,6 +562,24 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedPhoneRef = useRef(selectedPhone);
   selectedPhoneRef.current = selectedPhone;
+
+  const clearThreadLongPress = useCallback(() => {
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  const openChatDeleteMenu = useCallback((phone: string, name: string) => {
+    clearThreadLongPress();
+    skipThreadClickRef.current = true;
+    try {
+      navigator.vibrate?.(12);
+    } catch {
+      /* ignore */
+    }
+    setChatDeleteTarget({ phone, name });
+  }, [clearThreadLongPress]);
   const threadMessagesRef = useRef(threadMessages);
   threadMessagesRef.current = threadMessages;
   const lastMarkedReadRef = useRef<Record<string, string>>({});
@@ -1291,6 +1315,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       messageId?: string | null;
       customerId?: string | null;
       templateName?: string | null;
+      /** Server already persisted the row — don't add a second local bubble. */
+      skipLocalBubble?: boolean;
     }) => {
       const phone = String(opts.phone || '').replace(/\D/g, '');
       if (!phone) return;
@@ -1304,6 +1330,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         else msgType = 'document';
       }
       if (opts.templateName && !opts.body) msgType = 'template';
+      if (opts.skipLocalBubble) {
+        void loadInbox({ soft: true, force: true });
+        if (phone === selectedPhoneRef.current) {
+          void loadThread(phone, { soft: true, force: true });
+        }
+        return;
+      }
       const row: WhatsAppMessageRow = {
         id: opts.messageId || `local-${Date.now()}`,
         wa_message_id: null,
@@ -1857,6 +1890,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           msgType: 'template',
           templateName: payload.templateName,
           customerId: activeThread?.customer_id,
+          skipLocalBubble: true,
         });
         void loadThread(selectedPhone, { soft: true, force: true });
         return;
@@ -1911,20 +1945,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         toast.error(result.error || 'Quick action failed');
         return;
       }
-      const isBook = action === 'book_service';
-      if (result.via === 'template') {
-        toast.success(
-          isBook
-            ? `Book template sent${result.templateName ? ` (${result.templateName})` : ''}. Booking continues when they reply.`
-            : `Ask template sent${result.templateName ? ` (${result.templateName})` : ''} — not a booking.`
-        );
-      } else {
-        toast.success(
-          isBook
-            ? 'Booking started on WhatsApp'
-            : `${QUICK_ACTION_LABELS[action]} sent — booking not started`
-        );
-      }
+      toast.success(`${QUICK_ACTION_LABELS[action]} sent`);
       setQuickActionConfirm(null);
       bumpThreadAfterOutbound({
         phone: selectedPhone,
@@ -1932,6 +1953,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         msgType: result.via === 'template' ? 'template' : 'interactive',
         templateName: result.templateName || null,
         customerId: activeThread?.customer_id,
+        skipLocalBubble: result.via === 'template',
       });
       void loadThread(selectedPhone, { soft: true, force: true });
     } finally {
@@ -2317,11 +2339,32 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     <li key={t.phone_e164}>
                       <button
                         type="button"
-                        onClick={() => setSelectedPhone(t.phone_e164)}
+                        onClick={() => {
+                          if (skipThreadClickRef.current) {
+                            skipThreadClickRef.current = false;
+                            return;
+                          }
+                          setSelectedPhone(t.phone_e164);
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          openChatDeleteMenu(t.phone_e164, title);
+                        }}
+                        onPointerDown={(e) => {
+                          if (e.pointerType === 'mouse' && e.button !== 0) return;
+                          clearThreadLongPress();
+                          longPressTimerRef.current = window.setTimeout(() => {
+                            openChatDeleteMenu(t.phone_e164, title);
+                          }, 480);
+                        }}
+                        onPointerUp={clearThreadLongPress}
+                        onPointerCancel={clearThreadLongPress}
+                        onPointerLeave={clearThreadLongPress}
                         className={cn(
-                          'group relative flex w-full cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0',
+                          'group relative flex w-full cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 select-none',
                           active ? 'bg-[#202c33]' : 'hover:bg-[#202c33]'
                         )}
+                        style={{ WebkitTouchCallout: 'none' }}
                       >
                         {active ? (
                           <span
@@ -3357,6 +3400,75 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               ) : (
                 'Send'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(chatDeleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !purging) setChatDeleteTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md border-[#2a3942] bg-[#111b21] text-[#e9edef]">
+          <DialogHeader>
+            <DialogTitle>Delete chat?</DialogTitle>
+            <DialogDescription className="text-[#8696a0]">
+              {chatDeleteTarget
+                ? `${chatDeleteTarget.name} · ${displayPhone(chatDeleteTarget.phone)}`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={purging || !chatDeleteTarget}
+              className="h-auto cursor-pointer justify-start whitespace-normal border-[#2a3942] bg-[#202c33] py-3 text-left text-[#e9edef] hover:bg-[#2a3942] hover:text-[#e9edef]"
+              onClick={() => {
+                const phone = chatDeleteTarget?.phone;
+                setChatDeleteTarget(null);
+                if (phone) void runPurge({ phoneE164: phone, keepMedia: true });
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4 shrink-0" />
+              <span>
+                <span className="block font-medium">Delete chat (keep files)</span>
+                <span className="block text-xs font-normal text-[#8696a0]">
+                  Remove messages from the inbox. Photos and PDFs stay on storage.
+                </span>
+              </span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={purging || !chatDeleteTarget}
+              className="h-auto cursor-pointer justify-start whitespace-normal border-red-900/40 bg-[#2a1f1f] py-3 text-left text-red-300 hover:bg-[#3b2a2a] hover:text-red-200"
+              onClick={() => {
+                const phone = chatDeleteTarget?.phone;
+                setChatDeleteTarget(null);
+                if (phone) void runPurge({ phoneE164: phone });
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4 shrink-0" />
+              <span>
+                <span className="block font-medium">Delete chat and files</span>
+                <span className="block text-xs font-normal text-red-300/80">
+                  Remove messages plus photos/PDFs from storage (frees space).
+                </span>
+              </span>
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              className="cursor-pointer text-[#8696a0] hover:bg-[#202c33] hover:text-[#e9edef]"
+              disabled={purging}
+              onClick={() => setChatDeleteTarget(null)}
+            >
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>

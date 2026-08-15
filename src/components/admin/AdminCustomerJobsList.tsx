@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -74,6 +74,7 @@ import {
 } from '@/lib/adminUtils';
 import type { Job } from '@/types';
 import { useFollowUpGlowEnabled } from '@/hooks/useFollowUpGlowEnabled';
+import { fetchSubmittedJobReviewRatingsByJobIds } from '@/lib/jobReviews';
 
 export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
   const ctx = useAdminDashboardList();
@@ -113,6 +114,29 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
   const [otpJob, setOtpJob] = useState<Job | null>(null);
   const [customNudgeJob, setCustomNudgeJob] = useState<Job | null>(null);
   const [nudgePickerJob, setNudgePickerJob] = useState<Job | null>(null);
+  const [reviewRatings, setReviewRatings] = useState<Record<string, number>>({});
+
+  const completedJobIdsKey = useMemo(() => {
+    const ids = displayedCustomers.flatMap(({ completedJobs }) =>
+      (completedJobs || []).map((j) => j.id).filter(Boolean)
+    );
+    return [...new Set(ids)].sort().join(',');
+  }, [displayedCustomers]);
+
+  useEffect(() => {
+    if (!completedJobIdsKey) {
+      setReviewRatings({});
+      return;
+    }
+    const ids = completedJobIdsKey.split(',');
+    let cancelled = false;
+    void fetchSubmittedJobReviewRatingsByJobIds(ids).then((map) => {
+      if (!cancelled) setReviewRatings(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [completedJobIdsKey]);
 
   return (
     <>
@@ -546,6 +570,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                   amcInfo={amcInfo}
                   completionNotes={completionNotes}
                   completedByName={completedByName}
+                  reviewRating={reviewRatings[fullJob.id] ?? null}
                   formattedCompletedAt={formattedCompletedAt}
                   setSelectedCompletedJob={a.setSelectedCompletedJob}
                   setCompletedJobEditData={a.setCompletedJobEditData}

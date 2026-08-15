@@ -10,6 +10,10 @@ import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { parseRequirements } from '@/lib/followUpToOngoing';
+import { jobHasSkipReview } from '@/lib/jobReviews';
+import { getLeadSourceFromJob } from '@/lib/adminUtils';
+import { ensureLeadCatalogLoaded, isDirectCallOrCustomLeadSource } from '@/lib/leadCatalog';
+import { getCompletedJobMissingMedia } from '@/lib/jobReportPhotos';
 import {
   buildJobCompletionColdBodyParams,
   buildJobCompletionLetterBodyParams,
@@ -385,8 +389,47 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       return 'skipped';
     }
 
+    if (!opts.force) {
+      const leadSource = getLeadSourceFromJob(job);
+      let catalog = null;
+      try {
+        catalog = await ensureLeadCatalogLoaded();
+      } catch {
+        catalog = null;
+      }
+      if (isDirectCallOrCustomLeadSource(leadSource, catalog)) {
+        const { missingBill } = getCompletedJobMissingMedia(job);
+        if (missingBill) {
+          if (notify) {
+            toast.message(
+              'Completion WhatsApp skipped — Direct call / custom lead needs a bill photo first'
+            );
+          }
+          return 'skipped';
+        }
+      }
+    }
+
     if (jobHasCompletionMessageSent(job)) {
       return 'skipped';
+    }
+
+    if (!jobHasSkipReview(job)) {
+      try {
+        const { createJobReviewInvite } = await import('@/lib/jobReviews');
+        const technicianId =
+          (job.completed_by as string) ||
+          (job.completedBy as string) ||
+          (job.assigned_technician_id as string) ||
+          (job.assignedTechnicianId as string) ||
+          null;
+        const invite = await createJobReviewInvite({ jobId, technicianId });
+        if (invite?.url) {
+          job.reviewUrl = invite.url;
+        }
+      } catch (err) {
+        console.warn('[job-completion-wa] review invite failed', err);
+      }
     }
 
     const customerId = resolveCustomerId(job);

@@ -157,6 +157,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   const [serviceBrand, setServiceBrand] = useState<ServiceBrand | null>(null);
   const [lastServiceBrand, setLastServiceBrand] = useState<ServiceBrand | null>(null);
   const [isLoadingServiceBrand, setIsLoadingServiceBrand] = useState(false);
+  const [askForReview, setAskForReview] = useState(true);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Helper functions
@@ -221,6 +222,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       setCompletionNotes('');
       setCompleteJobStep(1);
       setBillAmount('');
+      setAskForReview(true);
       setBillPhotos([]);
       setBillPhotoSources({});
       const today = getTodayLocalDate();
@@ -327,6 +329,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   const handleClose = () => {
     setCompleteJobStep(1);
     setBillAmount('');
+    setAskForReview(true);
     setBillPhotos([]);
     setBillPhotoSources({});
     const today = getTodayLocalDate();
@@ -531,9 +534,12 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       );
 
       // Tag office completions (no field technician) so reports can show "Office".
-      requirements = requirements.filter((req: any) => !req.completed_by_office);
+      requirements = requirements.filter((req: any) => !req.completed_by_office && !req.skip_review);
       if (isOfficeCompletion) {
         requirements.push({ completed_by_office: true });
+      }
+      if (!askForReview || isOfficeCompletion) {
+        requirements.push({ skip_review: true });
       }
 
       if (uploadedBillPhotos.length > 0) {
@@ -770,6 +776,14 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       });
 
       toast.success('Job completed successfully');
+      if (askForReview && !isOfficeCompletion && completedByTechnicianId) {
+        void import('@/lib/jobReviews').then(({ createJobReviewInvite }) => {
+          void createJobReviewInvite({
+            jobId: job.id,
+            technicianId: String(completedByTechnicianId),
+          });
+        });
+      }
       // Brand completion WhatsApp when auto-send is ON (skips AMC / dont_send).
       // Refresh again after a successful send so "Message Sent" updates on the completed card.
       void import('@/lib/jobCompletionWhatsApp').then(({ queueJobCompletionWhatsAppAutoSend }) => {
@@ -781,7 +795,11 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
             actual_cost: parseFloat(billAmount) || (job as any).actual_cost,
             payment_amount: parseFloat(billAmount) || (job as any).payment_amount,
             service_brand: serviceBrand || (job as any).service_brand,
-            requirements: (job as any).requirements,
+            completed_by: completedByTechnicianId,
+            assigned_technician_id: updateData.assigned_technician_id ?? (job as any).assigned_technician_id,
+            requirements: updateData.requirements,
+            after_photos: updateData.after_photos,
+            lead_source: (job as any).lead_source,
           },
           {
             onResult: (result) => {
@@ -1964,9 +1982,20 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
             {/* Step 6: Prefilter Question or Softener Complete */}
             {completeJobStep === 6 && isSoftenerService() && (
               <div className="space-y-4">
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground">Completing job...</p>
-                </div>
+                <label className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 px-3 py-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={askForReview}
+                    onChange={(e) => setAskForReview(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-gray-300"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Ask customer to review us</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      Sends a review page linked to this technician with the completion WhatsApp.
+                    </span>
+                  </span>
+                </label>
               </div>
             )}
 
@@ -2033,6 +2062,20 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     required
                   />
                 </div>
+                <label className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 px-3 py-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={askForReview}
+                    onChange={(e) => setAskForReview(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-gray-300"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Ask customer to review us</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      Sends a review page linked to this technician with the completion WhatsApp.
+                    </span>
+                  </span>
+                </label>
               </div>
             )}
           </div>

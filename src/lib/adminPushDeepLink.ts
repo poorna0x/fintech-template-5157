@@ -89,6 +89,15 @@ export function parseAdminPushDeepLinkData(
     };
   }
 
+  if (String(raw.type || '').trim() === 'job_review') {
+    return {
+      kind: 'settings',
+      jobId: String(raw.jobId || '').trim(),
+      event: 'job_review',
+      panel: 'job-reviews',
+    };
+  }
+
   if (String(raw.type || '').trim() === 'admin_reminder') {
     const reminderId = String(raw.reminderId || '').trim();
     const panelRaw = String(raw.panel || '').trim();

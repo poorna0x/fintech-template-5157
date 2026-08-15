@@ -175,16 +175,6 @@ const RECOMMENDED = [
     hint: 'Missed call — we were busy, request callback ({{1}} name)',
   },
   {
-    name: 'missed_call_callback_ero_cta_v3',
-    language: 'en',
-    hint: 'Missed call Eleven RO v3 (Call us + Call me back)',
-  },
-  {
-    name: 'missed_call_callback_hro_cta_v3',
-    language: 'en',
-    hint: 'Missed call Hydrogen RO v3 (Call us + Call me back)',
-  },
-  {
     name: 'svc_missed_call',
     language: 'en',
     hint: 'Missed call callback ({{1}} name) — UTILITY',
@@ -381,7 +371,7 @@ function buildCreatePayload(body) {
       name,
       language,
       category: 'UTILITY',
-      allow_category_change: true,
+      allow_category_change: false,
       components,
     },
   };
@@ -421,7 +411,13 @@ exports.handler = async (event) => {
       const raw = await listAllTemplates(accessToken, wabaId);
 
       if (manage) {
-        const templates = raw.map(mapTemplateRow).sort((a, b) => {
+        const mapped = raw.map(mapTemplateRow);
+        const marketingBlocked = mapped.filter(
+          (t) => String(t.category || '').toUpperCase() === 'MARKETING'
+        );
+        const templates = mapped
+          .filter((t) => String(t.category || '').toUpperCase() !== 'MARKETING')
+          .sort((a, b) => {
           const statusRank = (s) =>
             s === 'APPROVED' ? 0 : s === 'PENDING' ? 1 : s === 'REJECTED' ? 2 : 3;
           const ra = statusRank(a.status);
@@ -437,8 +433,14 @@ exports.handler = async (event) => {
           other: templates.filter(
             (t) => !['APPROVED', 'PENDING', 'REJECTED'].includes(t.status)
           ).length,
+          marketing: marketingBlocked.length,
         };
-        return json(200, headers, { templates, counts, recommended: RECOMMENDED });
+        return json(200, headers, {
+          templates,
+          marketingBlocked,
+          counts,
+          recommended: RECOMMENDED,
+        });
       }
 
       // Inbox / cold picker: APPROVED non-marketing only (compat)

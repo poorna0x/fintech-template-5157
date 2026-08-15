@@ -641,6 +641,11 @@ const AdminDashboard = () => {
           return;
         }
 
+        if (payload.kind === 'settings' && payload.panel === 'job-reviews') {
+          navigate(settingsPanelPath('job-reviews'));
+          return;
+        }
+
         if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
           navigate(
             settingsPanelPath(payload.panel, {

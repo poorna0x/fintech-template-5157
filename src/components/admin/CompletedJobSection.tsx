@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle, Edit, Images, Loader2, Mail, ShoppingCart } from 'lucide-react';
+import { CheckCircle, Edit, Images, Loader2, Mail, ShoppingCart, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -70,6 +70,7 @@ interface CompletedJobSectionProps {
   amcInfo: any;
   completionNotes: string;
   completedByName: string;
+  reviewRating?: number | null;
   formattedCompletedAt: string | null;
   setSelectedCompletedJob: (job: Job) => void;
   setCompletedJobEditData: (data: any) => void;
@@ -114,6 +115,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   amcInfo,
   completionNotes,
   completedByName,
+  reviewRating,
   formattedCompletedAt,
   setSelectedCompletedJob,
   setCompletedJobEditData,
@@ -632,6 +634,18 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           {completedByName && (
             <div className="text-gray-700 mt-2 pt-2 border-t border-green-200 break-words">
               <span className="text-gray-500 font-medium">Completed By:</span> {completedByName}
+              {typeof reviewRating === 'number' && reviewRating >= 1 && reviewRating <= 5 ? (
+                <span className="ml-2 inline-flex items-center gap-0.5 align-middle" title={`${reviewRating} of 5 stars`}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Star
+                      key={n}
+                      className={`h-3.5 w-3.5 ${
+                        n <= reviewRating ? 'fill-amber-400 text-amber-400' : 'text-gray-300'
+                      }`}
+                    />
+                  ))}
+                </span>
+              ) : null}
             </div>
           )}
           

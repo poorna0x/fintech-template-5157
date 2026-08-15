@@ -19,6 +19,7 @@ import {
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
+import { jobHasSkipReview } from '@/lib/jobReviews';
 
 type DeliveryMode = 'api' | 'wa_me';
 
@@ -54,6 +55,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('wa_me');
   /** Cloud API only when Settings allow + auto-send completion are ON. */
   const [cloudApiAllowed, setCloudApiAllowed] = useState(false);
+  const [reviewUrl, setReviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -61,6 +63,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       setSending(false);
       setDeliveryMode('wa_me');
       setCloudApiAllowed(false);
+      setReviewUrl(null);
       return;
     }
     let cancelled = false;
@@ -80,11 +83,26 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
           setDeliveryMode('wa_me');
         }
       }
+      if (!job?.id || jobHasSkipReview(job as Record<string, unknown>)) return;
+      try {
+        const { createJobReviewInvite } = await import('@/lib/jobReviews');
+        const rec = job as Record<string, unknown>;
+        const technicianId =
+          String(rec.completed_by || rec.completedBy || rec.assigned_technician_id || rec.assignedTechnicianId || '') ||
+          null;
+        const invite = await createJobReviewInvite({
+          jobId: String(job.id),
+          technicianId,
+        });
+        if (!cancelled && invite?.url) setReviewUrl(invite.url);
+      } catch {
+        /* soft-fail */
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, job]);
 
   if (!job) return null;
 
@@ -104,7 +122,10 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     | string
     | undefined;
 
-  const completion = buildJobCompletionMessageFromJob(jobRec);
+  const completion = buildJobCompletionMessageFromJob({
+    ...jobRec,
+    reviewUrl: reviewUrl || undefined,
+  });
   const whatsappMessage = completion.whatsappMessage;
   const brandLabel = getDocumentBrandLabel(completion.documentBrand);
   const brandContact =

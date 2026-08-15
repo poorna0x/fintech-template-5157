@@ -34,6 +34,17 @@ const WA_TEMPLATE_ALIASES = {
   missed_call_book_cta: 'missed_call_callback_hro_cta_v4',
   missed_call_book_ero_cta: 'missed_call_callback_ero_cta_v4',
   missed_call_book_hro_cta: 'missed_call_callback_hro_cta_v4',
+  missed_call_callback_ero_cta_v3: 'missed_call_callback_ero_cta_v4',
+  missed_call_callback_hro_cta_v3: 'missed_call_callback_hro_cta_v4',
+  svc_wfs_hello: 'svc_wfs_hello_v3',
+  svc_wfs_hello_hro: 'svc_wfs_hello_hro_v2',
+  svc_wfs_hello_ero: 'svc_wfs_hello_ero_v2',
+  svc_wfs_just_hi: 'svc_wfs_just_hi_v3',
+  svc_wfs_just_hi_hro: 'svc_wfs_just_hi_hro_v3',
+  svc_wfs_just_hi_ero: 'svc_wfs_just_hi_ero_v3',
+  svc_wfs_hi: 'svc_wfs_hi_hro_v2',
+  svc_wfs_hi_hro: 'svc_wfs_hi_hro_v2',
+  svc_wfs_hi_ero: 'svc_wfs_hi_ero_v2',
   booking_confirmed_ero_cta: 'svc_booking_confirmed_letter_ero_v4',
   booking_confirmed_hro_cta: 'svc_booking_confirmed_letter_hro_v4',
   svc_document_ready: 'svc_doc_pdf_v2',
@@ -49,4 +60,70 @@ function resolveWaTemplateName(name) {
   return WA_TEMPLATE_ALIASES[n] || n;
 }
 
-module.exports = { WA_TEMPLATE_ALIASES, resolveWaTemplateName };
+/** Names Meta categorized (or recategorized) as MARKETING — never send. */
+const BLOCKED_MARKETING_TEMPLATE_NAMES = new Set([
+  'svc_booking_menu',
+  'booking_menu',
+  'service_reminder_cta',
+  'service_due_notice_cta',
+  'customer_followup_cta',
+  'customer_update_notice_cta',
+  'amc_renewal',
+  'quotation_ready',
+  'service_bill_ready',
+  'invoice_ready',
+  'receipt_ready',
+  'document_ready',
+  'amc_document_ready',
+  'warranty_ready',
+  'general_notice',
+  'book_existing_customer_cta',
+  'book_existing_customer_ero_cta',
+  'book_existing_customer_hro_cta',
+  'book_new_customer_cta',
+  'book_new_customer_ero_cta',
+  'book_new_customer_hro_cta',
+  'missed_call_book_cta',
+  'missed_call_book_ero_cta',
+  'missed_call_book_hro_cta',
+  'new_customer_service_setup_ero_cta',
+  'new_customer_service_setup_hro_cta',
+  'missed_call_callback_ero_cta_v3',
+  'missed_call_callback_hro_cta_v3',
+  'svc_wfs_hello_ero',
+  'svc_wfs_hello_hro',
+  'svc_wfs_hello',
+  'svc_wfs_hi_hro',
+  'svc_wfs_hi_ero',
+  'svc_wfs_hi_from_ero',
+  'svc_wfs_hi',
+  'svc_wfs_hi_from',
+  'svc_wfs_hi_from_hro',
+  'svc_wfs_hi_from_ero_v2',
+  'svc_wfs_just_hi',
+  'svc_wfs_just_hi_ero',
+  'svc_wfs_just_hi_hro',
+  'svc_wfs_ask_name_v1',
+  'svc_wfs_ask_name_simple_ero_v1',
+  'svc_wfs_ask_name_hro_v1',
+  'svc_wfs_ask_name_ero_v1',
+  'svc_wfs_ask_name_simple_hro_v1',
+  'svc_wfs_ask_name_simple_v1',
+]);
+
+/**
+ * True when this name (before or after alias) is a MARKETING template we must not send.
+ * @param {string} name
+ */
+function isBlockedMarketingTemplateName(name) {
+  const resolved = resolveWaTemplateName(String(name || '').trim());
+  if (!resolved) return false;
+  return BLOCKED_MARKETING_TEMPLATE_NAMES.has(resolved);
+}
+
+module.exports = {
+  WA_TEMPLATE_ALIASES,
+  BLOCKED_MARKETING_TEMPLATE_NAMES,
+  resolveWaTemplateName,
+  isBlockedMarketingTemplateName,
+};

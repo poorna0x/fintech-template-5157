@@ -39,7 +39,8 @@ import {
   Repeat,
   ShieldCheck,
   CalendarPlus,
-  Database
+  Database,
+  Star
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -105,6 +106,7 @@ import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
 import PdfAuthenticityVerifyPage from '@/pages/PdfAuthenticityVerifyPage';
+import JobReviewsPage from '@/pages/JobReviewsPage';
 import DbStorageStatsPage from '@/pages/DbStorageStatsPage';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
@@ -364,6 +366,9 @@ const Settings = () => {
   const [showPdfAuthenticityPage, setShowPdfAuthenticityPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'pdf-authenticity'
   );
+  const [showJobReviewsPage, setShowJobReviewsPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'job-reviews'
+  );
   const [showDbStoragePage, setShowDbStoragePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'db-storage'
   );
@@ -421,6 +426,11 @@ const Settings = () => {
             return;
           }
 
+          if (payload.kind === 'settings' && payload.panel === 'job-reviews') {
+            navigate(settingsPanelPath('job-reviews'));
+            return;
+          }
+
           if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
             navigate(
               settingsPanelPath(payload.panel, {
@@ -475,6 +485,7 @@ const Settings = () => {
     setShowWhatsAppSettingsPage(panel === 'whatsapp-settings' && !isManager);
     setShowPrivacyCenterPage(panel === 'privacy-center' && !isManager);
     setShowPdfAuthenticityPage(panel === 'pdf-authenticity' && !isManager);
+    setShowJobReviewsPage(panel === 'job-reviews');
     setShowDbStoragePage(panel === 'db-storage' && !isManager);
     setShowRecurringServicePage(panel === 'recurring-service');
     setShowLeadCatalogPage(panel === 'lead-catalog' && !isManager);
@@ -1894,6 +1905,7 @@ const Settings = () => {
       showWhatsAppInboxPage ||
       showWhatsAppSettingsPage ||
       showPdfAuthenticityPage ||
+      showJobReviewsPage ||
       showDbStoragePage ||
       showRecurringServicePage ||
       showLeadCatalogPage
@@ -1937,6 +1949,7 @@ const Settings = () => {
     showWhatsAppInboxPage,
     showWhatsAppSettingsPage,
     showPdfAuthenticityPage,
+    showJobReviewsPage,
     showDbStoragePage,
     showRecurringServicePage,
     showLeadCatalogPage,
@@ -2223,6 +2236,44 @@ const Settings = () => {
         </div>
         <div className="container mx-auto px-4 py-5 sm:py-8 pb-10 max-w-6xl">
           <DbStorageStatsPage hideHeader onBack={closeSettingsPanel} />
+        </div>
+      </div>
+    );
+  }
+
+  if (showJobReviewsPage) {
+    return (
+      <div className="admin-page min-h-[100dvh] bg-gradient-to-b from-amber-50/40 via-background to-background">
+        <div className="bg-card/90 backdrop-blur-sm border-b border-border sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3.5 sm:py-0 sm:h-16">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white">
+                  <Star className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
+                    Customer reviews
+                  </h1>
+                  <p className="text-xs text-muted-foreground truncate sm:hidden">
+                    Linked to the technician on each job
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeSettingsPanel}
+                className="text-muted-foreground hover:text-foreground -ml-2 self-start sm:self-auto cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-5 sm:py-8 pb-10 max-w-3xl">
+          <JobReviewsPage hideHeader onBack={closeSettingsPanel} />
         </div>
       </div>
     );
@@ -2918,6 +2969,23 @@ const Settings = () => {
               >
                 <FileText className="w-4 h-4 shrink-0" />
                 Open AMC View
+              </Button>
+            }
+          />
+
+          <SettingsActionCard
+            title="Customer reviews"
+            description="Settings → Customer reviews. Ratings after Complete Job, attached to the technician."
+            icon={<Star />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('job-reviews')}
+              >
+                <Star className="w-4 h-4 shrink-0" />
+                Open reviews
               </Button>
             }
           />

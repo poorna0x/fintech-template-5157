@@ -28,7 +28,10 @@ const {
   stampAwaitingMediaIfAsking,
   stampPayQrAwaitingMedia,
 } = require('./whatsapp-unsolicited-media');
-const { resolveWaTemplateName } = require('./whatsapp-template-resolve');
+const {
+  resolveWaTemplateName,
+  isBlockedMarketingTemplateName,
+} = require('./whatsapp-template-resolve');
 const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
 const { seedAdminPendingAction } = require('./whatsapp-booking-bot');
 
@@ -551,6 +554,11 @@ exports.handler = async (event) => {
     const templateName = resolveWaTemplateName(String(body.templateName || '').trim());
     if (!templateName) {
       return json(400, headers, { error: 'templateName required' });
+    }
+    if (isBlockedMarketingTemplateName(templateName)) {
+      return json(400, headers, {
+        error: 'Marketing WhatsApp templates are not allowed',
+      });
     }
     if (templateName === 'hello_world') {
       return json(400, headers, {

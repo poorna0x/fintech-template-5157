@@ -19,6 +19,10 @@ const {
   seedAdminPendingAction,
   lookupCustomerFull,
 } = require('./whatsapp-booking-bot');
+const {
+  resolveWaTemplateName,
+  isBlockedMarketingTemplateName,
+} = require('./whatsapp-template-resolve');
 
 const ACTIONS = new Set([
   'book_service',
@@ -100,6 +104,10 @@ async function sendTemplateMessage({
   bodyParams,
   customerId,
 }) {
+  templateName = resolveWaTemplateName(templateName);
+  if (isBlockedMarketingTemplateName(templateName)) {
+    return { ok: false, error: 'Marketing WhatsApp templates are not allowed', waId: null };
+  }
   const components =
     Array.isArray(bodyParams) && bodyParams.length
       ? [
@@ -304,15 +312,21 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
   // request_photo
   return {
     primary: {
-      name: 'svc_service_request',
+      name: 'svc_ask_photo',
       languageCode: 'en',
-      bodyParams: [name],
+      bodyParams: [name, waterFilterFromLabel(brand)],
       seedPending: 'request_photo',
     },
     fallback: {
       name: 'svc_visit_reminder',
       languageCode: 'en',
       bodyParams: [name, 'please reply with a photo of your water purifier'],
+      seedPending: 'request_photo',
+    },
+    fallback2: {
+      name: 'svc_smoke_update',
+      languageCode: 'en',
+      bodyParams: [name],
       seedPending: 'request_photo',
     },
   };
@@ -474,17 +488,19 @@ exports.handler = async (event) => {
   let used = attempts[0] || { name: 'svc_visit_reminder', seedPending: action };
 
   for (const attempt of attempts) {
+    const name = resolveWaTemplateName(attempt.name);
+    if (isBlockedMarketingTemplateName(name)) continue;
     sent = await sendTemplateMessage({
       db,
       phoneNumberId,
       accessToken,
       to,
-      templateName: attempt.name,
+      templateName: name,
       languageCode: attempt.languageCode || 'en',
       bodyParams: attempt.bodyParams,
       customerId,
     });
-    used = attempt;
+    used = { ...attempt, name };
     if (sent.ok) break;
   }
 

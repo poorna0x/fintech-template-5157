@@ -165,6 +165,11 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./fcm-helper')];
     delete require.cache[require.resolve('./push-prefs-helper')];
     handler = require('./notify-admins');
+  } else if (req.url.startsWith('/.netlify/functions/job-review-notify')) {
+    delete require.cache[require.resolve('./job-review-notify')];
+    delete require.cache[require.resolve('./fcm-helper')];
+    delete require.cache[require.resolve('./push-prefs-helper')];
+    handler = require('./job-review-notify');
   } else if (req.url.startsWith('/.netlify/functions/send-location-ping')) {
     handler = sendLocationPing;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-send')) {
@@ -175,6 +180,8 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-webhook')) {
     delete require.cache[require.resolve('./whatsapp-unsolicited-media')];
     delete require.cache[require.resolve('./whatsapp-pay-qr-helper')];
+    delete require.cache[require.resolve('./whatsapp-booking-bot')];
+    delete require.cache[require.resolve('./whatsapp-eleven-support')];
     handler = loadFn('whatsapp-webhook');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-events')) {
     handler = whatsappEvents;
@@ -187,7 +194,9 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./whatsapp-purge-messages')];
     handler = require('./whatsapp-purge-messages');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-booking-start')) {
-    handler = whatsappBookingStart;
+    delete require.cache[require.resolve('./whatsapp-booking-bot')];
+    delete require.cache[require.resolve('./whatsapp-template-resolve')];
+    handler = loadFn('whatsapp-booking-start');
   } else if (req.url.startsWith('/.netlify/functions/dial-call')) {
     handler = dialCall;
   } else if (req.url.startsWith('/.netlify/functions/pdf-authenticity-otp-verify')) {

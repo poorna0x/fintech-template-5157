@@ -2,7 +2,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { isJobPendingPaymentOpen, parseJobPendingPayment } from '@/lib/jobPendingPayment';
 import { formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
-import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, letterLabelValue, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import type { PendingPaymentWhatsAppUpiOptions } from '@/lib/pendingPaymentReminder';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
@@ -24,6 +24,8 @@ export interface JobCompletionMessageInput {
   /** When true, caption mentions QR image attached above. */
   withQrImage?: boolean;
   documentBrand: DocumentBrand;
+  /** Public /review/{token} link for this job’s technician. */
+  reviewUrl?: string | null;
 }
 
 function capitalizeWord(value: string): string {
@@ -112,7 +114,13 @@ export function buildJobCompletionMessage(input: JobCompletionMessageInput): str
     '',
     `Thank you for choosing ${brandName}. We appreciate your trust and hope you're satisfied with our work.`,
     '',
-    ...brandLetterFooterLines(input.documentBrand, { includeReview: true, skipChatHint: true }),
+    ...brandLetterFooterLines(input.documentBrand, {
+      includeReview: !input.reviewUrl,
+      skipChatHint: true,
+    }),
+    ...(input.reviewUrl
+      ? ['', letterLabelValue('Review us', input.reviewUrl)]
+      : []),
   ].join('\n');
 }
 
@@ -171,6 +179,9 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
     pending > 0 && (payLink || upiId)
       ? '💬 Reply on this chat if you need any help or if you have already paid.'
       : '💬 Reply on this chat if you need any help.',
+    ...(input.reviewUrl
+      ? ['', waLabeledLink('⭐', 'Review us', input.reviewUrl)]
+      : []),
   ].join('\n');
 }
 
@@ -325,6 +336,7 @@ export function buildJobCompletionMessageFromJob(job: Record<string, unknown>): 
     pendingDueDate: pendingDueDate || null,
     jobRef: jobNumber || null,
     documentBrand,
+    reviewUrl: typeof job.reviewUrl === 'string' ? job.reviewUrl : null,
   };
 
   return {
