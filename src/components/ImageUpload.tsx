@@ -744,35 +744,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         </div>
       )}
 
-      {/* Drag and Drop Zone — compact + photos: only slim “Add another” row */}
-      {compact && uploadedImages.length > 0 ? (
-        uploadedImages.length < maxImages ? (
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="flex-1"
-              disabled={isUploading}
-              onClick={openFileDialog}
-            >
-              <Upload className="w-4 h-4 mr-1.5" />
-              {isUploading ? 'Uploading…' : 'Add another'}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="flex-1"
-              disabled={isUploading}
-              onClick={openCameraDialog}
-            >
-              <Camera className="w-4 h-4 mr-1.5" />
-              Camera
-            </Button>
-          </div>
-        ) : null
-      ) : (
+      {/* Drag and Drop Zone */}
+      {uploadedImages.length < maxImages ? (
       <div
         ref={dropZoneRef}
         onDragOver={handleDragOver}
@@ -806,13 +779,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           
           <div>
             <h3 className={`font-medium text-foreground ${compact ? 'text-sm' : 'text-sm sm:text-lg'}`}>
-              {isDragOver ? 'Drop image here' : compact ? 'Tap to upload image' : 'Drag & drop images here'}
+              {isDragOver ? 'Drop image here' : 'Drag & drop images here'}
             </h3>
-            {!compact && (
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                or click to browse files
-              </p>
-            )}
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+              or click to browse files
+            </p>
             <p className={`text-xs text-muted-foreground ${compact ? 'mt-1' : 'mt-1 sm:mt-2'}`}>
               JPEG, PNG, WebP{compact ? '' : ` • Max 5MB • Up to ${maxImages} images`}
             </p>
@@ -858,7 +829,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           </div>
         </div>
       </div>
-      )}
+      ) : null}
 
       {/* Hidden File Inputs */}
       <input

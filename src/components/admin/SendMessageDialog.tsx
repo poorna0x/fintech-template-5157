@@ -218,14 +218,16 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     }
   };
 
-  const sendPrimaryLabel =
-    deliveryMode === 'wa_me' || !cloudApiAllowed
-      ? alreadySent
-        ? 'Open phone WhatsApp again'
-        : 'Open phone WhatsApp'
-      : alreadySent
-        ? 'Send again via Cloud API'
-        : 'Send via Cloud API';
+  const isPhoneOpen = deliveryMode === 'wa_me' || !cloudApiAllowed;
+  const sendPrimaryLabel = isPhoneOpen
+    ? alreadySent
+      ? 'Open WhatsApp again'
+      : 'Open WhatsApp'
+    : alreadySent
+      ? 'Send again via Cloud API'
+      : 'Send via Cloud API';
+  const primaryDigits = formatPhoneForWhatsApp(customerPhone).slice(-10);
+  const altDigits = formatPhoneForWhatsApp(alternatePhone).slice(-10);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -393,75 +395,92 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
           )}
         </div>
 
-        <DialogFooter className="shrink-0 flex-col gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:justify-end sm:px-6">
+        <DialogFooter className="shrink-0 w-full gap-3 border-t bg-slate-50/90 px-4 py-3 sm:flex-col sm:items-stretch sm:justify-start sm:space-x-0 sm:px-6">
           {!brandConfirmed ? (
-            <>
+            <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button
                 variant="outline"
-                className="w-full sm:w-auto"
+                className="h-10 w-full rounded-xl sm:w-auto"
                 disabled={sending}
                 onClick={() => onOpenChange(false)}
               >
                 Cancel
               </Button>
               <Button
-                className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
+                className="h-10 w-full rounded-xl bg-black text-white hover:bg-gray-800 sm:w-auto"
                 onClick={() => setBrandConfirmed(true)}
               >
                 Confirm and Continue
               </Button>
-            </>
+            </div>
           ) : (
-            <>
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto"
-                disabled={sending}
-                onClick={() => setBrandConfirmed(false)}
-              >
-                Back
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto"
-                disabled={sending}
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-between">
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="h-11 flex-1 rounded-xl sm:flex-none"
+                  disabled={sending}
+                  onClick={() => setBrandConfirmed(false)}
+                >
+                  Back
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-11 flex-1 rounded-xl sm:flex-none"
+                  disabled={sending}
+                  onClick={() => onOpenChange(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
               {hasAlternate ? (
-                <>
+                <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:max-w-md sm:flex-none">
                   <Button
-                    variant="default"
-                    className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
+                    type="button"
+                    className="h-11 rounded-xl bg-[#25D366] px-3 text-white shadow-sm hover:bg-[#1ebe5d]"
                     disabled={sending || !reviewLinkReady}
                     onClick={() => void sendToPhone(customerPhone)}
                   >
                     {sending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                     ) : (
-                      <WhatsAppIcon className="mr-2 h-4 w-4" />
+                      <WhatsAppIcon className="h-4 w-4 shrink-0" />
                     )}
-                    {deliveryMode === 'wa_me' || !cloudApiAllowed ? 'Open' : 'API'} · Primary
+                    <span className="ml-1.5 min-w-0 text-left leading-tight">
+                      <span className="block text-[10px] font-medium uppercase tracking-wide text-white/80">
+                        Primary
+                      </span>
+                      <span className="block truncate text-sm font-semibold">
+                        {isPhoneOpen ? (primaryDigits || 'Open') : 'Send API'}
+                      </span>
+                    </span>
                   </Button>
                   <Button
-                    variant="default"
-                    className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
+                    type="button"
+                    variant="outline"
+                    className="h-11 rounded-xl border-[#25D366]/50 bg-white px-3 text-emerald-800 shadow-sm hover:bg-emerald-50 hover:text-emerald-900"
                     disabled={sending || !reviewLinkReady}
                     onClick={() => void sendToPhone(alternatePhone)}
                   >
                     {sending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                     ) : (
-                      <WhatsAppIcon className="mr-2 h-4 w-4" />
+                      <WhatsAppIcon className="h-4 w-4 shrink-0 text-[#25D366]" />
                     )}
-                    {deliveryMode === 'wa_me' || !cloudApiAllowed ? 'Open' : 'API'} · Alt
+                    <span className="ml-1.5 min-w-0 text-left leading-tight">
+                      <span className="block text-[10px] font-medium uppercase tracking-wide text-emerald-700/70">
+                        Alternate
+                      </span>
+                      <span className="block truncate text-sm font-semibold">
+                        {isPhoneOpen ? (altDigits || 'Open') : 'Send API'}
+                      </span>
+                    </span>
                   </Button>
-                </>
+                </div>
               ) : (
                 <Button
-                  variant="default"
-                  className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
+                  type="button"
+                  className="h-11 w-full rounded-xl bg-[#25D366] px-4 text-white shadow-sm hover:bg-[#1ebe5d] sm:w-auto"
                   disabled={sending || !reviewLinkReady}
                   onClick={() => void sendToPhone(customerPhone)}
                 >
@@ -473,7 +492,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                   {sendPrimaryLabel}
                 </Button>
               )}
-            </>
+            </div>
           )}
         </DialogFooter>
       </DialogContent>
