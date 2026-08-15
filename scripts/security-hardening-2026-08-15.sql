@@ -1,10 +1,18 @@
--- Apply in Supabase SQL Editor AFTER the app/Netlify functions that call
--- job-review-public are deployed. Safe to re-run.
+-- NEXT MONTH GO-LIVE (see .cursor/rules/next-month-main-golive.mdc)
+-- 1) Deploy wip/next-month-main → main (wait until hydrogenro.com is live)
+-- 2) Smoke Book, warranty, /review, admin, tech photos
+-- 3) THEN run THIS file in Supabase SQL Editor (safe to re-run)
+-- Do NOT run this while production still uses anon get_job_review_invite —
+-- customer /review pages will 401/403.
+--
 -- Restores strict is_admin_user(), closes leftover anon RPC grants, and
 -- tightens booking-intent / job-review / QR catalog policies.
 --
 -- Will NOT apply is_admin_user() if it would lock every admin out
 -- (zero active admin_users, or none of those emails exist in auth.users).
+--
+-- Website Book + warranty already use Netlify + service_role; they stay working.
+-- Leftover Auth users not in admin_users lose admin (intended).
 
 DO $$
 DECLARE

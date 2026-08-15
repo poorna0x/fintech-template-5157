@@ -1,0 +1,61 @@
+---
+description: Next-month merge of wip/next-month-main — deploy order, SQL, remaining security
+alwaysApply: true
+---
+
+# Next month: merge `wip/next-month-main` → `main`
+
+Do **not** merge or `git push origin main` until the user explicitly asks. Until then keep work on **`wip/next-month-main`**.
+
+Live site today is still old `main`. This branch is not production until Netlify deploys `main`.
+
+## Order (required)
+
+1. Confirm every real admin email is in `admin_users` (`is_active = true`) and matches Auth (`auth.users.email`).
+2. Merge/push **`wip/next-month-main` → `main`**. Wait until **hydrogenro.com** (and ElevenRO if it deploys from its own `wip/next-month-main`) is actually serving the new build.
+3. Smoke: Book a job, warranty lookup, admin login, technician photos, one `/review/{token}` get+submit, assign job with WhatsApp setting OFF (no popup).
+4. **Then** run in Supabase SQL Editor: `scripts/security-hardening-2026-08-15.sql` (safe to re-run). Preflight aborts if it would lock every admin out.
+5. Re-check `/review` and admin lists. Do **not** run SQL before the Netlify functions `job-review-public` / `job-review-invite` exist in production.
+
+ElevenRO `/review` calls `https://hydrogenro.com/.netlify/functions/job-review-public` — HydrogenRO functions must be live first.
+
+## What this branch already contains
+
+- Strict `is_admin_user()` SQL (email in `admin_users`, not “anyone who is not a technician”).
+- Review mint/get/submit via Netlify; public RPCs revoked after SQL.
+- Booking RPCs service_role-only after SQL (website Book/warranty already use Netlify — stay working).
+- Booking banners admin-only; catalog/QR staff-only; jobs trigger freezes `customer_id` / `job_number` for non-admins.
+- Assign WhatsApp respects Dashboard master on new customer / new job.
+- SEO NAP/schema (public site).
+
+## Do not run SQL against live DB until step 4
+
+Running SQL while production JS still uses anon `get_job_review_invite` **breaks customer `/review`**.
+
+## Remaining security (not unhackable) — next hardening after go-live
+
+Re-checked 2026-08-15 with vibe-security (secrets, RLS, auth, rate limits, payments, HMAC). **No service_role in the client bundle.** These are **still true** after this branch + SQL. Do not claim “unhackable.”
+
+### High (after SQL; product/ops, not CRM takeover)
+
+- **Cloudinary:** unsigned/public delivery if restricted media is off; technician signed-URL ACL is fail-open when `jobId` is omitted (in-progress photos).
+- **`get_upi_pay_link` GRANT anon** (`scripts/add-upi-pay-links.sql`): public `/p/{code}` page; RPC returns **phone**. 8-char codes are hard to brute-force but not hashed. Next: drop `phone` from the public RPC, or look up via Netlify + rate limit.
+- **`booking_abandonments` anon INSERT** (`WITH CHECK (true)`): needed for the website banner; anyone with the anon key can spam name/phone rows. Not a full CRM takeover. Next: Turnstile/Netlify insert only.
+- **Push/cash-check HMAC** (`push-hmac-secret.js`, `cash-check-hmac.js`): production still **signs with `SUPABASE_SERVICE_ROLE_KEY`** unless `PUSH_REPLY_HMAC_SECRET` / `CASH_CHECK_HMAC_SECRET` are set. Service role stays server-only; decoupling is hygiene so a leaked HMAC does not equal DB god-key. Set dedicated secrets on Netlify **after** deploy (tokens in flight ~30 min).
+- **`ALTCHA_HMAC_KEY`:** if missing, code uses a **placeholder** (`altcha-guard.js`). Confirm production env has a real key (placeholder path should refuse login).
+
+### Medium
+
+- **Rate limits:** in-memory per Lambda instance; not Redis. Attackers can retry across cold starts.
+- **`report-app-crash`:** auth is “FCM token exists in DB” (same as some tech alerts). Stolen/old FCM token can POST junk stacks; rate-limited.
+- **Email open pixel** (`email-open-track`): unauthenticated by design (opaque UUID). Enumeration of UUIDs is impractical; still a tracking endpoint.
+- **`VITE_GOOGLE_MAPS_API_KEY` / Firebase web apiKey / Turnstile site key / Supabase anon:** expected in the browser. Lock Google key **HTTP referrers** + API restrictions in Google Cloud. Restrict Firebase API key in Google Cloud.
+- **npm audit** high/critical (e.g. websocket-driver) — not upgraded on this branch; bump carefully after go-live.
+- **`schema.sql`** still shows ancient `USING (true)` policies — **never apply schema.sql as live truth.** Live DB is the patched one.
+
+### Low / accepted
+
+- **APK:** JS/security on this branch reaches phones via Netlify; native Java/gradle needs a new APK only if those files change.
+- **ElevenRO** hold branch `wip/next-month-main` is mostly SEO; HydrogenRO functions serve `/review`. Merge HydrogenRO first.
+
+Fix leftover holes **one at a time** after go-live, with a local test each time. Never run experimental SQL on production without the deploy-first rule above.
