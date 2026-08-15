@@ -5,6 +5,12 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const {
+  isRateLimitEnabled,
+  checkRateLimit,
+  checkRateLimitForKey,
+  rateLimitResponseForKey,
+} = require('./rate-limiter');
+const {
   getMessaging,
   getAdminFcmTokens,
   pruneAdminFcmTokens,
@@ -37,6 +43,27 @@ exports.handler = async (event) => {
   const token = String(body.token || '').trim();
   if (!token || token.length < 12 || token.length > 48) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'token required' }) };
+  }
+
+  if (isRateLimitEnabled()) {
+    const ipLimit = checkRateLimit(event, {
+      maxRequests: 20,
+      windowMs: 60_000,
+      endpoint: 'job-review-notify-ip',
+    });
+    if (!ipLimit.allowed) {
+      const base = rateLimitResponseForKey(ipLimit);
+      return { ...base, headers: { ...headers, ...base.headers } };
+    }
+    const tokenLimit = checkRateLimitForKey(`notify:${token}`, {
+      maxRequests: 3,
+      windowMs: 15 * 60_000,
+      endpoint: 'job-review-notify-token',
+    });
+    if (!tokenLimit.allowed) {
+      const base = rateLimitResponseForKey(tokenLimit);
+      return { ...base, headers: { ...headers, ...base.headers } };
+    }
   }
 
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();

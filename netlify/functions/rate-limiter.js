@@ -276,6 +276,7 @@ function enforceSendEmailRateLimits(event, recipientEmail) {
 }
 
 module.exports = {
+  isRateLimitEnabled,
   checkRateLimit,
   checkRateLimitForKey,
   peekRateLimit,

@@ -341,8 +341,8 @@ REVOKE ALL ON FUNCTION public.submit_job_review(text, integer, text) FROM PUBLIC
 
 GRANT EXECUTE ON FUNCTION public.create_job_review_invite(uuid, uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_job_review_invite(uuid, uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.get_job_review_invite(text) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_job_review_invite(text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) TO anon, authenticated, service_role;
 
 -- Slim technician averages for Settings → Customer reviews (no comments).
 CREATE OR REPLACE FUNCTION public.job_review_technician_stats()

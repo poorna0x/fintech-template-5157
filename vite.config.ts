@@ -89,6 +89,10 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/job-review-public': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/db-storage-stats': {
         target: 'http://localhost:8888',
         changeOrigin: true,

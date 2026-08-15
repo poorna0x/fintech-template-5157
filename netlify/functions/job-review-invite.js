@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
+const { isRateLimitEnabled, checkRateLimit, rateLimitResponseForKey } = require('./rate-limiter');
 
 function newReviewToken() {
   const alphabet = 'abcdefghijkmnpqrstuvwxyz23456789';
@@ -33,6 +34,17 @@ exports.handler = async (event) => {
   }
   if (shouldRejectMissingOrigin(event)) {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
+  }
+  if (isRateLimitEnabled()) {
+    const ipLimit = checkRateLimit(event, {
+      maxRequests: 60,
+      windowMs: 60_000,
+      endpoint: 'job-review-invite-ip',
+    });
+    if (!ipLimit.allowed) {
+      const base = rateLimitResponseForKey(ipLimit);
+      return { ...base, headers: { ...headers, ...base.headers } };
+    }
   }
 
   let body = {};

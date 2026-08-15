@@ -40,32 +40,35 @@ export function jobReviewPublicUrl(token: string, brand: DocumentBrand): string 
   return `${origin}/review/${encodeURIComponent(t)}`;
 }
 
-/** Public get/submit must send the anon JWT — the CRM fetch wrapper skips Data API fallbacks. */
-async function invokePublicJobReviewRpc(
-  fn: 'get_job_review_invite' | 'submit_job_review',
-  body: Record<string, unknown>
-): Promise<{ data: unknown; error: string | null }> {
-  if (!isSupabaseConfigured() || !supabaseUrl || !supabaseAnonKey) {
-    return { data: null, error: 'Supabase is not configured' };
+function jobReviewPublicFunctionUrl(name: 'job-review-public' | 'job-review-notify'): string {
+  const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+  if (host.includes('elevenro')) {
+    return `https://hydrogenro.com/.netlify/functions/${name}`;
   }
+  return `/.netlify/functions/${name}`;
+}
+
+async function invokePublicJobReviewFn(
+  action: 'get' | 'submit',
+  body: Record<string, unknown>
+): Promise<{ data: unknown; error: string | null; status?: number }> {
   try {
-    const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/rpc/${fn}`, {
+    const res = await fetch(jobReviewPublicFunctionUrl('job-review-public'), {
       method: 'POST',
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...body }),
     });
     const json = await res.json().catch(() => null);
+    if (res.status === 429) {
+      return { data: null, error: 'Too many requests. Please wait a moment.', status: 429 };
+    }
     if (!res.ok) {
       const msg =
-        (json && typeof json === 'object' && (json as { message?: string }).message) ||
+        (json && typeof json === 'object' && (json as { error?: string }).error) ||
         `HTTP ${res.status}`;
-      return { data: null, error: String(msg) };
+      return { data: null, error: String(msg), status: res.status };
     }
-    return { data: json, error: null };
+    return { data: json, error: null, status: res.status };
   } catch (err) {
     return { data: null, error: err instanceof Error ? err.message : 'failed' };
   }
@@ -397,7 +400,7 @@ export async function fetchPublicJobReviewInvite(token: string): Promise<{
   const t = String(token || '').trim();
   if (!t) return { invite: null, error: 'invalid' };
   try {
-    const { data, error } = await invokePublicJobReviewRpc('get_job_review_invite', { p_token: t });
+    const { data, error } = await invokePublicJobReviewFn('get', { token: t });
     if (error) {
       console.warn('[job-review] get failed', error);
       return { invite: null, error: 'failed' };
@@ -434,10 +437,10 @@ export async function submitPublicJobReview(opts: {
   const rating = Math.round(Number(opts.rating));
   if (!token || rating < 1 || rating > 5) return { ok: false, error: 'invalid' };
   try {
-    const { data, error } = await invokePublicJobReviewRpc('submit_job_review', {
-      p_token: token,
-      p_rating: rating,
-      p_comment: String(opts.comment || '').trim().slice(0, 1000),
+    const { data, error } = await invokePublicJobReviewFn('submit', {
+      token,
+      rating,
+      comment: String(opts.comment || '').trim().slice(0, 1000),
     });
     if (error) {
       console.warn('[job-review] submit failed', error);
@@ -648,13 +651,7 @@ export async function fetchSubmittedJobReviewRatingsByJobIds(
 export function notifyAdminsJobReviewSubmitted(token: string): void {
   const t = String(token || '').trim();
   if (!t) return;
-  const host =
-    typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
-  const url =
-    host.includes('elevenro')
-      ? 'https://hydrogenro.com/.netlify/functions/job-review-notify'
-      : '/.netlify/functions/job-review-notify';
-  void fetch(url, {
+  void fetch(jobReviewPublicFunctionUrl('job-review-notify'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token: t }),
