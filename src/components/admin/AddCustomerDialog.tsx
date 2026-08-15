@@ -325,18 +325,22 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       didInitStep5DateRef.current = false;
       return;
     }
-    if (!shouldCreateJob || didInitStep5DateRef.current) return;
+    if (!shouldCreateJob) return;
+    const isFirstPassThisOpen = !didInitStep5DateRef.current;
     didInitStep5DateRef.current = true;
-    setStep5JobData(prev => ({
-      ...prev,
-      scheduled_date: prev.scheduled_date_touched
-        ? prev.scheduled_date
-        : getDefaultNewJobScheduledDate(),
-      service_type: prev.scheduled_date
-        ? prev.service_type
-        : addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
-    }));
-  }, [open, shouldCreateJob, addFormData.service_types]);
+    setStep5JobData(prev => {
+      const needsDefault =
+        !prev.scheduled_date || (isFirstPassThisOpen && !prev.scheduled_date_touched);
+      if (!needsDefault) return prev;
+      return {
+        ...prev,
+        scheduled_date: getDefaultNewJobScheduledDate(),
+        service_type: prev.scheduled_date
+          ? prev.service_type
+          : addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
+      };
+    });
+  }, [open, shouldCreateJob, step5JobData.scheduled_date, addFormData.service_types]);
 
   const handleResumeDraft = () => {
     const draft = loadAddCustomerDraft();
@@ -362,7 +366,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     clearAddCustomerDraft();
     clearLocationFetchState();
     setAddFormData(createDefaultAddFormData());
-    setStep5JobData(createDefaultStep5JobData());
+    setStep5JobData({
+      ...createDefaultStep5JobData(),
+      scheduled_date: getDefaultNewJobScheduledDate(),
+    });
     setCurrentStep(1);
     setFormErrors({});
     setDuplicateFoundOnBlur(null);
