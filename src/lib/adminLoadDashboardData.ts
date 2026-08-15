@@ -10,6 +10,7 @@ import { ensureAdminSupabaseSession } from '@/lib/auth';
 import type { LoadFilteredJobsOptions } from '@/lib/adminLoadFilteredJobs';
 import { fetchCustomerIdsWithCompletedJobsMap, db, supabase } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
+import { FOLLOW_UP_COUNT_DUE_WITHIN_DAYS } from '@/lib/followUpDisplaySettings';
 
 export type LoadFilteredJobsFn = (
   filter: AdminStatusFilter,
@@ -41,7 +42,10 @@ export function applyAdminDashboardSnapshot(
   handlers.setTechnicians(transformed);
   // Counts cached under the other follow-up preference would flash a wrong
   // Followup number until the fresh fetch lands.
-  if ((snap.countsExcludeAmcFollowUps === true) === handlers.countOnlyNonAmcFollowUps) {
+  if (
+    (snap.countsExcludeAmcFollowUps === true) === handlers.countOnlyNonAmcFollowUps &&
+    snap.followUpCountDueWithinDays === FOLLOW_UP_COUNT_DUE_WITHIN_DAYS
+  ) {
     handlers.setJobCounts(snap.jobCounts);
   }
 }
@@ -142,6 +146,7 @@ export async function loadAdminDashboardData(
         : db.technicians.getAllForDashboard(100),
       db.jobs.getCounts({
         countOnlyNonAmcFollowUps: ctx.countOnlyNonAmcFollowUps,
+        followUpsDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
       }),
       skipOngoingFetch && ctx.statusFilter === 'ONGOING'
         ? Promise.resolve({ data: null as Job[] | null, error: null })
@@ -198,6 +203,7 @@ export async function loadAdminDashboardData(
           completed: 0,
         },
         countsExcludeAmcFollowUps: ctx.countOnlyNonAmcFollowUps,
+        followUpCountDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
       });
     }
 

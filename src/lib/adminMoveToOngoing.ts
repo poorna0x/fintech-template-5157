@@ -20,29 +20,14 @@ export type AdminMoveToOngoingTimeSlot = 'MORNING' | 'AFTERNOON' | 'EVENING' | '
 
 export function getDefaultAdminMoveToOngoingSchedule(now = new Date()) {
   const today = getLocalTodayYmd(now);
-  const currentHour = now.getHours();
-
-  let defaultTimeSlot: AdminMoveToOngoingTimeSlot = 'MORNING';
-  let defaultTime = '09:00';
-
-  if (currentHour >= 5 && currentHour < 12) {
-    defaultTimeSlot = 'MORNING';
-    defaultTime = '09:00';
-  } else if (currentHour >= 12 && currentHour < 17) {
-    defaultTimeSlot = 'AFTERNOON';
-    defaultTime = '14:00';
-  } else if (currentHour >= 17 && currentHour < 20) {
-    defaultTimeSlot = 'EVENING';
-    defaultTime = '17:00';
-  } else {
-    defaultTimeSlot = 'CUSTOM';
-    defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  }
+  const defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(
+    now.getMinutes()
+  ).padStart(2, '0')}`;
 
   return {
     date: today,
-    timeSlot: defaultTimeSlot,
-    customTime: defaultTimeSlot === 'CUSTOM' ? defaultTime : '',
+    timeSlot: 'CUSTOM' as const,
+    customTime: defaultTime,
   };
 }
 

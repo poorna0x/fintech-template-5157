@@ -3722,7 +3722,8 @@ const Settings = () => {
                     Count only non-AMC follow-ups
                   </h3>
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
-                    This device only. When enabled, the Followup stats card excludes AMC jobs.
+                    The Followup card counts jobs due within the next 2 days. This device setting
+                    additionally excludes AMC jobs from that count.
                   </p>
                 </div>
                 <Switch

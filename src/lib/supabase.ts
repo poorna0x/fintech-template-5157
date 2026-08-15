@@ -2913,7 +2913,10 @@ export const db = {
     },
 
     // Get job counts by status (for stats without loading all data)
-    async getCounts(opts?: { countOnlyNonAmcFollowUps?: boolean }) {
+    async getCounts(opts?: {
+      countOnlyNonAmcFollowUps?: boolean;
+      followUpsDueWithinDays?: number;
+    }) {
       try {
         // Get today's date range (start and end of today) for today-specific counts
         // Use local timezone date, then convert to UTC for database comparison
@@ -2924,7 +2927,12 @@ export const db = {
 
         const dayKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const countOnlyNonAmcFollowUps = opts?.countOnlyNonAmcFollowUps === true;
-        const countsCacheKey = `job_counts_v1:${dayKey}:non_amc_${countOnlyNonAmcFollowUps}`;
+        const followUpsDueWithinDays = Number.isFinite(opts?.followUpsDueWithinDays)
+          ? Math.max(0, Math.floor(opts?.followUpsDueWithinDays ?? 0))
+          : null;
+        const countsCacheKey =
+          `job_counts_v1:${dayKey}:non_amc_${countOnlyNonAmcFollowUps}` +
+          `:due_${followUpsDueWithinDays ?? 'all'}`;
         const cached = cacheGet<{
           ongoing: number;
           followup: number;
@@ -2948,7 +2956,11 @@ export const db = {
         // one round-trip (vs four separate count queries). The client passes the
         // same UTC day bounds, so results are identical to the fallback below.
         // Falls back transparently if the function isn't present yet.
-        if (!countOnlyNonAmcFollowUps && !adminJobCountsRpcMissing) {
+        if (
+          !countOnlyNonAmcFollowUps &&
+          followUpsDueWithinDays === null &&
+          !adminJobCountsRpcMissing
+        ) {
           const rpc = await supabase.rpc('get_admin_job_counts', {
             p_today_start: todayStart,
             p_today_next: todayStartNextDay,
@@ -2983,6 +2995,13 @@ export const db = {
           followupCountQuery = followupCountQuery.or(
             'service_sub_type.is.null,service_sub_type.neq.AMC Service'
           );
+        }
+        if (followUpsDueWithinDays !== null) {
+          const dueCutoff = new Date(year, month, day + followUpsDueWithinDays);
+          const dueCutoffYmd = `${dueCutoff.getFullYear()}-${String(
+            dueCutoff.getMonth() + 1
+          ).padStart(2, '0')}-${String(dueCutoff.getDate()).padStart(2, '0')}`;
+          followupCountQuery = followupCountQuery.lte('follow_up_date', dueCutoffYmd);
         }
 
         // Count jobs in parallel for better performance

@@ -17,6 +17,7 @@ export type AdminDashboardSnapshot = {
   jobCounts: AdminJobCounts;
   /** Follow-up preference the cached counts were computed with. */
   countsExcludeAmcFollowUps?: boolean;
+  followUpCountDueWithinDays?: number;
 };
 
 let inflightPrefetch: Promise<AdminDashboardSnapshot | null> | null = null;
@@ -199,7 +200,10 @@ async function fetchCriticalSnapshot(): Promise<AdminDashboardSnapshot | null> {
     const { ensureAdminSupabaseSession } = await import('@/lib/auth');
     if (!(await ensureAdminSupabaseSession(2_000))) return null;
 
-    const [{ db }, { readFollowUpDisplaySettings }] = await Promise.all([
+    const [
+      { db },
+      { FOLLOW_UP_COUNT_DUE_WITHIN_DAYS, readFollowUpDisplaySettings },
+    ] = await Promise.all([
       import('@/lib/supabase'),
       import('@/lib/followUpDisplaySettings'),
     ]);
@@ -207,7 +211,10 @@ async function fetchCriticalSnapshot(): Promise<AdminDashboardSnapshot | null> {
     const [jobsResult, techniciansResult, countsResult] = await Promise.all([
       db.jobs.getOngoing(100),
       db.technicians.getAllForDashboard(100),
-      db.jobs.getCounts({ countOnlyNonAmcFollowUps }),
+      db.jobs.getCounts({
+        countOnlyNonAmcFollowUps,
+        followUpsDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
+      }),
     ]);
 
     if (jobsResult.error && techniciansResult.error) return null;
@@ -228,6 +235,7 @@ async function fetchCriticalSnapshot(): Promise<AdminDashboardSnapshot | null> {
       technicianRows: techniciansResult.data ?? [],
       jobCounts,
       countsExcludeAmcFollowUps: countOnlyNonAmcFollowUps,
+      followUpCountDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
     };
   } catch {
     return null;

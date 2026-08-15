@@ -91,6 +91,7 @@ import {
 } from '@/lib/adminDashboardCustomerFilters';
 import { loadFilteredJobsForAdmin } from '@/lib/adminLoadFilteredJobs';
 import {
+  FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
   FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT,
   readFollowUpDisplaySettings,
   saveFollowUpDisplaySettings,
@@ -1123,7 +1124,7 @@ const AdminDashboard = () => {
   const [moveToOngoingDialogOpen, setMoveToOngoingDialogOpen] = useState(false);
   const [selectedJobForMoveToOngoing, setSelectedJobForMoveToOngoing] = useState<Job | null>(null);
   const [moveToOngoingDate, setMoveToOngoingDate] = useState<string>('');
-  const [moveToOngoingTimeSlot, setMoveToOngoingTimeSlot] = useState<'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM'>('MORNING');
+  const [moveToOngoingTimeSlot, setMoveToOngoingTimeSlot] = useState<'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM'>('CUSTOM');
   const [moveToOngoingCustomTime, setMoveToOngoingCustomTime] = useState<string>('');
   const [assignAfterMoveToOngoing, setAssignAfterMoveToOngoing] = useState(false);
   const [followUpAssignFlow, setFollowUpAssignFlow] = useState(false);
@@ -1290,7 +1291,11 @@ const AdminDashboard = () => {
 
   // Job counts for stats cards (loaded separately)
   const [jobCounts, setJobCounts] = useState<{ongoing: number; followup: number; denied: number; completed: number}>(() =>
-    initialDashboardCache?.jobCounts ?? {
+    initialDashboardCache?.countsExcludeAmcFollowUps ===
+      followUpDisplaySettings.countOnlyNonAmcFollowUps &&
+    initialDashboardCache?.followUpCountDueWithinDays === FOLLOW_UP_COUNT_DUE_WITHIN_DAYS
+      ? initialDashboardCache.jobCounts
+      : {
     ongoing: 0,
     followup: 0,
     denied: 0,
@@ -1687,6 +1692,7 @@ const AdminDashboard = () => {
     try {
       const { data, error } = await db.jobs.getCounts({
         countOnlyNonAmcFollowUps: followUpDisplaySettings.countOnlyNonAmcFollowUps,
+        followUpsDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
       });
       if (error) {
         // ignore
@@ -7154,7 +7160,7 @@ const AdminDashboard = () => {
             setMoveToOngoingDialogOpen(false);
             setSelectedJobForMoveToOngoing(null);
             setMoveToOngoingDate('');
-            setMoveToOngoingTimeSlot('MORNING');
+            setMoveToOngoingTimeSlot('CUSTOM');
             setMoveToOngoingCustomTime('');
           })}
           date={moveToOngoingDate}

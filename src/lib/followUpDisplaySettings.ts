@@ -1,6 +1,7 @@
 export const HIDE_AMC_FOLLOW_UPS_KEY = 'admin_hide_amc_follow_ups';
 export const COUNT_ONLY_NON_AMC_FOLLOW_UPS_KEY = 'admin_count_only_non_amc_follow_ups';
 export const FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT = 'followUpDisplaySettingsChanged';
+export const FOLLOW_UP_COUNT_DUE_WITHIN_DAYS = 2;
 
 export type FollowUpDisplaySettings = {
   hideAmcFollowUps: boolean;

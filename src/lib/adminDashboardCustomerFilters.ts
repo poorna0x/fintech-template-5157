@@ -253,7 +253,7 @@ export function getFilteredCustomersForDashboard({
         customerMap.get(customerId)!.allJobs.push(job);
       });
 
-      let customersList = Array.from(customerMap.values()).map(
+      const customersList = Array.from(customerMap.values()).map(
         ({ customer, allJobs }) => {
           const completedJobs = allJobs
             .filter((job) => job.status === 'COMPLETED')

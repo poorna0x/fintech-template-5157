@@ -144,7 +144,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
           </div>
         </div>
         <p className="text-xs text-gray-500">
-            Jobs requiring follow-up
+            Due within the next 2 days
           </p>
       </Card>
 
