@@ -3719,30 +3719,6 @@ const Settings = () => {
               <div className="flex items-center justify-between gap-4 p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
                 <div className="flex-1">
                   <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
-                    Hide AMC follow-ups
-                  </h3>
-                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
-                    This device only. When enabled, the Followup section lists only non-AMC jobs.
-                  </p>
-                </div>
-                <Switch
-                  checked={followUpDisplaySettings.hideAmcFollowUps}
-                  onCheckedChange={(enabled) =>
-                    updateFollowUpDisplaySettings(
-                      { hideAmcFollowUps: enabled },
-                      enabled
-                        ? 'AMC follow-ups hidden from the Followup section'
-                        : 'AMC follow-ups shown in the Followup section'
-                    )
-                  }
-                  aria-label="Hide AMC follow-ups"
-                  className="ml-2 sm:ml-6 shrink-0 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
-                />
-              </div>
-
-              <div className="flex items-center justify-between gap-4 p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
                     Count only non-AMC follow-ups
                   </h3>
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
