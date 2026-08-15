@@ -28,6 +28,12 @@ const {
   recordDocumentPdfAuthenticityServer,
   todayYmdIst,
 } = require('./document-pdf-authenticity-record');
+const {
+  buildBrandEmailHtml,
+  emailParagraph,
+  EMAIL_FONT: SHELL_FONT,
+  EMAIL_SHELL_COLORS: SHELL_COLORS,
+} = require('./brand-email-shell');
 
 const MAX_PDF_BYTES = 4.5 * 1024 * 1024;
 const EMAIL_RE =
@@ -64,14 +70,12 @@ function brandInfo(brand) {
       webHost: 'elevenro.com',
       // Shared Accept backend/page is deployed from HydrogenRO first.
       origin: 'https://hydrogenro.com',
-      accent: '#0284c7',
     };
   }
   return {
     label: 'Hydrogen RO',
     webHost: 'hydrogenro.com',
     origin: 'https://hydrogenro.com',
-    accent: '#0284c7',
   };
 }
 
@@ -97,26 +101,13 @@ function createTransporter() {
   };
 }
 
-function emailShell({ brand, title, bodyHtml, button }) {
-  const info = brandInfo(brand);
-  const buttonHtml = button
-    ? `<p style="margin:28px 0;text-align:center"><a href="${escapeHtml(button.href)}" style="display:inline-block;background:#0f172a;color:#fff;text-decoration:none;font-weight:700;padding:14px 24px;border-radius:10px">${escapeHtml(button.label)}</a></p>`
-    : '';
-  return `<!doctype html>
-<html><body style="margin:0;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a">
-  <div style="max-width:620px;margin:0 auto;padding:24px 14px">
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden">
-      <div style="background:${info.accent};padding:18px 24px;color:#fff;font-size:20px;font-weight:700">${escapeHtml(info.label)}</div>
-      <div style="padding:24px">
-        <h1 style="font-size:22px;line-height:1.3;margin:0 0 16px">${escapeHtml(title)}</h1>
-        ${bodyHtml}
-        ${buttonHtml}
-        <p style="font-size:12px;line-height:1.6;color:#64748b;margin:24px 0 0">This private link expires in 48 hours and can be accepted once. Do not forward this email.</p>
-      </div>
-    </div>
-    <p style="text-align:center;color:#64748b;font-size:12px;margin:16px 0">Questions? Reply to this email or visit ${escapeHtml(info.webHost)}.</p>
-  </div>
-</body></html>`;
+function acceptDetailRow(label, value, last) {
+  const border = last ? '' : `border-bottom:1px solid ${SHELL_COLORS.BORDER};`;
+  return `
+    <tr>
+      <td class="email-detail-label" style="padding:10px 0;${border}font-family:${SHELL_FONT};font-size:11px;width:42%;vertical-align:top;text-transform:uppercase;letter-spacing:0.4px;font-weight:500;color:${SHELL_COLORS.LABEL};">${escapeHtml(label)}</td>
+      <td class="email-detail-value" style="padding:10px 0 10px 12px;${border}font-family:${SHELL_FONT};font-size:14px;font-weight:700;vertical-align:top;line-height:1.45;color:${SHELL_COLORS.HEADING};">${escapeHtml(value)}</td>
+    </tr>`;
 }
 
 async function sendPreviewEmail({ row, previewBuffer, previewFilename, acceptUrl }) {
@@ -125,14 +116,27 @@ async function sendPreviewEmail({ row, previewBuffer, previewFilename, acceptUrl
   const meta = getBrandMailMeta(row.brand);
   const label = String(row.document_label || 'document').trim() || 'document';
   const name = plainName(row.customer_name);
+  const reference = String(row.document_ref || '').trim();
   const subject = `Review and accept your ${label} — ${brandInfo(row.brand).label}`;
-  const html = emailShell({
+  const html = buildBrandEmailHtml({
     brand: row.brand,
-    title: `Review your ${label}`,
-    bodyHtml: `<p style="font-size:15px;line-height:1.7">Hi ${escapeHtml(name)},</p>
-      <p style="font-size:15px;line-height:1.7">Your watermarked <strong>preview ${escapeHtml(label)}</strong> is attached. Please review all terms, scope, pricing, validity, and policies.</p>
-      <p style="font-size:15px;line-height:1.7">When everything is correct, use the secure button below. After you accept, we will email the verified original PDF.</p>`,
-    button: { href: acceptUrl, label: 'Review & Accept' },
+    previewText: `Review your preview ${label} and accept securely.`,
+    eyebrow: 'Document review',
+    heading: `Review your ${label}`,
+    introHtml:
+      emailParagraph(
+        `Hi <strong class="email-text-strong" style="font-weight:600;">${escapeHtml(name)}</strong>, your watermarked <strong class="email-text-strong" style="font-weight:600;">preview ${escapeHtml(label)}</strong> is attached.`
+      ) +
+      emailParagraph(
+        'Please check the scope, pricing, validity and policies. When everything looks right, accept securely below and we will email the verified original PDF.'
+      ),
+    badgeHtml: reference
+      ? `Ref&nbsp;<strong class="email-text-strong" style="font-weight:700;letter-spacing:-0.02em;">${escapeHtml(reference)}</strong>&nbsp;&middot;&nbsp;<span class="email-badge-success" style="font-weight:600;">Preview</span>`
+      : '',
+    cta: { href: acceptUrl, label: 'Review & Accept' },
+    noteHtml:
+      'This private link expires in 48 hours and can be accepted once. Please do not forward this email.',
+    whatsappText: `Hi, I have a question about my ${label}${reference ? ` (${reference})` : ''}.`,
   });
   const text = `Hi ${name},\n\nYour watermarked preview ${label} is attached. Review it, then accept securely:\n${acceptUrl}\n\nAfter acceptance, we will email the verified original PDF. This private link expires in 48 hours and can be accepted once.`;
 
@@ -167,14 +171,33 @@ async function sendOriginalEmail(row, pdfBuffer) {
   const name = plainName(row.customer_name);
   const confirmation = String(row.confirmation_id || '').trim();
   const verifyCode = String(row.original_verify_code || '').trim();
+  const reference = String(row.document_ref || '').trim();
   const subject = `Original ${label} — ${info.label}`;
-  const html = emailShell({
+  const detailRows = [
+    confirmation ? acceptDetailRow('Confirmation ID', confirmation, !verifyCode) : '',
+    verifyCode ? acceptDetailRow('Authenticity code', verifyCode, true) : '',
+  ].join('');
+  const html = buildBrandEmailHtml({
     brand: row.brand,
-    title: `Your original ${label}`,
-    bodyHtml: `<p style="font-size:15px;line-height:1.7">Hi ${escapeHtml(name)},</p>
-      <p style="font-size:15px;line-height:1.7">Thank you. Your acceptance has been recorded and the verified original PDF is attached.</p>
-      ${confirmation ? `<p style="font-size:14px;line-height:1.7"><strong>Confirmation ID:</strong> ${escapeHtml(confirmation)}</p>` : ''}
-      ${verifyCode ? `<p style="font-size:14px;line-height:1.7"><strong>Authenticity code:</strong> ${escapeHtml(verifyCode)}<br>Verify at ${escapeHtml(info.webHost)}/authenticity</p>` : ''}`,
+    previewText: `Your accepted ${label} is attached.`,
+    eyebrow: 'Accepted',
+    heading: `Your original ${label}`,
+    showSuccessIcon: true,
+    introHtml:
+      emailParagraph(
+        `Hi <strong class="email-text-strong" style="font-weight:600;">${escapeHtml(name)}</strong>, thank you. Your acceptance has been recorded and the verified original PDF is attached.`
+      ),
+    badgeHtml: reference
+      ? `Ref&nbsp;<strong class="email-text-strong" style="font-weight:700;letter-spacing:-0.02em;">${escapeHtml(reference)}</strong>&nbsp;&middot;&nbsp;<span class="email-badge-success" style="font-weight:600;">Accepted</span>`
+      : '',
+    infoBoxHtml: detailRows
+      ? `<p class="email-details-title" style="margin:0 0 6px;font-family:${SHELL_FONT};font-size:13px;font-weight:600;text-align:center;color:${SHELL_COLORS.HEADING};">Keep this for your records</p>
+         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${detailRows}</table>`
+      : '',
+    noteHtml: verifyCode
+      ? `Verify this document any time at ${escapeHtml(info.webHost)}/authenticity using the code above.`
+      : '',
+    whatsappText: `Hi, I have a question about my ${label}${reference ? ` (${reference})` : ''}.`,
   });
   const text = `Hi ${name},\n\nYour acceptance has been recorded. The verified original ${label} is attached.${confirmation ? `\nConfirmation ID: ${confirmation}` : ''}${verifyCode ? `\nAuthenticity code: ${verifyCode}\nVerify at ${info.webHost}/authenticity` : ''}`;
 
