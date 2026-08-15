@@ -467,7 +467,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
               <div>
                 <Label>{sendReviewOnly ? 'Review request preview' : 'Message preview (24h chat)'}</Label>
-                <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+                <div className="mt-2 max-h-52 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm text-foreground/90 sm:max-h-64">
                   {reviewLinkReady ? (
                     sendReviewOnly && reviewUrl
                       ? buildAskReviewWhatsAppMessage({
@@ -488,7 +488,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
               {!sendReviewOnly && completion.amountPendingValue <= 0 ? (
                 <div>
                   <Label>If the 24h window is closed (cold template)</Label>
-                  <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+                  <div className="mt-2 max-h-52 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm text-foreground/90 sm:max-h-64">
                     {formatJobCompletionColdTemplatePreview({
                       customerName: completion.customerName,
                       amountCollected: completion.amountCollected,
@@ -508,7 +508,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
               ) : (
                 <div>
                   <Label>{sendReviewOnly ? 'Review request preview' : 'Message Preview'}</Label>
-                  <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+                  <div className="mt-2 max-h-52 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm text-foreground/90 sm:max-h-64">
                     {reviewLinkReady ? (
                       sendReviewOnly && reviewUrl
                         ? buildAskReviewWhatsAppMessage({
