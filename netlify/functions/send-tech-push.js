@@ -242,8 +242,11 @@ exports.handler = async (event) => {
         android: { priority: 'high' },
       });
     } else if (overlayEvent) {
-      // Data-only so HroMessagingService can show a draw-over-apps card even
-      // when the app is killed (notification+data often never reaches Java).
+      // Display notification + data. Data-only assign pushes were delayed 5–15s
+      // when the phone screen was off (Doze / OEM standby still throttles
+      // high-priority data). A notification payload is shown by Android
+      // immediately. When the app is in the foreground, FCM skips the OS tray
+      // and HroMessagingService still gets onMessageReceived for the overlay.
       const overlayDefaults = {
         assigned: 'New job assigned',
         reassigned: 'Job reassigned to you',
@@ -252,20 +255,34 @@ exports.handler = async (event) => {
         updated: 'Job updated',
       };
       const notifTitle = title || overlayDefaults[overlayEvent] || 'Job alert';
+      const overlayTag = tag || `job_alert_${overlayEvent}`;
       const ack = ackDataFields(siteUrl, technicianId, 'job_alert', ackAbout || notifTitle);
       buildMessage = (token) => ({
         token,
+        notification: {
+          title: notifTitle,
+          body: message || '',
+        },
         data: {
           type: 'job_alert_overlay',
           event: overlayEvent,
           msgTitle: notifTitle,
           msgBody: message || '',
           ...(jobId ? { jobId } : {}),
-          tag: tag || `job_alert_${overlayEvent}`,
+          tag: overlayTag,
           ...(color ? { color } : {}),
           ...ack,
         },
-        android: { priority: 'high' },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'job_alerts_v2',
+            defaultSound: true,
+            ...(color ? { color } : {}),
+            tag: overlayTag,
+            visibility: 'public',
+          },
+        },
       });
     } else if (showOverlay) {
       // Tray-only nudges (e.g. photo) that also want the on-screen card.
