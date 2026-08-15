@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CustomAppointmentTimeSelect } from './CustomAppointmentTimeSelect';
+import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
 
 export type MoveToOngoingTimeSlot = 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM';
 
@@ -44,13 +45,7 @@ export default function MoveToOngoingDialog({
 }: MoveToOngoingDialogProps) {
   const handleTimeSlotChange = (value: MoveToOngoingTimeSlot) => {
     onTimeSlotChange(value);
-    if (value === 'CUSTOM') {
-      const now = new Date();
-      const nextCustomTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      onCustomTimeChange(nextCustomTime);
-    } else {
-      onCustomTimeChange('');
-    }
+    onCustomTimeChange(value === 'CUSTOM' ? nextPresetAppointmentTime() : '');
   };
 
   return (

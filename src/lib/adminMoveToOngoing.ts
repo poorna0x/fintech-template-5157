@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { toast } from 'sonner';
+import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
 import {
@@ -19,15 +20,10 @@ import type { Job, Technician } from '@/types';
 export type AdminMoveToOngoingTimeSlot = 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM';
 
 export function getDefaultAdminMoveToOngoingSchedule(now = new Date()) {
-  const today = getLocalTodayYmd(now);
-  const defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(
-    now.getMinutes()
-  ).padStart(2, '0')}`;
-
   return {
-    date: today,
+    date: getLocalTodayYmd(now),
     timeSlot: 'CUSTOM' as const,
-    customTime: defaultTime,
+    customTime: nextPresetAppointmentTime(now),
   };
 }
 
