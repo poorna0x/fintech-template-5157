@@ -68,8 +68,6 @@ import {
   RefreshCw,
   Navigation,
   ShoppingCart,
-  ChevronDown,
-  ChevronUp,
   Lock
 } from 'lucide-react';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
