@@ -67,7 +67,7 @@ export async function submitAdminFollowUp(
         parent_follow_up_id: followUpData.parentFollowUpId || null,
         follow_up_date: followUpData.followUpDate,
         follow_up_time: followUpData.followUpTime,
-        reason: followUpData.followUpReason,
+        reason: followUpData.followUpReason?.trim() || '',
         notes: null,
         scheduled_by: null,
         completed: false,

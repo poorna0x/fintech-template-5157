@@ -229,8 +229,8 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
   }, [existingFollowUps]);
 
   const handleSubmit = async () => {
-    if (!job || !selectedDate || !selectedTime || !reason.trim()) {
-      toast.error('Please fill in all required fields');
+    if (!job || !selectedDate || !selectedTime) {
+      toast.error('Please pick a follow-up date and time');
       return;
     }
 
@@ -444,7 +444,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="followup-reason">Reason *</Label>
+                <Label htmlFor="followup-reason">Reason</Label>
                 <div className="relative">
                   <Input
                     ref={reasonInputRef}
@@ -520,7 +520,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                   </Button>
                   <Button
                     onClick={handleSubmit}
-                    disabled={!selectedDate || !selectedTime || !reason.trim() || isSubmitting}
+                    disabled={!selectedDate || !selectedTime || isSubmitting}
                   >
                     {isSubmitting ? (rescheduleFollowUpId ? 'Rescheduling...' : 'Scheduling...') : (rescheduleFollowUpId ? 'Reschedule Follow-up' : 'Schedule Follow-up')}
                   </Button>
