@@ -77,6 +77,14 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/document-accept-email-send': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/document-accept-public': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/notify-admins': {
         target: 'http://localhost:8888',
         changeOrigin: true,

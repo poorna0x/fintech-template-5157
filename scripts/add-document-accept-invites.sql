@@ -1,4 +1,4 @@
--- Document Accept invites (preview PDF → /c/{token} → original PDF on WhatsApp).
+-- Document Accept invites (preview PDF → WhatsApp button or secure email link → original).
 -- Token plaintext is NEVER stored — only SHA-256 hex of the opaque token.
 -- Original PDF bytes live briefly on private R2 (r2_object_key); deleted after accept or expiry.
 -- Safe to re-run.
@@ -17,7 +17,10 @@ CREATE TABLE IF NOT EXISTS public.document_accept_invites (
   source_key text,
   customer_id uuid REFERENCES public.customers(id) ON DELETE SET NULL,
   customer_name text,
-  phone_e164 text NOT NULL,
+  phone_e164 text,
+  channel text NOT NULL DEFAULT 'whatsapp'
+    CHECK (channel IN ('whatsapp', 'email')),
+  recipient_email text,
   amount_display text,
   summary jsonb NOT NULL DEFAULT '{}'::jsonb,
   original_filename text,
@@ -27,6 +30,11 @@ CREATE TABLE IF NOT EXISTS public.document_accept_invites (
   r2_object_key text,
   preview_wa_message_id text,
   original_wa_message_id text,
+  preview_email_message_id text,
+  original_email_message_id text,
+  original_delivery_status text NOT NULL DEFAULT 'pending'
+    CHECK (original_delivery_status IN ('pending', 'sending', 'sent', 'failed')),
+  original_delivery_error text,
   confirmation_id text,
   expires_at timestamptz NOT NULL,
   accepted_at timestamptz,
@@ -41,9 +49,58 @@ CREATE TABLE IF NOT EXISTS public.document_accept_invites (
     CHECK (original_sha256_hex IS NULL OR original_sha256_hex ~ '^[a-f0-9]{64}$'),
   CONSTRAINT document_accept_invites_verify_code_format
     CHECK (original_verify_code IS NULL OR original_verify_code ~ '^[A-Z0-9]{8}$'),
-  CONSTRAINT document_accept_invites_phone_nonempty
-    CHECK (length(trim(phone_e164)) >= 10)
+  CONSTRAINT document_accept_invites_contact_for_channel
+    CHECK (
+      (channel = 'whatsapp' AND length(trim(coalesce(phone_e164, ''))) >= 10)
+      OR
+      (channel = 'email' AND position('@' in coalesce(recipient_email, '')) > 1)
+    )
 );
+
+-- Additive upgrade for databases that already have the WhatsApp-only table.
+ALTER TABLE public.document_accept_invites
+  ALTER COLUMN phone_e164 DROP NOT NULL;
+ALTER TABLE public.document_accept_invites
+  ADD COLUMN IF NOT EXISTS channel text NOT NULL DEFAULT 'whatsapp',
+  ADD COLUMN IF NOT EXISTS recipient_email text,
+  ADD COLUMN IF NOT EXISTS preview_email_message_id text,
+  ADD COLUMN IF NOT EXISTS original_email_message_id text,
+  ADD COLUMN IF NOT EXISTS original_delivery_status text NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS original_delivery_error text;
+
+ALTER TABLE public.document_accept_invites
+  DROP CONSTRAINT IF EXISTS document_accept_invites_phone_nonempty;
+ALTER TABLE public.document_accept_invites
+  DROP CONSTRAINT IF EXISTS document_accept_invites_contact_for_channel;
+ALTER TABLE public.document_accept_invites
+  ADD CONSTRAINT document_accept_invites_contact_for_channel
+  CHECK (
+    (channel = 'whatsapp' AND length(trim(coalesce(phone_e164, ''))) >= 10)
+    OR
+    (channel = 'email' AND position('@' in coalesce(recipient_email, '')) > 1)
+  );
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'document_accept_invites_channel_check'
+      AND conrelid = 'public.document_accept_invites'::regclass
+  ) THEN
+    ALTER TABLE public.document_accept_invites
+      ADD CONSTRAINT document_accept_invites_channel_check
+      CHECK (channel IN ('whatsapp', 'email'));
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'document_accept_invites_delivery_status_check'
+      AND conrelid = 'public.document_accept_invites'::regclass
+  ) THEN
+    ALTER TABLE public.document_accept_invites
+      ADD CONSTRAINT document_accept_invites_delivery_status_check
+      CHECK (original_delivery_status IN ('pending', 'sending', 'sent', 'failed'));
+  END IF;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS document_accept_invites_token_hash_uidx
   ON public.document_accept_invites (token_hash);
@@ -55,6 +112,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS document_accept_invites_confirmation_id_uidx
 CREATE INDEX IF NOT EXISTS document_accept_invites_phone_created_idx
   ON public.document_accept_invites (phone_e164, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS document_accept_invites_email_created_idx
+  ON public.document_accept_invites (lower(recipient_email), created_at DESC)
+  WHERE recipient_email IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS document_accept_invites_status_expires_idx
   ON public.document_accept_invites (status, expires_at);
 
@@ -63,7 +124,7 @@ CREATE INDEX IF NOT EXISTS document_accept_invites_customer_idx
   WHERE customer_id IS NOT NULL;
 
 COMMENT ON TABLE public.document_accept_invites IS
-  'WhatsApp document Accept flow: opaque token hash, audit, short-lived R2 original PDF key.';
+  'Document Accept flow: hashed opaque token, audit, channel delivery, short-lived R2 original PDF key.';
 
 ALTER TABLE public.document_accept_invites ENABLE ROW LEVEL SECURITY;
 

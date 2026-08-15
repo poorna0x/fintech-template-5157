@@ -3,9 +3,9 @@ description: Document Accept flow — WhatsApp-only preview PDF → I Accept →
 alwaysApply: true
 ---
 
-# Document Accept flow (preview PDF → I Accept → original)
+# Document Accept flow (WhatsApp + secure email)
 
-**Status:** Implemented (HydrogenRO). WhatsApp-only — **no** brand-site `/c/{token}` Accept page. Test locally; do **not** merge to main / Netlify-deploy unless asked.
+**Status:** Implemented locally (HydrogenRO). Test locally; do **not** merge to main / Netlify-deploy unless asked.
 
 ## Agreed product flow
 
@@ -18,10 +18,19 @@ alwaysApply: true
 5. Send **ORIGINAL** PDF on same WhatsApp chat (seal + authenticity hash + confirmation id).
 6. **Do not store PDF bytes forever** — original briefly on private R2 (`whatsapp/accept/…`), deleted after accept; DB keeps hash + audit only.
 
+### Email flow
+
+1. CRM emails the watermarked **PREVIEW** PDF plus a secure **Review & Accept** link.
+2. Link opens `/accept/{opaque-token}`; token plaintext is emailed once and only its SHA-256 hash is stored.
+3. Customer explicitly checks the agreement box and taps **I Accept**.
+4. Public Netlify function validates, rate-limits, and atomically claims the single-use invite server-side.
+5. Server emails the verified **ORIGINAL** PDF to the same address, records confirmation/audit, and deletes the private R2 object.
+6. Email, WhatsApp, and Both are available in all active CRM **Require Accept** document dialogs.
+
 ## Do not use
 
 - Old APPROVED `svc_doc_accept_preview_*_v1`–`v4` (URL Accept → `/c/{{1}}`) — wrong UX; not shipped.
-- Web Accept lookup/confirm page as the primary path.
+- Web Accept lookup/confirm page as the primary **WhatsApp** path. `/accept/{token}` is for email invitations only.
 
 ## Implementation map
 
@@ -31,6 +40,8 @@ alwaysApply: true
 | Admin send | `document-accept-send.js` |
 | Inbound Accept | `document-accept-inbound.js` (webhook) |
 | Helpers | `document-accept-helper.js` |
+| Email send | `document-accept-email-send.js` + `document-accept-email-helper.js` |
+| Public email Accept | `document-accept-public.js` + `PublicDocumentAcceptPage.tsx` |
 | CRM UI | Document email/WhatsApp dialog → **Require Accept** checkbox |
 | Client | `src/lib/documentAcceptPreview.ts` |
 | Cold names | `resolveDocAcceptPreviewTemplate` → `*_v8`; cold-fallback `v8`→`v7` only |
@@ -63,7 +74,7 @@ Separate from Accept. Letter + light emojis; DOCUMENT header; Call us + Website.
 
 ## Security (required when building)
 
-- Opaque cryptographically random **single-use** token (invite id in DB; not a public web URL).
+- Opaque cryptographically random **single-use** token. WhatsApp uses an invite-bound quick reply; email stores only the URL token hash.
 - Token tied to one document + one customer + one WA number; expire ~48h.
 - Server-side Accept only (webhook); never trust client amount/name/hash.
 - Soft-fail WhatsApp paths where appropriate; RLS on tables.

@@ -60,6 +60,7 @@ const SpareParts = lazy(() => import("./pages/SpareParts"));
 const Warranty = lazy(() => import("./pages/Warranty"));
 const PublicPdfAuthenticityPage = lazy(() => import("./pages/PublicPdfAuthenticityPage"));
 const PublicJobReviewPage = lazy(() => import("./pages/PublicJobReviewPage"));
+const PublicDocumentAcceptPage = lazy(() => import("./pages/PublicDocumentAcceptPage"));
 const PayUpi = lazy(() => import("./pages/PayUpi"));
 const WhatsAppTest = lazy(() => import("./pages/WhatsAppTest"));
 const CallDialPage = lazy(() => import("./pages/CallDialPage"));
@@ -218,6 +219,7 @@ const App = () => (
                   <Route path="/warranty" element={<Warranty />} />
                   <Route path="/authenticity" element={<PublicPdfAuthenticityPage />} />
                   <Route path="/review/:token" element={<PublicJobReviewPage />} />
+                  <Route path="/accept/:token" element={<PublicDocumentAcceptPage />} />
                   
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />

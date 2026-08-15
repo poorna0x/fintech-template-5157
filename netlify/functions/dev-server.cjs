@@ -70,6 +70,8 @@ const dialCall = require('./dial-call');
 const pdfAuthenticityOtpVerify = require('./pdf-authenticity-otp-verify');
 const pdfAuthenticityCheck = require('./pdf-authenticity-check');
 const documentAcceptSend = require('./document-accept-send');
+const documentAcceptEmailSend = require('./document-accept-email-send');
+const documentAcceptPublic = require('./document-accept-public');
 const whatsappTrayClearPush = require('./whatsapp-tray-clear-push');
 const whatsappInboxApplyToCustomer = require('./whatsapp-inbox-apply-to-customer');
 const salarySlipMonthEnd = require('./salary-slip-month-end');
@@ -218,6 +220,11 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/document-accept-send')) {
     delete require.cache[require.resolve('./admin-auth-guard')];
     handler = loadFn('document-accept-send');
+  } else if (req.url.startsWith('/.netlify/functions/document-accept-email-send')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    handler = loadFn('document-accept-email-send');
+  } else if (req.url.startsWith('/.netlify/functions/document-accept-public')) {
+    handler = loadFn('document-accept-public');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-tray-clear-push')) {
     handler = whatsappTrayClearPush;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-inbox-apply-to-customer')) {
