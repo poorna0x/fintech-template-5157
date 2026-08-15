@@ -36,6 +36,7 @@ public final class ForegroundPushNotifier {
             || "going_now".equals(type)
             || "tech_nudge".equals(type)
             || "job_alert_overlay".equals(type)
+            || "job_alert_os".equals(type)
             || "clear_notifications".equals(type)
             || "location_request".equals(type)) {
             return;

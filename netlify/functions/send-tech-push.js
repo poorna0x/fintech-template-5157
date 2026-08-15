@@ -157,6 +157,7 @@ exports.handler = async (event) => {
     const ackAbout = replyAbout || title || '';
 
     let buildMessage;
+    let buildOsCompanion = null;
     if (clear) {
       buildMessage = (token) => ({
         token,
@@ -242,11 +243,8 @@ exports.handler = async (event) => {
         android: { priority: 'high' },
       });
     } else if (overlayEvent) {
-      // Display notification + data. Data-only assign pushes were delayed 5–15s
-      // when the phone screen was off (Doze / OEM standby still throttles
-      // high-priority data). A notification payload is shown by Android
-      // immediately. When the app is in the foreground, FCM skips the OS tray
-      // and HroMessagingService still gets onMessageReceived for the overlay.
+      // Data-only: Java must receive this or the Truecaller-style banner never
+      // runs (notification+data is swallowed by Android when the app is killed).
       const overlayDefaults = {
         assigned: 'New job assigned',
         reassigned: 'Job reassigned to you',
@@ -257,21 +255,32 @@ exports.handler = async (event) => {
       const notifTitle = title || overlayDefaults[overlayEvent] || 'Job alert';
       const overlayTag = tag || `job_alert_${overlayEvent}`;
       const ack = ackDataFields(siteUrl, technicianId, 'job_alert', ackAbout || notifTitle);
+      const overlayData = {
+        type: 'job_alert_overlay',
+        event: overlayEvent,
+        msgTitle: notifTitle,
+        msgBody: message || '',
+        ...(jobId ? { jobId } : {}),
+        tag: overlayTag,
+        ...(color ? { color } : {}),
+        ...ack,
+      };
       buildMessage = (token) => ({
+        token,
+        data: overlayData,
+        android: { priority: 'high' },
+      });
+      // Companion OS notification: same tag so it replaces, not duplicates.
+      // Screen-off Doze delivers this immediately; the data-only banner follows.
+      buildOsCompanion = (token) => ({
         token,
         notification: {
           title: notifTitle,
           body: message || '',
         },
         data: {
-          type: 'job_alert_overlay',
-          event: overlayEvent,
-          msgTitle: notifTitle,
-          msgBody: message || '',
-          ...(jobId ? { jobId } : {}),
+          type: 'job_alert_os',
           tag: overlayTag,
-          ...(color ? { color } : {}),
-          ...ack,
         },
         android: {
           priority: 'high',
@@ -284,6 +293,7 @@ exports.handler = async (event) => {
           },
         },
       });
+    } else if (showOverlay) {
     } else if (showOverlay) {
       // Tray-only nudges (e.g. photo) that also want the on-screen card.
       // Data-only so Java runs when the app is killed.
@@ -336,13 +346,19 @@ exports.handler = async (event) => {
       category = 'job_nudges';
     }
 
-    const { sent, tokens } = await sendToTechnicianDevices(
+    const overlaySend = sendToTechnicianDevices(
       db,
       messaging,
       technicianId,
       buildMessage,
       category
     );
+    const osSend = buildOsCompanion
+      ? sendToTechnicianDevices(db, messaging, technicianId, buildOsCompanion, category)
+      : Promise.resolve(null);
+    const [primary, companion] = await Promise.all([overlaySend, osSend]);
+    const sent = Math.max(primary.sent || 0, companion?.sent || 0);
+    const tokens = Math.max(primary.tokens || 0, companion?.tokens || 0);
 
     // Mirror nudge/office messages to WhatsApp (not assign/unassign — CRM handles those).
     if (!clear && category) {
