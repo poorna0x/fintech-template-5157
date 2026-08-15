@@ -276,7 +276,8 @@ class CloudinaryService {
   async deleteImage(
     publicId: string,
     useSecondary: boolean = false,
-    jobId?: string | null
+    jobId?: string | null,
+    resourceType?: string
   ): Promise<{ success: boolean; error?: string }> {
     const functionUrl = getCloudinaryDeleteFunctionUrl();
     try {
@@ -302,6 +303,7 @@ class CloudinaryService {
         publicId: publicId.trim(),
         useSecondary,
         ...(jobId ? { jobId } : {}),
+        ...(resourceType ? { resourceType } : {}),
       }),
       });
       const data = await response.json().catch(() => ({}));

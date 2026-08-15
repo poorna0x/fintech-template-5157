@@ -2218,7 +2218,7 @@ const Settings = () => {
                     Storage
                   </h1>
                   <p className="text-xs text-muted-foreground truncate sm:hidden">
-                    Postgres and Cloudflare R2
+                    Postgres, Cloudflare R2, and Cloudinary
                   </p>
                 </div>
               </div>
@@ -3776,7 +3776,7 @@ const Settings = () => {
           {!isManager ? (
           <SettingsActionCard
             title="Storage"
-            description="Postgres table sizes plus Cloudflare R2 media space used"
+            description="Postgres, Cloudflare R2, and Cloudinary account usage"
             icon={<Database />}
             actions={
               <Button

@@ -18,7 +18,7 @@
     "preview": "vite preview",
     "generate:sitemaps": "node scripts/generate-sitemaps.mjs",
     "test": "vitest run && npm run test:security",
-    "test:security": "node tests/staff-access.test.cjs && node tests/sql-is-admin-user-strict.test.cjs && node tests/job-review-security.test.cjs && node tests/admin-auth-guard.test.cjs && node tests/cloudinary-signed-url-auth.test.cjs",
+    "test:security": "node tests/staff-access.test.cjs && node tests/sql-is-admin-user-strict.test.cjs && node tests/job-review-security.test.cjs && node tests/admin-auth-guard.test.cjs && node tests/cloudinary-signed-url-auth.test.cjs && node tests/rate-limiter.test.cjs && node tests/cloudinary-usage.test.cjs",
     "wa:templates:status": "node scripts/submit-whatsapp-full-utility.mjs --status",
     "wa:templates:submit": "node scripts/submit-whatsapp-full-utility.mjs --submit",
     "wa:templates:cleanup-marketing": "node scripts/submit-whatsapp-full-utility.mjs --delete-marketing"

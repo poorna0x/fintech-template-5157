@@ -175,6 +175,9 @@ exports.handler = async (event, context) => {
     };
   }
 
+  const resourceTypeRaw = String(body.resourceType || body.resource_type || 'image').trim().toLowerCase();
+  const resourceType = ['image', 'video', 'raw'].includes(resourceTypeRaw) ? resourceTypeRaw : 'image';
+
   if (auth.role === 'technician') {
     const db = getServiceDb();
     const jobId = UUID_RE.test(String(body.jobId || '').trim()) ? String(body.jobId).trim() : null;
@@ -199,7 +202,7 @@ exports.handler = async (event, context) => {
       invalidate: 'true',
     }).toString();
     const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${config.cloudName}/image/destroy`,
+      `https://api.cloudinary.com/v1_1/${config.cloudName}/${resourceType}/destroy`,
       {
         method: 'POST',
         headers: {

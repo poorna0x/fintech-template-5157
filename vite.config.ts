@@ -97,6 +97,14 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/cloudinary-usage': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/cloudinary-delete': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Booking create must hit local functions so DPDP consent writes run before main deploy.
       '/.netlify/functions/booking-job-create': {
         target: 'http://localhost:8888',

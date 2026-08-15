@@ -231,6 +231,9 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/db-storage-stats')) {
     delete require.cache[require.resolve('./r2-helper')];
     handler = loadFn('db-storage-stats');
+  } else if (req.url.startsWith('/.netlify/functions/cloudinary-usage')) {
+    delete require.cache[require.resolve('./cloudinary-usage-helper')];
+    handler = loadFn('cloudinary-usage');
   } else if (req.url.startsWith('/.netlify/functions/salary-slip-month-end')) {
     handler = salarySlipMonthEnd;
   } else {
