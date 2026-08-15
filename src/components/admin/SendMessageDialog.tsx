@@ -63,6 +63,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   const [cloudApiAllowed, setCloudApiAllowed] = useState(false);
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [reviewLinkReady, setReviewLinkReady] = useState(false);
+  /** On an already-sent job, review-only is offered first but the full message stays available. */
+  const [reviewOnlyChoice, setReviewOnlyChoice] = useState(true);
   const jobId = job?.id ? String(job.id) : '';
 
   useEffect(() => {
@@ -73,6 +75,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       setCloudApiAllowed(false);
       setReviewUrl(null);
       setReviewLinkReady(false);
+      setReviewOnlyChoice(true);
       return;
     }
     let cancelled = false;
@@ -130,6 +133,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     customer?.id || (job as any).customer_id || (job as any).customerId || null;
 
   const alreadySent = jobHasCompletionMessageSent(jobRec);
+  const canSendReviewOnly = alreadySent && !jobHasSkipReview(jobRec);
+  const sendReviewOnly = canSendReviewOnly && reviewOnlyChoice;
   const dontSend = jobHasDontSendCompletionMessage(jobRec);
   const requirements = parseRequirements((job as any).requirements || job.requirements);
   const messageSentAt = requirements.find((r: any) => r?.message_sent_at)?.message_sent_at as
@@ -186,7 +191,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
         return;
       }
 
-      if (alreadySent) {
+      if (sendReviewOnly) {
         if (!url) {
           toast.error('Could not create the review request link.');
           return;
@@ -299,10 +304,10 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
   const isPhoneOpen = deliveryMode === 'wa_me' || !cloudApiAllowed;
   const sendPrimaryLabel = isPhoneOpen
-    ? alreadySent
+    ? sendReviewOnly
       ? 'Open review request'
       : 'Open WhatsApp'
-    : alreadySent
+    : sendReviewOnly
       ? 'Send review request'
       : 'Send via Cloud API';
   const primaryDigits = formatPhoneForWhatsApp(customerPhone).slice(-10);
@@ -318,11 +323,11 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       >
         <DialogHeader className="shrink-0 space-y-1.5 border-b px-4 pb-3 pt-5 pr-12 text-left sm:px-6">
           <DialogTitle className="text-base leading-snug sm:text-lg">
-            {alreadySent ? 'Send Review Request' : 'Send Completion Confirmation Message'}
+            {sendReviewOnly ? 'Send Review Request' : 'Send Completion Confirmation Message'}
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
-            {alreadySent
-              ? 'The completion message is already sent. Send only the review link now.'
+            {canSendReviewOnly
+              ? 'Completion is already sent. Send just the review link, or the full message again.'
               : 'Send confirmation message to customer for completed job'}
           </DialogDescription>
         </DialogHeader>
@@ -349,8 +354,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                     <p className="font-medium">Already marked Message Sent</p>
                     <p className="mt-0.5 text-xs text-emerald-800">
                       {messageSentAt
-                        ? `Completion sent ${formatSentAt(String(messageSentAt))}. Continue to send only the review request.`
-                        : 'Continue to send only the review request.'}
+                        ? `Completion sent ${formatSentAt(String(messageSentAt))}. Next you can pick the review request or the full message.`
+                        : 'Next you can pick the review request or the full message.'}
                     </p>
                   </div>
                 </div>
@@ -387,6 +392,42 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                   </div>
                 )}
               </div>
+
+              {canSendReviewOnly ? (
+                <div className="space-y-1.5">
+                  <Label>What to send</Label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      className={
+                        reviewOnlyChoice
+                          ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
+                          : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
+                      }
+                      onClick={() => setReviewOnlyChoice(true)}
+                    >
+                      <span className="block">Review request only</span>
+                      <span className="block text-[11px] font-normal opacity-80">
+                        Short message with the review link
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        !reviewOnlyChoice
+                          ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
+                          : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
+                      }
+                      onClick={() => setReviewOnlyChoice(false)}
+                    >
+                      <span className="block">Full completion message</span>
+                      <span className="block text-[11px] font-normal opacity-80">
+                        Send the whole message again
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               {cloudApiAllowed ? (
                 <>
@@ -425,10 +466,10 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 </div>
 
               <div>
-                <Label>{alreadySent ? 'Review request preview' : 'Message preview (24h chat)'}</Label>
+                <Label>{sendReviewOnly ? 'Review request preview' : 'Message preview (24h chat)'}</Label>
                 <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
                   {reviewLinkReady ? (
-                    alreadySent && reviewUrl
+                    sendReviewOnly && reviewUrl
                       ? buildAskReviewWhatsAppMessage({
                           customerName,
                           brand: completion.documentBrand,
@@ -444,7 +485,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                   )}
                 </div>
               </div>
-              {!alreadySent && completion.amountPendingValue <= 0 ? (
+              {!sendReviewOnly && completion.amountPendingValue <= 0 ? (
                 <div>
                   <Label>If the 24h window is closed (cold template)</Label>
                   <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
@@ -466,10 +507,10 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 </>
               ) : (
                 <div>
-                  <Label>{alreadySent ? 'Review request preview' : 'Message Preview'}</Label>
+                  <Label>{sendReviewOnly ? 'Review request preview' : 'Message Preview'}</Label>
                   <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
                     {reviewLinkReady ? (
-                      alreadySent && reviewUrl
+                      sendReviewOnly && reviewUrl
                         ? buildAskReviewWhatsAppMessage({
                             customerName,
                             brand: completion.documentBrand,
@@ -505,7 +546,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 className="h-10 w-full rounded-xl bg-black text-white hover:bg-gray-800 sm:w-auto"
                 onClick={() => setBrandConfirmed(true)}
               >
-                {alreadySent ? 'Continue to Review Request' : 'Confirm and Continue'}
+                {alreadySent ? 'Continue to Send Options' : 'Confirm and Continue'}
               </Button>
             </div>
           ) : (
