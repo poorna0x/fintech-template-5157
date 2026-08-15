@@ -85,6 +85,7 @@ const createDefaultStep5JobData = () => ({
   service_sub_type: 'Service',
   service_sub_type_custom: '',
   scheduled_date: '',
+  scheduled_date_touched: false,
   scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM',
   scheduled_time_custom: '',
   description: '',
@@ -204,6 +205,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     ...createDefaultStep5JobData(),
     ...(initialDraftRef.current?.step5JobData || {}),
   }));
+  const didInitStep5DateRef = useRef(false);
 
   // Load technicians for assignment
   const [technicians, setTechnicians] = useState<any[]>([]);
@@ -315,16 +317,26 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     loadTechnicians();
   }, [open, shouldCreateJob]);
 
-  // Initialize scheduled_date when dialog opens and shouldCreateJob is true
+  // Initialize scheduled_date when dialog opens and shouldCreateJob is true.
+  // A saved draft can carry a date from an earlier day (or from before the 7 PM
+  // cutoff), so re-apply the default unless the admin picked the date themselves.
   useEffect(() => {
-    if (open && shouldCreateJob && !step5JobData.scheduled_date) {
-      setStep5JobData(prev => ({
-        ...prev,
-        scheduled_date: getDefaultNewJobScheduledDate(),
-        service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
-      }));
+    if (!open) {
+      didInitStep5DateRef.current = false;
+      return;
     }
-  }, [open, shouldCreateJob, step5JobData.scheduled_date, addFormData.service_types]);
+    if (!shouldCreateJob || didInitStep5DateRef.current) return;
+    didInitStep5DateRef.current = true;
+    setStep5JobData(prev => ({
+      ...prev,
+      scheduled_date: prev.scheduled_date_touched
+        ? prev.scheduled_date
+        : getDefaultNewJobScheduledDate(),
+      service_type: prev.scheduled_date
+        ? prev.service_type
+        : addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
+    }));
+  }, [open, shouldCreateJob, addFormData.service_types]);
 
   const handleResumeDraft = () => {
     const draft = loadAddCustomerDraft();
@@ -2014,7 +2026,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         setShouldCreateJob(true);
                         setStep5JobData(prev => ({
                           ...prev,
-                          scheduled_date: getDefaultNewJobScheduledDate(),
+                          scheduled_date: prev.scheduled_date_touched
+                            ? prev.scheduled_date
+                            : getDefaultNewJobScheduledDate(),
                           service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
                         }));
                       }}
@@ -2095,7 +2109,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       <Label htmlFor="step5_scheduled_date">Scheduled Date</Label>
                       <DatePicker
                         value={step5JobData.scheduled_date || undefined}
-                        onChange={(v) => v && setStep5JobData(prev => ({ ...prev, scheduled_date: v }))}
+                        onChange={(v) =>
+                          v &&
+                          setStep5JobData(prev => ({
+                            ...prev,
+                            scheduled_date: v,
+                            scheduled_date_touched: true,
+                          }))
+                        }
                         placeholder="Pick date"
                       />
                     </div>
