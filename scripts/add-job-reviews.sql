@@ -77,6 +77,15 @@ CREATE POLICY job_reviews_technician_select
     AND status = 'submitted'
   );
 
+-- Admins may delete submitted/pending reviews from Settings → Customer reviews.
+GRANT DELETE ON public.job_reviews TO authenticated;
+DROP POLICY IF EXISTS job_reviews_admin_delete ON public.job_reviews;
+CREATE POLICY job_reviews_admin_delete
+  ON public.job_reviews
+  FOR DELETE
+  TO authenticated
+  USING (public.is_admin_user());
+
 -- ---------------------------------------------------------------------------
 -- Create / reuse invite (admin or the technician on that job)
 -- ---------------------------------------------------------------------------

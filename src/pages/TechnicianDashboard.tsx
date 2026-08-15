@@ -20,6 +20,7 @@ import {
 import Logo from '@/components/Logo';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import TechnicianOtpRequestCard from '@/components/technician/TechnicianOtpRequestCard';
+import TechnicianReviewsDialog from '@/components/technician/TechnicianReviewsDialog';
 import {
   buildAdminPhotoViewerSelection,
   resolveAdminPhotoViewerSources,
@@ -766,6 +767,7 @@ const TechnicianDashboard = () => {
 
   // Header 3-dot menu → centered options dialog
   const [headerOptionsDialogOpen, setHeaderOptionsDialogOpen] = useState(false);
+  const [reviewsDialogOpen, setReviewsDialogOpen] = useState(false);
   // Technician ID Card QR Code Dialog
   const [technicianIdCardDialogOpen, setTechnicianIdCardDialogOpen] = useState(false);
   const [selectedIdCardBrand, setSelectedIdCardBrand] = useState<DocumentBrand | null>(null);
@@ -6714,6 +6716,17 @@ const TechnicianDashboard = () => {
             </Button>
             <Button
               variant="ghost"
+              className="cursor-pointer justify-start h-12 px-4 text-base"
+              onClick={() => {
+                setHeaderOptionsDialogOpen(false);
+                setReviewsDialogOpen(true);
+              }}
+            >
+              <Star className="w-5 h-5 mr-3" />
+              My Reviews
+            </Button>
+            <Button
+              variant="ghost"
               className="justify-start h-12 px-4 text-base"
               onClick={() => window.location.reload()}
             >
@@ -6734,6 +6747,12 @@ const TechnicianDashboard = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <TechnicianReviewsDialog
+        open={reviewsDialogOpen}
+        onOpenChange={setReviewsDialogOpen}
+        technicianId={String(user?.technicianId || '')}
+      />
 
       {/* Location Error Banner */}
       {locationError && (

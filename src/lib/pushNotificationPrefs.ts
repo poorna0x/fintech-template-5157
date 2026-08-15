@@ -26,6 +26,7 @@ export const TECH_PUSH_CATEGORIES = [
   'cash_handover',
   'wrong_line',
   'pay_qr_screenshot',
+  'job_reviews',
 ] as const;
 
 export type AdminPushCategory = (typeof ADMIN_PUSH_CATEGORIES)[number];
@@ -142,6 +143,10 @@ export const TECH_PUSH_LABELS: Record<TechPushCategory, { label: string; descrip
     label: 'Pay QR payment screenshots',
     description:
       'When you send a pay QR on WhatsApp, customer photos for the next 30 minutes are pushed to this phone.',
+  },
+  job_reviews: {
+    label: 'Customer reviews',
+    description: 'When a customer submits a review for one of your completed jobs.',
   },
 };
 

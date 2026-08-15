@@ -1,12 +1,24 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Star } from 'lucide-react';
+import { ArrowLeft, Star, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   AnalyticsListPagination,
   ANALYTICS_LIST_SCROLL_ANCHOR_CLASS,
   AnalyticsListLoadingOverlay,
 } from '@/components/admin/AnalyticsListPagination';
 import {
+  deleteJobReview,
   fetchJobReviewTechnicianStats,
   fetchSubmittedJobReviewsPage,
   type JobReviewListRow,
@@ -49,17 +61,39 @@ function formatReviewWhen(iso: string): string {
   }
 }
 
-const ReviewRow = memo(function ReviewRow({ row }: { row: JobReviewListRow }) {
+const ReviewRow = memo(function ReviewRow({
+  row,
+  onDelete,
+  deleting,
+}: {
+  row: JobReviewListRow;
+  onDelete: (row: JobReviewListRow) => void;
+  deleting: boolean;
+}) {
   return (
     <li className="rounded-xl border border-border bg-card p-3">
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-start gap-2 justify-between">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium truncate">{row.technicianName}</p>
           <p className="text-xs text-muted-foreground truncate">
             {row.customerName} · {getDocumentBrandLabel(row.brand)}
           </p>
         </div>
-        <Stars rating={row.rating} />
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Stars rating={row.rating} />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 cursor-pointer text-muted-foreground hover:text-destructive"
+            aria-label="Delete review"
+            title="Delete review"
+            disabled={deleting}
+            onClick={() => onDelete(row)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
       {row.comment ? (
         <p className="mt-2 text-sm text-foreground/90 whitespace-pre-wrap break-words">{row.comment}</p>
@@ -80,8 +114,20 @@ export default function JobReviewsPage({ hideHeader, onBack }: Props) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [listLoading, setListLoading] = useState(true);
+  const [listReloadKey, setListReloadKey] = useState(0);
   const [technicianId, setTechnicianId] = useState<string | null>(null);
   const [brand, setBrand] = useState<DocumentBrand | 'all'>('all');
+  const [pendingDelete, setPendingDelete] = useState<JobReviewListRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const reloadStats = useCallback(() => {
+    setStatsLoading(true);
+    void fetchJobReviewTechnicianStats({ force: true }).then((result) => {
+      setStats(result.technicians);
+      setStatsTotal(result.total);
+      setStatsLoading(false);
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,7 +162,7 @@ export default function JobReviewsPage({ hideHeader, onBack }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [page, pageSize, technicianId, brand]);
+  }, [page, pageSize, technicianId, brand, listReloadKey]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const overallAvg = useMemo(() => {
@@ -129,6 +175,21 @@ export default function JobReviewsPage({ hideHeader, onBack }: Props) {
     setTechnicianId((prev) => (prev === id ? null : id));
     setPage(1);
   }, []);
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    const result = await deleteJobReview(pendingDelete.id);
+    setDeleting(false);
+    if (!result.ok) {
+      toast.error(result.error || 'Could not delete review');
+      return;
+    }
+    toast.success('Review deleted');
+    setPendingDelete(null);
+    setListReloadKey((n) => n + 1);
+    reloadStats();
+  }, [pendingDelete, reloadStats]);
 
   return (
     <div className={hideHeader ? '' : 'space-y-4'}>
@@ -242,7 +303,12 @@ export default function JobReviewsPage({ hideHeader, onBack }: Props) {
         ) : (
           <ul className="space-y-3">
             {rows.map((row) => (
-              <ReviewRow key={row.id} row={row} />
+              <ReviewRow
+                key={row.id}
+                row={row}
+                deleting={deleting && pendingDelete?.id === row.id}
+                onDelete={setPendingDelete}
+              />
             ))}
           </ul>
         )}
@@ -264,6 +330,37 @@ export default function JobReviewsPage({ hideHeader, onBack }: Props) {
           }}
         />
       )}
+
+      <AlertDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this review?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Removes the customer rating
+              {pendingDelete?.technicianName ? ` for ${pendingDelete.technicianName}` : ''}
+              . This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 cursor-pointer"
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmDelete();
+              }}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

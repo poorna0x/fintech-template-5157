@@ -585,6 +585,27 @@ export async function fetchSubmittedJobReviewsPage(opts: {
 const STATS_CACHE_KEY = 'job_review_tech_stats_v1';
 const STATS_TTL_MS = 60 * 1000;
 
+/** Admin Settings — delete one review (RLS: is_admin_user). */
+export async function deleteJobReview(
+  reviewId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const id = String(reviewId || '').trim();
+  if (!id) return { ok: false, error: 'Review id required' };
+
+  const { error } = await supabase.from('job_reviews').delete().eq('id', id);
+  if (error) {
+    console.warn('[job-review] delete failed', error.message);
+    return { ok: false, error: error.message || 'Could not delete review' };
+  }
+
+  try {
+    sessionStorage.removeItem(STATS_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+  return { ok: true };
+}
+
 export async function fetchJobReviewTechnicianStats(opts?: {
   force?: boolean;
 }): Promise<{ total: number; technicians: JobReviewTechStat[] }> {
