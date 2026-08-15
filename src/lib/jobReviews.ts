@@ -149,6 +149,121 @@ export type LastCompletedJobForReview = {
   brand: DocumentBrand;
 };
 
+export async function sendAskReviewForJob(opts: {
+  to: string;
+  customerId: string;
+  customerName?: string | null;
+  jobId: string;
+  technicianId?: string | null;
+  brand?: DocumentBrand | null;
+  jobNumber?: string | null;
+  reviewUrl?: string | null;
+  forceWaMe?: boolean;
+  source?: 'inbox' | 'job_completion';
+}): Promise<{
+  ok: boolean;
+  error?: string;
+  via?: 'api' | 'template' | 'wa_me';
+  usedTemplate?: boolean;
+  jobNumber?: string;
+  alreadySubmitted?: boolean;
+}> {
+  const to = String(opts.to || '').trim();
+  const customerId = String(opts.customerId || '').trim();
+  const jobId = String(opts.jobId || '').trim();
+  if (!to) return { ok: false, error: 'Phone required' };
+  if (!customerId) return { ok: false, error: 'Customer required' };
+  if (!jobId) return { ok: false, error: 'Completed job required' };
+
+  let url = String(opts.reviewUrl || '').trim();
+  let token = jobReviewTokenFromUrl(url);
+  let brand = opts.brand || 'hydrogenro';
+
+  if (!url || !token) {
+    const invite = await createJobReviewInvite({
+      jobId,
+      technicianId: opts.technicianId,
+    });
+    if (invite?.alreadySubmitted) {
+      return {
+        ok: false,
+        alreadySubmitted: true,
+        jobNumber: String(opts.jobNumber || ''),
+        error: opts.jobNumber
+          ? `Already reviewed (${opts.jobNumber})`
+          : 'This visit was already reviewed',
+      };
+    }
+    if (!invite?.token || !invite.url) {
+      return {
+        ok: false,
+        error: invite?.skipped
+          ? 'Could not attach a technician to this job'
+          : 'Could not create review link',
+      };
+    }
+    url = invite.url;
+    token = invite.token;
+    brand = invite.brand || brand;
+  }
+
+  const text = buildAskReviewWhatsAppMessage({
+    customerName: opts.customerName,
+    brand,
+    reviewUrl: url,
+    jobRef: opts.jobNumber || null,
+  });
+  const source = opts.source || 'job_completion';
+
+  const textResult = await sendAdminWhatsAppText({
+    to,
+    text,
+    customerId,
+    source,
+    forceWaMe: opts.forceWaMe === true,
+    fallbackWaMe: false,
+  });
+  if (textResult.ok) {
+    return {
+      ok: true,
+      via: opts.forceWaMe ? 'wa_me' : 'api',
+      usedTemplate: false,
+      jobNumber: String(opts.jobNumber || ''),
+    };
+  }
+  if (opts.forceWaMe || textResult.featureDisabled) {
+    return { ok: false, error: textResult.error || 'Could not send review request' };
+  }
+  if (!textResult.needsWindowOrTemplate) {
+    return { ok: false, error: textResult.error || 'Could not send review request' };
+  }
+
+  const reviewButton = jobReviewColdUrlButtonParam(token, 1);
+  if (!reviewButton) return { ok: false, error: 'Review link is invalid' };
+
+  const cold = await sendAdminWhatsAppTemplate({
+    to,
+    templateName: resolveAskReviewTemplateName(brand),
+    languageCode: 'en',
+    bodyParams: [whatsappGreetingName(opts.customerName, 'there')],
+    buttonUrlParams: [reviewButton],
+    customerId,
+    source,
+  });
+  if (cold.ok) {
+    return {
+      ok: true,
+      via: 'template',
+      usedTemplate: true,
+      jobNumber: String(opts.jobNumber || ''),
+    };
+  }
+  return {
+    ok: false,
+    error: cold.error || '24h window closed and ask-review template is not approved yet.',
+  };
+}
+
 export async function fetchLastCompletedJobForCustomer(
   customerId: string
 ): Promise<LastCompletedJobForReview | null> {
@@ -185,89 +300,26 @@ export async function sendAskReviewForLastCompletedJob(opts: {
 }): Promise<{
   ok: boolean;
   error?: string;
-  via?: 'api' | 'template';
+  via?: 'api' | 'template' | 'wa_me';
   usedTemplate?: boolean;
   jobNumber?: string;
   alreadySubmitted?: boolean;
 }> {
-  const to = String(opts.to || '').trim();
   const customerId = String(opts.customerId || '').trim();
-  if (!to) return { ok: false, error: 'Phone required' };
   if (!customerId) return { ok: false, error: 'Link a CRM customer to this chat first' };
 
   const job = await fetchLastCompletedJobForCustomer(customerId);
   if (!job) return { ok: false, error: 'No completed job for this customer' };
-
-  const invite = await createJobReviewInvite({
+  return sendAskReviewForJob({
+    to: opts.to,
+    customerId,
+    customerName: opts.customerName,
     jobId: job.id,
     technicianId: job.technicianId,
-  });
-  if (invite?.alreadySubmitted) {
-    return {
-      ok: false,
-      alreadySubmitted: true,
-      jobNumber: job.jobNumber,
-      error: job.jobNumber
-        ? `Already reviewed (${job.jobNumber})`
-        : 'This visit was already reviewed',
-    };
-  }
-  if (!invite?.token || !invite.url) {
-    if (invite?.skipped) {
-      return { ok: false, error: 'Could not attach a technician to this job' };
-    }
-    return { ok: false, error: 'Could not create review link' };
-  }
-
-  const brand = invite.brand || job.brand || opts.brand || 'hydrogenro';
-  const text = buildAskReviewWhatsAppMessage({
-    customerName: opts.customerName,
-    brand,
-    reviewUrl: invite.url,
-    jobRef: job.jobNumber || null,
-  });
-
-  const textResult = await sendAdminWhatsAppText({
-    to,
-    text,
-    customerId,
-    source: 'inbox',
-    fallbackWaMe: false,
-  });
-  if (textResult.ok) {
-    return { ok: true, via: 'api', usedTemplate: false, jobNumber: job.jobNumber };
-  }
-  if (textResult.featureDisabled) {
-    return { ok: false, error: textResult.error || 'WhatsApp send is off' };
-  }
-  if (!textResult.needsWindowOrTemplate) {
-    return { ok: false, error: textResult.error || 'Could not send review request' };
-  }
-
-  const reviewButton = jobReviewColdUrlButtonParam(invite.token, 1);
-  if (!reviewButton) {
-    return { ok: false, error: 'Review link is invalid' };
-  }
-
-  const templateName = resolveAskReviewTemplateName(brand);
-  const cold = await sendAdminWhatsAppTemplate({
-    to,
-    templateName,
-    languageCode: 'en',
-    bodyParams: [whatsappGreetingName(opts.customerName, 'there')],
-    buttonUrlParams: [reviewButton],
-    customerId,
+    brand: job.brand || opts.brand,
+    jobNumber: job.jobNumber,
     source: 'inbox',
   });
-  if (cold.ok) {
-    return { ok: true, via: 'template', usedTemplate: true, jobNumber: job.jobNumber };
-  }
-  return {
-    ok: false,
-    error:
-      cold.error ||
-      '24h window closed and ask-review template is not approved yet.',
-  };
 }
 
 function parseInvitePayload(data: unknown): JobReviewInvite | null {
