@@ -11,4 +11,4 @@ When changing code on a feature branch (not `main`):
 - Goal: remote branch always has latest WIP so merging / pushing to **main** later is one clean step.
 - Do **not** push or merge **main** unless the user explicitly asks.
 
-Active WhatsApp-era preference still applies where relevant: prefer the agreed feature branch for related work; see `whatsapp-crm-feature-branch.mdc`.
+Active hold-for-main preference: put WIP on `wip/next-month-main` (see `whatsapp-crm-feature-branch.mdc`).

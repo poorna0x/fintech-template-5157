@@ -1,17 +1,16 @@
 ---
-description: Work on WhatsApp CRM feature branch until merge to main
+description: Hold all WIP on wip/next-month-main until merge to main
 alwaysApply: true
 ---
 
-# Branch: WhatsApp CRM (until main)
+# Branch: hold for main (until next month)
 
 Until the user explicitly says to merge / push this work to **main**:
 
-- **Active branch:** `feat/whatsapp-crm-2026-08-07`
-- Put **all** related commits on this branch (checkout it first if needed) — not only WhatsApp-named files; any work in this period goes here.
-- **While iterating:** after meaningful chunks of work, **commit and push this feature branch** (`git push -u origin HEAD`) so WIP is on the remote — do **not** wait for an explicit “push” each time (unless the user said not to). Same habit as `feature-branch-wip-push.mdc` / updated push policy.
+- **Active branch:** `wip/next-month-main`
+- Put **all** new commits on this branch (checkout it first if needed).
+- **While iterating:** after meaningful chunks of work, **commit and push this branch** (`git push -u origin HEAD`) so WIP is on the remote — do **not** wait for an explicit “push” each time (unless the user said not to). Same habit as `feature-branch-wip-push.mdc`.
 - When the user asks to **push** (without saying main): push **only** this branch.
 - **Do not merge into `main`**, create a main-bound release, or `git push origin main` unless the user clearly asks (e.g. "merge to main", "push to main").
 - Prefer rebasing this branch onto latest `origin/main` before the final main merge if asked, to reduce conflicts.
 
-Unrelated sitemap-only noise can stay uncommitted unless the user asks to include it.
