@@ -35,7 +35,6 @@ import {
   Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { DialogTitle } from '@/components/ui/dialog';
 import {
   CommandDialog,
   CommandEmpty,
@@ -189,8 +188,12 @@ export function SettingsSearch({ isManager, openPanel }: SettingsSearchProps) {
         </span>
       </Button>
 
-      <CommandDialog open={open} onOpenChange={setOpen}>
-        <DialogTitle className="sr-only">Search settings</DialogTitle>
+      <CommandDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Search settings"
+        description="Type to find any settings panel, tool or section, then press Enter to open it."
+      >
         <div className="border-b bg-gradient-to-r from-blue-50/80 to-cyan-50/60 px-4 py-3 dark:from-blue-950/30 dark:to-cyan-950/20">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <ShieldCheck className="h-4 w-4 text-blue-600" />
