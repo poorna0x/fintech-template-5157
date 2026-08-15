@@ -34,6 +34,7 @@ const {
   EMAIL_FONT: SHELL_FONT,
   EMAIL_SHELL_COLORS: SHELL_COLORS,
 } = require('./brand-email-shell');
+const { prepareTrackedEmail } = require('./email-tracking');
 
 const MAX_PDF_BYTES = 4.5 * 1024 * 1024;
 const EMAIL_RE =
@@ -146,12 +147,22 @@ async function sendPreviewEmail({ row, previewBuffer, previewFilename, acceptUrl
   });
   const text = `Hi ${name},\n\nYour watermarked preview ${label} is attached. Review it, then accept securely:\n${acceptUrl}\n\nAfter acceptance, we will email the verified original PDF. This private link expires in 48 hours and can be accepted once.`;
 
+  const tracked = await prepareTrackedEmail({
+    html,
+    recipientEmail: row.recipient_email,
+    subject,
+    templateType: 'document_accept_preview',
+    documentBrand: row.brand,
+    customerId: row.customer_id,
+    sentByUserId: row.created_by,
+  });
+
   try {
     const info = await mail.transporter.sendMail({
       from: { name: meta.fromName, address: mail.fromAddress },
       to: row.recipient_email,
       subject,
-      html,
+      html: tracked.html,
       text,
       replyTo: meta.replyTo,
       attachments: [{
@@ -219,12 +230,22 @@ async function sendOriginalEmail(row, pdfBuffer) {
   });
   const text = `Hi ${name},\n\nYour acceptance has been recorded. The verified original ${label} is attached.${confirmation ? `\nConfirmation ID: ${confirmation}` : ''}${verifyCode ? `\nAuthenticity code: ${verifyCode}\nVerify at ${info.webHost}/authenticity` : ''}`;
 
+  const tracked = await prepareTrackedEmail({
+    html,
+    recipientEmail: row.recipient_email,
+    subject,
+    templateType: 'document_accept_original',
+    documentBrand: row.brand,
+    customerId: row.customer_id,
+    sentByUserId: row.created_by,
+  });
+
   try {
     const result = await mail.transporter.sendMail({
       from: { name: meta.fromName, address: mail.fromAddress },
       to: row.recipient_email,
       subject,
-      html,
+      html: tracked.html,
       text,
       replyTo: meta.replyTo,
       attachments: [{

@@ -83,6 +83,9 @@ function formatTemplateType(type: string): string {
     invoice: 'Invoice',
     service_bill: 'Service bill',
     quotation: 'Quotation',
+    warranty_document: 'Warranty card',
+    document_accept_preview: 'Accept preview',
+    document_accept_original: 'Accept original',
     service_reminder: 'Reminder',
     general: 'General',
   };
@@ -523,6 +526,9 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                   <SelectItem value="invoice">Invoice</SelectItem>
                   <SelectItem value="service_bill">Service bill</SelectItem>
                   <SelectItem value="quotation">Quotation</SelectItem>
+                  <SelectItem value="warranty_document">Warranty card</SelectItem>
+                  <SelectItem value="document_accept_preview">Accept preview</SelectItem>
+                  <SelectItem value="document_accept_original">Accept original</SelectItem>
                   <SelectItem value="service_reminder">Reminder</SelectItem>
                   <SelectItem value="general">General</SelectItem>
                 </SelectContent>
@@ -725,8 +731,11 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                         <SelectItem value="amc_document">AMC</SelectItem>
                         <SelectItem value="admin_composer">Admin email</SelectItem>
                         <SelectItem value="invoice">Invoice</SelectItem>
-                  <SelectItem value="service_bill">Service bill</SelectItem>
+                        <SelectItem value="service_bill">Service bill</SelectItem>
                         <SelectItem value="quotation">Quotation</SelectItem>
+                        <SelectItem value="warranty_document">Warranty card</SelectItem>
+                        <SelectItem value="document_accept_preview">Accept preview</SelectItem>
+                        <SelectItem value="document_accept_original">Accept original</SelectItem>
                         <SelectItem value="service_reminder">Reminder</SelectItem>
                         <SelectItem value="general">General</SelectItem>
                       </SelectContent>
