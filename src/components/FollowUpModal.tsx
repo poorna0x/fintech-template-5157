@@ -15,6 +15,8 @@ import { supabase, FOLLOW_UP_ROW_COLUMNS } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { hasAutoMoveToOngoingOnDate } from '@/lib/followUpToOngoing';
+import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
+import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 
 interface FollowUp {
   id: string;
@@ -38,6 +40,7 @@ interface FollowUpModalProps {
   job: Job | null;
   onScheduleFollowUp: (jobId: string, followUpData: {
     followUpDate: string;
+    followUpTime: string;
     followUpReason: string;
     parentFollowUpId?: string;
     rescheduleFollowUpId?: string;
@@ -47,6 +50,7 @@ interface FollowUpModalProps {
 
 export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp }: FollowUpModalProps) {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  const [selectedTime, setSelectedTime] = useState(() => nextPresetAppointmentTime());
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [existingFollowUps, setExistingFollowUps] = useState<FollowUp[]>([]);
@@ -85,6 +89,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
     if (isOpen && job) {
       // Reset form fields
       setSelectedDate(new Date());
+      setSelectedTime(nextPresetAppointmentTime());
       setReason('');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
@@ -121,6 +126,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       // If no follow-ups found in table but job has follow-up data, create a record
       if ((!data || data.length === 0) && job.status === 'FOLLOW_UP') {
         const followUpDate = (job as any).follow_up_date || job.followUpDate;
+        const followUpTime = (job as any).follow_up_time || job.followUpTime;
         const followUpNotes = (job as any).follow_up_notes || job.followUpNotes;
         const followUpScheduledAt = (job as any).follow_up_scheduled_at || job.followUpScheduledAt;
         const followUpScheduledBy = (job as any).follow_up_scheduled_by || job.followUpScheduledBy;
@@ -133,6 +139,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
             .insert({
               job_id: job.id,
               follow_up_date: followUpDate,
+              follow_up_time: followUpTime || null,
               reason: followUpNotes,
               scheduled_by: followUpScheduledBy || null, // Must be UUID or null, not a string
               completed: false
@@ -222,7 +229,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
   }, [existingFollowUps]);
 
   const handleSubmit = async () => {
-    if (!job || !selectedDate || !reason.trim()) {
+    if (!job || !selectedDate || !selectedTime || !reason.trim()) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -238,6 +245,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       
       const followUpData = {
         followUpDate: formattedDate,
+        followUpTime: selectedTime,
         followUpReason: reason.trim(),
         parentFollowUpId: selectedParentFollowUp || undefined,
         rescheduleFollowUpId: rescheduleFollowUpId || undefined,
@@ -248,6 +256,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       
       // Reset form
       setSelectedDate(new Date());
+      setSelectedTime(nextPresetAppointmentTime());
       setReason('');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
@@ -290,6 +299,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                 <Badge variant="outline" className="text-xs">
                   <CalendarIcon className="w-3 h-3 mr-1" />
                   {new Date(node.follow_up_date).toLocaleDateString()}
+                  {node.follow_up_time ? ` · ${node.follow_up_time.slice(0, 5)}` : ''}
                 </Badge>
                 {node.completed && (
                   <Badge variant="default" className="text-xs bg-green-500">
@@ -318,6 +328,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                   onClick={() => {
                     setRescheduleFollowUpId(node.id);
                     setSelectedDate(new Date(node.follow_up_date));
+                    setSelectedTime(node.follow_up_time?.slice(0, 5) || nextPresetAppointmentTime());
                     setReason(node.reason);
                   }}
                   className="text-xs"
@@ -386,6 +397,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                     setSelectedParentFollowUp(null);
                     setRescheduleFollowUpId(null);
                     setSelectedDate(new Date());
+                    setSelectedTime(nextPresetAppointmentTime());
                     setReason('');
                   }}
                 >
@@ -420,6 +432,15 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                     />
                   </PopoverContent>
                 </Popover>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="followup-time">Follow-up Time *</Label>
+                <CustomAppointmentTimeSelect
+                  id="followup-time"
+                  value={selectedTime}
+                  onChange={setSelectedTime}
+                />
               </div>
 
               <div className="space-y-2">
@@ -490,6 +511,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                       setRescheduleFollowUpId(null);
                       setReason('');
                       setSelectedDate(new Date());
+                      setSelectedTime(nextPresetAppointmentTime());
                       onClose();
                     }}
                     disabled={isSubmitting}
@@ -498,7 +520,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                   </Button>
                   <Button
                     onClick={handleSubmit}
-                    disabled={!selectedDate || !reason.trim() || isSubmitting}
+                    disabled={!selectedDate || !selectedTime || !reason.trim() || isSubmitting}
                   >
                     {isSubmitting ? (rescheduleFollowUpId ? 'Rescheduling...' : 'Scheduling...') : (rescheduleFollowUpId ? 'Reschedule Follow-up' : 'Schedule Follow-up')}
                   </Button>

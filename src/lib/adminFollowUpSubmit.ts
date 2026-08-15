@@ -8,6 +8,7 @@ import type { Job } from '@/types';
 
 export type AdminFollowUpSubmitData = {
   followUpDate: string;
+  followUpTime: string;
   followUpReason: string;
   parentFollowUpId?: string;
   rescheduleFollowUpId?: string;
@@ -65,6 +66,7 @@ export async function submitAdminFollowUp(
         job_id: jobId,
         parent_follow_up_id: followUpData.parentFollowUpId || null,
         follow_up_date: followUpData.followUpDate,
+        follow_up_time: followUpData.followUpTime,
         reason: followUpData.followUpReason,
         notes: null,
         scheduled_by: null,
@@ -101,6 +103,7 @@ export async function submitAdminFollowUp(
       const { error: jobError } = await db.jobs.update(jobId, {
         status: 'FOLLOW_UP',
         follow_up_date: followUpData.followUpDate,
+        follow_up_time: followUpData.followUpTime,
         follow_up_notes: followUpData.followUpReason,
         follow_up_scheduled_by: null,
         follow_up_scheduled_at: new Date().toISOString(),
@@ -118,6 +121,7 @@ export async function submitAdminFollowUp(
                 ...job,
                 status: 'FOLLOW_UP',
                 followUpDate: followUpData.followUpDate,
+                followUpTime: followUpData.followUpTime,
                 followUpNotes: followUpData.followUpReason,
                 followUpScheduledBy: 'admin',
                 followUpScheduledAt: new Date().toISOString(),
@@ -136,6 +140,7 @@ export async function submitAdminFollowUp(
                   ...job,
                   status: 'FOLLOW_UP',
                   followUpDate: followUpData.followUpDate,
+                  followUpTime: followUpData.followUpTime,
                   followUpNotes:
                     followUpData.followUpReason +
                     ((followUpData as any).followUpNotes
