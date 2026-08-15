@@ -1,6 +1,7 @@
 -- Customer “review us” after Complete Job.
 -- Shared by HydrogenRO + ElevenRO. One row per job, attached to the technician
--- who completed / was assigned. Public submit is via RPCs only (no table access).
+-- who completed / was assigned. Public get/submit is Netlify + service_role only
+-- (anon/authenticated must not EXECUTE those RPCs).
 -- Run in the Supabase SQL Editor. Safe to re-run.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -96,6 +97,7 @@ DECLARE
   v_existing record;
   v_new_id uuid;
   v_try int := 0;
+  v_i int;
   v_allowed boolean := false;
 BEGIN
   IF p_job_id IS NULL THEN
@@ -158,7 +160,6 @@ BEGIN
         'ok', true,
         'already_submitted', true,
         'id', v_existing.id,
-        'token', v_existing.token,
         'brand', v_brand
       );
     END IF;
@@ -180,8 +181,15 @@ BEGIN
   END IF;
 
   LOOP
-    -- Short tidy token (12 hex). Unique index + retry on collision.
-    v_token := left(replace(gen_random_uuid()::text, '-', ''), 12);
+    -- 16 chars from 32-symbol alphabet (~80 bits). Unique index + retry on collision.
+    v_token := '';
+    FOR v_i IN 1..16 LOOP
+      v_token := v_token || substr(
+        'abcdefghijkmnpqrstuvwxyz23456789',
+        1 + (get_byte(gen_random_bytes(1), 0) % 32),
+        1
+      );
+    END LOOP;
 
     BEGIN
       IF v_existing.id IS NOT NULL THEN
@@ -338,11 +346,15 @@ $$;
 REVOKE ALL ON FUNCTION public.create_job_review_invite(uuid, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_job_review_invite(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.submit_job_review(text, integer, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_job_review_invite(text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.get_job_review_invite(text) FROM authenticated;
+REVOKE EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) FROM authenticated;
 
 GRANT EXECUTE ON FUNCTION public.create_job_review_invite(uuid, uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_job_review_invite(uuid, uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.get_job_review_invite(text) TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_job_review_invite(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) TO service_role;
 
 -- Slim technician averages for Settings → Customer reviews (no comments).
 CREATE OR REPLACE FUNCTION public.job_review_technician_stats()

@@ -1,9 +1,9 @@
 /**
  * Public /review/{token} get + submit. IP + per-token rate limits (production).
- * Service-role RPCs only — the browser must not call PostgREST with the anon key.
+ * Service-role RPCs only — anon/authenticated must not EXECUTE these RPCs on PostgREST.
  */
 const { createClient } = require('@supabase/supabase-js');
-const { getCorsHeaders, shouldRejectMissingOrigin, isOriginAllowed } = require('./cors-helper');
+const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const {
   isRateLimitEnabled,
   checkRateLimit,
@@ -11,8 +11,14 @@ const {
   rateLimitResponseForKey,
 } = require('./rate-limiter');
 
+function rateLimitsOn() {
+  if (typeof isRateLimitEnabled === 'function') return isRateLimitEnabled();
+  const ctx = process.env.CONTEXT;
+  return Boolean(ctx && ctx !== 'dev');
+}
+
 function limited(event, corsHeaders, ipOpts, key, keyOpts) {
-  if (!isRateLimitEnabled()) return null;
+  if (!rateLimitsOn()) return null;
   const ip = checkRateLimit(event, ipOpts);
   if (!ip.allowed) {
     const base = rateLimitResponseForKey(ip);
@@ -39,9 +45,10 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
-  if (shouldRejectMissingOrigin(event)) {
-    return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
+  if ((event.body || '').length > 12_000) {
+    return { statusCode: 413, headers, body: JSON.stringify({ error: 'Payload too large' }) };
   }
+  // Token is the auth. Do not 403 missing Origin (mobile Safari / WhatsApp in-app).
   if (origin && !isOriginAllowed(origin)) {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
   }
@@ -60,6 +67,13 @@ exports.handler = async (event) => {
   }
   if (action !== 'get' && action !== 'submit') {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'action required' }) };
+  }
+  let rating = null;
+  if (action === 'submit') {
+    rating = Math.round(Number(body.rating));
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'rating' }) };
+    }
   }
 
   const blocked =
@@ -99,7 +113,6 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers, body: JSON.stringify(data || { ok: false, error: 'failed' }) };
   }
 
-  const rating = Math.round(Number(body.rating));
   const comment = String(body.comment || '').trim().slice(0, 1000);
   const { data, error } = await db.rpc('submit_job_review', {
     p_token: token,

@@ -124,9 +124,73 @@ async function verifyTechnicianAmcSaveAccess(admin, technicianId, { customerId, 
   return { ok: true };
 }
 
+function mediaBlobContainsPublicId(value, publicId) {
+  if (!publicId || value == null) return false;
+  try {
+    return JSON.stringify(value).includes(publicId);
+  } catch {
+    return false;
+  }
+}
+
+function isConfigTestPublicId(publicId) {
+  const id = String(publicId || '');
+  return id === 'test' || id.startsWith('test/');
+}
+
+/**
+ * Technician may sign/delete Cloudinary assets that belong to their jobs
+ * (or a job they are actively working — jobId hint for unsaved photos).
+ * Admins skip this helper. Fail closed.
+ */
+async function technicianMayAccessCloudinaryAsset(admin, technicianId, { publicId, jobId }) {
+  if (!technicianId || !publicId) return false;
+  if (isConfigTestPublicId(publicId)) return true;
+
+  const hint = String(jobId || '').trim();
+  if (hint) {
+    const onJob = await technicianCanAccessJob(admin, technicianId, hint);
+    if (onJob) return true;
+  }
+
+  const idSets = [];
+  for (const col of ['assigned_technician_id', 'completed_by', 'assigned_by']) {
+    const { data, error } = await admin.from('jobs').select('id').eq(col, technicianId).limit(80);
+    if (!error && Array.isArray(data)) idSets.push(...data.map((r) => r.id).filter(Boolean));
+  }
+
+  const { data: reqs } = await admin
+    .from('job_assignment_requests')
+    .select('job_id')
+    .eq('technician_id', technicianId)
+    .limit(80);
+  if (Array.isArray(reqs)) idSets.push(...reqs.map((r) => r.job_id).filter(Boolean));
+
+  const ids = [...new Set(idSets)].slice(0, 120);
+  if (!ids.length) return false;
+
+  const { data: jobs, error: jobsErr } = await admin
+    .from('jobs')
+    .select('id, images, before_photos, after_photos, requirements')
+    .in('id', ids)
+    .limit(120);
+  if (jobsErr || !Array.isArray(jobs)) return false;
+
+  return jobs.some(
+    (job) =>
+      mediaBlobContainsPublicId(job.images, publicId) ||
+      mediaBlobContainsPublicId(job.before_photos, publicId) ||
+      mediaBlobContainsPublicId(job.after_photos, publicId) ||
+      mediaBlobContainsPublicId(job.requirements, publicId)
+  );
+}
+
 module.exports = {
   technicianCanAccessJob,
   technicianCanAccessCustomer,
   technicianCanMessageCustomer,
   verifyTechnicianAmcSaveAccess,
+  technicianMayAccessCloudinaryAsset,
+  mediaBlobContainsPublicId,
+  isConfigTestPublicId,
 };

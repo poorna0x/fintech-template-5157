@@ -6,16 +6,37 @@
 
 CREATE OR REPLACE FUNCTION public.auth_user_role()
 RETURNS text LANGUAGE sql STABLE AS $$
-  SELECT coalesce(
-    auth.jwt() -> 'app_metadata' ->> 'role',
-    auth.jwt() -> 'user_metadata' ->> 'role',
-    'admin'
-  );
+  SELECT CASE
+    WHEN auth.uid() IS NULL THEN NULL
+    ELSE coalesce(
+      auth.jwt() -> 'app_metadata' ->> 'role',
+      auth.jwt() -> 'user_metadata' ->> 'role',
+      'admin'
+    )
+  END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.is_admin_user()
-RETURNS boolean LANGUAGE sql STABLE AS $$
-  SELECT public.auth_user_role() IS DISTINCT FROM 'technician';
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    auth.uid() IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.technicians t WHERE t.id = auth.uid()
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM public.admin_users a
+      WHERE lower(a.email) = lower(coalesce(
+              nullif(auth.jwt() ->> 'email', ''),
+              ''
+            ))
+        AND coalesce(a.is_active, true) = true
+    );
 $$;
 
 CREATE OR REPLACE FUNCTION public.technician_can_access_job(p_job_id uuid)
@@ -104,7 +125,7 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_admin_insert', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_admin_update', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_admin_delete', t);
-    EXECUTE format('CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (true)', t || '_select_auth', t);
+    EXECUTE format('CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (public.is_admin_user() OR public.is_active_technician())', t || '_select_auth', t);
     EXECUTE format('CREATE POLICY %I ON public.%I FOR INSERT TO authenticated WITH CHECK (public.is_admin_user())', t || '_admin_insert', t);
     EXECUTE format('CREATE POLICY %I ON public.%I FOR UPDATE TO authenticated USING (public.is_admin_user()) WITH CHECK (public.is_admin_user())', t || '_admin_update', t);
     EXECUTE format('CREATE POLICY %I ON public.%I FOR DELETE TO authenticated USING (public.is_admin_user())', t || '_admin_delete', t);

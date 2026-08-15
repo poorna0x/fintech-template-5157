@@ -3,7 +3,7 @@
  * Auth is the review token itself (must be submitted in the last 2 minutes).
  */
 const { createClient } = require('@supabase/supabase-js');
-const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
+const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const {
   isRateLimitEnabled,
   checkRateLimit,
@@ -29,7 +29,8 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
-  if (shouldRejectMissingOrigin(event)) {
+  const origin = event.headers.origin || event.headers.Origin;
+  if (origin && !isOriginAllowed(origin)) {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
   }
 
@@ -45,7 +46,7 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'token required' }) };
   }
 
-  if (isRateLimitEnabled()) {
+  if (typeof isRateLimitEnabled === 'function' ? isRateLimitEnabled() : Boolean(process.env.CONTEXT && process.env.CONTEXT !== 'dev')) {
     const ipLimit = checkRateLimit(event, {
       maxRequests: 20,
       windowMs: 60_000,
@@ -83,7 +84,7 @@ exports.handler = async (event) => {
     .maybeSingle();
 
   if (reviewErr || !review) {
-    return { statusCode: 404, headers, body: JSON.stringify({ error: 'not found' }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ sent: 0 }) };
   }
   if (review.status !== 'submitted' || !review.submitted_at) {
     return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'not_submitted' }) };

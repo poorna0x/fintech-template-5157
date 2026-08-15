@@ -6,9 +6,11 @@
 //   2. An allowed Origin
 //   3. Per-IP and per-user rate limits
 //   4. A strict publicId format (no shell/path injection, length-bounded)
+const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-auth-guard');
+const { technicianMayAccessCloudinaryAsset } = require('./staff-access');
 const {
   checkRateLimit,
   checkRateLimitForKey,
@@ -48,8 +50,19 @@ function getCloudinaryConfig(useSecondary) {
 // Use Basic Auth (no signature) - recommended for server-side; avoids signature encoding issues
 function buildAuthHeader(apiKey, apiSecret) {
   const credentials = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
-  return `Basic ${credentials}`;
+  return 'Basic ' + credentials;
 }
+
+function getServiceDb() {
+  const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  if (!supabaseUrl || !serviceKey) return null;
+  return createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 exports.handler = async (event, context) => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
@@ -160,6 +173,24 @@ exports.handler = async (event, context) => {
       headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
       body: JSON.stringify({ deleted: false, error: 'Invalid useSecondary flag' }),
     };
+  }
+
+  if (auth.role === 'technician') {
+    const db = getServiceDb();
+    const jobId = UUID_RE.test(String(body.jobId || '').trim()) ? String(body.jobId).trim() : null;
+    if (db && jobId) {
+      const allowed = await technicianMayAccessCloudinaryAsset(db, auth.userId, {
+        publicId: id,
+        jobId,
+      });
+      if (!allowed) {
+        return {
+          statusCode: 403,
+          headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ deleted: false, error: 'Forbidden' }),
+        };
+      }
+    }
   }
 
   const tryDestroyWithConfig = async (idToTry, config) => {

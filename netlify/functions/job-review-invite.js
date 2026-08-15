@@ -11,9 +11,9 @@ const { isRateLimitEnabled, checkRateLimit, rateLimitResponseForKey } = require(
 
 function newReviewToken() {
   const alphabet = 'abcdefghijkmnpqrstuvwxyz23456789';
-  const bytes = crypto.randomBytes(12);
+  const bytes = crypto.randomBytes(16);
   let out = '';
-  for (let i = 0; i < 12; i++) out += alphabet[bytes[i] % alphabet.length];
+  for (let i = 0; i < 16; i++) out += alphabet[bytes[i] % alphabet.length];
   return out;
 }
 
@@ -35,7 +35,7 @@ exports.handler = async (event) => {
   if (shouldRejectMissingOrigin(event)) {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
   }
-  if (isRateLimitEnabled()) {
+  if (typeof isRateLimitEnabled === 'function' && isRateLimitEnabled()) {
     const ipLimit = checkRateLimit(event, {
       maxRequests: 60,
       windowMs: 60_000,
@@ -91,7 +91,7 @@ exports.handler = async (event) => {
   const onJob =
     job.assigned_technician_id === staff.userId || job.completed_by === staff.userId;
   if (staff.role !== 'admin' && !onJob) {
-    return { statusCode: 403, headers, body: JSON.stringify({ error: 'not authorized' }) };
+    return { statusCode: 404, headers, body: JSON.stringify({ error: 'job not found' }) };
   }
 
   const techArg =
@@ -125,7 +125,6 @@ exports.handler = async (event) => {
         ok: true,
         already_submitted: true,
         id: existing.id,
-        token: existing.token,
         brand,
       }),
     };
@@ -179,7 +178,7 @@ exports.handler = async (event) => {
       .maybeSingle();
     if (updErr || !updated?.token) {
       console.warn('[job-review-invite] update', updErr?.message);
-      return { statusCode: 500, headers, body: JSON.stringify({ error: updErr?.message || 'update failed' }) };
+      return { statusCode: 500, headers, body: JSON.stringify({ error: 'update failed' }) };
     }
     return {
       statusCode: 200,
@@ -203,7 +202,7 @@ exports.handler = async (event) => {
 
   if (insErr || !inserted?.token) {
     console.warn('[job-review-invite] insert', insErr?.message);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: insErr?.message || 'insert failed' }) };
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'insert failed' }) };
   }
 
   return {

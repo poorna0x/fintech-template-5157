@@ -174,11 +174,13 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./job-review-invite')];
     delete require.cache[require.resolve('./admin-auth-guard')];
     delete require.cache[require.resolve('./cors-helper')];
+    delete require.cache[require.resolve('./rate-limiter')];
     handler = require('./job-review-invite');
   } else if (req.url.startsWith('/.netlify/functions/job-review-notify')) {
     delete require.cache[require.resolve('./job-review-notify')];
     delete require.cache[require.resolve('./fcm-helper')];
     delete require.cache[require.resolve('./push-prefs-helper')];
+    delete require.cache[require.resolve('./rate-limiter')];
     handler = require('./job-review-notify');
   } else if (req.url.startsWith('/.netlify/functions/send-location-ping')) {
     handler = sendLocationPing;

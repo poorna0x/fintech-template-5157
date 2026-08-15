@@ -103,7 +103,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       const url = String(invite?.url || '').trim();
       setReviewUrl(url || null);
       setReviewLinkReady(true);
-      if (!skipReview && !url) {
+      if (!skipReview && !url && !invite?.alreadySubmitted) {
         toast.error('Could not create the Review us link for this job.');
       }
     })();

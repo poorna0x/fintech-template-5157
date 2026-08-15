@@ -60,6 +60,6 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) TO service_role;

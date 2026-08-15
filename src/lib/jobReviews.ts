@@ -74,6 +74,32 @@ async function invokePublicJobReviewFn(
   }
 }
 
+/** Live DB still grants these to anon until hardening SQL is applied. */
+async function invokePublicJobReviewRpc(
+  action: 'get' | 'submit',
+  body: Record<string, unknown>
+): Promise<{ data: unknown; error: string | null }> {
+  if (!isSupabaseConfigured()) return { data: null, error: 'failed' };
+  try {
+    if (action === 'get') {
+      const { data, error } = await supabase.rpc('get_job_review_invite', {
+        p_token: body.token,
+      });
+      if (error) return { data: null, error: error.message };
+      return { data, error: null };
+    }
+    const { data, error } = await supabase.rpc('submit_job_review', {
+      p_token: body.token,
+      p_rating: body.rating,
+      p_comment: body.comment ?? '',
+    });
+    if (error) return { data: null, error: error.message };
+    return { data, error: null };
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err.message : 'failed' };
+  }
+}
+
 /** Token suffix for Meta URL buttons (`https://…/review/{{1}}`). */
 export function jobReviewTokenFromUrl(url: string | null | undefined): string {
   const m = String(url || '')
@@ -255,6 +281,15 @@ function parseInvitePayload(data: unknown): JobReviewInvite | null {
   }
   const row = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
   if (!row || row.ok !== true) return null;
+  if (row.already_submitted === true) {
+    return {
+      ok: true,
+      token: '',
+      brand: normalizeDocumentBrand(row.brand) || 'hydrogenro',
+      url: '',
+      alreadySubmitted: true,
+    };
+  }
   if (row.skipped === true) {
     return {
       ok: true,
@@ -290,10 +325,10 @@ export async function createJobReviewInvite(opts: {
     : null;
 
   const fromFn = await mintInviteViaFunction(jobId, technicianId);
-  if (fromFn?.url) return fromFn;
+  if (fromFn?.url || fromFn?.alreadySubmitted) return fromFn;
 
   const fromRpc = await mintInviteViaBrowserRpc(jobId, technicianId);
-  if (fromRpc?.url) return fromRpc;
+  if (fromRpc?.url || fromRpc?.alreadySubmitted) return fromRpc;
 
   return fromFn || fromRpc;
 }
@@ -400,10 +435,16 @@ export async function fetchPublicJobReviewInvite(token: string): Promise<{
   const t = String(token || '').trim();
   if (!t) return { invite: null, error: 'invalid' };
   try {
-    const { data, error } = await invokePublicJobReviewFn('get', { token: t });
+    let { data, error } = await invokePublicJobReviewFn('get', { token: t });
     if (error) {
-      console.warn('[job-review] get failed', error);
-      return { invite: null, error: 'failed' };
+      const fallback = await invokePublicJobReviewRpc('get', { token: t });
+      if (!fallback.error) {
+        data = fallback.data;
+        error = null;
+      } else {
+        console.warn('[job-review] get failed', error);
+        return { invite: null, error: 'failed' };
+      }
     }
     const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
     if (!row || row.ok !== true) {
@@ -437,14 +478,21 @@ export async function submitPublicJobReview(opts: {
   const rating = Math.round(Number(opts.rating));
   if (!token || rating < 1 || rating > 5) return { ok: false, error: 'invalid' };
   try {
-    const { data, error } = await invokePublicJobReviewFn('submit', {
+    const comment = String(opts.comment || '').trim().slice(0, 1000);
+    let { data, error } = await invokePublicJobReviewFn('submit', {
       token,
       rating,
-      comment: String(opts.comment || '').trim().slice(0, 1000),
+      comment,
     });
     if (error) {
-      console.warn('[job-review] submit failed', error);
-      return { ok: false, error };
+      const fallback = await invokePublicJobReviewRpc('submit', { token, rating, comment });
+      if (!fallback.error) {
+        data = fallback.data;
+        error = null;
+      } else {
+        console.warn('[job-review] submit failed', error);
+        return { ok: false, error };
+      }
     }
     const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
     if (!row || row.ok !== true) {

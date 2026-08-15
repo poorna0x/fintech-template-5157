@@ -36,7 +36,7 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.mark_website_booking_intent_booked(text, text, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.mark_website_booking_intent_booked(text, text, text) TO anon;
-GRANT EXECUTE ON FUNCTION public.mark_website_booking_intent_booked(text, text, text) TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.mark_website_booking_intent_booked(text, text, text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.mark_website_booking_intent_booked(text, text, text) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.mark_website_booking_intent_booked(text, text, text) TO service_role;
 
