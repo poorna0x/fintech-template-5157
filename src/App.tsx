@@ -15,7 +15,11 @@ import PerformanceMonitor from "./components/PerformanceMonitor";
 import PublicSiteSeo from "./components/PublicSiteSeo";
 import GoogleAnalytics from "./components/GoogleAnalytics";
 import CookieConsentBanner from "./components/CookieConsentBanner";
-import { SEO_CITY_SERVICE_PAGES, SEO_LOCATION_PAGES, SEO_SERVICE_PAGES } from "@/lib/publicSeoPages";
+import {
+  findCityServicePage,
+  findLocationPage,
+  findServicePage,
+} from "@/lib/publicSeoPages";
 import { disablePWA } from "@/lib/pwa";
 import { isTechnicianPortalPath } from "@/lib/authPortal";
 import { startNativeBackButtonHandler } from "@/lib/nativeBackButton";
@@ -64,6 +68,22 @@ const PublicDocumentAcceptPage = lazy(() => import("./pages/PublicDocumentAccept
 const PayUpi = lazy(() => import("./pages/PayUpi"));
 const WhatsAppTest = lazy(() => import("./pages/WhatsAppTest"));
 const CallDialPage = lazy(() => import("./pages/CallDialPage"));
+
+/**
+ * One route handles the 1,000+ generated public SEO slugs. Rendering a
+ * separate <Route> for every slug added substantial startup work on every
+ * page, even though only one can ever match.
+ */
+function SeoLandingRoute() {
+  const { pathname } = useLocation();
+  if (findCityServicePage(pathname) || findServicePage(pathname)) {
+    return <Services />;
+  }
+  if (findLocationPage(pathname)) {
+    return <ServiceAreas />;
+  }
+  return <NotFound />;
+}
 
 /** Plain bounce — used for in-session Suspense (Settings, previews, tech dashboard, …). */
 function PlainPortalSuspenseLoader() {
@@ -224,21 +244,6 @@ const App = () => (
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />
                   
-                  {/* City × service pages — e.g. /ro-installation-in-mysuru */}
-                  {SEO_CITY_SERVICE_PAGES.map(({ path }) => (
-                    <Route key={path} path={path} element={<Services />} />
-                  ))}
-
-                  {/* Service-specific pages — same UI, unique SEO URLs */}
-                  {SEO_SERVICE_PAGES.map(({ path }) => (
-                    <Route key={path} path={path} element={<Services />} />
-                  ))}
-
-                  {/* Location-specific pages — same UI, unique SEO URLs */}
-                  {SEO_LOCATION_PAGES.map(({ path }) => (
-                    <Route key={path} path={path} element={<ServiceAreas />} />
-                  ))}
-                  
                   {/* Technician ID Card - Public route */}
                   <Route path="/technician-id/:id" element={<TechnicianIdCard />} />
                   
@@ -252,6 +257,9 @@ const App = () => (
 
                   {/* WhatsApp Cloud API POC (text + PDF) */}
                   <Route path="/whatsapp-test" element={<WhatsAppTest />} />
+
+                  {/* Generated city/service/location SEO landing pages. */}
+                  <Route path="/:slug" element={<SeoLandingRoute />} />
                   
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />

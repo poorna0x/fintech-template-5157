@@ -98,17 +98,24 @@
     <link rel="icon" type="image/png" sizes="512x512" href="https://hydrogenro.com/android-chrome-512x512.png?v=4" />
     <script src="/head-pwa-manifest.js" defer></script>
     
-    <!-- Inter — blocking so first paint matches brand typography (async caused system-font fallback on mobile) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Self-host Inter to remove the render-blocking Google Fonts request chain. -->
     <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="preload"
+      href="/inter-latin-300-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
     />
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"></noscript>
     
     <!-- Critical CSS to prevent FOUC -->
     <style>
+      @font-face {
+        font-family: 'Inter';
+        font-style: normal;
+        font-weight: 300 700;
+        font-display: swap;
+        src: url('/inter-latin-300-700.woff2') format('woff2');
+      }
       * { box-sizing: border-box; }
       body { 
         margin: 0; 
@@ -237,9 +244,6 @@
     <link rel="dns-prefetch" href="//cgpjfmbyxjetmzehkumo.supabase.co">
     
     <!-- DNS Prefetch for external resources -->
-    <link rel="dns-prefetch" href="//fonts.googleapis.com">
-    <link rel="dns-prefetch" href="//fonts.gstatic.com">
-    
     <!-- Google Maps API for address autocomplete (optional - will use free services if not available) -->
     <!-- <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_ACTUAL_GOOGLE_MAPS_API_KEY&libraries=places"></script> -->
     
@@ -1162,8 +1166,9 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     
-    <!-- COMPREHENSIVE SEO CONTENT - HIDDEN FROM USERS -->
-    <div class="seo-hidden" id="crawler-seo-hydrogenro">
+    <!-- Legacy crawler copy kept outside the live DOM; dedicated SEO pages,
+         sitemaps and JSON-LD provide indexable content without runtime cost. -->
+    <template id="crawler-seo-hydrogenro">
       <h1>Best RO Water Purifier Services in Bengaluru - Top Rated RO Installation & Repair</h1>
       <h2>#1 RO Service Provider in Bangalore | Same Day RO Repair | All Areas Covered</h2>
       
@@ -1313,6 +1318,6 @@
       <p>RO service in Hennur, Kalyan Nagar and Kammanahalli, North Bangalore. Professional technicians and genuine spare parts.</p>
       <h3>RO Service Jalahalli Ulsoor Frazer Town Bengaluru</h3>
       <p>RO installation and repair in Jalahalli, Ulsoor and Frazer Town, Bangalore. Emergency and same-day RO service available.</p>
-    </div>
+    </template>
   </body>
 </html>

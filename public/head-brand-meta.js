@@ -45,7 +45,10 @@
   }
 
   function w(html) {
-    document.write(html);
+    var template = document.createElement('template');
+    template.innerHTML = html;
+    var node = template.content.firstElementChild;
+    if (node) document.head.appendChild(node);
   }
 
   var pathSegment = (location.pathname || '/').replace(/\/$/, '') || '';
