@@ -243,6 +243,86 @@ export async function notifyTechnicianJobWhatsApp(opts: {
   return 'dialog';
 }
 
+/** Same fields as new-customer / new-job create-with-assign (not a full Job row). */
+export type CreateAssignWhatsAppPayload = {
+  technicianId: string;
+  serviceSubType: string;
+  customerName: string;
+  visibleAddress?: string;
+  address?: { area?: string; city?: string };
+  leadSource?: string;
+  customTime?: string;
+  description?: string;
+  agreedCost?: string;
+};
+
+/**
+ * New customer + job / search-customer new job: same master + auto-send rules as
+ * assign on an existing ongoing job. Must not open wa.me when Dashboard job WhatsApp is OFF.
+ */
+export async function notifyTechnicianJobWhatsAppOnCreateAssign(opts: {
+  payload: CreateAssignWhatsAppPayload;
+  technician: TechLikeForWhatsApp;
+  ctx?: OpenAdminWhatsappForJobCtx | null;
+  scrollY?: number;
+}): Promise<NotifyJobTechWhatsAppResult> {
+  const phone =
+    getTechnicianAdminWhatsAppPhone(opts.technician) || opts.technician.phone || '';
+  if (!phone.trim()) return 'skipped';
+
+  const prefs = await ensureJobWhatsAppNotifyPrefs();
+  if (!prefs.enabled) return 'skipped';
+
+  const allowed = await isWhatsAppJobNotifyAllowed(
+    'job_assigned',
+    opts.technician.id || opts.payload.technicianId || null
+  );
+  if (!allowed.ok) {
+    if (shouldToastJobWhatsAppSkip(allowed.reason)) {
+      toast.message(allowed.reason || 'Job WhatsApp notify is off — skipped');
+    }
+    return 'skipped';
+  }
+
+  const vis = String(opts.payload.visibleAddress || '').trim();
+  const addr = opts.payload.address;
+  const locationText = vis || addr?.area || addr?.city || '';
+  const message = buildJobTechnicianWhatsAppMessage({
+    mode: 'assign',
+    serviceSubType: opts.payload.serviceSubType || 'Service',
+    customerName: opts.payload.customerName || 'Customer',
+    location: locationText,
+    leadSource: opts.payload.leadSource,
+    customTime: opts.payload.customTime,
+    description: opts.payload.description,
+    agreedCost: opts.payload.agreedCost,
+  });
+
+  if (prefs.autoAssign) {
+    void autoSendJobTechWhatsApp(phone, message, 'assign');
+    return 'auto';
+  }
+
+  if (!opts.ctx) return 'skipped';
+
+  const scrollY = opts.scrollY ?? window.scrollY;
+  opts.ctx.scrollPositionBeforeWhatsAppRef.current = scrollY;
+  opts.ctx.setWhatsappTechnician({
+    name: opts.technician.fullName,
+    phone,
+  });
+  opts.ctx.setWhatsappServiceSubType(opts.payload.serviceSubType || 'Service');
+  opts.ctx.setWhatsappCustomerName(opts.payload.customerName || 'Customer');
+  opts.ctx.setWhatsappLocation(locationText);
+  opts.ctx.setWhatsappLeadSource(opts.payload.leadSource || '');
+  opts.ctx.setWhatsappCustomTime(opts.payload.customTime || '');
+  opts.ctx.setWhatsappDescription(opts.payload.description || '');
+  opts.ctx.setWhatsappAgreedCost(opts.payload.agreedCost || '');
+  opts.ctx.openAdminWhatsappModal();
+  opts.ctx.setWhatsappDialogOpen(true);
+  return 'dialog';
+}
+
 /**
  * Background WhatsApp for job updates / team / visit-order (no dialog).
  * Needs Dashboard job WhatsApp master ON. Does NOT require Auto-send

@@ -1344,32 +1344,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               } catch {
                 // best-effort
               }
-
-              try {
-                const { notifyTechnicianJobWhatsApp } = await import('@/lib/jobTechnicianWhatsApp');
-                const assignedTechRow = technicians.find(
-                  (t) => t.id === step5JobData.assigned_technician_id
-                );
-                if (assignedTechRow) {
-                  void notifyTechnicianJobWhatsApp({
-                    job: { ...(newJob as any), customer: newCustomer } as any,
-                    technician: {
-                      id: assignedTechRow.id,
-                      fullName:
-                        assignedTechRow.fullName ||
-                        (assignedTechRow as any).full_name ||
-                        'Technician',
-                      phone: assignedTechRow.phone,
-                      whatsappPhone: (assignedTechRow as any).whatsappPhone,
-                      whatsapp_phone: (assignedTechRow as any).whatsapp_phone,
-                    },
-                    mode: 'assign',
-                    ctx: null,
-                  });
-                }
-              } catch {
-                // best-effort
-              }
             }
             
             if (step5JobData.assigned_technician_id) {

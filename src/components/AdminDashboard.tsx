@@ -559,6 +559,55 @@ const AdminDashboard = () => {
     );
   }, [navigate, location.search]);
 
+  /** New customer + new job assign: same Dashboard job WhatsApp master as ongoing assign. */
+  const notifyWhatsAppAfterCreateAssign = useCallback(
+    (payload: {
+      technicianId: string;
+      serviceSubType: string;
+      customerName: string;
+      visibleAddress?: string;
+      address?: { area?: string; city?: string };
+      leadSource?: string;
+      customTime?: string;
+      description?: string;
+      agreedCost?: string;
+    }) => {
+      const assignedTechnician = techniciansRef.current.find((t) => t.id === payload.technicianId);
+      if (!assignedTechnician) return;
+      const ctx = {
+        scrollPositionBeforeWhatsAppRef,
+        setWhatsappTechnician,
+        setWhatsappServiceSubType,
+        setWhatsappCustomerName,
+        setWhatsappLocation,
+        setWhatsappLeadSource,
+        setWhatsappCustomTime,
+        setWhatsappDescription,
+        setWhatsappAgreedCost,
+        setWhatsappDialogOpen,
+        openAdminWhatsappModal,
+      };
+      void import('@/lib/jobTechnicianWhatsApp').then(({ notifyTechnicianJobWhatsAppOnCreateAssign }) =>
+        notifyTechnicianJobWhatsAppOnCreateAssign({
+          payload,
+          technician: {
+            id: assignedTechnician.id,
+            fullName:
+              assignedTechnician.fullName ||
+              (assignedTechnician as { full_name?: string }).full_name ||
+              'Technician',
+            phone: assignedTechnician.phone,
+            whatsappPhone: (assignedTechnician as { whatsappPhone?: string }).whatsappPhone,
+            whatsapp_phone: (assignedTechnician as { whatsapp_phone?: string }).whatsapp_phone,
+          },
+          ctx,
+          scrollY: window.scrollY,
+        })
+      );
+    },
+    [openAdminWhatsappModal]
+  );
+
   /** Tab switches stay in React state (no ?tab= history). Modals still use ?modal= for swipe-back. */
   const switchJobTab = useCallback(
     (filter: AdminStatusFilter) => {
@@ -6597,33 +6646,7 @@ const AdminDashboard = () => {
             loadJobCounts(),
           ]);
         }}
-        onJobAssignedToTechnician={(payload) => {
-          const assignedTechnician = technicians.find((t) => t.id === payload.technicianId);
-          const waPhone = assignedTechnician
-            ? getTechnicianAdminWhatsAppPhone(assignedTechnician)
-            : '';
-          if (!waPhone) return;
-          scrollPositionBeforeWhatsAppRef.current = window.scrollY;
-          const vis = payload.visibleAddress;
-          const addr = payload.address;
-          const locationText =
-            vis && String(vis).trim()
-              ? String(vis).trim()
-              : addr?.area || addr?.city || '';
-          setWhatsappTechnician({
-            name: assignedTechnician.fullName || (assignedTechnician as { full_name?: string }).full_name || 'Technician',
-            phone: waPhone,
-          });
-          setWhatsappServiceSubType(payload.serviceSubType);
-          setWhatsappCustomerName(payload.customerName);
-          setWhatsappLocation(locationText || '');
-          setWhatsappLeadSource(payload.leadSource || '');
-          setWhatsappCustomTime(payload.customTime || '');
-          setWhatsappDescription(payload.description || '');
-          setWhatsappAgreedCost(payload.agreedCost || '');
-          setWhatsappDialogOpen(true);
-          openAdminWhatsappModal();
-        }}
+        onJobAssignedToTechnician={notifyWhatsAppAfterCreateAssign}
         onCheckExistingCustomer={checkExistingCustomer}
         onExistingCustomerFound={(customer) => {
           setExistingCustomer(customer);
@@ -6831,36 +6854,7 @@ const AdminDashboard = () => {
         }}
         onBrandsModelsReload={loadBrandsAndModels}
         parseDbServiceType={parseDbServiceType}
-        onJobAssignedToTechnician={(payload) => {
-          const assignedTechnician = technicians.find((t) => t.id === payload.technicianId);
-          const waPhone = assignedTechnician
-            ? getTechnicianAdminWhatsAppPhone(assignedTechnician)
-            : '';
-          if (!waPhone) return;
-          scrollPositionBeforeWhatsAppRef.current = window.scrollY;
-          const vis = payload.visibleAddress;
-          const addr = payload.address;
-          const locationText =
-            vis && String(vis).trim()
-              ? String(vis).trim()
-              : addr?.area || addr?.city || '';
-          setWhatsappTechnician({
-            name:
-              assignedTechnician.fullName ||
-              (assignedTechnician as { full_name?: string }).full_name ||
-              'Technician',
-            phone: waPhone,
-          });
-          setWhatsappServiceSubType(payload.serviceSubType);
-          setWhatsappCustomerName(payload.customerName);
-          setWhatsappLocation(locationText || '');
-          setWhatsappLeadSource(payload.leadSource || '');
-          setWhatsappCustomTime(payload.customTime || '');
-          setWhatsappDescription(payload.description || '');
-          setWhatsappAgreedCost(payload.agreedCost || '');
-          setWhatsappDialogOpen(true);
-          openAdminWhatsappModal();
-        }}
+        onJobAssignedToTechnician={notifyWhatsAppAfterCreateAssign}
       />
 
       {/* Customer Photo Gallery Dialog */}

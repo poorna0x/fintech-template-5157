@@ -535,23 +535,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           (newJob as any).visit_order = visitOrder;
           (newJob as any).visitOrder = visitOrder;
         }
-        const assignedTech = technicians.find((t) => t.id === newJobFormData.assigned_technician_id);
-        if (assignedTech) {
-          void import('@/lib/jobTechnicianWhatsApp').then(({ notifyTechnicianJobWhatsApp }) =>
-            notifyTechnicianJobWhatsApp({
-              job: newJob as any,
-              technician: {
-                id: assignedTech.id,
-                fullName: assignedTech.fullName || (assignedTech as any).full_name || 'Technician',
-                phone: assignedTech.phone,
-                whatsappPhone: (assignedTech as any).whatsappPhone,
-                whatsapp_phone: (assignedTech as any).whatsapp_phone,
-              },
-              mode: 'assign',
-              ctx: null,
-            })
-          );
-        }
       }
 
       onJobCreated(newJob);
