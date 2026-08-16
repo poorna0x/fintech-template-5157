@@ -109,6 +109,10 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/ilovepdf-usage': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/cloudinary-delete': {
         target: 'http://localhost:8888',
         changeOrigin: true,

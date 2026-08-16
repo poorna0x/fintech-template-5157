@@ -48,7 +48,6 @@ const bookingCustomerMutate = require('./booking-customer-mutate');
 const bookingCustomerLookup = require('./booking-customer-lookup');
 const bookingNotify = require('./booking-notify');
 const warrantyLookup = require('./warranty-lookup');
-const generatePdf = require('./generate-pdf');
 const saveAmcContract = require('./save-amc-contract');
 const sendEmailPreview = require('./send-email-preview');
 // Push notification senders (FCM credential comes from app_secrets via the
@@ -148,7 +147,9 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/warranty-lookup')) {
     handler = warrantyLookup;
   } else if (req.url.startsWith('/.netlify/functions/generate-pdf')) {
-    handler = generatePdf;
+    delete require.cache[require.resolve('./ilovepdf-compress-helper')];
+    delete require.cache[require.resolve('./quotation-pdf-compression-setting')];
+    handler = loadFn('generate-pdf');
   } else if (req.url.startsWith('/.netlify/functions/save-amc-contract')) {
     handler = saveAmcContract;
   } else if (req.url.startsWith('/.netlify/functions/send-email-preview')) {
@@ -241,6 +242,10 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/cloudinary-usage')) {
     delete require.cache[require.resolve('./cloudinary-usage-helper')];
     handler = loadFn('cloudinary-usage');
+  } else if (req.url.startsWith('/.netlify/functions/ilovepdf-usage')) {
+    delete require.cache[require.resolve('./ilovepdf-compress-helper')];
+    delete require.cache[require.resolve('./quotation-pdf-compression-setting')];
+    handler = loadFn('ilovepdf-usage');
   } else if (req.url.startsWith('/.netlify/functions/salary-slip-month-end')) {
     handler = salarySlipMonthEnd;
   } else {

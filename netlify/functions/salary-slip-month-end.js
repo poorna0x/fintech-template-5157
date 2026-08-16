@@ -31,9 +31,10 @@ const {
   generateDocumentPdfVerifyCode,
   todayYmdIst,
 } = require('./document-pdf-authenticity-record');
-// Lazy-load Chromium/Puppeteer only when actually rendering (early exits stay fast).
+// Scheduled batch has a 26-second Netlify ceiling and may render several slips.
+// Keep this path local-only; interactive salary-slip download/send uses generate-pdf
+// and gets optional iLovePDF compression like every other interactive document.
 function renderHtmlToPdf(html, requestOrigin) {
-  // eslint-disable-next-line global-require
   return require('./generate-pdf').renderHtmlToPdf(html, requestOrigin);
 }
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;

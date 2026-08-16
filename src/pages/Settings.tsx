@@ -102,6 +102,10 @@ import {
   saveJobWhatsAppMasterEnabled,
   type JobWhatsAppNotifyPrefs,
 } from '@/lib/jobAssignWhatsAppSettingsCache';
+import {
+  fetchQuotationPdfCompressionEnabled,
+  saveQuotationPdfCompressionEnabled,
+} from '@/lib/quotationPdfCompressionSettings';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
@@ -331,6 +335,8 @@ const Settings = () => {
       }
   );
   const [jobWaNotifySaving, setJobWaNotifySaving] = useState(false);
+  const [quotationPdfCompressionEnabled, setQuotationPdfCompressionEnabled] = useState(true);
+  const [quotationPdfCompressionSaving, setQuotationPdfCompressionSaving] = useState(false);
 
   // Download data state
   const [isDownloading, setIsDownloading] = useState(false);
@@ -661,6 +667,17 @@ const Settings = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (isManager) return;
+    let cancelled = false;
+    void fetchQuotationPdfCompressionEnabled().then(({ enabled }) => {
+      if (!cancelled) setQuotationPdfCompressionEnabled(enabled);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isManager]);
+
   // Handle location tracking toggle
   const handleLocationTrackingToggle = (enabled: boolean) => {
     setLocationTrackingEnabled(enabled);
@@ -711,6 +728,27 @@ const Settings = () => {
       );
     } finally {
       setJobWaNotifySaving(false);
+    }
+  };
+
+  const handleQuotationPdfCompressionToggle = async (enabled: boolean) => {
+    const previous = quotationPdfCompressionEnabled;
+    setQuotationPdfCompressionEnabled(enabled);
+    setQuotationPdfCompressionSaving(true);
+    try {
+      const result = await saveQuotationPdfCompressionEnabled(enabled);
+      if (!result.ok) {
+        setQuotationPdfCompressionEnabled(previous);
+        toast.error(result.error || 'Could not save PDF compression setting');
+        return;
+      }
+      toast.success(
+        enabled
+          ? 'PDF compression enabled'
+          : 'PDF compression disabled — original PDFs will be used'
+      );
+    } finally {
+      setQuotationPdfCompressionSaving(false);
     }
   };
 
@@ -3695,7 +3733,7 @@ const Settings = () => {
                 Dashboard Settings
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                Follow-up display preferences (this device) and job WhatsApp popup (all admins)
+                Dashboard display, PDF compression, and job WhatsApp preferences
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 space-y-3">
@@ -3740,6 +3778,28 @@ const Settings = () => {
                   className="ml-2 sm:ml-6 shrink-0 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>
+
+              {!isManager ? (
+              <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
+                    Compress PDFs
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
+                    Uses highest-quality iLovePDF compression for document downloads, email,
+                    WhatsApp, and Require Accept (quotations, bills, invoices, AMC, warranty,
+                    salary slips, and more). If credits run out or compression fails, the
+                    original PDF is used automatically.
+                  </p>
+                </div>
+                <Switch
+                  checked={quotationPdfCompressionEnabled}
+                  disabled={quotationPdfCompressionSaving}
+                  onCheckedChange={(v) => void handleQuotationPdfCompressionToggle(v)}
+                  className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
+                />
+              </div>
+              ) : null}
 
               {!isManager ? (
               <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">

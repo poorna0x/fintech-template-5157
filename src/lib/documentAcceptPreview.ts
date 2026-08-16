@@ -195,7 +195,10 @@ export async function generateDocumentAcceptPdfPair(
   );
 
   const [original, preview] = await Promise.all([
-    generateDocumentPdfBase64({ html: originalHtml, filename }),
+    generateDocumentPdfBase64({
+      html: originalHtml,
+      filename,
+    }),
     generateDocumentPdfBase64({
       html: previewHtml,
       filename: `PREVIEW_${filename}`,
