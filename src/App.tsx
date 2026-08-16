@@ -66,6 +66,7 @@ const PayUpi = lazy(() => import("./pages/PayUpi"));
 const WhatsAppTest = lazy(() => import("./pages/WhatsAppTest"));
 const CallDialPage = lazy(() => import("./pages/CallDialPage"));
 const PortalProviders = lazy(() => import("./components/PortalProviders"));
+const PublicSecurityProviders = lazy(() => import("./components/PublicSecurityProviders"));
 
 /**
  * One route handles the 1,000+ generated public SEO slugs. Rendering a
@@ -147,9 +148,20 @@ function isPortalPath(pathname: string): boolean {
   );
 }
 
+/** Public pages that use AltchaWidget / honeypot (need SecurityProvider, not Auth). */
+function isPublicSecurityPath(pathname: string): boolean {
+  return (
+    pathname === '/book' ||
+    pathname === '/booking' ||
+    pathname === '/warranty' ||
+    pathname === '/authenticity' ||
+    pathname === '/privacy-request'
+  );
+}
+
 /**
- * Public pages do not need Supabase auth or the CRM security context. Load
- * those providers only when a portal route is actually requested.
+ * Marketing pages stay provider-light. Portal routes get Auth + Security.
+ * Public forms get Security only (ALTCHA / honeypot).
  */
 const RouteProviders = ({ children }: { children: React.ReactNode }) => {
   const { pathname } = useLocation();
@@ -158,13 +170,23 @@ const RouteProviders = ({ children }: { children: React.ReactNode }) => {
     if (!isPortalPath(pathname)) disablePWA();
   }, [pathname]);
 
-  if (!isPortalPath(pathname)) return <>{children}</>;
+  if (isPortalPath(pathname)) {
+    return (
+      <Suspense fallback={<LoadingSpinner />}>
+        <PortalProviders>{children}</PortalProviders>
+      </Suspense>
+    );
+  }
 
-  return (
-    <Suspense fallback={<LoadingSpinner />}>
-      <PortalProviders>{children}</PortalProviders>
-    </Suspense>
-  );
+  if (isPublicSecurityPath(pathname)) {
+    return (
+      <Suspense fallback={<LoadingSpinner />}>
+        <PublicSecurityProviders>{children}</PublicSecurityProviders>
+      </Suspense>
+    );
+  }
+
+  return <>{children}</>;
 };
 
 const GlobalHaptics = () => {
