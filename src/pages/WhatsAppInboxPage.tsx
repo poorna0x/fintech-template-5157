@@ -15,6 +15,7 @@ import {
   Search,
   Send,
   Settings,
+  Sparkles,
   Trash2,
   UserRound,
   X,
@@ -151,6 +152,11 @@ import {
   WHATSAPP_ATTACH_ACCEPT,
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
+import {
+  requestAiInboxSuggestion,
+  saveAiQuotationDraft,
+  type AiInboxSuggestion,
+} from '@/lib/aiInboxAssistant';
 import { saveBytesToNativeDownloads } from '@/lib/nativeDownloadsSave';
 import { isNativeRuntime, openBytesNatively } from '@/lib/nativeFileOpen';
 import {
@@ -442,6 +448,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [draft, setDraft] = useState('');
   const [threadBrand, setThreadBrand] = useState<DocumentBrand>('hydrogenro');
   const [sending, setSending] = useState(false);
+  const [aiSuggesting, setAiSuggesting] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<AiInboxSuggestion | null>(null);
+  const [aiSavingQuote, setAiSavingQuote] = useState(false);
   const [purging, setPurging] = useState(false);
   const [chatDeleteTarget, setChatDeleteTarget] = useState<{
     phone: string;
@@ -1425,8 +1434,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     if (!selectedPhone) {
       setThreadMessages([]);
       setThreadHasMoreOlder(false);
+      setAiSuggestion(null);
       return;
     }
+    setAiSuggestion(null);
     const phoneDigits = toWhatsAppPhoneDigits(selectedPhone);
     stickToBottomRef.current = true;
     setShowJumpToLatest(false);
@@ -1812,6 +1823,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         }
         setDraft('');
         clearAttach();
+        setAiSuggestion(null);
         toast.success(parsed.mimeType.startsWith('image/') ? 'Image sent' : 'File sent');
         bumpThreadAfterOutbound({
           phone,
@@ -1836,6 +1848,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         return;
       }
       setDraft('');
+      setAiSuggestion(null);
       toast.success('Sent');
       bumpThreadAfterOutbound({
         phone,
@@ -1848,6 +1861,93 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       setSending(false);
     }
   }, [activeThread?.customer_id, bumpThreadAfterOutbound]);
+
+  const runAiSuggest = useCallback(
+    async (operation: 'suggest_reply' | 'suggest_quotation') => {
+      const phone = selectedPhoneRef.current;
+      if (!phone || aiSuggesting) return;
+      setAiSuggesting(true);
+      const toastId = toast.loading(
+        operation === 'suggest_quotation' ? 'Drafting quotation…' : 'Drafting reply…'
+      );
+      try {
+        const result = await requestAiInboxSuggestion({
+          operation,
+          phoneE164: phone,
+          customerId: activeThread?.customer_id || null,
+        });
+        if (!result.ok) {
+          toast.error(result.error, { id: toastId });
+          return;
+        }
+        setAiSuggestion(result.suggestion);
+        toast.success(
+          operation === 'suggest_quotation' ? 'Quotation draft ready to review' : 'Reply draft ready',
+          { id: toastId }
+        );
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'AI draft failed', { id: toastId });
+      } finally {
+        setAiSuggesting(false);
+      }
+    },
+    [activeThread?.customer_id, aiSuggesting]
+  );
+
+  const applyAiReplyToComposer = useCallback(() => {
+    const text = String(aiSuggestion?.replyText || '').trim();
+    if (!text) {
+      toast.message('No reply text in this suggestion');
+      return;
+    }
+    setDraft(text);
+    toast.success('Applied to composer — review before Send');
+  }, [aiSuggestion?.replyText]);
+
+  const saveAiQuotationFromSuggestion = useCallback(async () => {
+    if (!aiSuggestion?.quotation || aiSavingQuote) return;
+    const customerId = aiSuggestion.customerId || activeThread?.customer_id;
+    if (!customerId) {
+      toast.error('Link this chat to a CRM customer before saving a quotation draft');
+      return;
+    }
+    setAiSavingQuote(true);
+    const toastId = toast.loading('Saving quotation draft…');
+    try {
+      const { data: customer, error } = await db.customers.getById(customerId);
+      if (error || !customer) {
+        toast.error(error?.message || 'Could not load customer', { id: toastId });
+        return;
+      }
+      const row = customer as Record<string, unknown>;
+      const mapped = {
+        id: String(row.id),
+        fullName: String(row.full_name || row.fullName || ''),
+        full_name: String(row.full_name || row.fullName || ''),
+        phone: String(row.phone || ''),
+        email: String(row.email || ''),
+        address: (row.address as any) || null,
+        city: String((row as any).city || ''),
+        state: String((row as any).state || ''),
+        pincode: String((row as any).pincode || ''),
+      };
+      const saved = await saveAiQuotationDraft({
+        suggestion: aiSuggestion,
+        customer: mapped,
+      });
+      if (!saved.ok) {
+        toast.error(saved.error, { id: toastId });
+        return;
+      }
+      toast.success(`Saved draft: ${saved.label}. Open Quotation → Drafts to enter prices.`, {
+        id: toastId,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save draft', { id: toastId });
+    } finally {
+      setAiSavingQuote(false);
+    }
+  }, [activeThread?.customer_id, aiSavingQuote, aiSuggestion]);
 
   const copyBookLink = useCallback(async () => {
     const url = quickReplyBookingUrl(quickReplyContext);
@@ -3110,6 +3210,96 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               ) : windowOpen ? (
               <div className="shrink-0 border-t border-[#2a3942] bg-[#111b21] px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-3">
                   <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-1.5 px-1">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 rounded-full border border-[#2a3942] bg-[#202c33] px-2.5 py-1 text-[11px] font-medium text-[#e9edef] transition hover:bg-[#2a3942] disabled:opacity-50"
+                        disabled={sending || aiSuggesting}
+                        onClick={() => void runAiSuggest('suggest_reply')}
+                        title="Generate a reply draft — you still review and press Send"
+                      >
+                        {aiSuggesting ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+                        )}
+                        AI draft
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 rounded-full border border-[#2a3942] bg-[#202c33] px-2.5 py-1 text-[11px] font-medium text-[#e9edef] transition hover:bg-[#2a3942] disabled:opacity-50"
+                        disabled={sending || aiSuggesting || !activeThread?.customer_id}
+                        onClick={() => void runAiSuggest('suggest_quotation')}
+                        title="Propose a quotation draft with blank prices"
+                      >
+                        <FileText className="h-3.5 w-3.5 text-emerald-300" />
+                        AI quotation
+                      </button>
+                      <span className="text-[10px] text-[#667781]">Review only — never auto-sends</span>
+                    </div>
+                    {aiSuggestion ? (
+                      <div className="rounded-xl border border-[#2a3942] bg-[#202c33] px-3 py-2 text-[#e9edef]">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8696a0]">
+                            AI suggestion
+                            {aiSuggestion.requiresHuman ? ' · needs human review' : ''}
+                          </p>
+                          <button
+                            type="button"
+                            className="text-[#8696a0] hover:text-[#e9edef]"
+                            onClick={() => setAiSuggestion(null)}
+                            aria-label="Dismiss AI suggestion"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        {aiSuggestion.replyText ? (
+                          <p className="whitespace-pre-wrap text-[13px] leading-snug text-[#e9edef]">
+                            {aiSuggestion.replyText}
+                          </p>
+                        ) : null}
+                        {aiSuggestion.warnings?.length ? (
+                          <p className="mt-1 text-[11px] text-amber-200/90">
+                            {aiSuggestion.warnings.join(' · ')}
+                          </p>
+                        ) : null}
+                        {aiSuggestion.quotation?.items?.length ? (
+                          <div className="mt-2 rounded-lg bg-[#111b21] px-2 py-1.5 text-[11px] text-[#cbd5e1]">
+                            <p className="font-medium text-[#94a3b8]">Quotation items (prices blank)</p>
+                            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                              {aiSuggestion.quotation.items.map((item, idx) => (
+                                <li key={`${item.description}-${idx}`}>
+                                  {item.description} × {item.quantity} · ₹0
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 bg-[#00a884] px-3 text-xs text-white hover:bg-[#008f72]"
+                            disabled={!aiSuggestion.replyText}
+                            onClick={applyAiReplyToComposer}
+                          >
+                            Apply to composer
+                          </Button>
+                          {aiSuggestion.quotation?.items?.length ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 border-[#3b4a54] bg-transparent px-3 text-xs text-[#e9edef] hover:bg-[#2a3942]"
+                              disabled={aiSavingQuote || !(aiSuggestion.customerId || activeThread?.customer_id)}
+                              onClick={() => void saveAiQuotationFromSuggestion()}
+                            >
+                              {aiSavingQuote ? 'Saving…' : 'Save quotation draft'}
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                     {attachFile ? (
                       <div className="flex items-center gap-2 rounded-xl bg-[#202c33] px-2 py-1.5 shadow-sm">
                         {attachPreviewUrl ? (

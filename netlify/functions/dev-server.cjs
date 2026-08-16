@@ -246,6 +246,16 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./ilovepdf-compress-helper')];
     delete require.cache[require.resolve('./pdf-compression-setting')];
     handler = loadFn('ilovepdf-usage');
+  } else if (req.url.startsWith('/.netlify/functions/ai-inbox-suggest')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ai-config')];
+    delete require.cache[require.resolve('./ai-provider')];
+    delete require.cache[require.resolve('./ai-provider-mock')];
+    delete require.cache[require.resolve('./ai-provider-gemini')];
+    delete require.cache[require.resolve('./ai-schemas')];
+    delete require.cache[require.resolve('./ai-audit')];
+    delete require.cache[require.resolve('./ai-inbox-suggest')];
+    handler = loadFn('ai-inbox-suggest');
   } else if (req.url.startsWith('/.netlify/functions/salary-slip-month-end')) {
     handler = salarySlipMonthEnd;
   } else {
