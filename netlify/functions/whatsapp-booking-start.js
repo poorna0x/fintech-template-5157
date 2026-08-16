@@ -167,13 +167,13 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
         : 'Service/Repair';
     const schedulePrimary = hasCustomer
       ? {
-          name: `existing_service_schedule_${suffix}_cta_v2`,
+          name: `existing_service_schedule_${suffix}_cta_v3`,
           languageCode: 'en',
           bodyParams: [name],
           seedPending: action === 'book_reinstall' ? 'book_reinstall' : 'book_service',
         }
       : {
-          name: `unregistered_number_service_${suffix}_cta`,
+          name: `unregistered_number_service_${suffix}_cta_v2`,
           languageCode: 'en',
           bodyParams: [name === 'Customer' ? 'there' : name],
           seedPending: action === 'book_reinstall' ? 'book_reinstall' : 'book_service',
@@ -272,22 +272,15 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
   }
 
   if (action === 'water_filter_service') {
+    const locFlatPhoto = coldAskLocFlatPhotoParams(brand, customerName);
     const ask = coldAskLocationParams(brand, customerName);
     const collect = coldWfsCollectParams(brand, customerName);
     return {
-      // No new Meta template — opener reuses ask-location UTILITY; lead source goes in the
-      // Share location message after they reply (24h opens).
-      primary: { ...ask, seedPending: 'water_filter_service' },
-      fallback: { ...collect, seedPending: 'water_filter_service' },
-      fallback2: {
-        name: 'svc_visit_reminder',
-        languageCode: 'en',
-        bodyParams: [
-          name,
-          `${waterFilterFromLabel(brand)} — reply here and we will send a Send location button`,
-        ],
-        seedPending: 'water_filter_service',
-      },
+      // Quick Customer cold opener: exact approved “Water Filter Service or
+      // Installation” template. The reply opens 24h and resumes location-first.
+      primary: { ...locFlatPhoto, seedPending: 'water_filter_service' },
+      fallback: { ...ask, seedPending: 'water_filter_service' },
+      fallback2: { ...collect, seedPending: 'water_filter_service' },
     };
   }
 

@@ -17,7 +17,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "generate:sitemaps": "node scripts/generate-sitemaps.mjs",
-    "test": "vitest run",
+    "test": "vitest run && npm run test:whatsapp-templates",
+    "test:whatsapp-templates": "node tests/whatsapp-template-wiring.test.cjs",
     "wa:templates:status": "node scripts/submit-whatsapp-full-utility.mjs --status",
     "wa:templates:submit": "node scripts/submit-whatsapp-full-utility.mjs --submit",
     "wa:templates:cleanup-marketing": "node scripts/submit-whatsapp-full-utility.mjs --delete-marketing"

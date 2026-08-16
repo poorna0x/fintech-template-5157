@@ -8,6 +8,7 @@
  */
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
+import { supabase } from '@/lib/supabaseClient';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 import { jobHasSkipReview, jobReviewColdUrlButtonParam, jobReviewTokenFromUrl } from '@/lib/jobReviews';
@@ -33,6 +34,10 @@ import {
   sendAdminWhatsAppText,
 } from '@/lib/sendAdminWhatsAppApi';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
+import {
+  fetchLastInboundAt,
+  isCustomerServiceWindowClosed,
+} from '@/lib/whatsappInbox';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import type { Job } from '@/types';
@@ -144,6 +149,9 @@ export async function sendJobCompletionWhatsApp(opts: {
     openWhatsAppMeDeepLink(opts.to, opts.text);
     return { ok: true, via: 'wa_me' };
   }
+  const windowClosed = isCustomerServiceWindowClosed(
+    await fetchLastInboundAt(opts.to, supabase)
+  );
 
   // Balance due + QR: IMAGE Pay-now templates have no Review us button.
   // Prefer 24h photo+caption (includes the review link) when we have a token.
@@ -170,32 +178,34 @@ export async function sendJobCompletionWhatsApp(opts: {
       }
     }
 
-    const mediaResult = await sendAdminWhatsAppMedia({
-      to: opts.to,
-      fileBase64: headerImage.imageBase64,
-      filename: headerImage.filename,
-      mimeType: headerImage.mimeType,
-      caption: opts.text,
-      customerId: opts.customerId,
-      source: 'job_completion',
-    });
-    if (mediaResult.ok) {
-      return { ...mediaResult, usedTemplate: false };
-    }
-    if (mediaResult.featureDisabled) {
-      return mediaResult;
-    }
-    if (!mediaResult.needsWindowOrTemplate) {
-      if (opts.fallbackWaMe !== false) {
-        openWhatsAppMeDeepLink(opts.to, opts.text);
-        return { ok: true, via: 'wa_me', error: mediaResult.error };
+    if (!windowClosed) {
+      const mediaResult = await sendAdminWhatsAppMedia({
+        to: opts.to,
+        fileBase64: headerImage.imageBase64,
+        filename: headerImage.filename,
+        mimeType: headerImage.mimeType,
+        caption: opts.text,
+        customerId: opts.customerId,
+        source: 'job_completion',
+      });
+      if (mediaResult.ok) {
+        return { ...mediaResult, usedTemplate: false };
       }
-      return mediaResult;
+      if (mediaResult.featureDisabled) {
+        return mediaResult;
+      }
+      if (!mediaResult.needsWindowOrTemplate) {
+        if (opts.fallbackWaMe !== false) {
+          openWhatsAppMeDeepLink(opts.to, opts.text);
+          return { ok: true, via: 'wa_me', error: mediaResult.error };
+        }
+        return mediaResult;
+      }
     }
   }
 
   // Pending + review: still attach QR in-window (caption has the review link).
-  if (useBalanceDueCold && headerImage && withReview) {
+  if (!windowClosed && useBalanceDueCold && headerImage && withReview) {
     const mediaResult = await sendAdminWhatsAppMedia({
       to: opts.to,
       fileBase64: headerImage.imageBase64,
@@ -220,13 +230,19 @@ export async function sendJobCompletionWhatsApp(opts: {
     }
   }
 
-  const textResult = await sendAdminWhatsAppText({
-    to: opts.to,
-    text: opts.text,
-    customerId: opts.customerId,
-    source: 'job_completion',
-    fallbackWaMe: false,
-  });
+  const textResult: Awaited<ReturnType<typeof sendAdminWhatsAppText>> = windowClosed
+    ? {
+        ok: false,
+        needsWindowOrTemplate: true,
+        error: '24h window closed',
+      }
+    : await sendAdminWhatsAppText({
+        to: opts.to,
+        text: opts.text,
+        customerId: opts.customerId,
+        source: 'job_completion',
+        fallbackWaMe: false,
+      });
 
   if (textResult.ok) {
     return textResult;

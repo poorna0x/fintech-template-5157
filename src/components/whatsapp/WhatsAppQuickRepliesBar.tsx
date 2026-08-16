@@ -338,6 +338,8 @@ export function WhatsAppQuickRepliesBar({
     const ok =
       !approvedTemplateNames?.size ||
       approvedTemplateNames.has(payload.templateName) ||
+      approvedTemplateNames.has('reschedule_visit_ero_cta_v2') ||
+      approvedTemplateNames.has('reschedule_visit_hro_cta_v2') ||
       approvedTemplateNames.has('reschedule_visit_ero_cta') ||
       approvedTemplateNames.has('reschedule_visit_hro_cta');
     if (!ok) {
@@ -353,6 +355,8 @@ export function WhatsAppQuickRepliesBar({
     const ok =
       !approvedTemplateNames?.size ||
       approvedTemplateNames.has(payload.templateName) ||
+      approvedTemplateNames.has('unregistered_number_service_ero_cta_v2') ||
+      approvedTemplateNames.has('unregistered_number_service_hro_cta_v2') ||
       approvedTemplateNames.has('unregistered_number_service_ero_cta') ||
       approvedTemplateNames.has('unregistered_number_service_hro_cta');
     if (!ok) {
@@ -368,6 +372,8 @@ export function WhatsAppQuickRepliesBar({
     const ok =
       !approvedTemplateNames?.size ||
       approvedTemplateNames.has(payload.templateName) ||
+      approvedTemplateNames.has('svc_booking_confirmed_letter_ero_v4') ||
+      approvedTemplateNames.has('svc_booking_confirmed_letter_hro_v4') ||
       approvedTemplateNames.has('svc_booking_confirmed_letter_ero_v3') ||
       approvedTemplateNames.has('svc_booking_confirmed_letter_hro_v3') ||
       approvedTemplateNames.has('svc_booking_confirmed_letter_ero_v2') ||
@@ -440,16 +446,22 @@ export function WhatsAppQuickRepliesBar({
 
   const showRescheduleTpl =
     !approvedTemplateNames?.size ||
+    approvedTemplateNames.has('reschedule_visit_ero_cta_v2') ||
+    approvedTemplateNames.has('reschedule_visit_hro_cta_v2') ||
     approvedTemplateNames.has('reschedule_visit_ero_cta') ||
     approvedTemplateNames.has('reschedule_visit_hro_cta');
 
   const showUnregisteredTpl =
     !approvedTemplateNames?.size ||
+    approvedTemplateNames.has('unregistered_number_service_ero_cta_v2') ||
+    approvedTemplateNames.has('unregistered_number_service_hro_cta_v2') ||
     approvedTemplateNames.has('unregistered_number_service_ero_cta') ||
     approvedTemplateNames.has('unregistered_number_service_hro_cta');
 
   const showBookingConfirmedTpl =
     !approvedTemplateNames?.size ||
+    approvedTemplateNames.has('svc_booking_confirmed_letter_ero_v4') ||
+    approvedTemplateNames.has('svc_booking_confirmed_letter_hro_v4') ||
     approvedTemplateNames.has('svc_booking_confirmed_letter_ero_v3') ||
     approvedTemplateNames.has('svc_booking_confirmed_letter_hro_v3') ||
     approvedTemplateNames.has('svc_booking_confirmed_letter_ero_v2') ||

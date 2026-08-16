@@ -5,6 +5,10 @@ import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-bra
 import { sendAdminWhatsAppTemplate, sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
 import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
+import {
+  fetchLastInboundAt,
+  isCustomerServiceWindowClosed,
+} from '@/lib/whatsappInbox';
 
 export type JobReviewInvite = {
   ok: true;
@@ -213,13 +217,23 @@ export async function sendAskReviewForLastCompletedJob(opts: {
     jobRef: job.jobNumber || null,
   });
 
-  const textResult = await sendAdminWhatsAppText({
-    to,
-    text,
-    customerId,
-    source: 'inbox',
-    fallbackWaMe: false,
-  });
+  const windowClosed = isCustomerServiceWindowClosed(
+    await fetchLastInboundAt(to, supabase)
+  );
+
+  const textResult: Awaited<ReturnType<typeof sendAdminWhatsAppText>> = windowClosed
+    ? {
+        ok: false,
+        needsWindowOrTemplate: true,
+        error: '24h window closed',
+      }
+    : await sendAdminWhatsAppText({
+        to,
+        text,
+        customerId,
+        source: 'inbox',
+        fallbackWaMe: false,
+      });
   if (textResult.ok) {
     return { ok: true, via: 'api', usedTemplate: false, jobNumber: job.jobNumber };
   }
