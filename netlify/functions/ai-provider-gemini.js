@@ -5,7 +5,8 @@
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_TIMEOUT_MS = 18_000;
-const MAX_OUTPUT_TOKENS = 1024;
+// Gemini 2.5+/3.x thinking can consume most of a small budget before JSON is emitted.
+const MAX_OUTPUT_TOKENS = 4096;
 
 function toGeminiContents(messages) {
   const contents = [];
@@ -81,15 +82,18 @@ async function generateWithGemini(input, config) {
   }
 
   const url = `${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`;
+  const requestedOut = Number(input.maxOutputTokens);
   const body = {
     contents,
     generationConfig: {
       temperature: typeof input.temperature === 'number' ? input.temperature : 0.3,
       maxOutputTokens: Math.min(
         MAX_OUTPUT_TOKENS,
-        Number(input.maxOutputTokens) || MAX_OUTPUT_TOKENS
+        Number.isFinite(requestedOut) && requestedOut > 0 ? requestedOut : MAX_OUTPUT_TOKENS
       ),
       responseMimeType: 'application/json',
+      // Draft JSON does not need extended thinking; keep output for the reply payload.
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
   if (systemInstruction) {

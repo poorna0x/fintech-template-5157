@@ -255,7 +255,7 @@ exports.handler = async (event) => {
       systemInstruction: buildSystemInstruction(parsed.value.operation),
       messages: [{ role: 'user', text: userPrompt }],
       temperature: 0.3,
-      maxOutputTokens: 900,
+      maxOutputTokens: 2048,
       timeoutMs: 18_000,
     });
 
