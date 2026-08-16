@@ -85,6 +85,24 @@ const Testimonials = () => {
       author: "Naveen Kumar",
       position: "Homeowner, BTM Layout",
       gender: "male"
+    },
+    {
+      quote: "Installed a water softener for our apartment in Sarjapur — no more white scale on taps and the geyser lasts longer. Same-day setup and clear pricing from Hydrogen RO.",
+      author: "Lakshmi Hegde",
+      position: "Homeowner, Sarjapur",
+      gender: "female"
+    },
+    {
+      quote: "Hard water in Hebbal was ruining our bathroom fittings. Their softener installation fixed it within a day. Soft water for bathing and washing — we notice the difference every morning.",
+      author: "Rohit Desai",
+      position: "Homeowner, Hebbal",
+      gender: "male"
+    },
+    {
+      quote: "Water softener service in Yelahanka was excellent. They checked resin levels, topped up salt, and explained how to maintain it. Skin feels better and clothes come out cleaner.",
+      author: "Shalini Krishnan",
+      position: "Homeowner, Yelahanka",
+      gender: "female"
     }
   ];
   
