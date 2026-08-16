@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { Mail, Phone } from 'lucide-react';
 import Logo from './Logo';
 import { getBrandSeoProfile } from '@/lib/publicSiteSeo';
@@ -8,7 +8,17 @@ import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 const Footer = () => {
   const brand = getBrandSeoProfile(getPublicSiteKey());
+  const location = useLocation();
   const telHref = (phone: string) => `tel:${phone.replace(/\s/g, '')}`;
+
+  useEffect(() => {
+    if (!location.hash) return;
+    const id = decodeURIComponent(location.hash.slice(1));
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [location.hash, location.pathname]);
 
   return (
     <footer
@@ -51,30 +61,30 @@ const Footer = () => {
           <div className="hidden md:block space-y-4">
             <h3 className="font-medium text-lg text-foreground">RO Services in Bengaluru</h3>
             <ul className="space-y-3">
-              <li><a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">RO Installation Bengaluru</a></li>
-              <li><a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">RO Repair & Maintenance</a></li>
-              <li><a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">RO Filter Replacement</a></li>
-              <li><a href="#services" className="text-muted-foreground hover:text-foreground transition-colors">Water Softener Installation</a></li>
+              <li><Link to="/ro-installation" className="text-muted-foreground hover:text-foreground transition-colors">RO Installation Bengaluru</Link></li>
+              <li><Link to="/ro-repair" className="text-muted-foreground hover:text-foreground transition-colors">RO Repair & Maintenance</Link></li>
+              <li><Link to="/filter-replacement" className="text-muted-foreground hover:text-foreground transition-colors">RO Filter Replacement</Link></li>
+              <li><Link to="/water-softener" className="text-muted-foreground hover:text-foreground transition-colors">Water Softener Installation</Link></li>
             </ul>
           </div>
           
           <div className="hidden md:block space-y-4">
             <h3 className="font-medium text-lg text-foreground">Service Areas & Company</h3>
             <ul className="space-y-3">
-              <li><a href="#about" className="text-muted-foreground hover:text-foreground transition-colors">About {brand.brandName}</a></li>
-              <li><a href="#testimonials" className="text-muted-foreground hover:text-foreground transition-colors">Customer Reviews</a></li>
-              <li><a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">Contact {brand.brandName}</a></li>
-              <li><a href="#why-choose" className="text-muted-foreground hover:text-foreground transition-colors">Why Choose Us</a></li>
+              <li><Link to="/about" className="text-muted-foreground hover:text-foreground transition-colors">About {brand.brandName}</Link></li>
+              <li><Link to="/#testimonials" className="text-muted-foreground hover:text-foreground transition-colors">Customer Reviews</Link></li>
+              <li><Link to="/contact" className="text-muted-foreground hover:text-foreground transition-colors">Contact {brand.brandName}</Link></li>
+              <li><Link to="/about" className="text-muted-foreground hover:text-foreground transition-colors">Why Choose Us</Link></li>
             </ul>
           </div>
           
           <div className="hidden md:block space-y-4">
             <h3 className="font-medium text-lg text-foreground">Support & Booking</h3>
             <ul className="space-y-3">
-              <li><a href="#booking" className="text-muted-foreground hover:text-foreground transition-colors">Book RO Service</a></li>
+              <li><Link to="/book" className="text-muted-foreground hover:text-foreground transition-colors">Book RO Service</Link></li>
               <li><Link to="/warranty" className="text-muted-foreground hover:text-foreground transition-colors">Check Warranty Status</Link></li>
-              <li><a href="#about" className="text-muted-foreground hover:text-foreground transition-colors">RO Maintenance Tips</a></li>
-              <li><a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">Service Support</a></li>
+              <li><Link to="/blog/maintain-ro-purifier-home-guide" className="text-muted-foreground hover:text-foreground transition-colors">RO Maintenance Tips</Link></li>
+              <li><Link to="/contact" className="text-muted-foreground hover:text-foreground transition-colors">Service Support</Link></li>
             </ul>
           </div>
         </div>
