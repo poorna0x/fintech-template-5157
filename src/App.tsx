@@ -188,6 +188,20 @@ const NativeBackButton = () => {
   return null;
 };
 
+/**
+ * SPA footer/nav links change the path while leaving scroll at the bottom, so
+ * the new page looks like "nothing happened". Scroll to top on pathname change;
+ * leave hash-only jumps alone so /#testimonials etc. still work.
+ */
+const ScrollToTopOnNavigate = () => {
+  const { pathname, hash } = useLocation();
+  useEffect(() => {
+    if (hash) return;
+    window.scrollTo(0, 0);
+  }, [pathname, hash]);
+  return null;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -199,6 +213,7 @@ const App = () => (
             <Sonner />
             <BrowserRouter>
               <NativeBackButton />
+              <ScrollToTopOnNavigate />
               <GlobalHaptics />
               <AuthPortalCoordinator />
               <PublicSiteSeo />
