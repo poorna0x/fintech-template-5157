@@ -1,0 +1,202 @@
+/**
+ * Request/response validation for the admin CRM AI chat.
+ * Dependency-free. Never trusts client provider/model/tools/SQL.
+ */
+
+const ALLOWED_ACTION_TYPES = Object.freeze([
+  'open_customer',
+  'create_job',
+  'schedule_follow_up',
+  'create_reminder',
+]);
+
+const MAX_MESSAGE_CHARS = 1500;
+const MAX_ANSWER_CHARS = 1800;
+const MAX_WARNINGS = 8;
+const MAX_ACTIONS = 4;
+const MAX_FIELD_CHARS = 240;
+
+function asTrimmedString(value, maxLen) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return '';
+  return text.slice(0, maxLen);
+}
+
+function clampConfidence(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0.5;
+  return Math.max(0, Math.min(1, n));
+}
+
+function parseCrmChatRequest(body) {
+  const message = asTrimmedString(body?.message, MAX_MESSAGE_CHARS);
+  if (message.length < 2) {
+    return { ok: false, error: 'Message required' };
+  }
+
+  const focusCustomerId = asTrimmedString(body?.focusCustomerId, 64) || null;
+  const conversationId = asTrimmedString(body?.conversationId, 80) || null;
+
+  return {
+    ok: true,
+    value: {
+      operation: 'crm_chat',
+      message,
+      focusCustomerId,
+      conversationId,
+    },
+  };
+}
+
+function normalizeWarnings(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((w) => asTrimmedString(w, MAX_FIELD_CHARS))
+    .filter(Boolean)
+    .slice(0, MAX_WARNINGS);
+}
+
+function normalizeCreateJobPayload(raw, knownCustomerIds) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const customerId = asTrimmedString(src.customerId, 64);
+  if (!customerId || !knownCustomerIds.has(customerId)) return null;
+  return {
+    customerId,
+    serviceType:
+      src.serviceType === 'SOFTENER' || src.service_type === 'SOFTENER' ? 'SOFTENER' : 'RO',
+    serviceSubType: asTrimmedString(src.serviceSubType || src.service_sub_type, 80) || 'Service',
+    scheduledDate: asTrimmedString(src.scheduledDate || src.scheduled_date, 10) || null,
+    scheduledTimeSlot: asTrimmedString(
+      src.scheduledTimeSlot || src.scheduled_time_slot,
+      20
+    ).toUpperCase() || null,
+    description: asTrimmedString(src.description, 500),
+    priority: asTrimmedString(src.priority, 12).toUpperCase() || 'MEDIUM',
+    leadSource: asTrimmedString(src.leadSource || src.lead_source, 80),
+    notes: asTrimmedString(src.notes, 500),
+  };
+}
+
+function normalizeFollowUpPayload(raw, knownJobIds) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const jobId = asTrimmedString(src.jobId, 64);
+  if (!jobId || !knownJobIds.has(jobId)) return null;
+  return {
+    jobId,
+    followUpDate: asTrimmedString(src.followUpDate || src.follow_up_date, 10) || null,
+    followUpTime: asTrimmedString(src.followUpTime || src.follow_up_time, 8) || null,
+    followUpReason: asTrimmedString(src.followUpReason || src.reason, 200) || 'Not confirmed',
+    addAmcReminder: src.addAmcReminder === true,
+  };
+}
+
+function normalizeReminderPayload(raw, knownCustomerIds) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const customerId = asTrimmedString(src.customerId, 64) || null;
+  if (customerId && !knownCustomerIds.has(customerId)) return null;
+  const title = asTrimmedString(src.title, 160);
+  if (!title) return null;
+  return {
+    customerId,
+    title,
+    notes: asTrimmedString(src.notes, 500),
+    reminderAt: asTrimmedString(src.reminderAt || src.reminder_at, 10) || null,
+  };
+}
+
+/**
+ * Normalize model JSON into a safe CRM chat payload.
+ * Mutations are never executed here — only proposed with requiresConfirm.
+ */
+function normalizeCrmChatOutput(raw, opts = {}) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const answer = asTrimmedString(src.answer || src.replyText || src.text, MAX_ANSWER_CHARS);
+  const confidence = clampConfidence(src.confidence);
+  const requiresHuman = src.requiresHuman === true || confidence < 0.35;
+  const warnings = normalizeWarnings(src.warnings);
+
+  const knownCustomerIds = new Set(
+    (opts.entities?.customers || []).map((c) => String(c.id)).filter(Boolean)
+  );
+  const knownJobIds = new Set(
+    (opts.entities?.jobs || []).map((j) => String(j.id)).filter(Boolean)
+  );
+
+  const proposedActions = [];
+  const rawActions = Array.isArray(src.proposedActions) ? src.proposedActions : [];
+  for (const row of rawActions.slice(0, MAX_ACTIONS)) {
+    if (!row || typeof row !== 'object') continue;
+    const type = asTrimmedString(row.type, 40);
+    if (!ALLOWED_ACTION_TYPES.includes(type)) continue;
+
+    let payload = null;
+    if (type === 'open_customer') {
+      const customerId = asTrimmedString(row.payload?.customerId || row.customerId, 64);
+      if (!customerId || !knownCustomerIds.has(customerId)) continue;
+      payload = { customerId };
+    } else if (type === 'create_job') {
+      payload = normalizeCreateJobPayload(row.payload || row, knownCustomerIds);
+    } else if (type === 'schedule_follow_up') {
+      payload = normalizeFollowUpPayload(row.payload || row, knownJobIds);
+    } else if (type === 'create_reminder') {
+      payload = normalizeReminderPayload(row.payload || row, knownCustomerIds);
+    }
+    if (!payload) continue;
+
+    proposedActions.push({
+      type,
+      label: asTrimmedString(row.label, 120) || type.replace(/_/g, ' '),
+      confidence: clampConfidence(row.confidence ?? confidence),
+      requiresConfirm: true,
+      payload,
+    });
+  }
+
+  if (!answer && !proposedActions.length && !(opts.entities?.customers || []).length) {
+    return { ok: false, error: 'Empty model output' };
+  }
+
+  return {
+    ok: true,
+    value: {
+      answer:
+        answer ||
+        (proposedActions.length
+          ? 'I prepared reviewed action drafts. Confirm in the CRM form to apply.'
+          : 'No matching CRM records found for that query.'),
+      confidence,
+      requiresHuman,
+      warnings,
+      proposedActions,
+    },
+  };
+}
+
+function assertNoMutationTools(toolNames) {
+  const banned = [
+    'delete',
+    'remove',
+    'update',
+    'create_job',
+    'send_whatsapp',
+    'execute_sql',
+    'run_rpc',
+    'fetch_url',
+  ];
+  const list = Array.isArray(toolNames) ? toolNames : [];
+  for (const name of list) {
+    const n = String(name || '').toLowerCase();
+    if (banned.some((b) => n.includes(b))) {
+      throw new Error(`Disallowed tool: ${name}`);
+    }
+  }
+  return true;
+}
+
+module.exports = {
+  ALLOWED_ACTION_TYPES,
+  MAX_MESSAGE_CHARS,
+  parseCrmChatRequest,
+  normalizeCrmChatOutput,
+  assertNoMutationTools,
+};

@@ -48,6 +48,13 @@ interface FollowUpModalProps {
     addAmcReminder?: boolean;
   }) => void;
   hasActiveAmc?: boolean;
+  /** Optional one-time AI / prepared draft. Applied on open; never auto-submits. */
+  initialDraft?: {
+    followUpDate?: string | null;
+    followUpTime?: string | null;
+    followUpReason?: string | null;
+    addAmcReminder?: boolean;
+  } | null;
 }
 
 export default function FollowUpModal({
@@ -56,6 +63,7 @@ export default function FollowUpModal({
   job,
   onScheduleFollowUp,
   hasActiveAmc = false,
+  initialDraft = null,
 }: FollowUpModalProps) {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedTime, setSelectedTime] = useState(() => nextPresetAppointmentTime());
@@ -97,14 +105,23 @@ export default function FollowUpModal({
   useEffect(() => {
     if (isOpen && job) {
       // Reset form fields
-      setSelectedDate(new Date());
-      setSelectedTime(nextPresetAppointmentTime());
-      setReason('');
+      const draftDate = initialDraft?.followUpDate
+        ? new Date(`${initialDraft.followUpDate}T00:00:00`)
+        : new Date();
+      setSelectedDate(Number.isNaN(draftDate.getTime()) ? new Date() : draftDate);
+      setSelectedTime(
+        initialDraft?.followUpTime && /^\d{1,2}:\d{2}/.test(initialDraft.followUpTime)
+          ? initialDraft.followUpTime.slice(0, 5)
+          : nextPresetAppointmentTime()
+      );
+      setReason(initialDraft?.followUpReason || '');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
       setAutoMoveToOngoingOnDate(hasAutoMoveToOngoingOnDate((job as any).requirements));
       setAddAmcReminder(
-        Boolean((job as any).include_amc_follow_up ?? (job as any).includeAmcFollowUp)
+        typeof initialDraft?.addAmcReminder === 'boolean'
+          ? initialDraft.addAmcReminder
+          : Boolean((job as any).include_amc_follow_up ?? (job as any).includeAmcFollowUp)
       );
     } else {
       setExistingFollowUps([]);
@@ -113,7 +130,7 @@ export default function FollowUpModal({
       setAutoMoveToOngoingOnDate(false);
       setAddAmcReminder(false);
     }
-  }, [isOpen, job]);
+  }, [isOpen, job, initialDraft]);
 
   const loadFollowUps = async () => {
     if (!job) return;

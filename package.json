@@ -21,7 +21,8 @@
     "test:pdf-compression": "node tests/pdf-compression.test.cjs",
     "test:whatsapp-templates": "node tests/whatsapp-template-wiring.test.cjs",
     "test:ai-inbox": "node tests/ai-inbox-assistant.test.cjs",
-    "test:security": "node tests/staff-access.test.cjs && node tests/sql-is-admin-user-strict.test.cjs && node tests/job-review-security.test.cjs && node tests/document-accept-security.test.cjs && node tests/admin-auth-guard.test.cjs && node tests/cloudinary-signed-url-auth.test.cjs && node tests/rate-limiter.test.cjs && node tests/cloudinary-usage.test.cjs && node tests/ai-inbox-assistant.test.cjs",
+    "test:ai-crm": "node tests/ai-crm-chat.test.cjs",
+    "test:security": "node tests/staff-access.test.cjs && node tests/sql-is-admin-user-strict.test.cjs && node tests/job-review-security.test.cjs && node tests/document-accept-security.test.cjs && node tests/admin-auth-guard.test.cjs && node tests/cloudinary-signed-url-auth.test.cjs && node tests/rate-limiter.test.cjs && node tests/cloudinary-usage.test.cjs && node tests/ai-inbox-assistant.test.cjs && node tests/ai-crm-chat.test.cjs",
     "wa:templates:status": "node scripts/submit-whatsapp-full-utility.mjs --status",
     "wa:templates:submit": "node scripts/submit-whatsapp-full-utility.mjs --submit",
     "wa:templates:cleanup-marketing": "node scripts/submit-whatsapp-full-utility.mjs --delete-marketing"

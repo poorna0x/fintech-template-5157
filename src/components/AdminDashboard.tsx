@@ -306,6 +306,12 @@ import AddTeamDialog from './admin/AddTeamDialog';
 import RemoveTeamDialog from './admin/RemoveTeamDialog';
 import NewJobDialog from './admin/NewJobDialog';
 import { AddReminderDialog } from './reminders/AddReminderDialog';
+import AdminCrmAiDialog from './admin/AdminCrmAiDialog';
+import type {
+  AiCrmCreateJobDraft,
+  AiCrmFollowUpDraft,
+  AiCrmReminderDraft,
+} from '@/lib/aiCrmAssistant';
 import { TodayRemindersPopup } from './reminders/TodayRemindersPopup';
 import { CustomerRemindersDialog } from './reminders/CustomerRemindersDialog';
 import EditJobDialog from './admin/EditJobDialog';
@@ -1090,6 +1096,27 @@ const AdminDashboard = () => {
   const nearbyJobsOpen = activeAdminTool === 'nearby-jobs';
   const technicianLiveLocationOpen = activeAdminTool === 'technician-live-location';
   const messageTechnicianOpen = activeAdminTool === 'message-technician';
+  const aiAssistantOpen = !isManager && activeAdminTool === 'ai-assistant';
+  const [aiJobDraft, setAiJobDraft] = useState<Partial<{
+    service_type: 'RO' | 'SOFTENER';
+    service_sub_type: string;
+    scheduled_date: string;
+    scheduled_time_slot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM';
+    description: string;
+    priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+    lead_source: string;
+  }> | null>(null);
+  const [aiFollowUpDraft, setAiFollowUpDraft] = useState<{
+    followUpDate?: string | null;
+    followUpTime?: string | null;
+    followUpReason?: string | null;
+    addAmcReminder?: boolean;
+  } | null>(null);
+  const [aiReminderDraft, setAiReminderDraft] = useState<{
+    title?: string;
+    notes?: string;
+    reminderAt?: string | null;
+  } | null>(null);
 
   // Close Tools dropdown before paint when URL changes (gesture back / in-app navigate).
   useLayoutEffect(() => {
@@ -5533,6 +5560,157 @@ const AdminDashboard = () => {
     openAdminModal('follow-up', { jobId: job.id });
   };
 
+  const handleAiSearchCustomer = useCallback(
+    async (query: string, customerId?: string) => {
+      closeAdminTool();
+      if (customerId) {
+        try {
+          const { data } = await db.customers.getById(customerId);
+          if (data) {
+            const customer = transformCustomerData(data);
+            setSearchResults((prev) => {
+              const list = prev || [];
+              if (list.some((c) => c.id === customer.id)) return list;
+              return [customer, ...list];
+            });
+            const q =
+              query.trim() ||
+              customer.phone ||
+              customer.fullName ||
+              customer.customerId ||
+              customer.id;
+            await runCustomerSearch(String(q));
+            return;
+          }
+        } catch {
+          /* fall through */
+        }
+      }
+      if (query.trim()) {
+        await runCustomerSearch(query.trim());
+      }
+    },
+    [closeAdminTool, runCustomerSearch]
+  );
+
+  const handleAiConfirmCreateJob = useCallback(
+    async (draft: AiCrmCreateJobDraft) => {
+      closeAdminTool();
+      if (!draft?.customerId) {
+        toast.error('AI job draft is missing a customer');
+        return;
+      }
+      try {
+        const { data, error } = await db.customers.getById(draft.customerId);
+        if (error || !data) {
+          toast.error('Customer not found for AI job draft');
+          return;
+        }
+        const customer = transformCustomerData(data);
+        setSearchResults((prev) => {
+          const list = prev || [];
+          if (list.some((c) => c.id === customer.id)) return list;
+          return [customer, ...list];
+        });
+        const slot = String(draft.scheduledTimeSlot || '').toUpperCase();
+        setAiJobDraft({
+          service_type: draft.serviceType === 'SOFTENER' ? 'SOFTENER' : 'RO',
+          service_sub_type: draft.serviceSubType || 'Service',
+          scheduled_date: draft.scheduledDate || undefined,
+          scheduled_time_slot:
+            slot === 'MORNING' ||
+            slot === 'AFTERNOON' ||
+            slot === 'EVENING' ||
+            slot === 'FLEXIBLE' ||
+            slot === 'CUSTOM'
+              ? slot
+              : undefined,
+          description: draft.description || draft.notes || undefined,
+          priority: (['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(
+            String(draft.priority || '').toUpperCase()
+          )
+            ? String(draft.priority).toUpperCase()
+            : 'MEDIUM') as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+          lead_source: draft.leadSource || undefined,
+        });
+        handleNewJob(customer);
+      } catch {
+        toast.error('Could not open job form from AI draft');
+      }
+    },
+    [closeAdminTool, handleNewJob]
+  );
+
+  const handleAiConfirmFollowUp = useCallback(
+    async (draft: AiCrmFollowUpDraft) => {
+      closeAdminTool();
+      if (!draft?.jobId) {
+        toast.error('AI follow-up draft is missing a job');
+        return;
+      }
+      let job =
+        jobs.find((j) => j.id === draft.jobId) ||
+        customerJobs.find((j) => j.id === draft.jobId) ||
+        null;
+      if (!job) {
+        const { data, error } = await db.jobs.getById(draft.jobId);
+        if (error || !data) {
+          toast.error('Job not found for AI follow-up draft');
+          return;
+        }
+        job = data as Job;
+        setJobs((prev) => (prev.some((j) => j.id === job!.id) ? prev : [job!, ...prev]));
+      }
+      setAiFollowUpDraft({
+        followUpDate: draft.followUpDate || null,
+        followUpTime: draft.followUpTime || null,
+        followUpReason: draft.followUpReason || 'Not confirmed',
+        addAmcReminder: draft.addAmcReminder === true,
+      });
+      setSelectedJobForFollowUp(job);
+      openAdminModal('follow-up', { jobId: job.id });
+    },
+    [closeAdminTool, jobs, customerJobs, openAdminModal]
+  );
+
+  const handleAiConfirmReminder = useCallback(
+    async (draft: AiCrmReminderDraft) => {
+      closeAdminTool();
+      if (!draft?.title?.trim()) {
+        toast.error('AI reminder draft needs a title');
+        return;
+      }
+      if (!draft.customerId) {
+        toast.error('Link a customer before creating a reminder from AI');
+        return;
+      }
+      try {
+        const { data, error } = await db.customers.getById(draft.customerId);
+        if (error || !data) {
+          toast.error('Customer not found for AI reminder draft');
+          return;
+        }
+        const customer = transformCustomerData(data);
+        setSearchResults((prev) => {
+          const list = prev || [];
+          if (list.some((c) => c.id === customer.id)) return list;
+          return [customer, ...list];
+        });
+        setAiReminderDraft({
+          title: draft.title,
+          notes: draft.notes || '',
+          reminderAt: draft.reminderAt || null,
+        });
+        setReminderEntity({ type: 'customer', id: customer.id });
+        setReminderContextLabel(customer.fullName || customer.phone || 'Customer');
+        openAdminModal('add-reminder', { customerId: customer.id });
+      } catch {
+        toast.error('Could not open reminder form from AI draft');
+      }
+    },
+    [closeAdminTool, openAdminModal]
+  );
+
   const handleFollowUpSubmit = useCallback(
     (jobId: string, followUpData: AdminFollowUpSubmitData) =>
       submitAdminFollowUp(jobId, followUpData, {
@@ -6881,10 +7059,13 @@ const AdminDashboard = () => {
           setNewJobDialogOpen(false);
           setIsJobDialogReady(false);
           setSelectedCustomerForJob(null);
+          setAiJobDraft(null);
         })}
         customer={selectedCustomerForJob}
         technicians={technicians}
+        initialDraft={aiJobDraft}
         onJobCreated={(newJob) => {
+          setAiJobDraft(null);
           setJobs([newJob, ...jobs]);
           const customerId = selectedCustomerForJob?.customer_id || selectedCustomerForJob?.customerId;
           if (customerId) {
@@ -7149,9 +7330,11 @@ const AdminDashboard = () => {
           onClose={() => {
             setFollowUpModalOpen(false);
             setSelectedJobForFollowUp(null);
+            setAiFollowUpDraft(null);
             closeAdminModal();
           }}
           job={selectedJobForFollowUp}
+          initialDraft={aiFollowUpDraft}
           hasActiveAmc={Boolean(
             selectedJobForFollowUp &&
               customerAMCStatus[
@@ -7526,9 +7709,30 @@ const AdminDashboard = () => {
 
       <AddReminderDialog
         open={addReminderDialogOpen}
-        onOpenChange={bindAdminModalDismiss('add-reminder', () => setAddReminderDialogOpen(false))}
+        onOpenChange={bindAdminModalDismiss('add-reminder', () => {
+          setAddReminderDialogOpen(false);
+          setAiReminderDraft(null);
+        })}
         entity={reminderEntity}
         contextLabel={reminderContextLabel || undefined}
+        initialDraft={aiReminderDraft}
+      />
+
+      <AdminCrmAiDialog
+        open={aiAssistantOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('ai-assistant', open)}
+        onSearchCustomer={(query, customerId) => {
+          void handleAiSearchCustomer(query, customerId);
+        }}
+        onConfirmCreateJob={(draft) => {
+          void handleAiConfirmCreateJob(draft);
+        }}
+        onConfirmFollowUp={(draft) => {
+          void handleAiConfirmFollowUp(draft);
+        }}
+        onConfirmReminder={(draft) => {
+          void handleAiConfirmReminder(draft);
+        }}
       />
 
       <WarrantyManagementDialog

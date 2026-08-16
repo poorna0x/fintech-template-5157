@@ -256,6 +256,17 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./ai-audit')];
     delete require.cache[require.resolve('./ai-inbox-suggest')];
     handler = loadFn('ai-inbox-suggest');
+  } else if (req.url.startsWith('/.netlify/functions/ai-crm-chat')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ai-config')];
+    delete require.cache[require.resolve('./ai-provider')];
+    delete require.cache[require.resolve('./ai-provider-mock')];
+    delete require.cache[require.resolve('./ai-provider-gemini')];
+    delete require.cache[require.resolve('./ai-crm-schemas')];
+    delete require.cache[require.resolve('./ai-crm-lookup')];
+    delete require.cache[require.resolve('./ai-audit')];
+    delete require.cache[require.resolve('./ai-crm-chat')];
+    handler = loadFn('ai-crm-chat');
   } else if (req.url.startsWith('/.netlify/functions/salary-slip-month-end')) {
     handler = salarySlipMonthEnd;
   } else {

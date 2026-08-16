@@ -37,6 +37,12 @@ interface AddReminderDialogProps {
   dialogTitle?: string;
   onSaved?: () => void;
   editReminder?: Reminder | null;
+  /** Optional one-time AI / prepared draft for create mode. Never auto-submits. */
+  initialDraft?: {
+    title?: string;
+    notes?: string;
+    reminderAt?: string | null;
+  } | null;
 }
 
 export function AddReminderDialog({
@@ -49,6 +55,7 @@ export function AddReminderDialog({
   dialogTitle,
   onSaved,
   editReminder,
+  initialDraft = null,
 }: AddReminderDialogProps) {
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
@@ -99,11 +106,16 @@ export function AddReminderDialog({
         setRepeatType(editReminder.interval_type === 'months' ? 'months' : 'none');
         setRepeatValueStr(editReminder.interval_value != null ? String(editReminder.interval_value) : '1');
       } else {
-        const d = new Date();
-        d.setDate(d.getDate() + 1);
+        const d = initialDraft?.reminderAt
+          ? parseReminderAtLocalDate(initialDraft.reminderAt)
+          : (() => {
+              const next = new Date();
+              next.setDate(next.getDate() + 1);
+              return next;
+            })();
         setDate(d);
-        setTitle('');
-        setNotes('');
+        setTitle(initialDraft?.title || '');
+        setNotes(initialDraft?.notes || '');
         setRepeatType('none');
         setRepeatValueStr('1');
         setAttachMode(requireCustomerPick ? 'customer' : 'general');
@@ -113,7 +125,7 @@ export function AddReminderDialog({
         setSelectedCustomer(null);
       }
     }
-  }, [open, editReminder, requireCustomerPick]);
+  }, [open, editReminder, requireCustomerPick, initialDraft]);
 
   const runCustomerSearch = useCallback(async () => {
     const q = customerQuery.trim();

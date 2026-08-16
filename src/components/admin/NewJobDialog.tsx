@@ -82,6 +82,8 @@ interface NewJobDialogProps {
    * skipped.
    */
   technicianMode?: boolean;
+  /** Optional one-time AI / prepared draft. Applied on open; never auto-submits. */
+  initialDraft?: Partial<NewJobFormData> | null;
 }
 
 const NewJobDialog: React.FC<NewJobDialogProps> = ({
@@ -95,6 +97,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   parseDbServiceType,
   onJobAssignedToTechnician,
   technicianMode = false,
+  initialDraft = null,
 }) => {
   const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [isCreatingJob, setIsCreatingJob] = useState(false);
@@ -160,9 +163,10 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       service_type: defaultServiceType as 'RO' | 'SOFTENER',
       service_sub_type: prev.service_sub_type || 'Service',
       brand: brand || prev.brand || 'Not specified',
-      model: model || prev.model || 'Not specified'
+      model: model || prev.model || 'Not specified',
+      ...(initialDraft || {}),
     }));
-  }, [open, customer, parseDbServiceType]);
+  }, [open, customer, parseDbServiceType, initialDraft]);
 
   const applyServiceSiteToForm = (site: CustomerLocationVariant) => {
     if (!customer) return;
