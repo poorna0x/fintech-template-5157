@@ -133,7 +133,7 @@ function buildUserPrompt(ctx, operation) {
 
 exports.handler = async (event) => {
   const requestOrigin = event.headers?.origin || event.headers?.Origin || '';
-  const headers = getCorsHeaders(event.headers || {});
+  const headers = getCorsHeaders(requestOrigin);
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers, body: '' };

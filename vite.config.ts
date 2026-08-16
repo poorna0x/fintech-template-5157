@@ -113,6 +113,11 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      // AI assistant is local-only until it ships to production.
+      '/.netlify/functions/ai-inbox-suggest': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/cloudinary-delete': {
         target: 'http://localhost:8888',
         changeOrigin: true,
