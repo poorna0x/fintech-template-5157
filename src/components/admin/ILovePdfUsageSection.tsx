@@ -42,7 +42,7 @@ export default function ILovePdfUsageSection() {
             {loading
               ? 'Loading credit balance…'
               : !data?.configured
-                ? 'API keys not configured on this server'
+                ? 'Not configured — add app_secrets.ilovepdf in Supabase (not Netlify env)'
                 : data.error
                   ? data.error
                   : `Credits remaining · ~${formatCount(jobs)} PDF compresses (${perFile} credits each)`}

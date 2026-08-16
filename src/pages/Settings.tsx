@@ -103,9 +103,9 @@ import {
   type JobWhatsAppNotifyPrefs,
 } from '@/lib/jobAssignWhatsAppSettingsCache';
 import {
-  fetchQuotationPdfCompressionEnabled,
-  saveQuotationPdfCompressionEnabled,
-} from '@/lib/quotationPdfCompressionSettings';
+  fetchPdfCompressionEnabled,
+  savePdfCompressionEnabled,
+} from '@/lib/pdfCompressionSettings';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
@@ -335,8 +335,8 @@ const Settings = () => {
       }
   );
   const [jobWaNotifySaving, setJobWaNotifySaving] = useState(false);
-  const [quotationPdfCompressionEnabled, setQuotationPdfCompressionEnabled] = useState(true);
-  const [quotationPdfCompressionSaving, setQuotationPdfCompressionSaving] = useState(false);
+  const [pdfCompressionEnabled, setPdfCompressionEnabled] = useState(true);
+  const [pdfCompressionSaving, setPdfCompressionSaving] = useState(false);
 
   // Download data state
   const [isDownloading, setIsDownloading] = useState(false);
@@ -670,8 +670,8 @@ const Settings = () => {
   useEffect(() => {
     if (isManager) return;
     let cancelled = false;
-    void fetchQuotationPdfCompressionEnabled().then(({ enabled }) => {
-      if (!cancelled) setQuotationPdfCompressionEnabled(enabled);
+    void fetchPdfCompressionEnabled().then(({ enabled }) => {
+      if (!cancelled) setPdfCompressionEnabled(enabled);
     });
     return () => {
       cancelled = true;
@@ -731,14 +731,14 @@ const Settings = () => {
     }
   };
 
-  const handleQuotationPdfCompressionToggle = async (enabled: boolean) => {
-    const previous = quotationPdfCompressionEnabled;
-    setQuotationPdfCompressionEnabled(enabled);
-    setQuotationPdfCompressionSaving(true);
+  const handlePdfCompressionToggle = async (enabled: boolean) => {
+    const previous = pdfCompressionEnabled;
+    setPdfCompressionEnabled(enabled);
+    setPdfCompressionSaving(true);
     try {
-      const result = await saveQuotationPdfCompressionEnabled(enabled);
+      const result = await savePdfCompressionEnabled(enabled);
       if (!result.ok) {
-        setQuotationPdfCompressionEnabled(previous);
+        setPdfCompressionEnabled(previous);
         toast.error(result.error || 'Could not save PDF compression setting');
         return;
       }
@@ -748,7 +748,7 @@ const Settings = () => {
           : 'PDF compression disabled — original PDFs will be used'
       );
     } finally {
-      setQuotationPdfCompressionSaving(false);
+      setPdfCompressionSaving(false);
     }
   };
 
@@ -3793,9 +3793,9 @@ const Settings = () => {
                   </p>
                 </div>
                 <Switch
-                  checked={quotationPdfCompressionEnabled}
-                  disabled={quotationPdfCompressionSaving}
-                  onCheckedChange={(v) => void handleQuotationPdfCompressionToggle(v)}
+                  checked={pdfCompressionEnabled}
+                  disabled={pdfCompressionSaving}
+                  onCheckedChange={(v) => void handlePdfCompressionToggle(v)}
                   className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>

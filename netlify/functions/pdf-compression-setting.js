@@ -1,13 +1,12 @@
 const { getServiceSupabase } = require('./whatsapp-helper');
 
-const SETTING_KEY = 'quotation_pdf_ilovepdf_compress';
+const SETTING_KEY = 'pdf_ilovepdf_compress';
 
 /**
  * Missing row defaults ON so deployments remain compatible while the migration
  * is being applied. DB/config errors fail closed to the original PDF.
- * Setting key kept for compatibility; UI label is "Compress PDFs" for all docs.
  */
-async function isQuotationPdfCompressionEnabled(db = getServiceSupabase()) {
+async function isPdfCompressionEnabled(db = getServiceSupabase()) {
   if (!db) {
     console.warn('[pdf-compress] settings DB unavailable; using original PDF');
     return false;
@@ -29,5 +28,5 @@ async function isQuotationPdfCompressionEnabled(db = getServiceSupabase()) {
 
 module.exports = {
   SETTING_KEY,
-  isQuotationPdfCompressionEnabled,
+  isPdfCompressionEnabled,
 };

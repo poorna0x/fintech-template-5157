@@ -148,7 +148,7 @@ const server = http.createServer((req, res) => {
     handler = warrantyLookup;
   } else if (req.url.startsWith('/.netlify/functions/generate-pdf')) {
     delete require.cache[require.resolve('./ilovepdf-compress-helper')];
-    delete require.cache[require.resolve('./quotation-pdf-compression-setting')];
+    delete require.cache[require.resolve('./pdf-compression-setting')];
     handler = loadFn('generate-pdf');
   } else if (req.url.startsWith('/.netlify/functions/save-amc-contract')) {
     handler = saveAmcContract;
@@ -244,7 +244,7 @@ const server = http.createServer((req, res) => {
     handler = loadFn('cloudinary-usage');
   } else if (req.url.startsWith('/.netlify/functions/ilovepdf-usage')) {
     delete require.cache[require.resolve('./ilovepdf-compress-helper')];
-    delete require.cache[require.resolve('./quotation-pdf-compression-setting')];
+    delete require.cache[require.resolve('./pdf-compression-setting')];
     handler = loadFn('ilovepdf-usage');
   } else if (req.url.startsWith('/.netlify/functions/salary-slip-month-end')) {
     handler = salarySlipMonthEnd;

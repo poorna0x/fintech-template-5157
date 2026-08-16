@@ -3,11 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
-  isQuotationPdfCompressionEnabled,
-} = require('../netlify/functions/quotation-pdf-compression-setting');
+  isPdfCompressionEnabled,
+} = require('../netlify/functions/pdf-compression-setting');
 const {
   maybeCompressPdfBuffer,
   fetchILovePdfAccountUsage,
+  clearILovePdfConfigCache,
 } = require('../netlify/functions/ilovepdf-compress-helper');
 
 function mockSettingsDb(result) {
@@ -23,25 +24,21 @@ function mockSettingsDb(result) {
 }
 
 async function testSettingGate() {
-  assert.equal(await isQuotationPdfCompressionEnabled(null), false);
+  assert.equal(await isPdfCompressionEnabled(null), false);
   assert.equal(
-    await isQuotationPdfCompressionEnabled(mockSettingsDb({ data: null, error: null })),
+    await isPdfCompressionEnabled(mockSettingsDb({ data: null, error: null })),
     true
   );
   assert.equal(
-    await isQuotationPdfCompressionEnabled(
-      mockSettingsDb({ data: { value: true }, error: null })
-    ),
+    await isPdfCompressionEnabled(mockSettingsDb({ data: { value: true }, error: null })),
     true
   );
   assert.equal(
-    await isQuotationPdfCompressionEnabled(
-      mockSettingsDb({ data: { value: false }, error: null })
-    ),
+    await isPdfCompressionEnabled(mockSettingsDb({ data: { value: false }, error: null })),
     false
   );
   assert.equal(
-    await isQuotationPdfCompressionEnabled(
+    await isPdfCompressionEnabled(
       mockSettingsDb({ data: null, error: { message: 'offline' } })
     ),
     false
@@ -53,12 +50,15 @@ async function testCreditFallback() {
   const originalKey = process.env.ILOVEPDF_PUBLIC_KEY;
   const originalToggle = process.env.ILOVEPDF_COMPRESS;
   const input = Buffer.alloc(2048, 7);
-  let calls = 0;
+  let apiCalls = 0;
+  const requestedUrls = [];
 
   process.env.ILOVEPDF_PUBLIC_KEY = 'test-public-key';
   delete process.env.ILOVEPDF_COMPRESS;
+  clearILovePdfConfigCache();
   global.fetch = async (url) => {
-    calls += 1;
+    requestedUrls.push(String(url));
+    if (/api\.ilovepdf\.com|mock\.ilovepdf\.test/.test(String(url))) apiCalls += 1;
     if (String(url).endsWith('/auth')) {
       return new Response(JSON.stringify({ token: 'test-token' }), {
         status: 200,
@@ -76,11 +76,16 @@ async function testCreditFallback() {
   };
 
   try {
-    const result = await maybeCompressPdfBuffer(input, { filename: 'Quotation_test.pdf' });
+    const result = await maybeCompressPdfBuffer(input, { filename: 'Document_test.pdf' });
     assert.equal(result.compressed, false);
     assert.strictEqual(result.buffer, input);
     assert.equal(result.compressedBytes, input.length);
-    assert.equal(calls, 2, 'must not upload when fewer than 10 credits remain');
+    assert.equal(apiCalls, 2, 'must only authenticate and start the task');
+    assert.equal(
+      requestedUrls.some((url) => url.endsWith('/upload')),
+      false,
+      'must not upload when fewer than 10 credits remain'
+    );
   } finally {
     global.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.ILOVEPDF_PUBLIC_KEY;
@@ -94,11 +99,12 @@ async function testDeadlineFallback() {
   const originalFetch = global.fetch;
   const originalKey = process.env.ILOVEPDF_PUBLIC_KEY;
   const input = Buffer.alloc(2048, 9);
-  let calls = 0;
+  let apiCalls = 0;
 
   process.env.ILOVEPDF_PUBLIC_KEY = 'test-public-key';
-  global.fetch = async () => {
-    calls += 1;
+  clearILovePdfConfigCache();
+  global.fetch = async (url) => {
+    if (/api\.ilovepdf\.com|mock\.ilovepdf\.test/.test(String(url))) apiCalls += 1;
     throw new Error('fetch should not run after deadline');
   };
 
@@ -109,7 +115,7 @@ async function testDeadlineFallback() {
     });
     assert.equal(result.compressed, false);
     assert.strictEqual(result.buffer, input);
-    assert.equal(calls, 0);
+    assert.equal(apiCalls, 0);
   } finally {
     global.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.ILOVEPDF_PUBLIC_KEY;
@@ -121,6 +127,7 @@ async function testUsageLookup() {
   const originalFetch = global.fetch;
   const originalKey = process.env.ILOVEPDF_PUBLIC_KEY;
   process.env.ILOVEPDF_PUBLIC_KEY = 'test-public-key';
+  clearILovePdfConfigCache();
   global.fetch = async (url) => {
     if (String(url).endsWith('/auth')) {
       return new Response(JSON.stringify({ token: 'test-token' }), {
@@ -159,7 +166,7 @@ function testGeneratePdfGuardsAndGlobalGate() {
     path.join(__dirname, '../netlify/functions/generate-pdf.js'),
     'utf8'
   );
-  assert.match(source, /const shouldCompress = await isQuotationPdfCompressionEnabled\(\)/);
+  assert.match(source, /const shouldCompress = await isPdfCompressionEnabled\(\)/);
   assert.doesNotMatch(source, /body\.compression/);
   assert.match(source, /iframe\|frame\|object\|embed/);
   assert.match(source, /requestStartedAt \+ 22_000/);
@@ -175,7 +182,7 @@ async function run() {
   await testCreditFallback();
   await testDeadlineFallback();
   await testUsageLookup();
-  console.log('quotation PDF compression tests passed');
+  console.log('PDF compression tests passed');
 }
 
 run().catch((error) => {

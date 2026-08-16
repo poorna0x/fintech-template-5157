@@ -1,7 +1,9 @@
--- Dashboard setting for optional iLovePDF compression of CRM document PDFs.
--- Safe to re-run. Run in Supabase before the next-month Netlify deployment.
--- Applies to quotations, bills, invoices, AMC, warranty, salary slips, etc.
--- via the interactive generate-pdf path when enabled.
+-- Dashboard setting for optional iLovePDF compression of all interactive CRM PDFs.
+-- Safe to re-run. Applies to quotations, bills, invoices, AMC, warranty,
+-- salary slips, and other PDFs generated through generate-pdf.
+--
+-- Production credentials belong in public.app_secrets under key "ilovepdf".
+-- Keep real credentials out of this committed migration and out of client env.
 
 CREATE TABLE IF NOT EXISTS public.crm_settings (
   key text PRIMARY KEY,
@@ -32,6 +34,16 @@ REVOKE ALL ON TABLE public.crm_settings FROM anon;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.crm_settings TO authenticated;
 GRANT ALL ON TABLE public.crm_settings TO service_role;
 
+-- Preserve the old quotation-only key when upgrading, otherwise default ON.
 INSERT INTO public.crm_settings (key, value)
-VALUES ('quotation_pdf_ilovepdf_compress', 'true'::jsonb)
+VALUES (
+  'pdf_ilovepdf_compress',
+  COALESCE(
+    (SELECT value FROM public.crm_settings WHERE key = 'quotation_pdf_ilovepdf_compress'),
+    'true'::jsonb
+  )
+)
 ON CONFLICT (key) DO NOTHING;
+
+DELETE FROM public.crm_settings
+WHERE key = 'quotation_pdf_ilovepdf_compress';

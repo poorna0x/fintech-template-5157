@@ -8,8 +8,8 @@ const { verifyStaffBearerToken } = require('./admin-auth-guard');
 const { checkRateLimit, checkRateLimitForKey, getClientIdentifier } = require('./rate-limiter');
 const { maybeCompressPdfBuffer } = require('./ilovepdf-compress-helper');
 const {
-  isQuotationPdfCompressionEnabled,
-} = require('./quotation-pdf-compression-setting');
+  isPdfCompressionEnabled,
+} = require('./pdf-compression-setting');
 
 chromium.setGraphicsMode = false;
 
@@ -409,7 +409,7 @@ exports.handler = async (event) => {
   const filename = sanitizeFilename(body.filename);
 
   try {
-    const shouldCompress = await isQuotationPdfCompressionEnabled();
+    const shouldCompress = await isPdfCompressionEnabled();
     const pdfBytes = await renderHtmlToPdf(html, requestOrigin, {
       compress: shouldCompress,
       filename,

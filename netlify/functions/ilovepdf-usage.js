@@ -14,8 +14,8 @@ const {
 } = require('./rate-limiter');
 const { fetchILovePdfAccountUsage } = require('./ilovepdf-compress-helper');
 const {
-  isQuotationPdfCompressionEnabled,
-} = require('./quotation-pdf-compression-setting');
+  isPdfCompressionEnabled,
+} = require('./pdf-compression-setting');
 
 function json(statusCode, headers, payload) {
   return {
@@ -68,7 +68,7 @@ exports.handler = async (event) => {
   try {
     const [usage, dashboardEnabled] = await Promise.all([
       fetchILovePdfAccountUsage(),
-      isQuotationPdfCompressionEnabled(),
+      isPdfCompressionEnabled(),
     ]);
     return json(usage.ok ? 200 : usage.configured ? 503 : 200, headers, {
       ok: usage.ok,
