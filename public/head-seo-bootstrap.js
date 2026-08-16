@@ -30,7 +30,7 @@
       legalName: 'ELEVEN RO',
       defaultTitle: 'Eleven RO - Best RO Water Purifier Service in Bengaluru | Same-Day Service',
       defaultDescription:
-        'Eleven RO - trusted RO water purifier service in Bengaluru, Karnataka. Professional RO installation, repair, maintenance and filter replacement. Same-day service across Bangalore including Anjanapura, JP Nagar, Bannerghatta and South Bangalore. Call 9880693311.',
+        'Eleven RO - trusted RO water purifier service in Bengaluru, Karnataka. Professional RO installation, repair, maintenance and filter replacement. Same-day service across Bangalore including Anjanapura, JP Nagar, Bannerghatta and South Bangalore. Call +91-9880693311.',
       keywords:
         'Eleven RO, Eleven RO service Bengaluru, RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Attibele, RO service Chandapura, RO service Bommasandra, RO service Jigani, RO service Hosur Road, RO installation Anjanapura, RO repair South Bangalore, same day RO service Eleven RO',
       ogImage: 'https://elevenro.com/elevenro-og.webp',
@@ -71,11 +71,11 @@
     el.setAttribute('content', content);
   }
 
-  function injectJsonLd(data, id) {
+  function injectJsonLd(data, id, brandKey) {
     var script = document.createElement('script');
     script.type = 'application/ld+json';
     if (id) script.id = id;
-    script.setAttribute('data-brand-seo', 'elevenro');
+    script.setAttribute('data-brand-seo', brandKey || detectSiteKey());
     script.textContent = JSON.stringify(data);
     document.head.appendChild(script);
   }
@@ -636,7 +636,17 @@
   }
   setMetaName('author', profile.brandName + ' - Water Purifier Services');
   setMetaName('robots', 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1');
+  setMetaName('geo.region', 'IN-KA');
+  setMetaName('geo.placename', profile.city);
+  setMetaName('geo.position', profile.geo.latitude + ';' + profile.geo.longitude);
+  setMetaName('ICBM', profile.geo.latitude + ', ' + profile.geo.longitude);
+  setMetaName('business:contact_data:street_address', profile.streetAddress);
+  setMetaName('business:contact_data:locality', profile.city);
+  setMetaName('business:contact_data:region', profile.state);
+  setMetaName('business:contact_data:postal_code', profile.pincode);
+  setMetaName('business:contact_data:country_name', 'India');
   setMetaName('business:contact_data:phone_number', profile.primaryPhone);
+  setMetaName('business:contact_data:email', profile.email);
   setMetaName('business:contact_data:website', profile.origin);
   setMetaName('apple-mobile-web-app-title', profile.brandName);
   setMetaName('application-name', profile.brandName);

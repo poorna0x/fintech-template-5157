@@ -21,6 +21,14 @@
         ogTitle: 'Eleven RO - Best RO Water Purifier Service in Bengaluru | Same-Day Service',
         ogDescription:
           'Expert RO water purifier installation, repair and maintenance in Bengaluru by Eleven RO. Same-day service across South Bangalore. Call +91-9880693311.',
+        phone: '+91-9880693311',
+        email: 'mail@elevenro.com',
+        street: '170, 2nd Cross Rd, Anjanapura 5th Block, Anjanapura Township',
+        city: 'Bengaluru',
+        region: 'Karnataka',
+        pincode: '560108',
+        geo: '12.8926;77.5993',
+        icbm: '12.8926, 77.5993',
       }
     : {
         title: 'Hydrogen RO - #1 Best RO Service in Bengaluru Bangalore | 5★ Rated',
@@ -35,6 +43,14 @@
         ogTitle: 'Best RO Water Purifier Services in Bengaluru Bangalore | RO Installation & Repair',
         ogDescription:
           'Expert RO water purifier installation, repair & maintenance in Bengaluru, Bangalore. Serving Electronic City, BTM, HSR, Whitefield, Koramangala, Hebbal, Sarjapur, Bellandur, Tumakuru, Nelamangala, Attibele, Chandapura, Devanahalli and all areas. Same-day service, 24/7 support. Trusted by 2300+ customers.',
+        phone: '+91-8884944288',
+        email: 'mail@hydrogenro.com',
+        street: 'Ground Floor, 13, 4th Main Road, Next To Jain Temple, Seshadripuram, Kumara Park West',
+        city: 'Bengaluru',
+        region: 'Karnataka',
+        pincode: '560020',
+        geo: '12.9716;77.5946',
+        icbm: '12.9716, 77.5946',
       };
 
   function esc(value) {
@@ -83,4 +99,28 @@
   w('<meta name="twitter:title" content="' + esc(profile.ogTitle) + '" />');
   w('<meta name="twitter:description" content="' + esc(profile.ogDescription) + '" />');
   w('<meta name="twitter:image" content="' + esc(profile.ogImage) + '" />');
+
+  // NAP / geo — overwrite Hydrogen-hardcoded index.html values for Eleven hosts
+  // (local SEO: consistent phone, address, coordinates across brands).
+  function setName(name, content) {
+    var el = document.querySelector('meta[name="' + name + '"]');
+    if (!el) {
+      el = document.createElement('meta');
+      el.setAttribute('name', name);
+      document.head.appendChild(el);
+    }
+    el.setAttribute('content', content);
+  }
+  setName('geo.region', 'IN-KA');
+  setName('geo.placename', profile.city);
+  setName('geo.position', profile.geo);
+  setName('ICBM', profile.icbm);
+  setName('business:contact_data:street_address', profile.street);
+  setName('business:contact_data:locality', profile.city);
+  setName('business:contact_data:region', profile.region);
+  setName('business:contact_data:postal_code', profile.pincode);
+  setName('business:contact_data:country_name', 'India');
+  setName('business:contact_data:phone_number', profile.phone);
+  setName('business:contact_data:email', profile.email);
+  setName('business:contact_data:website', profile.origin);
 })();
