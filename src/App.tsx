@@ -4,9 +4,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import { SecurityProvider } from "./contexts/SecurityContext";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
-import { AuthPortalCoordinator } from "./components/AuthPortalCoordinator";
 import { Suspense, lazy, useEffect } from "react";
 import { useGlobalButtonHaptics } from "@/hooks/useGlobalButtonHaptics";
 import Index from "./pages/Index";
@@ -21,7 +18,7 @@ import {
   findServicePage,
 } from "@/lib/publicSeoPages";
 import { disablePWA } from "@/lib/pwa";
-import { isTechnicianPortalPath } from "@/lib/authPortal";
+import { isTechnicianPortalPath } from "@/lib/portalPaths";
 import { startNativeBackButtonHandler } from "@/lib/nativeBackButton";
 import { isNativeApp } from "@/lib/isNativeApp";
 import { PortalBootLoader } from "@/components/PortalBootLoader";
@@ -68,6 +65,7 @@ const PublicDocumentAcceptPage = lazy(() => import("./pages/PublicDocumentAccept
 const PayUpi = lazy(() => import("./pages/PayUpi"));
 const WhatsAppTest = lazy(() => import("./pages/WhatsAppTest"));
 const CallDialPage = lazy(() => import("./pages/CallDialPage"));
+const PortalProviders = lazy(() => import("./components/PortalProviders"));
 
 /**
  * One route handles the 1,000+ generated public SEO slugs. Rendering a
@@ -141,38 +139,32 @@ const queryClient = new QueryClient({
   },
 });
 
-// Component to handle PWA enable/disable based on route
-const PWARouteHandler = () => {
-  const location = useLocation();
-  const { user, isAdmin } = useAuth();
+function isPortalPath(pathname: string): boolean {
+  return (
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/settings') ||
+    isTechnicianPortalPath(pathname)
+  );
+}
+
+/**
+ * Public pages do not need Supabase auth or the CRM security context. Load
+ * those providers only when a portal route is actually requested.
+ */
+const RouteProviders = ({ children }: { children: React.ReactNode }) => {
+  const { pathname } = useLocation();
 
   useEffect(() => {
-    // Admin app routes (must match admin-manifest scope / install — do not disablePWA here)
-    const isPWAPage =
-      isTechnicianPortalPath(location.pathname) ||
-      location.pathname.startsWith('/admin') ||
-      location.pathname.startsWith('/settings');
-    
-    if (!isPWAPage) {
-      disablePWA();
-    }
-    // Note: PWA is enabled by registerTechnicianPWA() or registerAdminPWA() 
-    // when those components mount, so we don't need to enable it here
+    if (!isPortalPath(pathname)) disablePWA();
+  }, [pathname]);
 
-    // Security: only warm the admin/data chunks AFTER we know the visitor is
-    // actually an authenticated admin. Otherwise an anonymous visitor to /admin
-    // would download `admin-data-*.js` (which contains all RPC + table names).
-    if (location.pathname.startsWith('/admin')) {
-      if (user && isAdmin) {
-        void import('./components/AdminDashboard');
-        void import('./lib/supabase');
-      }
-    } else if (isTechnicianPortalPath(location.pathname)) {
-      void import('./pages/TechnicianDashboard');
-    }
-  }, [location.pathname, user, isAdmin]);
+  if (!isPortalPath(pathname)) return <>{children}</>;
 
-  return null;
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <PortalProviders>{children}</PortalProviders>
+    </Suspense>
+  );
 };
 
 const GlobalHaptics = () => {
@@ -205,21 +197,18 @@ const ScrollToTopOnNavigate = () => {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
-      <SecurityProvider>
-        <AuthProvider>
-            <TooltipProvider>
-            {import.meta.env.DEV ? <PerformanceMonitor /> : null}
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <NativeBackButton />
-              <ScrollToTopOnNavigate />
-              <GlobalHaptics />
-              <AuthPortalCoordinator />
-              <PublicSiteSeo />
-              <GoogleAnalytics />
-              <CookieConsentBanner />
-              <PWARouteHandler />
+      <TooltipProvider>
+        {import.meta.env.DEV ? <PerformanceMonitor /> : null}
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <NativeBackButton />
+          <ScrollToTopOnNavigate />
+          <GlobalHaptics />
+          <PublicSiteSeo />
+          <GoogleAnalytics />
+          <CookieConsentBanner />
+          <RouteProviders>
               <Suspense fallback={<LoadingSpinner />}>
                 <Routes>
                   <Route path="/" element={<Index />} />
@@ -280,10 +269,9 @@ const App = () => (
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
-            </BrowserRouter>
-          </TooltipProvider>
-        </AuthProvider>
-      </SecurityProvider>
+          </RouteProviders>
+        </BrowserRouter>
+      </TooltipProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );
