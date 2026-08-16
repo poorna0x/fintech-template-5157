@@ -151,6 +151,8 @@ import {
   WHATSAPP_ATTACH_ACCEPT,
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
+import { saveBytesToNativeDownloads } from '@/lib/nativeDownloadsSave';
+import { isNativeRuntime, openBytesNatively } from '@/lib/nativeFileOpen';
 import {
   buildQuickHelloTemplate,
   quickReplyBookingUrl,
@@ -223,6 +225,21 @@ function formatDaySeparator(iso: string): string {
     month: 'short',
     year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
   });
+}
+
+function mediaFilenameFor(row: WhatsAppMessageRow): string {
+  const name = (row.filename || '').trim();
+  if (name) return name;
+  return row.msg_type === 'image' || row.media_mime?.startsWith('image/')
+    ? 'photo.jpg'
+    : 'document.pdf';
+}
+
+function mediaMimeFor(row: WhatsAppMessageRow, filename: string): string {
+  return (
+    row.media_mime ||
+    (/\.pdf$/i.test(filename) ? 'application/pdf' : 'application/octet-stream')
+  );
 }
 
 function triggerBlobDownload(blob: Blob, filename: string) {
@@ -1044,6 +1061,32 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     [resolveMediaHref]
   );
 
+  const loadMediaBytes = useCallback(
+    async (row: WhatsAppMessageRow): Promise<ArrayBuffer> => {
+      const ref = row.media_url as string;
+      if (isR2MediaRef(ref) || ref.startsWith('whatsapp-media:')) {
+        const fetched = await getWhatsAppMediaBytesCached({
+          mediaUrl: ref,
+          messageId: row.id,
+          mimeHint: row.media_mime,
+        });
+        if (fetched.ok && fetched.bytes) return fetched.bytes;
+        if (fetched.ok && fetched.url) {
+          const res = await fetch(fetched.url);
+          if (!res.ok) throw new Error('Download failed');
+          return res.arrayBuffer();
+        }
+        throw new Error(fetched.error || 'Download failed');
+      }
+      const href = await resolveMediaHref(row);
+      if (!href) throw new Error('Could not download');
+      const res = await fetch(href);
+      if (!res.ok) throw new Error('Download failed');
+      return res.arrayBuffer();
+    },
+    [resolveMediaHref]
+  );
+
   const openMedia = useCallback(
     async (row: WhatsAppMessageRow) => {
       if (!row.media_url) return;
@@ -1051,6 +1094,26 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         await openImageViewer(row);
         return;
       }
+
+      // Android/iOS WebView has no PDF viewer and ignores blob: popups.
+      if (isNativeRuntime()) {
+        const toastId = toast.loading('Opening…');
+        try {
+          const name = mediaFilenameFor(row);
+          const bytes = await loadMediaBytes(row);
+          const result = await openBytesNatively(bytes, name, mediaMimeFor(row, name));
+          if (result === 'unavailable') {
+            throw new Error('No app on this phone can open this file');
+          }
+          toast.dismiss(toastId);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Could not open attachment', {
+            id: toastId,
+          });
+        }
+        return;
+      }
+
       // Prefer already-resolved / public URL — no loading toast
       const ready =
         mediaUrlCacheRef.current[row.id] ||
@@ -1060,7 +1123,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           ? row.media_url
           : null);
       if (ready) {
-        window.open(ready, '_blank', 'noopener,noreferrer');
+        if (!window.open(ready, '_blank', 'noopener,noreferrer')) {
+          toast.error('Allow pop-ups to open this attachment');
+        }
         return;
       }
 
@@ -1076,7 +1141,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           toast.error('Could not open attachment', { id: toastId });
           return;
         }
-        window.open(href, '_blank', 'noopener,noreferrer');
+        if (!window.open(href, '_blank', 'noopener,noreferrer')) {
+          toast.error('Allow pop-ups to open this attachment', { id: toastId });
+          return;
+        }
         toast.dismiss(toastId);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Could not open attachment', {
@@ -1084,54 +1152,28 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         });
       }
     },
-    [resolveMediaHref, openImageViewer]
+    [resolveMediaHref, openImageViewer, loadMediaBytes]
   );
 
   const downloadMedia = useCallback(
     async (row: WhatsAppMessageRow) => {
       if (!row.media_url) return;
-      const name =
-        (row.filename || '').trim() ||
-        (row.msg_type === 'image' || row.media_mime?.startsWith('image/')
-          ? 'photo.jpg'
-          : 'document.pdf');
+      const name = mediaFilenameFor(row);
+      const mime = mediaMimeFor(row, name);
       const toastId = toast.loading('Downloading…');
       try {
-        const ref = row.media_url;
-        if (isR2MediaRef(ref) || ref.startsWith('whatsapp-media:')) {
-          const fetched = await getWhatsAppMediaBytesCached({
-            mediaUrl: ref,
-            messageId: row.id,
-            mimeHint: row.media_mime,
-          });
-          if (fetched.ok && fetched.bytes) {
-            const mime =
-              row.media_mime ||
-              (/\.pdf$/i.test(name) ? 'application/pdf' : 'application/octet-stream');
-            triggerBlobDownload(new Blob([fetched.bytes], { type: mime }), name);
-            toast.success('Downloaded', { id: toastId });
-            return;
-          }
-          if (fetched.ok && fetched.url) {
-            const res = await fetch(fetched.url);
-            if (!res.ok) throw new Error('Download failed');
-            triggerBlobDownload(await res.blob(), name);
-            toast.success('Downloaded', { id: toastId });
-            return;
-          }
-          throw new Error(fetched.error || 'Download failed');
+        const bytes = await loadMediaBytes(row);
+        if (isNativeRuntime() && (await saveBytesToNativeDownloads(bytes, name, mime))) {
+          toast.success('Saved to Downloads', { id: toastId });
+          return;
         }
-        const href = await resolveMediaHref(row);
-        if (!href) throw new Error('Could not download');
-        const res = await fetch(href);
-        if (!res.ok) throw new Error('Download failed');
-        triggerBlobDownload(await res.blob(), name);
+        triggerBlobDownload(new Blob([bytes], { type: mime }), name);
         toast.success('Downloaded', { id: toastId });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Download failed', { id: toastId });
       }
     },
-    [resolveMediaHref]
+    [loadMediaBytes]
   );
 
   // Prefetch recent image signed URLs in parallel (ref cache → fewer re-renders)
