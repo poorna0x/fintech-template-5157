@@ -18,6 +18,7 @@ const MAX_NOTE_CHARS = 240;
 const MAX_WARNINGS = 8;
 const MAX_TERMS = 16;
 const MAX_TERM_CHARS = 320;
+const MAX_UNIT_PRICE = 10_000_000;
 
 function asTrimmedString(value, maxLen) {
   const text = String(value == null ? '' : value).trim();
@@ -53,6 +54,8 @@ function parseSuggestRequest(body) {
         phoneDigits: null,
         customerId,
         instruction,
+        // Prices are only used when the admin explicitly states them in the brief.
+        allowPrices: body?.allowPrices === true,
         saveQuotationDraft: false,
       },
     };
@@ -82,7 +85,7 @@ function clampConfidence(raw) {
   return Math.max(0, Math.min(1, n));
 }
 
-function normalizeQuotationItems(rawItems) {
+function normalizeQuotationItems(rawItems, opts = {}) {
   if (!Array.isArray(rawItems)) return [];
   const items = [];
   for (const row of rawItems.slice(0, MAX_QUOTE_ITEMS)) {
@@ -91,14 +94,23 @@ function normalizeQuotationItems(rawItems) {
     const quantityRaw = Number(row?.quantity);
     const quantity =
       Number.isFinite(quantityRaw) && quantityRaw > 0 ? Math.min(99, Math.round(quantityRaw * 100) / 100) : 1;
+
+    // Prices stay zero unless the admin opted in to pricing from their own brief.
+    let unitPrice = 0;
+    if (opts.allowPrices === true) {
+      const priceRaw = Number(row?.unitPrice ?? row?.price ?? row?.rate);
+      if (Number.isFinite(priceRaw) && priceRaw > 0) {
+        unitPrice = Math.min(MAX_UNIT_PRICE, Math.round(priceRaw * 100) / 100);
+      }
+    }
+
     items.push({
       description,
       quantity,
-      // Selling prices are never trusted from the model.
-      unitPrice: 0,
+      unitPrice,
       taxRate: 0,
       taxAmount: 0,
-      total: 0,
+      total: Math.round(unitPrice * quantity * 100) / 100,
     });
   }
   return items;
@@ -144,7 +156,7 @@ function normalizeSuggestionOutput(raw, opts = {}) {
   const wantQuote = opts.includeQuotation === true || src.quotation || src.quotationProposal;
   if (wantQuote) {
     const q = src.quotation || src.quotationProposal || {};
-    const items = normalizeQuotationItems(q.items);
+    const items = normalizeQuotationItems(q.items, { allowPrices: opts.allowPrices === true });
     quotation = {
       items,
       notes: normalizeNotes(q.notes),

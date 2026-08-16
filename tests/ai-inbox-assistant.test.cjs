@@ -74,6 +74,46 @@ function testQuotationBuilderRequestAndTerms() {
   assert.equal(normalized.value.quotation.validityDays, 15);
 }
 
+function testPricesOnlyWhenAdminOptsIn() {
+  const parsedDefault = parseSuggestRequest({
+    operation: 'build_quotation',
+    customerId: 'customer-123',
+    instruction: 'Membrane replacement quotation for ₹3500.',
+  });
+  assert.equal(parsedDefault.value.allowPrices, false);
+
+  const parsedOptIn = parseSuggestRequest({
+    operation: 'build_quotation',
+    customerId: 'customer-123',
+    instruction: 'Membrane replacement quotation for ₹3500.',
+    allowPrices: true,
+  });
+  assert.equal(parsedOptIn.value.allowPrices, true);
+
+  const priced = normalizeQuotationItems(
+    [{ description: 'RO membrane', quantity: 2, unitPrice: 3500 }],
+    { allowPrices: true }
+  );
+  assert.equal(priced[0].unitPrice, 3500);
+  assert.equal(priced[0].total, 7000);
+
+  const blank = normalizeQuotationItems([
+    { description: 'RO membrane', quantity: 2, unitPrice: 3500 },
+  ]);
+  assert.equal(blank[0].unitPrice, 0);
+  assert.equal(blank[0].total, 0);
+
+  // Inbox suggestions must never carry prices, even if the model returns them.
+  const inbox = normalizeSuggestionOutput(
+    {
+      replyText: 'Draft',
+      quotation: { items: [{ description: 'AMC', quantity: 1, unitPrice: 4500 }] },
+    },
+    { includeQuotation: true }
+  );
+  assert.equal(inbox.value.quotation.items[0].unitPrice, 0);
+}
+
 function testUnknownOperationRejected() {
   const parsed = parseSuggestRequest({
     operation: 'delete_everything',
@@ -205,6 +245,7 @@ function testEndpointSourceHasSafetyGuards() {
 async function main() {
   testRequestIgnoresClientProviderFields();
   testQuotationBuilderRequestAndTerms();
+  testPricesOnlyWhenAdminOptsIn();
   testUnknownOperationRejected();
   testQuotationPricesForcedZero();
   testMutationToolsBanned();

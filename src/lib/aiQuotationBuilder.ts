@@ -15,6 +15,7 @@ export type AiQuotationBuildResult =
         gstOption: 'normal' | 'exclude' | 'include';
         showBankDetails: boolean;
       };
+      pricedItemCount: number;
       warnings: string[];
       confidence: number;
       requiresHuman: boolean;
@@ -33,6 +34,7 @@ function cleanStrings(raw: unknown, maxItems: number, maxChars: number): string[
 export async function buildQuotationWithAi(opts: {
   customerId: string;
   instruction: string;
+  allowPrices?: boolean;
 }): Promise<AiQuotationBuildResult> {
   const instruction = String(opts.instruction || '').trim();
   if (instruction.length < 8) {
@@ -54,6 +56,7 @@ export async function buildQuotationWithAi(opts: {
         operation: 'build_quotation',
         customerId: opts.customerId,
         instruction,
+        allowPrices: opts.allowPrices === true,
       }),
     });
     const data = await response.json().catch(() => ({}));
@@ -64,18 +67,25 @@ export async function buildQuotationWithAi(opts: {
       };
     }
 
+    const allowPrices = opts.allowPrices === true;
     const proposal = data.suggestion.quotation as Record<string, unknown>;
     const rawItems = Array.isArray(proposal.items) ? proposal.items : [];
     const items: BillItem[] = rawItems.slice(0, 12).map((raw, index) => {
       const row = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
       const quantity = Number(row.quantity);
+      const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.min(99, quantity) : 1;
+      const price = Number(row.unitPrice);
+      // Prices only survive when the admin opted in; otherwise the admin fills them.
+      const unitPrice =
+        allowPrices && Number.isFinite(price) && price > 0
+          ? Math.min(10_000_000, Math.round(price * 100) / 100)
+          : 0;
       return {
         id: `ai-quote-${Date.now()}-${index}`,
         description: String(row.description || `Item ${index + 1}`).trim().slice(0, 200),
-        quantity: Number.isFinite(quantity) && quantity > 0 ? Math.min(99, quantity) : 1,
-        // Model prices are never trusted. Admin enters approved prices afterward.
-        unitPrice: 0,
-        total: 0,
+        quantity: safeQuantity,
+        unitPrice,
+        total: Math.round(unitPrice * safeQuantity * 100) / 100,
         taxRate: 0,
         taxAmount: 0,
       };
@@ -109,6 +119,7 @@ export async function buildQuotationWithAi(opts: {
         gstOption,
         showBankDetails: proposal.showBankDetails === true,
       },
+      pricedItemCount: items.filter((item) => item.unitPrice > 0).length,
       warnings: cleanStrings(
         [...(Array.isArray(data.suggestion.warnings) ? data.suggestion.warnings : []),
           ...(Array.isArray(proposal.warnings) ? proposal.warnings : [])],

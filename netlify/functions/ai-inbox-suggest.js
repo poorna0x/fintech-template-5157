@@ -81,13 +81,16 @@ function json(statusCode, headers, payload) {
   };
 }
 
-function buildSystemInstruction(operation) {
+function buildSystemInstruction(operation, allowPrices = false) {
   if (operation === 'build_quotation') {
     return [
       'You build complete editable quotation drafts for HydrogenRO / ElevenRO RO service admins.',
       'Return ONLY valid JSON with keys: replyText, intent, confidence (0-1), requiresHuman (boolean), warnings (string[]), quotation.',
       'quotation must contain items, notes, notesHeading, terms, validityNote, validityDays, gstOption, and showBankDetails.',
-      'Each item has description, quantity, and unitPrice. Always set every unitPrice to 0; never invent or infer a selling price.',
+      'Each item has description, quantity, and unitPrice.',
+      allowPrices
+        ? 'Use only the exact prices the admin wrote in the brief; set unitPrice to 0 for any item whose price the admin did not state. Never estimate, infer, or invent a price.'
+        : 'Always set every unitPrice to 0; never invent or infer a selling price.',
       'Write a complete, professional quotation based only on the admin brief and customer name.',
       'Choose relevant terms and conditions, including payment, delivery/service, warranty, exclusions, cancellation, and Bengaluru jurisdiction where applicable.',
       'Do not add irrelevant boilerplate. Do not invent customer facts, product specifications, warranty periods, or commitments not supported by the brief.',
@@ -123,7 +126,7 @@ async function loadQuotationCustomer(customerId) {
   };
 }
 
-function buildQuotationBriefPrompt(instruction, customerName) {
+function buildQuotationBriefPrompt(instruction, customerName, allowPrices = false) {
   return [
     'Operation: build_quotation',
     `Customer name: ${customerName || 'Customer'}`,
@@ -131,7 +134,9 @@ function buildQuotationBriefPrompt(instruction, customerName) {
     '<brief>',
     String(instruction || ''),
     '</brief>',
-    'Create the complete quotation draft JSON. Keep every item unitPrice at 0.',
+    allowPrices
+      ? 'Create the complete quotation draft JSON. Copy only prices stated in the brief; use 0 for every other item.'
+      : 'Create the complete quotation draft JSON. Keep every item unitPrice at 0.',
   ].join('\n');
 }
 
@@ -347,14 +352,15 @@ exports.handler = async (event) => {
       });
     }
 
+    const allowPrices = isQuotationBuilder && parsed.value.allowPrices === true;
     const userPrompt = isQuotationBuilder
-      ? buildQuotationBriefPrompt(parsed.value.instruction, ctx.customerName)
+      ? buildQuotationBriefPrompt(parsed.value.instruction, ctx.customerName, allowPrices)
       : buildUserPrompt(ctx, parsed.value.operation);
     promptHash = sha256(userPrompt);
 
     const providerResult = await generateWithProvider(config, {
       operation: parsed.value.operation,
-      systemInstruction: buildSystemInstruction(parsed.value.operation),
+      systemInstruction: buildSystemInstruction(parsed.value.operation, allowPrices),
       messages: [{ role: 'user', text: userPrompt }],
       temperature: 0.3,
       maxOutputTokens: 2048,
@@ -377,14 +383,15 @@ exports.handler = async (event) => {
       includeQuotation:
         parsed.value.operation === 'suggest_quotation' ||
         parsed.value.operation === 'build_quotation',
+      allowPrices,
     });
     if (!normalized.ok) {
       errorCategory = 'empty_output';
       return json(502, headers, { success: false, error: 'AI returned an empty suggestion' });
     }
 
-    // Quotation proposals must always have zero prices.
-    if (normalized.value.quotation?.items) {
+    // Prices stay blank unless the admin asked for prices from their own brief.
+    if (normalized.value.quotation?.items && !allowPrices) {
       normalized.value.quotation.items = normalized.value.quotation.items.map((item) => ({
         ...item,
         unitPrice: 0,
@@ -403,6 +410,7 @@ exports.handler = async (event) => {
         ...normalized.value,
         customerId,
         customerName: ctx.customerName,
+        pricesFromBrief: allowPrices,
       },
       meta: {
         ...publicConfigSummary(config),

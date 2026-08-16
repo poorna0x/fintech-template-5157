@@ -40,6 +40,9 @@ async function generateWithMock(input) {
       'Thanks. I can prepare a quotation draft for our team to review. Please confirm the product/service items you want priced, and we will send the final quotation after admin pricing.';
   }
 
+  // Mock only echoes a price when the brief clearly contains one.
+  const briefPrice = Number((String(last).match(/(?:₹|rs\.?\s*)(\d{2,7})/i) || [])[1] || 0);
+
   const quotation = includeQuotation
     ? {
         items: [
@@ -48,7 +51,7 @@ async function generateWithMock(input) {
               ? 'RO Water Purifier Installation'
               : 'RO Service / Repair (as discussed)',
             quantity: 1,
-            unitPrice: 0,
+            unitPrice: briefPrice > 0 ? briefPrice : 0,
           },
           ...(/(filter|cartridge|membrane)/i.test(last)
             ? [{ description: 'Filter / membrane replacement (as needed)', quantity: 1, unitPrice: 0 }]
