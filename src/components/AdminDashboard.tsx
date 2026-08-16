@@ -1102,6 +1102,7 @@ const AdminDashboard = () => {
     service_sub_type: string;
     scheduled_date: string;
     scheduled_time_slot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM';
+    scheduled_time_custom: string;
     description: string;
     priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
     lead_source: string;
@@ -5613,6 +5614,9 @@ const AdminDashboard = () => {
           return [customer, ...list];
         });
         const slot = String(draft.scheduledTimeSlot || '').toUpperCase();
+        const customTime = /^\d{2}:\d{2}$/.test(String(draft.scheduledTimeCustom || ''))
+          ? String(draft.scheduledTimeCustom)
+          : '';
         setAiJobDraft({
           service_type: draft.serviceType === 'SOFTENER' ? 'SOFTENER' : 'RO',
           service_sub_type: draft.serviceSubType || 'Service',
@@ -5625,6 +5629,7 @@ const AdminDashboard = () => {
             slot === 'CUSTOM'
               ? slot
               : undefined,
+          ...(customTime ? { scheduled_time_custom: customTime } : {}),
           description: draft.description || draft.notes || undefined,
           priority: (['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(
             String(draft.priority || '').toUpperCase()

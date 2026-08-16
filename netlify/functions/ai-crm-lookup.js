@@ -45,6 +45,92 @@ function normalizePhoneDigits(raw) {
   return String(raw || '').replace(/\D/g, '');
 }
 
+/** Words that never identify a customer, so they must not become search terms. */
+const NAME_STOP_WORDS = new Set(
+  [
+    'about', 'add', 'afternoon', 'again', 'against', 'all', 'also', 'amc', 'amount', 'and', 'any',
+    'anyone', 'are', 'assign', 'assigned', 'balance', 'bill', 'booked', 'booking', 'called', 'can',
+    'cancel', 'cancelled', 'candy', 'cash', 'change', 'charge', 'check', 'closed', 'collect',
+    'collected', 'coming', 'company', 'complaint', 'complaints', 'complete', 'completed',
+    'confirm', 'contact', 'cost', 'count', 'create', 'customer', 'customers', 'date', 'day',
+    'days', 'description', 'detail', 'details', 'did', 'does', 'done', 'due', 'dues', 'earn',
+    'evening', 'expire', 'expired', 'expiring', 'expiry', 'filter', 'filters', 'find', 'finished',
+    'follow', 'followup', 'followups', 'for', 'from', 'get', 'give', 'has', 'have', 'his', 'her',
+    'how', 'income', 'info', 'information', 'install', 'installation', 'invoice', 'issue',
+    'issues', 'job', 'jobs', 'last', 'leak', 'leakage', 'lead', 'leads', 'list', 'machine',
+    'make', 'many', 'me', 'month', 'more', 'morning', 'much', 'my', 'name', 'need', 'needs',
+    'new', 'next', 'night', 'not', 'note', 'notes', 'now', 'number', 'off', 'ongoing', 'open',
+    'order', 'our', 'outstanding', 'overdue', 'paid', 'past', 'pay', 'payment', 'payments',
+    'pending', 'phone', 'please', 'post', 'pre', 'price', 'purifier', 'quotation', 'raise',
+    'received', 'record', 'records', 'renew', 'renewal', 'repair', 'report', 'reminder',
+    'reminders', 'rupees', 'sales', 'schedule', 'scheduled', 'search', 'service', 'services',
+    'set', 'show', 'slot', 'softener', 'status', 'summary', 'system', 'task', 'tasks', 'that',
+    'the', 'their', 'them', 'these', 'this', 'time', 'today', 'tomorrow', 'total', 'turnover',
+    'unpaid', 'update', 'upcoming', 'visit', 'visits', 'want', 'was', 'water', 'week', 'were',
+    'what', 'when', 'which', 'who', 'will', 'with', 'work', 'year', 'yesterday', 'you', 'your',
+  ].map((w) => w.toLowerCase())
+);
+
+/** Words that usually sit right before a customer name. */
+const NAME_LEAD_WORDS = new Set([
+  'find',
+  'for',
+  'customer',
+  'search',
+  'open',
+  'called',
+  'named',
+  'of',
+  'to',
+  'with',
+  'mr',
+  'mrs',
+  'ms',
+]);
+
+function looksLikeTomorrowTypo(word) {
+  return /^tom+o?r+o?w$/.test(word) || /^tomm?row$/.test(word);
+}
+
+/**
+ * Pull likely customer-name words out of a free-form sentence.
+ * Returns single tokens (not the whole phrase) so "Find poorna and add a job…"
+ * still searches for "poorna".
+ */
+function extractNameTokens(text) {
+  const cleaned = String(text || '')
+    .replace(/(?:\+?91[\s-]*)?[6-9]\d{9}\b/g, ' ')
+    .replace(/\b[A-Z]{1,4}\d{2,}[A-Z0-9-]*\b/gi, ' ')
+    .replace(/[^\p{L}\p{N}\s.'-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return [];
+
+  const words = cleaned.split(' ');
+  const candidates = [];
+  for (let i = 0; i < words.length; i += 1) {
+    const word = words[i].replace(/^[.'-]+|[.'-]+$/g, '');
+    if (word.length < 3 || word.length > 40) continue;
+    const lower = word.toLowerCase();
+    if (NAME_STOP_WORDS.has(lower) || looksLikeTomorrowTypo(lower)) continue;
+    if (!/\p{L}/u.test(word) || /\d/.test(word)) continue;
+    const prev = (words[i - 1] || '').toLowerCase().replace(/[^\p{L}]/gu, '');
+    candidates.push({ word, priority: NAME_LEAD_WORDS.has(prev) ? 0 : 1 });
+  }
+
+  candidates.sort((a, b) => a.priority - b.priority);
+  const seen = new Set();
+  const tokens = [];
+  for (const c of candidates) {
+    const key = c.word.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tokens.push(c.word);
+    if (tokens.length >= 3) break;
+  }
+  return tokens;
+}
+
 function extractQueryHints(message) {
   const text = String(message || '').trim();
   const phoneMatch = text.match(/(?:\+?91[\s-]*)?([6-9]\d{9})\b/);
@@ -53,21 +139,14 @@ function extractQueryHints(message) {
   const jobMatch = text.match(/\b(?:job\s*#?\s*)?([A-Z]{1,4}\d{2,}[A-Z0-9-]*)\b/i);
   const jobNumber = jobMatch?.[1] && /[0-9]/.test(jobMatch[1]) ? jobMatch[1] : null;
 
-  // Strip common action words so name search works better.
-  const nameHint = text
-    .replace(/\b(create|new|job|follow[- ]?up|reminder|schedule|search|find|show|open|for|the|a|an|please|want|need|to)\b/gi, ' ')
-    .replace(/(?:\+?91[\s-]*)?[6-9]\d{9}\b/g, ' ')
-    .replace(/\b[A-Z]{1,4}\d{2,}[A-Z0-9-]*\b/gi, ' ')
-    .replace(/[^\p{L}\p{N}\s.'-]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80);
+  const nameTokens = extractNameTokens(text);
 
   return {
     raw: text.slice(0, 1500),
     phone,
     jobNumber,
-    nameHint: nameHint.length >= 2 ? nameHint : null,
+    nameTokens,
+    nameHint: nameTokens[0] || null,
   };
 }
 
@@ -150,7 +229,7 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     end = start;
     label = 'yesterday';
     explicitDate = true;
-  } else if (has(/\btomorrow\b/)) {
+  } else if (has(/\btom+o?r+o?w\b|\btomm?row\b/)) {
     start = addDaysKey(todayKey, 1);
     end = start;
     label = 'tomorrow';
@@ -314,7 +393,7 @@ async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
 
   const queries = [];
   if (hints.phone) queries.push(hints.phone);
-  if (hints.nameHint) queries.push(hints.nameHint);
+  for (const token of hints.nameTokens || []) queries.push(token);
   if (!queries.length && hints.raw && opts.allowRawFallback !== false) {
     queries.push(hints.raw.slice(0, 60));
   }
@@ -726,10 +805,13 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
     };
   }
 
-  const intent = detectOverviewIntent(message, todayKey);
   const hints = extractQueryHints(message);
-  // A pure "what's on today" question should not fuzzy-search customer text.
-  if (intent.active && !hints.phone && !hints.jobNumber) hints.nameHint = null;
+  const detected = detectOverviewIntent(message, todayKey);
+  // A request naming a person or job is about them, not a whole-day sweep.
+  const hasSpecificTarget = Boolean(
+    hints.phone || hints.jobNumber || (hints.nameTokens || []).length || focusCustomerId
+  );
+  const intent = { ...detected, active: detected.active && !hasSpecificTarget };
   const customers = await searchCustomers(db, hints, focusCustomerId, {
     allowRawFallback: !intent.active,
   });
@@ -838,8 +920,12 @@ function formatContextForPrompt(pack) {
   const stats = pack.stats || {};
   const nameById = new Map((pack.customers || []).map((c) => [c.id, c.name]));
 
+  const today = stats.today || istDateKey();
   lines.push(
-    `Today (IST) is ${stats.today || istDateKey()}${stats.weekday ? ` (${stats.weekday})` : ''}.`
+    `Today (IST) is ${today}${stats.weekday ? ` (${stats.weekday})` : ''}. Tomorrow is ${addDaysKey(
+      today,
+      1
+    )}; yesterday was ${addDaysKey(today, -1)}. Use these for relative dates, including misspellings.`
   );
   if (pack.intent?.scopes?.length) {
     const showStatuses = pack.intent.statuses && pack.intent.scopes.includes('jobs');

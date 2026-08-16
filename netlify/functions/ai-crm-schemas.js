@@ -56,20 +56,49 @@ function normalizeWarnings(raw) {
     .slice(0, MAX_WARNINGS);
 }
 
+const JOB_TIME_SLOTS = ['MORNING', 'AFTERNOON', 'EVENING', 'FLEXIBLE', 'CUSTOM'];
+
+/**
+ * Accept either a CRM slot name or a clock time ("10 am", "14:30") and return
+ * the slot the job form understands plus an exact HH:MM when given.
+ */
+function normalizeTimeSlot(rawSlot, rawCustom) {
+  const slot = asTrimmedString(rawSlot, 20).toUpperCase();
+  const parseClock = (value) => {
+    const text = asTrimmedString(value, 20).toLowerCase();
+    const match = text.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+    if (!match) return null;
+    let hour = Number(match[1]);
+    const minute = Number(match[2] || 0);
+    if (!Number.isFinite(hour) || hour > 23 || minute > 59) return null;
+    const meridiem = match[3];
+    if (meridiem === 'pm' && hour < 12) hour += 12;
+    if (meridiem === 'am' && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  };
+
+  const custom = parseClock(rawCustom) || (JOB_TIME_SLOTS.includes(slot) ? null : parseClock(slot));
+  if (custom) return { slot: 'CUSTOM', custom };
+  if (JOB_TIME_SLOTS.includes(slot)) return { slot, custom: null };
+  return { slot: null, custom: null };
+}
+
 function normalizeCreateJobPayload(raw, knownCustomerIds) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const customerId = asTrimmedString(src.customerId, 64);
   if (!customerId || !knownCustomerIds.has(customerId)) return null;
+  const time = normalizeTimeSlot(
+    src.scheduledTimeSlot || src.scheduled_time_slot,
+    src.scheduledTimeCustom || src.scheduled_time_custom
+  );
   return {
     customerId,
     serviceType:
       src.serviceType === 'SOFTENER' || src.service_type === 'SOFTENER' ? 'SOFTENER' : 'RO',
     serviceSubType: asTrimmedString(src.serviceSubType || src.service_sub_type, 80) || 'Service',
     scheduledDate: asTrimmedString(src.scheduledDate || src.scheduled_date, 10) || null,
-    scheduledTimeSlot: asTrimmedString(
-      src.scheduledTimeSlot || src.scheduled_time_slot,
-      20
-    ).toUpperCase() || null,
+    scheduledTimeSlot: time.slot,
+    scheduledTimeCustom: time.custom,
     description: asTrimmedString(src.description, 500),
     priority: asTrimmedString(src.priority, 12).toUpperCase() || 'MEDIUM',
     leadSource: asTrimmedString(src.leadSource || src.lead_source, 80),

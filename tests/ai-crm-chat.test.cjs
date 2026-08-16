@@ -96,8 +96,68 @@ function testLookupHintsAndLimits() {
   const hints = extractQueryHints('Please create a new job for Ramesh 9876543210 job HRO123');
   assert.equal(hints.phone, '9876543210');
   assert.ok(hints.jobNumber);
+  assert.deepEqual(hints.nameTokens, ['Ramesh']);
   assert.ok(CUSTOMER_LIMIT <= 15);
   assert.ok(JOB_LIMIT <= 15);
+}
+
+function testNameSurvivesActionSentences() {
+  const hints = extractQueryHints(
+    'Find poorna and add job for tommrow 10 am it has leakage issue need to change pre filter agrred for 1500'
+  );
+  assert.equal(hints.nameHint, 'poorna');
+  assert.equal(hints.nameTokens[0], 'poorna');
+  // Operational chatter must never become a search term.
+  for (const noise of ['job', 'leakage', 'filter', 'tommrow']) {
+    assert.equal(hints.nameTokens.includes(noise), false);
+  }
+
+  const opsOnly = extractQueryHints('how many jobs are pending today');
+  assert.deepEqual(opsOnly.nameTokens, []);
+}
+
+function testJobDraftTimeNormalization() {
+  const customerId = '11111111-1111-1111-1111-111111111111';
+  const known = { entities: { customers: [{ id: customerId }], jobs: [] } };
+
+  const clock = normalizeCrmChatOutput(
+    {
+      answer: 'ok',
+      proposedActions: [
+        {
+          type: 'create_job',
+          payload: { customerId, scheduledTimeSlot: '10:00 AM', scheduledDate: '2026-08-17' },
+        },
+      ],
+    },
+    known
+  );
+  const clockPayload = clock.value.proposedActions[0].payload;
+  assert.equal(clockPayload.scheduledTimeSlot, 'CUSTOM');
+  assert.equal(clockPayload.scheduledTimeCustom, '10:00');
+
+  const named = normalizeCrmChatOutput(
+    {
+      answer: 'ok',
+      proposedActions: [
+        { type: 'create_job', payload: { customerId, scheduledTimeSlot: 'afternoon' } },
+      ],
+    },
+    known
+  );
+  assert.equal(named.value.proposedActions[0].payload.scheduledTimeSlot, 'AFTERNOON');
+  assert.equal(named.value.proposedActions[0].payload.scheduledTimeCustom, null);
+
+  const junk = normalizeCrmChatOutput(
+    {
+      answer: 'ok',
+      proposedActions: [
+        { type: 'create_job', payload: { customerId, scheduledTimeSlot: 'whenever' } },
+      ],
+    },
+    known
+  );
+  assert.equal(junk.value.proposedActions[0].payload.scheduledTimeSlot, null);
 }
 
 function testOverviewIntentDetection() {
@@ -182,6 +242,8 @@ async function main() {
   testActionsRequireKnownIdsAndConfirm();
   testMutationToolsBanned();
   testLookupHintsAndLimits();
+  testNameSurvivesActionSentences();
+  testJobDraftTimeNormalization();
   testOverviewIntentDetection();
   await testMockCrmChat();
   testEndpointSourceHasSafetyGuards();

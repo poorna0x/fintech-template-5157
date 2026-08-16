@@ -79,6 +79,7 @@ export type AiCrmCreateJobDraft = {
   serviceSubType?: string;
   scheduledDate?: string | null;
   scheduledTimeSlot?: string | null;
+  scheduledTimeCustom?: string | null;
   description?: string;
   priority?: string;
   leadSource?: string;
