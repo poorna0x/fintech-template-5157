@@ -45,10 +45,18 @@ interface FollowUpModalProps {
     parentFollowUpId?: string;
     rescheduleFollowUpId?: string;
     autoMoveToOngoingOnDate?: boolean;
+    addAmcReminder?: boolean;
   }) => void;
+  hasActiveAmc?: boolean;
 }
 
-export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp }: FollowUpModalProps) {
+export default function FollowUpModal({
+  isOpen,
+  onClose,
+  job,
+  onScheduleFollowUp,
+  hasActiveAmc = false,
+}: FollowUpModalProps) {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedTime, setSelectedTime] = useState(() => nextPresetAppointmentTime());
   const [reason, setReason] = useState('');
@@ -58,6 +66,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
   const [selectedParentFollowUp, setSelectedParentFollowUp] = useState<string | null>(null);
   const [rescheduleFollowUpId, setRescheduleFollowUpId] = useState<string | null>(null);
   const [autoMoveToOngoingOnDate, setAutoMoveToOngoingOnDate] = useState(false);
+  const [addAmcReminder, setAddAmcReminder] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const reasonInputRef = useRef<HTMLInputElement>(null);
 
@@ -94,11 +103,15 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
       setAutoMoveToOngoingOnDate(hasAutoMoveToOngoingOnDate((job as any).requirements));
+      setAddAmcReminder(
+        Boolean((job as any).include_amc_follow_up ?? (job as any).includeAmcFollowUp)
+      );
     } else {
       setExistingFollowUps([]);
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
       setAutoMoveToOngoingOnDate(false);
+      setAddAmcReminder(false);
     }
   }, [isOpen, job]);
 
@@ -250,6 +263,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
         parentFollowUpId: selectedParentFollowUp || undefined,
         rescheduleFollowUpId: rescheduleFollowUpId || undefined,
         autoMoveToOngoingOnDate: selectedParentFollowUp ? undefined : autoMoveToOngoingOnDate,
+        addAmcReminder: selectedParentFollowUp ? undefined : addAmcReminder,
       };
 
       await onScheduleFollowUp(job.id, followUpData);
@@ -261,6 +275,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
       setAutoMoveToOngoingOnDate(false);
+      setAddAmcReminder(false);
       
       // Reload follow-ups
       await loadFollowUps();
@@ -500,6 +515,25 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                     </Label>
                     <p className="text-xs text-muted-foreground leading-snug">
                       When checked, this job moves to Ongoing as unassigned on the follow-up date when you open admin.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {hasActiveAmc && !selectedParentFollowUp && (
+                <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
+                  <Checkbox
+                    id="add-amc-reminder"
+                    checked={addAmcReminder}
+                    onCheckedChange={(checked) => setAddAmcReminder(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="add-amc-reminder" className="text-sm font-medium leading-snug cursor-pointer">
+                      Add reminder and show in Follow-up
+                    </Label>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      Creates a customer reminder for this date. AMC Service jobs are normally hidden from Follow-up, but this one will appear like a normal follow-up.
                     </p>
                   </div>
                 </div>

@@ -7152,6 +7152,17 @@ const AdminDashboard = () => {
             closeAdminModal();
           }}
           job={selectedJobForFollowUp}
+          hasActiveAmc={Boolean(
+            selectedJobForFollowUp &&
+              customerAMCStatus[
+                String(
+                  selectedJobForFollowUp.customerId ||
+                    selectedJobForFollowUp.customer_id ||
+                    selectedJobForFollowUp.customer?.id ||
+                    ''
+                )
+              ]
+          )}
           onScheduleFollowUp={handleFollowUpSubmit}
         />
 

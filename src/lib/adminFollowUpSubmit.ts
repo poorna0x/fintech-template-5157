@@ -13,7 +13,63 @@ export type AdminFollowUpSubmitData = {
   parentFollowUpId?: string;
   rescheduleFollowUpId?: string;
   autoMoveToOngoingOnDate?: boolean;
+  addAmcReminder?: boolean;
 };
+
+async function syncAmcFollowUpReminder(opts: {
+  job: Job;
+  followUpDate: string;
+  followUpTime: string;
+  followUpReason: string;
+  enabled: boolean;
+}) {
+  const customerId =
+    opts.job.customerId || opts.job.customer_id || opts.job.customer?.id || null;
+  if (!customerId) throw new Error('Customer is missing for the AMC reminder');
+  const jobNumber = opts.job.jobNumber || opts.job.job_number || 'AMC job';
+  const title = `AMC follow-up · ${jobNumber}`;
+
+  const { data: existing, error: lookupError } = await supabase
+    .from('reminders')
+    .select('id')
+    .eq('entity_type', 'customer')
+    .eq('entity_id', customerId)
+    .eq('title', title)
+    .is('completed_at', null)
+    .limit(1)
+    .maybeSingle();
+  if (lookupError) throw new Error(lookupError.message);
+
+  if (!opts.enabled) {
+    if (existing?.id) {
+      const { error } = await db.reminders.delete(existing.id);
+      if (error) throw new Error(error.message);
+    }
+    return;
+  }
+
+  const notes = [
+    opts.followUpReason,
+    opts.followUpTime ? `Follow-up time: ${opts.followUpTime}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const result = existing?.id
+    ? await db.reminders.update(existing.id, {
+        title,
+        notes,
+        reminder_at: opts.followUpDate,
+      })
+    : await db.reminders.create({
+        entity_type: 'customer',
+        entity_id: customerId,
+        title,
+        notes,
+        reminder_at: opts.followUpDate,
+      });
+  if (result.error) throw new Error(result.error.message);
+}
 
 export async function submitAdminFollowUp(
   jobId: string,
@@ -30,6 +86,11 @@ export async function submitAdminFollowUp(
   }
 ) {
   try {
+    const existingJob =
+      ctx.jobs.find((j) => j.id === jobId) ||
+      Object.values(ctx.customerJobs)
+        .flat()
+        .find((j) => j.id === jobId);
     let wasRootFollowUp = false;
     if (followUpData.rescheduleFollowUpId) {
       const { data: oldFollowUp } = await supabase
@@ -90,11 +151,6 @@ export async function submitAdminFollowUp(
     }
 
     if (!followUpData.parentFollowUpId || wasRootFollowUp) {
-      const existingJob =
-        ctx.jobs.find((j) => j.id === jobId) ||
-        Object.values(ctx.customerJobs)
-          .flat()
-          .find((j) => j.id === jobId);
       const requirements = applyAutoMoveToOngoingOnDateFlag(
         (existingJob as any)?.requirements,
         Boolean(followUpData.autoMoveToOngoingOnDate)
@@ -108,6 +164,7 @@ export async function submitAdminFollowUp(
         follow_up_notes: followUpReason,
         follow_up_scheduled_by: null,
         follow_up_scheduled_at: new Date().toISOString(),
+        include_amc_follow_up: Boolean(followUpData.addAmcReminder),
         requirements,
       } as any);
 
@@ -126,6 +183,8 @@ export async function submitAdminFollowUp(
                 followUpNotes: followUpReason,
                 followUpScheduledBy: 'admin',
                 followUpScheduledAt: new Date().toISOString(),
+                includeAmcFollowUp: Boolean(followUpData.addAmcReminder),
+                include_amc_follow_up: Boolean(followUpData.addAmcReminder),
                 requirements,
               }
             : job
@@ -149,6 +208,8 @@ export async function submitAdminFollowUp(
                       : ''),
                   followUpScheduledBy: 'admin',
                   followUpScheduledAt: new Date().toISOString(),
+                  includeAmcFollowUp: Boolean(followUpData.addAmcReminder),
+                  include_amc_follow_up: Boolean(followUpData.addAmcReminder),
                   requirements,
                 }
               : job
@@ -156,6 +217,21 @@ export async function submitAdminFollowUp(
         });
         return updated;
       });
+
+      if (existingJob) {
+        try {
+          await syncAmcFollowUpReminder({
+            job: existingJob,
+            followUpDate: followUpData.followUpDate,
+            followUpTime: followUpData.followUpTime,
+            followUpReason,
+            enabled: Boolean(followUpData.addAmcReminder),
+          });
+        } catch (reminderError) {
+          console.warn('[follow-up] AMC reminder sync failed', reminderError);
+          toast.warning('Follow-up saved, but the AMC reminder could not be updated');
+        }
+      }
     }
 
     toast.success(

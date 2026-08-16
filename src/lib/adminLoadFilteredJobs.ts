@@ -240,6 +240,7 @@ export async function loadFilteredJobsForAdmin(
         {
           includePhotoFields: true,
           excludeServiceSubType: deps.hideAmcFollowUps ? 'AMC Service' : undefined,
+          includeAmcFollowUpOverrides: deps.hideAmcFollowUps,
         }
       );
       data = slimFu.data || [];
@@ -252,7 +253,10 @@ export async function loadFilteredJobsForAdmin(
           page,
           deps.pageSize,
           undefined,
-          { excludeServiceSubType: deps.hideAmcFollowUps ? 'AMC Service' : undefined }
+          {
+            excludeServiceSubType: deps.hideAmcFollowUps ? 'AMC Service' : undefined,
+            includeAmcFollowUpOverrides: deps.hideAmcFollowUps,
+          }
         );
         data = fallback.data || [];
         error = fallback.error;

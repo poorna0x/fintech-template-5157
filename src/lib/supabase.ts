@@ -661,6 +661,8 @@ type AdminCompletedListFilters = {
   serviceSubTypeIn?: string[];
   leadRequirementsContainVariants?: string[];
   excludeServiceSubType?: string;
+  /** When excluding AMC Service, retain rows explicitly opted into follow-up. */
+  includeAmcFollowUpOverrides?: boolean;
 };
 
 function applyAdminCompletedListFilters(query: any, listFilters?: AdminCompletedListFilters) {
@@ -672,9 +674,14 @@ function applyAdminCompletedListFilters(query: any, listFilters?: AdminCompleted
     query = query.in('service_sub_type', listFilters.serviceSubTypeIn);
   }
   if (listFilters.excludeServiceSubType) {
-    query = query.or(
-      `service_sub_type.is.null,service_sub_type.neq.${listFilters.excludeServiceSubType}`
-    );
+    const filters = [
+      'service_sub_type.is.null',
+      `service_sub_type.neq.${listFilters.excludeServiceSubType}`,
+    ];
+    if (listFilters.includeAmcFollowUpOverrides) {
+      filters.push('include_amc_follow_up.eq.true');
+    }
+    query = query.or(filters.join(','));
   }
   if (listFilters.leadRequirementsContainVariants?.length) {
     const variants = listFilters.leadRequirementsContainVariants;
@@ -2993,7 +3000,7 @@ export const db = {
           .in('status', ['FOLLOW_UP', 'RESCHEDULED']);
         if (countOnlyNonAmcFollowUps) {
           followupCountQuery = followupCountQuery.or(
-            'service_sub_type.is.null,service_sub_type.neq.AMC Service'
+            'service_sub_type.is.null,service_sub_type.neq.AMC Service,include_amc_follow_up.eq.true'
           );
         }
         if (followUpsDueWithinDays !== null) {
@@ -3066,6 +3073,7 @@ export const db = {
         leadRequirementsContainVariants?: string[];
         /** Keep rows with null subtype, but omit this exact subtype. */
         excludeServiceSubType?: string;
+        includeAmcFollowUpOverrides?: boolean;
       }
     ) {
       const from = (page - 1) * pageSize;
@@ -3231,6 +3239,7 @@ export const db = {
         leadRequirementsContainVariants?: string[];
         /** Keep rows with null subtype, but omit this exact subtype. */
         excludeServiceSubType?: string;
+        includeAmcFollowUpOverrides?: boolean;
         /** When true, drop `requirements` jsonb from rows (admin “minimal” list; details on demand). */
         omitRequirements?: boolean;
         /** Prefer Postgres `estimated` count for faster pagination metadata (slight variance vs `exact` on huge tables). */
@@ -3252,6 +3261,7 @@ export const db = {
         'priority',
         'service_type',
         'service_sub_type',
+        'include_amc_follow_up',
         'service_brand',
         'scheduled_date',
         'scheduled_time_slot',
@@ -3392,6 +3402,7 @@ export const db = {
         serviceSubTypeIn: opts?.serviceSubTypeIn,
         leadRequirementsContainVariants: opts?.leadRequirementsContainVariants,
         excludeServiceSubType: opts?.excludeServiceSubType,
+        includeAmcFollowUpOverrides: opts?.includeAmcFollowUpOverrides,
       });
 
       const deniedCancelledList =
@@ -3434,7 +3445,9 @@ export const db = {
         .in('follow_up_date', [todayStr, tomorrowStr])
         .limit(200);
       if (opts?.excludeAmc) {
-        query = query.or('service_sub_type.is.null,service_sub_type.neq.AMC Service');
+        query = query.or(
+          'service_sub_type.is.null,service_sub_type.neq.AMC Service,include_amc_follow_up.eq.true'
+        );
       }
       const { data, error } = await query;
       return { data: data || [], error };
