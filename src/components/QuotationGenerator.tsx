@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Share2, Image as ImageIcon } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Share2, Image as ImageIcon, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
@@ -66,6 +66,7 @@ import {
   serializeTermItems,
   type ServiceDocumentTermItem,
 } from '@/lib/service-document-terms';
+import { buildQuotationWithAi } from '@/lib/aiQuotationBuilder';
 
 interface QuotationGeneratorProps {
   customer?: Customer;
@@ -167,6 +168,8 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     defaultRecipients: string[];
     dueDateIso: string;
   } | null>(null);
+  const [aiQuoteInstruction, setAiQuoteInstruction] = useState('');
+  const [aiQuoteLoading, setAiQuoteLoading] = useState(false);
   
   // Computed values for backward compatibility
   const includeGST = gstOption === 'include';
@@ -664,6 +667,60 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
   };
 
+  const handleBuildQuotationWithAi = async () => {
+    const instruction = aiQuoteInstruction.trim();
+    if (instruction.length < 8) {
+      toast.error('Describe what the quotation should include');
+      return;
+    }
+    if (!customer?.id) {
+      toast.error('Select a customer before using AI quotation builder');
+      return;
+    }
+
+    setAiQuoteLoading(true);
+    const toastId = toast.loading('Building quotation draft…');
+    try {
+      const result = await buildQuotationWithAi({
+        customerId: String(customer.id),
+        instruction,
+      });
+      if (!result.ok) {
+        toast.error(result.error, { id: toastId });
+        return;
+      }
+
+      const validUntil = new Date();
+      validUntil.setDate(validUntil.getDate() + result.draft.validityDays);
+      const snapshot = getDraftSnapshot();
+      applyDraftSnapshot({
+        ...snapshot,
+        items: result.draft.items,
+        serviceCharge: 0,
+        notes: result.draft.notes,
+        notesHeading: result.draft.notesHeading,
+        validityNote: result.draft.validityNote,
+        showValidityNote: Boolean(result.draft.validityNote),
+        validUntilDate: validUntil.toISOString().split('T')[0],
+        isValidUntilManuallySet: false,
+        termItems:
+          result.draft.termItems.length > 0 ? result.draft.termItems : snapshot.termItems,
+        gstOption: result.draft.gstOption,
+        showBankDetails: result.draft.showBankDetails,
+      });
+
+      const warning = result.warnings[0];
+      toast.success(
+        warning
+          ? `Draft built. Review prices, terms and warning: ${warning}`
+          : 'Draft built. Review every item, enter prices, and check all terms.',
+        { id: toastId, duration: 7000 }
+      );
+    } finally {
+      setAiQuoteLoading(false);
+    }
+  };
+
   const buildDraftLabel = (snap: ReturnType<typeof getDraftSnapshot>) => {
     const num = snap.quotationNumber || 'Draft';
     const who = snap.editableCustomer?.name || 'Customer';
@@ -739,6 +796,43 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
           />
         }
       />
+
+      <Card className="border-violet-200 bg-violet-50/40">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg text-violet-900">
+            <Sparkles className="h-5 w-5" />
+            Build quotation with AI
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Textarea
+            value={aiQuoteInstruction}
+            onChange={(event) => setAiQuoteInstruction(event.target.value)}
+            placeholder="Example: Prepare a quotation for RO membrane replacement, pre-filter and service visit. Include 90-day membrane warranty, payment on completion, 30-day validity, and relevant exclusions."
+            rows={4}
+            maxLength={4000}
+            disabled={aiQuoteLoading}
+          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-violet-800">
+              AI fills items, notes, validity and terms. Prices stay ₹0 until you review and enter them.
+            </p>
+            <Button
+              type="button"
+              onClick={handleBuildQuotationWithAi}
+              disabled={aiQuoteLoading || aiQuoteInstruction.trim().length < 8}
+              className="shrink-0 bg-violet-700 hover:bg-violet-800"
+            >
+              {aiQuoteLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="mr-2 h-4 w-4" />
+              )}
+              Build editable draft
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
         {/* Quotation Information */}

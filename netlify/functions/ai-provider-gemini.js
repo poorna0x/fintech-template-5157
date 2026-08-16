@@ -70,7 +70,7 @@ function tryParseJsonObject(text) {
 
 async function generateWithGemini(input, config) {
   const apiKey = String(config?.geminiApiKey || '').trim();
-  const model = String(config?.model || 'gemini-3.5-flash').trim();
+  const model = String(config?.model || 'gemini-3.1-flash-lite').trim();
   if (!apiKey) {
     throw new Error('Gemini API key missing');
   }
@@ -96,6 +96,10 @@ async function generateWithGemini(input, config) {
       thinkingConfig: { thinkingBudget: 0 },
     },
   };
+  // Only server-owned schemas are passed here; the browser cannot supply one.
+  if (input.responseJsonSchema && typeof input.responseJsonSchema === 'object') {
+    body.generationConfig.responseJsonSchema = input.responseJsonSchema;
+  }
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }

@@ -24,7 +24,9 @@ async function generateWithMock(input) {
   const last = lastCustomerText(messages);
   const intent = detectIntent(last);
   const includeQuotation =
-    input.operation === 'suggest_quotation' || intent === 'quotation';
+    input.operation === 'suggest_quotation' ||
+    input.operation === 'build_quotation' ||
+    intent === 'quotation';
 
   let replyText =
     'Thanks for your message. Our team will help you with this shortly. Could you share a bit more detail if needed?';
@@ -54,6 +56,18 @@ async function generateWithMock(input) {
         ],
         notes: ['Prices to be filled by admin before sending to customer.'],
         warnings: ['AI draft only — selling prices left blank on purpose.'],
+        notesHeading: 'Scope & Notes',
+        terms: [
+          'Final scope and selling prices are subject to admin confirmation.',
+          'Payment is due as agreed in the approved quotation.',
+          'Warranty applies only when explicitly stated in the final quotation.',
+          'Additional work or materials outside this scope will be charged separately.',
+          'All disputes are subject to Bengaluru, Karnataka jurisdiction.',
+        ],
+        validityNote: 'This quotation is valid for 30 days from the date of issue.',
+        validityDays: 30,
+        gstOption: 'include',
+        showBankDetails: false,
       }
     : null;
 

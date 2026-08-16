@@ -39,6 +39,41 @@ function testRequestIgnoresClientProviderFields() {
   assert.equal('provider' in parsed.value, false);
 }
 
+function testQuotationBuilderRequestAndTerms() {
+  const parsed = parseSuggestRequest({
+    operation: 'build_quotation',
+    customerId: 'customer-123',
+    instruction: 'Build a membrane replacement quotation with service and warranty terms.',
+    phoneE164: 'not-required',
+  });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.value.phoneDigits, null);
+  assert.equal(parsed.value.customerId, 'customer-123');
+  assert.match(parsed.value.instruction, /membrane replacement/);
+
+  const normalized = normalizeSuggestionOutput(
+    {
+      quotation: {
+        items: [{ description: 'RO membrane', quantity: 1, unitPrice: 9999 }],
+        notesHeading: 'Scope',
+        notes: ['Installation included'],
+        terms: ['Payment on completion', { text: 'Bengaluru jurisdiction' }],
+        validityNote: 'Valid for 15 days',
+        validityDays: 15,
+        gstOption: 'include',
+      },
+    },
+    { includeQuotation: true }
+  );
+  assert.equal(normalized.ok, true);
+  assert.equal(normalized.value.quotation.items[0].unitPrice, 0);
+  assert.deepEqual(normalized.value.quotation.terms, [
+    'Payment on completion',
+    'Bengaluru jurisdiction',
+  ]);
+  assert.equal(normalized.value.quotation.validityDays, 15);
+}
+
 function testUnknownOperationRejected() {
   const parsed = parseSuggestRequest({
     operation: 'delete_everything',
@@ -84,7 +119,7 @@ function testProviderAllowlist() {
   assert.equal(ALLOWED_PROVIDERS.has('gemini'), true);
   assert.equal(ALLOWED_PROVIDERS.has('mock'), true);
   assert.equal(ALLOWED_PROVIDERS.has('openai'), false);
-  assert.equal(ALLOWED_GEMINI_MODELS.has('gemini-3.5-flash'), true);
+  assert.equal(ALLOWED_GEMINI_MODELS.has('gemini-3.1-flash-lite'), true);
 
   clearAiAssistantConfigCache();
   const cfg = normalizeConfig(
@@ -96,7 +131,7 @@ function testProviderAllowlist() {
     'env'
   );
   assert.equal(cfg.provider, 'gemini');
-  assert.equal(cfg.model, 'gemini-3.5-flash');
+  assert.equal(cfg.model, 'gemini-3.1-flash-lite');
 }
 
 async function testMockProviderStructuredOutput() {
@@ -169,6 +204,7 @@ function testEndpointSourceHasSafetyGuards() {
 
 async function main() {
   testRequestIgnoresClientProviderFields();
+  testQuotationBuilderRequestAndTerms();
   testUnknownOperationRejected();
   testQuotationPricesForcedZero();
   testMutationToolsBanned();

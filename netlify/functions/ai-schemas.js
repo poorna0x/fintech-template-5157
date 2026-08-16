@@ -3,14 +3,21 @@
  * Kept dependency-free so Netlify functions do not need an extra Zod install.
  */
 
-const ALLOWED_OPERATIONS = Object.freeze(['suggest_reply', 'suggest_quotation']);
+const ALLOWED_OPERATIONS = Object.freeze([
+  'suggest_reply',
+  'suggest_quotation',
+  'build_quotation',
+]);
 const MAX_PHONE_LEN = 20;
+const MAX_INSTRUCTION_CHARS = 4_000;
 const MAX_REPLY_CHARS = 1200;
 const MAX_QUOTE_ITEMS = 12;
 const MAX_ITEM_DESC = 200;
 const MAX_NOTES = 8;
 const MAX_NOTE_CHARS = 240;
 const MAX_WARNINGS = 8;
+const MAX_TERMS = 16;
+const MAX_TERM_CHARS = 320;
 
 function asTrimmedString(value, maxLen) {
   const text = String(value == null ? '' : value).trim();
@@ -30,12 +37,32 @@ function parseSuggestRequest(body) {
     return { ok: false, error: 'Unsupported operation' };
   }
 
+  const customerId = asTrimmedString(body?.customerId, 64) || null;
+  if (operation === 'build_quotation') {
+    const instruction = asTrimmedString(body?.instruction, MAX_INSTRUCTION_CHARS);
+    if (instruction.length < 8) {
+      return { ok: false, error: 'Describe the quotation in at least 8 characters' };
+    }
+    if (!customerId) {
+      return { ok: false, error: 'Customer required' };
+    }
+    return {
+      ok: true,
+      value: {
+        operation,
+        phoneDigits: null,
+        customerId,
+        instruction,
+        saveQuotationDraft: false,
+      },
+    };
+  }
+
   const phoneDigits = normalizePhoneDigits(body?.phoneE164 || body?.phone || body?.to);
   if (!phoneDigits) {
     return { ok: false, error: 'Valid phone required' };
   }
 
-  const customerId = asTrimmedString(body?.customerId, 64) || null;
   const saveQuotationDraft = body?.saveQuotationDraft === true;
 
   return {
@@ -93,6 +120,14 @@ function normalizeNotes(raw) {
     .slice(0, MAX_NOTES);
 }
 
+function normalizeTerms(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((term) => asTrimmedString(term?.text || term, MAX_TERM_CHARS))
+    .filter(Boolean)
+    .slice(0, MAX_TERMS);
+}
+
 /**
  * Normalize provider JSON into a safe suggestion payload.
  * Always forces quotation prices to zero.
@@ -115,6 +150,15 @@ function normalizeSuggestionOutput(raw, opts = {}) {
       notes: normalizeNotes(q.notes),
       warnings: normalizeWarnings(q.warnings || warnings),
       customerName: asTrimmedString(q.customerName, 120) || null,
+      notesHeading: asTrimmedString(q.notesHeading, 80) || 'Additional Info',
+      terms: normalizeTerms(q.terms || q.termsAndConditions),
+      validityNote: asTrimmedString(q.validityNote, 400),
+      validityDays: Math.max(1, Math.min(180, Math.round(Number(q.validityDays) || 30))),
+      gstOption:
+        q.gstOption === 'normal' || q.gstOption === 'exclude' || q.gstOption === 'include'
+          ? q.gstOption
+          : 'include',
+      showBankDetails: q.showBankDetails === true,
     };
   }
 
@@ -162,6 +206,7 @@ module.exports = {
   parseSuggestRequest,
   normalizeSuggestionOutput,
   normalizeQuotationItems,
+  normalizeTerms,
   assertNoMutationTools,
   normalizePhoneDigits,
 };
