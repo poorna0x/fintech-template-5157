@@ -38,7 +38,7 @@
           'Hydrogen RO, best RO service Bengaluru, best RO service Bangalore, RO water purifier service Bangalore, RO installation Bengaluru, RO repair Bangalore, RO service Electronic City, RO service BTM Layout, RO service HSR Layout, same day RO service Bangalore',
         author: 'Hydrogen RO - Water Purifier Services',
         origin: 'https://hydrogenro.com',
-        ogImage: 'https://hydrogenro.com/og-image.jpg',
+        ogImage: 'https://hydrogenro.com/og-image.jpg', // TODO(seo): add a proper 1200x630 brand OG image (current placeholder removed)
         siteName: 'Hydrogen RO',
         ogTitle: 'Best RO Water Purifier Services in Bengaluru Bangalore | RO Installation & Repair',
         ogDescription:

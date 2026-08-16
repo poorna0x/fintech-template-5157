@@ -51,7 +51,7 @@ const HYDROGEN_SEO: BrandSeoProfile = {
     'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. Same-day RO installation, repair, maintenance and filter replacement across all Bangalore areas. Call +91-8884944288.',
   keywords:
     'Hydrogen RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, water purifier service Karnataka, RO repair Karnataka, RO installation Karnataka, RO AMC Karnataka, RO maintenance Karnataka, RO technician Karnataka, Kent RO service, Aquaguard service, Livpure service, Pureit service, AO Smith service, best RO service near me, RO service Mysuru, RO service Mangaluru, RO service Hubballi, RO service Belagavi, same day RO service Karnataka',
-  ogImage: 'https://hydrogenro.com/og-image.jpg',
+  ogImage: 'https://hydrogenro.com/og-image.jpg', // TODO(seo): add a proper 1200x630 brand OG image (placeholder removed)
   logoPath: 'https://hydrogenro.com/fulllogo.png',
   phones: ['+91-8884944288', '+91-9886944288'],
   primaryPhone: '+91-8884944288',
