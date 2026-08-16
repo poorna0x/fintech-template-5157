@@ -84,7 +84,7 @@ function testProviderAllowlist() {
   assert.equal(ALLOWED_PROVIDERS.has('gemini'), true);
   assert.equal(ALLOWED_PROVIDERS.has('mock'), true);
   assert.equal(ALLOWED_PROVIDERS.has('openai'), false);
-  assert.equal(ALLOWED_GEMINI_MODELS.has('gemini-2.0-flash'), true);
+  assert.equal(ALLOWED_GEMINI_MODELS.has('gemini-3.5-flash'), true);
 
   clearAiAssistantConfigCache();
   const cfg = normalizeConfig(
@@ -96,7 +96,7 @@ function testProviderAllowlist() {
     'env'
   );
   assert.equal(cfg.provider, 'gemini');
-  assert.equal(cfg.model, 'gemini-2.0-flash');
+  assert.equal(cfg.model, 'gemini-3.5-flash');
 }
 
 async function testMockProviderStructuredOutput() {

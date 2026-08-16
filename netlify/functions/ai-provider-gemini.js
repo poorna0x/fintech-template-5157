@@ -69,7 +69,7 @@ function tryParseJsonObject(text) {
 
 async function generateWithGemini(input, config) {
   const apiKey = String(config?.geminiApiKey || '').trim();
-  const model = String(config?.model || 'gemini-2.0-flash').trim();
+  const model = String(config?.model || 'gemini-3.5-flash').trim();
   if (!apiKey) {
     throw new Error('Gemini API key missing');
   }
@@ -110,6 +110,13 @@ async function generateWithGemini(input, config) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const code = data?.error?.status || data?.error?.code || response.status;
+    const msg = String(data?.error?.message || '').toLowerCase();
+    if (response.status === 429 || msg.includes('quota') || msg.includes('credit') || msg.includes('billing')) {
+      throw new Error('Gemini quota/billing unavailable — top up credits in AI Studio, then retry');
+    }
+    if (response.status === 404 || String(code).includes('NOT_FOUND')) {
+      throw new Error(`Gemini model not available (${model})`);
+    }
     throw new Error(`Gemini request failed (${code})`);
   }
 
