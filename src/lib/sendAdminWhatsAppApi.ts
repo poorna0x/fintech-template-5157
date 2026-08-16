@@ -639,6 +639,8 @@ export async function sendAdminWhatsAppTemplate(
 }
 
 export type SendAdminWhatsAppTextWithTemplateOptions = SendAdminWhatsAppTextOptions & {
+  /** CRM already knows the 24h window is closed; skip free-form and send the template first. */
+  preferColdTemplate?: boolean;
   /** When free-form fails due to closed 24h window, try this Meta template before wa.me. */
   coldTemplate?: {
     name: string;
@@ -657,10 +659,18 @@ export type SendAdminWhatsAppTextWithTemplateOptions = SendAdminWhatsAppTextOpti
 export async function sendAdminWhatsAppTextWithOptionalTemplate(
   options: SendAdminWhatsAppTextWithTemplateOptions
 ): Promise<AdminWhatsAppSendResult & { usedTemplate?: boolean }> {
-  const textResult = await sendAdminWhatsAppText({
-    ...options,
-    fallbackWaMe: false,
-  });
+  const coldName = String(options.coldTemplate?.name || '').trim();
+  const textResult: AdminWhatsAppSendResult =
+    options.preferColdTemplate
+      ? {
+          ok: false,
+          needsWindowOrTemplate: true,
+          error: '24h window closed',
+        }
+      : await sendAdminWhatsAppText({
+          ...options,
+          fallbackWaMe: false,
+        });
   if (textResult.ok) {
     return textResult;
   }
@@ -669,7 +679,6 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
     return textResult;
   }
 
-  const coldName = String(options.coldTemplate?.name || '').trim();
   if (textResult.needsWindowOrTemplate && coldName) {
     const tpl = await sendAdminWhatsAppTemplate({
       to: options.to,

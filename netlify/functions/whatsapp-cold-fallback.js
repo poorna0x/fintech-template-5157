@@ -226,25 +226,25 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     const v2Match = String(primaryName || '').match(/^svc_doc_([a-z]+)_(ero|hro)_v2$/i);
     const directMatch = String(primaryName || '').match(/^svc_doc_direct_(ero|hro)_v1$/i);
     const labelFromParams = String(bodyParams?.[1] || '').trim();
+    const docHeaders = Array.isArray(headerComponents) ? headerComponents : [];
 
     if (v3Match) {
       const slug = v3Match[1].toLowerCase();
       const suffix = v3Match[2].toLowerCase();
       const label = labelFromParams || labelMap[slug] || 'document';
-      push(`svc_doc_direct_${suffix}_v1`, [name, label]);
-      push(`svc_doc_${slug}_${suffix}_v2`, [name]);
-      push('svc_doc_pdf_v2', [name, label]);
+      push(`svc_doc_direct_${suffix}_v1`, [name, label], docHeaders);
+      push(`svc_doc_${slug}_${suffix}_v2`, [name], docHeaders);
+      push('svc_doc_pdf_v2', [name, label], docHeaders);
     } else if (directMatch) {
       const suffix = directMatch[1].toLowerCase();
       const label = labelFromParams || 'document';
-      push(`svc_doc_generic_${suffix}_v3`, [name]);
-      push(`svc_doc_generic_${suffix}_v2`, [name]);
-      push('svc_doc_pdf_v2', [name, label]);
+      push(`svc_doc_generic_${suffix}_v3`, [name], docHeaders);
+      push(`svc_doc_generic_${suffix}_v2`, [name], docHeaders);
+      push('svc_doc_pdf_v2', [name, label], docHeaders);
     } else if (v2Match) {
       const slug = v2Match[1].toLowerCase();
-      push('svc_doc_pdf_v2', [name, labelMap[slug] || 'document']);
+      push('svc_doc_pdf_v2', [name, labelMap[slug] || 'document'], docHeaders);
     }
-    push(SMOKE, [name]);
   }
 
   // Missed-call CTA not approved yet → plain UTILITY missed-call body
@@ -558,24 +558,32 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
   // Ask location “from WFS” → v3 Share location → approved svc_ask_location
   if (/^svc_wfs_ask_loc_from_(hro|ero)_v1$/i.test(primaryName)) {
     const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
+    const fromLabel =
+      suffix === 'hro'
+        ? 'Hydrogen RO Water Filter Service'
+        : 'Eleven RO Water Filter Service';
     push('svc_wfs_ask_loc_from_v1', [name]);
     push(`svc_wfs_ask_loc_${suffix}_v3`, [name]);
-    push('svc_ask_location', [name]);
+    push('svc_ask_location', [name, fromLabel]);
   }
   if (/^svc_wfs_ask_loc_from_v1$/i.test(primaryName)) {
     push('svc_wfs_ask_loc_v3', [name]);
-    push('svc_ask_location', [name]);
+    push('svc_ask_location', [name, 'Water Filter Service']);
   }
 
   if (/^svc_wfs_ask_loc_flat_photo_(hro|ero)_v1$/i.test(primaryName)) {
     const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
+    const fromLabel =
+      suffix === 'hro'
+        ? 'Hydrogen RO Water Filter Service'
+        : 'Eleven RO Water Filter Service';
     push('svc_wfs_ask_loc_flat_photo_v1', [name]);
     push(`svc_wfs_ask_loc_from_${suffix}_v1`, [name]);
-    push('svc_ask_location', [name]);
+    push('svc_ask_location', [name, fromLabel]);
   }
   if (/^svc_wfs_ask_loc_flat_photo_v1$/i.test(primaryName)) {
     push('svc_wfs_ask_loc_from_v1', [name]);
-    push('svc_ask_location', [name]);
+    push('svc_ask_location', [name, 'Water Filter Service']);
   }
 
   // Ask location v3 (Share location + emoji) → v2 → v1 → legacy
@@ -675,9 +683,14 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(SMOKE, [name || 'there']);
   }
 
-  // Last-resort smoke only for non-payment families. Payment/balance/overdue must
-  // stay in-family (see isUnsafeColdFallback) — never generic smoke or visit_confirmed.
-  if (!/balance_due|payment_overdue|svc_balance_due/i.test(primaryName)) {
+  // Last-resort smoke only for non-payment, non-document families.
+  // A PDF flow must never report success after silently dropping its attachment.
+  const isDocumentFamily =
+    hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName);
+  if (
+    !isDocumentFamily &&
+    !/balance_due|payment_overdue|svc_balance_due/i.test(primaryName)
+  ) {
     push(SMOKE, [name]);
   }
   return attempts;

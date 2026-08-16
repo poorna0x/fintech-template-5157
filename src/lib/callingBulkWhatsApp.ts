@@ -12,6 +12,11 @@ import {
 } from '@/lib/sendAdminWhatsAppApi';
 import type { WhatsAppSendSource } from '@/lib/whatsappCrmSettings';
 import type { DocumentBrand } from '@/lib/service-brands';
+import { supabase } from '@/lib/supabaseClient';
+import {
+  fetchLastInboundAt,
+  isCustomerServiceWindowClosed,
+} from '@/lib/whatsappInbox';
 
 export type CallingDeliveryMode = 'api' | 'wa_me';
 export type CallingBulkBrandMode = 'auto' | DocumentBrand;
@@ -174,6 +179,8 @@ export async function sendCallingWhatsAppOne(opts: {
     opts.template === 'service_due' || opts.template === 'easy_booking'
       ? 'book_service'
       : null;
+  const inboundAt = await fetchLastInboundAt(to, supabase);
+  const windowClosed = isCustomerServiceWindowClosed(inboundAt);
 
   const result = await sendAdminWhatsAppTextWithOptionalTemplate({
     to,
@@ -182,6 +189,7 @@ export async function sendCallingWhatsAppOne(opts: {
     customerName,
     source,
     fallbackWaMe: false,
+    preferColdTemplate: windowClosed,
     seedPendingAction: seedPending,
     coldTemplate: coldApproved
       ? {

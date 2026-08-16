@@ -329,7 +329,7 @@ export const WA_COLD = {
   },
   book_new_customer: {
     /** Use resolveBookingCta('book_new_customer', brand, name) at send time. */
-    name: 'unregistered_number_service_ero_cta',
+    name: 'unregistered_number_service_ero_cta_v2',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName) || 'there'],
   },
@@ -341,7 +341,7 @@ export const WA_COLD = {
   },
   reschedule_visit: {
     /** Use resolveBookingCta('reschedule_visit', brand, name, when) at send time. */
-    name: 'reschedule_visit_ero_cta',
+    name: 'reschedule_visit_ero_cta_v2',
     language: 'en',
     bodyParams: (customerName: string, whenLabel: string) => [
       cleanName(customerName),

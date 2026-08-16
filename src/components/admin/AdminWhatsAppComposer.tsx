@@ -570,6 +570,8 @@ export function AdminWhatsAppComposerPanel({
         bookingForm: templateType === 'booking_confirmation' ? bookingForm : undefined,
         documentForm: templateType !== 'booking_confirmation' ? documentForm : undefined,
       });
+      const inboundAt = await fetchLastInboundAt(phone.trim(), supabase);
+      const windowClosed = isCustomerServiceWindowClosed(inboundAt);
 
       const result = await sendAdminWhatsAppTextWithOptionalTemplate({
         to: phone.trim(),
@@ -577,6 +579,7 @@ export function AdminWhatsAppComposerPanel({
         customerId: linkedCustomerId,
         source: 'composer',
         fallbackWaMe: true,
+        preferColdTemplate: windowClosed,
         coldTemplate: coldTpl
           ? {
               name: coldTpl.name,

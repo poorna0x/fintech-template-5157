@@ -1034,8 +1034,10 @@ export function filterQuickTemplatesByApproved(
       ].some((n) => approvedNames.has(resolveWaTemplateName(n)));
     }
     if (r.id === 'tpl_balance_due') {
-      return pendingPaymentTemplateFallbackNames('hydrogenro').some((n) =>
-        approvedNames.has(resolveWaTemplateName(n))
+      return (['hydrogenro', 'elevenro'] as const).some((brand) =>
+        pendingPaymentTemplateFallbackNames(brand).some((n) =>
+          approvedNames.has(resolveWaTemplateName(n))
+        )
       );
     }
     const name = r.resolveTemplateName
