@@ -12,7 +12,14 @@ const {
   assertNoMutationTools,
   ALLOWED_ACTION_TYPES,
 } = require('../netlify/functions/ai-crm-schemas');
-const { extractQueryHints, CUSTOMER_LIMIT, JOB_LIMIT } = require('../netlify/functions/ai-crm-lookup');
+const {
+  extractQueryHints,
+  detectOverviewIntent,
+  addDaysKey,
+  CUSTOMER_LIMIT,
+  JOB_LIMIT,
+  OVERVIEW_JOB_LIMIT,
+} = require('../netlify/functions/ai-crm-lookup');
 const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
 
 function testRequestIgnoresDangerousClientFields() {
@@ -93,6 +100,39 @@ function testLookupHintsAndLimits() {
   assert.ok(JOB_LIMIT <= 15);
 }
 
+function testOverviewIntentDetection() {
+  const today = '2026-08-16';
+
+  const todayJobs = detectOverviewIntent("show today's jobs", today);
+  assert.equal(todayJobs.active, true);
+  assert.equal(todayJobs.scopes.has('jobs'), true);
+  assert.equal(todayJobs.range.start, today);
+  assert.equal(todayJobs.range.end, today);
+
+  const tomorrow = detectOverviewIntent('what is scheduled tomorrow', today);
+  assert.equal(tomorrow.range.start, addDaysKey(today, 1));
+
+  const followUps = detectOverviewIntent('follow ups pending', today);
+  assert.deepEqual(followUps.statuses, ['FOLLOW_UP']);
+  assert.equal(followUps.scopes.has('jobs'), true);
+
+  const payments = detectOverviewIntent('pending payments', today);
+  assert.equal(payments.scopes.has('payments'), true);
+
+  const week = detectOverviewIntent('reminders due this week', today);
+  assert.equal(week.range.end, addDaysKey(today, 6));
+
+  const overdue = detectOverviewIntent('overdue reminders', today);
+  assert.equal(overdue.range.start, null);
+  assert.equal(overdue.range.end, addDaysKey(today, -1));
+
+  // A plain person lookup must not turn into an operational sweep.
+  const nameOnly = detectOverviewIntent('find Ramesh 9876543210', today);
+  assert.equal(nameOnly.active, false);
+
+  assert.ok(OVERVIEW_JOB_LIMIT <= 25);
+}
+
 async function testMockCrmChat() {
   const result = await generateWithMock({
     operation: 'crm_chat',
@@ -142,6 +182,7 @@ async function main() {
   testActionsRequireKnownIdsAndConfirm();
   testMutationToolsBanned();
   testLookupHintsAndLimits();
+  testOverviewIntentDetection();
   await testMockCrmChat();
   testEndpointSourceHasSafetyGuards();
   testLookupSourceIsBounded();

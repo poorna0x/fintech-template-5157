@@ -148,8 +148,8 @@ export default function AdminCrmAiDialog({
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
           {turns.length === 0 && (
             <div className="rounded-lg border border-dashed border-violet-200 bg-violet-50/40 p-3 text-sm text-violet-900">
-              Try: “find 98765…”, “job HRO123”, “create service job for Ramesh”, or “follow up
-              tomorrow for job …”.
+              Try: “today's jobs”, “pending payments”, “AMC expiring soon”, “find 98765…”, “job
+              RO12345678”, or “create service job for Ramesh”.
             </div>
           )}
 

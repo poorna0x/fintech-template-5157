@@ -12,6 +12,14 @@ const PAYMENT_LIMIT = 10;
 const DOCUMENT_LIMIT = 8;
 const PENDING_PAYMENT_TITLE = 'Pending payment';
 
+const OVERVIEW_CUSTOMER_LIMIT = 20;
+const OVERVIEW_JOB_LIMIT = 20;
+const OVERVIEW_REMINDER_LIMIT = 15;
+const OVERVIEW_PAYMENT_SCAN = 60;
+const AMC_EXPIRY_LOOKAHEAD_DAYS = 45;
+const IST_TZ = 'Asia/Kolkata';
+const ONGOING_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'];
+
 const CUSTOMER_COLS =
   'id, customer_id, full_name, phone, alternate_phone, email, service_type, brand, model, last_service_date, customer_tier, status';
 
@@ -60,6 +68,138 @@ function extractQueryHints(message) {
     phone,
     jobNumber,
     nameHint: nameHint.length >= 2 ? nameHint : null,
+  };
+}
+
+function istDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function istWeekdayName(dateKey) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    weekday: 'long',
+  }).format(new Date(`${dateKey}T00:00:00Z`));
+}
+
+function addDaysKey(dateKey, days) {
+  const d = new Date(`${dateKey}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function monthBoundsKey(dateKey, monthOffset = 0) {
+  const d = new Date(`${dateKey}T00:00:00Z`);
+  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + monthOffset, 1));
+  const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + monthOffset + 1, 0));
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+/** IST day bounds as timestamptz strings for completed_at style columns. */
+function istDayBounds(startKey, endKey) {
+  return {
+    fromTs: `${startKey}T00:00:00+05:30`,
+    toTs: `${addDaysKey(endKey, 1)}T00:00:00+05:30`,
+  };
+}
+
+/**
+ * Detect an operational ("show me the CRM") intent: what to list and for when.
+ * Purely keyword-based; never turns into free-form SQL.
+ */
+function detectOverviewIntent(message, todayKey = istDateKey()) {
+  const text = String(message || '').toLowerCase();
+  const has = (re) => re.test(text);
+
+  const isFollowUp = has(/\bfollow[\s-]?ups?\b/);
+
+  const scopes = new Set();
+  if (
+    isFollowUp ||
+    has(/\bjobs?\b|\bservices?\b|\bvisits?\b|\bschedule[ds]?\b|\bcomplaints?\b|\bcalls?\b/)
+  )
+    scopes.add('jobs');
+  if (isFollowUp || has(/\breminder|\bdue\b|\btask/)) scopes.add('reminders');
+  if (has(/\bpayment|\bpending amount|\boutstanding|\bbalance|\bcollect|\bunpaid|\bdues?\b/))
+    scopes.add('payments');
+  if (has(/\bamc\b|\bexpir|\brenew/)) scopes.add('amc');
+  if (has(/\bnew customers?\b|\brecent customers?\b|\bnew leads?\b/)) scopes.add('customers');
+  if (has(/\brevenue|\bcollect|\bearn|\bincome|\bturnover|\bsales\b/)) scopes.add('revenue');
+  if (has(/\bsummary|\boverview|\bstatus\b|\bhow many|\bcount\b|\btotal\b|\btoday\b|\breport\b/))
+    scopes.add('summary');
+
+  let statuses = null;
+  if (isFollowUp) statuses = ['FOLLOW_UP'];
+  else if (has(/\bcompleted?\b|\bdone\b|\bfinished\b|\bclosed\b/)) statuses = ['COMPLETED'];
+  else if (has(/\bcancell?ed\b/)) statuses = ['CANCELLED'];
+  else if (has(/\bpending\b|\bopen\b|\bongoing\b|\bincomplete\b|\bunassigned\b|\bactive\b/))
+    statuses = ONGOING_JOB_STATUSES;
+
+  let start = todayKey;
+  let end = todayKey;
+  let label = 'today';
+  let explicitDate = false;
+
+  if (has(/\byesterday\b/)) {
+    start = addDaysKey(todayKey, -1);
+    end = start;
+    label = 'yesterday';
+    explicitDate = true;
+  } else if (has(/\btomorrow\b/)) {
+    start = addDaysKey(todayKey, 1);
+    end = start;
+    label = 'tomorrow';
+    explicitDate = true;
+  } else if (has(/\blast month\b|\bprevious month\b/)) {
+    const b = monthBoundsKey(todayKey, -1);
+    start = b.start;
+    end = b.end;
+    label = 'last month';
+    explicitDate = true;
+  } else if (has(/\bthis month\b|\bmonth\b/)) {
+    const b = monthBoundsKey(todayKey, 0);
+    start = b.start;
+    end = b.end;
+    label = 'this month';
+    explicitDate = true;
+  } else if (has(/\blast week\b|\bpast week\b|\blast 7 days\b|\bpast 7 days\b/)) {
+    start = addDaysKey(todayKey, -6);
+    end = todayKey;
+    label = 'last 7 days';
+    explicitDate = true;
+  } else if (has(/\bthis week\b|\bnext week\b|\bcoming week\b|\bnext 7 days\b|\bweek\b/)) {
+    start = todayKey;
+    end = addDaysKey(todayKey, 6);
+    label = 'next 7 days';
+    explicitDate = true;
+  } else if (has(/\boverdue\b|\bpast due\b|\bmissed\b/)) {
+    start = null;
+    end = addDaysKey(todayKey, -1);
+    label = 'overdue (before today)';
+    explicitDate = true;
+  } else if (has(/\btoday\b|\bnow\b/)) {
+    explicitDate = true;
+  }
+
+  const explicitDateKey = String(message || '').match(/\b(20\d{2}-\d{2}-\d{2})\b/)?.[1] || null;
+  if (explicitDateKey) {
+    start = explicitDateKey;
+    end = explicitDateKey;
+    label = explicitDateKey;
+    explicitDate = true;
+  }
+
+  return {
+    scopes,
+    statuses,
+    range: { start, end, label },
+    explicitDate,
+    active: scopes.size > 0,
   };
 }
 
@@ -155,7 +295,7 @@ function slimPayment(row) {
   };
 }
 
-async function searchCustomers(db, hints, focusCustomerId) {
+async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
   const out = [];
   const seen = new Set();
 
@@ -175,7 +315,9 @@ async function searchCustomers(db, hints, focusCustomerId) {
   const queries = [];
   if (hints.phone) queries.push(hints.phone);
   if (hints.nameHint) queries.push(hints.nameHint);
-  if (!queries.length && hints.raw) queries.push(hints.raw.slice(0, 60));
+  if (!queries.length && hints.raw && opts.allowRawFallback !== false) {
+    queries.push(hints.raw.slice(0, 60));
+  }
 
   for (const q of queries) {
     if (out.length >= CUSTOMER_LIMIT) break;
@@ -366,10 +508,210 @@ async function loadDocuments(db, customerIds) {
   return docs.slice(0, DOCUMENT_LIMIT * 2);
 }
 
+async function countRows(builder) {
+  const { count, error } = await builder;
+  if (error) {
+    console.warn('[ai-crm-lookup] count failed', error.message);
+    return null;
+  }
+  return typeof count === 'number' ? count : null;
+}
+
+async function loadCustomersByIds(db, ids) {
+  const list = [...new Set((ids || []).filter(Boolean))].slice(0, OVERVIEW_CUSTOMER_LIMIT);
+  if (!list.length) return [];
+  const { data, error } = await db.from('customers').select(CUSTOMER_COLS).in('id', list);
+  if (error) {
+    console.warn('[ai-crm-lookup] customer hydrate failed', error.message);
+    return [];
+  }
+  return (data || []).map(slimCustomer).filter(Boolean);
+}
+
+/**
+ * Operational lists + exact counts for "what's happening" questions.
+ * Every query is allowlisted, thin-column and row-capped.
+ */
+async function loadOverview(db, intent, todayKey) {
+  const out = {
+    jobs: [],
+    reminders: [],
+    payments: [],
+    documents: [],
+    customers: [],
+    stats: {},
+    truncated: {},
+  };
+  const { scopes, statuses, range } = intent;
+  const wantsJobs = scopes.has('jobs') || scopes.has('summary') || scopes.has('revenue');
+  const wantsReminders = scopes.has('reminders') || scopes.has('summary');
+  const wantsPayments = scopes.has('payments') || scopes.has('summary');
+  const wantsAmc = scopes.has('amc');
+  const wantsCustomers = scopes.has('customers');
+
+  if (wantsJobs) {
+    const completedOnly = Array.isArray(statuses) && statuses.length === 1 && statuses[0] === 'COMPLETED';
+    const useCompletedAt = completedOnly || scopes.has('revenue');
+    let q = db.from('jobs').select(JOB_COLS).limit(OVERVIEW_JOB_LIMIT);
+
+    if (useCompletedAt) {
+      const bounds = istDayBounds(range.start || todayKey, range.end || todayKey);
+      q = q
+        .eq('status', 'COMPLETED')
+        .gte('completed_at', bounds.fromTs)
+        .lt('completed_at', bounds.toTs)
+        .order('completed_at', { ascending: false });
+    } else {
+      if (statuses) q = q.in('status', statuses);
+      const applyRange = intent.explicitDate || !statuses;
+      if (applyRange) {
+        if (range.start) q = q.gte('scheduled_date', range.start);
+        if (range.end) q = q.lte('scheduled_date', range.end);
+      }
+      q = q.order('scheduled_date', { ascending: true });
+    }
+
+    const { data, error } = await q;
+    if (error) console.warn('[ai-crm-lookup] overview jobs failed', error.message);
+    for (const row of data || []) {
+      const slim = slimJob(row);
+      if (slim) out.jobs.push(slim);
+    }
+    out.truncated.jobs = out.jobs.length >= OVERVIEW_JOB_LIMIT;
+  }
+
+  if (wantsReminders || wantsPayments) {
+    let q = db
+      .from('reminders')
+      .select(REMINDER_COLS)
+      .is('completed_at', null)
+      .order('reminder_at', { ascending: true })
+      .limit(OVERVIEW_PAYMENT_SCAN);
+    if (range.start && !wantsPayments) q = q.gte('reminder_at', range.start);
+    if (range.end) q = q.lte('reminder_at', range.end);
+
+    const { data, error } = await q;
+    if (error) console.warn('[ai-crm-lookup] overview reminders failed', error.message);
+
+    let paymentTotal = 0;
+    let paymentCount = 0;
+    for (const row of data || []) {
+      const isPayment = String(row.title || '').trim() === PENDING_PAYMENT_TITLE;
+      if (isPayment) {
+        if (!wantsPayments) continue;
+        const pay = slimPayment(row);
+        if (!pay) continue;
+        paymentCount += 1;
+        paymentTotal += pay.amountPending || 0;
+        if (out.payments.length < PAYMENT_LIMIT) out.payments.push(pay);
+      } else {
+        if (!wantsReminders) continue;
+        const rem = slimReminder(row);
+        if (rem && out.reminders.length < OVERVIEW_REMINDER_LIMIT) out.reminders.push(rem);
+      }
+    }
+    if (wantsPayments) {
+      out.stats.pendingPaymentsListed = paymentCount;
+      out.stats.pendingPaymentsListedTotal = Math.round(paymentTotal);
+      out.truncated.payments = paymentCount > out.payments.length;
+    }
+    if (wantsReminders) {
+      out.truncated.reminders = out.reminders.length >= OVERVIEW_REMINDER_LIMIT;
+    }
+  }
+
+  if (wantsAmc) {
+    const from = range.start || todayKey;
+    const to = intent.explicitDate
+      ? range.end || addDaysKey(todayKey, AMC_EXPIRY_LOOKAHEAD_DAYS)
+      : addDaysKey(todayKey, AMC_EXPIRY_LOOKAHEAD_DAYS);
+    const { data, error } = await db
+      .from('amc_contracts')
+      .select(AMC_COLS)
+      .gte('end_date', from)
+      .lte('end_date', to)
+      .order('end_date', { ascending: true })
+      .limit(DOCUMENT_LIMIT);
+    if (error) console.warn('[ai-crm-lookup] amc expiry failed', error.message);
+    out.stats.amcExpiryWindow = `${from} to ${to}`;
+    for (const row of data || []) {
+      out.documents.push({
+        kind: 'amc',
+        id: String(row.id),
+        customerId: row.customer_id ? String(row.customer_id) : null,
+        label: `AMC ends ${row.end_date || '—'}`,
+        startDate: row.start_date || null,
+        endDate: row.end_date || null,
+        status: row.status || null,
+      });
+    }
+  }
+
+  if (wantsCustomers) {
+    const { data, error } = await db
+      .from('customers')
+      .select(CUSTOMER_COLS)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (error) console.warn('[ai-crm-lookup] recent customers failed', error.message);
+    for (const row of data || []) {
+      const slim = slimCustomer(row);
+      if (slim) out.customers.push(slim);
+    }
+  }
+
+  // Exact counts (cheap head queries) so "how many" answers are accurate.
+  const dayBounds = istDayBounds(range.start || todayKey, range.end || todayKey);
+  out.stats.today = todayKey;
+  out.stats.rangeLabel = range.label;
+  out.stats.jobsScheduledInRange = await countRows(
+    (() => {
+      let q = db.from('jobs').select('id', { count: 'exact', head: true });
+      if (range.start) q = q.gte('scheduled_date', range.start);
+      if (range.end) q = q.lte('scheduled_date', range.end);
+      return q;
+    })()
+  );
+  out.stats.jobsCompletedInRange = await countRows(
+    db
+      .from('jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'COMPLETED')
+      .gte('completed_at', dayBounds.fromTs)
+      .lt('completed_at', dayBounds.toTs)
+  );
+  out.stats.openJobsTotal = await countRows(
+    db.from('jobs').select('id', { count: 'exact', head: true }).in('status', ONGOING_JOB_STATUSES)
+  );
+  out.stats.followUpJobsTotal = await countRows(
+    db.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'FOLLOW_UP')
+  );
+
+  if (scopes.has('revenue') || wantsJobs) {
+    const { data, error } = await db
+      .from('jobs')
+      .select('payment_amount, actual_cost')
+      .eq('status', 'COMPLETED')
+      .gte('completed_at', dayBounds.fromTs)
+      .lt('completed_at', dayBounds.toTs)
+      .limit(500);
+    if (error) console.warn('[ai-crm-lookup] revenue failed', error.message);
+    let sum = 0;
+    for (const row of data || []) {
+      const n = Number(row.payment_amount ?? row.actual_cost);
+      if (Number.isFinite(n)) sum += n;
+    }
+    out.stats.completedJobValueInRange = Math.round(sum);
+  }
+
+  return out;
+}
+
 /**
  * Build a bounded CRM context pack for one admin chat turn.
  */
 async function lookupCrmContext({ message, focusCustomerId } = {}) {
+  const todayKey = istDateKey();
   const db = getServiceSupabase();
   if (!db) {
     return {
@@ -378,13 +720,19 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
       reminders: [],
       payments: [],
       documents: [],
+      stats: { today: todayKey },
       hints: extractQueryHints(message),
       error: 'Database unavailable',
     };
   }
 
+  const intent = detectOverviewIntent(message, todayKey);
   const hints = extractQueryHints(message);
-  const customers = await searchCustomers(db, hints, focusCustomerId);
+  // A pure "what's on today" question should not fuzzy-search customer text.
+  if (intent.active && !hints.phone && !hints.jobNumber) hints.nameHint = null;
+  const customers = await searchCustomers(db, hints, focusCustomerId, {
+    allowRawFallback: !intent.active,
+  });
   const customerIds = customers.map((c) => c.id);
   const jobs = await searchJobs(db, hints, customerIds);
 
@@ -408,19 +756,123 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
   const { reminders, payments } = await loadRemindersAndPayments(db, allCustomerIds);
   const documents = await loadDocuments(db, allCustomerIds);
 
+  let stats = { today: todayKey, weekday: istWeekdayName(todayKey) };
+  let truncated = {};
+
+  if (intent.active) {
+    const overview = await loadOverview(db, intent, todayKey);
+    stats = { ...stats, ...overview.stats };
+    truncated = overview.truncated || {};
+
+    const jobIds = new Set(jobs.map((j) => j.id));
+    for (const job of overview.jobs) {
+      if (jobIds.has(job.id)) continue;
+      jobIds.add(job.id);
+      jobs.push(job);
+    }
+
+    const reminderIds = new Set(reminders.map((r) => r.id));
+    for (const rem of overview.reminders) {
+      if (reminderIds.has(rem.id)) continue;
+      reminderIds.add(rem.id);
+      reminders.push(rem);
+    }
+
+    const paymentIds = new Set(payments.map((p) => p.reminderId));
+    for (const pay of overview.payments) {
+      if (paymentIds.has(pay.reminderId)) continue;
+      paymentIds.add(pay.reminderId);
+      payments.push(pay);
+    }
+
+    for (const doc of overview.documents) {
+      if (!documents.find((d) => d.kind === doc.kind && d.id === doc.id)) documents.push(doc);
+    }
+
+    const knownCustomerIds = new Set(customers.map((c) => c.id));
+    const relatedIds = [
+      ...overview.customers.map((c) => c.id),
+      ...jobs.map((j) => j.customerId),
+      ...reminders.filter((r) => r.entityType === 'customer').map((r) => r.entityId),
+      ...payments.map((p) => p.customerId),
+      ...overview.documents.map((d) => d.customerId),
+    ].filter((id) => id && !knownCustomerIds.has(id));
+
+    for (const c of overview.customers) {
+      if (!knownCustomerIds.has(c.id)) {
+        knownCustomerIds.add(c.id);
+        customers.push(c);
+      }
+    }
+    const hydrated = await loadCustomersByIds(db, relatedIds);
+    for (const c of hydrated) {
+      if (knownCustomerIds.has(c.id)) continue;
+      knownCustomerIds.add(c.id);
+      customers.push(c);
+    }
+  }
+
+  const customerCap = intent.active ? OVERVIEW_CUSTOMER_LIMIT : CUSTOMER_LIMIT;
+  const jobCap = intent.active ? OVERVIEW_JOB_LIMIT + JOB_LIMIT : JOB_LIMIT;
+  const reminderCap = intent.active ? OVERVIEW_REMINDER_LIMIT + REMINDER_LIMIT : REMINDER_LIMIT;
+
   return {
-    customers: customers.slice(0, CUSTOMER_LIMIT),
-    jobs: jobs.slice(0, JOB_LIMIT),
-    reminders: reminders.slice(0, REMINDER_LIMIT),
-    payments: payments.slice(0, PAYMENT_LIMIT),
+    customers: customers.slice(0, customerCap),
+    jobs: jobs.slice(0, jobCap),
+    reminders: reminders.slice(0, reminderCap),
+    payments: payments.slice(0, PAYMENT_LIMIT * 2),
     documents: documents.slice(0, DOCUMENT_LIMIT * 2),
+    stats,
+    truncated,
+    intent: {
+      scopes: [...intent.scopes],
+      statuses: intent.statuses,
+      range: intent.range,
+    },
     hints,
   };
 }
 
 function formatContextForPrompt(pack) {
   const lines = [];
+  const stats = pack.stats || {};
+  const nameById = new Map((pack.customers || []).map((c) => [c.id, c.name]));
+
+  lines.push(
+    `Today (IST) is ${stats.today || istDateKey()}${stats.weekday ? ` (${stats.weekday})` : ''}.`
+  );
+  if (pack.intent?.scopes?.length) {
+    const showStatuses = pack.intent.statuses && pack.intent.scopes.includes('jobs');
+    lines.push(
+      `Interpreted request: ${pack.intent.scopes.join(', ')}; period = ${pack.intent.range?.label || 'today'}${
+        showStatuses ? `; job status filter = ${pack.intent.statuses.join('/')}` : ''
+      }.`
+    );
+  }
   lines.push('CRM lookup results (bounded; treat as facts only):');
+
+  const statLines = [];
+  if (stats.jobsScheduledInRange != null)
+    statLines.push(`jobs scheduled in period = ${stats.jobsScheduledInRange}`);
+  if (stats.jobsCompletedInRange != null)
+    statLines.push(`jobs completed in period = ${stats.jobsCompletedInRange}`);
+  if (stats.openJobsTotal != null)
+    statLines.push(`open jobs right now (PENDING/ASSIGNED/EN_ROUTE/IN_PROGRESS) = ${stats.openJobsTotal}`);
+  if (stats.followUpJobsTotal != null)
+    statLines.push(`jobs in FOLLOW_UP = ${stats.followUpJobsTotal}`);
+  if (stats.completedJobValueInRange != null)
+    statLines.push(
+      `billed value of jobs completed in period (INR, may include not-yet-collected amounts) = ${stats.completedJobValueInRange}`
+    );
+  if (stats.pendingPaymentsListed != null)
+    statLines.push(
+      `pending payment reminders scanned = ${stats.pendingPaymentsListed}, total INR = ${stats.pendingPaymentsListedTotal}`
+    );
+  if (stats.amcExpiryWindow) statLines.push(`AMC contracts listed expire between ${stats.amcExpiryWindow}`);
+  if (statLines.length) {
+    lines.push('Exact counts (authoritative, use these for "how many"):');
+    for (const s of statLines) lines.push(`- ${s}`);
+  }
 
   if (!pack.customers.length) {
     lines.push('Customers: (none matched)');
@@ -439,16 +891,17 @@ function formatContextForPrompt(pack) {
     lines.push('Jobs:');
     for (const j of pack.jobs) {
       lines.push(
-        `- id=${j.id}; number=${j.jobNumber || '—'}; customerId=${j.customerId || '—'}; status=${j.status || '—'}; subtype=${j.serviceSubType || '—'}; payment=${j.paymentAmount ?? '—'}`
+        `- id=${j.id}; number=${j.jobNumber || '—'}; customer=${nameById.get(j.customerId) || '—'} (${j.customerId || '—'}); status=${j.status || '—'}; scheduled=${j.scheduledDate || '—'}; completed=${j.completedAt || '—'}; subtype=${j.serviceSubType || '—'}; payment=${j.paymentAmount ?? '—'}`
       );
     }
+    if (pack.truncated?.jobs) lines.push('  (job list truncated — use the exact counts above)');
   }
 
   if (pack.reminders.length) {
     lines.push('Reminders:');
     for (const r of pack.reminders) {
       lines.push(
-        `- id=${r.id}; customerId=${r.entityId || '—'}; title=${r.title}; at=${r.reminderAt || '—'}`
+        `- id=${r.id}; customer=${nameById.get(r.entityId) || '—'} (${r.entityId || '—'}); type=${r.entityType || '—'}; title=${r.title}; at=${r.reminderAt || '—'}`
       );
     }
   }
@@ -457,7 +910,7 @@ function formatContextForPrompt(pack) {
     lines.push('Pending payments:');
     for (const p of pack.payments) {
       lines.push(
-        `- reminderId=${p.reminderId}; customerId=${p.customerId || '—'}; amount=${p.amountPending}; due=${p.dueAt || '—'}; job=${p.jobNumber || '—'}`
+        `- reminderId=${p.reminderId}; customer=${nameById.get(p.customerId) || '—'} (${p.customerId || '—'}); amount=${p.amountPending}; due=${p.dueAt || '—'}; job=${p.jobNumber || '—'}`
       );
     }
   }
@@ -477,7 +930,12 @@ function formatContextForPrompt(pack) {
 module.exports = {
   CUSTOMER_LIMIT,
   JOB_LIMIT,
+  OVERVIEW_JOB_LIMIT,
+  ONGOING_JOB_STATUSES,
   extractQueryHints,
+  detectOverviewIntent,
+  istDateKey,
+  addDaysKey,
   lookupCrmContext,
   formatContextForPrompt,
   slimCustomer,
