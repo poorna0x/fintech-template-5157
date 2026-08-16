@@ -2085,11 +2085,15 @@ export function isWithinCustomerServiceWindow(lastInboundAt: string | null | und
 }
 
 /**
- * True only when we *know* the 24h window is closed (inbound exists and is older than 24h).
- * Missing inbound → try free-form first; Meta will reject if the window is actually closed.
+ * True when free-form / session media must not be used.
+ *
+ * - No inbound on file → treat as closed (cold template). Meta often accepts a
+ *   free-form send with HTTP 200 then fails delivery with "Re-engagement message",
+ *   so optimistic free-form skips the cold PDF/template path.
+ * - Inbound older than 24h → closed.
  */
 export function isCustomerServiceWindowClosed(lastInboundAt: string | null | undefined): boolean {
-  if (!lastInboundAt) return false;
+  if (!lastInboundAt) return true;
   return !isWithinCustomerServiceWindow(lastInboundAt);
 }
 
