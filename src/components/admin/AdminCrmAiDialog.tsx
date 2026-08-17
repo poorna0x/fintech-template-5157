@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -233,6 +234,7 @@ export default function AdminCrmAiDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        hideCloseButton
         className="flex max-h-[92vh] w-[min(96vw,720px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes('Files')) event.preventDefault();
@@ -244,10 +246,23 @@ export default function AdminCrmAiDialog({
         }}
       >
         <DialogHeader className="border-b px-4 py-3 text-left">
-          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-            <Sparkles className="h-4 w-4 text-violet-600" />
-            CRM AI
-          </DialogTitle>
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+              <Sparkles className="h-4 w-4 text-violet-600" />
+              CRM AI
+            </DialogTitle>
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="-mr-1 h-8 w-8 shrink-0"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </DialogClose>
+          </div>
           <DialogDescription className="sr-only">
             Ask about customers, jobs, reminders, payments and documents.
           </DialogDescription>
