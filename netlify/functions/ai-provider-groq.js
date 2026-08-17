@@ -128,6 +128,14 @@ async function generateWithGroq(input, config) {
         code,
       });
     }
+    if (code === 'json_validate_failed' || message.includes('json')) {
+      // The model occasionally emits output that misses the schema. Another
+      // attempt or provider usually returns valid JSON, so do not fail the chat.
+      throw createProviderError('Groq returned output that did not match the schema', {
+        retryable: true,
+        code,
+      });
+    }
     throw createProviderError(`Groq request failed (${code})`, { code });
   }
 

@@ -11,6 +11,7 @@ const SEARCH_ONLY_TOOLS = new Set(['customer_search', 'job_search']);
 
 const ALLOWED_CRM_TOOLS = Object.freeze([
   'customer_search',
+  'customer_directory',
   'job_search',
   'jobs_overview',
   'payments',
@@ -48,6 +49,7 @@ function plannerSystemInstruction() {
     `CRM tools are allowlisted: ${ALLOWED_CRM_TOOLS.join(', ')}.`,
     'Choose only tools needed for the request. Never request SQL, database access, deletion, sending, or external URLs.',
     'customer_search and job_search look up specific records the message names, so include the name, phone, code or job number in rewrittenQuery.',
+    'customer_directory answers how many customers exist or which ones are new; it never needs a name.',
     'Use jobs_overview when the answer needs the jobs behind a total, such as which customer or job produced an amount.',
     'For CRM, rewrite the current request into one self-contained query using recent history to resolve follow-ups like "what about yesterday?" or "show their jobs".',
     'Preserve names, phones, job numbers, amounts, dates, and requested action fields exactly. Never invent them.',
@@ -123,9 +125,16 @@ function inferDeterministicPlan(message, history = []) {
   const lastUserMessage = [...(Array.isArray(history) ? history : [])]
     .reverse()
     .find((turn) => turn?.role === 'user')?.text;
+  // A message naming its own subject is a fresh question, not a follow-up.
+  const hasOwnSubject =
+    /\bjobs?\b|\bvisits?\b|\bcustomers?\b|\bclients?\b|\bpayments?\b|\breminders?\b|\bamc\b|\brevenue\b|\btechnicians?\b|\btechs?\b|\bdocuments?\b|\binvoices?\b|\bquotations?\b|\bbills?\b/i.test(
+      text
+    );
+
   // "who has the lowest" only makes sense against the previous ranking, so keep
   // that tool instead of letting it decay into a plain name search.
   const superlativeFollowUp =
+    !hasOwnSubject &&
     text.length <= 60 &&
     /^(?:so\s+)?(?:and\s+)?(?:who|which|what)?\s*(?:one)?\s*(?:has|had|is|was|did)?\s*(?:the)?\s*(?:lowest|highest|least|most|biggest|smallest|top|worst|best)\b/i.test(
       text
@@ -156,6 +165,7 @@ function inferDeterministicPlan(message, history = []) {
   // "how many remaining" / "I meant ongoing" only swaps the status filter of the
   // previous question, so re-ask that question with the new filter.
   const statusFollowUp =
+    !hasOwnSubject &&
     text.length <= 60 &&
     /\bon[\s-]?going\b|\bremaining\b|\bleft\b|\bopen\b|\bpending\b|\bin[\s-]?progress\b|\bunassigned\b|\bcancell?ed\b|\bcompleted?\b|\bassigned\b|\ben[\s-]?route\b/i.test(
       text
@@ -170,6 +180,7 @@ function inferDeterministicPlan(message, history = []) {
 
   // "not today, all time" only changes the period of the previous question.
   const periodFollowUp =
+    !hasOwnSubject &&
     text.length <= 60 &&
     /\ball[\s-]?time\b|\bentire\b|\bever\b|\blife[\s-]?time\b|\byesterday\b|\bthis (?:week|month)\b|\blast (?:week|month)\b|\boverall\b|\bso far\b/i.test(
       text
@@ -188,9 +199,12 @@ function inferDeterministicPlan(message, history = []) {
   const period = periodMarker(detailFollowUp ? combined : text);
 
   if (
-    (/\btechnicians?\b|\btechs?\b|\btechcnians?\b|\btehcnc?ians?\b/.test(lower) &&
-      /\bhighest\b|\btop\b|\bmost\b/.test(lower) &&
-      /\bbill(?:ed|ing)?\b|\brevenue\b|\bsales\b/.test(lower)) ||
+    ((/\btechnicians?\b|\btechs?\b|\btechcnians?\b|\btehcnc?ians?\b/.test(lower) ||
+      /\bcompare\b|\bvs\b|\bversus\b/.test(lower)) &&
+      /\bhighest\b|\btop\b|\bmost\b|\blowest\b|\bleast\b|\bcompare\b|\bvs\b|\bversus\b|\beach\b|\bper technician\b/.test(
+        lower
+      ) &&
+      /\bbill(?:ed|ing)?\b|\brevenue\b|\bsales\b|\bearn(?:ed|ings)?\b/.test(lower)) ||
     (detailFollowUp &&
       /\btechnicians?\b|\btechs?\b|\btechcnians?\b|\btehcnc?ians?\b/.test(combined) &&
       /\bhighest\b|\btop\b|\bmost\b/.test(combined) &&
@@ -209,7 +223,7 @@ function inferDeterministicPlan(message, history = []) {
 
   if (
     /\b(customers?|clients?)\b/.test(lower) &&
-    /\bhighest\b|\btop\b|\bmost\b|\bbiggest\b/.test(lower) &&
+    /\bhighest\b|\btop\b|\bmost\b|\bbiggest\b|\blowest\b|\bleast\b|\bsmallest\b/.test(lower) &&
     /\bpaid\b|\bspent\b|\bbill(?:ed|ing)?\b|\bvalue\b/.test(lower)
   ) {
     return {
@@ -221,10 +235,36 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
+  if (/\bhow many customers?\b|\btotal customers?\b|\bcustomer count\b|\bnumber of customers?\b/.test(lower)) {
+    return {
+      route: 'crm',
+      tools: ['customer_directory'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
   if (/\bpending payments?\b|\bpayments? pending\b|\bpayment dues?\b/.test(lower)) {
     return {
       route: 'crm',
       tools: ['payments'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  // Money we earned, as opposed to money customers still owe us.
+  if (
+    /\brevenue\b|\bcollect(?:ed|ion|ions)?\b|\bincome\b|\bturnover\b|\bearn(?:ed|ings|ing)?\b|\bbusiness did\b/.test(
+      lower
+    ) &&
+    !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['revenue'],
       rewrittenQuery: text,
       directAnswer: '',
       strategy: 'deterministic',
@@ -376,7 +416,9 @@ function visibleEntitiesForTools(pack, tools) {
 
   const shows = (...names) => names.some((name) => selected.includes(name));
   return {
-    customers: shows('customer_search', 'customer_value_ranking', 'action_draft') ? all.customers : [],
+    customers: shows('customer_search', 'customer_directory', 'customer_value_ranking', 'action_draft')
+      ? all.customers
+      : [],
     jobs: shows('job_search', 'jobs_overview', 'revenue', 'action_draft') ? all.jobs : [],
     reminders: shows('reminders') ? all.reminders : [],
     payments: shows('payments') ? all.payments : [],

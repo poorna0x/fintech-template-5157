@@ -89,7 +89,11 @@ function nameMatchesToken(fullName, token) {
     .split(/[^\p{L}]+/u)
     .filter(Boolean);
   for (const word of words) {
-    if (word.includes(token) || token.includes(word)) return 0;
+    // A typed prefix of a real name is a match ("shett" -> "shetty"), but a real
+    // name much shorter than what was typed is a different person
+    // ("Jyoti" is not "Jyotirling").
+    if (word.includes(token)) return 0;
+    if (token.includes(word) && word.length >= token.length - 2) return 0;
     const distance = editDistance(word, token, budget);
     if (distance <= budget) return distance;
   }
@@ -124,6 +128,7 @@ const NAME_STOP_WORDS = new Set(
     'called', 'containing', 'contains', 'ending', 'ends', 'had', 'having', 'including', 'includes',
     'lowest', 'named', 'naming', 'similar', 'sounds', 'spelled', 'spelling', 'starting', 'starts',
     'whose', 'enroute', 'left', 'meant', 'progress', 'remaining', 'route',
+    'collection', 'collections', 'earnings', 'gst', 'money', 'profit', 'revenue', 'tax',
     'alltime', 'billed', 'billing', 'biggest', 'client', 'entire', 'ever', 'highest', 'largest', 'lifetime',
     'paying', 'spend', 'spent', 'thing', 'top', 'value', 'technician', 'technicians', 'tech',
     'tehcncian', 'tehcnician',
@@ -325,7 +330,12 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   if (has(/\bpayment|\bpending amount|\boutstanding|\bbalance|\bcollect|\bunpaid|\bdues?\b/))
     scopes.add('payments');
   if (has(/\bamc\b|\bexpir|\brenew/)) scopes.add('amc');
-  if (has(/\bnew customers?\b|\brecent customers?\b|\bnew leads?\b/)) scopes.add('customers');
+  if (
+    has(
+      /\bnew customers?\b|\brecent customers?\b|\bnew leads?\b|\bhow many customers?\b|\btotal customers?\b|\bcustomer count\b|\bnumber of customers?\b/
+    )
+  )
+    scopes.add('customers');
   const wantsCustomerRanking = detectCustomerValueRanking(message);
   const wantsTechnicianRanking = detectTechnicianBillingRanking(message);
   if (
@@ -422,6 +432,15 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     explicitDate = true;
   }
 
+  const yearMatch = String(message || '').match(/\b(20\d{2})\b(?!-)/);
+  if (yearMatch && !has(/\b20\d{2}-\d{2}-\d{2}\b/)) {
+    start = `${yearMatch[1]}-01-01`;
+    end = `${yearMatch[1]}-12-31`;
+    label = yearMatch[1];
+    explicitDate = true;
+    allTime = false;
+  }
+
   const explicitDateKey = String(message || '').match(/\b(20\d{2}-\d{2}-\d{2})\b/)?.[1] || null;
   if (explicitDateKey) {
     start = explicitDateKey;
@@ -431,12 +450,20 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     allTime = false;
   }
 
+  // "Top billing customer" and "who paid us most" are different questions: one
+  // counts everything invoiced, the other only money confirmed as paid.
+  const rankingBasis =
+    has(/\bbill(?:ed|ing)?\b|\brevenue\b|\bvalue\b|\bturnover\b/) && !has(/\bpaid\b|\bspent\b/)
+      ? 'billed'
+      : 'paid';
+
   return {
     scopes,
     statuses,
     range: { start, end, label },
     explicitDate,
     allTime,
+    rankingBasis,
     active: scopes.size > 0,
   };
 }
@@ -859,6 +886,16 @@ function normalizeCustomerValueRow(row) {
   };
 }
 
+/** Orders customers by the total the question actually asked about. */
+function compareCustomerValue(basis) {
+  const primary = basis === 'billed' ? 'billedTotal' : 'confirmedPaidTotal';
+  const secondary = basis === 'billed' ? 'confirmedPaidTotal' : 'billedTotal';
+  return (a, b) =>
+    b[primary] - a[primary] ||
+    b[secondary] - a[secondary] ||
+    String(a.name || '').localeCompare(String(b.name || ''));
+}
+
 function resolveCompletedJobValue(row) {
   const paymentAmount = Number(row?.payment_amount) || 0;
   const actualCost = Number(row?.actual_cost) || 0;
@@ -991,13 +1028,18 @@ async function loadTopCustomerValueRanking(db, intent, todayKey) {
   }
 
   const { data: rpcData, error: rpcError } = await db.rpc('ai_crm_top_customers', {
-    p_limit: TOP_CUSTOMER_LIMIT,
+    // Over-fetch so re-ordering by billed value still sees the real leaders.
+    p_limit: TOP_CUSTOMER_LIMIT * 3,
     p_from: fromTs,
     p_to: toTs,
   });
   if (!rpcError && Array.isArray(rpcData)) {
     return {
-      customers: rpcData.map(normalizeCustomerValueRow).filter(Boolean),
+      customers: rpcData
+        .map(normalizeCustomerValueRow)
+        .filter(Boolean)
+        .sort(compareCustomerValue(intent.rankingBasis))
+        .slice(0, TOP_CUSTOMER_LIMIT),
       source: 'database_aggregate',
       truncated: false,
     };
@@ -1051,11 +1093,13 @@ async function loadTopCustomerValueRanking(db, intent, todayKey) {
     }
   }
 
+  const primary = intent.rankingBasis === 'billed' ? 'billedTotal' : 'confirmedPaidTotal';
+  const secondary = intent.rankingBasis === 'billed' ? 'confirmedPaidTotal' : 'billedTotal';
   const ranked = [...grouped.values()]
     .sort(
       (a, b) =>
-        b.confirmedPaidTotal - a.confirmedPaidTotal ||
-        b.billedTotal - a.billedTotal ||
+        b[primary] - a[primary] ||
+        b[secondary] - a[secondary] ||
         a.customerId.localeCompare(b.customerId)
     )
     .slice(0, TOP_CUSTOMER_LIMIT);
@@ -1218,12 +1262,7 @@ async function loadCustomerValuesForShortlist(db, shortlist, intent, todayKey) {
       });
     })
     .filter(Boolean)
-    .sort(
-      (a, b) =>
-        b.billedTotal - a.billedTotal ||
-        b.confirmedPaidTotal - a.confirmedPaidTotal ||
-        a.name.localeCompare(b.name)
-    );
+    .sort(compareCustomerValue(intent.rankingBasis));
 
   return {
     customers: ranked,
@@ -1274,8 +1313,9 @@ async function loadOverview(db, intent, todayKey) {
       fullyPaidJobs: customer.fullyPaidJobs,
       completedJobs: customer.completedJobs,
     }));
-    out.stats.customerValueRankingBasis =
-      'confirmedPaidTotal counts completed jobs whose payment_status is PAID; billedTotal counts completed-job value and may include unpaid or partially paid work';
+    out.stats.customerValueRankingBasis = `ordered by ${
+      intent.rankingBasis === 'billed' ? 'billedTotal' : 'confirmedPaidTotal'
+    }; confirmedPaidTotal counts completed jobs whose payment_status is PAID; billedTotal counts completed-job value and may include unpaid or partially paid work`;
     out.stats.customerValueRankingPeriod =
       intent.explicitDate && !intent.allTime ? range.label : 'lifetime';
     if (intent.shortlistCustomers?.length) {
@@ -1347,11 +1387,56 @@ async function loadOverview(db, intent, todayKey) {
       q = q.order('scheduled_date', { ascending: true });
     }
 
+    // "How many jobs did Jyotirling do today" is about one technician, not the
+    // whole day.
+    if (intent.technicianMatches?.length) {
+      const ids = intent.technicianMatches.map((technician) => technician.id);
+      q = q.or(
+        `assigned_technician_id.in.(${ids.join(',')}),completed_by.in.(${ids.join(',')})`
+      );
+      out.stats.jobsFilteredByTechnician = intent.technicianMatches.map(
+        (technician) => technician.name
+      );
+    }
+
     const { data, error } = await q;
     if (error) console.warn('[ai-crm-lookup] overview jobs failed', error.message);
+    const seenJobIds = new Set(out.jobs.map((job) => job.id));
     for (const row of data || []) {
       const slim = slimJob(row);
-      if (slim) out.jobs.push(slim);
+      if (!slim || seenJobIds.has(slim.id)) continue;
+      seenJobIds.add(slim.id);
+      out.jobs.push(slim);
+    }
+
+    // Work finished today was often scheduled earlier, so a technician's day is
+    // incomplete without the jobs they closed in the period.
+    if (intent.technicianMatches?.length && !useCompletedAt) {
+      const ids = intent.technicianMatches.map((technician) => technician.id);
+      const bounds = intentBounds(intent, todayKey);
+      let closed = db
+        .from('jobs')
+        .select(JOB_COLS)
+        .eq('status', 'COMPLETED')
+        .or(`assigned_technician_id.in.(${ids.join(',')}),completed_by.in.(${ids.join(',')})`)
+        .order('completed_at', { ascending: false })
+        .limit(OVERVIEW_JOB_LIMIT);
+      if (bounds.fromTs && bounds.toTs) {
+        closed = closed.gte('completed_at', bounds.fromTs).lt('completed_at', bounds.toTs);
+      }
+      const closedResult = await closed;
+      if (closedResult.error) {
+        console.warn('[ai-crm-lookup] technician completed jobs failed', closedResult.error.message);
+      }
+      let completedByTechnician = 0;
+      for (const row of closedResult.data || []) {
+        completedByTechnician += 1;
+        const slim = slimJob(row);
+        if (!slim || seenJobIds.has(slim.id)) continue;
+        seenJobIds.add(slim.id);
+        out.jobs.push(slim);
+      }
+      out.stats.jobsCompletedByTechnicianInRange = completedByTechnician;
     }
     out.truncated.jobs = out.jobs.length >= OVERVIEW_JOB_LIMIT;
   }
@@ -1363,14 +1448,19 @@ async function loadOverview(db, intent, todayKey) {
       .is('completed_at', null)
       .order('reminder_at', { ascending: true })
       .limit(OVERVIEW_PAYMENT_SCAN);
+    // Outstanding money stays outstanding, so a plain "pending payments" question
+    // must not hide amounts that happen to fall due next week.
+    const openEndedPayments = wantsPayments && !intent.explicitDate;
     if (range.start && !wantsPayments) q = q.gte('reminder_at', range.start);
-    if (range.end) q = q.lte('reminder_at', range.end);
+    if (range.end && !openEndedPayments) q = q.lte('reminder_at', range.end);
 
     const { data, error } = await q;
     if (error) console.warn('[ai-crm-lookup] overview reminders failed', error.message);
 
     let paymentTotal = 0;
     let paymentCount = 0;
+    let dueNowCount = 0;
+    let dueNowTotal = 0;
     for (const row of data || []) {
       const isPayment = String(row.title || '').trim() === PENDING_PAYMENT_TITLE;
       if (isPayment) {
@@ -1379,8 +1469,13 @@ async function loadOverview(db, intent, todayKey) {
         if (!pay) continue;
         paymentCount += 1;
         paymentTotal += pay.amountPending || 0;
+        if (!pay.dueAt || String(pay.dueAt).slice(0, 10) <= todayKey) {
+          dueNowCount += 1;
+          dueNowTotal += pay.amountPending || 0;
+        }
         if (out.payments.length < PAYMENT_LIMIT) out.payments.push(pay);
       } else {
+        if (openEndedPayments && String(row.reminder_at || '') > (range.end || todayKey)) continue;
         if (!wantsReminders) continue;
         const rem = slimReminder(row);
         if (rem && out.reminders.length < OVERVIEW_REMINDER_LIMIT) out.reminders.push(rem);
@@ -1389,6 +1484,15 @@ async function loadOverview(db, intent, todayKey) {
     if (wantsPayments) {
       out.stats.pendingPaymentsListed = paymentCount;
       out.stats.pendingPaymentsListedTotal = Math.round(paymentTotal);
+      // Money owed is outstanding until it is collected; it is not "today's"
+      // data even though it shows up in a question asked today.
+      out.stats.pendingPaymentsScope = intent.explicitDate
+        ? `due on or before ${range.end || todayKey}`
+        : 'every outstanding payment reminder, whatever its due date';
+      if (!intent.explicitDate) {
+        out.stats.pendingPaymentsAlreadyDue = dueNowCount;
+        out.stats.pendingPaymentsAlreadyDueTotal = Math.round(dueNowTotal);
+      }
       out.truncated.payments = paymentCount > out.payments.length;
     }
     if (wantsReminders) {
@@ -1434,6 +1538,19 @@ async function loadOverview(db, intent, todayKey) {
       const slim = slimCustomer(row);
       if (slim) out.customers.push(slim);
     }
+    out.stats.customersTotal = await countRows(
+      db.from('customers').select('id', { count: 'exact', head: true })
+    );
+    out.stats.customersAddedInRange = await countRows(
+      (() => {
+        const bounds = intentBounds(intent, todayKey);
+        let query = db.from('customers').select('id', { count: 'exact', head: true });
+        if (bounds.fromTs && bounds.toTs) {
+          query = query.gte('created_at', bounds.fromTs).lt('created_at', bounds.toTs);
+        }
+        return query;
+      })()
+    );
   }
 
   // Ranking-only questions are already answered by one grouped RPC. Avoid the
@@ -1526,6 +1643,7 @@ function scopesForPlannerTools(tools) {
   // customer_search / job_search deliberately map to no scope: they are targeted
   // hint lookups, not "list every recent customer/job" sweeps.
   const map = {
+    customer_directory: 'customers',
     jobs_overview: 'jobs',
     payments: 'payments',
     reminders: 'reminders',
@@ -1565,12 +1683,27 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
   }
   // A request naming a person or job is about them, not a whole-day sweep.
   const hasSpecificTarget = hasSearchableTarget(hints, focusCustomerId);
-  const isRankingIntent =
-    detected.scopes.has('customer_value_ranking') ||
-    detected.scopes.has('technician_billing_ranking');
+  // Aggregates answer "how much / how many overall" and stay correct even when a
+  // stray word ("revenue", "money") is mistaken for a name. Only the plain jobs
+  // and customers lists are suppressed, because those would become a whole-day
+  // sweep on top of a request about one person.
+  const wantsAggregate = [...detected.scopes].some((scope) =>
+    ['revenue', 'payments', 'reminders', 'amc', 'summary', 'customer_value_ranking', 'technician_billing_ranking'].includes(
+      scope
+    )
+  );
+  // A named technician is a filter on the day's work, not a customer lookup, so
+  // resolve it before deciding whether the operational query may run at all.
+  const technicianMatches =
+    detected.active &&
+    (detected.scopes.has('jobs') || detected.scopes.has('technician_billing_ranking')) &&
+    (hints.nameTokens || []).length
+      ? await findTechniciansByName(db, hints.nameTokens)
+      : [];
   const intent = {
     ...detected,
-    active: detected.active && (!hasSpecificTarget || isRankingIntent),
+    technicianMatches,
+    active: detected.active && (!hasSpecificTarget || wantsAggregate || technicianMatches.length > 0),
   };
 
   // Greetings and chit-chat name no record and ask for no list, so skip the DB
@@ -1622,9 +1755,6 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
   if (intent.active) {
     if (customers.length && (hints.nameTokens || []).length) {
       intent.shortlistCustomers = customers;
-    }
-    if (intent.scopes.has('technician_billing_ranking') && (hints.nameTokens || []).length) {
-      intent.technicianMatches = await findTechniciansByName(db, hints.nameTokens);
     }
     const overview = await loadOverview(db, intent, todayKey);
     stats = { ...stats, ...overview.stats };
@@ -1706,6 +1836,7 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
       scopes: [...intent.scopes],
       statuses: intent.statuses,
       range: intent.range,
+      explicitDate: intent.explicitDate,
     },
     hints,
   };
@@ -1732,13 +1863,17 @@ function formatContextForPrompt(pack) {
   }
   if (pack.intent?.scopes?.length) {
     const showStatuses = pack.intent.statuses && pack.intent.scopes.includes('jobs');
+    const paymentsOnly =
+      pack.intent.scopes.length === 1 && pack.intent.scopes[0] === 'payments' && !pack.intent.explicitDate;
     const periodLabel =
       pack.intent.scopes.includes('customer_value_ranking') && stats.customerValueRankingPeriod
         ? stats.customerValueRankingPeriod
         : pack.intent.scopes.includes('technician_billing_ranking') &&
             stats.technicianBillingPeriod
           ? stats.technicianBillingPeriod
-        : pack.intent.range?.label || 'today';
+          : paymentsOnly
+            ? 'outstanding right now (not limited to today)'
+            : pack.intent.range?.label || 'today';
     lines.push(
       `Interpreted request: ${pack.intent.scopes.join(', ')}; period = ${periodLabel}${
         showStatuses ? `; job status filter = ${pack.intent.statuses.join('/')}` : ''
@@ -1772,13 +1907,31 @@ function formatContextForPrompt(pack) {
     statLines.push(`open jobs right now (PENDING/ASSIGNED/EN_ROUTE/IN_PROGRESS) = ${stats.openJobsTotal}`);
   if (stats.followUpJobsTotal != null)
     statLines.push(`jobs in FOLLOW_UP = ${stats.followUpJobsTotal}`);
+  if (stats.jobsFilteredByTechnician?.length)
+    statLines.push(
+      `the job list below is filtered to technician(s) ${stats.jobsFilteredByTechnician.join(', ')}; counts labelled "in period" cover all technicians`
+    );
+  if (stats.jobsCompletedByTechnicianInRange != null)
+    statLines.push(
+      `jobs completed in period by ${(stats.jobsFilteredByTechnician || []).join(', ') || 'the named technician'} = ${stats.jobsCompletedByTechnicianInRange}`
+    );
+  if (stats.customersTotal != null)
+    statLines.push(`customers in the CRM (all time) = ${stats.customersTotal}`);
+  if (stats.customersAddedInRange != null)
+    statLines.push(`customers added in period = ${stats.customersAddedInRange}`);
   if (stats.completedJobValueInRange != null)
     statLines.push(
       `billed value of jobs completed in period (INR, may include not-yet-collected amounts) = ${stats.completedJobValueInRange}`
     );
   if (stats.pendingPaymentsListed != null)
     statLines.push(
-      `pending payment reminders scanned = ${stats.pendingPaymentsListed}, total INR = ${stats.pendingPaymentsListedTotal}`
+      `pending payment reminders scanned = ${stats.pendingPaymentsListed}, total INR = ${stats.pendingPaymentsListedTotal      }${
+        stats.pendingPaymentsScope ? ` (covers ${stats.pendingPaymentsScope})` : ''
+      }${
+        stats.pendingPaymentsAlreadyDue != null
+          ? `, of which ${stats.pendingPaymentsAlreadyDue} are already due today or earlier totalling INR ${stats.pendingPaymentsAlreadyDueTotal}`
+          : ''
+      }`
     );
   if (stats.amcExpiryWindow) statLines.push(`AMC contracts listed expire between ${stats.amcExpiryWindow}`);
   if (statLines.length) {
@@ -1876,7 +2029,9 @@ function formatContextForPrompt(pack) {
     lines.push('Documents (metadata only):');
     for (const d of pack.documents) {
       lines.push(
-        `- kind=${d.kind}; id=${d.id}; customerId=${d.customerId || '—'}; label=${d.label}`
+        `- kind=${d.kind}; id=${d.id}; customer=${nameById.get(d.customerId) || 'unknown'}; customerId=${d.customerId || '—'}; label=${d.label}${
+          d.endDate ? `; ends=${d.endDate}` : ''
+        }`
       );
     }
   }

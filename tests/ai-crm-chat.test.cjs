@@ -150,6 +150,35 @@ function testMisspelledNamesResolveWithoutMatchingSentenceGlue() {
   // A different name that merely starts the same must not be accepted.
   assert.equal(nameMatchesToken('Dr. Sheen Khurdi', 'shety'), -1);
   assert.equal(nameMatchesToken('Ramesh Kumar', 'shety'), -1);
+  // A shorter real name is a different person, not a fuzzy match.
+  assert.equal(nameMatchesToken('Jyoti', 'jyotirling'), -1);
+  assert.equal(nameMatchesToken('Jyotirling', 'jyotirling'), 0);
+}
+
+function testFreshQuestionsAreNotTreatedAsFollowUps() {
+  const history = [
+    { role: 'user', text: 'amc expiring soon' },
+    { role: 'assistant', text: 'Two AMC contracts expire soon.' },
+  ];
+  // Naming its own subject makes this a new question, not a period follow-up.
+  assert.deepEqual(inferDeterministicPlan('reminders due this week', history).tools, ['reminders']);
+  assert.deepEqual(inferDeterministicPlan('revenue this month', history).tools, ['revenue']);
+  assert.deepEqual(inferDeterministicPlan('how many customers do we have', history).tools, [
+    'customer_directory',
+  ]);
+  assert.equal(scopesForPlannerTools(['customer_directory']).has('customers'), true);
+}
+
+function testPeriodAndRankingBasisFollowTheQuestion() {
+  const year = detectOverviewIntent('how many jobs completed in 2019', '2026-08-17');
+  assert.equal(year.range.start, '2019-01-01');
+  assert.equal(year.range.end, '2019-12-31');
+
+  assert.equal(detectOverviewIntent('top billing customers', '2026-08-17').rankingBasis, 'billed');
+  assert.equal(
+    detectOverviewIntent('which customer paid us the most', '2026-08-17').rankingBasis,
+    'paid'
+  );
 }
 
 function testAllTimeRangeIsSupported() {
@@ -656,6 +685,8 @@ async function main() {
   testDeterministicFastRoutesStayReadOnlyAndNarrow();
   testMisspelledNamesResolveWithoutMatchingSentenceGlue();
   testAllTimeRangeIsSupported();
+  testFreshQuestionsAreNotTreatedAsFollowUps();
+  testPeriodAndRankingBasisFollowTheQuestion();
   testShortMessageRejected();
   testActionsRequireKnownIdsAndConfirm();
   testMutationToolsBanned();
