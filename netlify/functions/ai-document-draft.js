@@ -236,8 +236,23 @@ exports.handler = async (event) => {
       },
     });
   } catch (error) {
-    errorCategory = 'provider_error';
-    console.warn('[ai-document-draft] failed', error?.message || error);
+    const message = String(error?.message || error || '');
+    const lower = message.toLowerCase();
+    const isRateLimited =
+      error?.retryable === true &&
+      (lower.includes('rate limit') ||
+        lower.includes('quota') ||
+        lower.includes('capacity') ||
+        String(error?.providerCode || '') === '429');
+    errorCategory = isRateLimited ? 'rate_limited' : 'provider_error';
+    console.warn('[ai-document-draft] failed', message);
+    if (isRateLimited) {
+      return json(429, headers, {
+        success: false,
+        error:
+          'AI provider free-tier limit reached. Try again after the daily reset (midnight UTC / 5:30 AM IST), or wait a minute if it was a per-minute cap.',
+      });
+    }
     return json(502, headers, {
       success: false,
       error: 'Could not prepare document changes. Please try again.',

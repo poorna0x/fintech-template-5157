@@ -118,7 +118,7 @@ async function generateWithGroq(input, config) {
     if (retryable) {
       throw createProviderError('Groq rate limit or capacity unavailable', {
         retryable: true,
-        code,
+        code: response.status === 429 ? 429 : code,
       });
     }
     if (response.status === 404 || message.includes('decommissioned')) {

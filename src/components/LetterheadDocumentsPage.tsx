@@ -255,7 +255,6 @@ export default function LetterheadDocumentsPage({
   }, [refreshDrafts]);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [showMobilePreview, setShowMobilePreview] = useState(false);
-  const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // If user just deep-linked to a specific type and there's no active draft yet,
   // honour the requested type once after mount.
@@ -273,21 +272,12 @@ export default function LetterheadDocumentsPage({
     writeActiveDraft(data);
   }, [data]);
 
-  // Render the live preview by writing into the iframe whenever data changes.
+  // Live preview uses srcDoc so we never call doc.write into a sandboxed frame
+  // (Chrome warns when scripts are blocked on write-based previews).
   const previewHtml = useMemo(() => {
     const bodyClass = getLetterheadBodyClass(data);
     return `<!DOCTYPE html><html><head><meta charset="utf-8" /><style>${getLetterheadCss()}</style></head><body class="${bodyClass}">${buildLetterheadInnerHtml(data)}</body></html>`;
   }, [data]);
-
-  useEffect(() => {
-    const iframe = previewIframeRef.current;
-    if (!iframe) return;
-    const doc = iframe.contentDocument;
-    if (!doc) return;
-    doc.open();
-    doc.write(previewHtml);
-    doc.close();
-  }, [previewHtml]);
 
   const updateData = useCallback(
     <K extends keyof LetterheadDocumentData>(key: K, value: LetterheadDocumentData[K]) => {
@@ -1298,11 +1288,11 @@ export default function LetterheadDocumentsPage({
               </CardHeader>
               <CardContent className="px-3 sm:px-6 pb-4">
                 <iframe
-                  ref={previewIframeRef}
                   title="Letterhead preview"
                   className="w-full rounded border bg-white"
                   style={{ minHeight: showMobilePreview ? '70vh' : '900px' }}
                   sandbox="allow-same-origin"
+                  srcDoc={previewHtml}
                 />
               </CardContent>
             </Card>
