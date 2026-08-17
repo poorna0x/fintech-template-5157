@@ -157,6 +157,13 @@ import {
   saveAiQuotationDraft,
   type AiInboxSuggestion,
 } from '@/lib/aiInboxAssistant';
+import {
+  fetchWhatsAppAiChatSettings,
+  markWhatsAppChatAiReviewed,
+  setWhatsAppAiReviewAll,
+  setWhatsAppChatAutoReply,
+  type WhatsAppAiChatSettings,
+} from '@/lib/whatsappAiChatSettings';
 import { saveBytesToNativeDownloads } from '@/lib/nativeDownloadsSave';
 import { isNativeRuntime, openBytesNatively } from '@/lib/nativeFileOpen';
 import {
@@ -451,6 +458,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [aiSuggesting, setAiSuggesting] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<AiInboxSuggestion | null>(null);
   const [aiSavingQuote, setAiSavingQuote] = useState(false);
+  const [aiChatSettings, setAiChatSettings] = useState<WhatsAppAiChatSettings>({
+    reviewAllChats: false,
+    autoReplyEnabled: false,
+    lastReviewedWaMessageId: null,
+    updatedAt: null,
+  });
+  const [aiChatSettingsBusy, setAiChatSettingsBusy] = useState(false);
+  const aiReviewedInSessionRef = useRef(new Set<string>());
   const [purging, setPurging] = useState(false);
   const [chatDeleteTarget, setChatDeleteTarget] = useState<{
     phone: string;
@@ -1455,6 +1470,26 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     void loadThread(phoneDigits, { force: true });
   }, [selectedPhone, loadThread]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const phone = toWhatsAppPhoneDigits(selectedPhone);
+    void fetchWhatsAppAiChatSettings(phone).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setAiChatSettings(result.settings);
+      } else {
+        setAiChatSettings((current) => ({
+          ...current,
+          autoReplyEnabled: false,
+          lastReviewedWaMessageId: null,
+        }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPhone]);
+
   const lastThreadMessageId = threadMessages[threadMessages.length - 1]?.id ?? null;
 
   const isNearBottom = useCallback((el: HTMLElement, threshold = 80) => {
@@ -1881,6 +1916,16 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           return;
         }
         setAiSuggestion(result.suggestion);
+        if (operation === 'suggest_reply') {
+          const latest = threadMessagesRef.current[threadMessagesRef.current.length - 1];
+          const reviewedId = String(latest?.wa_message_id || latest?.id || '');
+          if (latest?.direction === 'inbound' && reviewedId) {
+            aiReviewedInSessionRef.current.add(reviewedId);
+            void markWhatsAppChatAiReviewed(phone, reviewedId).then((saved) => {
+              if (saved.ok) setAiChatSettings(saved.settings);
+            });
+          }
+        }
         toast.success(
           operation === 'suggest_quotation' ? 'Quotation draft ready to review' : 'Reply draft ready',
           { id: toastId }
@@ -1893,6 +1938,82 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     },
     [activeThread?.customer_id, aiSuggesting]
   );
+
+  const updateAiReviewAll = useCallback(async () => {
+    if (aiChatSettingsBusy) return;
+    setAiChatSettingsBusy(true);
+    const enabled = !aiChatSettings.reviewAllChats;
+    const result = await setWhatsAppAiReviewAll(enabled, selectedPhoneRef.current);
+    setAiChatSettingsBusy(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    setAiChatSettings(result.settings);
+    toast.success(enabled ? 'AI review enabled for every opened chat' : 'AI review disabled');
+  }, [aiChatSettings.reviewAllChats, aiChatSettingsBusy]);
+
+  const updateChatAutoReply = useCallback(async () => {
+    const phone = selectedPhoneRef.current;
+    if (!phone || aiChatSettingsBusy) return;
+    const enabled = !aiChatSettings.autoReplyEnabled;
+    if (
+      enabled &&
+      !window.confirm(
+        'Enable safe AI auto replies for this chat only?\n\nAI may acknowledge service issues and collect details. Prices, payments, complaints, promises and uncertain answers will wait for an admin.'
+      )
+    ) {
+      return;
+    }
+    setAiChatSettingsBusy(true);
+    const result = await setWhatsAppChatAutoReply(phone, enabled);
+    setAiChatSettingsBusy(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    setAiChatSettings(result.settings);
+    toast.success(enabled ? 'Auto reply enabled for this chat only' : 'Auto reply disabled');
+  }, [aiChatSettings.autoReplyEnabled, aiChatSettingsBusy]);
+
+  useEffect(() => {
+    if (!aiChatSettings.reviewAllChats || aiSuggesting || !selectedPhone) return;
+    const latest = threadMessages[threadMessages.length - 1];
+    if (!latest || latest.direction !== 'inbound') return;
+    const reviewId = String(latest.wa_message_id || latest.id || '');
+    if (
+      !reviewId ||
+      reviewId === aiChatSettings.lastReviewedWaMessageId ||
+      aiReviewedInSessionRef.current.has(reviewId)
+    ) {
+      return;
+    }
+    const phoneAtSchedule = selectedPhone;
+    const timer = window.setTimeout(
+      () => {
+        const current = threadMessagesRef.current[threadMessagesRef.current.length - 1];
+        if (
+          selectedPhoneRef.current !== phoneAtSchedule ||
+          current?.direction !== 'inbound' ||
+          String(current.wa_message_id || current.id || '') !== reviewId
+        ) {
+          return;
+        }
+        aiReviewedInSessionRef.current.add(reviewId);
+        void runAiSuggest('suggest_reply');
+      },
+      aiChatSettings.autoReplyEnabled ? 2500 : 350
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    aiChatSettings.autoReplyEnabled,
+    aiChatSettings.lastReviewedWaMessageId,
+    aiChatSettings.reviewAllChats,
+    aiSuggesting,
+    runAiSuggest,
+    selectedPhone,
+    threadMessages,
+  ]);
 
   const applyAiReplyToComposer = useCallback(() => {
     const text = String(aiSuggestion?.replyText || '').trim();
@@ -3235,7 +3356,41 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         <FileText className="h-3.5 w-3.5 text-emerald-300" />
                         AI quotation
                       </button>
-                      <span className="text-[10px] text-[#667781]">Review only — never auto-sends</span>
+                      <button
+                        type="button"
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50',
+                          aiChatSettings.reviewAllChats
+                            ? 'border-sky-400/40 bg-sky-400/15 text-sky-100'
+                            : 'border-[#2a3942] bg-[#202c33] text-[#aebac1] hover:bg-[#2a3942]'
+                        )}
+                        disabled={aiChatSettingsBusy}
+                        onClick={() => void updateAiReviewAll()}
+                        title="Automatically prepare a review-only draft when an opened chat receives a new customer message"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Review all: {aiChatSettings.reviewAllChats ? 'On' : 'Off'}
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-50',
+                          aiChatSettings.autoReplyEnabled
+                            ? 'border-emerald-400/50 bg-emerald-400/15 text-emerald-100'
+                            : 'border-[#2a3942] bg-[#202c33] text-[#aebac1] hover:bg-[#2a3942]'
+                        )}
+                        disabled={aiChatSettingsBusy}
+                        onClick={() => void updateChatAutoReply()}
+                        title="Safe service-detail replies only; enabled for this chat phone"
+                      >
+                        <Zap className="h-3.5 w-3.5" />
+                        Auto this chat: {aiChatSettings.autoReplyEnabled ? 'On' : 'Off'}
+                      </button>
+                      <span className="text-[10px] text-[#667781]">
+                        {aiChatSettings.autoReplyEnabled
+                          ? 'Sensitive messages still wait for review'
+                          : 'Manual drafts never auto-send'}
+                      </span>
                     </div>
                     {aiSuggestion ? (
                       <div className="rounded-xl border border-[#2a3942] bg-[#202c33] px-3 py-2 text-[#e9edef]">

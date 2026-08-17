@@ -5285,6 +5285,7 @@ module.exports = {
   shouldSuppressAdminInboundAlert,
   BOOKING_FLOW_ALERT_MARKER,
   isBookingBotEnabled,
+  sendText,
   sendLocationRequest,
   sendCtaUrl,
   lookupCustomerFull,

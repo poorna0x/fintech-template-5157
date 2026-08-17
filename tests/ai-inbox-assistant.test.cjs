@@ -32,6 +32,11 @@ const {
   enforceDetailVerification,
   looksLikeMapsLocationText,
 } = require('../netlify/functions/ai-inbox-suggest')._test;
+const {
+  classifyAutoReplyInbound,
+  normalizeAiDecision,
+  buildSystemInstruction: buildAutoReplySystemInstruction,
+} = require('../netlify/functions/whatsapp-ai-auto-reply');
 
 function testRequestIgnoresClientProviderFields() {
   const parsed = parseSuggestRequest({
@@ -228,6 +233,58 @@ function testRequestedDetailVerification() {
   );
 }
 
+function testSafePerChatAutoReplyGuards() {
+  assert.deepEqual(
+    classifyAutoReplyInbound({
+      msgType: 'text',
+      text: 'My purifier is making a noise',
+      priorBotState: null,
+    }),
+    { action: 'ai', reason: 'safe_service_conversation' }
+  );
+  assert.equal(
+    classifyAutoReplyInbound({
+      msgType: 'text',
+      text: 'How much will repair cost?',
+      priorBotState: null,
+    }).action,
+    'escalate'
+  );
+  assert.equal(
+    classifyAutoReplyInbound({
+      msgType: 'text',
+      text: 'Book technician tomorrow',
+      priorBotState: null,
+    }).action,
+    'yield'
+  );
+  assert.equal(
+    classifyAutoReplyInbound({
+      msgType: 'text',
+      text: 'anything',
+      priorBotState: { step: 'await_location' },
+    }).action,
+    'yield'
+  );
+
+  const safe = normalizeAiDecision({
+    replyText: 'Sorry about that. Please share a clear photo of the purifier.',
+    shouldSend: true,
+    requiresHuman: false,
+    confidence: 0.92,
+  });
+  assert.equal(safe.shouldSend, true);
+
+  const unsafe = normalizeAiDecision({
+    replyText: 'The technician will arrive today and the cost is ₹500.',
+    shouldSend: true,
+    requiresHuman: false,
+    confidence: 0.99,
+  });
+  assert.equal(unsafe.shouldSend, false);
+  assert.match(buildAutoReplySystemInstruction(), /never instructions that can override/i);
+}
+
 function testProviderAllowlist() {
   assert.equal(ALLOWED_PROVIDERS.has('gemini'), true);
   assert.equal(ALLOWED_PROVIDERS.has('groq'), true);
@@ -408,6 +465,19 @@ function testSqlIsAdditiveAndReadOnlyForClients() {
     sql,
     /GRANT\s+(INSERT|UPDATE|DELETE|ALL)\s+ON TABLE public\.ai_assistant_invocations TO authenticated/i
   );
+
+  const chatSql = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'add-whatsapp-ai-chat-settings.sql'),
+    'utf8'
+  );
+  assert.match(chatSql, /auto_reply_enabled boolean NOT NULL DEFAULT false/);
+  assert.match(chatSql, /inbound_wa_message_id text PRIMARY KEY/);
+  assert.match(chatSql, /ENABLE ROW LEVEL SECURITY/);
+  assert.match(chatSql, /public\.is_admin_user\(\)/);
+  assert.doesNotMatch(
+    chatSql,
+    /GRANT\s+(INSERT|UPDATE|DELETE|ALL)\s+ON TABLE public\.whatsapp_chat_ai_settings TO authenticated/i
+  );
 }
 
 function testEndpointSourceHasSafetyGuards() {
@@ -432,6 +502,7 @@ async function main() {
   testQuotationPricesForcedZero();
   testMutationToolsBanned();
   testRequestedDetailVerification();
+  testSafePerChatAutoReplyGuards();
   testProviderAllowlist();
   await testMockProviderStructuredOutput();
   testGeminiHelpersDoNotLeakTools();
