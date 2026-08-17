@@ -38,6 +38,10 @@ function testAllowlistsExposeNoSecrets() {
   assert.equal(summary.model, 'openai/gpt-oss-120b');
   assert.equal(summary.geminiConfigured, true);
   assert.equal(summary.groqConfigured, true);
+  assert.equal(summary.providerFreeTiers?.rpd, 1000);
+  assert.equal(summary.providerFreeTiers?.tpd, 200000);
+  assert.equal(summary.providerFreeTiers?.rpm, 30);
+  assert.match(String(summary.providerFreeTiers?.resetNote || ''), /midnight UTC/i);
   assert.equal('geminiApiKey' in summary, false);
   assert.equal('groqApiKey' in summary, false);
   assert.equal(JSON.stringify(summary).includes('secret'), false);

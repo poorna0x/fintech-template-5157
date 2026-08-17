@@ -54,6 +54,39 @@ const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 const DEFAULT_GEMINI_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
 
+/** Official Groq free-plan caps (org-level). Source: console.groq.com/docs/rate-limits */
+const GROQ_FREE_TIER_BY_MODEL = Object.freeze({
+  'openai/gpt-oss-120b': { rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000 },
+  'openai/gpt-oss-20b': { rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000 },
+  'qwen/qwen3.6-27b': { rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000 },
+  'groq/compound-mini': { rpm: 30, rpd: 250, tpm: 70000, tpd: null },
+});
+
+const PROVIDER_FREE_TIER_RESET = Object.freeze({
+  timezone: 'UTC',
+  note: 'Groq free-tier daily limits reset at midnight UTC (5:30 AM IST).',
+});
+
+function getGroqFreeTier(model) {
+  const key = String(model || '').trim();
+  return GROQ_FREE_TIER_BY_MODEL[key] || GROQ_FREE_TIER_BY_MODEL[DEFAULT_GROQ_MODEL];
+}
+
+function getProviderFreeTier(provider, model) {
+  if (provider !== 'groq') return null;
+  const tiers = getGroqFreeTier(model);
+  return {
+    provider: 'groq',
+    model: String(model || DEFAULT_GROQ_MODEL),
+    rpm: tiers.rpm,
+    rpd: tiers.rpd,
+    tpm: tiers.tpm,
+    tpd: tiers.tpd,
+    resetTimezone: PROVIDER_FREE_TIER_RESET.timezone,
+    resetNote: PROVIDER_FREE_TIER_RESET.note,
+  };
+}
+
 let cachedConfig = null;
 let cachedAt = 0;
 
@@ -130,13 +163,27 @@ function normalizeConfig(raw, source) {
       : resolvedProvider === 'groq'
         ? normalizeGroqModel(raw.model)
         : 'mock-local';
+  const freeTiers = getProviderFreeTier(resolvedProvider, model);
+  const defaultRequestLimit =
+    resolvedProvider === 'groq' ? Number(freeTiers?.rpd) || 1000 : 80;
+  const defaultTokenLimit =
+    resolvedProvider === 'groq' ? Number(freeTiers?.tpd) || 200000 : 200000;
+  const maxRequestLimit = resolvedProvider === 'groq' ? 1000 : 500;
   const config = {
     provider: resolvedProvider,
     geminiApiKey: geminiApiKey || null,
     groqApiKey: groqApiKey || null,
     model,
-    dailyRequestLimit: normalizePositiveInt(raw.dailyRequestLimit || raw.daily_request_limit, 80, 500),
-    dailyTokenLimit: normalizePositiveInt(raw.dailyTokenLimit || raw.daily_token_limit, 200000, 2_000_000),
+    dailyRequestLimit: normalizePositiveInt(
+      raw.dailyRequestLimit || raw.daily_request_limit,
+      defaultRequestLimit,
+      maxRequestLimit
+    ),
+    dailyTokenLimit: normalizePositiveInt(
+      raw.dailyTokenLimit || raw.daily_token_limit,
+      defaultTokenLimit,
+      2_000_000
+    ),
     source,
   };
   config.fallbackChain = normalizeFallbackChain();
@@ -251,6 +298,7 @@ function publicConfigSummary(config) {
     geminiConfigured: Boolean(config.geminiApiKey),
     groqConfigured: Boolean(config.groqApiKey),
     configured: true,
+    providerFreeTiers: getProviderFreeTier(config.provider, config.model),
   };
 }
 
@@ -326,20 +374,27 @@ async function saveAiAssistantModelSelection({ provider, model }) {
     return { ok: false, error: 'Groq API key is not configured on the server' };
   }
 
+  const freeTiers = getProviderFreeTier(nextProvider, nextModel);
   const merged = {
     ...existing,
     provider: nextProvider,
     model: nextModel,
-    dailyRequestLimit: normalizePositiveInt(
-      existing.dailyRequestLimit || existing.daily_request_limit,
-      80,
-      500
-    ),
-    dailyTokenLimit: normalizePositiveInt(
-      existing.dailyTokenLimit || existing.daily_token_limit,
-      200000,
-      2_000_000
-    ),
+    dailyRequestLimit:
+      nextProvider === 'groq' && freeTiers?.rpd
+        ? freeTiers.rpd
+        : normalizePositiveInt(
+            existing.dailyRequestLimit || existing.daily_request_limit,
+            80,
+            500
+          ),
+    dailyTokenLimit:
+      nextProvider === 'groq' && freeTiers?.tpd
+        ? freeTiers.tpd
+        : normalizePositiveInt(
+            existing.dailyTokenLimit || existing.daily_token_limit,
+            200000,
+            2_000_000
+          ),
   };
   if (geminiApiKey) {
     merged.geminiApiKey = geminiApiKey;
@@ -390,6 +445,9 @@ module.exports = {
   DEFAULT_GEMINI_MODEL,
   DEFAULT_GEMINI_FALLBACK_MODEL,
   DEFAULT_GROQ_MODEL,
+  GROQ_FREE_TIER_BY_MODEL,
+  getGroqFreeTier,
+  getProviderFreeTier,
   getAiAssistantConfig,
   clearAiAssistantConfigCache,
   publicConfigSummary,

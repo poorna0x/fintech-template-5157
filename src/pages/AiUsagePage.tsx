@@ -275,7 +275,8 @@ export default function AiUsagePage({ hideHeader, onBack }: Props) {
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Your CRM daily allowance</CardTitle>
               <CardDescription>
-                App-enforced limits for this admin account (not Gemini/Groq free-tier dashboards).
+                App-enforced limits for this admin account. When Groq is selected, CRM caps match
+                Groq free-tier daily limits.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -312,6 +313,49 @@ export default function AiUsagePage({ hideHeader, onBack }: Props) {
                   max={snapshot.myToday.tokenLimit}
                 />
               </div>
+              {snapshot.config?.providerFreeTiers ? (
+                <div className="rounded-lg border border-border/70 bg-muted/30 p-3 space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Groq free tier ({snapshot.config.providerFreeTiers.model})
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <StatBlock
+                      label="Requests / day"
+                      value={String(snapshot.config.providerFreeTiers.rpd)}
+                    />
+                    <StatBlock
+                      label="Tokens / day"
+                      value={
+                        snapshot.config.providerFreeTiers.tpd == null
+                          ? '—'
+                          : formatTokenCount(snapshot.config.providerFreeTiers.tpd)
+                      }
+                    />
+                    <StatBlock
+                      label="Requests / min"
+                      value={String(snapshot.config.providerFreeTiers.rpm)}
+                    />
+                    <StatBlock
+                      label="Tokens / min"
+                      value={formatTokenCount(snapshot.config.providerFreeTiers.tpm)}
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    {snapshot.config.providerFreeTiers.resetNote ||
+                      'Daily limits reset at midnight UTC (5:30 AM IST).'}{' '}
+                    Live remaining quota:{' '}
+                    <a
+                      href="https://console.groq.com/settings/limits"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-2"
+                    >
+                      Groq Limits
+                    </a>
+                    .
+                  </p>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -416,8 +460,14 @@ export default function AiUsagePage({ hideHeader, onBack }: Props) {
                 </a>
               </Button>
               <Button asChild variant="outline" className="h-11 touch-manipulation">
+                <a href="https://console.groq.com/settings/limits" target="_blank" rel="noreferrer">
+                  Groq limits
+                  <ExternalLink className="ml-2 h-4 w-4" />
+                </a>
+              </Button>
+              <Button asChild variant="outline" className="h-11 touch-manipulation">
                 <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer">
-                  Groq console
+                  Groq keys
                   <ExternalLink className="ml-2 h-4 w-4" />
                 </a>
               </Button>

@@ -14,6 +14,17 @@ export type AiUsagePeriod = {
   byErrorCategory: Array<{ category: string; count: number }>;
 };
 
+export type AiProviderFreeTiers = {
+  provider: string;
+  model: string;
+  rpm: number;
+  rpd: number;
+  tpm: number;
+  tpd: number | null;
+  resetTimezone: string;
+  resetNote: string;
+};
+
 export type AiUsageConfig = {
   provider?: string;
   model?: string;
@@ -23,6 +34,7 @@ export type AiUsageConfig = {
   geminiConfigured?: boolean;
   groqConfigured?: boolean;
   configured?: boolean;
+  providerFreeTiers?: AiProviderFreeTiers | null;
 };
 
 export type AiSelectableModels = {
@@ -167,6 +179,26 @@ function parseConfig(raw: unknown): AiUsageConfig | null {
     geminiConfigured: row.geminiConfigured === true,
     groqConfigured: row.groqConfigured === true,
     configured: row.configured === true,
+    providerFreeTiers: parseProviderFreeTiers(row.providerFreeTiers),
+  };
+}
+
+function parseProviderFreeTiers(raw: unknown): AiProviderFreeTiers | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const row = raw as Record<string, unknown>;
+  const rpd = Number(row.rpd);
+  const rpm = Number(row.rpm);
+  const tpm = Number(row.tpm);
+  if (!Number.isFinite(rpd) || !Number.isFinite(rpm) || !Number.isFinite(tpm)) return null;
+  return {
+    provider: String(row.provider || 'groq'),
+    model: String(row.model || ''),
+    rpm,
+    rpd,
+    tpm,
+    tpd: row.tpd == null ? null : Number(row.tpd) || null,
+    resetTimezone: String(row.resetTimezone || 'UTC'),
+    resetNote: String(row.resetNote || ''),
   };
 }
 
