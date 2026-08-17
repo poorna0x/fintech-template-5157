@@ -43,6 +43,8 @@ function plannerSystemInstruction() {
     'Use route=crm when the user asks to find, count, compare, rank, summarize, create, or edit CRM records.',
     `CRM tools are allowlisted: ${ALLOWED_CRM_TOOLS.join(', ')}.`,
     'Choose only tools needed for the request. Never request SQL, database access, deletion, sending, or external URLs.',
+    'customer_search and job_search look up specific records the message names, so include the name, phone, code or job number in rewrittenQuery.',
+    'Use jobs_overview when the answer needs the jobs behind a total, such as which customer or job produced an amount.',
     'For CRM, rewrite the current request into one self-contained query using recent history to resolve follow-ups like "what about yesterday?" or "show their jobs".',
     'Preserve names, phones, job numbers, amounts, dates, and requested action fields exactly. Never invent them.',
     'For create/edit requests choose action_draft plus customer_search or job_search only when an existing record must be found.',
@@ -81,6 +83,24 @@ function normalizePlannerOutput(raw, fallbackMessage) {
   };
 }
 
+/**
+ * A ranking answer alone cannot say which customer or job produced a total, so
+ * guarantee the underlying jobs are fetched rather than trusting the model to ask.
+ */
+function augmentPlanTools(plan, message) {
+  if (plan?.route !== 'crm') return plan;
+  const tools = [...(plan.tools || [])];
+  const isRanking =
+    tools.includes('technician_billing_ranking') || tools.includes('customer_value_ranking');
+  const wantsRecordDetail = /\bcustomers?\b|\bjobs?\b/i.test(
+    `${message || ''} ${plan.rewrittenQuery || ''}`
+  );
+  if (isRanking && wantsRecordDetail && !tools.includes('jobs_overview')) {
+    tools.push('jobs_overview');
+  }
+  return { ...plan, tools: tools.slice(0, 4) };
+}
+
 function buildPlannerMessages(history, message) {
   const turns = (Array.isArray(history) ? history : []).slice(-8).map((turn) => ({
     role: turn.role === 'assistant' ? 'assistant' : 'user',
@@ -106,6 +126,35 @@ function buildAllowlistedLookupQuery(plan, fallbackMessage) {
   return `${base}${suffix ? `\n${suffix}` : ''}`.slice(0, 1800);
 }
 
+/**
+ * Only surface the record sections the plan actually asked for, so a targeted
+ * question does not render unrelated customer/job cards.
+ */
+function visibleEntitiesForTools(pack, tools) {
+  const selected = Array.isArray(tools) ? tools : [];
+  const all = {
+    customers: pack?.customers || [],
+    jobs: pack?.jobs || [],
+    reminders: pack?.reminders || [],
+    payments: pack?.payments || [],
+    documents: pack?.documents || [],
+    technicians: pack?.technicians || [],
+  };
+  if (!selected.length) return all;
+
+  const shows = (...names) => names.some((name) => selected.includes(name));
+  return {
+    customers: shows('customer_search', 'customer_value_ranking', 'action_draft')
+      ? all.customers
+      : [],
+    jobs: shows('job_search', 'jobs_overview', 'revenue', 'action_draft') ? all.jobs : [],
+    reminders: shows('reminders') ? all.reminders : [],
+    payments: shows('payments') ? all.payments : [],
+    documents: shows('documents', 'amc') ? all.documents : [],
+    technicians: shows('technician_billing_ranking') ? all.technicians : [],
+  };
+}
+
 module.exports = {
   ALLOWED_CRM_TOOLS,
   CRM_PLANNER_SCHEMA,
@@ -113,4 +162,6 @@ module.exports = {
   normalizePlannerOutput,
   buildPlannerMessages,
   buildAllowlistedLookupQuery,
+  visibleEntitiesForTools,
+  augmentPlanTools,
 };

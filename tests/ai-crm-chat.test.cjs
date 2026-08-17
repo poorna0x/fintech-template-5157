@@ -33,6 +33,7 @@ const {
   ALLOWED_CRM_TOOLS,
   normalizePlannerOutput,
   buildAllowlistedLookupQuery,
+  visibleEntitiesForTools,
 } = require('../netlify/functions/ai-crm-planner');
 
 function testRequestIgnoresDangerousClientFields() {
@@ -98,6 +99,39 @@ function testPlannerOutputIsAllowlisted() {
     [...scopesForPlannerTools(['payments', 'execute_sql', 'reminders'])],
     ['payments', 'reminders']
   );
+  // Targeted searches must not turn into "list every recent customer/job".
+  assert.deepEqual([...scopesForPlannerTools(['customer_search', 'job_search'])], []);
+}
+
+function testOnlyPlannedSectionsAreReturned() {
+  const pack = {
+    customers: [{ id: 'c1' }],
+    jobs: [{ id: 'j1' }],
+    reminders: [{ id: 'r1' }],
+    payments: [{ reminderId: 'p1' }],
+    documents: [{ id: 'd1' }],
+    technicians: [{ technicianId: 't1' }],
+  };
+
+  const ranking = visibleEntitiesForTools(pack, ['technician_billing_ranking']);
+  assert.deepEqual(ranking.technicians, pack.technicians);
+  assert.deepEqual(ranking.customers, []);
+  assert.deepEqual(ranking.jobs, []);
+  assert.deepEqual(ranking.payments, []);
+
+  const jobsOnly = visibleEntitiesForTools(pack, ['jobs_overview']);
+  assert.deepEqual(jobsOnly.jobs, pack.jobs);
+  assert.deepEqual(jobsOnly.customers, []);
+
+  // Keyword fallback (no plan) keeps the previous behaviour.
+  assert.deepEqual(visibleEntitiesForTools(pack, []), {
+    customers: pack.customers,
+    jobs: pack.jobs,
+    reminders: pack.reminders,
+    payments: pack.payments,
+    documents: pack.documents,
+    technicians: pack.technicians,
+  });
 }
 
 function testShortMessageRejected() {
@@ -512,6 +546,7 @@ async function main() {
   testRequestIgnoresDangerousClientFields();
   testRequestHistoryIsBoundedAndNormalized();
   testPlannerOutputIsAllowlisted();
+  testOnlyPlannedSectionsAreReturned();
   testShortMessageRejected();
   testActionsRequireKnownIdsAndConfirm();
   testMutationToolsBanned();

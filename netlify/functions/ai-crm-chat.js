@@ -24,6 +24,8 @@ const {
   normalizePlannerOutput,
   buildPlannerMessages,
   buildAllowlistedLookupQuery,
+  visibleEntitiesForTools,
+  augmentPlanTools,
 } = require('./ai-crm-planner');
 const { sha256, localDayKey, claimAiQuota, finalizeAiInvocation } = require('./ai-audit');
 
@@ -147,6 +149,8 @@ function buildSystemInstruction() {
     'For schedule_follow_up, payload.jobId must match a looked-up job.',
     'If an existing customer/job is ambiguous, ask a clarifying question. New-customer actions do not need an existing customerId.',
     'Never claim you created, updated, deleted, emailed, or WhatsApped anything. Drafts only.',
+    'Never print internal UUIDs. Refer to customers by name and customer code, jobs by job number, technicians by name.',
+    'Answer only what was asked. Do not list extra records the question did not ask about.',
     'Keep answer concise and practical for Indian RO service ops.',
   ].join(' ');
 }
@@ -322,15 +326,18 @@ exports.handler = async (event) => {
     servedProvider = plannerResult.rawMetadata?.provider || config.provider;
     servedModel = plannerResult.rawMetadata?.model || config.model;
     fellBack = plannerResult.rawMetadata?.fellBack === true;
-    const plan = normalizePlannerOutput(
-      plannerResult.parsed ||
+    const plan = augmentPlanTools(
+      normalizePlannerOutput(
+        plannerResult.parsed ||
         (() => {
           try {
             return JSON.parse(plannerResult.text || '{}');
           } catch {
             return {};
           }
-        })(),
+          })(),
+        parsed.value.message
+      ),
       parsed.value.message
     );
 
@@ -440,14 +447,7 @@ exports.handler = async (event) => {
       confidence: normalized.value.confidence,
       requiresHuman: normalized.value.requiresHuman,
       warnings: normalized.value.warnings,
-      entities: {
-        customers: pack.customers,
-        jobs: pack.jobs,
-        reminders: pack.reminders,
-        payments: pack.payments,
-        documents: pack.documents,
-        technicians: pack.technicians,
-      },
+      entities: visibleEntitiesForTools(pack, plan.tools),
       proposedActions,
       meta: {
         ...publicConfigSummary(config),

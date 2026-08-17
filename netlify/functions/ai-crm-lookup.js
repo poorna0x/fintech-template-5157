@@ -670,6 +670,33 @@ async function countRows(builder) {
   return typeof count === 'number' ? count : null;
 }
 
+async function loadTechnicianNames(db, ids, knownTechnicians = []) {
+  const nameById = new Map(
+    (knownTechnicians || [])
+      .filter((tech) => tech?.technicianId)
+      .map((tech) => [String(tech.technicianId), tech.name])
+  );
+  const missing = [
+    ...new Set(
+      (ids || [])
+        .filter(Boolean)
+        .map(String)
+        .filter((id) => !nameById.has(id))
+    ),
+  ].slice(0, OVERVIEW_CUSTOMER_LIMIT);
+  if (!missing.length) return Object.fromEntries(nameById);
+
+  const { data, error } = await db.from('technicians').select('id,full_name').in('id', missing);
+  if (error) {
+    console.warn('[ai-crm-lookup] technician name hydrate failed', error.message);
+    return Object.fromEntries(nameById);
+  }
+  for (const row of data || []) {
+    nameById.set(String(row.id), String(row.full_name || 'Technician').trim());
+  }
+  return Object.fromEntries(nameById);
+}
+
 async function loadCustomersByIds(db, ids) {
   const list = [...new Set((ids || []).filter(Boolean))].slice(0, OVERVIEW_CUSTOMER_LIMIT);
   if (!list.length) return [];
@@ -1195,9 +1222,9 @@ async function loadOverview(db, intent, todayKey) {
  * Build a bounded CRM context pack for one admin chat turn.
  */
 function scopesForPlannerTools(tools) {
+  // customer_search / job_search deliberately map to no scope: they are targeted
+  // hint lookups, not "list every recent customer/job" sweeps.
   const map = {
-    customer_search: 'customers',
-    job_search: 'jobs',
     jobs_overview: 'jobs',
     payments: 'payments',
     reminders: 'reminders',
@@ -1349,9 +1376,19 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
   const jobCap = intent.active ? OVERVIEW_JOB_LIMIT + JOB_LIMIT : JOB_LIMIT;
   const reminderCap = intent.active ? OVERVIEW_REMINDER_LIMIT + REMINDER_LIMIT : REMINDER_LIMIT;
 
+  const visibleJobs = jobs.slice(0, jobCap);
+  // Without a technician name on each job, "which job did this technician do?"
+  // cannot be answered from the facts.
+  const technicianNameById = await loadTechnicianNames(
+    db,
+    visibleJobs.map((job) => job.assignedTechnicianId || job.completedBy),
+    technicians
+  );
+
   return {
     customers: customers.slice(0, customerCap),
-    jobs: jobs.slice(0, jobCap),
+    jobs: visibleJobs,
+    technicianNameById,
     reminders: reminders.slice(0, reminderCap),
     payments: payments.slice(0, PAYMENT_LIMIT * 2),
     documents: documents.slice(0, DOCUMENT_LIMIT * 2),
@@ -1371,6 +1408,7 @@ function formatContextForPrompt(pack) {
   const lines = [];
   const stats = pack.stats || {};
   const nameById = new Map((pack.customers || []).map((c) => [c.id, c.name]));
+  const technicianNameById = pack.technicianNameById || {};
 
   const today = stats.today || istDateKey();
   lines.push(
@@ -1482,7 +1520,9 @@ function formatContextForPrompt(pack) {
     lines.push('Jobs:');
     for (const j of pack.jobs) {
       lines.push(
-        `- id=${j.id}; number=${j.jobNumber || '—'}; customer=${nameById.get(j.customerId) || '—'} (${j.customerId || '—'}); status=${j.status || '—'}; scheduled=${j.scheduledDate || '—'}; completed=${j.completedAt || '—'}; subtype=${j.serviceSubType || '—'}; payment=${j.paymentAmount ?? '—'}`
+        `- id=${j.id}; number=${j.jobNumber || '—'}; customer=${nameById.get(j.customerId) || '—'} (${j.customerId || '—'}); technician=${
+          technicianNameById[String(j.assignedTechnicianId || j.completedBy || '')] || '—'
+        }; status=${j.status || '—'}; scheduled=${j.scheduledDate || '—'}; completed=${j.completedAt || '—'}; subtype=${j.serviceSubType || '—'}; payment=${j.paymentAmount ?? '—'}`
       );
     }
     if (pack.truncated?.jobs) lines.push('  (job list truncated — use the exact counts above)');
