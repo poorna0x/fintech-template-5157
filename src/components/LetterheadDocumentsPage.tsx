@@ -53,6 +53,7 @@ import { toast } from 'sonner';
 
 import RichTextEditor from '@/components/letterhead/RichTextEditor';
 import TableBlockEditor from '@/components/letterhead/TableBlockEditor';
+import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
 import {
   LETTERHEAD_DOCUMENT_TYPE_LABEL,
   LetterheadBlock,
@@ -292,6 +293,13 @@ export default function LetterheadDocumentsPage({
     },
     []
   );
+  const getAiDraftSnapshot = useCallback(
+    () => ({ ...data }) as unknown as Record<string, unknown>,
+    [data]
+  );
+  const applyAiDraftSnapshot = useCallback((snapshot: Record<string, unknown>) => {
+    setData(normalizeLetterheadData(snapshot));
+  }, []);
 
   const switchDocumentType = useCallback((nextType: LetterheadDocumentType) => {
     setData((prev) => ({
@@ -732,6 +740,13 @@ export default function LetterheadDocumentsPage({
             </CardContent>
           </Card>
 
+          <AiDocumentDraftAssistant
+            kind="letterhead"
+            documentNoun="letterhead document"
+            getSnapshot={getAiDraftSnapshot}
+            onApply={applyAiDraftSnapshot}
+          />
+
           <Card className="border-slate-200 shadow-sm">
             <CardHeader className="py-3 px-4 sm:px-6">
               <CardTitle className="text-sm sm:text-base font-semibold text-slate-900">Header</CardTitle>
@@ -748,6 +763,61 @@ export default function LetterheadDocumentsPage({
                   onChange={(e) => updateData('title', e.target.value)}
                   placeholder="Service Report"
                 />
+              </div>
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-md border border-slate-200 bg-slate-50/70 p-3">
+                <div>
+                  <Label htmlFor="lh-title-align">Title alignment</Label>
+                  <Select
+                    value={data.titleAlignment || 'left'}
+                    onValueChange={(value: 'left' | 'center' | 'right') =>
+                      updateData('titleAlignment', value)
+                    }
+                  >
+                    <SelectTrigger id="lh-title-align">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="left">Left</SelectItem>
+                      <SelectItem value="center">Center</SelectItem>
+                      <SelectItem value="right">Right</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="lh-title-size">Title size</Label>
+                  <Select
+                    value={data.titleSize || 'medium'}
+                    onValueChange={(value: 'small' | 'medium' | 'large') =>
+                      updateData('titleSize', value)
+                    }
+                  >
+                    <SelectTrigger id="lh-title-size">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="small">Small</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="large">Large</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="lh-title-case">Title style</Label>
+                  <Select
+                    value={data.titleCase || 'uppercase'}
+                    onValueChange={(value: 'normal' | 'uppercase') =>
+                      updateData('titleCase', value)
+                    }
+                  >
+                    <SelectTrigger id="lh-title-case">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="uppercase">Uppercase</SelectItem>
+                      <SelectItem value="normal">Normal case</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div>
                 <Label htmlFor="lh-doc-no">Document Number</Label>

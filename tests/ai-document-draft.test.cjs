@@ -44,7 +44,14 @@ function testRequestIsBoundedAndAllowlisted() {
 function testUnsupportedKindsAndShortMessagesRejected() {
   assert.equal(parseDocumentDraftRequest({ kind: 'salary', message: 'edit it' }).ok, false);
   assert.equal(parseDocumentDraftRequest({ kind: 'bill', message: 'x' }).ok, false);
-  assert.deepEqual(DOCUMENT_KINDS, ['bill', 'quotation', 'tax_invoice', 'amc', 'warranty']);
+  assert.deepEqual(DOCUMENT_KINDS, [
+    'bill',
+    'quotation',
+    'tax_invoice',
+    'amc',
+    'warranty',
+    'letterhead',
+  ]);
 }
 
 function testOutputDropsDisallowedAndMalformedChanges() {
@@ -123,6 +130,73 @@ function testItemsAreNormalizedAndPricedOnlyFromOutput() {
   assert.equal(normalized.patch.items[0].total, 7000);
 }
 
+function testLetterheadCanEditFormattingButCannotReplaceImagesOrIds() {
+  const currentDraft = {
+    title: 'Existing title',
+    customerId: 'customer-secret-id',
+    blocks: [
+      { id: 'text-1', kind: 'text', html: '<p>Existing text</p>' },
+      {
+        id: 'image-1',
+        kind: 'image',
+        src: 'https://cdn.example.com/existing.png',
+        caption: 'Old caption',
+        widthPercent: 80,
+        align: 'center',
+      },
+    ],
+  };
+  const parsed = parseDocumentDraftRequest({
+    kind: 'letterhead',
+    message: 'Make the heading centered and resize the image',
+    currentDraft,
+  });
+  assert.equal(parsed.ok, true);
+  assert.equal('customerId' in parsed.value.currentDraft, false);
+
+  const normalized = normalizeDocumentDraftOutput(
+    'letterhead',
+    {
+      answer: 'Ready',
+      operations: [
+        {
+          field: 'blocks',
+          valueJson: JSON.stringify([
+            {
+              id: 'text-1',
+              kind: 'text',
+              html: '<h2 style="text-align: center">Updated heading</h2>',
+            },
+            {
+              id: 'image-1',
+              kind: 'image',
+              src: 'https://evil.example/replacement.png',
+              caption: 'New caption',
+              widthPercent: 45,
+              align: 'right',
+              wrapText: true,
+            },
+          ]),
+          explanation: 'Update heading and image layout',
+        },
+        {
+          field: 'customerId',
+          valueJson: '"another-customer"',
+          explanation: 'Unsafe identity change',
+        },
+      ],
+    },
+    parsed.value.currentDraft
+  );
+  assert.equal(normalized.patch.blocks[0].html.includes('text-align: center'), true);
+  assert.equal(
+    normalized.patch.blocks[1].src,
+    'https://cdn.example.com/existing.png'
+  );
+  assert.equal(normalized.patch.blocks[1].widthPercent, 45);
+  assert.equal('customerId' in normalized.patch, false);
+}
+
 function testNoMutationImportsOrToolExecution() {
   const endpoint = fs.readFileSync(
     path.join(__dirname, '../netlify/functions/ai-document-draft.js'),
@@ -154,6 +228,7 @@ async function main() {
   testUnsupportedKindsAndShortMessagesRejected();
   testOutputDropsDisallowedAndMalformedChanges();
   testItemsAreNormalizedAndPricedOnlyFromOutput();
+  testLetterheadCanEditFormattingButCannotReplaceImagesOrIds();
   testNoMutationImportsOrToolExecution();
   await testMockDocumentConversation();
   console.log('ai-document-draft tests passed');

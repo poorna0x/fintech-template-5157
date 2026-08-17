@@ -55,6 +55,8 @@ function buildSystemInstruction(kind, allowedFields) {
   const kindHint =
     kind === 'warranty'
       ? 'Warranty items use {key, category, label, durValue, durUnit ("months" or "days"), include, covered, inventory_id, job_part_id}. Use category OTHER for new manual coverage.'
+      : kind === 'letterhead'
+        ? 'Letterhead blocks are an ordered array of text, table, image, and pagebreak blocks. Preserve existing block IDs. Text block html may use p, h1-h4, strong, em, u, s, ul, ol, li, blockquote, hr, table, and safe inline text-align styles. Use style="text-align: left|center|right" for alignment. The main title also has titleAlignment (left/center/right), titleSize (small/medium/large), and titleCase (normal/uppercase). You may rewrite existing text, change heading levels, alignment, emphasis, lists, table titles/columns/rows, reorder blocks, add text/table/pagebreak blocks, and resize/align/wrap/caption existing images. Never add an image block, invent or replace an image src, or change customerId/customerCode.'
       : 'Document line items use the exact current item shape, normally including id, description, quantity, unitPrice, total, taxRate and taxAmount.';
   return [
     `You are a careful conversational editor for an open ${kind.replace('_', ' ')} form in the HydrogenRO / ElevenRO admin CRM.`,
@@ -65,7 +67,7 @@ function buildSystemInstruction(kind, allowedFields) {
     'valueJson must be a valid JSON-encoded replacement value for that entire top-level field.',
     'Return only fields the admin actually asked to change. Preserve every other field.',
     'When editing an array or object, copy the current shape and preserve IDs/keys and untouched entries.',
-    'You may add, edit, reorder, or remove draft line items, notes, and terms when the admin explicitly asks.',
+    'You may add, edit, reorder, or remove draft line items, body blocks, notes, and terms when the admin explicitly asks.',
     'You may update any allowlisted form field, including document number, dates, customer text, address choice, tax display, payment fields, warranty coverage, AMC settings, and document wording.',
     'For a newly requested line item, add a short unique id/key beginning with "ai-".',
     kindHint,

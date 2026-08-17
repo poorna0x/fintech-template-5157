@@ -1,6 +1,12 @@
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
-export type AiDocumentKind = 'bill' | 'quotation' | 'tax_invoice' | 'amc' | 'warranty';
+export type AiDocumentKind =
+  | 'bill'
+  | 'quotation'
+  | 'tax_invoice'
+  | 'amc'
+  | 'warranty'
+  | 'letterhead';
 
 export type AiDocumentChatTurn = {
   role: 'user' | 'assistant';

@@ -4,6 +4,7 @@ const DOCUMENT_KINDS = Object.freeze([
   'tax_invoice',
   'amc',
   'warranty',
+  'letterhead',
 ]);
 
 const COMMON_FIELDS = [
@@ -118,6 +119,35 @@ const ALLOWED_FIELDS = Object.freeze({
     'defaultUnit',
     'customNotes',
   ]),
+  letterhead: new Set([
+    'documentNumber',
+    'documentType',
+    'brand',
+    'title',
+    'titleAlignment',
+    'titleSize',
+    'titleCase',
+    'date',
+    'subject',
+    'referenceNumber',
+    'cc',
+    'customerName',
+    'customerCompany',
+    'siteLocation',
+    'customerPhone',
+    'customerEmail',
+    'blocks',
+    'leftSignatory',
+    'rightSignatory',
+    'useBrandSealAsStamp',
+    'brandSealVariant',
+    'hideLeftSignatory',
+    'hideRightSignatory',
+    'notes',
+    'terms',
+    'hideBrandFooter',
+    'showPageBorder',
+  ]),
 });
 
 const MAX_HISTORY_TURNS = 10;
@@ -160,7 +190,10 @@ function sanitizeDraft(kind, rawDraft) {
   const out = {};
   for (const field of allowed) {
     if (!Object.prototype.hasOwnProperty.call(rawDraft, field)) continue;
-    const value = sanitizeJsonValue(rawDraft[field]);
+    const value =
+      kind === 'letterhead' && field === 'blocks'
+        ? normalizeLetterheadBlocks(rawDraft[field], rawDraft[field])
+        : sanitizeJsonValue(rawDraft[field]);
     if (value !== undefined) out[field] = value;
   }
   const json = JSON.stringify(out);
@@ -220,8 +253,102 @@ function normalizeItems(kind, value) {
     .filter(Boolean);
 }
 
+function normalizeLetterheadBlocks(value, currentValue) {
+  if (!Array.isArray(value)) return null;
+  const currentBlocks = Array.isArray(currentValue) ? currentValue : [];
+  const currentById = new Map(
+    currentBlocks
+      .filter((block) => block && typeof block === 'object' && block.id)
+      .map((block) => [String(block.id), block])
+  );
+  return value
+    .slice(0, 40)
+    .map((raw, index) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+      const id = cleanString(raw.id || `ai-letterhead-${Date.now()}-${index}`, 100);
+      const existing = currentById.get(id);
+      if (raw.kind === 'text') {
+        return {
+          id,
+          kind: 'text',
+          html: String(raw.html || '').slice(0, 16_000),
+        };
+      }
+      if (raw.kind === 'table') {
+        const columns = (Array.isArray(raw.columns) ? raw.columns : [])
+          .slice(0, 12)
+          .map((item) => cleanString(item, 160));
+        if (!columns.length) columns.push('Column 1');
+        return {
+          id,
+          kind: 'table',
+          title: cleanString(raw.title, 200),
+          columns,
+          rows: (Array.isArray(raw.rows) ? raw.rows : []).slice(0, 60).map((row) =>
+            (Array.isArray(row) ? row : [])
+              .slice(0, columns.length)
+              .map((cell) => String(cell || '').slice(0, 500))
+          ),
+        };
+      }
+      if (raw.kind === 'image') {
+        // AI may resize, align, wrap, caption, move or remove an existing image,
+        // but it may never invent a URL or replace uploaded media.
+        if (!existing || existing.kind !== 'image' || !existing.src) return null;
+        return {
+          id,
+          kind: 'image',
+          src: String(existing.src).slice(0, 2_000_000),
+          caption: cleanString(raw.caption, 300),
+          widthPercent: Math.min(100, Math.max(10, Number(raw.widthPercent) || 80)),
+          align: raw.align === 'left' || raw.align === 'right' ? raw.align : 'center',
+          wrapText: raw.wrapText === true,
+        };
+      }
+      if (raw.kind === 'pagebreak') return { id, kind: 'pagebreak' };
+      return null;
+    })
+    .filter(Boolean);
+}
+
 function normalizeFieldValue(kind, field, value, currentValue) {
   if (field === 'items') return normalizeItems(kind, value);
+  if (kind === 'letterhead' && field === 'blocks') {
+    return normalizeLetterheadBlocks(value, currentValue);
+  }
+  if (kind === 'letterhead' && field === 'documentType') {
+    return ['service_report', 'amc_report', 'custom_document', 'letterhead'].includes(value)
+      ? value
+      : null;
+  }
+  if (kind === 'letterhead' && field === 'brand') {
+    return value === 'hydrogenro' || value === 'elevenro' ? value : null;
+  }
+  if (kind === 'letterhead' && field === 'brandSealVariant') {
+    return value === 'sign' || value === 'stamp' ? value : null;
+  }
+  if (kind === 'letterhead' && field === 'titleAlignment') {
+    return ['left', 'center', 'right'].includes(value) ? value : null;
+  }
+  if (kind === 'letterhead' && field === 'titleSize') {
+    return ['small', 'medium', 'large'].includes(value) ? value : null;
+  }
+  if (kind === 'letterhead' && field === 'titleCase') {
+    return value === 'normal' || value === 'uppercase' ? value : null;
+  }
+  if (
+    kind === 'letterhead' &&
+    (field === 'leftSignatory' || field === 'rightSignatory')
+  ) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    return {
+      name: cleanString(value.name, 160),
+      designation: cleanString(value.designation, 160),
+      ...(currentValue?.imageUrl
+        ? { imageUrl: String(currentValue.imageUrl).slice(0, 2_000_000) }
+        : {}),
+    };
+  }
   if (field === 'termItems') {
     if (!Array.isArray(value)) return null;
     return value

@@ -57,9 +57,83 @@ const LETTERHEAD_RICH_TEXT_CONFIG = {
   ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
 };
 
-function sanitizeRichTextHtml(html: string): string {
+export function sanitizeLetterheadRichTextHtml(html: string): string {
   if (!html) return '';
-  return String(DOMPurify.sanitize(html, LETTERHEAD_RICH_TEXT_CONFIG));
+  const clean = String(DOMPurify.sanitize(html, LETTERHEAD_RICH_TEXT_CONFIG));
+  // Rich text only needs alignment from inline CSS. Strip every other style so
+  // an AI/user draft cannot smuggle remote URLs or layout-breaking CSS.
+  return clean.replace(/\sstyle="([^"]*)"/gi, (_match, style: string) => {
+    const alignment = String(style).match(/(?:^|;)\s*text-align\s*:\s*(left|center|right)\s*(?:;|$)/i);
+    return alignment ? ` style="text-align: ${alignment[1].toLowerCase()}"` : '';
+  });
+}
+
+function normalizeLetterheadImageSrc(value: unknown): string {
+  const src = String(value || '').trim();
+  if (
+    /^https:\/\//i.test(src) ||
+    /^\/(?!\/)/.test(src) ||
+    /^data:image\/(?:png|jpe?g|webp);base64,/i.test(src)
+  ) {
+    return src.slice(0, 2_000_000);
+  }
+  return '';
+}
+
+function normalizeLetterheadBlocks(rawBlocks: unknown, fallback: LetterheadBlock[]): LetterheadBlock[] {
+  if (!Array.isArray(rawBlocks)) return fallback;
+  const blocks = rawBlocks
+    .slice(0, 40)
+    .map((raw, index): LetterheadBlock | null => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+      const block = raw as Record<string, unknown>;
+      const id = String(block.id || `block-${index + 1}`).slice(0, 100);
+      if (block.kind === 'text') {
+        return {
+          id,
+          kind: 'text',
+          html: sanitizeLetterheadRichTextHtml(String(block.html || '').slice(0, 16_000)),
+        };
+      }
+      if (block.kind === 'table') {
+        const columns = (Array.isArray(block.columns) ? block.columns : [])
+          .slice(0, 12)
+          .map((value) => String(value || '').slice(0, 160));
+        const safeColumns = columns.length ? columns : ['Column 1'];
+        const rows = (Array.isArray(block.rows) ? block.rows : [])
+          .slice(0, 60)
+          .map((row) =>
+            (Array.isArray(row) ? row : [])
+              .slice(0, safeColumns.length)
+              .map((value) => String(value || '').slice(0, 500))
+          );
+        return {
+          id,
+          kind: 'table',
+          title: String(block.title || '').slice(0, 200),
+          columns: safeColumns,
+          rows,
+        };
+      }
+      if (block.kind === 'image') {
+        const src = normalizeLetterheadImageSrc(block.src);
+        if (!src) return null;
+        return {
+          id,
+          kind: 'image',
+          src,
+          caption: String(block.caption || '').slice(0, 300),
+          widthPercent: Math.min(100, Math.max(10, Number(block.widthPercent) || 80)),
+          align:
+            block.align === 'left' || block.align === 'right' ? block.align : 'center',
+          wrapText: block.wrapText === true,
+        };
+      }
+      if (block.kind === 'pagebreak') return { id, kind: 'pagebreak' };
+      return null;
+    })
+    .filter((block): block is LetterheadBlock => block !== null);
+  return blocks.length ? blocks : fallback;
 }
 
 export type LetterheadDocumentType =
@@ -108,6 +182,9 @@ export interface LetterheadDocumentData {
 
   /** Header form fields. */
   title: string;
+  titleAlignment?: 'left' | 'center' | 'right';
+  titleSize?: 'small' | 'medium' | 'large';
+  titleCase?: 'normal' | 'uppercase';
   date: string;
   subject?: string;
   /** Free-text reference (PO / Work Order / Job ID). */
@@ -275,6 +352,9 @@ export function createEmptyLetterhead(
     documentType: type,
     brand,
     title: LETTERHEAD_DOCUMENT_TYPE_LABEL[type],
+    titleAlignment: 'left',
+    titleSize: 'medium',
+    titleCase: 'uppercase',
     date: new Date().toISOString().slice(0, 10),
     subject: '',
     referenceNumber: '',
@@ -311,9 +391,16 @@ export function normalizeLetterheadData(raw: any): LetterheadDocumentData {
   return {
     ...base,
     ...raw,
-    blocks: Array.isArray(raw?.blocks) && raw.blocks.length > 0 ? raw.blocks : base.blocks,
+    blocks: normalizeLetterheadBlocks(raw?.blocks, base.blocks),
     brand,
     documentType: type,
+    titleAlignment:
+      raw?.titleAlignment === 'center' || raw?.titleAlignment === 'right'
+        ? raw.titleAlignment
+        : 'left',
+    titleSize:
+      raw?.titleSize === 'small' || raw?.titleSize === 'large' ? raw.titleSize : 'medium',
+    titleCase: raw?.titleCase === 'normal' ? 'normal' : 'uppercase',
   };
 }
 
@@ -322,7 +409,7 @@ export function normalizeLetterheadData(raw: any): LetterheadDocumentData {
 function renderBlockHtml(block: LetterheadBlock): string {
   switch (block.kind) {
     case 'text':
-      return `<div class="lh-text-block">${sanitizeRichTextHtml(block.html || '')}</div>`;
+      return `<div class="lh-text-block">${sanitizeLetterheadRichTextHtml(block.html || '')}</div>`;
     case 'table': {
       const cols = block.columns.length > 0 ? block.columns : ['Column 1'];
       const rows = block.rows.length > 0 ? block.rows : [cols.map(() => '')];
@@ -507,6 +594,13 @@ export function buildLetterheadInnerHtml(data: LetterheadDocumentData): string {
   const company = getCompanyInfoForBrand(data.brand);
   const typeLabel = LETTERHEAD_DOCUMENT_TYPE_LABEL[data.documentType] || 'Document';
   const brandLabel = getDocumentBrandLabel(data.brand);
+  const titleAlignment =
+    data.titleAlignment === 'center' || data.titleAlignment === 'right'
+      ? data.titleAlignment
+      : 'left';
+  const titleSize =
+    data.titleSize === 'small' ? 15 : data.titleSize === 'large' ? 22 : 18;
+  const titleTransform = data.titleCase === 'normal' ? 'none' : 'uppercase';
 
   const bodyBlocks = (data.blocks || []).map((b) => renderBlockHtml(b)).join('');
   const headerMeta = renderHeaderTwoColHtml(data);
@@ -529,7 +623,7 @@ export function buildLetterheadInnerHtml(data: LetterheadDocumentData): string {
       </div>
 
       <div class="lh-title-row">
-        <div class="lh-title">${sanitizeForTemplate(
+        <div class="lh-title" style="text-align: ${titleAlignment}; font-size: ${titleSize}px; text-transform: ${titleTransform};">${sanitizeForTemplate(
           data.title || typeLabel
         )}</div>
         <div class="lh-brand-tag">${sanitizeForTemplate(brandLabel)}</div>
@@ -654,6 +748,7 @@ const LETTERHEAD_BASE_CSS = `
     gap: 12px;
   }
   .lh-title {
+    flex: 1;
     font-size: 18px;
     font-weight: 700;
     color: #0f172a;
