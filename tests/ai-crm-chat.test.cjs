@@ -14,6 +14,7 @@ const {
 } = require('../netlify/functions/ai-crm-schemas');
 const {
   extractQueryHints,
+  hasSearchableTarget,
   detectOverviewIntent,
   detectCustomerValueRanking,
   detectTechnicianBillingRanking,
@@ -120,6 +121,40 @@ function testNameSurvivesActionSentences() {
 
   const opsOnly = extractQueryHints('how many jobs are pending today');
   assert.deepEqual(opsOnly.nameTokens, []);
+}
+
+function testGreetingsDoNotSearchTheCrm() {
+  for (const greeting of ['hi', 'hello', 'hey there', 'thanks', 'what can you do']) {
+    const hints = extractQueryHints(greeting);
+    assert.equal(
+      hasSearchableTarget(hints, null),
+      false,
+      `"${greeting}" must not trigger a CRM search`
+    );
+    assert.equal(detectOverviewIntent(greeting, '2026-08-17').active, false);
+  }
+
+  // Partial phones and customer/job codes must still search.
+  assert.equal(hasSearchableTarget(extractQueryHints('9880693'), null), true);
+  assert.equal(hasSearchableTarget(extractQueryHints('C1730'), null), true);
+  assert.equal(hasSearchableTarget(extractQueryHints('find Ramesh'), null), true);
+  assert.equal(hasSearchableTarget(extractQueryHints('hi'), 'customer-uuid'), true);
+
+  const context = formatContextForPrompt({
+    customers: [],
+    jobs: [],
+    reminders: [],
+    payments: [],
+    documents: [],
+    technicians: [],
+    stats: { today: '2026-08-17' },
+    truncated: {},
+    intent: { scopes: [], statuses: null, range: { label: 'today' } },
+    noLookup: true,
+  });
+  assert.match(context, /No CRM lookup was performed/);
+  assert.doesNotMatch(context, /Customers:/);
+  assert.doesNotMatch(context, /Jobs:/);
 }
 
 function testJobDraftTimeNormalization() {
@@ -426,6 +461,7 @@ async function main() {
   testMutationToolsBanned();
   testLookupHintsAndLimits();
   testNameSurvivesActionSentences();
+  testGreetingsDoNotSearchTheCrm();
   testJobDraftTimeNormalization();
   testCustomerDraftActionsAreReviewOnlyAndBounded();
   testOverviewIntentDetection();

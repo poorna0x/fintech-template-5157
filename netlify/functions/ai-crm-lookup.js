@@ -76,6 +76,10 @@ const NAME_STOP_WORDS = new Set(
     'alltime', 'billed', 'billing', 'biggest', 'client', 'entire', 'ever', 'highest', 'largest', 'lifetime',
     'paying', 'spend', 'spent', 'thing', 'top', 'value', 'technician', 'technicians', 'tech',
     'tehcncian', 'tehcnician',
+    // Greetings and chit-chat must never become a customer search term.
+    'bye', 'cool', 'everything', 'fine', 'good', 'great', 'greetings', 'hai', 'hello', 'hey',
+    'hii', 'hiii', 'holdon', 'hola', 'namaste', 'nice', 'okay', 'okey', 'please', 'sorry',
+    'sure', 'thank', 'thanks', 'thankyou', 'there', 'welcome', 'yeah', 'yes',
   ].map((w) => w.toLowerCase())
 );
 
@@ -149,13 +153,35 @@ function extractQueryHints(message) {
 
   const nameTokens = extractNameTokens(text);
 
+  // Partial phones and customer/job codes are the only free-text terms worth a
+  // substring search. Searching the whole sentence makes "hi" match "Rohith".
+  const lookupTerms = [];
+  if (jobNumber) lookupTerms.push(jobNumber);
+  if (!phone) {
+    for (const run of text.match(/\d{4,}/g) || []) {
+      if (!lookupTerms.includes(run)) lookupTerms.push(run);
+    }
+  }
+
   return {
     raw: text.slice(0, 1500),
     phone,
     jobNumber,
     nameTokens,
     nameHint: nameTokens[0] || null,
+    lookupTerms: lookupTerms.slice(0, 3),
   };
+}
+
+/** True when there is nothing concrete to look up for this message. */
+function hasSearchableTarget(hints, focusCustomerId) {
+  return Boolean(
+    focusCustomerId ||
+      hints?.phone ||
+      hints?.jobNumber ||
+      (hints?.nameTokens || []).length ||
+      (hints?.lookupTerms || []).length
+  );
 }
 
 function istDateKey(date = new Date()) {
@@ -442,8 +468,8 @@ async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
   const queries = [];
   if (hints.phone) queries.push(hints.phone);
   for (const token of hints.nameTokens || []) queries.push(token);
-  if (!queries.length && hints.raw && opts.allowRawFallback !== false) {
-    queries.push(hints.raw.slice(0, 60));
+  if (!queries.length) {
+    for (const term of hints.lookupTerms || []) queries.push(term);
   }
 
   for (const q of queries) {
@@ -1164,9 +1190,7 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
   const hints = extractQueryHints(message);
   const detected = detectOverviewIntent(message, todayKey);
   // A request naming a person or job is about them, not a whole-day sweep.
-  const hasSpecificTarget = Boolean(
-    hints.phone || hints.jobNumber || (hints.nameTokens || []).length || focusCustomerId
-  );
+  const hasSpecificTarget = hasSearchableTarget(hints, focusCustomerId);
   const isRankingIntent =
     detected.scopes.has('customer_value_ranking') ||
     detected.scopes.has('technician_billing_ranking');
@@ -1174,9 +1198,26 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
     ...detected,
     active: detected.active && (!hasSpecificTarget || isRankingIntent),
   };
-  const customers = await searchCustomers(db, hints, focusCustomerId, {
-    allowRawFallback: !intent.active,
-  });
+
+  // Greetings and chit-chat name no record and ask for no list, so skip the DB
+  // entirely instead of showing unrelated rows.
+  if (!intent.active && !hasSpecificTarget) {
+    return {
+      customers: [],
+      jobs: [],
+      reminders: [],
+      payments: [],
+      documents: [],
+      technicians: [],
+      stats: { today: todayKey, weekday: istWeekdayName(todayKey) },
+      truncated: {},
+      intent: { scopes: [], statuses: null, range: detected.range },
+      hints,
+      noLookup: true,
+    };
+  }
+
+  const customers = await searchCustomers(db, hints, focusCustomerId);
   const customerIds = customers.map((c) => c.id);
   const jobs = await searchJobs(db, hints, customerIds);
 
@@ -1292,6 +1333,12 @@ function formatContextForPrompt(pack) {
       1
     )}; yesterday was ${addDaysKey(today, -1)}. Use these for relative dates, including misspellings.`
   );
+  if (pack.noLookup) {
+    lines.push(
+      'No CRM lookup was performed because the message did not name a customer, job or list to fetch. Reply conversationally and invite a specific request. Do not claim records are missing.'
+    );
+    return lines.join('\n');
+  }
   if (pack.intent?.scopes?.length) {
     const showStatuses = pack.intent.statuses && pack.intent.scopes.includes('jobs');
     const periodLabel =
@@ -1433,6 +1480,7 @@ module.exports = {
   TOP_TECHNICIAN_LIMIT,
   ONGOING_JOB_STATUSES,
   extractQueryHints,
+  hasSearchableTarget,
   detectOverviewIntent,
   detectCustomerValueRanking,
   detectTechnicianBillingRanking,
