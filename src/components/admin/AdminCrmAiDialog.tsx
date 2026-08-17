@@ -106,7 +106,12 @@ export default function AdminCrmAiDialog({
       return;
     }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [open, turns, loading]);
+    // Keep the composer ready for the next question once a reply lands. Skipped
+    // on touch-only devices so the on-screen keyboard does not cover the answer.
+    if (loading) return;
+    if (typeof window !== 'undefined' && !window.matchMedia('(pointer: fine)').matches) return;
+    inputRef.current?.focus({ preventScroll: true });
+  }, [open, turns, loading, inputRef]);
 
   const send = async () => {
     const message = input.trim();
@@ -549,7 +554,6 @@ export default function AdminCrmAiDialog({
               placeholder="Ask anything about your CRM…"
               rows={1}
               maxLength={1500}
-              disabled={loading}
               className="min-h-0 resize-none overflow-hidden border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-transparent"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
