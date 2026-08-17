@@ -54,6 +54,8 @@ const CRM_CHAT_SCHEMA = {
               'create_reminder',
               'open_app',
               'open_document_draft',
+              'open_job',
+              'open_customer_composer',
             ],
           },
           label: { type: 'string' },
@@ -69,6 +71,9 @@ const CRM_CHAT_SCHEMA = {
               target: { type: 'string' },
               documentType: { type: 'string' },
               instruction: { type: 'string' },
+              mode: { type: 'string' },
+              channel: { type: 'string' },
+              template: { type: 'string' },
               fullName: { type: 'string' },
               phone: { type: 'string' },
               alternatePhone: { type: 'string' },
@@ -132,9 +137,10 @@ function buildSystemInstruction() {
   return [
     'You are an admin CRM assistant for HydrogenRO / ElevenRO.',
     'Answer using ONLY the provided CRM lookup facts. Never invent customers, jobs, amounts, or dates.',
+    'If the facts include an exact customer-code or phone match, never claim that target was not found. Associate listed documents and jobs with that matched customer.',
     'Conversation history explains references such as "those" or "last month", but it is not current CRM evidence. For the current answer, never reuse a count, amount, row, or date from an earlier assistant reply unless the current CRM lookup facts provide it again.',
     'The facts include today\'s IST date, exact counts, and capped lists. Use the exact counts for "how many" and totals; never count the rows in a list yourself, because lists are truncated.',
-    'Job value figures are billed amounts for completed jobs, not confirmed cash collection — word it that way.',
+    'For revenue/collection facts, follow completedJobValueBasis exactly. Billed basis includes unpaid work. Confirmed-paid basis includes completed jobs currently marked PAID by completion date, but is still not a cash-transaction ledger.',
     'Expense totals come from business_expenses and technician_expenses. Keep the two types separate, and quote the combined total only when useful. Do not call revenue minus these two totals net profit because other costs may exist.',
     'If an expense source is marked unavailable, say that its data could not be loaded; never turn an unavailable source into zero.',
     'For customer value rankings, preserve the authoritative rank order. "confirmedFullyPaidINR" counts only completed jobs marked PAID; "completedJobBilledINR" can include unpaid or partially paid work. State both when useful and never call billed value collected cash.',
@@ -148,11 +154,14 @@ function buildSystemInstruction() {
     'Reminder facts explicitly exclude pending-payment reminders. Never rename non-payment reminders as payment reminders; payment-reminder questions use the payments facts.',
     'Only say no records were found when the relevant fact sections are empty or zero.',
     'Return ONLY JSON with keys: answer, confidence (0-1), requiresHuman (boolean), warnings (string[]), proposedActions (array).',
-    'proposedActions types are limited to: open_customer, create_customer, create_customer_and_job, edit_customer, create_job, schedule_follow_up, create_reminder, open_app, open_document_draft.',
+    'proposedActions types are limited to: open_customer, create_customer, create_customer_and_job, edit_customer, create_job, schedule_follow_up, create_reminder, open_app, open_document_draft, open_job, open_customer_composer.',
     'Every proposed action MUST set requiresConfirm=true. Drafts only open normal CRM forms for admin review.',
     'Propose create, edit, job, follow-up, or reminder actions only when the user explicitly asks to perform or draft that action. A lookup such as "AMC expiring soon" must not invent reminder drafts.',
-    'Use open_app when the admin asks to open, go to, show, manage, configure, or edit an app screen/settings area. payload.target MUST be one of: dashboard, ongoing_jobs, completed_jobs, followup_jobs, payments, billing, analytics, inventory, gst_invoices, amc_contracts, letterhead_documents, settings, whatsapp_inbox, whatsapp_settings, calling, reminders, pending_payments, recurring_service, advanced_search, warranty, privacy_center, pdf_authenticity, ai_usage, database_storage, direct_sale, lead_catalog, job_reviews, technicians, technician_locations, todo_tasks, payment_qr, quick_upi_qr, product_qr, data_export, app_lock, recent_accounts, quick_customer, amount_trackers, sent_email_log, measure_distance, arrange_visit_order, nearby_jobs, technician_live_location, message_technician. Never invent a URL or target.',
+    'Use open_app when the admin asks to open, go to, show, manage, configure, or edit an app screen/settings area. payload.target MUST be one of: dashboard, ongoing_jobs, completed_jobs, followup_jobs, payments, billing, analytics, inventory, gst_invoices, amc_contracts, letterhead_documents, settings, dashboard_settings, whatsapp_inbox, whatsapp_settings, calling, reminders, pending_payments, recurring_service, advanced_search, warranty, privacy_center, pdf_authenticity, ai_usage, database_storage, direct_sale, lead_catalog, job_reviews, technicians, technician_locations, todo_tasks, payment_qr, quick_upi_qr, product_qr, data_export, app_lock, recent_accounts, quick_customer, amount_trackers, sent_email_log, measure_distance, arrange_visit_order, nearby_jobs, technician_live_location, message_technician. Use dashboard_settings for PDF compression, follow-up glow, non-AMC follow-up count, or job-assignment WhatsApp preferences. Use ai_usage for AI provider/model selection and usage statistics. Never invent a URL or target.',
     'Use open_document_draft when the admin asks to draft/open/prepare a quotation, service bill, tax invoice, AMC, or warranty for a looked-up customer. payload must contain documentType (quotation|service_bill|tax_invoice|amc|warranty), the looked-up customerId, and instruction copied from the user request. This opens the normal document form and carries the instruction into its AI editor; it never generates, sends, downloads, or saves automatically.',
+    'Use open_job for a looked-up job when the admin asks to view details, edit, assign, reassign, complete, or schedule a follow-up. payload must contain the looked-up jobId and mode (details|edit|assign|reassign|complete|follow_up). It only opens the existing CRM review form.',
+    'Do not propose assign, reassign, or complete for a job already marked COMPLETED. Explain that it is already completed; viewing details or scheduling a follow-up may still be offered.',
+    'Use open_customer_composer when the admin asks to write, draft, compose, email, or WhatsApp a looked-up customer. payload must contain customerId, channel (whatsapp|email), and template (general|pending_payment|service_reminder|quotation|invoice). It opens a composer but never sends.',
     'A proposed action has not happened yet. Say it is ready and tell the admin to tap the action button; never claim that you already opened, prepared, saved, sent, or changed something.',
     'Use create_customer when the admin asks to add a new customer. Copy only supplied name, phone, email, address, visible location label, Google Maps link, RO/softener type, brand, model and notes. Never invent missing values.',
     'Use create_customer_and_job when the admin explicitly asks for both a new customer and a job. Include the customer fields plus the job fields.',
@@ -184,9 +193,23 @@ function filterProposedActionsForPlan(actions, tools) {
     .map((action) => ({ ...action, requiresConfirm: true }));
 }
 
-function deriveSafeUiActions({ message, tools, customers }) {
+function filterProposedActionsForRequest(actions, message) {
+  const lower = String(message || '').toLowerCase();
+  return (Array.isArray(actions) ? actions : []).filter((action) => {
+    if (action?.type === 'schedule_follow_up') {
+      return /\bfollow[\s-]?up\b|\breschedule\b/.test(lower);
+    }
+    if (action?.type === 'create_reminder') {
+      return /\bremind(?:er| me)?\b/.test(lower);
+    }
+    return true;
+  });
+}
+
+function deriveSafeUiActions({ message, tools, customers, jobs }) {
   const lower = String(message || '').toLowerCase();
   const rows = Array.isArray(customers) ? customers : [];
+  const jobRows = Array.isArray(jobs) ? jobs : [];
   const actions = [];
 
   if (
@@ -228,21 +251,120 @@ function deriveSafeUiActions({ message, tools, customers }) {
     }
   }
 
+  if (Array.isArray(tools) && tools.includes('action_draft') && jobRows[0]?.id) {
+    const mode = /\breassign\b/.test(lower)
+      ? 'reassign'
+      : /\bassign\b/.test(lower)
+        ? 'assign'
+        : /\bcomplete\b|\bclose\b|\bfinish\b/.test(lower)
+          ? 'complete'
+          : /\bfollow[\s-]?up\b|\breschedule\b/.test(lower)
+            ? 'follow_up'
+            : /\bedit\b|\bchange\b|\bupdate\b/.test(lower)
+              ? 'edit'
+              : /\bopen\b|\bview\b|\bshow\b|\bdetails?\b/.test(lower)
+                ? 'details'
+                : null;
+    if (mode) {
+      actions.push({
+        type: 'open_job',
+        label: `${mode === 'details' ? 'Open' : 'Review'} job ${jobRows[0].jobNumber || ''}`.trim(),
+        confidence: 0.95,
+        requiresConfirm: true,
+        payload: { jobId: String(jobRows[0].id), mode },
+      });
+    }
+  }
+
+  if (
+    Array.isArray(tools) &&
+    tools.includes('action_draft') &&
+    rows[0]?.id &&
+    /\b(?:whatsapp|email|compose|write|message)\b/.test(lower)
+  ) {
+    const channel = /\bemail\b/.test(lower) ? 'email' : 'whatsapp';
+    const template = /\bpending payment\b|\bpayment due\b/.test(lower)
+      ? 'pending_payment'
+      : /\bservice reminder\b|\bservice due\b/.test(lower)
+        ? 'service_reminder'
+        : /\bquotation\b|\bquote\b/.test(lower)
+          ? 'quotation'
+          : /\binvoice\b/.test(lower)
+            ? 'invoice'
+            : 'general';
+    actions.push({
+      type: 'open_customer_composer',
+      label: `Open ${channel === 'email' ? 'email' : 'WhatsApp'} composer for ${
+        rows[0].name || 'customer'
+      }`,
+      confidence: 0.95,
+      requiresConfirm: true,
+      payload: { customerId: String(rows[0].id), channel, template },
+    });
+  }
+
   return actions;
 }
 
 function mergeSafeUiActions(modelActions, derivedActions) {
-  const out = Array.isArray(modelActions) ? [...modelActions] : [];
+  let out = Array.isArray(modelActions) ? [...modelActions] : [];
   for (const action of Array.isArray(derivedActions) ? derivedActions : []) {
+    if (['open_job', 'open_customer_composer', 'open_document_draft'].includes(action?.type)) {
+      out = out.filter((existing) => {
+        if (existing?.type !== action.type) return true;
+        if (action.payload?.jobId) return existing.payload?.jobId !== action.payload.jobId;
+        if (action.payload?.customerId) {
+          return existing.payload?.customerId !== action.payload.customerId;
+        }
+        return false;
+      });
+    }
+    if (
+      action?.type === 'open_job' &&
+      action?.payload?.mode === 'follow_up' &&
+      out.some(
+        (existing) =>
+          existing?.type === 'schedule_follow_up' &&
+          existing?.payload?.jobId === action.payload?.jobId
+      )
+    ) {
+      continue;
+    }
     const duplicate = out.some(
       (existing) =>
         existing?.type === action.type &&
         existing?.payload?.customerId === action.payload?.customerId &&
-        existing?.payload?.documentType === action.payload?.documentType
+        existing?.payload?.documentType === action.payload?.documentType &&
+        existing?.payload?.jobId === action.payload?.jobId &&
+        existing?.payload?.mode === action.payload?.mode &&
+        existing?.payload?.channel === action.payload?.channel
     );
     if (!duplicate) out.push(action);
   }
   return out.slice(0, 4);
+}
+
+function filterActionsForEntityState(actions, jobs) {
+  const jobById = new Map(
+    (Array.isArray(jobs) ? jobs : []).map((job) => [String(job.id), String(job.status || '')])
+  );
+  return (Array.isArray(actions) ? actions : []).filter((action) => {
+    if (action?.type !== 'open_job') return true;
+    const status = jobById.get(String(action.payload?.jobId || ''));
+    if (status !== 'COMPLETED') return true;
+    return !['edit', 'assign', 'reassign', 'complete'].includes(action.payload?.mode);
+  });
+}
+
+function normalizePendingActionAnswer(answer, actions) {
+  const text = String(answer || '');
+  if (!(Array.isArray(actions) && actions.length)) return text;
+  return text
+    .replace(/\bI have navigated to\b/gi, 'I can open')
+    .replace(/\bI navigated to\b/gi, 'I can open')
+    .replace(/\bI have opened\b/gi, 'I can open')
+    .replace(/\bI opened\b/gi, 'I can open')
+    .replace(/\bI have prepared the (dashboard|WhatsApp|AI) settings\b/gi, 'I can open the $1 settings');
 }
 
 function buildUserPrompt(message, contextText, history = []) {
@@ -545,18 +667,26 @@ exports.handler = async (event) => {
     }
 
     // Hard guarantee: every action still requires human confirmation.
-    const proposedActions = mergeSafeUiActions(
-      filterProposedActionsForPlan(normalized.value.proposedActions, plan.tools),
-      deriveSafeUiActions({
-        message: parsed.value.message,
-        tools: plan.tools,
-        customers: pack.customers,
-      })
+    const proposedActions = filterActionsForEntityState(
+      mergeSafeUiActions(
+        filterProposedActionsForRequest(
+          filterProposedActionsForPlan(normalized.value.proposedActions, plan.tools),
+          parsed.value.message
+        ),
+        deriveSafeUiActions({
+          message: parsed.value.message,
+          tools: plan.tools,
+          customers: pack.customers,
+          jobs: pack.jobs,
+        })
+      ),
+      pack.jobs
     );
+    const answer = normalizePendingActionAnswer(normalized.value.answer, proposedActions);
 
     responseHash = sha256(
       JSON.stringify({
-        answer: normalized.value.answer,
+        answer,
         actions: proposedActions,
         customerIds: pack.customers.map((c) => c.id),
       })
@@ -565,7 +695,7 @@ exports.handler = async (event) => {
 
     return json(200, headers, {
       success: true,
-      answer: normalized.value.answer,
+      answer,
       confidence: normalized.value.confidence,
       requiresHuman: normalized.value.requiresHuman,
       warnings: normalized.value.warnings,
@@ -618,7 +748,10 @@ module.exports._test = {
   buildSystemInstruction,
   buildUserPrompt,
   filterProposedActionsForPlan,
+  filterProposedActionsForRequest,
   deriveSafeUiActions,
   mergeSafeUiActions,
+  filterActionsForEntityState,
+  normalizePendingActionAnswer,
   CRM_CHAT_SCHEMA,
 };

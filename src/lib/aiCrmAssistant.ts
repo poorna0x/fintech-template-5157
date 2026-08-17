@@ -13,7 +13,9 @@ export type AiCrmActionType =
   | 'schedule_follow_up'
   | 'create_reminder'
   | 'open_app'
-  | 'open_document_draft';
+  | 'open_document_draft'
+  | 'open_job'
+  | 'open_customer_composer';
 
 export type AiCrmAppTarget =
   | 'dashboard'
@@ -28,6 +30,7 @@ export type AiCrmAppTarget =
   | 'amc_contracts'
   | 'letterhead_documents'
   | 'settings'
+  | 'dashboard_settings'
   | 'whatsapp_inbox'
   | 'whatsapp_settings'
   | 'calling'
@@ -72,6 +75,17 @@ export type AiCrmOpenDocumentDraft = {
   documentType: AiCrmDocumentDraftType;
   customerId: string;
   instruction?: string;
+};
+
+export type AiCrmOpenJobDraft = {
+  jobId: string;
+  mode: 'details' | 'edit' | 'assign' | 'reassign' | 'complete' | 'follow_up';
+};
+
+export type AiCrmOpenCustomerComposer = {
+  customerId: string;
+  channel: 'whatsapp' | 'email';
+  template: 'general' | 'pending_payment' | 'service_reminder' | 'quotation' | 'invoice';
 };
 
 export type AiCrmCustomerEntity = {
@@ -216,7 +230,9 @@ export type AiCrmProposedAction = {
     | AiCrmFollowUpDraft
     | AiCrmReminderDraft
     | { target: AiCrmAppTarget }
-    | AiCrmOpenDocumentDraft;
+    | AiCrmOpenDocumentDraft
+    | AiCrmOpenJobDraft
+    | AiCrmOpenCustomerComposer;
 };
 
 export type AiCrmChatResult =

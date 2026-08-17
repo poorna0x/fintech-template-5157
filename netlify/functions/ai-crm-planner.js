@@ -63,6 +63,8 @@ function plannerSystemInstruction() {
     'For create/edit requests choose action_draft plus customer_search or job_search only when an existing record must be found.',
     'Use app_navigation when the user asks to open, go to, manage, configure, or edit an allowlisted CRM screen/settings area. Navigation never changes a setting by itself.',
     'For a quotation, bill, tax invoice, AMC, or warranty draft for an existing customer, choose action_draft plus customer_search so the answer can propose open_document_draft.',
+    'For view/edit/assign/reassign/complete/follow-up requests about an existing job, choose action_draft plus job_search.',
+    'For WhatsApp/email draft or compose requests about an existing customer, choose action_draft plus customer_search. The CRM only opens the composer and never sends automatically.',
     'directAnswer must be empty for route=crm.',
   ].join(' ');
 }
@@ -122,10 +124,45 @@ function inferDeterministicPlan(message, history = []) {
 
   const text = String(message || '').trim();
   const lower = normalizeCrmQueryText(text).toLowerCase();
+  const directHints = extractQueryHints(text);
+  const hasDirectJobReference =
+    Boolean(directHints.jobNumber) &&
+    (!/^C\d+$/i.test(String(directHints.jobNumber)) || /\bjob\b/.test(lower));
+  if (
+    hasDirectJobReference &&
+    /\b(?:open|view|show|details?|edit|change|update|assign|reassign|complete|close|finish|follow[\s-]?up|reschedule)\b/.test(
+      lower
+    )
+  ) {
+    return {
+      route: 'crm',
+      tools: ['job_search', 'action_draft'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
   if (
     (/\b(?:open|go to|take me to|navigate to|manage|configure|edit settings?)\b/.test(lower) ||
       /\b(?:show me|edit|change)\b.{0,40}\bsettings?\b/.test(lower)) &&
     /\b(?:settings?|dashboard|payments?|billing|analytics|inventory|whatsapp|calling|reminders?|technicians?|qr|reviews?|privacy|database|usage|jobs?|accounts?|customer|trackers?|email|distance|visit|location)\b/.test(
+      lower
+    ) &&
+    !hasDirectJobReference
+  ) {
+    return {
+      route: 'crm',
+      tools: ['app_navigation'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+  if (
+    (/\b(?:turn|switch)\s+(?:on|off)\b|\b(?:enable|disable)\b/.test(lower) ||
+      (/\b(?:change|switch|select|choose)\b/.test(lower) &&
+        /\b(?:ai|model|provider)\b/.test(lower))) &&
+    /\b(?:settings?|whatsapp|notifications?|push|pdf|compression|tracking|glow|reminders?|ai|model)\b/.test(
       lower
     )
   ) {
@@ -138,7 +175,21 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
   if (
-    /\b(create|add|edit|update|change|delete|remove|send|whatsapp|email|book|schedule|set)\b/.test(
+    /\b(?:documents?|invoices?|quotations?|quotes?|warrant(?:y|ies)|bills?|authenticity|verify code)\b/.test(
+      lower
+    ) &&
+    !/\b(?:draft|prepare|create|make|generate|email|whatsapp|send)\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['documents'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+  if (
+    /\b(create|add|edit|update|change|delete|remove|send|whatsapp|email|book|schedule|set|assign|reassign|complete|finish)\b/.test(
       lower
     )
   ) {

@@ -13,6 +13,7 @@ const TARGET_PATHS: Record<AiCrmAppTarget, string> = {
   amc_contracts: '/admin?view=amc-view',
   letterhead_documents: '/admin?view=letterhead-documents',
   settings: '/settings',
+  dashboard_settings: '/settings?section=dashboard',
   whatsapp_inbox: '/settings?panel=whatsapp-inbox',
   whatsapp_settings: '/settings?panel=whatsapp-settings',
   calling: '/settings?panel=calling',

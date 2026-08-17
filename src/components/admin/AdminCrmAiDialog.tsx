@@ -17,6 +17,8 @@ import {
   ImagePlus,
   FileText,
   Loader2,
+  Mail,
+  MessageSquare,
   Pencil,
   Search,
   Settings,
@@ -36,6 +38,8 @@ import {
   type AiCrmReminderDraft,
   type AiCrmAppTarget,
   type AiCrmOpenDocumentDraft,
+  type AiCrmOpenJobDraft,
+  type AiCrmOpenCustomerComposer,
 } from '@/lib/aiCrmAssistant';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { useAutoGrowTextarea } from '@/lib/useAutoGrowTextarea';
@@ -61,6 +65,8 @@ type AdminCrmAiDialogProps = {
   onConfirmReminder: (draft: AiCrmReminderDraft) => void;
   onOpenApp: (target: AiCrmAppTarget) => void;
   onOpenDocumentDraft: (draft: AiCrmOpenDocumentDraft) => void;
+  onOpenJob: (draft: AiCrmOpenJobDraft) => void;
+  onOpenCustomerComposer: (draft: AiCrmOpenCustomerComposer) => void;
 };
 
 function formatInr(amount: number | null | undefined) {
@@ -85,6 +91,8 @@ export default function AdminCrmAiDialog({
   onConfirmReminder,
   onOpenApp,
   onOpenDocumentDraft,
+  onOpenJob,
+  onOpenCustomerComposer,
 }: AdminCrmAiDialogProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -217,6 +225,14 @@ export default function AdminCrmAiDialog({
     }
     if (action.type === 'open_document_draft') {
       onOpenDocumentDraft(action.payload as AiCrmOpenDocumentDraft);
+      return;
+    }
+    if (action.type === 'open_job') {
+      onOpenJob(action.payload as AiCrmOpenJobDraft);
+      return;
+    }
+    if (action.type === 'open_customer_composer') {
+      onOpenCustomerComposer(action.payload as AiCrmOpenCustomerComposer);
       return;
     }
     setActionBusy(true);
@@ -496,6 +512,8 @@ export default function AdminCrmAiDialog({
                                 ? 'Opens this CRM screen — no setting changes automatically.'
                                 : action.type === 'open_document_draft'
                                   ? 'Opens the customer document with its AI context — review before generating.'
+                                  : action.type === 'open_customer_composer'
+                                    ? 'Opens a customer composer — review before sending.'
                                   : 'Opens the CRM form — nothing saves until you confirm.'}
                             </p>
                           </div>
@@ -523,6 +541,12 @@ export default function AdminCrmAiDialog({
                               <FileText className="mr-1.5 h-3.5 w-3.5" />
                             ) : action.type === 'open_app' ? (
                               <Settings className="mr-1.5 h-3.5 w-3.5" />
+                            ) : action.type === 'open_customer_composer' ? (
+                              (action.payload as AiCrmOpenCustomerComposer).channel === 'email' ? (
+                                <Mail className="mr-1.5 h-3.5 w-3.5" />
+                              ) : (
+                                <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                              )
                             ) : (
                               <Search className="mr-1.5 h-3.5 w-3.5" />
                             )}

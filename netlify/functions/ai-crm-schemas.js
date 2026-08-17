@@ -13,6 +13,8 @@ const ALLOWED_ACTION_TYPES = Object.freeze([
   'create_reminder',
   'open_app',
   'open_document_draft',
+  'open_job',
+  'open_customer_composer',
 ]);
 
 const ALLOWED_APP_TARGETS = Object.freeze([
@@ -28,6 +30,7 @@ const ALLOWED_APP_TARGETS = Object.freeze([
   'amc_contracts',
   'letterhead_documents',
   'settings',
+  'dashboard_settings',
   'whatsapp_inbox',
   'whatsapp_settings',
   'calling',
@@ -68,6 +71,24 @@ const ALLOWED_DOCUMENT_DRAFT_TYPES = Object.freeze([
   'tax_invoice',
   'amc',
   'warranty',
+]);
+
+const ALLOWED_JOB_OPEN_MODES = Object.freeze([
+  'details',
+  'edit',
+  'assign',
+  'reassign',
+  'complete',
+  'follow_up',
+]);
+
+const ALLOWED_COMPOSER_CHANNELS = Object.freeze(['whatsapp', 'email']);
+const ALLOWED_COMPOSER_TEMPLATES = Object.freeze([
+  'general',
+  'pending_payment',
+  'service_reminder',
+  'quotation',
+  'invoice',
 ]);
 
 const MAX_MESSAGE_CHARS = 1500;
@@ -282,6 +303,25 @@ function normalizeOpenDocumentDraftPayload(raw, knownCustomerIds) {
   };
 }
 
+function normalizeOpenJobPayload(raw, knownJobIds) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const jobId = asTrimmedString(src.jobId || src.job_id, 64);
+  const mode = asTrimmedString(src.mode, 30) || 'details';
+  if (!jobId || !knownJobIds.has(jobId) || !ALLOWED_JOB_OPEN_MODES.includes(mode)) return null;
+  return { jobId, mode };
+}
+
+function normalizeOpenCustomerComposerPayload(raw, knownCustomerIds) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const customerId = asTrimmedString(src.customerId || src.customer_id, 64);
+  const channel = asTrimmedString(src.channel, 20);
+  const template = asTrimmedString(src.template, 40) || 'general';
+  if (!customerId || !knownCustomerIds.has(customerId)) return null;
+  if (!ALLOWED_COMPOSER_CHANNELS.includes(channel)) return null;
+  if (!ALLOWED_COMPOSER_TEMPLATES.includes(template)) return null;
+  return { customerId, channel, template };
+}
+
 /**
  * Normalize model JSON into a safe CRM chat payload.
  * Mutations are never executed here — only proposed with requiresConfirm.
@@ -328,6 +368,10 @@ function normalizeCrmChatOutput(raw, opts = {}) {
       payload = normalizeOpenAppPayload(row.payload || row);
     } else if (type === 'open_document_draft') {
       payload = normalizeOpenDocumentDraftPayload(row.payload || row, knownCustomerIds);
+    } else if (type === 'open_job') {
+      payload = normalizeOpenJobPayload(row.payload || row, knownJobIds);
+    } else if (type === 'open_customer_composer') {
+      payload = normalizeOpenCustomerComposerPayload(row.payload || row, knownCustomerIds);
     }
     if (!payload) continue;
 
@@ -385,6 +429,9 @@ module.exports = {
   ALLOWED_ACTION_TYPES,
   ALLOWED_APP_TARGETS,
   ALLOWED_DOCUMENT_DRAFT_TYPES,
+  ALLOWED_JOB_OPEN_MODES,
+  ALLOWED_COMPOSER_CHANNELS,
+  ALLOWED_COMPOSER_TEMPLATES,
   MAX_MESSAGE_CHARS,
   parseCrmChatRequest,
   normalizeCrmChatOutput,

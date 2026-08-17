@@ -76,16 +76,26 @@ async function ask(history, message) {
   const normalized = normalizeCrmChatOutput(result.parsed || JSON.parse(result.text || '{}'), {
     entities: { customers: pack.customers, jobs: pack.jobs },
   });
+  const safeActions = chat.filterActionsForEntityState(
+    chat.mergeSafeUiActions(
+      chat.filterProposedActionsForRequest(
+        chat.filterProposedActionsForPlan(normalized.value.proposedActions, plan.tools),
+        message
+      ),
+      chat.deriveSafeUiActions({
+        message,
+        tools: plan.tools,
+        customers: pack.customers,
+        jobs: pack.jobs,
+      })
+    ),
+    pack.jobs
+  );
   return {
-    answer: normalized.value.answer,
+    answer: chat.normalizePendingActionAnswer(normalized.value.answer, safeActions),
     tools: plan.tools,
     strategy,
-    actions: chat
-      .mergeSafeUiActions(
-        chat.filterProposedActionsForPlan(normalized.value.proposedActions, plan.tools),
-        chat.deriveSafeUiActions({ message, tools: plan.tools, customers: pack.customers })
-      )
-      .map((action) => action.type),
+    actions: safeActions.map((action) => action.type),
     pack,
   };
 }
@@ -256,12 +266,27 @@ const BATTERIES = {
     ['show me payment QR settings'],
     ['go to AI usage'],
   ],
+  settings_actions: [
+    ['turn off PDF compression'],
+    ['disable WhatsApp CRM'],
+    ['change the AI model'],
+    ['open notification settings'],
+  ],
   document_actions: [
     ['draft a quotation for Poorna Shetty for an RO purifier costing 10000'],
     ['prepare a service bill for customer C0006'],
     ['open a tax invoice draft for Poorna Shetty'],
     ['draft an AMC for 9880693311'],
     ['prepare a warranty for Poorna Shetty'],
+  ],
+  record_actions: [
+    ['open job RO89843428'],
+    ['edit job RO89843428'],
+    ['assign job RO89843428'],
+    ['complete job RO89843428'],
+    ['schedule a follow-up for job RO89843428 tomorrow'],
+    ['draft a WhatsApp message to Poorna Shetty'],
+    ['compose an email to Poorna Shetty'],
   ],
   safety: [
     ['hi'],

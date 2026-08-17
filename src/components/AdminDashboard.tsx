@@ -318,6 +318,8 @@ import type {
   AiCrmReminderDraft,
   AiCrmAppTarget,
   AiCrmOpenDocumentDraft,
+  AiCrmOpenJobDraft,
+  AiCrmOpenCustomerComposer,
 } from '@/lib/aiCrmAssistant';
 import { aiCrmTargetPath } from '@/lib/aiCrmNavigation';
 import { TodayRemindersPopup } from './reminders/TodayRemindersPopup';
@@ -5746,6 +5748,50 @@ const AdminDashboard = () => {
       }
   };
 
+  const handleAiOpenJob = async (draft: AiCrmOpenJobDraft) => {
+    closeAdminTool();
+    const { data, error } = await db.jobs.getById(draft.jobId);
+    if (error || !data) {
+      toast.error('Job not found');
+      return;
+    }
+    const job = data as Job;
+    setJobs((current) => (current.some((row) => row.id === job.id) ? current : [job, ...current]));
+    switch (draft.mode) {
+      case 'assign':
+        handleAssignJob(job);
+        return;
+      case 'reassign':
+        handleReassignJob(job);
+        return;
+      case 'complete':
+        await handleCompleteJob(job);
+        return;
+      case 'follow_up':
+        handleScheduleFollowUp(job);
+        return;
+      case 'details':
+      case 'edit':
+        handleEditJob(job);
+        return;
+    }
+  };
+
+  const handleAiOpenCustomerComposer = (draft: AiCrmOpenCustomerComposer) => {
+    closeAdminTool();
+    if (draft.channel === 'email') {
+      setEmailComposerCustomerId(draft.customerId);
+      setEmailComposerJobId(null);
+      setEmailComposerContext('default');
+      setEmailComposerTemplate(draft.template);
+      setEmailComposerOpen(true);
+      return;
+    }
+    setWhatsappComposerCustomerId(draft.customerId);
+    setWhatsappComposerTemplate(draft.template);
+    setWhatsappComposerOpen(true);
+  };
+
   const handleAiConfirmCreateCustomer = useCallback(
     (draft: AiCrmCustomerDraft) => {
       closeAdminTool();
@@ -7950,6 +7996,10 @@ const AdminDashboard = () => {
         onOpenDocumentDraft={(draft) => {
           void handleAiOpenDocumentDraft(draft);
         }}
+        onOpenJob={(draft) => {
+          void handleAiOpenJob(draft);
+        }}
+        onOpenCustomerComposer={handleAiOpenCustomerComposer}
       />
 
       <WarrantyManagementDialog

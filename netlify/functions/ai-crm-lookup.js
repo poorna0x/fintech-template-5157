@@ -167,6 +167,8 @@ const NAME_STOP_WORDS = new Set(
     // Ranking follow-ups ("who is second") point at the previous list, not a person.
     'best', 'compare', 'comparison', 'expect', 'estimate', 'first', 'forecast', 'growth',
     'least', 'less', 'other', 'project', 'projection', 'rank', 'ranking', 'second', 'smallest',
+    'ai', 'assistant', 'compression', 'glow', 'model', 'models', 'notification', 'notifications',
+    'pdf', 'push', 'setting', 'settings', 'tracking',
     'third', 'trend', 'versus', 'worst',
     // Pronouns point back at the previous answer, never at a person to search.
     'both', 'each', 'everyone', 'him', 'his', 'it', 'its', 'none', 'one', 'ones', 'people',
@@ -538,6 +540,11 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     has(/\bbill(?:ed|ing)?\b|\brevenue\b|\bvalue\b|\bturnover\b/) && !has(/\bpaid\b|\bspent\b/)
       ? 'billed'
       : 'paid';
+  const revenueBasis = has(
+    /\bcollect(?:ed|ion|ions)?\b|\bcash received\b|\bmoney received\b|\bconfirmed paid\b|\bpaid jobs?\b/
+  )
+    ? 'confirmed_paid'
+    : 'billed';
 
   // Trend and forecast facts cost extra queries and clutter a plain "how much
   // today", so only gather them when the question actually asks.
@@ -568,6 +575,7 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     explicitDate,
     allTime,
     rankingBasis,
+    revenueBasis,
     wantsComparison,
     wantsProjection,
     active: scopes.size > 0,
@@ -1407,6 +1415,7 @@ async function loadOverview(db, intent, todayKey) {
   const wantsCustomerValueRanking = scopes.has('customer_value_ranking');
   const wantsTechnicianBillingRanking = scopes.has('technician_billing_ranking');
   const wantsExpenses = scopes.has('expenses');
+  const wantsDocuments = scopes.has('documents') && !intent.skipGlobalDocuments;
 
   if (wantsCustomerValueRanking) {
     // "Which Shetty billed most" must rank the matched names, not the global top
@@ -1644,6 +1653,71 @@ async function loadOverview(db, intent, todayKey) {
     }
   }
 
+  if (wantsDocuments) {
+    let invoiceQuery = db
+      .from('tax_invoices')
+      .select(TAX_COLS)
+      .order('invoice_date', { ascending: false })
+      .limit(DOCUMENT_LIMIT);
+    if (intent.explicitDate && range.start) invoiceQuery = invoiceQuery.gte('invoice_date', range.start);
+    if (intent.explicitDate && range.end) invoiceQuery = invoiceQuery.lte('invoice_date', range.end);
+
+    let authenticityQuery = db
+      .from('document_pdf_authenticity')
+      .select(AUTH_COLS)
+      .order('created_at', { ascending: false })
+      .limit(DOCUMENT_LIMIT);
+    if (intent.explicitDate && range.start) {
+      authenticityQuery = authenticityQuery.gte('created_at', `${range.start}T00:00:00`);
+    }
+    if (intent.explicitDate && range.end) {
+      authenticityQuery = authenticityQuery.lt(
+        'created_at',
+        `${addDaysKey(range.end, 1)}T00:00:00`
+      );
+    }
+
+    const [invoiceResult, authenticityResult] = await Promise.all([
+      invoiceQuery,
+      authenticityQuery,
+    ]);
+    if (invoiceResult.error) {
+      console.warn('[ai-crm-lookup] global tax invoices failed', invoiceResult.error.message);
+    }
+    if (authenticityResult.error) {
+      console.warn('[ai-crm-lookup] global authenticity failed', authenticityResult.error.message);
+    }
+    for (const row of invoiceResult.data || []) {
+      out.documents.push({
+        kind: 'tax_invoice',
+        id: String(row.id),
+        customerId: row.customer_id ? String(row.customer_id) : null,
+        label: row.invoice_number ? `Invoice ${row.invoice_number}` : 'Tax invoice',
+        invoiceDate: row.invoice_date || null,
+        grandTotal: Number(row.total_amount) || null,
+        status: null,
+      });
+    }
+    for (const row of authenticityResult.data || []) {
+      out.documents.push({
+        kind: 'pdf_authenticity',
+        id: String(row.id),
+        customerId: row.customer_id ? String(row.customer_id) : null,
+        label: `${row.doc_type || 'document'} · code ${row.verify_code || '—'}`,
+        documentType: row.doc_type || null,
+        verifyCode: row.verify_code || null,
+        createdAt: row.created_at || null,
+      });
+    }
+    out.stats.documentsListed = out.documents.length;
+    out.stats.documentsScope = intent.explicitDate ? range.label : 'latest stored documents';
+    out.stats.documentsCoverage =
+      'stored tax invoices and generated-PDF authenticity records; quotations, bills, AMC and warranty appear when fingerprinted';
+    out.truncated.documents =
+      (invoiceResult.data || []).length >= DOCUMENT_LIMIT ||
+      (authenticityResult.data || []).length >= DOCUMENT_LIMIT;
+  }
+
   if (wantsExpenses) {
     const loadExpenseRows = async (table) => {
       for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -1814,7 +1888,10 @@ async function loadOverview(db, intent, todayKey) {
 
   if (scopes.has('revenue') || scopes.has('summary')) {
     const sumCompletedValue = async (fromTs, toTs) => {
-      let query = db.from('jobs').select('payment_amount, actual_cost').eq('status', 'COMPLETED');
+      let query = db
+        .from('jobs')
+        .select('payment_amount, actual_cost, payment_status')
+        .eq('status', 'COMPLETED');
       if (fromTs && toTs) query = query.gte('completed_at', fromTs).lt('completed_at', toTs);
       const { data, error } = await query.limit(REVENUE_SCAN_LIMIT);
       if (error) {
@@ -1823,6 +1900,7 @@ async function loadOverview(db, intent, todayKey) {
       }
       let sum = 0;
       for (const row of data || []) {
+        if (intent.revenueBasis === 'confirmed_paid' && row.payment_status !== 'PAID') continue;
         const n = Number(row.payment_amount ?? row.actual_cost);
         if (Number.isFinite(n)) sum += n;
       }
@@ -1832,6 +1910,10 @@ async function loadOverview(db, intent, todayKey) {
 
     const value = await sumCompletedValue(dayBounds.fromTs, dayBounds.toTs);
     if (value != null) out.stats.completedJobValueInRange = value;
+    out.stats.completedJobValueBasis =
+      intent.revenueBasis === 'confirmed_paid'
+        ? 'completed jobs currently marked PAID, grouped by completion date; not a cash-transaction ledger'
+        : 'billed value of completed jobs, including unpaid or partially paid jobs';
 
     const wantsTrend = intent.wantsComparison || intent.wantsProjection;
     if (
@@ -1914,6 +1996,7 @@ function scopesForPlannerTools(tools) {
     expenses: 'expenses',
     customer_value_ranking: 'customer_value_ranking',
     technician_billing_ranking: 'technician_billing_ranking',
+    documents: 'documents',
   };
   return new Set((Array.isArray(tools) ? tools : []).map((tool) => map[tool]).filter(Boolean));
 }
@@ -2016,6 +2099,7 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
   let technicians = [];
 
   if (intent.active) {
+    intent.skipGlobalDocuments = customers.length > 0 && hasSearchableTarget(hints, focusCustomerId);
     if (customers.length && (hints.nameTokens || []).length) {
       intent.shortlistCustomers = customers;
     }
@@ -2108,6 +2192,12 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
 function formatContextForPrompt(pack) {
   const lines = [];
   const stats = pack.stats || {};
+  const confirmedPaidValue =
+    String(stats.completedJobValueBasis || '').startsWith('completed jobs currently marked PAID');
+  const valueLabel = confirmedPaidValue
+    ? 'confirmed-paid value of jobs completed in period'
+    : 'billed value of jobs completed in period';
+  const comparisonValueLabel = confirmedPaidValue ? 'confirmed-paid completed-job value' : 'billed';
   const nameById = new Map((pack.customers || []).map((c) => [c.id, c.name]));
   const technicianNameById = pack.technicianNameById || {};
 
@@ -2159,6 +2249,19 @@ function formatContextForPrompt(pack) {
       `Spelling note: no customer name contains "${match.typed}"; the closest real names were matched instead (for example ${match.matched}). Say you searched the closest spelling.`
     );
   }
+  const requestedCustomerCodes = (pack.hints?.lookupTerms || [])
+    .map((term) => String(term || '').toUpperCase())
+    .filter((term) => /^C\d+$/.test(term));
+  for (const code of requestedCustomerCodes) {
+    const exact = (pack.customers || []).find(
+      (customer) => String(customer.customerCode || '').toUpperCase() === code
+    );
+    if (exact) {
+      lines.push(
+        `Exact customer-code match: ${code} is ${exact.name} (id ${exact.id}). Do not say this customer code was not found.`
+      );
+    }
+  }
   lines.push('CRM lookup results (bounded; treat as facts only):');
 
   const statLines = [];
@@ -2186,11 +2289,11 @@ function formatContextForPrompt(pack) {
     statLines.push(`customers added in period = ${stats.customersAddedInRange}`);
   if (stats.completedJobValueInRange != null)
     statLines.push(
-      `billed value of jobs completed in period (INR, may include not-yet-collected amounts) = ${stats.completedJobValueInRange}`
+      `${valueLabel} (INR) = ${stats.completedJobValueInRange}; basis: ${stats.completedJobValueBasis}`
     );
   if (stats.completedJobValuePrevious)
     statLines.push(
-      `same-length previous period (${stats.completedJobValuePrevious.label}) billed INR ${stats.completedJobValuePrevious.value}${
+      `same-length previous period (${stats.completedJobValuePrevious.label}) ${comparisonValueLabel} INR ${stats.completedJobValuePrevious.value}${
         stats.completedJobValuePrevious.changePct != null
           ? `, change ${stats.completedJobValuePrevious.changePct > 0 ? '+' : ''}${stats.completedJobValuePrevious.changePct}%`
           : ''
@@ -2198,7 +2301,7 @@ function formatContextForPrompt(pack) {
     );
   if (stats.completedJobValuePreviousToDate)
     statLines.push(
-      `same elapsed window of the previous period (${stats.completedJobValuePreviousToDate.label}) billed INR ${stats.completedJobValuePreviousToDate.value}${
+      `same elapsed window of the previous period (${stats.completedJobValuePreviousToDate.label}) ${comparisonValueLabel} INR ${stats.completedJobValuePreviousToDate.value}${
         stats.completedJobValuePreviousToDate.changePct != null
           ? `, change ${stats.completedJobValuePreviousToDate.changePct > 0 ? '+' : ''}${stats.completedJobValuePreviousToDate.changePct}%`
           : ''
@@ -2206,7 +2309,7 @@ function formatContextForPrompt(pack) {
     );
   if (stats.completedJobValueProjection)
     statLines.push(
-      `straight-line projection for the full period = INR ${stats.completedJobValueProjection.projectedPeriodTotal} (${stats.completedJobValueProjection.elapsedDays} of ${stats.completedJobValueProjection.periodDays} days elapsed, INR ${stats.completedJobValueProjection.perDay} per day so far) — state it as an estimate at the current run rate`
+      `straight-line projection for the full period (${comparisonValueLabel}) = INR ${stats.completedJobValueProjection.projectedPeriodTotal} (${stats.completedJobValueProjection.elapsedDays} of ${stats.completedJobValueProjection.periodDays} days elapsed, INR ${stats.completedJobValueProjection.perDay} per day so far) — state it as an estimate at the current run rate`
     );
   if (stats.expenses) {
     const business = stats.expenses.business;

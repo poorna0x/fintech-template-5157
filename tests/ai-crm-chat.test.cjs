@@ -34,6 +34,9 @@ const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
 const {
   filterProposedActionsForPlan,
   deriveSafeUiActions,
+  filterActionsForEntityState,
+  filterProposedActionsForRequest,
+  normalizePendingActionAnswer,
 } = require('../netlify/functions/ai-crm-chat')._test;
 const {
   ALLOWED_CRM_TOOLS,
@@ -183,6 +186,11 @@ function testPeriodAndRankingBasisFollowTheQuestion() {
     detectOverviewIntent('which customer paid us the most', '2026-08-17').rankingBasis,
     'paid'
   );
+  assert.equal(
+    detectOverviewIntent('how much did we collect today', '2026-08-17').revenueBasis,
+    'confirmed_paid'
+  );
+  assert.equal(detectOverviewIntent('revenue today', '2026-08-17').revenueBasis, 'billed');
 }
 
 function testTrendFactsOnlyWhenAsked() {
@@ -356,6 +364,11 @@ function testDeterministicFastRoutesStayReadOnlyAndNarrow() {
     augmentPlanTools({ route: 'crm', tools: ['customer_search'], rewrittenQuery: 'customer shetty' }, 'find shetty').tools,
     ['customer_search']
   );
+  assert.deepEqual(inferDeterministicPlan('open job RO89843428').tools, [
+    'job_search',
+    'action_draft',
+  ]);
+  assert.deepEqual(inferDeterministicPlan('show latest invoices').tools, ['documents']);
 
   // Changing only the period keeps the previous subject.
   const allTime = inferDeterministicPlan('not today in entire all time', [
@@ -488,16 +501,29 @@ function testLookupCannotInventMutationDrafts() {
     ),
     []
   );
+  assert.deepEqual(
+    filterProposedActionsForRequest(
+      [{ type: 'schedule_follow_up', payload: { jobId: 'j1' } }],
+      'open job RO123'
+    ),
+    []
+  );
+  assert.equal(
+    normalizePendingActionAnswer('I have navigated to WhatsApp settings.', [
+      { type: 'open_app', payload: { target: 'whatsapp_settings' } },
+    ]),
+    'I can open WhatsApp settings.'
+  );
 }
 
 function testNavigationAndDocumentActionsAreAllowlisted() {
   const customerId = '11111111-1111-1111-1111-111111111111';
+  const jobId = '22222222-2222-2222-2222-222222222222';
   const normalized = normalizeCrmChatOutput(
     {
       answer: 'Ready',
       proposedActions: [
         { type: 'open_app', payload: { target: 'whatsapp_settings' } },
-        { type: 'open_app', payload: { target: 'https://evil.example' } },
         {
           type: 'open_document_draft',
           payload: {
@@ -506,21 +532,24 @@ function testNavigationAndDocumentActionsAreAllowlisted() {
             instruction: 'Add one purifier for 10000',
           },
         },
+        { type: 'open_job', payload: { jobId, mode: 'assign' } },
         {
-          type: 'open_document_draft',
-          payload: { documentType: 'unknown', customerId },
+          type: 'open_customer_composer',
+          payload: { customerId, channel: 'whatsapp', template: 'general' },
         },
       ],
     },
-    { entities: { customers: [{ id: customerId }], jobs: [] } }
+    { entities: { customers: [{ id: customerId }], jobs: [{ id: jobId }] } }
   );
   assert.equal(normalized.ok, true);
   assert.deepEqual(
     normalized.value.proposedActions.map((action) => action.type),
-    ['open_app', 'open_document_draft']
+    ['open_app', 'open_document_draft', 'open_job', 'open_customer_composer']
   );
   assert.equal(normalized.value.proposedActions[0].payload.target, 'whatsapp_settings');
   assert.equal(normalized.value.proposedActions[1].payload.customerId, customerId);
+  assert.equal(normalized.value.proposedActions[2].payload.mode, 'assign');
+  assert.equal(normalized.value.proposedActions[3].payload.channel, 'whatsapp');
 
   const derived = deriveSafeUiActions({
     message: 'draft a quotation for Poorna Shetty for an RO purifier costing 10000',
@@ -537,6 +566,42 @@ function testNavigationAndDocumentActionsAreAllowlisted() {
       tools: ['documents', 'customer_search'],
       customers: [{ id: customerId, name: 'Poorna Shetty' }],
     }),
+    []
+  );
+
+  const jobAction = deriveSafeUiActions({
+    message: 'assign job RO89843428',
+    tools: ['action_draft', 'job_search'],
+    customers: [],
+    jobs: [{ id: jobId, jobNumber: 'RO89843428' }],
+  });
+  assert.equal(jobAction[0].type, 'open_job');
+  assert.equal(jobAction[0].payload.mode, 'assign');
+
+  const composerAction = deriveSafeUiActions({
+    message: 'compose an email to Poorna Shetty',
+    tools: ['action_draft', 'customer_search'],
+    customers: [{ id: customerId, name: 'Poorna Shetty' }],
+    jobs: [],
+  });
+  assert.equal(composerAction[0].type, 'open_customer_composer');
+  assert.equal(composerAction[0].payload.channel, 'email');
+  const mergedComposer = require('../netlify/functions/ai-crm-chat')._test.mergeSafeUiActions(
+    [
+      {
+        type: 'open_customer_composer',
+        payload: { customerId, channel: 'email', template: 'pending_payment' },
+      },
+    ],
+    composerAction
+  );
+  assert.equal(mergedComposer.length, 1);
+  assert.equal(mergedComposer[0].payload.template, 'general');
+  assert.deepEqual(
+    filterActionsForEntityState(
+      [{ type: 'open_job', payload: { jobId, mode: 'complete' } }],
+      [{ id: jobId, status: 'COMPLETED' }]
+    ),
     []
   );
 }
