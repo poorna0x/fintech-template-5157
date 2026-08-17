@@ -7,11 +7,20 @@ const GROQ_BASE = 'https://api.groq.com/openai/v1';
 const DEFAULT_TIMEOUT_MS = 18_000;
 const MAX_OUTPUT_TOKENS = 4096;
 
-function createProviderError(message, { retryable = false, code = null } = {}) {
+function createProviderError(message, { retryable = false, code = null, retryAfterSeconds = null, limitKind = null } = {}) {
   const error = new Error(message);
   error.retryable = retryable;
   error.providerCode = code;
+  error.retryAfterSeconds = retryAfterSeconds;
+  error.limitKind = limitKind;
   return error;
+}
+
+/** Groq says which window was exhausted in the 429 body ("per day" / "per minute"). */
+function detectGroqLimitKind(message) {
+  if (/per\s*day|requests? per day|tokens? per day|\brpd\b|\btpd\b/i.test(message)) return 'daily';
+  if (/per\s*min|\brpm\b|\btpm\b/i.test(message)) return 'per_minute';
+  return null;
 }
 
 function toGroqMessages(systemInstruction, messages) {
@@ -116,10 +125,19 @@ async function generateWithGroq(input, config) {
       message.includes('quota') ||
       message.includes('capacity');
     if (retryable) {
-      throw createProviderError('Groq rate limit or capacity unavailable', {
-        retryable: true,
-        code: response.status === 429 ? 429 : code,
-      });
+      const rawMessage = String(data?.error?.message || '');
+      const retryAfterHeader = Number(response.headers?.get?.('retry-after'));
+      throw createProviderError(
+        rawMessage
+          ? `Groq rate limit or capacity unavailable: ${rawMessage.slice(0, 300)}`
+          : 'Groq rate limit or capacity unavailable',
+        {
+          retryable: true,
+          code: response.status === 429 ? 429 : code,
+          retryAfterSeconds: Number.isFinite(retryAfterHeader) ? retryAfterHeader : null,
+          limitKind: detectGroqLimitKind(rawMessage),
+        }
+      );
     }
     if (response.status === 404 || message.includes('decommissioned')) {
       // A retired model must not break the CRM: let the chain try the next provider.
@@ -157,6 +175,7 @@ async function generateWithGroq(input, config) {
 module.exports = {
   generateWithGroq,
   createProviderError,
+  detectGroqLimitKind,
   toGroqMessages,
   extractUsage,
   tryParseJsonObject,

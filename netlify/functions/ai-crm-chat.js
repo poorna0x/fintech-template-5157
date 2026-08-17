@@ -11,7 +11,7 @@ const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { readBearerToken, verifyFullAdminBearerToken } = require('./admin-auth-guard');
 const { checkRateLimit, checkRateLimitForKey } = require('./rate-limiter');
 const { getAiAssistantConfig, publicConfigSummary } = require('./ai-config');
-const { generateWithProvider } = require('./ai-provider');
+const { generateWithProvider, describeProviderRateLimit } = require('./ai-provider');
 const { parseCrmChatRequest, normalizeCrmChatOutput, assertNoMutationTools } = require('./ai-crm-schemas');
 const { lookupCrmContext, formatContextForPrompt } = require('./ai-crm-lookup');
 const {
@@ -718,8 +718,12 @@ exports.handler = async (event) => {
       },
     });
   } catch (err) {
-    errorCategory = 'provider_error';
+    const rateLimit = describeProviderRateLimit(err);
+    errorCategory = rateLimit ? 'rate_limited' : 'provider_error';
     console.warn('[ai-crm-chat] failed', err?.message || err);
+    if (rateLimit) {
+      return json(429, headers, { success: false, error: rateLimit.message });
+    }
     return json(502, headers, {
       success: false,
       error: 'Could not complete CRM AI request. Please try again.',

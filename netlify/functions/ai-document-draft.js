@@ -7,7 +7,7 @@ const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { readBearerToken, verifyFullAdminBearerToken } = require('./admin-auth-guard');
 const { checkRateLimit, checkRateLimitForKey } = require('./rate-limiter');
 const { getAiAssistantConfig, publicConfigSummary } = require('./ai-config');
-const { generateWithProvider } = require('./ai-provider');
+const { generateWithProvider, describeProviderRateLimit } = require('./ai-provider');
 const { sha256, localDayKey, claimAiQuota, finalizeAiInvocation } = require('./ai-audit');
 const {
   ALLOWED_FIELDS,
@@ -236,21 +236,13 @@ exports.handler = async (event) => {
       },
     });
   } catch (error) {
-    const message = String(error?.message || error || '');
-    const lower = message.toLowerCase();
-    const isRateLimited =
-      error?.retryable === true &&
-      (lower.includes('rate limit') ||
-        lower.includes('quota') ||
-        lower.includes('capacity') ||
-        String(error?.providerCode || '') === '429');
-    errorCategory = isRateLimited ? 'rate_limited' : 'provider_error';
-    console.warn('[ai-document-draft] failed', message);
-    if (isRateLimited) {
+    const rateLimit = describeProviderRateLimit(error);
+    errorCategory = rateLimit ? 'rate_limited' : 'provider_error';
+    console.warn('[ai-document-draft] failed', error?.message || error);
+    if (rateLimit) {
       return json(429, headers, {
         success: false,
-        error:
-          'AI provider free-tier limit reached. Try again after the daily reset (midnight UTC / 5:30 AM IST), or wait a minute if it was a per-minute cap.',
+        error: `${rateLimit.message} Try a shorter instruction, or split big edits into steps.`,
       });
     }
     return json(502, headers, {

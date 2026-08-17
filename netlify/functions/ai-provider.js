@@ -28,6 +28,34 @@ function isRetryableProviderError(error) {
   return error?.retryable === true;
 }
 
+/**
+ * Free-tier exhaustion is a 429 for the admin, not a server bug.
+ * Returns null when the failure is not a provider rate limit.
+ */
+function describeProviderRateLimit(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  const isRateLimited =
+    error?.retryable === true &&
+    (message.includes('rate limit') ||
+      message.includes('quota') ||
+      message.includes('capacity') ||
+      String(error?.providerCode || '') === '429');
+  if (!isRateLimited) return null;
+
+  const retryAfter = Number(error?.retryAfterSeconds);
+  const waitHint =
+    Number.isFinite(retryAfter) && retryAfter > 0
+      ? ` Retry in about ${Math.ceil(retryAfter)}s.`
+      : '';
+  const limitHint =
+    error?.limitKind === 'daily'
+      ? 'Daily free-tier limit reached. It resets at midnight UTC (5:30 AM IST).'
+      : error?.limitKind === 'per_minute'
+        ? 'Per-minute free-tier limit reached (large requests use many tokens at once).'
+        : 'AI provider free-tier limit reached.';
+  return { message: `${limitHint}${waitHint}`, retryAfterSeconds: retryAfter || null };
+}
+
 async function runProvider(attempt, config, payload) {
   const attemptConfig = {
     ...config,
@@ -82,5 +110,6 @@ module.exports = {
   generateWithProvider,
   buildProviderAttempts,
   isRetryableProviderError,
+  describeProviderRateLimit,
   runProvider,
 };
