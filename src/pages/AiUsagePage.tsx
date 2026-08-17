@@ -255,16 +255,9 @@ export default function AiUsagePage({ hideHeader, onBack }: Props) {
                 </div>
               </div>
 
-              {snapshot.config?.fallbackChain?.length ? (
-                <p className="text-xs text-muted-foreground">
-                  Automatic fallback:{' '}
-                  {snapshot.config.fallbackChain
-                    .map((item) => `${item.provider}/${item.model}`)
-                    .join(' → ')}
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">No automatic fallback configured.</p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Automatic fallback is disabled. Only the selected provider/model is used.
+              </p>
 
               <Button
                 type="button"

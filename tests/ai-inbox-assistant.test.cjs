@@ -190,14 +190,9 @@ function testProviderAllowlist() {
     },
     'app_secrets'
   );
-  assert.deepEqual(fallbackConfig.fallbackChain, [
-    { provider: 'gemini', model: 'gemini-3.1-flash-lite' },
-    { provider: 'groq', model: 'openai/gpt-oss-120b' },
-  ]);
+  assert.deepEqual(fallbackConfig.fallbackChain, []);
   assert.deepEqual(buildProviderAttempts(fallbackConfig), [
     { provider: 'gemini', model: 'gemini-2.5-flash' },
-    { provider: 'gemini', model: 'gemini-3.1-flash-lite' },
-    { provider: 'groq', model: 'openai/gpt-oss-120b' },
   ]);
 
   const groqConfig = normalizeConfig(
@@ -216,7 +211,7 @@ function testProviderAllowlist() {
     { provider: 'groq', model: 'openai/gpt-oss-120b' },
   ]);
 
-  const groqWithExplicitGeminiFallback = normalizeConfig(
+  const ignoresStoredFallback = normalizeConfig(
     {
       provider: 'groq',
       geminiApiKey: 'gemini-test-key',
@@ -226,9 +221,7 @@ function testProviderAllowlist() {
     },
     'env'
   );
-  assert.deepEqual(groqWithExplicitGeminiFallback.fallbackChain, [
-    { provider: 'gemini', model: 'gemini-3.1-flash-lite' },
-  ]);
+  assert.deepEqual(ignoresStoredFallback.fallbackChain, []);
 }
 
 async function testMockProviderStructuredOutput() {
