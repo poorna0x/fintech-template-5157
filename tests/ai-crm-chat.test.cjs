@@ -199,6 +199,60 @@ function testTrendFactsOnlyWhenAsked() {
   );
 }
 
+function testBusinessTyposAndDateRanges() {
+  const typo = detectOverviewIntent('how many jbos complted tody', '2026-08-17');
+  assert.deepEqual([...typo.scopes], ['jobs']);
+  assert.deepEqual(typo.statuses, ['COMPLETED']);
+  assert.equal(typo.range.start, '2026-08-17');
+  assert.deepEqual(extractQueryHints('remidners tommorow').nameTokens, []);
+
+  const isoRange = detectOverviewIntent(
+    'jobs from 2026-08-01 to 2026-08-07',
+    '2026-08-17'
+  );
+  assert.equal(isoRange.range.start, '2026-08-01');
+  assert.equal(isoRange.range.end, '2026-08-07');
+  assert.deepEqual(extractQueryHints('jobs from 2026-08-01 to 2026-08-07').lookupTerms, []);
+
+  const namedRange = detectOverviewIntent(
+    'jobs between 1 august 2026 and 10 august 2026',
+    '2026-08-17'
+  );
+  assert.equal(namedRange.range.start, '2026-08-01');
+  assert.equal(namedRange.range.end, '2026-08-10');
+  assert.deepEqual(
+    extractQueryHints('jobs between 1 august 2026 and 10 august 2026').nameTokens,
+    []
+  );
+
+  // In a follow-up chain the last period wins, not the first period in history.
+  const latest = detectOverviewIntent(
+    'jobs completed yesterday what about last week and this month',
+    '2026-08-17'
+  );
+  assert.equal(latest.range.label, 'this month');
+}
+
+function testExactOpenStatusesAndBusinessRoutes() {
+  assert.deepEqual(
+    detectOverviewIntent('how many jobs are assigned today', '2026-08-17').statuses,
+    ['ASSIGNED']
+  );
+  assert.deepEqual(
+    detectOverviewIntent('how many jobs are en route today', '2026-08-17').statuses,
+    ['EN_ROUTE']
+  );
+  assert.deepEqual(
+    detectOverviewIntent('how many jobs are in progress today', '2026-08-17').statuses,
+    ['IN_PROGRESS']
+  );
+  assert.deepEqual(inferDeterministicPlan('payment reminders due tomorrow').tools, ['payments']);
+  assert.deepEqual(inferDeterministicPlan('customers added last month').tools, [
+    'customer_directory',
+  ]);
+  assert.deepEqual(inferDeterministicPlan('jobs on 2026-08-17').tools, ['jobs_overview']);
+}
+
 function testRankingFollowUpsAreNotTreatedAsNames() {
   // "who is second" ranks the previous list; it must never become a name search.
   for (const message of ['who is second', 'which technician is on those', 'compare them']) {
@@ -297,6 +351,16 @@ function testDeterministicFastRoutesStayReadOnlyAndNarrow() {
     detectOverviewIntent(pronoun.rewrittenQuery, '2026-08-17').statuses,
     ONGOING_JOB_STATUSES
   );
+
+  const biggest = inferDeterministicPlan('what was his biggest job', [
+    { role: 'user', text: 'compare Jyotirling and Pradeep all time' },
+    { role: 'assistant', text: 'Jyotirling billed more.' },
+    { role: 'user', text: 'how many jobs did Srujan complete this month' },
+    { role: 'assistant', text: 'Srujan completed 20 jobs.' },
+  ]);
+  assert.deepEqual(biggest.tools, ['technician_billing_ranking', 'jobs_overview']);
+  assert.match(biggest.rewrittenQuery, /Srujan/i);
+  assert.doesNotMatch(biggest.rewrittenQuery, /Jyotirling/i);
 
   assert.deepEqual(inferDeterministicPlan('pending payments').tools, ['payments']);
   assert.deepEqual(inferDeterministicPlan('AMC expiring this month').tools, ['amc']);
@@ -725,6 +789,8 @@ async function main() {
   testMisspelledNamesResolveWithoutMatchingSentenceGlue();
   testAllTimeRangeIsSupported();
   testTrendFactsOnlyWhenAsked();
+  testBusinessTyposAndDateRanges();
+  testExactOpenStatusesAndBusinessRoutes();
   testRankingFollowUpsAreNotTreatedAsNames();
   testFreshQuestionsAreNotTreatedAsFollowUps();
   testPeriodAndRankingBasisFollowTheQuestion();

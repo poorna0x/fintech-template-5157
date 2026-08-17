@@ -30,6 +30,30 @@ const TOP_CUSTOMER_FALLBACK_MAX_PAGES = 50;
 const IST_TZ = 'Asia/Kolkata';
 const ONGOING_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'];
 
+function normalizeCrmQueryText(value) {
+  const replacements = {
+    jbos: 'jobs',
+    complted: 'completed',
+    completd: 'completed',
+    tody: 'today',
+    pendng: 'pending',
+    paymnts: 'payments',
+    remidners: 'reminders',
+    remidner: 'reminder',
+    tehcnician: 'technician',
+    tehcncian: 'technician',
+    billng: 'billing',
+    mnth: 'month',
+    custmer: 'customer',
+    detals: 'details',
+    expiary: 'expiry',
+    revneue: 'revenue',
+  };
+  return String(value || '').replace(/\b[\p{L}]+\b/gu, (word) => {
+    return replacements[word.toLowerCase()] || word;
+  });
+}
+
 const CUSTOMER_COLS =
   'id, customer_id, full_name, phone, alternate_phone, email, service_type, brand, model, last_service_date, customer_tier, status';
 
@@ -105,11 +129,13 @@ function nameMatchesToken(fullName, token) {
 const NAME_STOP_WORDS = new Set(
   [
     'about', 'add', 'afternoon', 'again', 'against', 'all', 'also', 'amc', 'amount', 'and', 'any',
+    'april', 'august', 'between', 'december', 'february', 'january', 'july', 'june',
+    'march', 'may', 'november', 'october', 'september',
     'anyone', 'are', 'assign', 'assigned', 'balance', 'bill', 'booked', 'booking', 'called', 'can',
     'cancel', 'cancelled', 'candy', 'cash', 'change', 'charge', 'check', 'closed', 'collect',
     'collected', 'coming', 'company', 'complaint', 'complaints', 'complete', 'completed',
-    'confirm', 'contact', 'cost', 'count', 'create', 'customer', 'customers', 'date', 'day',
-    'days', 'description', 'detail', 'details', 'did', 'does', 'done', 'due', 'dues', 'earn',
+    'added', 'confirm', 'contact', 'cost', 'count', 'create', 'customer', 'customers', 'date', 'day',
+    'days', 'description', 'detail', 'details', 'did', 'document', 'documents', 'does', 'done', 'due', 'dues', 'earn',
     'evening', 'expire', 'expired', 'expiring', 'expiry', 'filter', 'filters', 'find', 'finished',
     'follow', 'followup', 'followups', 'for', 'from', 'get', 'give', 'has', 'have', 'his', 'her',
     'how', 'income', 'info', 'information', 'install', 'installation', 'invoice', 'issue',
@@ -174,7 +200,7 @@ function looksLikeTomorrowTypo(word) {
  * still searches for "poorna".
  */
 function extractNameTokens(text) {
-  const cleaned = String(text || '')
+  const cleaned = normalizeCrmQueryText(text)
     .replace(/(?:\+?91[\s-]*)?[6-9]\d{9}\b/g, ' ')
     .replace(/\b[A-Z]{1,4}\d{2,}[A-Z0-9-]*\b/gi, ' ')
     .replace(/[^\p{L}\p{N}\s.'-]/gu, ' ')
@@ -208,7 +234,7 @@ function extractNameTokens(text) {
 }
 
 function extractQueryHints(message) {
-  const text = String(message || '').trim();
+  const text = normalizeCrmQueryText(message).trim();
   const phoneMatch = text.match(/(?:\+?91[\s-]*)?([6-9]\d{9})\b/);
   const phone = phoneMatch?.[1] || null;
 
@@ -222,7 +248,10 @@ function extractQueryHints(message) {
   const lookupTerms = [];
   if (jobNumber) lookupTerms.push(jobNumber);
   if (!phone) {
-    for (const run of text.match(/\d{4,}/g) || []) {
+    const searchText = text
+      .replace(/\b20\d{2}-\d{2}-\d{2}\b/g, ' ')
+      .replace(/\b(?:19|20)\d{2}\b/g, ' ');
+    for (const run of searchText.match(/\d{4,}/g) || []) {
       if (!lookupTerms.includes(run)) lookupTerms.push(run);
     }
   }
@@ -331,7 +360,7 @@ function detectTechnicianBillingRanking(message) {
  * Purely keyword-based; never turns into free-form SQL.
  */
 function detectOverviewIntent(message, todayKey = istDateKey()) {
-  const text = String(message || '').toLowerCase();
+  const text = normalizeCrmQueryText(message).toLowerCase();
   const has = (re) => re.test(text);
 
   const isFollowUp = has(/\bfollow[\s-]?ups?\b/);
@@ -349,7 +378,7 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   if (
     has(
       /\bnew customers?\b|\brecent customers?\b|\bnew leads?\b|\bhow many customers?\b|\btotal customers?\b|\bcustomer count\b|\bnumber of customers?\b/
-    )
+  ) || has(/\bcustomers?\s+(?:added|created|joined)\b/)
   )
     scopes.add('customers');
   const wantsCustomerRanking = detectCustomerValueRanking(message);
@@ -371,10 +400,14 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     { statuses: ['FOLLOW_UP'], pattern: /\bfollow[\s-]?ups?\b/g },
     { statuses: ['COMPLETED'], pattern: /\bcompleted?\b|\bdone\b|\bfinished\b|\bclosed\b/g },
     { statuses: ['CANCELLED'], pattern: /\bcancell?ed\b/g },
+    { statuses: ['ASSIGNED'], pattern: /\bassigned\b/g },
+    { statuses: ['EN_ROUTE'], pattern: /\ben[\s-]?route\b/g },
+    { statuses: ['IN_PROGRESS'], pattern: /\bin[\s-]?progress\b/g },
+    { statuses: ['PENDING'], pattern: /\bunassigned\b|\bpending\b/g },
     {
       statuses: ONGOING_JOB_STATUSES,
       pattern:
-        /\bpending\b|\bopen\b|\bon[\s-]?going\b|\bincomplete\b|\bunassigned\b|\bactive\b|\bremaining\b|\bleft\b|\bin[\s-]?progress\b|\ben[\s-]?route\b|\bnot (?:yet )?(?:completed|done)\b|\byet to\b/g,
+        /\bopen\b|\bon[\s-]?going\b|\bincomplete\b|\bactive\b|\bremaining\b|\bleft\b|\bnot (?:yet )?(?:completed|done)\b|\byet to\b/g,
     },
   ];
   let statuses = null;
@@ -397,71 +430,101 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   let explicitDate = false;
   let allTime = false;
 
-  if (
-    has(
-      /\ball[\s-]?time\b|\blife[\s-]?time\b|\bever\b|\boverall\b|\bin total\b|\bentire\b|\bso far\b|\bhistor(?:y|ical)\b|\bever since\b|\bfrom the start\b/
-    )
-  ) {
-    start = null;
-    end = null;
-    label = 'all time';
+  const dateCandidates = [];
+  const addDateCandidate = (pattern, resolve) => {
+    for (const match of text.matchAll(pattern)) dateCandidates.push({ index: match.index, resolve });
+  };
+  addDateCandidate(
+    /\ball[\s-]?time\b|\blife[\s-]?time\b|\bever\b|\boverall\b|\bin total\b|\bentire\b|\bso far\b|\bhistor(?:y|ical)\b|\bever since\b|\bfrom the start\b/g,
+    () => ({ start: null, end: null, label: 'all time', allTime: true })
+  );
+  addDateCandidate(/\byesterday\b/g, () => {
+    const day = addDaysKey(todayKey, -1);
+    return { start: day, end: day, label: 'yesterday' };
+  });
+  addDateCandidate(/\btom+o?r+o?w\b|\btomm?row\b/g, () => {
+    const day = addDaysKey(todayKey, 1);
+    return { start: day, end: day, label: 'tomorrow' };
+  });
+  addDateCandidate(/\blast month\b|\bprevious month\b/g, () => ({
+    ...monthBoundsKey(todayKey, -1),
+    label: 'last month',
+  }));
+  addDateCandidate(/\bthis month\b|\bmonth to date\b|(?<!last )(?<!previous )\bmonth\b/g, () => ({
+    ...monthBoundsKey(todayKey, 0),
+    label: 'this month',
+  }));
+  addDateCandidate(/\blast week\b|\bpast week\b|\blast 7 days\b|\bpast 7 days\b/g, () => ({
+    start: addDaysKey(todayKey, -6),
+    end: todayKey,
+    label: 'last 7 days',
+  }));
+  addDateCandidate(
+    /\bthis week\b|\bnext week\b|\bcoming week\b|\bnext 7 days\b|(?<!last )(?<!past )\bweek\b/g,
+    () => ({
+    start: todayKey,
+    end: addDaysKey(todayKey, 6),
+    label: 'next 7 days',
+    })
+  );
+  addDateCandidate(/\boverdue\b|\bpast due\b|\bmissed\b/g, () => ({
+    start: null,
+    end: addDaysKey(todayKey, -1),
+    label: 'overdue (before today)',
+  }));
+  addDateCandidate(/\btoday\b|\bnow\b/g, () => ({ start: todayKey, end: todayKey, label: 'today' }));
+  dateCandidates.sort((a, b) => a.index - b.index);
+  const relative = dateCandidates.at(-1)?.resolve();
+  if (relative) {
+    ({ start, end, label } = relative);
     explicitDate = true;
-    allTime = true;
-  } else if (has(/\byesterday\b/)) {
-    start = addDaysKey(todayKey, -1);
-    end = start;
-    label = 'yesterday';
-    explicitDate = true;
-  } else if (has(/\btom+o?r+o?w\b|\btomm?row\b/)) {
-    start = addDaysKey(todayKey, 1);
-    end = start;
-    label = 'tomorrow';
-    explicitDate = true;
-  } else if (has(/\blast month\b|\bprevious month\b/)) {
-    const b = monthBoundsKey(todayKey, -1);
-    start = b.start;
-    end = b.end;
-    label = 'last month';
-    explicitDate = true;
-  } else if (has(/\bthis month\b|\bmonth\b/)) {
-    const b = monthBoundsKey(todayKey, 0);
-    start = b.start;
-    end = b.end;
-    label = 'this month';
-    explicitDate = true;
-  } else if (has(/\blast week\b|\bpast week\b|\blast 7 days\b|\bpast 7 days\b/)) {
-    start = addDaysKey(todayKey, -6);
-    end = todayKey;
-    label = 'last 7 days';
-    explicitDate = true;
-  } else if (has(/\bthis week\b|\bnext week\b|\bcoming week\b|\bnext 7 days\b|\bweek\b/)) {
-    start = todayKey;
-    end = addDaysKey(todayKey, 6);
-    label = 'next 7 days';
-    explicitDate = true;
-  } else if (has(/\boverdue\b|\bpast due\b|\bmissed\b/)) {
-    start = null;
-    end = addDaysKey(todayKey, -1);
-    label = 'overdue (before today)';
-    explicitDate = true;
-  } else if (has(/\btoday\b|\bnow\b/)) {
-    explicitDate = true;
+    allTime = Boolean(relative.allTime);
   }
 
-  const yearMatch = String(message || '').match(/\b(20\d{2})\b(?!-)/);
-  if (yearMatch && !has(/\b20\d{2}-\d{2}-\d{2}\b/)) {
-    start = `${yearMatch[1]}-01-01`;
-    end = `${yearMatch[1]}-12-31`;
-    label = yearMatch[1];
+  const rawMessage = normalizeCrmQueryText(message);
+  const isoDates = [...rawMessage.matchAll(/\b(20\d{2}-\d{2}-\d{2})\b/g)].map((match) => match[1]);
+  if (isoDates.length >= 2 && /\b(?:from|between)\b[\s\S]*\b(?:to|and)\b/i.test(rawMessage)) {
+    [start, end] = isoDates;
+    if (start > end) [start, end] = [end, start];
+    label = `${start} to ${end}`;
+    explicitDate = true;
+    allTime = false;
+  } else if (isoDates.length === 1) {
+    [start] = isoDates;
+    end = start;
+    label = start;
     explicitDate = true;
     allTime = false;
   }
 
-  const explicitDateKey = String(message || '').match(/\b(20\d{2}-\d{2}-\d{2})\b/)?.[1] || null;
-  if (explicitDateKey) {
-    start = explicitDateKey;
-    end = explicitDateKey;
-    label = explicitDateKey;
+  const monthNumbers = {
+    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+    may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9,
+    sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11,
+    dec: 12, december: 12,
+  };
+  const namedDates = [...rawMessage.toLowerCase().matchAll(
+    /\b([0-3]?\d)\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(20\d{2})\b/g
+  )].map((match) => {
+    const month = monthNumbers[match[2]];
+    const day = Number(match[1]);
+    if (!month || day < 1 || day > 31) return null;
+    return `${match[3]}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }).filter(Boolean);
+  if (namedDates.length) {
+    start = namedDates[0];
+    end = namedDates[1] || start;
+    if (start > end) [start, end] = [end, start];
+    label = start === end ? start : `${start} to ${end}`;
+    explicitDate = true;
+    allTime = false;
+  }
+
+  const yearMatch = rawMessage.match(/\b(20\d{2})\b(?!-)/);
+  if (yearMatch && !isoDates.length && !namedDates.length) {
+    start = `${yearMatch[1]}-01-01`;
+    end = `${yearMatch[1]}-12-31`;
+    label = yearMatch[1];
     explicitDate = true;
     allTime = false;
   }
@@ -611,6 +674,12 @@ async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
   const matchedBefore = out.length;
   const queries = [];
   if (hints.phone) queries.push(hints.phone);
+  // Customer codes look like job numbers to the generic identifier parser.
+  // Search them before ordinary words such as "documents", otherwise that word
+  // suppresses the exact C0006 lookup.
+  for (const term of hints.lookupTerms || []) {
+    if (/^C\d+$/i.test(term) && !queries.includes(term)) queries.push(term);
+  }
   for (const token of hints.nameTokens || []) queries.push(token);
   if (!queries.length) {
     for (const term of hints.lookupTerms || []) queries.push(term);
@@ -1478,7 +1547,7 @@ async function loadOverview(db, intent, todayKey) {
     // Outstanding money stays outstanding, so a plain "pending payments" question
     // must not hide amounts that happen to fall due next week.
     const openEndedPayments = wantsPayments && !intent.explicitDate;
-    if (range.start && !wantsPayments) q = q.gte('reminder_at', range.start);
+    if (range.start && (!wantsPayments || intent.explicitDate)) q = q.gte('reminder_at', range.start);
     if (range.end && !openEndedPayments) q = q.lte('reminder_at', range.end);
 
     const { data, error } = await q;
@@ -1514,7 +1583,9 @@ async function loadOverview(db, intent, todayKey) {
       // Money owed is outstanding until it is collected; it is not "today's"
       // data even though it shows up in a question asked today.
       out.stats.pendingPaymentsScope = intent.explicitDate
-        ? `due on or before ${range.end || todayKey}`
+        ? range.start
+          ? `due from ${range.start} through ${range.end || range.start}`
+          : `due on or before ${range.end || todayKey}`
         : 'every outstanding payment reminder, whatever its due date';
       if (!intent.explicitDate) {
         out.stats.pendingPaymentsAlreadyDue = dueNowCount;
@@ -1636,12 +1707,29 @@ async function loadOverview(db, intent, todayKey) {
     }
     if (wantsOpenCount) {
       out.stats.openJobsTotal = await countRows(
-        db.from('jobs').select('id', { count: 'exact', head: true }).in('status', ONGOING_JOB_STATUSES)
+        (() => {
+          let q = db
+            .from('jobs')
+            .select('id', { count: 'exact', head: true })
+            .in('status', Array.isArray(statuses) ? statuses : ONGOING_JOB_STATUSES);
+          if (intent.explicitDate && range.start) q = q.gte('scheduled_date', range.start);
+          if (intent.explicitDate && range.end) q = q.lte('scheduled_date', range.end);
+          return q;
+        })()
       );
+      out.stats.openJobsStatuses = Array.isArray(statuses) ? statuses : ONGOING_JOB_STATUSES;
     }
     if (wantsFollowUpCount) {
       out.stats.followUpJobsTotal = await countRows(
-        db.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'FOLLOW_UP')
+        (() => {
+          let q = db
+            .from('jobs')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'FOLLOW_UP');
+          if (intent.explicitDate && range.start) q = q.gte('scheduled_date', range.start);
+          if (intent.explicitDate && range.end) q = q.lte('scheduled_date', range.end);
+          return q;
+        })()
       );
     }
   }
@@ -2000,9 +2088,11 @@ function formatContextForPrompt(pack) {
   if (stats.jobsCompletedInRange != null)
     statLines.push(`jobs completed in period = ${stats.jobsCompletedInRange}`);
   if (stats.openJobsTotal != null)
-    statLines.push(`open jobs right now (PENDING/ASSIGNED/EN_ROUTE/IN_PROGRESS) = ${stats.openJobsTotal}`);
+    statLines.push(
+      `jobs in requested open status(es) ${(stats.openJobsStatuses || ONGOING_JOB_STATUSES).join('/')} during the requested period = ${stats.openJobsTotal}`
+    );
   if (stats.followUpJobsTotal != null)
-    statLines.push(`jobs in FOLLOW_UP = ${stats.followUpJobsTotal}`);
+    statLines.push(`jobs in FOLLOW_UP during the requested period = ${stats.followUpJobsTotal}`);
   if (stats.jobsFilteredByTechnician?.length)
     statLines.push(
       `the job list below is filtered to technician(s) ${stats.jobsFilteredByTechnician.join(', ')}; counts labelled "in period" cover all technicians`
@@ -2162,6 +2252,7 @@ module.exports = {
   TOP_CUSTOMER_LIMIT,
   TOP_TECHNICIAN_LIMIT,
   ONGOING_JOB_STATUSES,
+  normalizeCrmQueryText,
   extractQueryHints,
   hasSearchableTarget,
   scopesForPlannerTools,

@@ -5,7 +5,11 @@
  * table names, RPC names or database filters; ai-crm-lookup remains authoritative.
  */
 
-const { extractQueryHints, hasSearchableTarget } = require('./ai-crm-lookup');
+const {
+  extractQueryHints,
+  hasSearchableTarget,
+  normalizeCrmQueryText,
+} = require('./ai-crm-lookup');
 
 const SEARCH_ONLY_TOOLS = new Set(['customer_search', 'job_search']);
 
@@ -112,7 +116,7 @@ function inferDeterministicPlan(message, history = []) {
   }
 
   const text = String(message || '').trim();
-  const lower = text.toLowerCase();
+  const lower = normalizeCrmQueryText(text).toLowerCase();
   if (
     /\b(create|add|edit|update|change|delete|remove|send|whatsapp|email|book|schedule|set)\b/.test(
       lower
@@ -174,6 +178,22 @@ function inferDeterministicPlan(message, history = []) {
         strategy: 'deterministic',
       };
     }
+  }
+
+  if (
+    lastUserMessage &&
+    /\b(?:his|her|their)\b/i.test(text) &&
+    /\b(?:biggest|highest|largest|top)\b/i.test(text) &&
+    /\bjob\b/i.test(text)
+  ) {
+    const merged = `${lastUserMessage} ${text}`;
+    return {
+      route: 'crm',
+      tools: ['technician_billing_ranking', 'jobs_overview'],
+      rewrittenQuery: merged,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
   }
 
   // "which technician is on those" points at the rows the previous question
@@ -256,7 +276,11 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
-  if (/\bhow many customers?\b|\btotal customers?\b|\bcustomer count\b|\bnumber of customers?\b/.test(lower)) {
+  if (
+    /\bhow many customers?\b|\btotal customers?\b|\bcustomer count\b|\bnumber of customers?\b|\bcustomers?\s+(?:added|created|joined)\b/.test(
+      lower
+    )
+  ) {
     return {
       route: 'crm',
       tools: ['customer_directory'],
@@ -266,7 +290,11 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
-  if (/\bpending payments?\b|\bpayments? pending\b|\bpayment dues?\b/.test(lower)) {
+  if (
+    /\bpending payments?\b|\bpayments? pending\b|\bpayment dues?\b|\bpayments?\s+reminders?\b|\bpayments?[\s-]+due\b|\boverdue\b|\bwho (?:owes|owe)\b|\bcustomers? (?:owes|owe)\b|\bowe us\b|\boutstanding (?:amount|payments?)\b/.test(
+      lower
+    )
+  ) {
     return {
       route: 'crm',
       tools: ['payments'],
@@ -315,7 +343,11 @@ function inferDeterministicPlan(message, history = []) {
   if (
     (/\b(today'?s?|yesterday'?s?) jobs?\b|\bjobs? (today|yesterday)\b/.test(lower) ||
       (/\bjobs?\b|\bvisits?\b|\bservices?\b/.test(lower) &&
-        /\bhow many\b|\bcount\b|\bon[\s-]?going\b|\bremaining\b|\bleft\b|\bopen\b|\bpending\b|\bin[\s-]?progress\b|\bunassigned\b|\bcompleted?\b|\bcancell?ed\b/.test(
+        /\bhow many\b|\bcount\b|\bon[\s-]?going\b|\bremaining\b|\bleft\b|\bopen\b|\bpending\b|\bin[\s-]?progress\b|\bunassigned\b|\bassigned\b|\ben[\s-]?route\b|\bcompleted?\b|\bcancell?ed\b/.test(
+          lower
+        )) ||
+      (/\bjobs?\b/.test(lower) &&
+        /\b20\d{2}-\d{2}-\d{2}\b|\bbetween\b|\bfrom\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/.test(
           lower
         ))) &&
     !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
