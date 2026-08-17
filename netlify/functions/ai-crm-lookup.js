@@ -204,7 +204,7 @@ function detectCustomerValueRanking(message) {
     text
   );
   const mentionsValue =
-    /\bpaid\b|\bpaying\b|\bspent\b|\bspend\b|\brevenue\b|\bsales\b|\bvalue\b|\bbilled\b/.test(
+    /\bpaid\b|\bpaying\b|\bspent\b|\bspend\b|\brevenue\b|\bsales\b|\bvalue\b|\bbill(?:ed|ing)?\b/.test(
       text
     );
   return mentionsCustomer && mentionsRanking && mentionsValue;
@@ -683,8 +683,37 @@ function resolveCompletedJobValue(row) {
   return Math.max(0, paymentAmount > 0 ? paymentAmount : actualCost);
 }
 
+function normalizeTechnicianBillingRow(row) {
+  if (!row?.technician_id) return null;
+  return {
+    technicianId: String(row.technician_id),
+    employeeId: row.employee_id ? String(row.employee_id) : null,
+    name: row.technician_name ? String(row.technician_name).trim() : 'Technician',
+    billedTotal: Math.round(Number(row.billed_total) || 0),
+    completedJobs: Math.max(0, Math.round(Number(row.completed_jobs) || 0)),
+  };
+}
+
 async function loadTechnicianBillingRanking(db, intent, todayKey) {
   const bounds = istDayBounds(intent.range.start || todayKey, intent.range.end || todayKey);
+
+  const { data: rpcData, error: rpcError } = await db.rpc('ai_crm_top_technicians', {
+    p_limit: TOP_TECHNICIAN_LIMIT,
+    p_from: bounds.fromTs,
+    p_to: bounds.toTs,
+  });
+  if (!rpcError && Array.isArray(rpcData)) {
+    return {
+      technicians: rpcData.map(normalizeTechnicianBillingRow).filter(Boolean),
+      scannedJobs: null,
+      truncated: false,
+      source: 'database_aggregate',
+    };
+  }
+  if (rpcError) {
+    console.warn('[ai-crm-lookup] top technician RPC unavailable; using thin fallback');
+  }
+
   const select =
     'id,assigned_technician_id,completed_by,payment_amount,actual_cost,completed_at,end_time';
   const queries = [
@@ -723,9 +752,8 @@ async function loadTechnicianBillingRanking(db, intent, todayKey) {
 
   const grouped = new Map();
   for (const job of jobs) {
-    // The person who actually completed the job is authoritative; assignment is
-    // the fallback for older rows that predate completed_by.
-    const technicianId = String(job.completed_by || job.assigned_technician_id || '').trim();
+    // Match analytics attribution first; completed_by covers legacy unassigned rows.
+    const technicianId = String(job.assigned_technician_id || job.completed_by || '').trim();
     if (!technicianId) continue;
     const current = grouped.get(technicianId) || {
       technicianId,
@@ -766,7 +794,12 @@ async function loadTechnicianBillingRanking(db, intent, todayKey) {
     )
     .slice(0, TOP_TECHNICIAN_LIMIT);
 
-  return { technicians, scannedJobs: jobs.length, truncated };
+  return {
+    technicians,
+    scannedJobs: jobs.length,
+    truncated,
+    source: 'thin_fallback',
+  };
 }
 
 async function loadTopCustomerValueRanking(db, intent, todayKey) {
@@ -932,7 +965,8 @@ async function loadOverview(db, intent, todayKey) {
     out.stats.technicianBillingPeriod = range.label || 'today';
     out.stats.technicianBillingCompletedJobsScanned = ranking.scannedJobs;
     out.stats.technicianBillingBasis =
-      'billedTotal is completed-job billing (payment_amount when positive, otherwise actual_cost); attribution uses completed_by, falling back to assigned_technician_id';
+      'billedTotal is completed-job billing (payment_amount when positive, otherwise actual_cost); attribution prefers assigned_technician_id to match Analytics, with completed_by as fallback in local scan mode';
+    out.stats.technicianBillingRankingSource = ranking.source;
     out.truncated.technicianBillingRanking = ranking.truncated;
   }
 

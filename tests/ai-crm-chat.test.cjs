@@ -414,6 +414,7 @@ function testLookupSourceIsBounded() {
   );
   assert.match(src, /CUSTOMER_LIMIT/);
   assert.match(src, /JOB_LIMIT/);
+  assert.match(src, /ai_crm_top_technicians/);
   assert.doesNotMatch(src, /select\('\*'\)/);
   assert.doesNotMatch(src, /pdf_bytes|base64/);
 }
