@@ -167,7 +167,7 @@ function testProviderAllowlist() {
   assert.equal(ALLOWED_PROVIDERS.has('mock'), true);
   assert.equal(ALLOWED_PROVIDERS.has('openai'), false);
   assert.equal(ALLOWED_GEMINI_MODELS.has('gemini-3.1-flash-lite'), true);
-  assert.equal(ALLOWED_GROQ_MODELS.has('llama-3.3-70b-versatile'), true);
+  assert.equal(ALLOWED_GROQ_MODELS.has('openai/gpt-oss-120b'), true);
 
   clearAiAssistantConfigCache();
   const cfg = normalizeConfig(
@@ -192,24 +192,24 @@ function testProviderAllowlist() {
   );
   assert.deepEqual(fallbackConfig.fallbackChain, [
     { provider: 'gemini', model: 'gemini-3.1-flash-lite' },
-    { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+    { provider: 'groq', model: 'openai/gpt-oss-120b' },
   ]);
   assert.deepEqual(buildProviderAttempts(fallbackConfig), [
     { provider: 'gemini', model: 'gemini-2.5-flash' },
     { provider: 'gemini', model: 'gemini-3.1-flash-lite' },
-    { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+    { provider: 'groq', model: 'openai/gpt-oss-120b' },
   ]);
 
   const groqConfig = normalizeConfig(
     {
       provider: 'groq',
       groqApiKey: 'groq-test-key',
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
     },
     'env'
   );
   assert.equal(groqConfig.provider, 'groq');
-  assert.equal(groqConfig.model, 'llama-3.3-70b-versatile');
+  assert.equal(groqConfig.model, 'openai/gpt-oss-120b');
 }
 
 async function testMockProviderStructuredOutput() {
@@ -290,7 +290,7 @@ async function testQuotaFallbackUsesGroq() {
         geminiApiKey: 'gemini-test-key',
         groqApiKey: 'groq-test-key',
         fallbackChain: [
-          { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+          { provider: 'groq', model: 'openai/gpt-oss-120b' },
         ],
       },
       {

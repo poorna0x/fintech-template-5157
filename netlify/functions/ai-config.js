@@ -43,14 +43,14 @@ const ALLOWED_GEMINI_MODELS = new Set([
   'gemini-1.5-flash-8b',
 ]);
 const ALLOWED_GROQ_MODELS = new Set([
-  'llama-3.3-70b-versatile',
   'openai/gpt-oss-120b',
   'openai/gpt-oss-20b',
   'qwen/qwen3.6-27b',
+  'groq/compound-mini',
 ]);
 const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 const DEFAULT_GEMINI_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
-const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
 
 let cachedConfig = null;
 let cachedAt = 0;

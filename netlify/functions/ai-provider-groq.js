@@ -64,7 +64,7 @@ function tryParseJsonObject(text) {
 
 async function generateWithGroq(input, config) {
   const apiKey = String(config?.groqApiKey || '').trim();
-  const model = String(config?.model || 'llama-3.3-70b-versatile').trim();
+  const model = String(config?.model || 'openai/gpt-oss-120b').trim();
   if (!apiKey) throw createProviderError('Groq API key missing');
 
   const messages = toGroqMessages(input.systemInstruction, input.messages);
@@ -121,8 +121,12 @@ async function generateWithGroq(input, config) {
         code,
       });
     }
-    if (response.status === 404) {
-      throw createProviderError(`Groq model not available (${model})`, { code });
+    if (response.status === 404 || message.includes('decommissioned')) {
+      // A retired model must not break the CRM: let the chain try the next provider.
+      throw createProviderError(`Groq model not available (${model})`, {
+        retryable: true,
+        code,
+      });
     }
     throw createProviderError(`Groq request failed (${code})`, { code });
   }

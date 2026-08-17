@@ -19,15 +19,15 @@ const { localDayKey, monthStartDayKey } = require('../netlify/functions/ai-audit
 function testAllowlistsExposeNoSecrets() {
   assert.equal(ALLOWED_PROVIDERS.has('groq'), true);
   assert.equal(ALLOWED_GEMINI_MODELS.has('gemini-2.5-flash'), true);
-  assert.equal(ALLOWED_GROQ_MODELS.has('llama-3.3-70b-versatile'), true);
+  assert.equal(ALLOWED_GROQ_MODELS.has('openai/gpt-oss-120b'), true);
 
   const selectable = listSelectableModels();
   assert.ok(selectable.providers.includes('gemini'));
-  assert.ok(selectable.models.groq.includes('llama-3.3-70b-versatile'));
+  assert.ok(selectable.models.groq.includes('openai/gpt-oss-120b'));
 
   const summary = publicConfigSummary({
     provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    model: 'openai/gpt-oss-120b',
     geminiApiKey: 'secret-gemini',
     groqApiKey: 'secret-groq',
     fallbackChain: [{ provider: 'gemini', model: 'gemini-3.1-flash-lite' }],
@@ -35,7 +35,7 @@ function testAllowlistsExposeNoSecrets() {
     dailyTokenLimit: 200000,
   });
   assert.equal(summary.provider, 'groq');
-  assert.equal(summary.model, 'llama-3.3-70b-versatile');
+  assert.equal(summary.model, 'openai/gpt-oss-120b');
   assert.equal(summary.geminiConfigured, true);
   assert.equal(summary.groqConfigured, true);
   assert.equal('geminiApiKey' in summary, false);
@@ -53,7 +53,7 @@ function testAggregationAndIstDay() {
     {
       status: 'ok',
       provider: 'groq',
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       operation: 'crm_chat',
       input_tokens: 10,
       output_tokens: 5,
