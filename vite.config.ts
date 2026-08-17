@@ -57,6 +57,10 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/whatsapp-ai-chat-settings': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/geocode': {
         target: 'http://localhost:8888',
         changeOrigin: true,

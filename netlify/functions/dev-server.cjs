@@ -232,6 +232,11 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./resolve-maps-link')];
     delete require.cache[require.resolve('./whatsapp-location-enrich')];
     handler = loadFn('whatsapp-inbox-apply-to-customer');
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-ai-chat-settings')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ai-audit')];
+    delete require.cache[require.resolve('./whatsapp-ai-chat-settings')];
+    handler = loadFn('whatsapp-ai-chat-settings');
   } else if (req.url.startsWith('/.netlify/functions/geocode')) {
     handler = loadFn('geocode');
   } else if (req.url.startsWith('/.netlify/functions/resolve-maps-link')) {
