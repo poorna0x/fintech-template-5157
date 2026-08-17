@@ -5,6 +5,9 @@
 
 const ALLOWED_ACTION_TYPES = Object.freeze([
   'open_customer',
+  'create_customer',
+  'create_customer_and_job',
+  'edit_customer',
   'create_job',
   'schedule_follow_up',
   'create_reminder',
@@ -87,12 +90,15 @@ function normalizeCreateJobPayload(raw, knownCustomerIds) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const customerId = asTrimmedString(src.customerId, 64);
   if (!customerId || !knownCustomerIds.has(customerId)) return null;
+  return { customerId, ...normalizeJobFields(src) };
+}
+
+function normalizeJobFields(src) {
   const time = normalizeTimeSlot(
     src.scheduledTimeSlot || src.scheduled_time_slot,
     src.scheduledTimeCustom || src.scheduled_time_custom
   );
   return {
-    customerId,
     serviceType:
       src.serviceType === 'SOFTENER' || src.service_type === 'SOFTENER' ? 'SOFTENER' : 'RO',
     serviceSubType: asTrimmedString(src.serviceSubType || src.service_sub_type, 80) || 'Service',
@@ -104,6 +110,63 @@ function normalizeCreateJobPayload(raw, knownCustomerIds) {
     leadSource: asTrimmedString(src.leadSource || src.lead_source, 80),
     notes: asTrimmedString(src.notes, 500),
   };
+}
+
+function normalizePhone(raw) {
+  const text = asTrimmedString(raw, 30);
+  if (!text) return '';
+  const digits = text.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits.slice(0, 15);
+}
+
+function normalizeCustomerFields(raw, { requireAny = true } = {}) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const fields = {
+    fullName: asTrimmedString(src.fullName || src.full_name || src.name, 120),
+    phone: normalizePhone(src.phone),
+    alternatePhone: normalizePhone(src.alternatePhone || src.alternate_phone),
+    email: asTrimmedString(src.email, 160),
+    address: asTrimmedString(src.address, 500),
+    visibleAddress: asTrimmedString(
+      src.visibleAddress || src.visible_address || src.locationLabel || src.location_label,
+      240
+    ),
+    googleLocation: asTrimmedString(
+      src.googleLocation || src.google_location || src.mapsLink || src.maps_link,
+      500
+    ),
+    serviceType:
+      src.serviceType === 'SOFTENER' || src.service_type === 'SOFTENER'
+        ? 'SOFTENER'
+        : src.serviceType === 'RO' || src.service_type === 'RO'
+          ? 'RO'
+          : '',
+    brand: asTrimmedString(src.brand, 100),
+    model: asTrimmedString(src.model, 100),
+    notes: asTrimmedString(src.customerNotes || src.customer_notes || src.notes, 500),
+  };
+  if (requireAny && !fields.fullName && !fields.phone) return null;
+  return fields;
+}
+
+function normalizeCreateCustomerPayload(raw, withJob = false) {
+  const customer = normalizeCustomerFields(raw);
+  if (!customer) return null;
+  return withJob ? { ...customer, ...normalizeJobFields(raw) } : customer;
+}
+
+function normalizeEditCustomerPayload(raw, knownCustomerIds) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const customerId = asTrimmedString(src.customerId, 64);
+  if (!customerId || !knownCustomerIds.has(customerId)) return null;
+  const patch = normalizeCustomerFields(src.patch || src, { requireAny: false });
+  const editable = Object.fromEntries(
+    Object.entries(patch || {}).filter(([key, value]) => key !== 'serviceType' && value !== '')
+  );
+  if (!Object.keys(editable).length) return null;
+  return { customerId, patch: editable };
 }
 
 function normalizeFollowUpPayload(raw, knownJobIds) {
@@ -163,6 +226,12 @@ function normalizeCrmChatOutput(raw, opts = {}) {
       const customerId = asTrimmedString(row.payload?.customerId || row.customerId, 64);
       if (!customerId || !knownCustomerIds.has(customerId)) continue;
       payload = { customerId };
+    } else if (type === 'create_customer') {
+      payload = normalizeCreateCustomerPayload(row.payload || row);
+    } else if (type === 'create_customer_and_job') {
+      payload = normalizeCreateCustomerPayload(row.payload || row, true);
+    } else if (type === 'edit_customer') {
+      payload = normalizeEditCustomerPayload(row.payload || row, knownCustomerIds);
     } else if (type === 'create_job') {
       payload = normalizeCreateJobPayload(row.payload || row, knownCustomerIds);
     } else if (type === 'schedule_follow_up') {

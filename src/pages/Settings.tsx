@@ -112,6 +112,7 @@ import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
+import QuickUpiQrGenerator from '@/components/admin/QuickUpiQrGenerator';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
 import { SettingsSearch } from '@/components/admin/SettingsSearch';
@@ -3494,6 +3495,8 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+
+          <QuickUpiQrGenerator />
 
           {/* UPI accounts for pending-payment WhatsApp pay links */}
           <Card id="section-upi-payment-accounts" className="scroll-mt-24">

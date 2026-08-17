@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ExternalLink, Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import { ExternalLink, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -165,27 +165,14 @@ export default function AiUsagePage({ hideHeader, onBack }: Props) {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-10 touch-manipulation"
-          onClick={() => void load()}
-          disabled={loading}
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          <span className="ml-2">Refresh</span>
-        </Button>
-        {snapshot?.dayKey ? (
-          <span className="text-xs text-muted-foreground">
-            IST day {snapshot.dayKey}
-            {snapshot.generatedAt
-              ? ` · updated ${new Date(snapshot.generatedAt).toLocaleTimeString()}`
-              : ''}
-          </span>
-        ) : null}
-      </div>
+      {snapshot?.dayKey ? (
+        <p className="text-xs text-muted-foreground">
+          IST day {snapshot.dayKey}
+          {snapshot.generatedAt
+            ? ` · updated ${new Date(snapshot.generatedAt).toLocaleTimeString()}`
+            : ''}
+        </p>
+      ) : null}
 
       {error ? (
         <Card>

@@ -98,12 +98,15 @@ export default function WhatsAppTest() {
 
   useEffect(() => {
     let cancelled = false;
+    let id: number | null = null;
+
     const load = async () => {
       if (!pocSecret.trim()) {
         setInboundError('Enter POC secret above (WHATSAPP_POC_SECRET from .env.local) to load messages.');
         setStoredMessages([]);
         return;
       }
+      if (typeof document !== 'undefined' && document.hidden) return;
       try {
         const qs = `?secret=${encodeURIComponent(pocSecret.trim())}`;
         const res = await fetch(`/.netlify/functions/whatsapp-events${qs}`);
@@ -115,6 +118,11 @@ export default function WhatsAppTest() {
               ? 'Unauthorized — POC secret does not match WHATSAPP_POC_SECRET in .env.local'
               : data?.error || `HTTP ${res.status}`
           );
+          // Stop hammering Netlify on permanent auth failures.
+          if (res.status === 401 || res.status === 403) {
+            if (id != null) window.clearInterval(id);
+            id = null;
+          }
           return;
         }
         setInboundError(null);
@@ -126,11 +134,18 @@ export default function WhatsAppTest() {
         }
       }
     };
+
     void load();
-    const id = window.setInterval(load, 3000);
+    // Local POC only — keep slow and pause when the tab is hidden to avoid Netlify request storms.
+    id = window.setInterval(load, 30_000);
+    const onVisibility = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      if (id != null) window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [pocSecret]);
 

@@ -138,6 +138,13 @@ const draftHasData = (draft: ReturnType<typeof loadAddCustomerDraft>): boolean =
 
 const ADD_CUSTOMER_STEPS = ['Personal', 'Address', 'Services', 'Review', 'Job'] as const;
 
+export type AddCustomerInitialDraft = {
+  addFormData?: Partial<ReturnType<typeof createDefaultAddFormData>>;
+  step5JobData?: Partial<ReturnType<typeof createDefaultStep5JobData>>;
+  currentStep?: number;
+  shouldCreateJob?: boolean;
+};
+
 interface AddCustomerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -149,6 +156,8 @@ interface AddCustomerDialogProps {
   onCheckExistingCustomer?: (phone: string, email?: string) => Promise<Customer | null>;
   /** When a new job is created with a technician assigned (step 5), open WhatsApp notify flow in parent. */
   onJobAssignedToTechnician?: (payload: JobAssignedToTechnicianPayload) => void;
+  /** Review-first AI prefill. Opens the normal form and never submits automatically. */
+  initialDraft?: AddCustomerInitialDraft | null;
 }
 
 const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
@@ -159,6 +168,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   onExistingCustomerFound,
   onCheckExistingCustomer,
   onJobAssignedToTechnician,
+  initialDraft,
 }) => {
   const initialDraftRef = useRef(loadAddCustomerDraft());
   const [currentStep, setCurrentStep] = useState(() =>
@@ -184,6 +194,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // When the dialog opens with a saved (uncreated) draft, ask whether to resume or start fresh.
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const wasOpenRef = useRef(false);
+  const appliedInitialDraftRef = useRef(false);
   const locationManuallyEditedRef = useRef(false);
   // Mirrors addFormData.google_location for race-safe reads across async awaits
   // (e.g. while clipboard.readText is in flight, the user might start typing).
@@ -267,13 +278,27 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // On open, if there's an uncreated draft, ask the admin to resume or start new.
   useEffect(() => {
     if (open && !wasOpenRef.current) {
-      setShowResumePrompt(draftHasData(loadAddCustomerDraft()));
+      if (initialDraft && !appliedInitialDraftRef.current) {
+        appliedInitialDraftRef.current = true;
+        clearLocationFetchState();
+        setAddFormData({ ...createDefaultAddFormData(), ...(initialDraft.addFormData || {}) });
+        setStep5JobData({
+          ...createDefaultStep5JobData(),
+          ...(initialDraft.step5JobData || {}),
+        });
+        setCurrentStep(initialDraft.currentStep || 1);
+        setShouldCreateJob(initialDraft.shouldCreateJob === true);
+        setShowResumePrompt(false);
+      } else {
+        setShowResumePrompt(draftHasData(loadAddCustomerDraft()));
+      }
     }
     if (!open) {
       setShowResumePrompt(false);
+      appliedInitialDraftRef.current = false;
     }
     wasOpenRef.current = open;
-  }, [open]);
+  }, [open, initialDraft, clearLocationFetchState]);
 
   // Persist in-progress input so closing the dialog (or a refresh) doesn't lose it.
   // Only while open, so the post-submit reset doesn't re-write an empty draft.

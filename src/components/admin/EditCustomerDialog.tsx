@@ -146,6 +146,19 @@ interface EditCustomerDialogProps {
   onCustomerUpdated: (updatedCustomer: Customer) => void;
   onLoadBrandsAndModels: () => Promise<void>;
   onCustomerDeleted?: (customerId: string) => void;
+  /** Review-first AI patch. Only supplied fields override the hydrated customer. */
+  initialPatch?: {
+    fullName?: string;
+    phone?: string;
+    alternatePhone?: string;
+    email?: string;
+    address?: string;
+    visibleAddress?: string;
+    googleLocation?: string;
+    brand?: string;
+    model?: string;
+    notes?: string;
+  } | null;
 }
 
 const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
@@ -156,7 +169,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   dbModels,
   onCustomerUpdated,
   onLoadBrandsAndModels,
-  onCustomerDeleted
+  onCustomerDeleted,
+  initialPatch,
 }) => {
   const { isManager } = useAdminRole();
   const managerRestrictedTitle = MANAGER_RESTRICTED_TITLE;
@@ -423,6 +437,37 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         service_cost: customerToUse.serviceCost || 0,
         cost_agreed: customerToUse.costAgreed || false
       });
+      if (initialPatch) {
+        setEditFormData((previous) => ({
+          ...previous,
+          full_name: initialPatch.fullName ?? previous.full_name,
+          phone: initialPatch.phone ?? previous.phone,
+          alternate_phone: initialPatch.alternatePhone ?? previous.alternate_phone,
+          email: initialPatch.email ?? previous.email,
+          notes: initialPatch.notes ?? previous.notes,
+          visible_address: initialPatch.visibleAddress ?? previous.visible_address,
+          google_location: initialPatch.googleLocation ?? previous.google_location,
+          address: initialPatch.address
+            ? { ...previous.address, street: initialPatch.address }
+            : previous.address,
+          equipment:
+            initialPatch.brand || initialPatch.model
+              ? {
+                  ...previous.equipment,
+                  [previous.service_types[0] || 'RO']: {
+                    brand:
+                      initialPatch.brand ??
+                      previous.equipment[previous.service_types[0] || 'RO']?.brand ??
+                      '',
+                    model:
+                      initialPatch.model ??
+                      previous.equipment[previous.service_types[0] || 'RO']?.model ??
+                      '',
+                  },
+                }
+              : previous.equipment,
+        }));
+      }
       
       lastSavedFormDataRef.current = JSON.stringify({
         full_name: customerToUse.full_name || customerToUse.fullName || '',
@@ -458,7 +503,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       void fetchFreshCustomerData();
       locationManuallyEditedRef.current = false;
       alternateLocationManuallyEditedRef.current = false;
-  }, [customer?.id, open]);
+  }, [customer?.id, open, initialPatch]);
 
 
   const handleEditFormChange = (

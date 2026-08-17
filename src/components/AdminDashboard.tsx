@@ -276,7 +276,9 @@ import WarrantyManagementDialog from './admin/WarrantyManagementDialog';
 import { CompleteJobDialog } from './admin/CompleteJobDialog';
 import { StatsCards } from './admin/StatsCards';
 import EditCustomerDialog from './admin/EditCustomerDialog';
-import AddCustomerDialog from './admin/AddCustomerDialog';
+import AddCustomerDialog, {
+  type AddCustomerInitialDraft,
+} from './admin/AddCustomerDialog';
 import CustomerReportDialog from './admin/CustomerReportDialog';
 import SendMessageDialog from './admin/SendMessageDialog';
 import AdminEmailComposerDialog from './admin/AdminEmailComposer';
@@ -308,7 +310,10 @@ import NewJobDialog from './admin/NewJobDialog';
 import { AddReminderDialog } from './reminders/AddReminderDialog';
 import AdminCrmAiDialog from './admin/AdminCrmAiDialog';
 import type {
+  AiCrmCreateCustomerAndJobDraft,
   AiCrmCreateJobDraft,
+  AiCrmCustomerDraft,
+  AiCrmEditCustomerDraft,
   AiCrmFollowUpDraft,
   AiCrmReminderDraft,
 } from '@/lib/aiCrmAssistant';
@@ -1106,7 +1111,11 @@ const AdminDashboard = () => {
     description: string;
     priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
     lead_source: string;
+    photos: string[];
   }> | null>(null);
+  const [aiCustomerDraft, setAiCustomerDraft] = useState<AddCustomerInitialDraft | null>(null);
+  const [aiEditCustomerPatch, setAiEditCustomerPatch] =
+    useState<AiCrmCustomerDraft | null>(null);
   const [aiFollowUpDraft, setAiFollowUpDraft] = useState<{
     followUpDate?: string | null;
     followUpTime?: string | null;
@@ -5594,6 +5603,124 @@ const AdminDashboard = () => {
     [closeAdminTool, runCustomerSearch]
   );
 
+  const buildAiCustomerSeed = useCallback(
+    (
+      draft: AiCrmCustomerDraft | AiCrmCreateCustomerAndJobDraft,
+      shouldCreateJob: boolean
+    ): AddCustomerInitialDraft => {
+      const photos = Array.isArray(draft.photoUrls) ? draft.photoUrls.filter(Boolean) : [];
+      const serviceType =
+        draft.serviceType === 'SOFTENER'
+          ? 'SOFTENER'
+          : draft.serviceType === 'RO'
+            ? 'RO'
+            : photos.length
+              ? 'RO'
+              : null;
+      return {
+        currentStep: 1,
+        shouldCreateJob,
+        addFormData: {
+          full_name: draft.fullName || '',
+          phone: draft.phone || '',
+          alternate_phone: draft.alternatePhone || '',
+          email: draft.email || '',
+          address: draft.address || '',
+          visible_address: draft.visibleAddress || '',
+          google_location: draft.googleLocation || '',
+          notes: draft.notes || '',
+          service_types: serviceType ? [serviceType] : [],
+          equipment: serviceType
+            ? {
+                [serviceType]: {
+                  brand: draft.brand || '',
+                  model: draft.model || '',
+                },
+              }
+            : {},
+          photos: serviceType && photos.length ? { [serviceType]: photos } : {},
+        },
+        ...(shouldCreateJob
+          ? {
+              step5JobData: {
+                service_type:
+                  (draft as AiCrmCreateCustomerAndJobDraft).serviceType === 'SOFTENER'
+                    ? 'SOFTENER'
+                    : 'RO',
+                service_sub_type:
+                  (draft as AiCrmCreateCustomerAndJobDraft).serviceSubType || 'Service',
+                scheduled_date:
+                  (draft as AiCrmCreateCustomerAndJobDraft).scheduledDate || '',
+                scheduled_date_touched: Boolean(
+                  (draft as AiCrmCreateCustomerAndJobDraft).scheduledDate
+                ),
+                scheduled_time_slot:
+                  ((draft as AiCrmCreateCustomerAndJobDraft).scheduledTimeSlot as
+                    | 'MORNING'
+                    | 'AFTERNOON'
+                    | 'EVENING'
+                    | 'FLEXIBLE'
+                    | 'CUSTOM') || 'MORNING',
+                scheduled_time_custom:
+                  (draft as AiCrmCreateCustomerAndJobDraft).scheduledTimeCustom || '',
+                description:
+                  (draft as AiCrmCreateCustomerAndJobDraft).description ||
+                  draft.notes ||
+                  '',
+                lead_source:
+                  (draft as AiCrmCreateCustomerAndJobDraft).leadSource || '',
+                priority:
+                  ((draft as AiCrmCreateCustomerAndJobDraft).priority as
+                    | 'LOW'
+                    | 'MEDIUM'
+                    | 'HIGH'
+                    | 'URGENT') || 'MEDIUM',
+              },
+            }
+          : {}),
+      };
+    },
+    []
+  );
+
+  const handleAiConfirmCreateCustomer = useCallback(
+    (draft: AiCrmCustomerDraft) => {
+      closeAdminTool();
+      setAiCustomerDraft(buildAiCustomerSeed(draft, false));
+      openAdminModal('add-customer');
+    },
+    [buildAiCustomerSeed, closeAdminTool, openAdminModal]
+  );
+
+  const handleAiConfirmCreateCustomerAndJob = useCallback(
+    (draft: AiCrmCreateCustomerAndJobDraft) => {
+      closeAdminTool();
+      setAiCustomerDraft(buildAiCustomerSeed(draft, true));
+      openAdminModal('add-customer');
+    },
+    [buildAiCustomerSeed, closeAdminTool, openAdminModal]
+  );
+
+  const handleAiConfirmEditCustomer = useCallback(
+    async (draft: AiCrmEditCustomerDraft) => {
+      closeAdminTool();
+      if (!draft.customerId) {
+        toast.error('AI edit draft is missing a customer');
+        return;
+      }
+      const { data, error } = await db.customers.getById(draft.customerId);
+      if (error || !data) {
+        toast.error('Customer not found for AI edit draft');
+        return;
+      }
+      const customer = transformCustomerData(data);
+      setAiEditCustomerPatch(draft.patch || {});
+      setEditingCustomer(customer);
+      openAdminModal('edit-customer', { customerId: customer.id });
+    },
+    [closeAdminTool, openAdminModal]
+  );
+
   const handleAiConfirmCreateJob = useCallback(
     async (draft: AiCrmCreateJobDraft) => {
       closeAdminTool();
@@ -5637,6 +5764,7 @@ const AdminDashboard = () => {
             ? String(draft.priority).toUpperCase()
             : 'MEDIUM') as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
           lead_source: draft.leadSource || undefined,
+          photos: Array.isArray(draft.photoUrls) ? draft.photoUrls : undefined,
         });
         handleNewJob(customer);
       } catch {
@@ -6862,9 +6990,14 @@ const AdminDashboard = () => {
       {/* Add Customer Dialog */}
       <AddCustomerDialog
         open={addDialogOpen}
-        onOpenChange={bindAdminModalDismiss('add-customer', () => setAddDialogOpen(false))}
+        onOpenChange={bindAdminModalDismiss('add-customer', () => {
+          setAddDialogOpen(false);
+          setAiCustomerDraft(null);
+        })}
+        initialDraft={aiCustomerDraft}
         customers={customers}
         onCustomerCreated={async (newCustomer) => {
+          setAiCustomerDraft(null);
           if (newCustomer) {
             const transformed = transformCustomerData(newCustomer);
             pendingNewCustomersRef.current.set(transformed.id, transformed);
@@ -6907,8 +7040,10 @@ const AdminDashboard = () => {
         onOpenChange={bindAdminModalDismiss('edit-customer', () => {
           setEditDialogOpen(false);
           setEditingCustomer(null);
+          setAiEditCustomerPatch(null);
         })}
         customer={editingCustomer}
+        initialPatch={aiEditCustomerPatch}
         dbBrands={dbBrands}
         dbModels={dbModels}
         onCustomerUpdated={(updatedCustomer) => {
@@ -6922,6 +7057,7 @@ const AdminDashboard = () => {
             full_name: (updatedCustomer as any).full_name ?? updatedCustomer.fullName ?? null,
           });
           setEditingCustomer(null);
+          setAiEditCustomerPatch(null);
           closeAdminModal();
           void loadFilteredJobs(statusFilter, currentPage, { silent: true });
         }}
@@ -7728,6 +7864,11 @@ const AdminDashboard = () => {
         onOpenChange={(open) => handleAdminToolOpenChange('ai-assistant', open)}
         onSearchCustomer={(query, customerId) => {
           void handleAiSearchCustomer(query, customerId);
+        }}
+        onConfirmCreateCustomer={handleAiConfirmCreateCustomer}
+        onConfirmCreateCustomerAndJob={handleAiConfirmCreateCustomerAndJob}
+        onConfirmEditCustomer={(draft) => {
+          void handleAiConfirmEditCustomer(draft);
         }}
         onConfirmCreateJob={(draft) => {
           void handleAiConfirmCreateJob(draft);

@@ -8,15 +8,33 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Sparkles, Search, Briefcase, Bell, CalendarClock } from 'lucide-react';
+import {
+  ArrowUp,
+  Bell,
+  Briefcase,
+  CalendarClock,
+  ImagePlus,
+  Loader2,
+  Pencil,
+  Search,
+  Sparkles,
+  UserPlus,
+  X,
+} from 'lucide-react';
 import {
   requestAiCrmChat,
   type AiCrmChatResult,
+  type AiCrmCreateCustomerAndJobDraft,
   type AiCrmCreateJobDraft,
+  type AiCrmCustomerDraft,
+  type AiCrmEditCustomerDraft,
   type AiCrmFollowUpDraft,
   type AiCrmProposedAction,
   type AiCrmReminderDraft,
 } from '@/lib/aiCrmAssistant';
+import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
+import { useAutoGrowTextarea } from '@/lib/useAutoGrowTextarea';
+import { toast } from 'sonner';
 
 type ChatTurn = {
   id: string;
@@ -30,6 +48,9 @@ type AdminCrmAiDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSearchCustomer: (query: string, customerId?: string) => void;
+  onConfirmCreateCustomer: (draft: AiCrmCustomerDraft) => void;
+  onConfirmCreateCustomerAndJob: (draft: AiCrmCreateCustomerAndJobDraft) => void;
+  onConfirmEditCustomer: (draft: AiCrmEditCustomerDraft) => void;
   onConfirmCreateJob: (draft: AiCrmCreateJobDraft) => void;
   onConfirmFollowUp: (draft: AiCrmFollowUpDraft) => void;
   onConfirmReminder: (draft: AiCrmReminderDraft) => void;
@@ -44,14 +65,20 @@ export default function AdminCrmAiDialog({
   open,
   onOpenChange,
   onSearchCustomer,
+  onConfirmCreateCustomer,
+  onConfirmCreateCustomerAndJob,
+  onConfirmEditCustomer,
   onConfirmCreateJob,
   onConfirmFollowUp,
   onConfirmReminder,
 }: AdminCrmAiDialogProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [attachments, setAttachments] = useState<Array<{ file: File; previewUrl: string }>>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const { ref: inputRef } = useAutoGrowTextarea(input);
   const conversationId = useMemo(
     () => `crm-ai-${Date.now().toString(36)}`,
     // Reset conversation id when dialog closes/reopens via key on parent if needed.
@@ -63,6 +90,11 @@ export default function AdminCrmAiDialog({
     if (!open) {
       setInput('');
       setLoading(false);
+      setActionBusy(false);
+      setAttachments((current) => {
+        current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+        return [];
+      });
       return;
     }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -112,14 +144,75 @@ export default function AdminCrmAiDialog({
     setLoading(false);
   };
 
-  const handleAction = (action: AiCrmProposedAction) => {
+  const addImages = (files: File[]) => {
+    const remaining = Math.max(0, 5 - attachments.length);
+    const accepted: Array<{ file: File; previewUrl: string }> = [];
+    for (const file of files.slice(0, remaining)) {
+      const validation = validateImageFile(file);
+      if (!validation.valid) {
+        toast.error(validation.error || 'Invalid image');
+        continue;
+      }
+      accepted.push({ file, previewUrl: URL.createObjectURL(file) });
+    }
+    if (files.length > remaining) toast.error('You can attach up to 5 images');
+    if (accepted.length) setAttachments((current) => [...current, ...accepted]);
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments((current) => {
+      const item = current[index];
+      if (item) URL.revokeObjectURL(item.previewUrl);
+      return current.filter((_, itemIndex) => itemIndex !== index);
+    });
+  };
+
+  const uploadAttachedImages = async (): Promise<string[]> => {
+    if (!attachments.length) return [];
+    const urls: string[] = [];
+    for (const item of attachments) {
+      const compressed = await compressImage(item.file, 1280, 0.65, true);
+      const uploaded = await cloudinaryService.uploadImage(compressed, 'ai-crm-drafts');
+      if (uploaded?.secure_url) urls.push(uploaded.secure_url);
+    }
+    return urls;
+  };
+
+  const handleAction = async (action: AiCrmProposedAction) => {
+    if (actionBusy) return;
     if (action.type === 'open_customer') {
       const customerId = (action.payload as { customerId?: string }).customerId;
       if (customerId) onSearchCustomer('', customerId);
       return;
     }
+    setActionBusy(true);
+    let photoUrls: string[] = [];
+    try {
+      if (
+        attachments.length &&
+        (action.type === 'create_customer' ||
+          action.type === 'create_customer_and_job' ||
+          action.type === 'create_job')
+      ) {
+        photoUrls = await uploadAttachedImages();
+      }
+      if (action.type === 'create_customer') {
+        onConfirmCreateCustomer({ ...(action.payload as AiCrmCustomerDraft), photoUrls });
+        return;
+      }
+      if (action.type === 'create_customer_and_job') {
+        onConfirmCreateCustomerAndJob({
+          ...(action.payload as AiCrmCreateCustomerAndJobDraft),
+          photoUrls,
+        });
+        return;
+      }
+      if (action.type === 'edit_customer') {
+        onConfirmEditCustomer(action.payload as AiCrmEditCustomerDraft);
+        return;
+      }
     if (action.type === 'create_job') {
-      onConfirmCreateJob(action.payload as AiCrmCreateJobDraft);
+      onConfirmCreateJob({ ...(action.payload as AiCrmCreateJobDraft), photoUrls });
       return;
     }
     if (action.type === 'schedule_follow_up') {
@@ -129,27 +222,47 @@ export default function AdminCrmAiDialog({
     if (action.type === 'create_reminder') {
       onConfirmReminder(action.payload as AiCrmReminderDraft);
     }
+    } catch (error) {
+      console.error('[CRM AI] action preparation failed', error);
+      toast.error('Could not prepare the CRM form');
+    } finally {
+      setActionBusy(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] w-[min(96vw,720px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
-        <DialogHeader className="border-b border-violet-100 bg-violet-50/70 px-4 py-3 text-left">
-          <DialogTitle className="flex items-center gap-2 text-violet-950">
-            <Sparkles className="h-5 w-5" />
-            CRM AI assistant
+      <DialogContent
+        className="flex max-h-[92vh] w-[min(96vw,720px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+        }}
+        onDrop={(event) => {
+          if (!event.dataTransfer.files.length) return;
+          event.preventDefault();
+          addImages(Array.from(event.dataTransfer.files));
+        }}
+      >
+        <DialogHeader className="border-b px-4 py-3 text-left">
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+            <Sparkles className="h-4 w-4 text-violet-600" />
+            CRM AI
           </DialogTitle>
-          <DialogDescription className="text-violet-800">
-            Search customers, jobs, reminders, payments and documents. New job / follow-up /
-            reminder drafts open the normal CRM forms for you to confirm.
+          <DialogDescription className="sr-only">
+            Ask about customers, jobs, reminders, payments and documents.
           </DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
           {turns.length === 0 && (
-            <div className="rounded-lg border border-dashed border-violet-200 bg-violet-50/40 p-3 text-sm text-violet-900">
-              Try: “today's jobs”, “pending payments”, “AMC expiring soon”, “find 98765…”, “job
-              RO12345678”, or “create service job for Ramesh”.
+            <div className="flex min-h-48 flex-col items-center justify-center text-center">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted">
+                <Sparkles className="h-5 w-5 text-muted-foreground" />
+              </span>
+              <p className="mt-3 text-sm font-medium">How can I help?</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Ask in your own words.
+              </p>
             </div>
           )}
 
@@ -158,8 +271,8 @@ export default function AdminCrmAiDialog({
               key={turn.id}
               className={
                 turn.role === 'user'
-                  ? 'ml-8 rounded-lg bg-slate-900 px-3 py-2 text-sm text-white'
-                  : 'mr-4 rounded-lg border border-violet-100 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm'
+                  ? 'ml-8 rounded-xl bg-foreground px-3 py-2 text-sm text-background'
+                  : 'mr-4 rounded-xl border bg-card px-3 py-2 text-sm text-card-foreground'
               }
             >
               {turn.role === 'user' ? (
@@ -180,7 +293,7 @@ export default function AdminCrmAiDialog({
 
                   {turn.result?.entities.customers?.length ? (
                     <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         {turn.result.entities.customers.some((customer) => customer.confirmedPaidTotal != null)
                           ? 'Top customers'
                           : 'Customers'}
@@ -190,12 +303,12 @@ export default function AdminCrmAiDialog({
                           key={c.id}
                           type="button"
                           onClick={() => onSearchCustomer(c.phone || c.name, c.id)}
-                          className="flex w-full items-start justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-left text-xs hover:bg-slate-100"
+                          className="flex w-full items-start justify-between rounded-lg border bg-muted/30 px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted"
                         >
                           <span>
                             <span className="font-medium">{c.name}</span>
                             {c.customerCode ? ` · ${c.customerCode}` : ''}
-                            <span className="block text-slate-600">
+                            <span className="block text-muted-foreground">
                               {c.phone || 'No phone'}
                               {c.lastServiceDate ? ` · last ${c.lastServiceDate}` : ''}
                             </span>
@@ -206,7 +319,7 @@ export default function AdminCrmAiDialog({
                               </span>
                             ) : null}
                           </span>
-                          <Search className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
+                          <Search className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         </button>
                       ))}
                     </div>
@@ -214,13 +327,13 @@ export default function AdminCrmAiDialog({
 
                   {turn.result?.entities.jobs?.length ? (
                     <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Jobs
                       </p>
                       {turn.result.entities.jobs.slice(0, 6).map((j) => (
                         <div
                           key={j.id}
-                          className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs"
+                          className="rounded-lg border bg-muted/30 px-2.5 py-2 text-xs"
                         >
                           <span className="font-medium">{j.jobNumber || j.id.slice(0, 8)}</span>
                           {j.status ? ` · ${j.status}` : ''}
@@ -233,7 +346,7 @@ export default function AdminCrmAiDialog({
 
                   {turn.result?.entities.payments?.length ? (
                     <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Pending payments
                       </p>
                       {turn.result.entities.payments.slice(0, 5).map((p) => (
@@ -251,13 +364,13 @@ export default function AdminCrmAiDialog({
 
                   {turn.result?.entities.reminders?.length ? (
                     <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Reminders
                       </p>
                       {turn.result.entities.reminders.slice(0, 5).map((r) => (
                         <div
                           key={r.id}
-                          className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs"
+                          className="rounded-lg border bg-muted/30 px-2.5 py-2 text-xs"
                         >
                           {r.title}
                           {r.reminderAt ? ` · ${r.reminderAt}` : ''}
@@ -268,13 +381,13 @@ export default function AdminCrmAiDialog({
 
                   {turn.result?.entities.documents?.length ? (
                     <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Documents
                       </p>
                       {turn.result.entities.documents.slice(0, 6).map((d) => (
                         <div
                           key={`${d.kind}-${d.id}`}
-                          className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs"
+                          className="rounded-lg border bg-muted/30 px-2.5 py-2 text-xs"
                         >
                           {d.label}
                         </div>
@@ -283,28 +396,37 @@ export default function AdminCrmAiDialog({
                   ) : null}
 
                   {turn.result?.proposedActions?.length ? (
-                    <div className="space-y-2 border-t border-violet-100 pt-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
+                    <div className="space-y-2 border-t pt-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Review & confirm
                       </p>
                       {turn.result.proposedActions.map((action, index) => (
                         <div
                           key={`${action.type}-${index}`}
-                          className="flex flex-col gap-2 rounded-md border border-violet-200 bg-violet-50/60 p-2 sm:flex-row sm:items-center sm:justify-between"
+                          className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-2.5 sm:flex-row sm:items-center sm:justify-between"
                         >
-                          <div className="text-xs text-violet-950">
+                          <div className="text-xs">
                             <p className="font-medium">{action.label || action.type}</p>
-                            <p className="text-violet-700">
-                              Opens the normal CRM form. Nothing is saved until you confirm there.
+                            <p className="text-muted-foreground">
+                              Opens the CRM form — nothing saves until you confirm.
                             </p>
                           </div>
                           <Button
                             type="button"
                             size="sm"
-                            className="shrink-0 bg-violet-700 hover:bg-violet-800"
-                            onClick={() => handleAction(action)}
+                            variant="outline"
+                            className="h-9 shrink-0"
+                            disabled={actionBusy}
+                            onClick={() => void handleAction(action)}
                           >
-                            {action.type === 'create_job' ? (
+                            {actionBusy ? (
+                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            ) : action.type === 'create_customer' ||
+                              action.type === 'create_customer_and_job' ? (
+                              <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                            ) : action.type === 'edit_customer' ? (
+                              <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                            ) : action.type === 'create_job' ? (
                               <Briefcase className="mr-1.5 h-3.5 w-3.5" />
                             ) : action.type === 'schedule_follow_up' ? (
                               <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
@@ -321,7 +443,7 @@ export default function AdminCrmAiDialog({
                   ) : null}
 
                   {turn.result?.meta?.model ? (
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-[11px] text-muted-foreground/70">
                       {turn.result.meta.model}
                       {turn.result.meta.latencyMs != null
                         ? ` · ${turn.result.meta.latencyMs}ms`
@@ -334,24 +456,46 @@ export default function AdminCrmAiDialog({
           ))}
 
           {loading && (
-            <div className="flex items-center gap-2 text-sm text-violet-800">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Searching CRM and drafting a reply…
+              Thinking…
             </div>
           )}
           <div ref={bottomRef} />
         </div>
 
-        <div className="border-t border-slate-200 bg-white px-4 py-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="border-t bg-background px-4 py-3">
+          {attachments.length ? (
+            <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+              {attachments.map((item, index) => (
+                <div key={`${item.file.name}-${index}`} className="relative shrink-0">
+                  <img
+                    src={item.previewUrl}
+                    alt=""
+                    className="h-14 w-14 rounded-lg border object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(index)}
+                    className="absolute -right-1 -top-1 rounded-full bg-foreground p-0.5 text-background"
+                    aria-label="Remove image"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="rounded-2xl border bg-background p-2 focus-within:ring-1 focus-within:ring-ring">
             <Textarea
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Search anyone, ask about a job, or draft a new job / follow-up / reminder…"
-              rows={2}
+              placeholder="Ask anything about your CRM…"
+              rows={1}
               maxLength={1500}
               disabled={loading}
-              className="min-h-[64px] flex-1"
+              className="min-h-0 resize-none overflow-hidden border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-transparent"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -359,15 +503,33 @@ export default function AdminCrmAiDialog({
                 }
               }}
             />
-            <Button
-              type="button"
-              onClick={() => void send()}
-              disabled={loading || input.trim().length < 2}
-              className="shrink-0 bg-violet-700 hover:bg-violet-800"
-            >
-              {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-              Ask
-            </Button>
+            <div className="mt-1 flex items-center justify-between">
+              <label className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                <ImagePlus className="h-4 w-4" />
+                <span className="sr-only">Attach images</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="sr-only"
+                  disabled={loading || actionBusy}
+                  onChange={(event) => {
+                    addImages(Array.from(event.target.files || []));
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+              <Button
+                type="button"
+                size="icon"
+                onClick={() => void send()}
+                disabled={loading || input.trim().length < 2}
+                aria-label="Ask CRM AI"
+                className="h-8 w-8 shrink-0 rounded-full"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>

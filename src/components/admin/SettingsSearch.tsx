@@ -82,18 +82,21 @@ const SEARCH_ITEMS: SettingsSearchItem[] = [
   { id: 'booking-archive', label: 'Done booking archive', description: 'Completed website booking records', keywords: 'website intent completed deleted', group: 'Customers & work', icon: ClipboardCheck, destination: { type: 'section', section: 'booking-intent-archive' }, adminOnly: true },
   { id: 'technician-locations', label: 'Technician locations', description: 'Last known technician locations', keywords: 'staff gps map current location', group: 'Technicians', icon: MapPin, destination: { type: 'section', section: 'technician-locations' } },
   { id: 'technician-management', label: 'Technician management', description: 'Add, edit or deactivate technicians', keywords: 'staff employee account salary password', group: 'Technicians', icon: Users, destination: { type: 'section', section: 'technician-management' } },
+  { id: 'add-technician', label: 'Add technician', description: 'Create a new technician account', keywords: 'staff employee new hire password', group: 'Technicians', icon: UserPlus, destination: { type: 'panel', panel: 'add-technician' }, adminOnly: true },
   { id: 'location-tracking', label: 'Location tracking', description: 'Enable automatic technician GPS updates', keywords: 'gps current map distance switch', group: 'Technicians', icon: Navigation, destination: { type: 'section', section: 'location-tracking' }, adminOnly: true },
   { id: 'device-tracker', label: 'Device tracker', description: 'Technician app devices and activity', keywords: 'phone handset fcm token', group: 'Technicians', icon: Smartphone, destination: { type: 'section', section: 'device-tracker' }, adminOnly: true },
   { id: 'pending-payments', label: 'Pending payments', description: 'Customer due amounts and payment dates', keywords: 'money outstanding due collect', group: 'Payments & documents', icon: IndianRupee, destination: { type: 'panel', panel: 'pending-payments' } },
   { id: 'add-pending-payment', label: 'Add pending payment', description: 'Record a new customer due amount', keywords: 'money outstanding due new', group: 'Payments & documents', icon: IndianRupee, destination: { type: 'panel', panel: 'pending-payments', action: 'add' } },
-  { id: 'gst-invoices', label: 'GST invoices', description: 'View and manage tax invoices', keywords: 'tax bill invoice', group: 'Payments & documents', icon: Receipt, destination: { type: 'route', path: '/admin?view=gst-invoices' }, adminOnly: true },
+  { id: 'gst-invoices', label: 'GST invoices', description: 'View and manage tax invoices', keywords: 'gst tax bill invoice', group: 'Payments & documents', icon: Receipt, destination: { type: 'route', path: '/admin?view=gst-invoices' }, adminOnly: true },
   { id: 'amcs', label: 'View AMCs', description: 'Annual Maintenance Contracts', keywords: 'contract annual maintenance', group: 'Payments & documents', icon: FileText, destination: { type: 'route', path: '/admin?view=amc-view' } },
   { id: 'pdf-authenticity', label: 'Verify PDF authenticity', description: 'Check document fingerprints and codes', keywords: 'hash genuine amc bill invoice warranty quotation', group: 'Payments & documents', icon: FileCheck, destination: { type: 'panel', panel: 'pdf-authenticity' }, adminOnly: true },
   { id: 'service-report', label: 'Service report', description: 'Create a letterhead service report', keywords: 'pdf document letter head', group: 'Payments & documents', icon: FileText, destination: { type: 'route', path: '/admin?view=letterhead-documents&type=service_report' } },
   { id: 'amc-report', label: 'AMC report', description: 'Create a letterhead AMC report', keywords: 'pdf document contract letter head', group: 'Payments & documents', icon: FileText, destination: { type: 'route', path: '/admin?view=letterhead-documents&type=amc_report' } },
   { id: 'custom-document', label: 'Custom letterhead document', description: 'Create a custom customer document', keywords: 'pdf letter head', group: 'Payments & documents', icon: FileSignature, destination: { type: 'route', path: '/admin?view=letterhead-documents&type=custom_document' } },
   { id: 'direct-sale', label: 'Direct / office sale', description: 'Record a counter sale', keywords: 'cash office counter part no customer', group: 'Payments & documents', icon: Store, destination: { type: 'panel', panel: 'direct-sale' }, adminOnly: true },
+  { id: 'letterhead-documents', label: 'Letterhead documents', description: 'Service report, AMC report and custom letterhead PDFs', keywords: 'pdf letter head service amc custom document', group: 'Payments & documents', icon: FileSignature, destination: { type: 'section', section: 'letterhead-documents' } },
   { id: 'payment-qr', label: 'Payment QR codes', description: 'Manage technician payment QR codes', keywords: 'upi scan dynamic amount', group: 'Payments & documents', icon: QrCode, destination: { type: 'section', section: 'payment-qr-codes' }, adminOnly: true },
+  { id: 'quick-upi-qr', label: 'Quick payment QR', description: 'Generate amount QR, download, or send on WhatsApp', keywords: 'upi scan amount whatsapp share send customer pay generic', group: 'Payments & documents', icon: QrCode, destination: { type: 'section', section: 'quick-upi-qr' }, adminOnly: true },
   { id: 'upi-accounts', label: 'UPI payment accounts', description: 'UPI IDs used in WhatsApp payment links', keywords: 'pay phone pending payment', group: 'Payments & documents', icon: Wallet, destination: { type: 'section', section: 'upi-payment-accounts' }, adminOnly: true },
   { id: 'qr-image-generator', label: 'QR image generator', description: 'Create a styled downloadable QR image', keywords: 'scan link text rounded dots download', group: 'Payments & documents', icon: QrCode, destination: { type: 'section', section: 'qr-image-generator' }, adminOnly: true },
   { id: 'common-qr', label: 'Common technician QR codes', description: 'Non-payment QR codes shown in the technician app', keywords: 'scan staff assign technician', group: 'Payments & documents', icon: QrCode, destination: { type: 'section', section: 'common-qr-codes' }, adminOnly: true },
@@ -121,6 +124,30 @@ const GROUPS: SettingsSearchItem['group'][] = [
   'App & data',
 ];
 
+function scoreSettingsMatch(item: SettingsSearchItem, rawQuery: string): number {
+  const query = rawQuery.trim().toLowerCase();
+  if (!query) return 1;
+
+  const label = item.label.toLowerCase();
+  const description = item.description.toLowerCase();
+  const keywords = item.keywords.toLowerCase();
+  const id = item.id.toLowerCase().replace(/-/g, ' ');
+  const labelWords = label.split(/[^a-z0-9]+/).filter(Boolean);
+  const keywordWords = keywords.split(/[^a-z0-9]+/).filter(Boolean);
+
+  if (label === query || id === query) return 1000;
+  if (label.startsWith(query)) return 900;
+  if (labelWords.some((word) => word === query)) return 850;
+  if (labelWords.some((word) => word.startsWith(query))) return 800;
+  if (id.startsWith(query) || id.includes(` ${query}`)) return 750;
+  if (label.includes(query)) return 700;
+  if (keywordWords.some((word) => word === query)) return 650;
+  if (keywordWords.some((word) => word.startsWith(query))) return 600;
+  if (keywords.includes(query)) return 500;
+  if (description.includes(query)) return 400;
+  return 0;
+}
+
 function ResultIcon({ icon }: { icon: SearchIcon }) {
   if (icon === 'whatsapp') {
     return (
@@ -145,10 +172,29 @@ type SettingsSearchProps = {
 export function SettingsSearch({ isManager, openPanel }: SettingsSearchProps) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const items = useMemo(
     () => SEARCH_ITEMS.filter((item) => !isManager || !item.adminOnly),
     [isManager]
   );
+
+  const rankedItems = useMemo(() => {
+    const trimmed = query.trim();
+    if (!trimmed) return items;
+    return items
+      .map((item) => ({ item, score: scoreSettingsMatch(item, trimmed) }))
+      .filter((row) => row.score > 0)
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          a.item.label.localeCompare(b.item.label, undefined, { sensitivity: 'base' })
+      )
+      .map((row) => row.item);
+  }, [items, query]);
+
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -175,6 +221,24 @@ export function SettingsSearch({ isManager, openPanel }: SettingsSearchProps) {
     requestAnimationFrame(() => scrollToSettingsSection(target.section));
   };
 
+  const renderItem = (item: SettingsSearchItem) => (
+    <CommandItem
+      key={item.id}
+      value={item.id}
+      onSelect={() => selectItem(item)}
+      className="cursor-pointer gap-3 rounded-lg px-3 py-2.5"
+    >
+      <ResultIcon icon={item.icon} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{item.label}</span>
+        <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
+      </span>
+      <CommandShortcut>
+        <ArrowRight className="!h-4 !w-4 opacity-60" />
+      </CommandShortcut>
+    </CommandItem>
+  );
+
   return (
     <>
       <Button
@@ -194,6 +258,7 @@ export function SettingsSearch({ isManager, openPanel }: SettingsSearchProps) {
       <CommandDialog
         open={open}
         onOpenChange={setOpen}
+        shouldFilter={false}
         title="Search settings"
         description="Type to find any settings panel, tool or section, then press Enter to open it."
       >
@@ -206,7 +271,12 @@ export function SettingsSearch({ isManager, openPanel }: SettingsSearchProps) {
             Search tools, controls, documents, payments, or communication.
           </p>
         </div>
-        <CommandInput placeholder="Try “WhatsApp”, “technician”, “PDF”…" aria-label="Search all settings" />
+        <CommandInput
+          value={query}
+          onValueChange={setQuery}
+          placeholder="Try “WhatsApp”, “technician”, “PDF”…"
+          aria-label="Search all settings"
+        />
         <CommandList className="max-h-[min(60vh,480px)] p-1">
           <CommandEmpty>
             <div className="px-4 py-3">
@@ -215,34 +285,30 @@ export function SettingsSearch({ isManager, openPanel }: SettingsSearchProps) {
               <p className="mt-1 text-xs text-muted-foreground">Try a shorter name or a related word.</p>
             </div>
           </CommandEmpty>
-          {GROUPS.map((group) => {
-            const groupItems = items.filter((item) => item.group === group);
-            if (groupItems.length === 0) return null;
-            return (
-              <CommandGroup key={group} heading={group}>
-                {groupItems.map((item) => (
-                  <CommandItem
-                    key={item.id}
-                    value={`${item.label} ${item.description} ${item.keywords}`}
-                    onSelect={() => selectItem(item)}
-                    className="cursor-pointer gap-3 rounded-lg px-3 py-2.5"
-                  >
-                    <ResultIcon icon={item.icon} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{item.label}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
-                    </span>
-                    <CommandShortcut>
-                      <ArrowRight className="!h-4 !w-4 opacity-60" />
-                    </CommandShortcut>
-                  </CommandItem>
-                ))}
+          {query.trim() ? (
+            rankedItems.length ? (
+              <CommandGroup heading="Best matches">
+                {rankedItems.map(renderItem)}
               </CommandGroup>
-            );
-          })}
+            ) : null
+          ) : (
+            GROUPS.map((group) => {
+              const groupItems = items.filter((item) => item.group === group);
+              if (groupItems.length === 0) return null;
+              return (
+                <CommandGroup key={group} heading={group}>
+                  {groupItems.map(renderItem)}
+                </CommandGroup>
+              );
+            })
+          )}
         </CommandList>
         <div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
-          <span>{items.length} searchable settings</span>
+          <span>
+            {query.trim()
+              ? `${rankedItems.length} match${rankedItems.length === 1 ? '' : 'es'}`
+              : `${items.length} searchable settings`}
+          </span>
           <span className="flex items-center gap-1">
             <MapPin className="h-3 w-3" />
             Opens the exact place

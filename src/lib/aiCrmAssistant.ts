@@ -6,6 +6,9 @@ import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
 export type AiCrmActionType =
   | 'open_customer'
+  | 'create_customer'
+  | 'create_customer_and_job'
+  | 'edit_customer'
   | 'create_job'
   | 'schedule_follow_up'
   | 'create_reminder';
@@ -88,6 +91,31 @@ export type AiCrmCreateJobDraft = {
   priority?: string;
   leadSource?: string;
   notes?: string;
+  photoUrls?: string[];
+};
+
+export type AiCrmCustomerDraft = {
+  fullName?: string;
+  phone?: string;
+  alternatePhone?: string;
+  email?: string;
+  address?: string;
+  visibleAddress?: string;
+  googleLocation?: string;
+  serviceType?: 'RO' | 'SOFTENER';
+  brand?: string;
+  model?: string;
+  notes?: string;
+  photoUrls?: string[];
+};
+
+export type AiCrmCreateCustomerAndJobDraft = AiCrmCustomerDraft &
+  Omit<AiCrmCreateJobDraft, 'customerId'>;
+
+export type AiCrmEditCustomerDraft = {
+  customerId: string;
+  patch: AiCrmCustomerDraft;
+  photoUrls?: string[];
 };
 
 export type AiCrmFollowUpDraft = {
@@ -112,6 +140,9 @@ export type AiCrmProposedAction = {
   requiresConfirm: true;
   payload:
     | { customerId: string }
+    | AiCrmCustomerDraft
+    | AiCrmCreateCustomerAndJobDraft
+    | AiCrmEditCustomerDraft
     | AiCrmCreateJobDraft
     | AiCrmFollowUpDraft
     | AiCrmReminderDraft;

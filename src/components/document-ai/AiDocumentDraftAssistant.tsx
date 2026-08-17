@@ -19,6 +19,7 @@ import {
   type AiDocumentKind,
 } from '@/lib/aiDocumentDraft';
 import { useAdminRole } from '@/lib/useAdminRole';
+import { useAutoGrowTextarea } from '@/lib/useAutoGrowTextarea';
 
 type VisibleTurn = AiDocumentChatTurn & {
   id: string;
@@ -71,14 +72,6 @@ const FIELD_LABELS: Record<string, string> = {
   documentBrand: 'Document brand',
 };
 
-const PROMPTS: Partial<Record<AiDocumentKind, string[]>> = {
-  bill: ['Add membrane ₹3,500', 'Set payment pending', 'Add a 30-day validity note'],
-  quotation: ['Add membrane and pre-filter', 'Make validity 15 days', 'Add payment terms'],
-  tax_invoice: ['Add PO number', 'Set payment due in 7 days', 'Add delivery address'],
-  amc: ['Set AMC cost ₹6,000', 'Make service every 4 months', 'Add two visits to description'],
-  warranty: ['Add membrane for 12 months', 'Start warranty today', 'Add an exclusion note'],
-};
-
 function cloneSnapshot<T>(snapshot: T): T {
   return JSON.parse(JSON.stringify(snapshot)) as T;
 }
@@ -110,8 +103,8 @@ export default function AiDocumentDraftAssistant<
   const [pending, setPending] = useState<PendingChange<TSnapshot> | null>(null);
   const [undoSnapshot, setUndoSnapshot] = useState<TSnapshot | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const { ref: inputRef } = useAutoGrowTextarea(input, 140);
 
-  const suggestions = useMemo(() => PROMPTS[kind] || [], [kind]);
   const history = useMemo<AiDocumentChatTurn[]>(
     () => turns.filter((turn) => !turn.error).map(({ role, text }) => ({ role, text })),
     [turns]
@@ -211,53 +204,38 @@ export default function AiDocumentDraftAssistant<
 
   return (
     <section
-      className={`overflow-hidden rounded-xl border border-violet-200 bg-white shadow-sm ${className}`}
+      className={`overflow-hidden rounded-2xl border bg-card ${className}`}
       aria-label={`AI ${documentNoun} editor`}
     >
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-3 px-3 py-3 text-left sm:px-4"
+        className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/40 sm:px-4"
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
-          <Sparkles className="h-4.5 w-4.5" />
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground">
+          <Sparkles className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-slate-900">
-            Edit this {documentNoun} with AI
+          <span className="block text-sm font-semibold text-foreground">
+            AI editor
           </span>
-          <span className="block truncate text-xs text-slate-500">
-            Continuous chat while this screen is open · preview before apply
+          <span className="block truncate text-xs text-muted-foreground">
+            Edit this {documentNoun} · review before apply
           </span>
         </span>
         {expanded ? (
-          <ChevronUp className="h-4 w-4 shrink-0 text-slate-500" />
+          <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
         ) : (
-          <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
         )}
       </button>
 
       {expanded ? (
-        <div className="border-t border-violet-100">
+        <div className="border-t">
           <div className="max-h-[42vh] min-h-[120px] space-y-2 overflow-y-auto px-3 py-3 sm:max-h-[360px] sm:px-4">
             {!turns.length ? (
-              <div className="space-y-2">
-                <p className="text-sm text-slate-600">
-                  Ask for items, prices, dates, terms, notes, GST, payment, address, or warranty
-                  changes. Only details you provide are used.
-                </p>
-                <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
-                  {suggestions.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      onClick={() => void send(suggestion)}
-                      className="shrink-0 rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs text-violet-800 hover:bg-violet-100"
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
+              <div className="flex min-h-24 items-center justify-center text-center">
+                <p className="text-sm text-muted-foreground">Describe what you want to change.</p>
               </div>
             ) : null}
 
@@ -266,11 +244,11 @@ export default function AiDocumentDraftAssistant<
                 key={turn.id}
                 className={
                   turn.role === 'user'
-                    ? 'ml-8 rounded-xl bg-slate-900 px-3 py-2 text-sm text-white'
+                    ? 'ml-8 rounded-xl bg-foreground px-3 py-2 text-sm text-background'
                     : `mr-5 rounded-xl border px-3 py-2 text-sm ${
                         turn.error
-                          ? 'border-red-200 bg-red-50 text-red-800'
-                          : 'border-slate-200 bg-slate-50 text-slate-800'
+                          ? 'border-destructive/30 bg-destructive/5 text-destructive'
+                          : 'bg-muted/30 text-foreground'
                       }`
                 }
               >
@@ -279,17 +257,17 @@ export default function AiDocumentDraftAssistant<
             ))}
 
             {loading ? (
-              <div className="mr-5 flex items-center gap-2 rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 text-sm text-violet-800">
+              <div className="mr-5 flex items-center gap-2 rounded-xl border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Preparing a reviewed edit…
+                Thinking…
               </div>
             ) : null}
 
             {pending ? (
-              <div className="space-y-3 rounded-xl border-2 border-violet-300 bg-violet-50/70 p-3">
+              <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
                 <div>
-                  <p className="text-sm font-semibold text-violet-950">Review changes</p>
-                  <p className="mt-0.5 text-xs text-violet-800">
+                  <p className="text-sm font-semibold text-foreground">Review changes</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     Nothing changes until you tap Apply.
                   </p>
                 </div>
@@ -297,17 +275,17 @@ export default function AiDocumentDraftAssistant<
                   {pending.changes.map((change) => (
                     <div
                       key={change.field}
-                      className="rounded-lg border border-violet-200 bg-white px-2.5 py-2"
+                      className="rounded-lg border bg-background px-2.5 py-2"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <span className="text-xs font-semibold text-slate-800">
+                        <span className="text-xs font-semibold text-foreground">
                           {FIELD_LABELS[change.field] || change.field}
                         </span>
-                        <span className="max-w-[45%] truncate text-right text-xs text-violet-700">
+                        <span className="max-w-[45%] truncate text-right text-xs text-foreground">
                           {compactValue(pending.proposed[change.field])}
                         </span>
                       </div>
-                      <p className="mt-0.5 text-xs text-slate-500">{change.explanation}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{change.explanation}</p>
                     </div>
                   ))}
                 </div>
@@ -326,7 +304,6 @@ export default function AiDocumentDraftAssistant<
                   <Button
                     type="button"
                     onClick={applyPending}
-                    className="bg-violet-700 hover:bg-violet-800"
                   >
                     <Check className="mr-1.5 h-4 w-4" />
                     Apply changes
@@ -337,9 +314,10 @@ export default function AiDocumentDraftAssistant<
             <div ref={bottomRef} />
           </div>
 
-          <div className="border-t border-slate-100 bg-slate-50/70 p-3 sm:px-4">
-            <div className="flex items-end gap-2">
+          <div className="border-t bg-background p-3 sm:px-4">
+            <div className="rounded-2xl border bg-background p-2 focus-within:ring-1 focus-within:ring-ring">
               <Textarea
+                ref={inputRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={(event) => {
@@ -351,28 +329,30 @@ export default function AiDocumentDraftAssistant<
                 placeholder={
                   pending ? 'Apply or discard the preview first' : `What should I change?`
                 }
-                rows={2}
+                rows={1}
                 maxLength={4000}
                 disabled={loading || Boolean(pending) || disabled}
-                className="min-h-[44px] resize-none bg-white"
+                className="min-h-0 resize-none overflow-hidden border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-transparent"
               />
-              <Button
-                type="button"
-                size="icon"
-                onClick={() => void send()}
-                disabled={loading || Boolean(pending) || input.trim().length < 2 || disabled}
-                className="h-11 w-11 shrink-0 bg-violet-700 hover:bg-violet-800"
-                aria-label="Send document edit request"
-              >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
+              <div className="mt-1 flex justify-end">
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={() => void send()}
+                  disabled={loading || Boolean(pending) || input.trim().length < 2 || disabled}
+                  className="h-8 w-8 shrink-0 rounded-full"
+                  aria-label="Send document edit request"
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
             </div>
             <div className="mt-2 flex items-center justify-between gap-2">
-              <p className="text-[11px] text-slate-500">Session memory clears when you leave.</p>
+              <p className="text-[11px] text-muted-foreground">Memory clears when you leave.</p>
               <div className="flex items-center gap-1">
                 {undoSnapshot ? (
                   <Button type="button" variant="ghost" size="sm" onClick={undo} className="h-7 px-2 text-xs">
@@ -386,7 +366,7 @@ export default function AiDocumentDraftAssistant<
                     variant="ghost"
                     size="sm"
                     onClick={clearSession}
-                    className="h-7 px-2 text-xs text-slate-500"
+                    className="h-7 px-2 text-xs text-muted-foreground"
                   >
                     New chat
                   </Button>

@@ -164,6 +164,69 @@ function testJobDraftTimeNormalization() {
   assert.equal(junk.value.proposedActions[0].payload.scheduledTimeSlot, null);
 }
 
+function testCustomerDraftActionsAreReviewOnlyAndBounded() {
+  const customerId = '11111111-1111-1111-1111-111111111111';
+  const normalized = normalizeCrmChatOutput(
+    {
+      answer: 'Drafts ready',
+      confidence: 0.95,
+      proposedActions: [
+        {
+          type: 'create_customer',
+          requiresConfirm: false,
+          payload: {
+            fullName: 'Ramesh',
+            phone: '+91 98765 43210',
+            visibleAddress: 'HSR Layout',
+            googleLocation: 'https://maps.app.goo.gl/example',
+            unknownAdminField: 'must be removed',
+          },
+        },
+        {
+          type: 'create_customer_and_job',
+          payload: {
+            fullName: 'Suresh',
+            phone: '9988776655',
+            serviceType: 'RO',
+            serviceSubType: 'Leakage',
+            scheduledTimeSlot: '10 am',
+          },
+        },
+        {
+          type: 'edit_customer',
+          payload: {
+            customerId,
+            patch: { visibleAddress: 'Site 2', notes: 'Call before visit', is_admin: true },
+          },
+        },
+        {
+          type: 'edit_customer',
+          payload: { customerId: 'unknown', patch: { fullName: 'Bad edit' } },
+        },
+        {
+          type: 'delete_customer',
+          payload: { customerId },
+        },
+      ],
+    },
+    { entities: { customers: [{ id: customerId }], jobs: [] } }
+  );
+
+  assert.equal(normalized.ok, true);
+  assert.equal(normalized.value.proposedActions.length, 3);
+  assert.equal(normalized.value.proposedActions[0].requiresConfirm, true);
+  assert.equal(normalized.value.proposedActions[0].payload.phone, '9876543210');
+  assert.equal('unknownAdminField' in normalized.value.proposedActions[0].payload, false);
+  assert.equal(
+    normalized.value.proposedActions[1].payload.scheduledTimeSlot,
+    'CUSTOM'
+  );
+  assert.deepEqual(normalized.value.proposedActions[2].payload.patch, {
+    visibleAddress: 'Site 2',
+    notes: 'Call before visit',
+  });
+}
+
 function testOverviewIntentDetection() {
   const today = '2026-08-16';
 
@@ -306,6 +369,7 @@ async function main() {
   testLookupHintsAndLimits();
   testNameSurvivesActionSentences();
   testJobDraftTimeNormalization();
+  testCustomerDraftActionsAreReviewOnlyAndBounded();
   testOverviewIntentDetection();
   testLifetimeCustomerValueRankingIntent();
   await testMockCrmChat();
