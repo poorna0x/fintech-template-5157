@@ -18,6 +18,13 @@ const {
   assertNoMutationTools,
 } = require('./ai-crm-schemas');
 const { lookupCrmContext, formatContextForPrompt } = require('./ai-crm-lookup');
+const {
+  CRM_PLANNER_SCHEMA,
+  plannerSystemInstruction,
+  normalizePlannerOutput,
+  buildPlannerMessages,
+  buildAllowlistedLookupQuery,
+} = require('./ai-crm-planner');
 const { sha256, localDayKey, claimAiQuota, finalizeAiInvocation } = require('./ai-audit');
 
 const MAX_BODY_BYTES = 10_000;
@@ -144,8 +151,19 @@ function buildSystemInstruction() {
   ].join(' ');
 }
 
-function buildUserPrompt(message, contextText) {
+function buildUserPrompt(message, contextText, history = []) {
+  const recent = (Array.isArray(history) ? history : []).slice(-8);
   return [
+    ...(recent.length
+      ? [
+          'Recent conversation:',
+          ...recent.map(
+            (turn) =>
+              `${turn.role === 'assistant' ? 'Assistant' : 'Admin'}: ${String(turn.text || '')}`
+          ),
+          '',
+        ]
+      : []),
     'Admin request:',
     '<message>',
     String(message || ''),
@@ -155,6 +173,27 @@ function buildUserPrompt(message, contextText) {
     '',
     'Respond with JSON only.',
   ].join('\n');
+}
+
+function addUsage(total, next) {
+  const a = total || {};
+  const b = next || {};
+  return {
+    inputTokens: (Number(a.inputTokens) || 0) + (Number(b.inputTokens) || 0),
+    outputTokens: (Number(a.outputTokens) || 0) + (Number(b.outputTokens) || 0),
+    totalTokens: (Number(a.totalTokens) || 0) + (Number(b.totalTokens) || 0),
+  };
+}
+
+function emptyEntities() {
+  return {
+    customers: [],
+    jobs: [],
+    reminders: [],
+    payments: [],
+    documents: [],
+    technicians: [],
+  };
 }
 
 exports.handler = async (event) => {
@@ -243,7 +282,8 @@ exports.handler = async (event) => {
     dayKey,
     requestLimit: config.dailyRequestLimit,
     tokenLimit: config.dailyTokenLimit,
-    reserveTokens: 1800,
+    // A CRM turn can use one planner call plus one answer call.
+    reserveTokens: 3200,
     idempotencyKey,
     provider: config.provider,
     model: config.model,
@@ -269,13 +309,79 @@ exports.handler = async (event) => {
   try {
     assertNoMutationTools([]);
 
+    const plannerResult = await generateWithProvider(config, {
+      operation: 'crm_chat_plan',
+      systemInstruction: plannerSystemInstruction(),
+      messages: buildPlannerMessages(parsed.value.history, parsed.value.message),
+      temperature: 0,
+      maxOutputTokens: 700,
+      timeoutMs: 15_000,
+      responseJsonSchema: CRM_PLANNER_SCHEMA,
+    });
+    usage = addUsage(usage, plannerResult.usage);
+    servedProvider = plannerResult.rawMetadata?.provider || config.provider;
+    servedModel = plannerResult.rawMetadata?.model || config.model;
+    fellBack = plannerResult.rawMetadata?.fellBack === true;
+    const plan = normalizePlannerOutput(
+      plannerResult.parsed ||
+        (() => {
+          try {
+            return JSON.parse(plannerResult.text || '{}');
+          } catch {
+            return {};
+          }
+        })(),
+      parsed.value.message
+    );
+
+    if (plan.route === 'conversation') {
+      const answer = plan.directAnswer;
+      promptHash = sha256(
+        JSON.stringify({
+          message: parsed.value.message,
+          history: parsed.value.history,
+          route: 'conversation',
+        })
+      );
+      responseHash = sha256(answer);
+      finalizeStatus = 'ok';
+      return json(200, headers, {
+        success: true,
+        answer,
+        confidence: 0.9,
+        requiresHuman: false,
+        warnings: [],
+        entities: emptyEntities(),
+        proposedActions: [],
+        meta: {
+          ...publicConfigSummary(config),
+          provider: servedProvider,
+          model: servedModel,
+          fellBack,
+          latencyMs: Date.now() - started,
+          usage,
+          plannerRoute: 'conversation',
+          plannerTools: [],
+          canAutoSend: false,
+          canDelete: false,
+          canCreateJob: false,
+          canMutate: false,
+        },
+      });
+    }
+
     const pack = await lookupCrmContext({
-      message: parsed.value.message,
+      message: buildAllowlistedLookupQuery(plan, parsed.value.message),
       focusCustomerId: parsed.value.focusCustomerId,
+      plannerTools: plan.tools,
     });
 
     const contextText = formatContextForPrompt(pack);
-    const userPrompt = buildUserPrompt(parsed.value.message, contextText);
+    const userPrompt = buildUserPrompt(
+      parsed.value.message,
+      contextText,
+      parsed.value.history
+    );
     promptHash = sha256(userPrompt);
 
     const providerResult = await generateWithProvider(config, {
@@ -290,8 +396,8 @@ exports.handler = async (event) => {
 
     servedProvider = providerResult.rawMetadata?.provider || config.provider;
     servedModel = providerResult.rawMetadata?.model || config.model;
-    fellBack = providerResult.rawMetadata?.fellBack === true;
-    usage = providerResult.usage || usage;
+    usage = addUsage(usage, providerResult.usage);
+    fellBack = fellBack || providerResult.rawMetadata?.fellBack === true;
     const rawObject =
       providerResult.parsed ||
       (() => {
@@ -350,6 +456,8 @@ exports.handler = async (event) => {
         fellBack,
         latencyMs: Date.now() - started,
         usage,
+        plannerRoute: 'crm',
+        plannerTools: plan.tools,
         canAutoSend: false,
         canDelete: false,
         canCreateJob: false,

@@ -15,6 +15,7 @@ const {
 const {
   extractQueryHints,
   hasSearchableTarget,
+  scopesForPlannerTools,
   detectOverviewIntent,
   detectCustomerValueRanking,
   detectTechnicianBillingRanking,
@@ -28,6 +29,11 @@ const {
   TOP_TECHNICIAN_LIMIT,
 } = require('../netlify/functions/ai-crm-lookup');
 const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
+const {
+  ALLOWED_CRM_TOOLS,
+  normalizePlannerOutput,
+  buildAllowlistedLookupQuery,
+} = require('../netlify/functions/ai-crm-planner');
 
 function testRequestIgnoresDangerousClientFields() {
   const parsed = parseCrmChatRequest({
@@ -44,6 +50,54 @@ function testRequestIgnoresDangerousClientFields() {
   assert.equal('provider' in parsed.value, false);
   assert.equal('tools' in parsed.value, false);
   assert.equal('sql' in parsed.value, false);
+}
+
+function testRequestHistoryIsBoundedAndNormalized() {
+  const history = Array.from({ length: 12 }, (_, index) => ({
+    role: index % 2 ? 'assistant' : 'user',
+    text: `turn ${index}`,
+    tools: ['execute_sql'],
+  }));
+  const parsed = parseCrmChatRequest({ message: 'what about yesterday?', history });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.value.history.length, 8);
+  assert.deepEqual(Object.keys(parsed.value.history[0]).sort(), ['role', 'text']);
+  assert.equal('tools' in parsed.value.history[0], false);
+}
+
+function testPlannerOutputIsAllowlisted() {
+  const conversational = normalizePlannerOutput(
+    {
+      route: 'conversation',
+      tools: ['execute_sql'],
+      directAnswer: 'Hello!',
+      rewrittenQuery: 'select * from jobs',
+    },
+    'hi'
+  );
+  assert.deepEqual(conversational, {
+    route: 'conversation',
+    tools: [],
+    rewrittenQuery: '',
+    directAnswer: 'Hello!',
+  });
+
+  const crm = normalizePlannerOutput(
+    {
+      route: 'crm',
+      tools: ['technician_billing_ranking', 'execute_sql', 'technician_billing_ranking'],
+      rewrittenQuery: 'what about yesterday?',
+    },
+    'fallback'
+  );
+  assert.deepEqual(crm.tools, ['technician_billing_ranking']);
+  assert.equal(ALLOWED_CRM_TOOLS.includes('execute_sql'), false);
+  assert.match(buildAllowlistedLookupQuery(crm, 'fallback'), /top technician highest billing/);
+  assert.deepEqual([...scopesForPlannerTools(crm.tools)], ['technician_billing_ranking']);
+  assert.deepEqual(
+    [...scopesForPlannerTools(['payments', 'execute_sql', 'reminders'])],
+    ['payments', 'reminders']
+  );
 }
 
 function testShortMessageRejected() {
@@ -456,6 +510,8 @@ function testLookupSourceIsBounded() {
 
 async function main() {
   testRequestIgnoresDangerousClientFields();
+  testRequestHistoryIsBoundedAndNormalized();
+  testPlannerOutputIsAllowlisted();
   testShortMessageRejected();
   testActionsRequireKnownIdsAndConfirm();
   testMutationToolsBanned();

@@ -188,6 +188,7 @@ export async function requestAiCrmChat(opts: {
   message: string;
   focusCustomerId?: string | null;
   conversationId?: string | null;
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>;
 }): Promise<AiCrmChatResult> {
   const message = String(opts.message || '').trim();
   if (message.length < 2) return { ok: false, error: 'Enter a search or request' };
@@ -206,6 +207,7 @@ export async function requestAiCrmChat(opts: {
         message,
         ...(opts.focusCustomerId ? { focusCustomerId: opts.focusCustomerId } : {}),
         ...(opts.conversationId ? { conversationId: opts.conversationId } : {}),
+        ...(opts.history?.length ? { history: opts.history.slice(-8) } : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));

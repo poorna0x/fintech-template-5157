@@ -18,6 +18,8 @@ const MAX_ANSWER_CHARS = 1800;
 const MAX_WARNINGS = 8;
 const MAX_ACTIONS = 4;
 const MAX_FIELD_CHARS = 240;
+const MAX_HISTORY_TURNS = 8;
+const MAX_HISTORY_CHARS = 600;
 
 function asTrimmedString(value, maxLen) {
   const text = String(value == null ? '' : value).trim();
@@ -39,6 +41,13 @@ function parseCrmChatRequest(body) {
 
   const focusCustomerId = asTrimmedString(body?.focusCustomerId, 64) || null;
   const conversationId = asTrimmedString(body?.conversationId, 80) || null;
+  const history = [];
+  for (const turn of Array.isArray(body?.history) ? body.history.slice(-MAX_HISTORY_TURNS) : []) {
+    if (!turn || typeof turn !== 'object') continue;
+    const role = turn.role === 'assistant' ? 'assistant' : turn.role === 'user' ? 'user' : null;
+    const text = asTrimmedString(turn.text, MAX_HISTORY_CHARS);
+    if (role && text) history.push({ role, text });
+  }
 
   return {
     ok: true,
@@ -47,6 +56,7 @@ function parseCrmChatRequest(body) {
       message,
       focusCustomerId,
       conversationId,
+      history,
     },
   };
 }

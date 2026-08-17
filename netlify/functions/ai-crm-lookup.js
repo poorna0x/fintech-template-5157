@@ -279,7 +279,7 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     scopes.add('revenue');
   if (wantsCustomerRanking) scopes.add('customer_value_ranking');
   if (wantsTechnicianRanking) scopes.add('technician_billing_ranking');
-  if (has(/\bsummary|\boverview|\bstatus\b|\bhow many|\bcount\b|\btotal\b|\breport\b/))
+  if (has(/\bsummary|\boverview|\bstatus report\b|\bdaily report\b|\bfull report\b/))
     scopes.add('summary');
 
   let statuses = null;
@@ -1124,30 +1124,54 @@ async function loadOverview(db, intent, todayKey) {
   const dayBounds = istDayBounds(range.start || todayKey, range.end || todayKey);
   out.stats.today = todayKey;
   out.stats.rangeLabel = range.label;
-  out.stats.jobsScheduledInRange = await countRows(
-    (() => {
-      let q = db.from('jobs').select('id', { count: 'exact', head: true });
-      if (range.start) q = q.gte('scheduled_date', range.start);
-      if (range.end) q = q.lte('scheduled_date', range.end);
-      return q;
-    })()
-  );
-  out.stats.jobsCompletedInRange = await countRows(
-    db
-      .from('jobs')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'COMPLETED')
-      .gte('completed_at', dayBounds.fromTs)
-      .lt('completed_at', dayBounds.toTs)
-  );
-  out.stats.openJobsTotal = await countRows(
-    db.from('jobs').select('id', { count: 'exact', head: true }).in('status', ONGOING_JOB_STATUSES)
-  );
-  out.stats.followUpJobsTotal = await countRows(
-    db.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'FOLLOW_UP')
-  );
+  if (wantsJobs) {
+    const wantsAllJobCounts = scopes.has('summary');
+    const wantsCompletedCount =
+      wantsAllJobCounts ||
+      scopes.has('revenue') ||
+      (Array.isArray(statuses) && statuses.length === 1 && statuses[0] === 'COMPLETED');
+    const wantsOpenCount =
+      wantsAllJobCounts ||
+      (Array.isArray(statuses) && statuses.some((status) => ONGOING_JOB_STATUSES.includes(status)));
+    const wantsFollowUpCount =
+      wantsAllJobCounts ||
+      (Array.isArray(statuses) && statuses.length === 1 && statuses[0] === 'FOLLOW_UP');
+    const wantsScheduledCount =
+      wantsAllJobCounts || (!wantsCompletedCount && !wantsOpenCount && !wantsFollowUpCount);
 
-  if (scopes.has('revenue') || wantsJobs) {
+    if (wantsScheduledCount) {
+      out.stats.jobsScheduledInRange = await countRows(
+        (() => {
+          let q = db.from('jobs').select('id', { count: 'exact', head: true });
+          if (range.start) q = q.gte('scheduled_date', range.start);
+          if (range.end) q = q.lte('scheduled_date', range.end);
+          return q;
+        })()
+      );
+    }
+    if (wantsCompletedCount) {
+      out.stats.jobsCompletedInRange = await countRows(
+        db
+          .from('jobs')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'COMPLETED')
+          .gte('completed_at', dayBounds.fromTs)
+          .lt('completed_at', dayBounds.toTs)
+      );
+    }
+    if (wantsOpenCount) {
+      out.stats.openJobsTotal = await countRows(
+        db.from('jobs').select('id', { count: 'exact', head: true }).in('status', ONGOING_JOB_STATUSES)
+      );
+    }
+    if (wantsFollowUpCount) {
+      out.stats.followUpJobsTotal = await countRows(
+        db.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'FOLLOW_UP')
+      );
+    }
+  }
+
+  if (scopes.has('revenue') || scopes.has('summary')) {
     const { data, error } = await db
       .from('jobs')
       .select('payment_amount, actual_cost')
@@ -1170,7 +1194,22 @@ async function loadOverview(db, intent, todayKey) {
 /**
  * Build a bounded CRM context pack for one admin chat turn.
  */
-async function lookupCrmContext({ message, focusCustomerId } = {}) {
+function scopesForPlannerTools(tools) {
+  const map = {
+    customer_search: 'customers',
+    job_search: 'jobs',
+    jobs_overview: 'jobs',
+    payments: 'payments',
+    reminders: 'reminders',
+    amc: 'amc',
+    revenue: 'revenue',
+    customer_value_ranking: 'customer_value_ranking',
+    technician_billing_ranking: 'technician_billing_ranking',
+  };
+  return new Set((Array.isArray(tools) ? tools : []).map((tool) => map[tool]).filter(Boolean));
+}
+
+async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {}) {
   const todayKey = istDateKey();
   const db = getServiceSupabase();
   if (!db) {
@@ -1189,6 +1228,13 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
 
   const hints = extractQueryHints(message);
   const detected = detectOverviewIntent(message, todayKey);
+  const plannedScopes = scopesForPlannerTools(plannerTools);
+  if (Array.isArray(plannerTools) && plannerTools.length) {
+    // The LLM may choose only allowlisted capabilities. Keywords still resolve
+    // dates/statuses, but cannot silently broaden the selected data sections.
+    detected.scopes = plannedScopes;
+    detected.active = plannedScopes.size > 0;
+  }
   // A request naming a person or job is about them, not a whole-day sweep.
   const hasSpecificTarget = hasSearchableTarget(hints, focusCustomerId);
   const isRankingIntent =
@@ -1481,6 +1527,7 @@ module.exports = {
   ONGOING_JOB_STATUSES,
   extractQueryHints,
   hasSearchableTarget,
+  scopesForPlannerTools,
   detectOverviewIntent,
   detectCustomerValueRanking,
   detectTechnicianBillingRanking,

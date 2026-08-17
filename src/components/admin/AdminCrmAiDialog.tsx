@@ -117,6 +117,10 @@ export default function AdminCrmAiDialog({
     const result = await requestAiCrmChat({
       message,
       conversationId,
+      history: turns
+        .filter((turn) => !turn.error)
+        .slice(-8)
+        .map(({ role, text }) => ({ role, text })),
     });
 
     if ('error' in result) {
