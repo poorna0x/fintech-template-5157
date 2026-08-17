@@ -3693,6 +3693,10 @@ const TechnicianDashboard = () => {
       includesPrefilter: amcIncludesPrefilter === true,
       servicePeriodKind: amcServicePeriodKind,
       servicePeriodCustomMonths: amcServicePeriodCustomMonths,
+      serviceAddress:
+        ((selectedJobForComplete as any).service_address ||
+          (selectedJobForComplete as any).serviceAddress ||
+          null) as Customer['address'] | null,
     });
   }, [
     hasAMC,

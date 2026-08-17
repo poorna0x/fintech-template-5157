@@ -64,6 +64,11 @@ import {
 import { db } from '@/lib/supabase';
 import { getOfficeJobParts } from '@/lib/adminUtils';
 import { getInventoryBillName } from '@/lib/inventoryBillName';
+import {
+  DocumentAddressSelector,
+  documentAddressForChoice,
+  type DocumentAddressChoice,
+} from '@/components/document/DocumentAddressSelector';
 
 type BillMode = 'normal' | 'set';
 type ExtraChargeKind = 'service' | 'visiting';
@@ -196,6 +201,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     brand: DocumentBrand;
     defaultRecipients: string[];
   } | null>(null);
+  const [addressChoice, setAddressChoice] = useState<DocumentAddressChoice>('omit');
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -229,6 +235,10 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       },
     });
   }, [customerName, customerPhone, customerEmail, customerGst, customerAddress]);
+
+  useEffect(() => {
+    setAddressChoice('omit');
+  }, [customer?.id]);
 
   // Calculate totals — set mode uses package amount only (ignore any leaked part prices)
   const rawSubtotal = items.reduce((sum, item) => sum + item.total, 0);
@@ -371,6 +381,15 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
         ]);
       if (partsError) throw partsError;
       if (jobError) throw jobError;
+      if ((job as any)?.service_site === 'secondary') {
+        const address = documentAddressForChoice(customer, 'secondary');
+        setAddressChoice('secondary');
+        setEditableCustomer((prev) => ({ ...prev, address }));
+      } else if ((job as any)?.service_site === 'primary') {
+        const address = documentAddressForChoice(customer, 'primary');
+        setAddressChoice('primary');
+        setEditableCustomer((prev) => ({ ...prev, address }));
+      }
 
       const lines: BillItem[] = [];
       const seen = new Set<string>();
@@ -624,6 +643,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     const billSubtotal = billMode === 'set' ? setTotalAmount : subtotal;
     const billTotal = billSubtotal + serviceCharge;
 
+    const selectedAddress = documentAddressForChoice(customer, addressChoice);
     return {
       id: Date.now().toString(),
       billNumber,
@@ -632,10 +652,10 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       customer: {
         id: customer.id || '',
         name: editableCustomer.name,
-        address: '',
-        city: '',
-        state: '',
-        pincode: '',
+        address: [selectedAddress.street, selectedAddress.area].filter(Boolean).join(', '),
+        city: selectedAddress.city,
+        state: selectedAddress.state,
+        pincode: selectedAddress.pincode,
         phone: editableCustomer.phone,
         email: editableCustomer.email,
         gstNumber: editableCustomer.gst
@@ -723,6 +743,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     billDate,
     billMode,
     selectedJobId,
+    addressChoice,
     items,
     notes,
     notesHeading,
@@ -748,6 +769,13 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     if (typeof snap.billDate === 'string') setBillDate(snap.billDate);
     if (snap.billMode === 'set' || snap.billMode === 'normal') setBillMode(snap.billMode);
     if (typeof snap.selectedJobId === 'string') setSelectedJobId(snap.selectedJobId);
+    if (
+      snap.addressChoice === 'omit' ||
+      snap.addressChoice === 'primary' ||
+      snap.addressChoice === 'secondary'
+    ) {
+      setAddressChoice(snap.addressChoice);
+    }
     if (Array.isArray(snap.items)) {
       let next = snap.items as BillItem[];
       if (snap.billMode === 'set') {
@@ -911,6 +939,15 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
             </div>
           </CardHeader>
           <CardContent className="space-y-3 sm:space-y-4">
+            <DocumentAddressSelector
+              customer={customer}
+              value={addressChoice}
+              allowOmit
+              onChange={(choice, address) => {
+                setAddressChoice(choice);
+                setEditableCustomer((prev) => ({ ...prev, address }));
+              }}
+            />
             {isEditingCustomer ? (
               <div className="space-y-3 sm:space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
@@ -953,7 +990,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Name and phone are enough for the bill — address is optional and omitted from this form.
+                  Name and phone are enough. Choose Primary or Secondary above to print an address,
+                  or keep Omit address.
                 </p>
               </div>
             ) : (
@@ -963,6 +1001,20 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                   {editableCustomer.phone && <div>Phone: {editableCustomer.phone}</div>}
                   {editableCustomer.email && <div>Email: {editableCustomer.email}</div>}
                   {editableCustomer.gst && <div>GST: {editableCustomer.gst}</div>}
+                  {addressChoice !== 'omit' ? (
+                    <div>
+                      Address:{' '}
+                      {[
+                        editableCustomer.address.street,
+                        editableCustomer.address.area,
+                        editableCustomer.address.city,
+                        editableCustomer.address.state,
+                        editableCustomer.address.pincode,
+                      ]
+                        .filter(Boolean)
+                        .join(', ')}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}

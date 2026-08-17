@@ -95,6 +95,8 @@ interface WarrantyManagementDialogProps {
 
 interface SelectedCustomer extends CustomerPick {
   addressText: string;
+  primaryAddressText: string;
+  secondaryAddressText: string;
   email?: string | null;
 }
 
@@ -105,6 +107,8 @@ interface JobRow {
   service_type: string;
   scheduled_date: string | null;
   completed_at: string | null;
+  service_site?: 'primary' | 'secondary' | null;
+  service_address?: unknown;
 }
 
 interface InventoryRow {
@@ -200,6 +204,7 @@ export default function WarrantyManagementDialog({
 
   // ---- selected customer context ----
   const [customer, setCustomer] = useState<SelectedCustomer | null>(null);
+  const [addressChoice, setAddressChoice] = useState<'primary' | 'secondary'>('primary');
   const [loadingCustomer, setLoadingCustomer] = useState(false);
   const [existing, setExisting] = useState<ExistingWarranty[]>([]);
   const [jobs, setJobs] = useState<JobRow[]>([]);
@@ -250,6 +255,7 @@ export default function WarrantyManagementDialog({
     setSearching(false);
     setSearched(false);
     setCustomer(null);
+    setAddressChoice('primary');
     setLoadingCustomer(false);
     setExisting([]);
     setJobs([]);
@@ -318,11 +324,20 @@ export default function WarrantyManagementDialog({
       ]);
 
       const addrRow = (addrRes.data ?? {}) as Record<string, unknown>;
+      const primaryAddressText =
+        buildAddressText(addrRow.address) ||
+        String(addrRow.visible_address || pick.visible_address || '');
+      const secondaryAddressText =
+        buildAddressText(addrRow.alternate_address) ||
+        String(addrRow.alternate_visible_address || '');
       setCustomer({
         ...pick,
-        addressText: buildAddressText(addrRow.address) || pick.visible_address,
+        addressText: primaryAddressText,
+        primaryAddressText,
+        secondaryAddressText,
         email: typeof addrRow.email === 'string' ? addrRow.email : null,
       });
+      setAddressChoice('primary');
 
       if (warrantiesRes.error) {
         const msg = warrantiesRes.error.message || '';
@@ -419,6 +434,21 @@ export default function WarrantyManagementDialog({
       const job = jobs.find((j) => j.id === jobId);
       const startSource = job?.completed_at || job?.scheduled_date;
       if (startSource) setStartDate(String(startSource).slice(0, 10));
+      if (job && customer) {
+        const jobAddress = buildAddressText(job.service_address);
+        const choice = job.service_site === 'secondary' ? 'secondary' : 'primary';
+        setAddressChoice(choice);
+        setCustomer((prev) =>
+          prev
+            ? {
+                ...prev,
+                addressText:
+                  jobAddress ||
+                  (choice === 'secondary' ? prev.secondaryAddressText : prev.primaryAddressText),
+              }
+            : prev
+        );
+      }
       setLoadingParts(true);
       try {
         const { data, error } = await db.jobPartsUsed.getByJob(jobId);
@@ -449,7 +479,7 @@ export default function WarrantyManagementDialog({
         setLoadingParts(false);
       }
     },
-    [defaultValue, defaultUnit, jobs]
+    [defaultValue, defaultUnit, jobs, customer]
   );
 
   // ---- add items from inventory (spare parts) ----
@@ -904,6 +934,41 @@ export default function WarrantyManagementDialog({
                   <p className="text-sm text-muted-foreground">
                     {customer.customer_id} · {customer.phone}
                   </p>
+                  {customer.secondaryAddressText ? (
+                    <div className="mt-2 max-w-md space-y-1">
+                      <Label className="text-xs">Address for warranty card</Label>
+                      <Select
+                        value={addressChoice}
+                        onValueChange={(raw) => {
+                          const choice = raw === 'secondary' ? 'secondary' : 'primary';
+                          setAddressChoice(choice);
+                          setCustomer((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  addressText:
+                                    choice === 'secondary'
+                                      ? prev.secondaryAddressText
+                                      : prev.primaryAddressText,
+                                }
+                              : prev
+                          );
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="primary">
+                            Primary · {customer.primaryAddressText || 'No address saved'}
+                          </SelectItem>
+                          <SelectItem value="secondary">
+                            Secondary · {customer.secondaryAddressText}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
                   {customer.addressText && (
                     <p className="text-sm text-muted-foreground flex items-start gap-1 mt-1">
                       <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0" />

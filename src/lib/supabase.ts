@@ -329,6 +329,8 @@ export const CUSTOMER_DOCUMENT_COLUMNS = [
   'email',
   'address',
   'visible_address',
+  'alternate_address',
+  'alternate_visible_address',
   'service_type',
   'brand',
   'model',
@@ -1724,11 +1726,11 @@ export const db = {
       return { data, error };
     },
 
-    /** Tiny fetch: address + email (e.g. warranty dialog). */
+    /** Tiny fetch: both document-address choices + email (e.g. warranty dialog). */
     async getAddressById(id: string) {
       const { data, error } = await supabase
         .from('customers')
-        .select('address, email')
+        .select('address, alternate_address, visible_address, alternate_visible_address, email')
         .eq('id', id)
         .single();
       return { data, error };
@@ -1981,7 +1983,7 @@ export const db = {
     async getByCustomerIdForPicker(customerId: string) {
       const { data, error } = await supabase
         .from('jobs')
-        .select('id, job_number, status, service_type, service_sub_type, scheduled_date, completed_at')
+        .select('id, job_number, status, service_type, service_sub_type, scheduled_date, completed_at, service_site, service_address')
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false })
         .limit(100);

@@ -68,6 +68,11 @@ import {
 } from '@/lib/service-brands';
 import type { TaxInvoiceEditSnapshot } from '@/lib/tax-invoice-edit-utils';
 import {
+  DocumentAddressSelector,
+  documentAddressForChoice,
+  type DocumentAddressChoice,
+} from '@/components/document/DocumentAddressSelector';
+import {
   type DocumentPaymentStatus,
   documentPaymentSummaryClass,
   documentPaymentSummaryLabel,
@@ -383,6 +388,7 @@ export default function TaxInvoiceGenerator({
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [addressChoice, setAddressChoice] = useState<DocumentAddressChoice>('primary');
   const [editableCustomer, setEditableCustomer] = useState({
     name: customerName || '',
     phone: customerPhone || '',
@@ -403,7 +409,7 @@ export default function TaxInvoiceGenerator({
     const phone = typeof customer.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
     const email = customer.email || '';
     const gst = getCustomerGstNumber(customer);
-    const addr = customer.address || {};
+    const addr = documentAddressForChoice(customer, addressChoice);
     setEditableCustomer((prev) => ({
       name: name || prev.name,
       phone: phone || prev.phone,
@@ -418,7 +424,7 @@ export default function TaxInvoiceGenerator({
         pincode: addr.pincode || prev.address.pincode || '',
       },
     }));
-  }, [customer, editInvoiceId]);
+  }, [customer, editInvoiceId, addressChoice]);
 
   // Auto-select place of supply / state code from customer GSTIN (first 2 digits)
   useEffect(() => {
@@ -1031,6 +1037,7 @@ export default function TaxInvoiceGenerator({
     amountReceived: num(amountReceived),
     deliveryAddress,
     showDeliveryAddress,
+    addressChoice,
     editableCustomer,
   });
 
@@ -1085,6 +1092,9 @@ export default function TaxInvoiceGenerator({
       setDeliveryAddress((prev) => ({ ...prev, ...snap.deliveryAddress }));
     if (typeof snap.showDeliveryAddress === 'boolean')
       setShowDeliveryAddress(snap.showDeliveryAddress);
+    if (snap.addressChoice === 'primary' || snap.addressChoice === 'secondary') {
+      setAddressChoice(snap.addressChoice);
+    }
     if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
   };
@@ -1460,6 +1470,17 @@ export default function TaxInvoiceGenerator({
             </div>
           </CardHeader>
           <CardContent className="space-y-3 sm:space-y-4">
+            {!editInvoiceId ? (
+              <DocumentAddressSelector
+                customer={customer}
+                value={addressChoice}
+                onChange={(choice, address) => {
+                  setAddressChoice(choice);
+                  setEditableCustomer((prev) => ({ ...prev, address }));
+                }}
+                label="Billing address"
+              />
+            ) : null}
             {isEditingCustomer ? (
               <div className="space-y-3 sm:space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">

@@ -67,6 +67,11 @@ import {
   type ServiceDocumentTermItem,
 } from '@/lib/service-document-terms';
 import { buildQuotationWithAi } from '@/lib/aiQuotationBuilder';
+import {
+  DocumentAddressSelector,
+  documentAddressForChoice,
+  type DocumentAddressChoice,
+} from '@/components/document/DocumentAddressSelector';
 
 interface QuotationGeneratorProps {
   customer?: Customer;
@@ -218,6 +223,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
 
   // Customer editing state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [addressChoice, setAddressChoice] = useState<DocumentAddressChoice>('primary');
   const [editableCustomer, setEditableCustomer] = useState({
     name: customerName,
     phone: customerPhone,
@@ -234,20 +240,21 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
 
   // Update editable customer when customer prop changes (incl. async GSTIN load)
   useEffect(() => {
+    const selectedAddress = documentAddressForChoice(customer, addressChoice);
     setEditableCustomer({
       name: customerName,
       phone: customerPhone,
       email: customerEmail,
       gst: customerGst,
       address: {
-        street: customerAddress.street || '',
-        area: customerAddress.area || '',
-        city: customerAddress.city || '',
-        state: customerAddress.state || '',
-        pincode: customerAddress.pincode || ''
+        street: selectedAddress.street,
+        area: selectedAddress.area,
+        city: selectedAddress.city,
+        state: selectedAddress.state,
+        pincode: selectedAddress.pincode
       }
     });
-  }, [customerName, customerPhone, customerEmail, customerGst, customerAddress]);
+  }, [customerName, customerPhone, customerEmail, customerGst, customerAddress, customer, addressChoice]);
 
   // Auto-select place of supply / state code from customer GSTIN when Include GST is on
   useEffect(() => {
@@ -634,6 +641,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     bankDetails,
     placeOfSupply,
     placeOfSupplyCode,
+    addressChoice,
     editableCustomer,
   });
 
@@ -677,6 +685,9 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       setBankDetails({ ...defaultBankDetails, ...snap.bankDetails });
     if (typeof snap.placeOfSupply === 'string') setPlaceOfSupply(snap.placeOfSupply);
     if (typeof snap.placeOfSupplyCode === 'string') setPlaceOfSupplyCode(snap.placeOfSupplyCode);
+    if (snap.addressChoice === 'primary' || snap.addressChoice === 'secondary') {
+      setAddressChoice(snap.addressChoice);
+    }
     if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
   };
@@ -1098,6 +1109,14 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
             </div>
           </CardHeader>
           <CardContent className="space-y-3 sm:space-y-4">
+            <DocumentAddressSelector
+              customer={customer}
+              value={addressChoice}
+              onChange={(choice, address) => {
+                setAddressChoice(choice);
+                setEditableCustomer((prev) => ({ ...prev, address }));
+              }}
+            />
             {isEditingCustomer ? (
               <div className="space-y-3 sm:space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
