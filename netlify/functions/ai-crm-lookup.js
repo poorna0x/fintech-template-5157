@@ -21,6 +21,7 @@ const TOP_CUSTOMER_LIMIT = 10;
 const TOP_TECHNICIAN_LIMIT = 10;
 const TECHNICIAN_BILLING_SCAN_LIMIT = 1000;
 const REVENUE_SCAN_LIMIT = 2000;
+const EXPENSE_SCAN_LIMIT = 1000;
 const FUZZY_NAME_SCAN_LIMIT = 40;
 const NAMED_CUSTOMER_VALUE_SCAN_LIMIT = 600;
 const TECHNICIAN_TOP_JOB_SCAN = 25;
@@ -128,18 +129,18 @@ function nameMatchesToken(fullName, token) {
 /** Words that never identify a customer, so they must not become search terms. */
 const NAME_STOP_WORDS = new Set(
   [
-    'about', 'add', 'afternoon', 'again', 'against', 'all', 'also', 'amc', 'amount', 'and', 'any',
+    'about', 'add', 'afternoon', 'again', 'against', 'all', 'also', 'amc', 'among', 'amount', 'and', 'any',
     'april', 'august', 'between', 'december', 'february', 'january', 'july', 'june',
     'march', 'may', 'november', 'october', 'september',
-    'anyone', 'are', 'assign', 'assigned', 'balance', 'bill', 'booked', 'booking', 'called', 'can',
-    'cancel', 'cancelled', 'candy', 'cash', 'change', 'charge', 'check', 'closed', 'collect',
+    'anyone', 'are', 'assign', 'assigned', 'balance', 'bill', 'booked', 'booking', 'business', 'called', 'can',
+    'cancel', 'cancelled', 'candy', 'cash', 'categories', 'category', 'change', 'charge', 'check', 'closed', 'collect',
     'collected', 'coming', 'company', 'complaint', 'complaints', 'complete', 'completed',
     'added', 'confirm', 'contact', 'cost', 'count', 'create', 'customer', 'customers', 'date', 'day',
     'days', 'description', 'detail', 'details', 'did', 'document', 'documents', 'does', 'done', 'due', 'dues', 'earn',
-    'evening', 'expire', 'expired', 'expiring', 'expiry', 'filter', 'filters', 'find', 'finished',
+    'evening', 'expense', 'expenses', 'expire', 'expired', 'expiring', 'expiry', 'filter', 'filters', 'find', 'finished',
     'follow', 'followup', 'followups', 'for', 'from', 'get', 'give', 'has', 'have', 'his', 'her',
     'how', 'income', 'info', 'information', 'install', 'installation', 'invoice', 'issue',
-    'issues', 'job', 'jobs', 'last', 'leak', 'leakage', 'lead', 'leads', 'list', 'machine',
+    'issues', 'job', 'jobs', 'last', 'latest', 'leak', 'leakage', 'lead', 'leads', 'list', 'machine',
     'make', 'many', 'me', 'month', 'more', 'morning', 'much', 'my', 'name', 'need', 'needs',
     'new', 'next', 'night', 'not', 'note', 'notes', 'now', 'number', 'off', 'ongoing', 'open',
     'order', 'our', 'outstanding', 'overdue', 'paid', 'past', 'pay', 'payment', 'payments',
@@ -153,11 +154,11 @@ const NAME_STOP_WORDS = new Set(
     // Sentence glue around a name ("customer having shety") must never be
     // searched itself: short words like "had" substring-match real surnames.
     'called', 'containing', 'contains', 'ending', 'ends', 'had', 'having', 'including', 'includes',
-    'lowest', 'named', 'naming', 'similar', 'sounds', 'spelled', 'spelling', 'starting', 'starts',
+    'happened', 'lowest', 'named', 'naming', 'similar', 'sounds', 'spelled', 'spelling', 'starting', 'starts',
     'whose', 'enroute', 'left', 'meant', 'progress', 'remaining', 'route',
     'collection', 'collections', 'earnings', 'gst', 'money', 'profit', 'revenue', 'tax',
     'alltime', 'billed', 'billing', 'biggest', 'client', 'entire', 'ever', 'highest', 'largest', 'lifetime',
-    'paying', 'spend', 'spent', 'thing', 'top', 'value', 'technician', 'technicians', 'tech',
+    'most', 'paying', 'spend', 'spending', 'spent', 'thing', 'top', 'value', 'technician', 'technicians', 'tech',
     'tehcncian', 'tehcnician',
     // Greetings and chit-chat must never become a customer search term.
     'bye', 'cool', 'everything', 'fine', 'good', 'great', 'greetings', 'hai', 'hello', 'hey',
@@ -375,6 +376,8 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   if (has(/\bpayment|\bpending amount|\boutstanding|\bbalance|\bcollect|\bunpaid|\bdues?\b/))
     scopes.add('payments');
   if (has(/\bamc\b|\bexpir|\brenew/)) scopes.add('amc');
+  if (has(/\bexpenses?\b|\bspend\b|\bspent\b|\bspending\b|\bfuel costs?\b|\brent costs?\b/))
+    scopes.add('expenses');
   if (
     has(
       /\bnew customers?\b|\brecent customers?\b|\bnew leads?\b|\bhow many customers?\b|\btotal customers?\b|\bcustomer count\b|\bnumber of customers?\b/
@@ -544,6 +547,19 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   const wantsProjection = has(
     /\bproject|\bforecast|\bestimate|\bexpect|\bon track\b|\brun[\s-]?rate\b|\bend (?:of|up)\b|\bwill (?:it|we|this)\b|\bcan be\b|\bcould be\b|\bmight be\b|\blikely\b|\bpace\b/
   );
+  if (
+    wantsComparison &&
+    has(/\blast month\b/) &&
+    (has(/\bthis month\b|\bmonth to date\b|\bdoing (?:better|worse)\b/) ||
+      /^\s*how does that compare\b/.test(text))
+  ) {
+    const currentMonth = monthBoundsKey(todayKey, 0);
+    start = currentMonth.start;
+    end = currentMonth.end;
+    label = 'this month';
+    explicitDate = true;
+    allTime = false;
+  }
 
   return {
     scopes,
@@ -1390,6 +1406,7 @@ async function loadOverview(db, intent, todayKey) {
   const wantsCustomers = scopes.has('customers');
   const wantsCustomerValueRanking = scopes.has('customer_value_ranking');
   const wantsTechnicianBillingRanking = scopes.has('technician_billing_ranking');
+  const wantsExpenses = scopes.has('expenses');
 
   if (wantsCustomerValueRanking) {
     // "Which Shetty billed most" must rank the matched names, not the global top
@@ -1594,6 +1611,8 @@ async function loadOverview(db, intent, todayKey) {
       out.truncated.payments = paymentCount > out.payments.length;
     }
     if (wantsReminders) {
+      out.stats.remindersListed = out.reminders.length;
+      out.stats.remindersScope = range.label;
       out.truncated.reminders = out.reminders.length >= OVERVIEW_REMINDER_LIMIT;
     }
   }
@@ -1623,6 +1642,65 @@ async function loadOverview(db, intent, todayKey) {
         status: row.status || null,
       });
     }
+  }
+
+  if (wantsExpenses) {
+    const loadExpenseRows = async (table) => {
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        let query = db
+          .from(table)
+          .select('id, amount, description, expense_date, category')
+          .order('expense_date', { ascending: false })
+          .limit(EXPENSE_SCAN_LIMIT);
+        if (range.start) query = query.gte('expense_date', range.start);
+        if (range.end) query = query.lte('expense_date', range.end);
+        const { data, error } = await query;
+        if (!error) {
+          if ((data || []).length >= EXPENSE_SCAN_LIMIT) out.truncated[table] = true;
+          return data || [];
+        }
+        console.warn(`[ai-crm-lookup] ${table} attempt ${attempt} failed`, error.message);
+      }
+      return null;
+    };
+    const [businessRows, technicianRows] = await Promise.all([
+      loadExpenseRows('business_expenses'),
+      loadExpenseRows('technician_expenses'),
+    ]);
+    const summarize = (rows) => {
+      const byCategory = new Map();
+      let total = 0;
+      for (const row of rows) {
+        const amount = Number(row.amount) || 0;
+        total += amount;
+        const category = String(row.category || 'UNCATEGORIZED').trim() || 'UNCATEGORIZED';
+        byCategory.set(category, (byCategory.get(category) || 0) + amount);
+      }
+      return {
+        count: rows.length,
+        total: Math.round(total),
+        byCategory: [...byCategory.entries()]
+          .map(([category, amount]) => ({ category, amount: Math.round(amount) }))
+          .sort((a, b) => b.amount - a.amount)
+          .slice(0, 12),
+        latest: rows.slice(0, 10).map((row) => ({
+          date: row.expense_date,
+          category: row.category || 'UNCATEGORIZED',
+          description: String(row.description || '').slice(0, 120),
+          amount: Math.round(Number(row.amount) || 0),
+        })),
+      };
+    };
+    const business = businessRows ? summarize(businessRows) : null;
+    const technician = technicianRows ? summarize(technicianRows) : null;
+    out.stats.expenses = {
+      period: range.label,
+      business,
+      technician,
+      combinedTotal:
+        business && technician ? business.total + technician.total : null,
+      incomplete: !business || !technician,
+    };
   }
 
   if (wantsCustomers) {
@@ -1833,6 +1911,7 @@ function scopesForPlannerTools(tools) {
     reminders: 'reminders',
     amc: 'amc',
     revenue: 'revenue',
+    expenses: 'expenses',
     customer_value_ranking: 'customer_value_ranking',
     technician_billing_ranking: 'technician_billing_ranking',
   };
@@ -1872,7 +1951,7 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
   // and customers lists are suppressed, because those would become a whole-day
   // sweep on top of a request about one person.
   const wantsAggregate = [...detected.scopes].some((scope) =>
-    ['revenue', 'payments', 'reminders', 'amc', 'summary', 'customer_value_ranking', 'technician_billing_ranking'].includes(
+    ['revenue', 'expenses', 'payments', 'reminders', 'amc', 'summary', 'customer_value_ranking', 'technician_billing_ranking'].includes(
       scope
     )
   );
@@ -2129,6 +2208,27 @@ function formatContextForPrompt(pack) {
     statLines.push(
       `straight-line projection for the full period = INR ${stats.completedJobValueProjection.projectedPeriodTotal} (${stats.completedJobValueProjection.elapsedDays} of ${stats.completedJobValueProjection.periodDays} days elapsed, INR ${stats.completedJobValueProjection.perDay} per day so far) — state it as an estimate at the current run rate`
     );
+  if (stats.expenses) {
+    const business = stats.expenses.business;
+    const technician = stats.expenses.technician;
+    statLines.push(
+      `expense totals for ${stats.expenses.period}: business expenses ${
+        business ? `INR ${business.total} across ${business.count} rows` : 'unavailable'
+      }; technician expenses ${
+        technician ? `INR ${technician.total} across ${technician.count} rows` : 'unavailable'
+      }; combined ${
+        stats.expenses.combinedTotal == null ? 'unavailable because one source failed' : `INR ${stats.expenses.combinedTotal}`
+      }`
+    );
+    if (business) {
+      statLines.push(`business expense categories = ${JSON.stringify(business.byCategory)}`);
+      statLines.push(`latest business expenses = ${JSON.stringify(business.latest)}`);
+    }
+    if (technician) {
+      statLines.push(`technician expense categories = ${JSON.stringify(technician.byCategory)}`);
+      statLines.push(`latest technician expenses = ${JSON.stringify(technician.latest)}`);
+    }
+  }
   if (stats.pendingPaymentsListed != null)
     statLines.push(
       `pending payment reminders scanned = ${stats.pendingPaymentsListed}, total INR = ${stats.pendingPaymentsListedTotal      }${
@@ -2138,6 +2238,10 @@ function formatContextForPrompt(pack) {
           ? `, of which ${stats.pendingPaymentsAlreadyDue} are already due today or earlier totalling INR ${stats.pendingPaymentsAlreadyDueTotal}`
           : ''
       }`
+    );
+  if (stats.remindersListed != null)
+    statLines.push(
+      `non-payment reminders in ${stats.remindersScope || stats.rangeLabel || 'the requested period'} = ${stats.remindersListed}`
     );
   if (stats.amcExpiryWindow) statLines.push(`AMC contracts listed expire between ${stats.amcExpiryWindow}`);
   if (statLines.length) {

@@ -130,6 +130,8 @@ function buildSystemInstruction() {
     'Conversation history explains references such as "those" or "last month", but it is not current CRM evidence. For the current answer, never reuse a count, amount, row, or date from an earlier assistant reply unless the current CRM lookup facts provide it again.',
     'The facts include today\'s IST date, exact counts, and capped lists. Use the exact counts for "how many" and totals; never count the rows in a list yourself, because lists are truncated.',
     'Job value figures are billed amounts for completed jobs, not confirmed cash collection — word it that way.',
+    'Expense totals come from business_expenses and technician_expenses. Keep the two types separate, and quote the combined total only when useful. Do not call revenue minus these two totals net profit because other costs may exist.',
+    'If an expense source is marked unavailable, say that its data could not be loaded; never turn an unavailable source into zero.',
     'For customer value rankings, preserve the authoritative rank order. "confirmedFullyPaidINR" counts only completed jobs marked PAID; "completedJobBilledINR" can include unpaid or partially paid work. State both when useful and never call billed value collected cash.',
     'For technician billing rankings, preserve the authoritative rank order and call the amount completed-job billing, not cash collected or technician salary. Answer the requested period only.',
     'When the facts contain a "Largest single completed job" line and the question asks for the highest billing for one customer or one job, answer with that job and customer, not the technician or customer total.',
@@ -138,10 +140,12 @@ function buildSystemInstruction() {
     'When asked how a period compares with before, use the same-length previous period line. Never compute your own percentage.',
     'Only say you searched for a name when the facts show a spelling note or customer rows; otherwise say the question did not include a name you could look up.',
     'When the facts contain jobs, reminders, payments or counts, summarise them directly instead of saying nothing was found.',
+    'Reminder facts explicitly exclude pending-payment reminders. Never rename non-payment reminders as payment reminders; payment-reminder questions use the payments facts.',
     'Only say no records were found when the relevant fact sections are empty or zero.',
     'Return ONLY JSON with keys: answer, confidence (0-1), requiresHuman (boolean), warnings (string[]), proposedActions (array).',
     'proposedActions types are limited to: open_customer, create_customer, create_customer_and_job, edit_customer, create_job, schedule_follow_up, create_reminder.',
     'Every proposed action MUST set requiresConfirm=true. Drafts only open normal CRM forms for admin review.',
+    'Propose create, edit, job, follow-up, or reminder actions only when the user explicitly asks to perform or draft that action. A lookup such as "AMC expiring soon" must not invent reminder drafts.',
     'Use create_customer when the admin asks to add a new customer. Copy only supplied name, phone, email, address, visible location label, Google Maps link, RO/softener type, brand, model and notes. Never invent missing values.',
     'Use create_customer_and_job when the admin explicitly asks for both a new customer and a job. Include the customer fields plus the job fields.',
     'A new-customer draft may omit phone, but warn that the CRM form requires it before saving.',
@@ -156,6 +160,13 @@ function buildSystemInstruction() {
     'Default to one or two direct sentences and at most 60 words. Only provide a list or longer explanation when the admin explicitly asks for details or a list.',
     'Keep answer concise and practical for Indian RO service ops.',
   ].join(' ');
+}
+
+function filterProposedActionsForPlan(actions, tools) {
+  const mayDraft = Array.isArray(tools) && tools.includes('action_draft');
+  return (Array.isArray(actions) ? actions : [])
+    .filter((action) => action?.type === 'open_customer' || mayDraft)
+    .map((action) => ({ ...action, requiresConfirm: true }));
 }
 
 function buildUserPrompt(message, contextText, history = []) {
@@ -458,10 +469,10 @@ exports.handler = async (event) => {
     }
 
     // Hard guarantee: every action still requires human confirmation.
-    const proposedActions = (normalized.value.proposedActions || []).map((action) => ({
-      ...action,
-      requiresConfirm: true,
-    }));
+    const proposedActions = filterProposedActionsForPlan(
+      normalized.value.proposedActions,
+      plan.tools
+    );
 
     responseHash = sha256(
       JSON.stringify({
@@ -526,5 +537,6 @@ exports.handler = async (event) => {
 module.exports._test = {
   buildSystemInstruction,
   buildUserPrompt,
+  filterProposedActionsForPlan,
   CRM_CHAT_SCHEMA,
 };

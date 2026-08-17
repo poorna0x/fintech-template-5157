@@ -80,9 +80,29 @@ async function ask(history, message) {
     answer: normalized.value.answer,
     tools: plan.tools,
     strategy,
-    actions: (normalized.value.proposedActions || []).map((action) => action.type),
+    actions: chat
+      .filterProposedActionsForPlan(normalized.value.proposedActions, plan.tools)
+      .map((action) => action.type),
     pack,
   };
+}
+
+function isTransientAiError(error) {
+  return /quota|capacity|rate limit|temporar|timeout|unavailable/i.test(String(error?.message || ''));
+}
+
+async function askWithRetry(history, message) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await ask(history, message);
+    } catch (error) {
+      lastError = error;
+      if (!isTransientAiError(error) || attempt === 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+    }
+  }
+  throw lastError;
 }
 
 const BATTERIES = {
@@ -195,6 +215,14 @@ const BATTERIES = {
     ['at this pace where will this month end'],
     ['how much gst business happened last month'],
   ],
+  expenses: [
+    ['how much did we spend this month'],
+    ['how much was business expense and technician expense'],
+    ['what are the biggest expense categories'],
+    ['show latest expenses'],
+    ['fuel expenses this month'],
+    ['expenses last month'],
+  ],
   typos: [
     ['how many jbos complted tody'],
     ['pendng paymnts'],
@@ -230,13 +258,14 @@ const BATTERIES = {
 async function main() {
   const requested = process.argv[2];
   const names = requested ? [requested] : Object.keys(BATTERIES);
+  let failures = 0;
   for (const name of names) {
     console.log(`\n================ ${name} ================`);
     const history = [];
     for (const [message] of BATTERIES[name]) {
       const started = Date.now();
       try {
-        const result = await ask(history, message);
+        const result = await askWithRetry(history, message);
         console.log(
           `\n>> ${message}\n[${result.strategy}: ${result.tools.join(',') || 'chat'}${
             result.actions.length ? ` | actions: ${result.actions.join(',')}` : ''
@@ -244,10 +273,12 @@ async function main() {
         );
         history.push({ role: 'user', text: message }, { role: 'assistant', text: result.answer });
       } catch (error) {
+        failures += 1;
         console.log(`\n>> ${message}\nFAILED: ${error.message}`);
       }
     }
   }
+  if (failures) throw new Error(`${failures} CRM AI smoke question(s) failed`);
 }
 
 main().catch((error) => {

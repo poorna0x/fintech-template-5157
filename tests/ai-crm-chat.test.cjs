@@ -31,6 +31,7 @@ const {
   ONGOING_JOB_STATUSES,
 } = require('../netlify/functions/ai-crm-lookup');
 const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
+const { filterProposedActionsForPlan } = require('../netlify/functions/ai-crm-chat')._test;
 const {
   ALLOWED_CRM_TOOLS,
   normalizePlannerOutput,
@@ -251,6 +252,30 @@ function testExactOpenStatusesAndBusinessRoutes() {
     'customer_directory',
   ]);
   assert.deepEqual(inferDeterministicPlan('jobs on 2026-08-17').tools, ['jobs_overview']);
+  assert.deepEqual(inferDeterministicPlan('how much did we spend this month').tools, ['expenses']);
+  const expenseFollowUp = inferDeterministicPlan('what are the biggest expense categories', [
+    { role: 'user', text: 'how much did we spend this month' },
+    { role: 'assistant', text: 'INR 35,253.' },
+  ]);
+  assert.deepEqual(expenseFollowUp.tools, ['expenses']);
+  assert.match(expenseFollowUp.rewrittenQuery, /this month/);
+  assert.deepEqual(inferDeterministicPlan('are we doing better than last month').tools, [
+    'revenue',
+  ]);
+  assert.deepEqual(
+    inferDeterministicPlan('compare Srujan and Pradeep billing this month').tools,
+    ['technician_billing_ranking']
+  );
+  const isolated = buildAllowlistedLookupQuery(
+    {
+      route: 'crm',
+      tools: ['revenue', 'customer_search'],
+      rewrittenQuery: 'Compare this month with last month for Ishanga',
+    },
+    'how much Ishanga happened last month'
+  );
+  assert.match(isolated, /^how much Ishanga happened last month/);
+  assert.doesNotMatch(isolated, /this month/);
 }
 
 function testRankingFollowUpsAreNotTreatedAsNames() {
@@ -417,6 +442,29 @@ function testActionsRequireKnownIdsAndConfirm() {
     assert.equal(action.requiresConfirm, true);
     assert.equal(ALLOWED_ACTION_TYPES.includes(action.type), true);
   }
+}
+
+function testLookupCannotInventMutationDrafts() {
+  const actions = [
+    { type: 'create_reminder', requiresConfirm: false, payload: {} },
+    { type: 'open_customer', requiresConfirm: false, payload: { customerId: 'c1' } },
+  ];
+  assert.deepEqual(
+    filterProposedActionsForPlan(actions, ['amc']).map((action) => action.type),
+    ['open_customer']
+  );
+  assert.deepEqual(
+    filterProposedActionsForPlan(actions, ['customer_search', 'action_draft']).map(
+      (action) => action.type
+    ),
+    ['create_reminder', 'open_customer']
+  );
+  assert.equal(
+    filterProposedActionsForPlan(actions, ['action_draft']).every(
+      (action) => action.requiresConfirm
+    ),
+    true
+  );
 }
 
 function testMutationToolsBanned() {
@@ -796,6 +844,7 @@ async function main() {
   testPeriodAndRankingBasisFollowTheQuestion();
   testShortMessageRejected();
   testActionsRequireKnownIdsAndConfirm();
+  testLookupCannotInventMutationDrafts();
   testMutationToolsBanned();
   testLookupHintsAndLimits();
   testNameSurvivesActionSentences();

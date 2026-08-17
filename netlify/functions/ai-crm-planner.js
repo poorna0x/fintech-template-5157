@@ -22,6 +22,7 @@ const ALLOWED_CRM_TOOLS = Object.freeze([
   'reminders',
   'amc',
   'revenue',
+  'expenses',
   'customer_value_ranking',
   'technician_billing_ranking',
   'documents',
@@ -55,6 +56,7 @@ function plannerSystemInstruction() {
     'customer_search and job_search look up specific records the message names, so include the name, phone, code or job number in rewrittenQuery.',
     'customer_directory answers how many customers exist or which ones are new; it never needs a name.',
     'Use jobs_overview when the answer needs the jobs behind a total, such as which customer or job produced an amount.',
+    'Use expenses for business expenses, technician expenses, spending, fuel costs, rent, and expense-category totals.',
     'For CRM, rewrite the current request into one self-contained query using recent history to resolve follow-ups like "what about yesterday?" or "show their jobs".',
     'Preserve names, phones, job numbers, amounts, dates, and requested action fields exactly. Never invent them.',
     'For create/edit requests choose action_draft plus customer_search or job_search only when an existing record must be found.',
@@ -225,6 +227,7 @@ function inferDeterministicPlan(message, history = []) {
   // "not today, all time" only changes the period of the previous question.
   const periodFollowUp =
     !hasOwnSubject &&
+    !hasSearchableTarget(extractQueryHints(text), null) &&
     text.length <= 60 &&
     /\ball[\s-]?time\b|\bentire\b|\bever\b|\blife[\s-]?time\b|\byesterday\b|\bthis (?:week|month)\b|\blast (?:week|month)\b|\boverall\b|\bso far\b/i.test(
       text
@@ -239,9 +242,10 @@ function inferDeterministicPlan(message, history = []) {
     /\bfor which customer\b|\bwhich customer\b|\bwhich job\b/i.test(text);
   const period = periodMarker(detailFollowUp ? combined : text);
 
+  const namesAtLeastTwoPeople = extractQueryHints(text).nameTokens.length >= 2;
   if (
     ((/\btechnicians?\b|\btechs?\b|\btechcnians?\b|\btehcnc?ians?\b/.test(lower) ||
-      /\bcompare\b|\bvs\b|\bversus\b/.test(lower)) &&
+      (namesAtLeastTwoPeople && /\bcompare\b|\bvs\b|\bversus\b/.test(lower))) &&
       /\bhighest\b|\btop\b|\bmost\b|\blowest\b|\bleast\b|\bcompare\b|\bvs\b|\bversus\b|\beach\b|\bper technician\b/.test(
         lower
       ) &&
@@ -304,9 +308,35 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
+  if (/\bexpenses?\b|\bspend\b|\bspent\b|\bspending\b|\bfuel costs?\b|\brent costs?\b/.test(lower)) {
+    const hasPeriod =
+      /\btoday\b|\byesterday\b|\btomorrow\b|\bthis (?:week|month)\b|\blast (?:week|month)\b|\ball[\s-]?time\b|\b20\d{2}(?:-\d{2}-\d{2})?\b/i.test(
+        text
+      );
+    const periodSource = hasPeriod
+      ? ''
+      : [...userTurns]
+          .reverse()
+          .slice(0, 3)
+          .find(
+            (turn) =>
+              /\bexpenses?\b|\bspend\b|\bspent\b|\bspending\b/i.test(turn) &&
+              /\btoday\b|\byesterday\b|\btomorrow\b|\bthis (?:week|month)\b|\blast (?:week|month)\b|\ball[\s-]?time\b|\b20\d{2}(?:-\d{2}-\d{2})?\b/i.test(
+                turn
+              )
+          );
+    return {
+      route: 'crm',
+      tools: ['expenses'],
+      rewrittenQuery: periodSource ? `${periodSource} ${text}` : text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
   // Money we earned, as opposed to money customers still owe us.
   if (
-    /\brevenue\b|\bcollect(?:ed|ion|ions)?\b|\bincome\b|\bturnover\b|\bearn(?:ed|ings|ing)?\b|\bbusiness did\b/.test(
+    /\brevenue\b|\bcollect(?:ed|ion|ions)?\b|\bincome\b|\bturnover\b|\bearn(?:ed|ings|ing)?\b|\bbusiness (?:did|happened)\b|\bbilling happened\b|\bmonth[\s-]+to[\s-]+date sales\b|\bdoing better\b|\bdoing worse\b|\bat this pace\b|\bwhere will this month end\b/.test(
       lower
     ) &&
     !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
@@ -435,7 +465,14 @@ function buildPlannerMessages(history, message) {
 }
 
 function buildAllowlistedLookupQuery(plan, fallbackMessage) {
-  const base = String(plan?.rewrittenQuery || fallbackMessage || '')
+  const fallback = String(fallbackMessage || '');
+  // A current message that names a customer/phone/code is a fresh target. Keep
+  // the model's tool choice, but do not let dates or comparisons from an older
+  // conversation topic leak into this lookup.
+  const source = hasSearchableTarget(extractQueryHints(fallback), null)
+    ? fallback
+    : plan?.rewrittenQuery || fallback;
+  const base = String(source || '')
     .trim()
     .slice(0, 1500);
   const markers = {
@@ -444,6 +481,7 @@ function buildAllowlistedLookupQuery(plan, fallbackMessage) {
     reminders: 'reminders',
     amc: 'AMC expiry',
     revenue: 'revenue',
+    expenses: 'expenses',
     customer_value_ranking: 'top customer paid most',
     technician_billing_ranking: 'top technician highest billing',
     documents: 'documents',
