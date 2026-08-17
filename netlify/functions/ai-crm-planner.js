@@ -5,6 +5,10 @@
  * table names, RPC names or database filters; ai-crm-lookup remains authoritative.
  */
 
+const { extractQueryHints, hasSearchableTarget } = require('./ai-crm-lookup');
+
+const SEARCH_ONLY_TOOLS = new Set(['customer_search', 'job_search']);
+
 const ALLOWED_CRM_TOOLS = Object.freeze([
   'customer_search',
   'job_search',
@@ -149,6 +153,21 @@ function inferDeterministicPlan(message, history = []) {
     }
   }
 
+  // "how many remaining" / "I meant ongoing" only swaps the status filter of the
+  // previous question, so re-ask that question with the new filter.
+  const statusFollowUp =
+    text.length <= 60 &&
+    /\bon[\s-]?going\b|\bremaining\b|\bleft\b|\bopen\b|\bpending\b|\bin[\s-]?progress\b|\bunassigned\b|\bcancell?ed\b|\bcompleted?\b|\bassigned\b|\ben[\s-]?route\b/i.test(
+      text
+    );
+  if (statusFollowUp && lastUserMessage) {
+    const merged = `${lastUserMessage} ${text}`;
+    const inherited = inferDeterministicPlan(merged, []);
+    if (inherited?.route === 'crm') {
+      return { ...inherited, rewrittenQuery: merged, strategy: 'deterministic' };
+    }
+  }
+
   // "not today, all time" only changes the period of the previous question.
   const periodFollowUp =
     text.length <= 60 &&
@@ -233,7 +252,11 @@ function inferDeterministicPlan(message, history = []) {
   }
 
   if (
-    /\b(today'?s?|yesterday'?s?) jobs?\b|\bjobs? (today|yesterday)\b/.test(lower) &&
+    (/\b(today'?s?|yesterday'?s?) jobs?\b|\bjobs? (today|yesterday)\b/.test(lower) ||
+      (/\bjobs?\b|\bvisits?\b|\bservices?\b/.test(lower) &&
+        /\bhow many\b|\bcount\b|\bon[\s-]?going\b|\bremaining\b|\bleft\b|\bopen\b|\bpending\b|\bin[\s-]?progress\b|\bunassigned\b|\bcompleted?\b|\bcancell?ed\b/.test(
+          lower
+        ))) &&
     !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
   ) {
     return {
@@ -292,6 +315,15 @@ function augmentPlanTools(plan, message) {
   const wantsRecordDetail = /\bcustomers?\b|\bjobs?\b/i.test(`${message || ''} ${plan.rewrittenQuery || ''}`);
   if (isRanking && wantsRecordDetail && !tools.includes('jobs_overview')) {
     tools.push('jobs_overview');
+  }
+  // job_search / customer_search only find a named record. With nothing to
+  // search for, the plan would query nothing and wrongly report "no records".
+  const searchOnly = tools.length > 0 && tools.every((tool) => SEARCH_ONLY_TOOLS.has(tool));
+  if (searchOnly) {
+    const combined = `${plan.rewrittenQuery || ''} ${message || ''}`;
+    if (!hasSearchableTarget(extractQueryHints(combined), null)) {
+      tools.push('jobs_overview');
+    }
   }
   return { ...plan, tools: tools.slice(0, 4) };
 }

@@ -28,6 +28,7 @@ const {
   OVERVIEW_JOB_LIMIT,
   TOP_CUSTOMER_LIMIT,
   TOP_TECHNICIAN_LIMIT,
+  ONGOING_JOB_STATUSES,
 } = require('../netlify/functions/ai-crm-lookup');
 const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
 const {
@@ -36,6 +37,7 @@ const {
   buildAllowlistedLookupQuery,
   visibleEntitiesForTools,
   inferDeterministicPlan,
+  augmentPlanTools,
 } = require('../netlify/functions/ai-crm-planner');
 
 function testRequestIgnoresDangerousClientFields() {
@@ -197,6 +199,27 @@ function testDeterministicFastRoutesStayReadOnlyAndNarrow() {
   ]);
   assert.deepEqual(lowest.tools, ['customer_search', 'customer_value_ranking']);
   assert.match(lowest.rewrittenQuery, /shety/);
+
+  // Swapping only the status keeps the previous subject, and the correction wins.
+  const ongoing = inferDeterministicPlan('i meant ongoing', [
+    { role: 'user', text: 'how many jobs completed today' },
+    { role: 'assistant', text: '3 jobs were completed today.' },
+  ]);
+  assert.deepEqual(ongoing.tools, ['jobs_overview']);
+  assert.deepEqual(
+    detectOverviewIntent(ongoing.rewrittenQuery, '2026-08-17').statuses,
+    ONGOING_JOB_STATUSES
+  );
+
+  // A plan that can only search by name must still query when nothing is named.
+  assert.deepEqual(
+    augmentPlanTools({ route: 'crm', tools: ['job_search'], rewrittenQuery: 'remaining jobs today' }, 'how many remaining').tools,
+    ['job_search', 'jobs_overview']
+  );
+  assert.deepEqual(
+    augmentPlanTools({ route: 'crm', tools: ['customer_search'], rewrittenQuery: 'customer shetty' }, 'find shetty').tools,
+    ['customer_search']
+  );
 
   // Changing only the period keeps the previous subject.
   const allTime = inferDeterministicPlan('not today in entire all time', [

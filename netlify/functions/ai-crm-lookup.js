@@ -123,7 +123,7 @@ const NAME_STOP_WORDS = new Set(
     // searched itself: short words like "had" substring-match real surnames.
     'called', 'containing', 'contains', 'ending', 'ends', 'had', 'having', 'including', 'includes',
     'lowest', 'named', 'naming', 'similar', 'sounds', 'spelled', 'spelling', 'starting', 'starts',
-    'whose',
+    'whose', 'enroute', 'left', 'meant', 'progress', 'remaining', 'route',
     'alltime', 'billed', 'billing', 'biggest', 'client', 'entire', 'ever', 'highest', 'largest', 'lifetime',
     'paying', 'spend', 'spent', 'thing', 'top', 'value', 'technician', 'technicians', 'tech',
     'tehcncian', 'tehcnician',
@@ -339,12 +339,31 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   if (has(/\bsummary|\boverview|\bstatus report\b|\bdaily report\b|\bfull report\b/))
     scopes.add('summary');
 
+  // The last status word wins so a correction ("completed today — I meant
+  // ongoing") overrides the status it is correcting.
+  const statusPatterns = [
+    { statuses: ['FOLLOW_UP'], pattern: /\bfollow[\s-]?ups?\b/g },
+    { statuses: ['COMPLETED'], pattern: /\bcompleted?\b|\bdone\b|\bfinished\b|\bclosed\b/g },
+    { statuses: ['CANCELLED'], pattern: /\bcancell?ed\b/g },
+    {
+      statuses: ONGOING_JOB_STATUSES,
+      pattern:
+        /\bpending\b|\bopen\b|\bon[\s-]?going\b|\bincomplete\b|\bunassigned\b|\bactive\b|\bremaining\b|\bleft\b|\bin[\s-]?progress\b|\ben[\s-]?route\b|\bnot (?:yet )?(?:completed|done)\b|\byet to\b/g,
+    },
+  ];
   let statuses = null;
+  let statusAt = -1;
+  for (const { statuses: candidate, pattern } of isFollowUp ? [] : statusPatterns) {
+    let match = pattern.exec(text);
+    while (match) {
+      if (match.index > statusAt) {
+        statusAt = match.index;
+        statuses = candidate;
+      }
+      match = pattern.exec(text);
+    }
+  }
   if (isFollowUp) statuses = ['FOLLOW_UP'];
-  else if (has(/\bcompleted?\b|\bdone\b|\bfinished\b|\bclosed\b/)) statuses = ['COMPLETED'];
-  else if (has(/\bcancell?ed\b/)) statuses = ['CANCELLED'];
-  else if (has(/\bpending\b|\bopen\b|\bongoing\b|\bincomplete\b|\bunassigned\b|\bactive\b/))
-    statuses = ONGOING_JOB_STATUSES;
 
   let start = todayKey;
   let end = todayKey;
