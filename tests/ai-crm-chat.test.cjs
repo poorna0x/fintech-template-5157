@@ -17,6 +17,7 @@ const {
   hasSearchableTarget,
   scopesForPlannerTools,
   detectOverviewIntent,
+  nameMatchesToken,
   detectCustomerValueRanking,
   detectTechnicianBillingRanking,
   formatContextForPrompt,
@@ -135,6 +136,40 @@ function testOnlyPlannedSectionsAreReturned() {
   });
 }
 
+function testMisspelledNamesResolveWithoutMatchingSentenceGlue() {
+  // Sentence glue used to substring-match real surnames ("had" in "Bahadur").
+  const hints = extractQueryHints(
+    'find me the customer with name having shety and had the highest billing to us'
+  );
+  assert.deepEqual(hints.nameTokens, ['shety']);
+
+  assert.equal(nameMatchesToken('Devraj C Shetty', 'shety'), 1);
+  assert.equal(nameMatchesToken('Prasad Shetty', 'shetty'), 0);
+  // A different name that merely starts the same must not be accepted.
+  assert.equal(nameMatchesToken('Dr. Sheen Khurdi', 'shety'), -1);
+  assert.equal(nameMatchesToken('Ramesh Kumar', 'shety'), -1);
+}
+
+function testAllTimeRangeIsSupported() {
+  const allTime = detectOverviewIntent(
+    'technician jyotirling highest billing in entire all time',
+    '2026-08-17'
+  );
+  assert.equal(allTime.allTime, true);
+  assert.equal(allTime.range.start, null);
+  assert.equal(allTime.range.end, null);
+  assert.equal(allTime.range.label, 'all time');
+
+  const today = detectOverviewIntent('top technician billing today', '2026-08-17');
+  assert.equal(today.allTime, false);
+  assert.equal(today.range.start, '2026-08-17');
+
+  // An explicit date always wins over a vague "ever".
+  const dated = detectOverviewIntent('best technician ever on 2026-08-01', '2026-08-17');
+  assert.equal(dated.allTime, false);
+  assert.equal(dated.range.start, '2026-08-01');
+}
+
 function testDeterministicFastRoutesStayReadOnlyAndNarrow() {
   assert.deepEqual(inferDeterministicPlan('hello'), {
     route: 'conversation',
@@ -154,6 +189,23 @@ function testDeterministicFastRoutesStayReadOnlyAndNarrow() {
   ]);
   assert.deepEqual(followUp.tools, ['technician_billing_ranking', 'jobs_overview']);
   assert.match(followUp.rewrittenQuery, /yesterday/);
+
+  // A superlative follow-up must keep ranking the same shortlist.
+  const lowest = inferDeterministicPlan('who has the lowest', [
+    { role: 'user', text: 'customer with name shety highest billing' },
+    { role: 'assistant', text: 'Prasad Shetty billed the most.' },
+  ]);
+  assert.deepEqual(lowest.tools, ['customer_search', 'customer_value_ranking']);
+  assert.match(lowest.rewrittenQuery, /shety/);
+
+  // Changing only the period keeps the previous subject.
+  const allTime = inferDeterministicPlan('not today in entire all time', [
+    { role: 'user', text: 'highest billing by technician jyotirling' },
+    { role: 'assistant', text: 'Jyotirling billed 2,250 today.' },
+  ]);
+  assert.deepEqual(allTime.tools, ['technician_billing_ranking']);
+  assert.match(allTime.rewrittenQuery, /jyotirling/i);
+  assert.match(allTime.rewrittenQuery, /all time/i);
 
   assert.deepEqual(inferDeterministicPlan('pending payments').tools, ['payments']);
   assert.deepEqual(inferDeterministicPlan('AMC expiring this month').tools, ['amc']);
@@ -579,6 +631,8 @@ async function main() {
   testPlannerOutputIsAllowlisted();
   testOnlyPlannedSectionsAreReturned();
   testDeterministicFastRoutesStayReadOnlyAndNarrow();
+  testMisspelledNamesResolveWithoutMatchingSentenceGlue();
+  testAllTimeRangeIsSupported();
   testShortMessageRejected();
   testActionsRequireKnownIdsAndConfirm();
   testMutationToolsBanned();

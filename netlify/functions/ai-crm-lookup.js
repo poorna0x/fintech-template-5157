@@ -20,6 +20,10 @@ const AMC_EXPIRY_LOOKAHEAD_DAYS = 45;
 const TOP_CUSTOMER_LIMIT = 10;
 const TOP_TECHNICIAN_LIMIT = 10;
 const TECHNICIAN_BILLING_SCAN_LIMIT = 1000;
+const FUZZY_NAME_SCAN_LIMIT = 40;
+const NAMED_CUSTOMER_VALUE_SCAN_LIMIT = 600;
+const TECHNICIAN_TOP_JOB_SCAN = 25;
+const TECHNICIAN_TOP_JOB_LIMIT = 10;
 const TOP_CUSTOMER_FALLBACK_PAGE_SIZE = 1000;
 const TOP_CUSTOMER_FALLBACK_MAX_PAGES = 50;
 const IST_TZ = 'Asia/Kolkata';
@@ -50,6 +54,48 @@ function normalizePhoneDigits(raw) {
   return String(raw || '').replace(/\D/g, '');
 }
 
+/** Bounded Levenshtein distance; returns max + 1 once the budget is exceeded. */
+function editDistance(a, b, max = 2) {
+  const s = String(a || '');
+  const t = String(b || '');
+  if (Math.abs(s.length - t.length) > max) return max + 1;
+  let prev = Array.from({ length: t.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= s.length; i += 1) {
+    const row = [i];
+    let best = i;
+    for (let j = 1; j <= t.length; j += 1) {
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      const value = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + cost);
+      row[j] = value;
+      if (value < best) best = value;
+    }
+    if (best > max) return max + 1;
+    prev = row;
+  }
+  return prev[t.length];
+}
+
+/** How far a misspelling may sit from a real name before we stop trusting it. */
+function fuzzyBudget(token) {
+  if (token.length <= 5) return 1;
+  if (token.length <= 9) return 2;
+  return 3;
+}
+
+function nameMatchesToken(fullName, token) {
+  const budget = fuzzyBudget(token);
+  const words = String(fullName || '')
+    .toLowerCase()
+    .split(/[^\p{L}]+/u)
+    .filter(Boolean);
+  for (const word of words) {
+    if (word.includes(token) || token.includes(word)) return 0;
+    const distance = editDistance(word, token, budget);
+    if (distance <= budget) return distance;
+  }
+  return -1;
+}
+
 /** Words that never identify a customer, so they must not become search terms. */
 const NAME_STOP_WORDS = new Set(
   [
@@ -73,6 +119,11 @@ const NAME_STOP_WORDS = new Set(
     'the', 'their', 'them', 'these', 'this', 'time', 'today', 'tomorrow', 'total', 'turnover',
     'unpaid', 'update', 'upcoming', 'us', 'visit', 'visits', 'want', 'was', 'water', 'week', 'were',
     'what', 'when', 'which', 'who', 'will', 'with', 'work', 'year', 'yesterday', 'you', 'your',
+    // Sentence glue around a name ("customer having shety") must never be
+    // searched itself: short words like "had" substring-match real surnames.
+    'called', 'containing', 'contains', 'ending', 'ends', 'had', 'having', 'including', 'includes',
+    'lowest', 'named', 'naming', 'similar', 'sounds', 'spelled', 'spelling', 'starting', 'starts',
+    'whose',
     'alltime', 'billed', 'billing', 'biggest', 'client', 'entire', 'ever', 'highest', 'largest', 'lifetime',
     'paying', 'spend', 'spent', 'thing', 'top', 'value', 'technician', 'technicians', 'tech',
     'tehcncian', 'tehcnician',
@@ -213,6 +264,12 @@ function monthBoundsKey(dateKey, monthOffset = 0) {
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 }
 
+/** Timestamp bounds for a resolved intent; null means unbounded ("all time"). */
+function intentBounds(intent, todayKey) {
+  if (intent?.allTime) return { fromTs: null, toTs: null };
+  return istDayBounds(intent?.range?.start || todayKey, intent?.range?.end || todayKey);
+}
+
 /** IST day bounds as timestamptz strings for completed_at style columns. */
 function istDayBounds(startKey, endKey) {
   return {
@@ -293,8 +350,19 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   let end = todayKey;
   let label = 'today';
   let explicitDate = false;
+  let allTime = false;
 
-  if (has(/\byesterday\b/)) {
+  if (
+    has(
+      /\ball[\s-]?time\b|\blife[\s-]?time\b|\bever\b|\boverall\b|\bin total\b|\bentire\b|\bso far\b|\bhistor(?:y|ical)\b|\bever since\b|\bfrom the start\b/
+    )
+  ) {
+    start = null;
+    end = null;
+    label = 'all time';
+    explicitDate = true;
+    allTime = true;
+  } else if (has(/\byesterday\b/)) {
     start = addDaysKey(todayKey, -1);
     end = start;
     label = 'yesterday';
@@ -341,6 +409,7 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     end = explicitDateKey;
     label = explicitDateKey;
     explicitDate = true;
+    allTime = false;
   }
 
   return {
@@ -348,6 +417,7 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     statuses,
     range: { start, end, label },
     explicitDate,
+    allTime,
     active: scopes.size > 0,
   };
 }
@@ -465,6 +535,7 @@ async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
     }
   }
 
+  const matchedBefore = out.length;
   const queries = [];
   if (hints.phone) queries.push(hints.phone);
   for (const token of hints.nameTokens || []) queries.push(token);
@@ -502,6 +573,45 @@ async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
       seen.add(slim.id);
       out.push(slim);
       if (out.length >= CUSTOMER_LIMIT) break;
+    }
+  }
+
+  // Admins type names the way they hear them ("shety" for "Shetty"), so retry
+  // spelled-out names approximately before reporting nothing found.
+  if (out.length === matchedBefore) {
+    for (const token of hints.nameTokens || []) {
+      if (out.length >= CUSTOMER_LIMIT) break;
+      const clean = token.toLowerCase().replace(/[^\p{L}]/gu, '');
+      if (clean.length < 4) continue;
+      const stem = escapeForLike(clean.slice(0, Math.max(3, Math.ceil(clean.length / 2))));
+      const { data, error } = await db
+        .from('customers')
+        .select(CUSTOMER_COLS)
+        .ilike('full_name', `%${stem}%`)
+        .order('created_at', { ascending: false })
+        .limit(FUZZY_NAME_SCAN_LIMIT);
+      if (error) {
+        console.warn('[ai-crm-lookup] fuzzy customer search failed', error.message);
+        continue;
+      }
+      const scored = [];
+      for (const row of data || []) {
+        const slim = slimCustomer(row);
+        if (!slim || seen.has(slim.id)) continue;
+        const distance = nameMatchesToken(slim.name, clean);
+        if (distance < 0) continue;
+        scored.push({ slim, distance });
+      }
+      if (!scored.length) continue;
+      scored.sort((a, b) => a.distance - b.distance);
+      hints.fuzzyNameMatches = hints.fuzzyNameMatches || [];
+      hints.fuzzyNameMatches.push({ typed: token, matched: scored[0].slim.name });
+      for (const { slim } of scored) {
+        if (seen.has(slim.id)) continue;
+        seen.add(slim.id);
+        out.push(slim);
+        if (out.length >= CUSTOMER_LIMIT) break;
+      }
     }
   }
 
@@ -748,7 +858,7 @@ function normalizeTechnicianBillingRow(row) {
 }
 
 async function loadTechnicianBillingRanking(db, intent, todayKey) {
-  const bounds = istDayBounds(intent.range.start || todayKey, intent.range.end || todayKey);
+  const bounds = intentBounds(intent, todayKey);
 
   const { data: rpcData, error: rpcError } = await db.rpc('ai_crm_top_technicians', {
     p_limit: TOP_TECHNICIAN_LIMIT,
@@ -769,22 +879,19 @@ async function loadTechnicianBillingRanking(db, intent, todayKey) {
 
   const select =
     'id,assigned_technician_id,completed_by,payment_amount,actual_cost,completed_at,end_time';
+  const withBounds = (query, column) => {
+    if (!bounds.fromTs || !bounds.toTs) return query;
+    return query.gte(column, bounds.fromTs).lt(column, bounds.toTs);
+  };
   const queries = [
-    db
-      .from('jobs')
-      .select(select)
-      .eq('status', 'COMPLETED')
-      .gte('completed_at', bounds.fromTs)
-      .lt('completed_at', bounds.toTs)
-      .limit(TECHNICIAN_BILLING_SCAN_LIMIT),
-    db
-      .from('jobs')
-      .select(select)
-      .eq('status', 'COMPLETED')
-      .is('completed_at', null)
-      .gte('end_time', bounds.fromTs)
-      .lt('end_time', bounds.toTs)
-      .limit(TECHNICIAN_BILLING_SCAN_LIMIT),
+    withBounds(
+      db.from('jobs').select(select).eq('status', 'COMPLETED'),
+      'completed_at'
+    ).limit(TECHNICIAN_BILLING_SCAN_LIMIT),
+    withBounds(
+      db.from('jobs').select(select).eq('status', 'COMPLETED').is('completed_at', null),
+      'end_time'
+    ).limit(TECHNICIAN_BILLING_SCAN_LIMIT),
   ];
   const results = await Promise.all(queries);
   const jobs = [];
@@ -858,7 +965,7 @@ async function loadTechnicianBillingRanking(db, intent, todayKey) {
 async function loadTopCustomerValueRanking(db, intent, todayKey) {
   let fromTs = null;
   let toTs = null;
-  if (intent.explicitDate) {
+  if (intent.explicitDate && !intent.allTime) {
     const bounds = istDayBounds(intent.range.start || todayKey, intent.range.end || todayKey);
     fromTs = bounds.fromTs;
     toTs = bounds.toTs;
@@ -963,6 +1070,149 @@ async function loadTopCustomerValueRanking(db, intent, todayKey) {
   };
 }
 
+/** Technicians whose name matches a typed token, allowing for misspellings. */
+async function findTechniciansByName(db, nameTokens) {
+  const matches = [];
+  for (const token of (nameTokens || []).slice(0, 2)) {
+    const clean = token.toLowerCase().replace(/[^\p{L}]/gu, '');
+    if (clean.length < 4) continue;
+    const stem = escapeForLike(clean.slice(0, Math.max(3, Math.ceil(clean.length / 2))));
+    const { data, error } = await db
+      .from('technicians')
+      .select('id,full_name,employee_id')
+      .ilike('full_name', `%${stem}%`)
+      .limit(FUZZY_NAME_SCAN_LIMIT);
+    if (error) {
+      console.warn('[ai-crm-lookup] technician name search failed', error.message);
+      continue;
+    }
+    for (const row of data || []) {
+      if (nameMatchesToken(row.full_name, clean) < 0) continue;
+      if (matches.find((match) => match.id === String(row.id))) continue;
+      matches.push({
+        id: String(row.id),
+        name: String(row.full_name || 'Technician').trim(),
+        employeeId: row.employee_id ? String(row.employee_id) : null,
+      });
+    }
+  }
+  return matches.slice(0, 3);
+}
+
+/**
+ * A technician's biggest completed jobs. Totals alone cannot answer "what is the
+ * highest billing they did for one customer".
+ */
+async function loadTechnicianTopJobs(db, technicianIds, intent, todayKey) {
+  const ids = (technicianIds || []).slice(0, 3);
+  if (!ids.length) return [];
+  const bounds = intentBounds(intent, todayKey);
+  const build = (column) => {
+    let query = db
+      .from('jobs')
+      .select(JOB_COLS)
+      .eq('status', 'COMPLETED')
+      .in('assigned_technician_id', ids)
+      .order(column, { ascending: false, nullsFirst: false })
+      .limit(TECHNICIAN_TOP_JOB_SCAN);
+    if (bounds.fromTs && bounds.toTs) {
+      query = query.gte('completed_at', bounds.fromTs).lt('completed_at', bounds.toTs);
+    }
+    return query;
+  };
+
+  const results = await Promise.all([build('payment_amount'), build('actual_cost')]);
+  const byId = new Map();
+  for (const result of results) {
+    if (result.error) {
+      console.warn('[ai-crm-lookup] technician top jobs failed', result.error.message);
+      continue;
+    }
+    for (const row of result.data || []) {
+      const slim = slimJob(row);
+      if (slim && !byId.has(slim.id)) byId.set(slim.id, slim);
+    }
+  }
+  return [...byId.values()]
+    .sort((a, b) => resolveCompletedJobValue(b) - resolveCompletedJobValue(a))
+    .slice(0, TECHNICIAN_TOP_JOB_LIMIT);
+}
+
+/**
+ * Billing totals for a named shortlist ("which Shetty billed the most"), which a
+ * global top-N ranking cannot answer because those customers may not be in it.
+ */
+async function loadCustomerValuesForShortlist(db, shortlist, intent, todayKey) {
+  const customers = (shortlist || []).filter((customer) => customer?.id).slice(0, TOP_CUSTOMER_LIMIT);
+  if (!customers.length) return { customers: [], source: 'named_shortlist', truncated: false };
+
+  let query = db
+    .from('jobs')
+    .select('id,customer_id,payment_status,payment_amount,actual_cost')
+    .eq('status', 'COMPLETED')
+    .in(
+      'customer_id',
+      customers.map((customer) => customer.id)
+    )
+    .limit(NAMED_CUSTOMER_VALUE_SCAN_LIMIT);
+  if (intent.explicitDate && !intent.allTime) {
+    const bounds = istDayBounds(intent.range.start || todayKey, intent.range.end || todayKey);
+    query = query.gte('completed_at', bounds.fromTs).lt('completed_at', bounds.toTs);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.warn('[ai-crm-lookup] named customer value scan failed', error.message);
+    return { customers: [], source: 'unavailable', truncated: false };
+  }
+
+  const totals = new Map(
+    customers.map((customer) => [
+      customer.id,
+      { confirmedPaidTotal: 0, billedTotal: 0, fullyPaidJobs: 0, completedJobs: 0 },
+    ])
+  );
+  for (const row of data || []) {
+    const current = totals.get(String(row.customer_id));
+    if (!current) continue;
+    const amount = resolveCompletedJobValue(row);
+    current.billedTotal += amount;
+    current.completedJobs += 1;
+    if (row.payment_status === 'PAID') {
+      current.confirmedPaidTotal += amount;
+      current.fullyPaidJobs += 1;
+    }
+  }
+
+  const ranked = customers
+    .map((customer) => {
+      const totalsForCustomer = totals.get(customer.id);
+      return normalizeCustomerValueRow({
+        customer_id: customer.id,
+        customer_code: customer.customerCode,
+        customer_name: customer.name,
+        phone: customer.phone,
+        confirmed_paid_total: totalsForCustomer.confirmedPaidTotal,
+        billed_total: totalsForCustomer.billedTotal,
+        fully_paid_jobs: totalsForCustomer.fullyPaidJobs,
+        completed_jobs: totalsForCustomer.completedJobs,
+      });
+    })
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        b.billedTotal - a.billedTotal ||
+        b.confirmedPaidTotal - a.confirmedPaidTotal ||
+        a.name.localeCompare(b.name)
+    );
+
+  return {
+    customers: ranked,
+    source: 'named_shortlist',
+    truncated: (data || []).length >= NAMED_CUSTOMER_VALUE_SCAN_LIMIT,
+  };
+}
+
 /**
  * Operational lists + exact counts for "what's happening" questions.
  * Every query is allowlisted, thin-column and row-capped.
@@ -988,7 +1238,11 @@ async function loadOverview(db, intent, todayKey) {
   const wantsTechnicianBillingRanking = scopes.has('technician_billing_ranking');
 
   if (wantsCustomerValueRanking) {
-    const ranking = await loadTopCustomerValueRanking(db, intent, todayKey);
+    // "Which Shetty billed most" must rank the matched names, not the global top
+    // ten, which may not contain any of them.
+    const ranking = intent.shortlistCustomers?.length
+      ? await loadCustomerValuesForShortlist(db, intent.shortlistCustomers, intent, todayKey)
+      : await loadTopCustomerValueRanking(db, intent, todayKey);
     out.customers.push(...ranking.customers);
     out.stats.customerValueRanking = ranking.customers.map((customer, index) => ({
       rank: index + 1,
@@ -1003,9 +1257,38 @@ async function loadOverview(db, intent, todayKey) {
     }));
     out.stats.customerValueRankingBasis =
       'confirmedPaidTotal counts completed jobs whose payment_status is PAID; billedTotal counts completed-job value and may include unpaid or partially paid work';
-    out.stats.customerValueRankingPeriod = intent.explicitDate ? range.label : 'lifetime';
+    out.stats.customerValueRankingPeriod =
+      intent.explicitDate && !intent.allTime ? range.label : 'lifetime';
+    if (intent.shortlistCustomers?.length) {
+      out.stats.customerValueRankingScope = `only customers matching the requested name (${intent.shortlistCustomers.length} matched)`;
+    }
     out.stats.customerValueRankingSource = ranking.source;
     out.truncated.customerValueRanking = ranking.truncated;
+  }
+
+  if (wantsTechnicianBillingRanking && intent.technicianMatches?.length) {
+    const topJobs = await loadTechnicianTopJobs(
+      db,
+      intent.technicianMatches.map((technician) => technician.id),
+      intent,
+      todayKey
+    );
+    out.jobs.push(...topJobs);
+    const best = topJobs[0];
+    out.stats.technicianTopJobs = {
+      technicians: intent.technicianMatches.map((technician) => technician.name),
+      period: intent.allTime ? 'all time' : range.label,
+      largestJob: best
+        ? {
+            jobNumber: best.jobNumber,
+            customerId: best.customerId,
+            billedInr: resolveCompletedJobValue({
+              payment_amount: best.paymentAmount,
+              actual_cost: best.actualCost,
+            }),
+          }
+        : null,
+    };
   }
 
   if (wantsTechnicianBillingRanking) {
@@ -1029,12 +1312,12 @@ async function loadOverview(db, intent, todayKey) {
     let q = db.from('jobs').select(JOB_COLS).limit(OVERVIEW_JOB_LIMIT);
 
     if (useCompletedAt) {
-      const bounds = istDayBounds(range.start || todayKey, range.end || todayKey);
-      q = q
-        .eq('status', 'COMPLETED')
-        .gte('completed_at', bounds.fromTs)
-        .lt('completed_at', bounds.toTs)
-        .order('completed_at', { ascending: false });
+      const bounds = intentBounds(intent, todayKey);
+      q = q.eq('status', 'COMPLETED');
+      if (bounds.fromTs && bounds.toTs) {
+        q = q.gte('completed_at', bounds.fromTs).lt('completed_at', bounds.toTs);
+      }
+      q = q.order('completed_at', { ascending: false });
     } else {
       if (statuses) q = q.in('status', statuses);
       const applyRange = intent.explicitDate || !statuses;
@@ -1148,7 +1431,11 @@ async function loadOverview(db, intent, todayKey) {
   }
 
   // Exact counts (cheap head queries) so "how many" answers are accurate.
-  const dayBounds = istDayBounds(range.start || todayKey, range.end || todayKey);
+  const dayBounds = intentBounds(intent, todayKey);
+  const withDayBounds = (query, column) => {
+    if (!dayBounds.fromTs || !dayBounds.toTs) return query;
+    return query.gte(column, dayBounds.fromTs).lt(column, dayBounds.toTs);
+  };
   out.stats.today = todayKey;
   out.stats.rangeLabel = range.label;
   if (wantsJobs) {
@@ -1178,12 +1465,10 @@ async function loadOverview(db, intent, todayKey) {
     }
     if (wantsCompletedCount) {
       out.stats.jobsCompletedInRange = await countRows(
-        db
-          .from('jobs')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'COMPLETED')
-          .gte('completed_at', dayBounds.fromTs)
-          .lt('completed_at', dayBounds.toTs)
+        withDayBounds(
+          db.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'COMPLETED'),
+          'completed_at'
+        )
       );
     }
     if (wantsOpenCount) {
@@ -1199,13 +1484,10 @@ async function loadOverview(db, intent, todayKey) {
   }
 
   if (scopes.has('revenue') || scopes.has('summary')) {
-    const { data, error } = await db
-      .from('jobs')
-      .select('payment_amount, actual_cost')
-      .eq('status', 'COMPLETED')
-      .gte('completed_at', dayBounds.fromTs)
-      .lt('completed_at', dayBounds.toTs)
-      .limit(500);
+    const { data, error } = await withDayBounds(
+      db.from('jobs').select('payment_amount, actual_cost').eq('status', 'COMPLETED'),
+      'completed_at'
+    ).limit(500);
     if (error) console.warn('[ai-crm-lookup] revenue failed', error.message);
     let sum = 0;
     for (const row of data || []) {
@@ -1319,6 +1601,12 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
   let technicians = [];
 
   if (intent.active) {
+    if (customers.length && (hints.nameTokens || []).length) {
+      intent.shortlistCustomers = customers;
+    }
+    if (intent.scopes.has('technician_billing_ranking') && (hints.nameTokens || []).length) {
+      intent.technicianMatches = await findTechniciansByName(db, hints.nameTokens);
+    }
     const overview = await loadOverview(db, intent, todayKey);
     stats = { ...stats, ...overview.stats };
     truncated = overview.truncated || {};
@@ -1438,6 +1726,22 @@ function formatContextForPrompt(pack) {
       }.`
     );
   }
+  if (stats.technicianTopJobs) {
+    const detail = stats.technicianTopJobs;
+    lines.push(
+      `Technician job detail (${detail.technicians.join(', ')}; ${detail.period}): the job rows below are their biggest completed jobs, highest billed first.`
+    );
+    if (detail.largestJob) {
+      lines.push(
+        `- Largest single completed job (authoritative for "highest billing for one customer/job"): job ${detail.largestJob.jobNumber || '—'}; customer=${nameById.get(detail.largestJob.customerId) || detail.largestJob.customerId || '—'}; billedINR=${detail.largestJob.billedInr}`
+      );
+    }
+  }
+  for (const match of pack.hints?.fuzzyNameMatches || []) {
+    lines.push(
+      `Spelling note: no customer name contains "${match.typed}"; the closest real names were matched instead (for example ${match.matched}). Say you searched the closest spelling.`
+    );
+  }
   lines.push('CRM lookup results (bounded; treat as facts only):');
 
   const statLines = [];
@@ -1468,6 +1772,9 @@ function formatContextForPrompt(pack) {
       `Customer value ranking (${stats.customerValueRankingPeriod || 'lifetime'}; authoritative order):`
     );
     lines.push(`- Basis: ${stats.customerValueRankingBasis}`);
+    if (stats.customerValueRankingScope) {
+      lines.push(`- Scope: ${stats.customerValueRankingScope}`);
+    }
     for (const row of stats.customerValueRanking) {
       lines.push(
         `- rank=${row.rank}; customerId=${row.customerId}; code=${row.customerCode || '—'}; name=${row.name}; phone=${row.phone || '—'}; confirmedFullyPaidINR=${row.confirmedPaidTotal}; completedJobBilledINR=${row.billedTotal}; fullyPaidJobs=${row.fullyPaidJobs}; completedJobs=${row.completedJobs}`
@@ -1571,6 +1878,7 @@ module.exports = {
   detectOverviewIntent,
   detectCustomerValueRanking,
   detectTechnicianBillingRanking,
+  nameMatchesToken,
   resolveCompletedJobValue,
   istDateKey,
   addDaysKey,

@@ -131,6 +131,7 @@ function buildSystemInstruction() {
     'Job value figures are billed amounts for completed jobs, not confirmed cash collection — word it that way.',
     'For customer value rankings, preserve the authoritative rank order. "confirmedFullyPaidINR" counts only completed jobs marked PAID; "completedJobBilledINR" can include unpaid or partially paid work. State both when useful and never call billed value collected cash.',
     'For technician billing rankings, preserve the authoritative rank order and call the amount completed-job billing, not cash collected or technician salary. Answer the requested period only.',
+    'When the facts contain a "Largest single completed job" line and the question asks for the highest billing for one customer or one job, answer with that job and customer, not the technician or customer total.',
     'Never add up amounts yourself: only quote money totals that appear in the exact counts section, or the individual amounts shown on a row.',
     'When the facts contain jobs, reminders, payments or counts, summarise them directly instead of saying nothing was found.',
     'Only say no records were found when the relevant fact sections are empty or zero.',
@@ -418,7 +419,8 @@ exports.handler = async (event) => {
       temperature: 0.2,
       // Read-only answers should be short; action drafts need room for their
       // validated payload schema.
-      maxOutputTokens: plan.tools.includes('action_draft') ? 1600 : 800,
+      // Enough headroom that a long list answer still closes its JSON object.
+      maxOutputTokens: plan.tools.includes('action_draft') ? 1600 : 1200,
       timeoutMs: 20_000,
       responseJsonSchema: CRM_CHAT_SCHEMA,
     });

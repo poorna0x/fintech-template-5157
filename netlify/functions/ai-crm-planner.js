@@ -116,6 +116,53 @@ function inferDeterministicPlan(message, history = []) {
   }
   const recent = historyText(history);
   const combined = `${recent} ${text}`.toLowerCase();
+  const lastUserMessage = [...(Array.isArray(history) ? history : [])]
+    .reverse()
+    .find((turn) => turn?.role === 'user')?.text;
+  // "who has the lowest" only makes sense against the previous ranking, so keep
+  // that tool instead of letting it decay into a plain name search.
+  const superlativeFollowUp =
+    text.length <= 60 &&
+    /^(?:so\s+)?(?:and\s+)?(?:who|which|what)?\s*(?:one)?\s*(?:has|had|is|was|did)?\s*(?:the)?\s*(?:lowest|highest|least|most|biggest|smallest|top|worst|best)\b/i.test(
+      text
+    );
+  if (superlativeFollowUp && lastUserMessage) {
+    const context = `${lastUserMessage} ${text}`.toLowerCase();
+    const aboutTechnician = /\btechnicians?\b|\btechs?\b|\btechcnians?\b|\btehcnc?ians?\b/.test(context);
+    if (aboutTechnician) {
+      return {
+        route: 'crm',
+        tools: ['technician_billing_ranking'],
+        rewrittenQuery: `${lastUserMessage} ${text}`,
+        directAnswer: '',
+        strategy: 'deterministic',
+      };
+    }
+    if (/\bcustomers?\b|\bclients?\b|\bpaid\b|\bbill(?:ed|ing)?\b/.test(context)) {
+      return {
+        route: 'crm',
+        tools: ['customer_search', 'customer_value_ranking'],
+        rewrittenQuery: `${lastUserMessage} ${text}`,
+        directAnswer: '',
+        strategy: 'deterministic',
+      };
+    }
+  }
+
+  // "not today, all time" only changes the period of the previous question.
+  const periodFollowUp =
+    text.length <= 60 &&
+    /\ball[\s-]?time\b|\bentire\b|\bever\b|\blife[\s-]?time\b|\byesterday\b|\bthis (?:week|month)\b|\blast (?:week|month)\b|\boverall\b|\bso far\b/i.test(
+      text
+    );
+  if (periodFollowUp && lastUserMessage) {
+    const merged = `${lastUserMessage} ${text}`;
+    const inherited = inferDeterministicPlan(merged, []);
+    if (inherited?.route === 'crm') {
+      return { ...inherited, rewrittenQuery: merged, strategy: 'deterministic' };
+    }
+  }
+
   const detailFollowUp =
     /^(for |which |what )?(customer|job)( was it| is it)?[?!.]*$/i.test(text) ||
     /\bfor which customer\b|\bwhich customer\b|\bwhich job\b/i.test(text);
