@@ -27,6 +27,7 @@ const ALLOWED_CRM_TOOLS = Object.freeze([
   'technician_billing_ranking',
   'documents',
   'action_draft',
+  'app_navigation',
 ]);
 
 const CRM_PLANNER_SCHEMA = {
@@ -60,6 +61,8 @@ function plannerSystemInstruction() {
     'For CRM, rewrite the current request into one self-contained query using recent history to resolve follow-ups like "what about yesterday?" or "show their jobs".',
     'Preserve names, phones, job numbers, amounts, dates, and requested action fields exactly. Never invent them.',
     'For create/edit requests choose action_draft plus customer_search or job_search only when an existing record must be found.',
+    'Use app_navigation when the user asks to open, go to, manage, configure, or edit an allowlisted CRM screen/settings area. Navigation never changes a setting by itself.',
+    'For a quotation, bill, tax invoice, AMC, or warranty draft for an existing customer, choose action_draft plus customer_search so the answer can propose open_document_draft.',
     'directAnswer must be empty for route=crm.',
   ].join(' ');
 }
@@ -119,6 +122,21 @@ function inferDeterministicPlan(message, history = []) {
 
   const text = String(message || '').trim();
   const lower = normalizeCrmQueryText(text).toLowerCase();
+  if (
+    (/\b(?:open|go to|take me to|navigate to|manage|configure|edit settings?)\b/.test(lower) ||
+      /\b(?:show me|edit|change)\b.{0,40}\bsettings?\b/.test(lower)) &&
+    /\b(?:settings?|dashboard|payments?|billing|analytics|inventory|whatsapp|calling|reminders?|technicians?|qr|reviews?|privacy|database|usage|jobs?|accounts?|customer|trackers?|email|distance|visit|location)\b/.test(
+      lower
+    )
+  ) {
+    return {
+      route: 'crm',
+      tools: ['app_navigation'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
   if (
     /\b(create|add|edit|update|change|delete|remove|send|whatsapp|email|book|schedule|set)\b/.test(
       lower
@@ -485,6 +503,7 @@ function buildAllowlistedLookupQuery(plan, fallbackMessage) {
     customer_value_ranking: 'top customer paid most',
     technician_billing_ranking: 'top technician highest billing',
     documents: 'documents',
+    app_navigation: 'open app screen',
   };
   const suffix = (plan?.tools || [])
     .map((tool) => markers[tool])

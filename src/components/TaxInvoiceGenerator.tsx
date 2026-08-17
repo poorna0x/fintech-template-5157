@@ -131,6 +131,7 @@ interface TaxInvoiceGeneratorProps {
   onPrint?: (bill: Bill, action?: 'print' | 'pdf') => void;
   onTaxInvoiceSaved?: () => void;
   embedded?: boolean;
+  initialAiInstruction?: string | null;
   /** Edit mode — loads snapshot and updates existing row instead of creating. */
   editInvoiceId?: string;
   initialEditSnapshot?: TaxInvoiceEditSnapshot;
@@ -183,6 +184,7 @@ export default function TaxInvoiceGenerator({
   onPrint,
   onTaxInvoiceSaved,
   embedded = false,
+  initialAiInstruction,
   editInvoiceId,
   initialEditSnapshot,
   initialCompanyInfo,
@@ -1237,6 +1239,7 @@ export default function TaxInvoiceGenerator({
           documentNoun="tax invoice"
           getSnapshot={getDraftSnapshot}
           onApply={applyDraftSnapshot}
+          initialInstruction={initialAiInstruction}
         />
       ) : null}
 

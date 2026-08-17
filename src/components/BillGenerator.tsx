@@ -122,6 +122,7 @@ interface BillGeneratorProps {
   onPrint?: (bill: Bill, action?: 'print' | 'pdf') => void;
   /** Hide page title when parent (modal / page shell) already shows one */
   embedded?: boolean;
+  initialAiInstruction?: string | null;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -149,7 +150,12 @@ const defaultBillItems: BillItem[] = [
   }
 ];
 
-export default function BillGenerator({ customer, onPrint, embedded = false }: BillGeneratorProps) {
+export default function BillGenerator({
+  customer,
+  onPrint,
+  embedded = false,
+  initialAiInstruction,
+}: BillGeneratorProps) {
   // Safe customer data extraction (search/slim rows may have string address or missing fields)
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
@@ -891,6 +897,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
         documentNoun="bill"
         getSnapshot={getDraftSnapshot}
         onApply={applyDraftSnapshot}
+        initialInstruction={initialAiInstruction}
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">

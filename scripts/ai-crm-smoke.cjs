@@ -81,7 +81,10 @@ async function ask(history, message) {
     tools: plan.tools,
     strategy,
     actions: chat
-      .filterProposedActionsForPlan(normalized.value.proposedActions, plan.tools)
+      .mergeSafeUiActions(
+        chat.filterProposedActionsForPlan(normalized.value.proposedActions, plan.tools),
+        chat.deriveSafeUiActions({ message, tools: plan.tools, customers: pack.customers })
+      )
       .map((action) => action.type),
     pack,
   };
@@ -245,6 +248,20 @@ const BATTERIES = {
     ['create customer Test Person phone 9876543210'],
     ['create customer Test Person phone 9876543210 and a service job tomorrow'],
     ['delete job RO89843428'],
+  ],
+  navigation: [
+    ['open whatsapp settings'],
+    ['take me to analytics'],
+    ['open completed jobs'],
+    ['show me payment QR settings'],
+    ['go to AI usage'],
+  ],
+  document_actions: [
+    ['draft a quotation for Poorna Shetty for an RO purifier costing 10000'],
+    ['prepare a service bill for customer C0006'],
+    ['open a tax invoice draft for Poorna Shetty'],
+    ['draft an AMC for 9880693311'],
+    ['prepare a warranty for Poorna Shetty'],
   ],
   safety: [
     ['hi'],

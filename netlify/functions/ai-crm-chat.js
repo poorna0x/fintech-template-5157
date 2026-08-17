@@ -52,6 +52,8 @@ const CRM_CHAT_SCHEMA = {
               'create_job',
               'schedule_follow_up',
               'create_reminder',
+              'open_app',
+              'open_document_draft',
             ],
           },
           label: { type: 'string' },
@@ -64,6 +66,9 @@ const CRM_CHAT_SCHEMA = {
             properties: {
               customerId: { type: 'string' },
               jobId: { type: 'string' },
+              target: { type: 'string' },
+              documentType: { type: 'string' },
+              instruction: { type: 'string' },
               fullName: { type: 'string' },
               phone: { type: 'string' },
               alternatePhone: { type: 'string' },
@@ -143,9 +148,12 @@ function buildSystemInstruction() {
     'Reminder facts explicitly exclude pending-payment reminders. Never rename non-payment reminders as payment reminders; payment-reminder questions use the payments facts.',
     'Only say no records were found when the relevant fact sections are empty or zero.',
     'Return ONLY JSON with keys: answer, confidence (0-1), requiresHuman (boolean), warnings (string[]), proposedActions (array).',
-    'proposedActions types are limited to: open_customer, create_customer, create_customer_and_job, edit_customer, create_job, schedule_follow_up, create_reminder.',
+    'proposedActions types are limited to: open_customer, create_customer, create_customer_and_job, edit_customer, create_job, schedule_follow_up, create_reminder, open_app, open_document_draft.',
     'Every proposed action MUST set requiresConfirm=true. Drafts only open normal CRM forms for admin review.',
     'Propose create, edit, job, follow-up, or reminder actions only when the user explicitly asks to perform or draft that action. A lookup such as "AMC expiring soon" must not invent reminder drafts.',
+    'Use open_app when the admin asks to open, go to, show, manage, configure, or edit an app screen/settings area. payload.target MUST be one of: dashboard, ongoing_jobs, completed_jobs, followup_jobs, payments, billing, analytics, inventory, gst_invoices, amc_contracts, letterhead_documents, settings, whatsapp_inbox, whatsapp_settings, calling, reminders, pending_payments, recurring_service, advanced_search, warranty, privacy_center, pdf_authenticity, ai_usage, database_storage, direct_sale, lead_catalog, job_reviews, technicians, technician_locations, todo_tasks, payment_qr, quick_upi_qr, product_qr, data_export, app_lock, recent_accounts, quick_customer, amount_trackers, sent_email_log, measure_distance, arrange_visit_order, nearby_jobs, technician_live_location, message_technician. Never invent a URL or target.',
+    'Use open_document_draft when the admin asks to draft/open/prepare a quotation, service bill, tax invoice, AMC, or warranty for a looked-up customer. payload must contain documentType (quotation|service_bill|tax_invoice|amc|warranty), the looked-up customerId, and instruction copied from the user request. This opens the normal document form and carries the instruction into its AI editor; it never generates, sends, downloads, or saves automatically.',
+    'A proposed action has not happened yet. Say it is ready and tell the admin to tap the action button; never claim that you already opened, prepared, saved, sent, or changed something.',
     'Use create_customer when the admin asks to add a new customer. Copy only supplied name, phone, email, address, visible location label, Google Maps link, RO/softener type, brand, model and notes. Never invent missing values.',
     'Use create_customer_and_job when the admin explicitly asks for both a new customer and a job. Include the customer fields plus the job fields.',
     'A new-customer draft may omit phone, but warn that the CRM form requires it before saving.',
@@ -164,9 +172,77 @@ function buildSystemInstruction() {
 
 function filterProposedActionsForPlan(actions, tools) {
   const mayDraft = Array.isArray(tools) && tools.includes('action_draft');
+  const mayNavigate = Array.isArray(tools) && tools.includes('app_navigation');
   return (Array.isArray(actions) ? actions : [])
-    .filter((action) => action?.type === 'open_customer' || mayDraft)
+    .filter(
+      (action) =>
+        action?.type === 'open_customer' ||
+        (action?.type === 'open_app' && mayNavigate) ||
+        (action?.type === 'open_document_draft' && mayDraft) ||
+        (mayDraft && !['open_app', 'open_document_draft'].includes(action?.type))
+    )
     .map((action) => ({ ...action, requiresConfirm: true }));
+}
+
+function deriveSafeUiActions({ message, tools, customers }) {
+  const lower = String(message || '').toLowerCase();
+  const rows = Array.isArray(customers) ? customers : [];
+  const actions = [];
+
+  if (
+    Array.isArray(tools) &&
+    tools.includes('action_draft') &&
+    /\b(?:draft|prepare|open|make|create|generate)\b/.test(lower) &&
+    rows[0]?.id
+  ) {
+    const documentType = /\bquotation\b|\bquote\b/.test(lower)
+      ? 'quotation'
+      : /\btax invoice\b|\bgst invoice\b/.test(lower)
+        ? 'tax_invoice'
+        : /\bservice bill\b|\bbill\b/.test(lower)
+          ? 'service_bill'
+          : /\bamc\b/.test(lower)
+            ? 'amc'
+            : /\bwarranty\b/.test(lower)
+              ? 'warranty'
+              : null;
+    if (documentType) {
+      const documentLabel = {
+        quotation: 'quotation',
+        service_bill: 'service bill',
+        tax_invoice: 'tax invoice',
+        amc: 'AMC',
+        warranty: 'warranty',
+      }[documentType];
+      actions.push({
+        type: 'open_document_draft',
+        label: `Open ${documentLabel} for ${rows[0].name || 'customer'}`,
+        confidence: 0.95,
+        requiresConfirm: true,
+        payload: {
+          documentType,
+          customerId: String(rows[0].id),
+          instruction: String(message || '').slice(0, 500),
+        },
+      });
+    }
+  }
+
+  return actions;
+}
+
+function mergeSafeUiActions(modelActions, derivedActions) {
+  const out = Array.isArray(modelActions) ? [...modelActions] : [];
+  for (const action of Array.isArray(derivedActions) ? derivedActions : []) {
+    const duplicate = out.some(
+      (existing) =>
+        existing?.type === action.type &&
+        existing?.payload?.customerId === action.payload?.customerId &&
+        existing?.payload?.documentType === action.payload?.documentType
+    );
+    if (!duplicate) out.push(action);
+  }
+  return out.slice(0, 4);
 }
 
 function buildUserPrompt(message, contextText, history = []) {
@@ -469,9 +545,13 @@ exports.handler = async (event) => {
     }
 
     // Hard guarantee: every action still requires human confirmation.
-    const proposedActions = filterProposedActionsForPlan(
-      normalized.value.proposedActions,
-      plan.tools
+    const proposedActions = mergeSafeUiActions(
+      filterProposedActionsForPlan(normalized.value.proposedActions, plan.tools),
+      deriveSafeUiActions({
+        message: parsed.value.message,
+        tools: plan.tools,
+        customers: pack.customers,
+      })
     );
 
     responseHash = sha256(
@@ -538,5 +618,7 @@ module.exports._test = {
   buildSystemInstruction,
   buildUserPrompt,
   filterProposedActionsForPlan,
+  deriveSafeUiActions,
+  mergeSafeUiActions,
   CRM_CHAT_SCHEMA,
 };

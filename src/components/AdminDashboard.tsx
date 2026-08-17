@@ -316,7 +316,10 @@ import type {
   AiCrmEditCustomerDraft,
   AiCrmFollowUpDraft,
   AiCrmReminderDraft,
+  AiCrmAppTarget,
+  AiCrmOpenDocumentDraft,
 } from '@/lib/aiCrmAssistant';
+import { aiCrmTargetPath } from '@/lib/aiCrmNavigation';
 import { TodayRemindersPopup } from './reminders/TodayRemindersPopup';
 import { CustomerRemindersDialog } from './reminders/CustomerRemindersDialog';
 import EditJobDialog from './admin/EditJobDialog';
@@ -460,6 +463,7 @@ const AdminDashboard = () => {
   const [selectedCustomerForBill, setSelectedCustomerForBill] = useState<Customer | null>(null);
   const [quotationModalOpen, setQuotationModalOpen] = useState(false);
   const [selectedCustomerForQuotation, setSelectedCustomerForQuotation] = useState<Customer | null>(null);
+  const [aiDocumentInstruction, setAiDocumentInstruction] = useState<string | null>(null);
   const [amcModalOpen, setAmcModalOpen] = useState(false);
   const [selectedCustomerForAMC, setSelectedCustomerForAMC] = useState<Customer | null>(null);
   const [amcPrefillFromJob, setAmcPrefillFromJob] = useState<import('@/lib/jobAmcInfo').JobAmcPrefill | null>(
@@ -5163,8 +5167,9 @@ const AdminDashboard = () => {
     return false;
   };
 
-  const handleGenerateBill = useCallback((customer: Customer) => {
+  const handleGenerateBill = useCallback((customer: Customer, initialAiInstruction?: string | null) => {
     preloadDocumentGeneratorModals();
+    setAiDocumentInstruction(initialAiInstruction || null);
     setSelectedCustomerForBill(customer);
     openAdminModal('bill', { customerId: customer.id });
   }, [openAdminModal]);
@@ -5173,11 +5178,13 @@ const AdminDashboard = () => {
     setBillModalOpen(false);
     closeAdminModal();
     setSelectedCustomerForBill(null);
+    setAiDocumentInstruction(null);
   };
 
-  const handleGenerateQuotation = (customer: Customer) => {
+  const handleGenerateQuotation = (customer: Customer, initialAiInstruction?: string | null) => {
     preloadDocumentGeneratorModals();
     setSelectedCustomerForQuotation(customer);
+    setAiDocumentInstruction(initialAiInstruction || null);
     setQuotationModalOpen(true);
     void loadCustomerForDocuments(customer).then(setSelectedCustomerForQuotation);
   };
@@ -5185,13 +5192,16 @@ const AdminDashboard = () => {
   const handleQuotationModalClose = () => {
     setQuotationModalOpen(false);
     setSelectedCustomerForQuotation(null);
+    setAiDocumentInstruction(null);
   };
 
   const handleGenerateAMC = (
     customer: Customer,
-    fromJob?: import('@/lib/jobAmcInfo').JobAmcPrefill | null
+    fromJob?: import('@/lib/jobAmcInfo').JobAmcPrefill | null,
+    initialAiInstruction?: string | null
   ) => {
     preloadDocumentGeneratorModals();
+    setAiDocumentInstruction(initialAiInstruction || null);
     setSelectedCustomerForAMC(customer);
     setAmcPrefillFromJob(fromJob ?? null);
     setAmcModalOpen(true);
@@ -5229,6 +5239,7 @@ const AdminDashboard = () => {
     setAmcModalOpen(false);
     setSelectedCustomerForAMC(null);
     setAmcPrefillFromJob(null);
+    setAiDocumentInstruction(null);
   };
 
   // Reload AMC status from database
@@ -5299,8 +5310,9 @@ const AdminDashboard = () => {
     }
   }, [statusFilter, currentPage, loadJobCounts, loadFilteredJobs, loadDashboardSecondary]);
 
-  const handleGenerateTaxInvoice = (customer: Customer) => {
+  const handleGenerateTaxInvoice = (customer: Customer, initialAiInstruction?: string | null) => {
     preloadDocumentGeneratorModals();
+    setAiDocumentInstruction(initialAiInstruction || null);
     setSelectedCustomerForTaxInvoice(customer);
     setTaxInvoiceModalOpen(true);
     void loadCustomerForDocuments(customer).then(setSelectedCustomerForTaxInvoice);
@@ -5309,6 +5321,7 @@ const AdminDashboard = () => {
   const handleTaxInvoiceModalClose = () => {
     setTaxInvoiceModalOpen(false);
     setSelectedCustomerForTaxInvoice(null);
+    setAiDocumentInstruction(null);
   };
 
   const handleShowGSTInvoices = () => {
@@ -5682,6 +5695,56 @@ const AdminDashboard = () => {
     },
     []
   );
+
+  const handleAiOpenApp = useCallback(
+    (target: AiCrmAppTarget) => {
+      const path = aiCrmTargetPath(target);
+      if (!path) {
+        toast.error('That CRM screen is not available');
+        return;
+      }
+      closeAdminTool();
+      navigate(path);
+    },
+    [closeAdminTool, navigate]
+  );
+
+  const handleAiOpenDocumentDraft = async (draft: AiCrmOpenDocumentDraft) => {
+      closeAdminTool();
+      const { data, error } = await db.customers.getById(draft.customerId);
+      if (error || !data) {
+        toast.error('Customer not found for document draft');
+        return;
+      }
+      const customer = transformCustomerData(data);
+      switch (draft.documentType) {
+        case 'quotation':
+          handleGenerateQuotation(customer, draft.instruction);
+          return;
+        case 'service_bill':
+          handleGenerateBill(customer, draft.instruction);
+          return;
+        case 'tax_invoice':
+          handleGenerateTaxInvoice(customer, draft.instruction);
+          return;
+        case 'amc':
+          handleGenerateAMC(customer, null, draft.instruction);
+          return;
+        case 'warranty':
+          setAiDocumentInstruction(draft.instruction || null);
+          setWarrantyDialogCustomer({
+            id: customer.id,
+            customer_id: customer.customerId || '',
+            full_name: customer.fullName || '',
+            phone: customer.phone || '',
+            model: customer.model || '',
+            brand: customer.brand || '',
+            visible_address: customer.visibleAddress || '',
+          });
+          setWarrantyDialogOpen(true);
+          return;
+      }
+  };
 
   const handleAiConfirmCreateCustomer = useCallback(
     (draft: AiCrmCustomerDraft) => {
@@ -7364,6 +7427,7 @@ const AdminDashboard = () => {
             isOpen={billModalOpen}
             onClose={handleBillModalClose}
             customer={selectedCustomerForBill}
+            initialAiInstruction={aiDocumentInstruction}
           />
         </Suspense>
       )}
@@ -7384,6 +7448,7 @@ const AdminDashboard = () => {
             isOpen={quotationModalOpen}
             onClose={handleQuotationModalClose}
             customer={selectedCustomerForQuotation}
+            initialAiInstruction={aiDocumentInstruction}
           />
         </Suspense>
       )}
@@ -7406,6 +7471,7 @@ const AdminDashboard = () => {
             customer={selectedCustomerForAMC}
             initialFromJob={amcPrefillFromJob}
             onAMCSaved={reloadAMCStatus}
+            initialAiInstruction={aiDocumentInstruction}
           />
         </Suspense>
       )}
@@ -7426,6 +7492,7 @@ const AdminDashboard = () => {
             isOpen={taxInvoiceModalOpen}
             onClose={handleTaxInvoiceModalClose}
             customer={selectedCustomerForTaxInvoice}
+            initialAiInstruction={aiDocumentInstruction}
           />
         </Suspense>
       )}
@@ -7879,6 +7946,10 @@ const AdminDashboard = () => {
         onConfirmReminder={(draft) => {
           void handleAiConfirmReminder(draft);
         }}
+        onOpenApp={handleAiOpenApp}
+        onOpenDocumentDraft={(draft) => {
+          void handleAiOpenDocumentDraft(draft);
+        }}
       />
 
       <WarrantyManagementDialog
@@ -7887,10 +7958,12 @@ const AdminDashboard = () => {
           if (!open) {
             setWarrantyDialogOpen(false);
             setWarrantyDialogCustomer(null);
+            setAiDocumentInstruction(null);
             onAdminModalOpenChange('warranty', false);
           }
         }}
         initialCustomer={warrantyDialogCustomer}
+        initialAiInstruction={aiDocumentInstruction}
       />
 
       <TodayRemindersPopup />

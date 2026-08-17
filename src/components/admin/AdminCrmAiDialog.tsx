@@ -15,9 +15,11 @@ import {
   Briefcase,
   CalendarClock,
   ImagePlus,
+  FileText,
   Loader2,
   Pencil,
   Search,
+  Settings,
   Sparkles,
   UserPlus,
   X,
@@ -32,6 +34,8 @@ import {
   type AiCrmFollowUpDraft,
   type AiCrmProposedAction,
   type AiCrmReminderDraft,
+  type AiCrmAppTarget,
+  type AiCrmOpenDocumentDraft,
 } from '@/lib/aiCrmAssistant';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { useAutoGrowTextarea } from '@/lib/useAutoGrowTextarea';
@@ -55,6 +59,8 @@ type AdminCrmAiDialogProps = {
   onConfirmCreateJob: (draft: AiCrmCreateJobDraft) => void;
   onConfirmFollowUp: (draft: AiCrmFollowUpDraft) => void;
   onConfirmReminder: (draft: AiCrmReminderDraft) => void;
+  onOpenApp: (target: AiCrmAppTarget) => void;
+  onOpenDocumentDraft: (draft: AiCrmOpenDocumentDraft) => void;
 };
 
 function formatInr(amount: number | null | undefined) {
@@ -77,6 +83,8 @@ export default function AdminCrmAiDialog({
   onConfirmCreateJob,
   onConfirmFollowUp,
   onConfirmReminder,
+  onOpenApp,
+  onOpenDocumentDraft,
 }: AdminCrmAiDialogProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -200,6 +208,15 @@ export default function AdminCrmAiDialog({
     if (action.type === 'open_customer') {
       const customerId = (action.payload as { customerId?: string }).customerId;
       if (customerId) onSearchCustomer('', customerId);
+      return;
+    }
+    if (action.type === 'open_app') {
+      const target = (action.payload as { target?: AiCrmAppTarget }).target;
+      if (target) onOpenApp(target);
+      return;
+    }
+    if (action.type === 'open_document_draft') {
+      onOpenDocumentDraft(action.payload as AiCrmOpenDocumentDraft);
       return;
     }
     setActionBusy(true);
@@ -465,7 +482,7 @@ export default function AdminCrmAiDialog({
                   {turn.result?.proposedActions?.length ? (
                     <div className="space-y-2 border-t pt-2">
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Review & confirm
+                        Ready actions
                       </p>
                       {turn.result.proposedActions.map((action, index) => (
                         <div
@@ -475,7 +492,11 @@ export default function AdminCrmAiDialog({
                           <div className="text-xs">
                             <p className="font-medium">{action.label || action.type}</p>
                             <p className="text-muted-foreground">
-                              Opens the CRM form — nothing saves until you confirm.
+                              {action.type === 'open_app'
+                                ? 'Opens this CRM screen — no setting changes automatically.'
+                                : action.type === 'open_document_draft'
+                                  ? 'Opens the customer document with its AI context — review before generating.'
+                                  : 'Opens the CRM form — nothing saves until you confirm.'}
                             </p>
                           </div>
                           <Button
@@ -498,10 +519,14 @@ export default function AdminCrmAiDialog({
                               <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
                             ) : action.type === 'create_reminder' ? (
                               <Bell className="mr-1.5 h-3.5 w-3.5" />
+                            ) : action.type === 'open_document_draft' ? (
+                              <FileText className="mr-1.5 h-3.5 w-3.5" />
+                            ) : action.type === 'open_app' ? (
+                              <Settings className="mr-1.5 h-3.5 w-3.5" />
                             ) : (
                               <Search className="mr-1.5 h-3.5 w-3.5" />
                             )}
-                            Open form
+                            {action.type === 'open_app' ? 'Open screen' : 'Open form'}
                           </Button>
                         </div>
                       ))}

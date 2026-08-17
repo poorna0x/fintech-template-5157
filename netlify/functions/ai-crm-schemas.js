@@ -11,6 +11,63 @@ const ALLOWED_ACTION_TYPES = Object.freeze([
   'create_job',
   'schedule_follow_up',
   'create_reminder',
+  'open_app',
+  'open_document_draft',
+]);
+
+const ALLOWED_APP_TARGETS = Object.freeze([
+  'dashboard',
+  'ongoing_jobs',
+  'completed_jobs',
+  'followup_jobs',
+  'payments',
+  'billing',
+  'analytics',
+  'inventory',
+  'gst_invoices',
+  'amc_contracts',
+  'letterhead_documents',
+  'settings',
+  'whatsapp_inbox',
+  'whatsapp_settings',
+  'calling',
+  'reminders',
+  'pending_payments',
+  'recurring_service',
+  'advanced_search',
+  'warranty',
+  'privacy_center',
+  'pdf_authenticity',
+  'ai_usage',
+  'database_storage',
+  'direct_sale',
+  'lead_catalog',
+  'job_reviews',
+  'technicians',
+  'technician_locations',
+  'todo_tasks',
+  'payment_qr',
+  'quick_upi_qr',
+  'product_qr',
+  'data_export',
+  'app_lock',
+  'recent_accounts',
+  'quick_customer',
+  'amount_trackers',
+  'sent_email_log',
+  'measure_distance',
+  'arrange_visit_order',
+  'nearby_jobs',
+  'technician_live_location',
+  'message_technician',
+]);
+
+const ALLOWED_DOCUMENT_DRAFT_TYPES = Object.freeze([
+  'quotation',
+  'service_bill',
+  'tax_invoice',
+  'amc',
+  'warranty',
 ]);
 
 const MAX_MESSAGE_CHARS = 1500;
@@ -206,6 +263,25 @@ function normalizeReminderPayload(raw, knownCustomerIds) {
   };
 }
 
+function normalizeOpenAppPayload(raw) {
+  const target = asTrimmedString(raw?.target, 80);
+  if (!ALLOWED_APP_TARGETS.includes(target)) return null;
+  return { target };
+}
+
+function normalizeOpenDocumentDraftPayload(raw, knownCustomerIds) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const documentType = asTrimmedString(src.documentType || src.document_type, 40);
+  const customerId = asTrimmedString(src.customerId || src.customer_id, 64);
+  if (!ALLOWED_DOCUMENT_DRAFT_TYPES.includes(documentType)) return null;
+  if (!customerId || !knownCustomerIds.has(customerId)) return null;
+  return {
+    documentType,
+    customerId,
+    instruction: asTrimmedString(src.instruction || src.prompt || src.request, 500),
+  };
+}
+
 /**
  * Normalize model JSON into a safe CRM chat payload.
  * Mutations are never executed here — only proposed with requiresConfirm.
@@ -248,6 +324,10 @@ function normalizeCrmChatOutput(raw, opts = {}) {
       payload = normalizeFollowUpPayload(row.payload || row, knownJobIds);
     } else if (type === 'create_reminder') {
       payload = normalizeReminderPayload(row.payload || row, knownCustomerIds);
+    } else if (type === 'open_app') {
+      payload = normalizeOpenAppPayload(row.payload || row);
+    } else if (type === 'open_document_draft') {
+      payload = normalizeOpenDocumentDraftPayload(row.payload || row, knownCustomerIds);
     }
     if (!payload) continue;
 
@@ -303,6 +383,8 @@ function assertNoMutationTools(toolNames) {
 
 module.exports = {
   ALLOWED_ACTION_TYPES,
+  ALLOWED_APP_TARGETS,
+  ALLOWED_DOCUMENT_DRAFT_TYPES,
   MAX_MESSAGE_CHARS,
   parseCrmChatRequest,
   normalizeCrmChatOutput,

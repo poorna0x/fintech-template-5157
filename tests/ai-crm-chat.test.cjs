@@ -31,7 +31,10 @@ const {
   ONGOING_JOB_STATUSES,
 } = require('../netlify/functions/ai-crm-lookup');
 const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
-const { filterProposedActionsForPlan } = require('../netlify/functions/ai-crm-chat')._test;
+const {
+  filterProposedActionsForPlan,
+  deriveSafeUiActions,
+} = require('../netlify/functions/ai-crm-chat')._test;
 const {
   ALLOWED_CRM_TOOLS,
   normalizePlannerOutput,
@@ -465,6 +468,77 @@ function testLookupCannotInventMutationDrafts() {
     ),
     true
   );
+  assert.deepEqual(
+    filterProposedActionsForPlan(
+      [{ type: 'open_app', requiresConfirm: false, payload: { target: 'analytics' } }],
+      ['app_navigation']
+    ).map((action) => action.type),
+    ['open_app']
+  );
+  assert.deepEqual(
+    filterProposedActionsForPlan(
+      [
+        {
+          type: 'open_document_draft',
+          requiresConfirm: false,
+          payload: { documentType: 'quotation', customerId: 'c1' },
+        },
+      ],
+      ['customer_search']
+    ),
+    []
+  );
+}
+
+function testNavigationAndDocumentActionsAreAllowlisted() {
+  const customerId = '11111111-1111-1111-1111-111111111111';
+  const normalized = normalizeCrmChatOutput(
+    {
+      answer: 'Ready',
+      proposedActions: [
+        { type: 'open_app', payload: { target: 'whatsapp_settings' } },
+        { type: 'open_app', payload: { target: 'https://evil.example' } },
+        {
+          type: 'open_document_draft',
+          payload: {
+            documentType: 'quotation',
+            customerId,
+            instruction: 'Add one purifier for 10000',
+          },
+        },
+        {
+          type: 'open_document_draft',
+          payload: { documentType: 'unknown', customerId },
+        },
+      ],
+    },
+    { entities: { customers: [{ id: customerId }], jobs: [] } }
+  );
+  assert.equal(normalized.ok, true);
+  assert.deepEqual(
+    normalized.value.proposedActions.map((action) => action.type),
+    ['open_app', 'open_document_draft']
+  );
+  assert.equal(normalized.value.proposedActions[0].payload.target, 'whatsapp_settings');
+  assert.equal(normalized.value.proposedActions[1].payload.customerId, customerId);
+
+  const derived = deriveSafeUiActions({
+    message: 'draft a quotation for Poorna Shetty for an RO purifier costing 10000',
+    tools: ['action_draft', 'customer_search'],
+    customers: [{ id: customerId, name: 'Poorna Shetty' }],
+  });
+  assert.equal(derived.length, 1);
+  assert.equal(derived[0].type, 'open_document_draft');
+  assert.equal(derived[0].payload.documentType, 'quotation');
+  assert.equal(derived[0].payload.customerId, customerId);
+  assert.deepEqual(
+    deriveSafeUiActions({
+      message: 'show quotation records for Poorna Shetty',
+      tools: ['documents', 'customer_search'],
+      customers: [{ id: customerId, name: 'Poorna Shetty' }],
+    }),
+    []
+  );
 }
 
 function testMutationToolsBanned() {
@@ -845,6 +919,7 @@ async function main() {
   testShortMessageRejected();
   testActionsRequireKnownIdsAndConfirm();
   testLookupCannotInventMutationDrafts();
+  testNavigationAndDocumentActionsAreAllowlisted();
   testMutationToolsBanned();
   testLookupHintsAndLimits();
   testNameSurvivesActionSentences();

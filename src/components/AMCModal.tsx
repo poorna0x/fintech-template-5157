@@ -14,6 +14,7 @@ interface AMCModalProps {
   /** Prefill from a completed job's technician/admin AMC reference fields. */
   initialFromJob?: JobAmcPrefill | null;
   onAMCSaved?: () => void;
+  initialAiInstruction?: string | null;
 }
 
 export default function AMCModal({
@@ -22,6 +23,7 @@ export default function AMCModal({
   customer,
   initialFromJob,
   onAMCSaved,
+  initialAiInstruction,
 }: AMCModalProps) {
   const handleClose = () => {
     onClose();
@@ -71,6 +73,7 @@ export default function AMCModal({
                 initialFromJob={initialFromJob ?? null}
                 onAMCSaved={onAMCSaved}
                 embedded
+                initialAiInstruction={initialAiInstruction}
               />
             </Suspense>
           ) : (

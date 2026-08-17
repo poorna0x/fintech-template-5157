@@ -93,6 +93,7 @@ interface WarrantyManagementDialogProps {
   onOpenChange: (open: boolean) => void;
   /** When provided, the dialog skips search and loads this customer directly on open. */
   initialCustomer?: CustomerPick | null;
+  initialAiInstruction?: string | null;
 }
 
 interface SelectedCustomer extends CustomerPick {
@@ -199,6 +200,7 @@ export default function WarrantyManagementDialog({
   open,
   onOpenChange,
   initialCustomer,
+  initialAiInstruction,
 }: WarrantyManagementDialogProps) {
   // ---- customer search ----
   const [query, setQuery] = useState('');
@@ -1214,6 +1216,7 @@ export default function WarrantyManagementDialog({
                       documentNoun="warranty card"
                       getSnapshot={getWarrantyAiSnapshot}
                       onApply={applyWarrantyAiSnapshot}
+                      initialInstruction={initialAiInstruction}
                     />
 
                     {/* Dates */}

@@ -80,6 +80,7 @@ interface AMCGeneratorProps {
   embedded?: boolean;
   /** Prefill amount / validity / prefilter / auto-visit from a completed job. */
   initialFromJob?: JobAmcPrefill | null;
+  initialAiInstruction?: string | null;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -100,6 +101,7 @@ export default function AMCGenerator({
   onAMCSaved,
   embedded = false,
   initialFromJob = null,
+  initialAiInstruction,
 }: AMCGeneratorProps) {
   const jobPrefillAppliedRef = useRef<string | null>(null);
   const sourceJobIdRef = useRef<string | null>(initialFromJob?.jobId ?? null);
@@ -987,6 +989,7 @@ export default function AMCGenerator({
         documentNoun="AMC agreement"
         getSnapshot={getDraftSnapshot}
         onApply={applyDraftSnapshot}
+        initialInstruction={initialAiInstruction}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8">

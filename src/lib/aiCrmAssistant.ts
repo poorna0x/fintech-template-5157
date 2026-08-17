@@ -11,7 +11,68 @@ export type AiCrmActionType =
   | 'edit_customer'
   | 'create_job'
   | 'schedule_follow_up'
-  | 'create_reminder';
+  | 'create_reminder'
+  | 'open_app'
+  | 'open_document_draft';
+
+export type AiCrmAppTarget =
+  | 'dashboard'
+  | 'ongoing_jobs'
+  | 'completed_jobs'
+  | 'followup_jobs'
+  | 'payments'
+  | 'billing'
+  | 'analytics'
+  | 'inventory'
+  | 'gst_invoices'
+  | 'amc_contracts'
+  | 'letterhead_documents'
+  | 'settings'
+  | 'whatsapp_inbox'
+  | 'whatsapp_settings'
+  | 'calling'
+  | 'reminders'
+  | 'pending_payments'
+  | 'recurring_service'
+  | 'advanced_search'
+  | 'warranty'
+  | 'privacy_center'
+  | 'pdf_authenticity'
+  | 'ai_usage'
+  | 'database_storage'
+  | 'direct_sale'
+  | 'lead_catalog'
+  | 'job_reviews'
+  | 'technicians'
+  | 'technician_locations'
+  | 'todo_tasks'
+  | 'payment_qr'
+  | 'quick_upi_qr'
+  | 'product_qr'
+  | 'data_export'
+  | 'app_lock'
+  | 'recent_accounts'
+  | 'quick_customer'
+  | 'amount_trackers'
+  | 'sent_email_log'
+  | 'measure_distance'
+  | 'arrange_visit_order'
+  | 'nearby_jobs'
+  | 'technician_live_location'
+  | 'message_technician';
+
+export type AiCrmDocumentDraftType =
+  | 'quotation'
+  | 'service_bill'
+  | 'tax_invoice'
+  | 'amc'
+  | 'warranty';
+
+export type AiCrmOpenDocumentDraft = {
+  documentType: AiCrmDocumentDraftType;
+  customerId: string;
+  instruction?: string;
+};
 
 export type AiCrmCustomerEntity = {
   id: string;
@@ -153,7 +214,9 @@ export type AiCrmProposedAction = {
     | AiCrmEditCustomerDraft
     | AiCrmCreateJobDraft
     | AiCrmFollowUpDraft
-    | AiCrmReminderDraft;
+    | AiCrmReminderDraft
+    | { target: AiCrmAppTarget }
+    | AiCrmOpenDocumentDraft;
 };
 
 export type AiCrmChatResult =

@@ -41,6 +41,7 @@ interface AiDocumentDraftAssistantProps<TSnapshot extends Record<string, unknown
   onApply: (snapshot: TSnapshot) => void;
   disabled?: boolean;
   className?: string;
+  initialInstruction?: string | null;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -94,6 +95,7 @@ export default function AiDocumentDraftAssistant<
   onApply,
   disabled = false,
   className = '',
+  initialInstruction,
 }: AiDocumentDraftAssistantProps<TSnapshot>) {
   const { isAdminRole, isLoading: roleLoading } = useAdminRole();
   const [expanded, setExpanded] = useState(false);
@@ -104,6 +106,7 @@ export default function AiDocumentDraftAssistant<
   const [undoSnapshot, setUndoSnapshot] = useState<TSnapshot | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const { ref: inputRef } = useAutoGrowTextarea(input, 140);
+  const initialInstructionStartedRef = useRef<string | null>(null);
 
   const history = useMemo<AiDocumentChatTurn[]>(
     () => turns.filter((turn) => !turn.error).map(({ role, text }) => ({ role, text })),
@@ -165,6 +168,16 @@ export default function AiDocumentDraftAssistant<
       });
     }
   };
+
+  useEffect(() => {
+    const instruction = String(initialInstruction || '').trim();
+    if (!instruction || initialInstructionStartedRef.current === instruction) return;
+    initialInstructionStartedRef.current = instruction;
+    setExpanded(true);
+    void send(instruction);
+    // The instruction is intentionally consumed once per mounted document form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialInstruction]);
 
   const applyPending = () => {
     if (!pending) return;

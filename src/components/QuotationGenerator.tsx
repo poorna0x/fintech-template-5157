@@ -77,6 +77,7 @@ interface QuotationGeneratorProps {
   customer?: Customer;
   onPrint?: (quotation: Bill, action?: 'print' | 'pdf') => void;
   embedded?: boolean;
+  initialAiInstruction?: string | null;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -116,7 +117,12 @@ const defaultBankDetails = {
   note: 'Account Type: Current Account. Please share the payment confirmation once the transfer is complete.'
 };
 
-export default function QuotationGenerator({ customer, onPrint, embedded = false }: QuotationGeneratorProps) {
+export default function QuotationGenerator({
+  customer,
+  onPrint,
+  embedded = false,
+  initialAiInstruction,
+}: QuotationGeneratorProps) {
   // Safe customer data extraction (search/slim rows may have string address or missing fields)
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
@@ -757,6 +763,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
         documentNoun="quotation"
         getSnapshot={getDraftSnapshot}
         onApply={applyDraftSnapshot}
+        initialInstruction={initialAiInstruction}
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
