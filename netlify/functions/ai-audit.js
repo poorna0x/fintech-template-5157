@@ -10,11 +10,19 @@ function sha256(text) {
   return crypto.createHash('sha256').update(String(text || ''), 'utf8').digest('hex');
 }
 
+/** Business calendar day in Asia/Kolkata (YYYY-MM-DD). */
 function localDayKey(d = new Date()) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+function monthStartDayKey(d = new Date()) {
+  const day = localDayKey(d);
+  return `${day.slice(0, 8)}01`;
 }
 
 function isMissingRelation(error) {
@@ -27,7 +35,8 @@ function isMissingRelation(error) {
     code === 'PGRST202' ||
     msg.includes('does not exist') ||
     msg.includes('could not find the table') ||
-    msg.includes('schema cache')
+    msg.includes('schema cache') ||
+    msg.includes('could not find the function')
   );
 }
 
@@ -82,22 +91,43 @@ async function finalizeAiInvocation(opts) {
   const db = getServiceSupabase();
   if (!db || !opts.invocationId) return { ok: true, skipped: true };
 
+  const payload = {
+    p_invocation_id: opts.invocationId,
+    p_status: opts.status || 'ok',
+    p_input_tokens: Math.max(0, Number(opts.inputTokens) || 0),
+    p_output_tokens: Math.max(0, Number(opts.outputTokens) || 0),
+    p_latency_ms: Math.max(0, Number(opts.latencyMs) || 0),
+    p_prompt_hash: opts.promptHash || null,
+    p_response_hash: opts.responseHash || null,
+    p_error_category: opts.errorCategory || null,
+    p_reserved_tokens: Math.max(0, Number(opts.reservedTokens) || 0),
+    p_day_key: opts.dayKey || localDayKey(),
+    p_actor_user_id: opts.actorUserId || null,
+    p_provider: opts.provider ? String(opts.provider).slice(0, 80) : null,
+    p_model: opts.model ? String(opts.model).slice(0, 120) : null,
+    p_fell_back: typeof opts.fellBack === 'boolean' ? opts.fellBack : null,
+  };
+
   try {
-    const { error } = await db.rpc('finalize_ai_assistant_invocation', {
-      p_invocation_id: opts.invocationId,
-      p_status: opts.status || 'ok',
-      p_input_tokens: Math.max(0, Number(opts.inputTokens) || 0),
-      p_output_tokens: Math.max(0, Number(opts.outputTokens) || 0),
-      p_latency_ms: Math.max(0, Number(opts.latencyMs) || 0),
-      p_prompt_hash: opts.promptHash || null,
-      p_response_hash: opts.responseHash || null,
-      p_error_category: opts.errorCategory || null,
-      p_reserved_tokens: Math.max(0, Number(opts.reservedTokens) || 0),
-      p_day_key: opts.dayKey || localDayKey(),
-      p_actor_user_id: opts.actorUserId || null,
-    });
+    const { error } = await db.rpc('finalize_ai_assistant_invocation', payload);
     if (error) {
-      if (isMissingRelation(error)) return { ok: true, skipped: true };
+      // Older DBs without the fallback params: retry without them.
+      if (
+        isMissingRelation(error) ||
+        /p_provider|p_model|p_fell_back|function.*does not exist/i.test(String(error.message || ''))
+      ) {
+        const legacy = { ...payload };
+        delete legacy.p_provider;
+        delete legacy.p_model;
+        delete legacy.p_fell_back;
+        const retry = await db.rpc('finalize_ai_assistant_invocation', legacy);
+        if (retry.error) {
+          if (isMissingRelation(retry.error)) return { ok: true, skipped: true };
+          console.warn('[ai-audit] finalize failed', retry.error.message);
+          return { ok: false, error: retry.error.message };
+        }
+        return { ok: true, skipped: false, legacyFinalize: true };
+      }
       console.warn('[ai-audit] finalize failed', error.message);
       return { ok: false, error: error.message };
     }
@@ -112,6 +142,7 @@ async function finalizeAiInvocation(opts) {
 module.exports = {
   sha256,
   localDayKey,
+  monthStartDayKey,
   claimAiQuota,
   finalizeAiInvocation,
   isMissingRelation,

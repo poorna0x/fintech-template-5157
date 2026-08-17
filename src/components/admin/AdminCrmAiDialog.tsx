@@ -86,7 +86,7 @@ export default function AdminCrmAiDialog({
       conversationId,
     });
 
-    if (!result.ok) {
+    if ('error' in result) {
       setTurns((prev) => [
         ...prev,
         {

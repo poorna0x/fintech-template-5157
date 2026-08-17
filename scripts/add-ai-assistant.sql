@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS public.ai_assistant_invocations (
   prompt_hash text,
   response_hash text,
   error_category text,
+  fell_back boolean NOT NULL DEFAULT false,
   idempotency_key text,
   created_at timestamptz NOT NULL DEFAULT now(),
   finalized_at timestamptz,
@@ -38,6 +39,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_assistant_invocations_idempotency
 
 CREATE INDEX IF NOT EXISTS idx_ai_assistant_invocations_actor_day
   ON public.ai_assistant_invocations (actor_user_id, day_key DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ai_assistant_invocations_day
+  ON public.ai_assistant_invocations (day_key DESC);
+
+ALTER TABLE public.ai_assistant_invocations
+  ADD COLUMN IF NOT EXISTS fell_back boolean NOT NULL DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS public.ai_assistant_usage_buckets (
   actor_user_id uuid NOT NULL,
@@ -192,6 +199,10 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.finalize_ai_assistant_invocation(
+  uuid, text, integer, integer, integer, text, text, text, integer, date, uuid
+);
+
 CREATE OR REPLACE FUNCTION public.finalize_ai_assistant_invocation(
   p_invocation_id uuid,
   p_status text,
@@ -203,7 +214,10 @@ CREATE OR REPLACE FUNCTION public.finalize_ai_assistant_invocation(
   p_error_category text DEFAULT NULL,
   p_reserved_tokens integer DEFAULT 0,
   p_day_key date DEFAULT NULL,
-  p_actor_user_id uuid DEFAULT NULL
+  p_actor_user_id uuid DEFAULT NULL,
+  p_provider text DEFAULT NULL,
+  p_model text DEFAULT NULL,
+  p_fell_back boolean DEFAULT NULL
 )
 RETURNS void
 LANGUAGE plpgsql
@@ -247,6 +261,9 @@ BEGIN
       WHEN p_status IN ('ok', 'error', 'quota_denied', 'pending') THEN p_status
       ELSE 'error'
     END,
+    provider = COALESCE(NULLIF(BTRIM(p_provider), ''), provider),
+    model = COALESCE(NULLIF(BTRIM(p_model), ''), model),
+    fell_back = COALESCE(p_fell_back, fell_back),
     input_tokens = v_in,
     output_tokens = v_out,
     total_tokens = v_in + v_out,
@@ -273,10 +290,18 @@ REVOKE ALL ON FUNCTION public.claim_ai_assistant_quota(uuid, date, integer, inte
 REVOKE ALL ON FUNCTION public.claim_ai_assistant_quota(uuid, date, integer, integer, integer, text, text, text, text) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_ai_assistant_quota(uuid, date, integer, integer, integer, text, text, text, text) TO service_role;
 
-REVOKE ALL ON FUNCTION public.finalize_ai_assistant_invocation(uuid, text, integer, integer, integer, text, text, text, integer, date, uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.finalize_ai_assistant_invocation(uuid, text, integer, integer, integer, text, text, text, integer, date, uuid) FROM anon;
-REVOKE ALL ON FUNCTION public.finalize_ai_assistant_invocation(uuid, text, integer, integer, integer, text, text, text, integer, date, uuid) FROM authenticated;
-GRANT EXECUTE ON FUNCTION public.finalize_ai_assistant_invocation(uuid, text, integer, integer, integer, text, text, text, integer, date, uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.finalize_ai_assistant_invocation(
+  uuid, text, integer, integer, integer, text, text, text, integer, date, uuid, text, text, boolean
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.finalize_ai_assistant_invocation(
+  uuid, text, integer, integer, integer, text, text, text, integer, date, uuid, text, text, boolean
+) FROM anon;
+REVOKE ALL ON FUNCTION public.finalize_ai_assistant_invocation(
+  uuid, text, integer, integer, integer, text, text, text, integer, date, uuid, text, text, boolean
+) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.finalize_ai_assistant_invocation(
+  uuid, text, integer, integer, integer, text, text, text, integer, date, uuid, text, text, boolean
+) TO service_role;
 
 COMMENT ON TABLE public.ai_assistant_invocations IS
   'AI inbox assistant usage metadata only (hashes, not prompts/PII).';

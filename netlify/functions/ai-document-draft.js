@@ -178,6 +178,9 @@ exports.handler = async (event) => {
   let usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
   let promptHash = null;
   let responseHash = null;
+  let servedProvider = config.provider;
+  let servedModel = config.model;
+  let fellBack = false;
 
   try {
     const userPrompt = buildUserPrompt(parsed.value);
@@ -194,6 +197,9 @@ exports.handler = async (event) => {
       timeoutMs: 22_000,
       responseJsonSchema: RESPONSE_SCHEMA,
     });
+    servedProvider = providerResult.rawMetadata?.provider || config.provider;
+    servedModel = providerResult.rawMetadata?.model || config.model;
+    fellBack = providerResult.rawMetadata?.fellBack === true;
     usage = providerResult.usage || usage;
     const rawObject =
       providerResult.parsed ||
@@ -216,6 +222,9 @@ exports.handler = async (event) => {
       ...normalized,
       meta: {
         ...publicConfigSummary(config),
+        provider: servedProvider,
+        model: servedModel,
+        fellBack,
         latencyMs: Date.now() - started,
         usage,
         canMutate: false,
@@ -244,6 +253,9 @@ exports.handler = async (event) => {
       responseHash,
       errorCategory,
       reservedTokens: quota.reservedTokens || 0,
+      provider: servedProvider,
+      model: servedModel,
+      fellBack,
     });
   }
 };

@@ -31,6 +31,7 @@ export const MANAGER_BLOCKED_SETTINGS_PANELS = new Set<string>([
   'privacy-center',
   'pdf-authenticity',
   'db-storage',
+  'ai-usage',
   'direct-sale',
   'merge-customers',
   'add-technician',

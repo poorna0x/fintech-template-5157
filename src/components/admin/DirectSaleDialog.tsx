@@ -1146,7 +1146,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                     icon: 'omit' as const,
                   },
                 ]}
-                onSelect={setAddressChoice}
+                onSelect={(choice) => setAddressChoice(choice as DirectSaleAddressChoice)}
               />
             ) : null}
 

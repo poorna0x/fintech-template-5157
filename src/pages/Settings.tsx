@@ -40,7 +40,8 @@ import {
   ShieldCheck,
   CalendarPlus,
   Database,
-  Star
+  Star,
+  Sparkles
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -117,6 +118,7 @@ import { SettingsSearch } from '@/components/admin/SettingsSearch';
 import PdfAuthenticityVerifyPage from '@/pages/PdfAuthenticityVerifyPage';
 import JobReviewsPage from '@/pages/JobReviewsPage';
 import DbStorageStatsPage from '@/pages/DbStorageStatsPage';
+import AiUsagePage from '@/pages/AiUsagePage';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
@@ -386,6 +388,9 @@ const Settings = () => {
   const [showDbStoragePage, setShowDbStoragePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'db-storage'
   );
+  const [showAiUsagePage, setShowAiUsagePage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'ai-usage'
+  );
   const [showRecurringServicePage, setShowRecurringServicePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'recurring-service'
   );
@@ -501,6 +506,7 @@ const Settings = () => {
     setShowPdfAuthenticityPage(panel === 'pdf-authenticity' && !isManager);
     setShowJobReviewsPage(panel === 'job-reviews');
     setShowDbStoragePage(panel === 'db-storage' && !isManager);
+    setShowAiUsagePage(panel === 'ai-usage' && !isManager);
     setShowRecurringServicePage(panel === 'recurring-service');
     setShowLeadCatalogPage(panel === 'lead-catalog' && !isManager);
     setRemindersDialogOpen(panel === 'reminders');
@@ -1963,6 +1969,7 @@ const Settings = () => {
       showPdfAuthenticityPage ||
       showJobReviewsPage ||
       showDbStoragePage ||
+      showAiUsagePage ||
       showRecurringServicePage ||
       showLeadCatalogPage
     ) {
@@ -2007,6 +2014,7 @@ const Settings = () => {
     showPdfAuthenticityPage,
     showJobReviewsPage,
     showDbStoragePage,
+    showAiUsagePage,
     showRecurringServicePage,
     showLeadCatalogPage,
   ]);
@@ -2292,6 +2300,44 @@ const Settings = () => {
         </div>
         <div className="container mx-auto px-4 py-5 sm:py-8 pb-10 max-w-6xl">
           <DbStorageStatsPage hideHeader onBack={closeSettingsPanel} />
+        </div>
+      </div>
+    );
+  }
+
+  if (showAiUsagePage) {
+    return (
+      <div className="admin-page">
+        <div className="bg-card border-b border-border">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
+                    AI usage & models
+                  </h1>
+                  <p className="text-xs text-muted-foreground truncate sm:hidden">
+                    Limits, tokens, and model selection
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeSettingsPanel}
+                className="text-muted-foreground hover:text-foreground -ml-2 self-start sm:self-auto cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-5 sm:py-8 pb-10 max-w-3xl">
+          <AiUsagePage hideHeader onBack={closeSettingsPanel} />
         </div>
       </div>
     );
@@ -3894,6 +3940,25 @@ const Settings = () => {
               >
                 <Database className="w-4 h-4 shrink-0" />
                 View storage
+              </Button>
+            }
+          />
+          ) : null}
+
+          {!isManager ? (
+          <SettingsActionCard
+            title="AI usage & models"
+            description="CRM AI request/token limits and manual Gemini or Groq model selection"
+            icon={<Sparkles />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('ai-usage')}
+              >
+                <Sparkles className="w-4 h-4 shrink-0" />
+                Open AI usage
               </Button>
             }
           />

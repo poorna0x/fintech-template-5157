@@ -16,11 +16,17 @@ const {
   normalizeConfig,
   ALLOWED_PROVIDERS,
   ALLOWED_GEMINI_MODELS,
+  ALLOWED_GROQ_MODELS,
   clearAiAssistantConfigCache,
 } = require('../netlify/functions/ai-config');
 const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
 const { tryParseJsonObject, toGeminiContents } = require('../netlify/functions/ai-provider-gemini');
-const { generateWithProvider } = require('../netlify/functions/ai-provider');
+const { toGroqMessages } = require('../netlify/functions/ai-provider-groq');
+const {
+  generateWithProvider,
+  buildProviderAttempts,
+  isRetryableProviderError,
+} = require('../netlify/functions/ai-provider');
 
 function testRequestIgnoresClientProviderFields() {
   const parsed = parseSuggestRequest({
@@ -157,9 +163,11 @@ function testMutationToolsBanned() {
 
 function testProviderAllowlist() {
   assert.equal(ALLOWED_PROVIDERS.has('gemini'), true);
+  assert.equal(ALLOWED_PROVIDERS.has('groq'), true);
   assert.equal(ALLOWED_PROVIDERS.has('mock'), true);
   assert.equal(ALLOWED_PROVIDERS.has('openai'), false);
   assert.equal(ALLOWED_GEMINI_MODELS.has('gemini-3.1-flash-lite'), true);
+  assert.equal(ALLOWED_GROQ_MODELS.has('llama-3.3-70b-versatile'), true);
 
   clearAiAssistantConfigCache();
   const cfg = normalizeConfig(
@@ -171,7 +179,37 @@ function testProviderAllowlist() {
     'env'
   );
   assert.equal(cfg.provider, 'gemini');
-  assert.equal(cfg.model, 'gemini-3.1-flash-lite');
+  assert.equal(cfg.model, 'gemini-2.5-flash');
+
+  const fallbackConfig = normalizeConfig(
+    {
+      provider: 'gemini',
+      geminiApiKey: 'gemini-test-key',
+      groqApiKey: 'groq-test-key',
+      model: 'gemini-2.5-flash',
+    },
+    'app_secrets'
+  );
+  assert.deepEqual(fallbackConfig.fallbackChain, [
+    { provider: 'gemini', model: 'gemini-3.1-flash-lite' },
+    { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+  ]);
+  assert.deepEqual(buildProviderAttempts(fallbackConfig), [
+    { provider: 'gemini', model: 'gemini-2.5-flash' },
+    { provider: 'gemini', model: 'gemini-3.1-flash-lite' },
+    { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+  ]);
+
+  const groqConfig = normalizeConfig(
+    {
+      provider: 'groq',
+      groqApiKey: 'groq-test-key',
+      model: 'llama-3.3-70b-versatile',
+    },
+    'env'
+  );
+  assert.equal(groqConfig.provider, 'groq');
+  assert.equal(groqConfig.model, 'llama-3.3-70b-versatile');
 }
 
 async function testMockProviderStructuredOutput() {
@@ -206,6 +244,71 @@ function testGeminiHelpersDoNotLeakTools() {
 
   const obj = tryParseJsonObject('```json\n{"replyText":"ok","confidence":0.5}\n```');
   assert.equal(obj.replyText, 'ok');
+
+  const groqMessages = toGroqMessages('System only', [
+    { role: 'user', text: 'Hello' },
+    { role: 'assistant', text: 'Hi' },
+  ]);
+  assert.deepEqual(groqMessages.map(({ role }) => role), ['system', 'user', 'assistant']);
+}
+
+async function testQuotaFallbackUsesGroq() {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      return {
+        ok: false,
+        status: 429,
+        json: async () => ({
+          error: { status: 'RESOURCE_EXHAUSTED', message: 'quota exceeded' },
+        }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: 'groq-test-response',
+        choices: [
+          {
+            finish_reason: 'stop',
+            message: { content: '{"replyText":"Fallback worked"}' },
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      }),
+    };
+  };
+
+  try {
+    const result = await generateWithProvider(
+      {
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        geminiApiKey: 'gemini-test-key',
+        groqApiKey: 'groq-test-key',
+        fallbackChain: [
+          { provider: 'groq', model: 'llama-3.3-70b-versatile' },
+        ],
+      },
+      {
+        operation: 'suggest_reply',
+        systemInstruction: 'Return JSON.',
+        messages: [{ role: 'user', text: 'Hello' }],
+      }
+    );
+    assert.equal(calls.length, 2);
+    assert.equal(result.rawMetadata.provider, 'groq');
+    assert.equal(result.rawMetadata.fellBack, true);
+    assert.equal(result.parsed.replyText, 'Fallback worked');
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(isRetryableProviderError(Object.assign(new Error('quota'), { retryable: true })), true);
+  assert.equal(isRetryableProviderError(new Error('auth')), false);
 }
 
 function testSqlIsAdditiveAndReadOnlyForClients() {
@@ -252,6 +355,7 @@ async function main() {
   testProviderAllowlist();
   await testMockProviderStructuredOutput();
   testGeminiHelpersDoNotLeakTools();
+  await testQuotaFallbackUsesGroq();
   testSqlIsAdditiveAndReadOnlyForClients();
   testEndpointSourceHasSafetyGuards();
   console.log('ai-inbox-assistant tests passed');

@@ -109,6 +109,7 @@ const SEARCH_ITEMS: SettingsSearchItem[] = [
   { id: 'privacy', label: 'Privacy Center', description: 'Data requests, consent and security audit', keywords: 'dsar delete access customer data gdpr', group: 'App & data', icon: ShieldCheck, destination: { type: 'panel', panel: 'privacy-center' }, adminOnly: true },
   { id: 'data-export', label: 'Data export', description: 'Download all database tables as CSV', keywords: 'backup zip download csv', group: 'App & data', icon: Download, destination: { type: 'section', section: 'data-export' }, adminOnly: true },
   { id: 'storage', label: 'Storage usage', description: 'Postgres, R2, Cloudinary and iLovePDF credits', keywords: 'database space files media ilovepdf credits compress pdf', group: 'App & data', icon: Database, destination: { type: 'panel', panel: 'db-storage' }, adminOnly: true },
+  { id: 'ai-usage', label: 'AI usage & models', description: 'CRM AI limits, tokens, and model selection', keywords: 'gemini groq tokens quota llm assistant model fallback', group: 'App & data', icon: Sparkles, destination: { type: 'panel', panel: 'ai-usage' }, adminOnly: true },
   { id: 'app-crashes', label: 'App crash reports', description: 'Technician and admin app errors', keywords: 'error logs stack android', group: 'App & data', icon: Bug, destination: { type: 'section', section: 'app-crashes' }, adminOnly: true },
 ];
 

@@ -8,6 +8,13 @@ const DEFAULT_TIMEOUT_MS = 18_000;
 // Gemini 2.5+/3.x thinking can consume most of a small budget before JSON is emitted.
 const MAX_OUTPUT_TOKENS = 4096;
 
+function createProviderError(message, { retryable = false, code = null } = {}) {
+  const error = new Error(message);
+  error.retryable = retryable;
+  error.providerCode = code;
+  return error;
+}
+
 function toGeminiContents(messages) {
   const contents = [];
   for (const msg of messages || []) {
@@ -105,22 +112,43 @@ async function generateWithGemini(input, config) {
   }
 
   const timeoutMs = Number(input.timeoutMs) || DEFAULT_TIMEOUT_MS;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+      throw createProviderError('Gemini request timed out', {
+        retryable: true,
+        code: 'timeout',
+      });
+    }
+    throw createProviderError('Gemini request failed');
+  }
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const code = data?.error?.status || data?.error?.code || response.status;
     const msg = String(data?.error?.message || '').toLowerCase();
-    if (response.status === 429 || msg.includes('quota') || msg.includes('credit') || msg.includes('billing')) {
-      throw new Error('Gemini quota/billing unavailable — top up credits in AI Studio, then retry');
+    if (
+      response.status === 429 ||
+      response.status >= 500 ||
+      msg.includes('quota') ||
+      msg.includes('credit') ||
+      msg.includes('billing') ||
+      msg.includes('capacity')
+    ) {
+      throw createProviderError('Gemini quota or capacity unavailable', {
+        retryable: true,
+        code,
+      });
     }
     if (response.status === 404 || String(code).includes('NOT_FOUND')) {
       throw new Error(`Gemini model not available (${model})`);
@@ -149,6 +177,7 @@ async function generateWithGemini(input, config) {
 
 module.exports = {
   generateWithGemini,
+  createProviderError,
   tryParseJsonObject,
   toGeminiContents,
   extractUsage,
