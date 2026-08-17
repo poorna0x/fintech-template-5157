@@ -74,6 +74,7 @@ import {
 import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
 import { filterInventoryByApproxSearch } from '@/lib/inventorySearch';
 import { AddressChoiceCards } from '@/components/document/DocumentAddressSelector';
+import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
 
 const DEFAULT_WARRANTY_CARD_BRAND: DocumentBrand = 'elevenro';
 
@@ -853,6 +854,69 @@ export default function WarrantyManagementDialog({
 
   const canSearch = query.trim().length >= 2 && !searching;
 
+  const getWarrantyAiSnapshot = () => ({
+    v: 1,
+    startDate,
+    defaultValue,
+    defaultUnit,
+    items,
+    customNotes,
+    addressChoice,
+    documentBrand,
+  });
+
+  const applyWarrantyAiSnapshot = (snapshot: ReturnType<typeof getWarrantyAiSnapshot>) => {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    if (typeof snapshot.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(snapshot.startDate)) {
+      setStartDate(snapshot.startDate);
+    }
+    if (typeof snapshot.defaultValue === 'number' && Number.isFinite(snapshot.defaultValue)) {
+      setDefaultValue(Math.max(0, Math.min(3650, Math.round(snapshot.defaultValue))));
+    }
+    if (snapshot.defaultUnit === 'months' || snapshot.defaultUnit === 'days') {
+      setDefaultUnit(snapshot.defaultUnit);
+    }
+    if (Array.isArray(snapshot.items)) {
+      const allowedCategories = new Set(WARRANTY_CATEGORIES.map((category) => category.value));
+      setItems(
+        snapshot.items.slice(0, 40).map((raw, index) => {
+          const row = raw as Partial<DraftItem>;
+          return {
+            key: String(row.key || `ai-warranty-${Date.now()}-${index}`),
+            category: allowedCategories.has(row.category as WarrantyCategory)
+              ? (row.category as WarrantyCategory)
+              : 'OTHER',
+            label: String(row.label || `Warranty item ${index + 1}`).slice(0, 160),
+            durValue: Math.max(0, Math.min(3650, Math.round(Number(row.durValue) || defaultValue))),
+            durUnit: row.durUnit === 'days' ? 'days' : 'months',
+            include: row.include !== false,
+            covered: row.covered !== false,
+            inventory_id: row.inventory_id ? String(row.inventory_id) : null,
+            job_part_id: row.job_part_id ? String(row.job_part_id) : null,
+          };
+        })
+      );
+    }
+    if (typeof snapshot.customNotes === 'string') setCustomNotes(snapshot.customNotes.slice(0, 4000));
+    if (snapshot.addressChoice === 'primary' || snapshot.addressChoice === 'secondary') {
+      setAddressChoice(snapshot.addressChoice);
+      setCustomer((previous) =>
+        previous
+          ? {
+              ...previous,
+              addressText:
+                snapshot.addressChoice === 'secondary'
+                  ? previous.secondaryAddressText
+                  : previous.primaryAddressText,
+            }
+          : previous
+      );
+    }
+    if (snapshot.documentBrand === 'hydrogenro' || snapshot.documentBrand === 'elevenro') {
+      setDocumentBrand(snapshot.documentBrand);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(next) => (!saving ? onOpenChange(next) : undefined)}>
       <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
@@ -1144,6 +1208,13 @@ export default function WarrantyManagementDialog({
                         <X className="h-4 w-4" />
                       </Button>
                     </div>
+
+                    <AiDocumentDraftAssistant
+                      kind="warranty"
+                      documentNoun="warranty card"
+                      getSnapshot={getWarrantyAiSnapshot}
+                      onApply={applyWarrantyAiSnapshot}
+                    />
 
                     {/* Dates */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

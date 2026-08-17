@@ -72,6 +72,7 @@ import {
   documentAddressForChoice,
   type DocumentAddressChoice,
 } from '@/components/document/DocumentAddressSelector';
+import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
 
 interface AMCGeneratorProps {
   customer: Customer;
@@ -979,6 +980,13 @@ export default function AMCGenerator({
             }
           />
         }
+      />
+
+      <AiDocumentDraftAssistant
+        kind="amc"
+        documentNoun="AMC agreement"
+        getSnapshot={getDraftSnapshot}
+        onApply={applyDraftSnapshot}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8">

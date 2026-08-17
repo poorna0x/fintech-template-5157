@@ -72,6 +72,7 @@ import {
   documentAddressForChoice,
   type DocumentAddressChoice,
 } from '@/components/document/DocumentAddressSelector';
+import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
 import {
   type DocumentPaymentStatus,
   documentPaymentSummaryClass,
@@ -1229,6 +1230,15 @@ export default function TaxInvoiceGenerator({
           />
         }
       />
+
+      {!readOnly ? (
+        <AiDocumentDraftAssistant
+          kind="tax_invoice"
+          documentNoun="tax invoice"
+          getSnapshot={getDraftSnapshot}
+          onApply={applyDraftSnapshot}
+        />
+      ) : null}
 
       <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 disabled:opacity-100">
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">

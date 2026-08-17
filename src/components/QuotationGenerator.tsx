@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Share2, Image as ImageIcon, Loader2, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Share2, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
@@ -66,12 +66,12 @@ import {
   serializeTermItems,
   type ServiceDocumentTermItem,
 } from '@/lib/service-document-terms';
-import { buildQuotationWithAi } from '@/lib/aiQuotationBuilder';
 import {
   DocumentAddressSelector,
   documentAddressForChoice,
   type DocumentAddressChoice,
 } from '@/components/document/DocumentAddressSelector';
+import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
 
 interface QuotationGeneratorProps {
   customer?: Customer;
@@ -173,23 +173,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     defaultRecipients: string[];
     dueDateIso: string;
   } | null>(null);
-  const [aiQuoteInstruction, setAiQuoteInstruction] = useState('');
-  const [aiQuoteLoading, setAiQuoteLoading] = useState(false);
-  const [aiQuoteAllowPrices, setAiQuoteAllowPrices] = useState(false);
-  const [aiQuoteResult, setAiQuoteResult] = useState<
-    | { status: 'error'; message: string }
-    | {
-        status: 'applied';
-        itemCount: number;
-        pricedItemCount: number;
-        termCount: number;
-        noteCount: number;
-        warnings: string[];
-        model?: string;
-      }
-    | null
-  >(null);
-  
+
   // Computed values for backward compatibility
   const includeGST = gstOption === 'include';
   
@@ -692,68 +676,6 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
   };
 
-  const handleBuildQuotationWithAi = async () => {
-    const instruction = aiQuoteInstruction.trim();
-    if (instruction.length < 8) {
-      setAiQuoteResult({ status: 'error', message: 'Describe what the quotation should include.' });
-      return;
-    }
-    if (!customer?.id) {
-      setAiQuoteResult({
-        status: 'error',
-        message: 'Select a customer before using the AI quotation builder.',
-      });
-      return;
-    }
-
-    setAiQuoteLoading(true);
-    setAiQuoteResult(null);
-    try {
-      const result = await buildQuotationWithAi({
-        customerId: String(customer.id),
-        instruction,
-        allowPrices: aiQuoteAllowPrices,
-      });
-      if (!result.ok) {
-        setAiQuoteResult({ status: 'error', message: result.error });
-        return;
-      }
-
-      const validUntil = new Date();
-      validUntil.setDate(validUntil.getDate() + result.draft.validityDays);
-      const snapshot = getDraftSnapshot();
-      applyDraftSnapshot({
-        ...snapshot,
-        items: result.draft.items.map((item) =>
-          recalculateQuotationItem(item, result.draft.gstOption)
-        ),
-        serviceCharge: 0,
-        notes: result.draft.notes,
-        notesHeading: result.draft.notesHeading,
-        validityNote: result.draft.validityNote,
-        showValidityNote: Boolean(result.draft.validityNote),
-        validUntilDate: validUntil.toISOString().split('T')[0],
-        isValidUntilManuallySet: false,
-        termItems:
-          result.draft.termItems.length > 0 ? result.draft.termItems : snapshot.termItems,
-        gstOption: result.draft.gstOption,
-        showBankDetails: result.draft.showBankDetails,
-      });
-
-      setAiQuoteResult({
-        status: 'applied',
-        itemCount: result.draft.items.length,
-        pricedItemCount: result.pricedItemCount,
-        termCount: result.draft.termItems.length,
-        noteCount: result.draft.notes.length,
-        warnings: result.warnings,
-        model: result.meta.model,
-      });
-    } finally {
-      setAiQuoteLoading(false);
-    }
-  };
-
   const buildDraftLabel = (snap: ReturnType<typeof getDraftSnapshot>) => {
     const num = snap.quotationNumber || 'Draft';
     const who = snap.editableCustomer?.name || 'Customer';
@@ -830,92 +752,12 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
         }
       />
 
-      <Card className="border-violet-200 bg-violet-50/40">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg text-violet-900">
-            <Sparkles className="h-5 w-5" />
-            Build quotation with AI
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Textarea
-            value={aiQuoteInstruction}
-            onChange={(event) => setAiQuoteInstruction(event.target.value)}
-            placeholder={
-              aiQuoteAllowPrices
-                ? 'Example: RO membrane replacement ₹3500, pre-filter ₹450, installation visit ₹600. 90-day membrane warranty, payment on completion, 30-day validity.'
-                : 'Example: Prepare a quotation for RO membrane replacement, pre-filter and service visit. Include 90-day membrane warranty, payment on completion, 30-day validity, and relevant exclusions.'
-            }
-            rows={4}
-            maxLength={4000}
-            disabled={aiQuoteLoading}
-          />
-          <label className="flex items-start gap-2 text-sm text-violet-900">
-            <input
-              type="checkbox"
-              checked={aiQuoteAllowPrices}
-              onChange={(event) => setAiQuoteAllowPrices(event.target.checked)}
-              disabled={aiQuoteLoading}
-              className="mt-1"
-            />
-            <span>
-              Use the prices I typed above
-              <span className="block text-xs text-violet-700">
-                Only prices written in your description are used. Anything you do not price stays ₹0.
-              </span>
-            </span>
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-violet-800">
-              AI fills items, notes, validity and terms. You always review before preview or send.
-            </p>
-            <Button
-              type="button"
-              onClick={handleBuildQuotationWithAi}
-              disabled={aiQuoteLoading || aiQuoteInstruction.trim().length < 8}
-              className="shrink-0 bg-violet-700 hover:bg-violet-800"
-            >
-              {aiQuoteLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="mr-2 h-4 w-4" />
-              )}
-              Build editable draft
-            </Button>
-          </div>
-
-          {aiQuoteResult?.status === 'error' && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-              {aiQuoteResult.message}
-            </div>
-          )}
-
-          {aiQuoteResult?.status === 'applied' && (
-            <div className="rounded-md border border-violet-200 bg-white p-3 text-sm text-violet-900">
-              <p className="font-medium">Draft applied to the form below.</p>
-              <ul className="mt-1 space-y-0.5 text-xs text-violet-800">
-                <li>
-                  {aiQuoteResult.itemCount} items
-                  {aiQuoteResult.pricedItemCount > 0
-                    ? ` · ${aiQuoteResult.pricedItemCount} priced from your description`
-                    : ' · all prices left at ₹0 for you to fill'}
-                </li>
-                <li>
-                  {aiQuoteResult.termCount} terms · {aiQuoteResult.noteCount} notes
-                  {aiQuoteResult.model ? ` · ${aiQuoteResult.model}` : ''}
-                </li>
-              </ul>
-              {aiQuoteResult.warnings.length > 0 && (
-                <ul className="mt-2 list-disc space-y-0.5 pl-4 text-xs text-amber-700">
-                  {aiQuoteResult.warnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <AiDocumentDraftAssistant
+        kind="quotation"
+        documentNoun="quotation"
+        getSnapshot={getDraftSnapshot}
+        onApply={applyDraftSnapshot}
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
         {/* Quotation Information */}

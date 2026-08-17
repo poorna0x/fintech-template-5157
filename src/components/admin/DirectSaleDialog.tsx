@@ -1120,12 +1120,12 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
               sale bucket.
             </p>
             {matchedAddresses ? (
-              <AddressChoiceCards<DirectSaleAddressChoice>
+              <AddressChoiceCards
                 label="Address for bill"
                 value={addressChoice}
                 options={[
                   {
-                    value: 'primary' as DirectSaleAddressChoice,
+                    value: 'primary' as const,
                     title: matchedAddresses.primaryLabel,
                     subtitle:
                       directSaleAddressLabel(matchedAddresses.primary) || 'No address saved',
@@ -1133,14 +1133,14 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                   ...(matchedAddresses.secondary
                     ? [
                         {
-                          value: 'secondary' as DirectSaleAddressChoice,
+                          value: 'secondary' as const,
                           title: matchedAddresses.secondaryLabel,
                           subtitle: directSaleAddressLabel(matchedAddresses.secondary),
                         },
                       ]
                     : []),
                   {
-                    value: 'omit' as DirectSaleAddressChoice,
+                    value: 'omit' as const,
                     title: 'No address',
                     subtitle: 'Print name and phone only',
                     icon: 'omit' as const,

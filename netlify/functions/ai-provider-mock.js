@@ -24,6 +24,43 @@ async function generateWithMock(input) {
   const last = lastCustomerText(messages);
   const intent = detectIntent(last);
 
+  if (input.operation === 'document_draft') {
+    const requestMatch = String(last).match(/<request>\s*([\s\S]*?)\s*<\/request>/i);
+    const request = String(requestMatch?.[1] || last).trim();
+    const notesMatch = String(last).match(/"notes"\s*:\s*(\[[\s\S]*?\])/);
+    let currentNotes = [];
+    try {
+      currentNotes = notesMatch ? JSON.parse(notesMatch[1]) : [];
+    } catch {
+      currentNotes = [];
+    }
+    const operations = [];
+    if (/\b(note|notes)\b/i.test(request)) {
+      operations.push({
+        field: 'notes',
+        valueJson: JSON.stringify([...currentNotes, request].slice(-8)),
+        explanation: 'Update document notes from your instruction',
+      });
+    }
+    const payload = {
+      answer: operations.length
+        ? 'I prepared the requested document edit for review.'
+        : 'Mock mode needs a request mentioning notes to demonstrate a document edit.',
+      confidence: 0.72,
+      warnings: ['Local mock mode — review before applying.'],
+      operations,
+    };
+    return {
+      text: JSON.stringify(payload),
+      parsed: payload,
+      toolCalls: [],
+      usage: { inputTokens: 180, outputTokens: 100, totalTokens: 280 },
+      finishReason: 'stop',
+      providerRequestId: `mock-document-${Date.now()}`,
+      rawMetadata: { provider: 'mock' },
+    };
+  }
+
   if (input.operation === 'crm_chat') {
     const wantsJob = /\b(new\s+job|create\s+job|book)\b/i.test(last);
     const wantsFollowUp = /\bfollow[- ]?up\b/i.test(last);

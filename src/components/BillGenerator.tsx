@@ -73,6 +73,7 @@ import {
   getPrimaryLocationLabel,
   getSecondaryLocationLabel,
 } from '@/lib/customer-locations';
+import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
 
 type BillMode = 'normal' | 'set';
 type ExtraChargeKind = 'service' | 'visiting';
@@ -883,6 +884,13 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
             }
           />
         }
+      />
+
+      <AiDocumentDraftAssistant
+        kind="bill"
+        documentNoun="bill"
+        getSnapshot={getDraftSnapshot}
+        onApply={applyDraftSnapshot}
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
