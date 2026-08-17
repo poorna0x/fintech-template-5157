@@ -32,6 +32,15 @@ export type AiInboxSuggestion = {
   quotation: AiQuotationProposal | null;
   customerId?: string | null;
   customerName?: string | null;
+  detailVerification?: {
+    kind: 'location' | 'photo';
+    label: string;
+    status: 'still_missing';
+    receivedType: string;
+    reason: string;
+    reaskAction: 'request_location' | 'request_photo';
+    source: 'booking_state' | 'recent_thread';
+  } | null;
 };
 
 export type AiInboxSuggestResult =

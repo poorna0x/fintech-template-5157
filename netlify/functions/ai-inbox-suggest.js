@@ -22,6 +22,24 @@ const { sha256, localDayKey, claimAiQuota, finalizeAiInvocation } = require('./a
 const MAX_BODY_BYTES = 8_000;
 const THREAD_LIMIT = 18;
 const MAX_MSG_CHARS = 500;
+const BOOKING_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const DETAIL_REQUESTS = {
+  await_location: {
+    kind: 'location',
+    label: 'Location',
+    reaskAction: 'request_location',
+  },
+  await_model_or_photo: {
+    kind: 'photo',
+    label: 'Purifier photo',
+    reaskAction: 'request_photo',
+  },
+  await_issue_media: {
+    kind: 'photo',
+    label: 'Issue photo or video',
+    reaskAction: 'request_photo',
+  },
+};
 const QUOTATION_BUILDER_SCHEMA = {
   type: 'object',
   required: ['replyText', 'intent', 'confidence', 'requiresHuman', 'warnings', 'quotation'],
@@ -104,6 +122,7 @@ function buildSystemInstruction(operation, allowPrices = false) {
     'quotation.items[].description and quantity only. Always set unitPrice to 0. Never invent selling prices.',
     'Do not claim a message was sent. Do not invent job numbers, payments, or customer facts not in the thread.',
     'Be concise, polite, and suitable for WhatsApp (India English).',
+    'A trusted requested-detail verification in the user prompt is server-calculated from message types and booking state. Always honor it. If a requested location/photo is still missing, politely ask for it again and never claim it was received.',
     'If unsure, set requiresHuman=true and ask a clarifying question in replyText.',
     operation === 'suggest_quotation'
       ? 'Focus on proposing a quotation draft from the conversation.'
@@ -158,9 +177,129 @@ function mapThreadToMessages(rows) {
   return messages;
 }
 
+function isInboundRow(row) {
+  const direction = String(row?.direction || '').toLowerCase();
+  return direction === 'inbound' || direction === 'in';
+}
+
+function isOutboundRow(row) {
+  const direction = String(row?.direction || '').toLowerCase();
+  return direction === 'outbound' || direction === 'out';
+}
+
+function looksLikeMapsLocationText(value) {
+  const text = String(value || '').trim();
+  return (
+    /(?:maps\.app\.goo\.gl|google\.[a-z.]+\/maps|goo\.gl\/maps|maps\.google)/i.test(text) ||
+    /(?:^|\s)-?\d{1,2}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}(?:\s|$)/.test(text)
+  );
+}
+
+function rowSatisfiesDetail(row, kind) {
+  if (!row || !isInboundRow(row)) return false;
+  const msgType = String(row.msg_type || '').toLowerCase();
+  if (kind === 'location') {
+    return msgType === 'location' || looksLikeMapsLocationText(row.body);
+  }
+  if (kind === 'photo') {
+    return msgType === 'image' || msgType === 'video' || msgType === 'document';
+  }
+  return Boolean(String(row.body || '').trim());
+}
+
+function inferRecentDetailRequest(rows) {
+  const chronological = Array.isArray(rows) ? rows : [];
+  for (let index = chronological.length - 1; index >= 0; index -= 1) {
+    const row = chronological[index];
+    if (!isOutboundRow(row)) continue;
+    const body = String(row.body || '');
+    if (
+      /(?:share|send|tap)[\s\S]{0,45}(?:google maps )?(?:location|pin)|location[\s\S]{0,30}(?:share|send|button)/i.test(
+        body
+      )
+    ) {
+      return {
+        request: DETAIL_REQUESTS.await_location,
+        requestedAtIndex: index,
+        source: 'recent_thread',
+      };
+    }
+    if (/(?:share|send)[\s\S]{0,40}(?:photo|image|video)|(?:photo|image)[\s\S]{0,30}(?:share|send)/i.test(body)) {
+      return {
+        request: DETAIL_REQUESTS.await_model_or_photo,
+        requestedAtIndex: index,
+        source: 'recent_thread',
+      };
+    }
+  }
+  return null;
+}
+
+function detectPendingDetailRequest(rows, bookingState) {
+  const chronological = Array.isArray(rows) ? rows : [];
+  const step = String(bookingState?.step || '').trim();
+  const stateRequest = DETAIL_REQUESTS[step] || null;
+  const inferred = stateRequest ? null : inferRecentDetailRequest(chronological);
+  const request = stateRequest || inferred?.request;
+  if (!request) return null;
+
+  const requestedAtIndex = inferred?.requestedAtIndex ?? -1;
+  const stateRequestedAt = stateRequest ? Date.parse(String(bookingState?.__requestedAt || '')) : NaN;
+  const inboundAfterRequest = chronological
+    .slice(requestedAtIndex + 1)
+    .filter(
+      (row) =>
+        isInboundRow(row) &&
+        (!Number.isFinite(stateRequestedAt) ||
+          Date.parse(String(row.created_at || '')) > stateRequestedAt)
+    );
+  const latestInbound = inboundAfterRequest.at(-1) || null;
+  if (!latestInbound || rowSatisfiesDetail(latestInbound, request.kind)) return null;
+
+  const receivedType = String(latestInbound.msg_type || 'text').toLowerCase();
+  return {
+    kind: request.kind,
+    label: request.label,
+    status: 'still_missing',
+    receivedType,
+    reason:
+      request.kind === 'location'
+        ? `Customer replied with ${receivedType}, not a location pin or Google Maps link.`
+        : `Customer replied with ${receivedType}, not the requested ${request.label.toLowerCase()}.`,
+    reaskAction: request.reaskAction,
+    source: stateRequest ? 'booking_state' : inferred.source,
+  };
+}
+
+async function loadRecentBookingState(db, phoneCandidates) {
+  const since = new Date(Date.now() - BOOKING_STATE_MAX_AGE_MS).toISOString();
+  const { data, error } = await db
+    .from('whatsapp_booking_bot_state')
+    .select('state, updated_at')
+    .in('phone_e164', phoneCandidates)
+    .gte('updated_at', since)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn('[ai-inbox-suggest] booking state load failed', error.message);
+    return null;
+  }
+  return data?.state && typeof data.state === 'object'
+    ? { ...data.state, __requestedAt: data.updated_at }
+    : null;
+}
+
 async function loadThreadContext(phoneDigits) {
   const db = getServiceSupabase();
-  if (!db) return { messages: [], customerId: null, customerName: null };
+  if (!db) {
+    return {
+      messages: [],
+      customerId: null,
+      customerName: null,
+      detailVerification: null,
+    };
+  }
 
   const e164Candidates = [`+${phoneDigits}`, phoneDigits];
   if (phoneDigits.length === 10) e164Candidates.push(`+91${phoneDigits}`);
@@ -177,7 +316,12 @@ async function loadThreadContext(phoneDigits) {
 
   if (error) {
     console.warn('[ai-inbox-suggest] thread load failed', error.message);
-    return { messages: [], customerId: null, customerName: null };
+    return {
+      messages: [],
+      customerId: null,
+      customerName: null,
+      detailVerification: null,
+    };
   }
 
   const chronological = (msgs || []).slice().reverse();
@@ -199,10 +343,15 @@ async function loadThreadContext(phoneDigits) {
     customerName = cust?.full_name ? String(cust.full_name).trim() : null;
   }
 
+  const phoneCandidates = [...new Set(e164Candidates)];
+  const bookingState = await loadRecentBookingState(db, phoneCandidates);
+  const detailVerification = detectPendingDetailRequest(chronological, bookingState);
+
   return {
     messages: mapThreadToMessages(chronological),
     customerId,
     customerName,
+    detailVerification,
   };
 }
 
@@ -210,6 +359,15 @@ function buildUserPrompt(ctx, operation) {
   const lines = [];
   lines.push(`Operation: ${operation}`);
   if (ctx.customerName) lines.push(`Customer name: ${ctx.customerName}`);
+  if (operation === 'suggest_reply' && ctx.detailVerification) {
+    lines.push('Trusted requested-detail verification (do not contradict):');
+    lines.push(
+      `${ctx.detailVerification.label} is still missing. ${ctx.detailVerification.reason}`
+    );
+    lines.push(
+      `Politely ask for the ${ctx.detailVerification.label.toLowerCase()} again; do not claim it was received.`
+    );
+  }
   lines.push('Recent WhatsApp thread (oldest → newest):');
   if (!ctx.messages.length) {
     lines.push('(no prior messages found)');
@@ -220,6 +378,26 @@ function buildUserPrompt(ctx, operation) {
   }
   lines.push('Return JSON only.');
   return lines.join('\n');
+}
+
+function enforceDetailVerification(suggestion, verification) {
+  if (!verification || !suggestion) return suggestion;
+  const warning = `${verification.label} still missing: ${verification.reason}`;
+  suggestion.warnings = [
+    warning,
+    ...(Array.isArray(suggestion.warnings)
+      ? suggestion.warnings.filter((item) => item !== warning)
+      : []),
+  ];
+  suggestion.requiresHuman = true;
+  if (
+    verification.kind === 'location' &&
+    !/(?:location|maps|pin)/i.test(String(suggestion.replyText || ''))
+  ) {
+    suggestion.replyText =
+      'Thanks for your message. To continue, please share your exact Google Maps location pin using the Send location button below. 📍';
+  }
+  return suggestion;
 }
 
 exports.handler = async (event) => {
@@ -396,6 +574,10 @@ exports.handler = async (event) => {
       return json(502, headers, { success: false, error: 'AI returned an empty suggestion' });
     }
 
+    const detailVerification =
+      parsed.value.operation === 'suggest_reply' ? ctx.detailVerification : null;
+    enforceDetailVerification(normalized.value, detailVerification);
+
     // Prices stay blank unless the admin asked for prices from their own brief.
     if (normalized.value.quotation?.items && !allowPrices) {
       normalized.value.quotation.items = normalized.value.quotation.items.map((item) => ({
@@ -417,6 +599,7 @@ exports.handler = async (event) => {
         customerId,
         customerName: ctx.customerName,
         pricesFromBrief: allowPrices,
+        detailVerification: detailVerification || null,
       },
       meta: {
         ...publicConfigSummary(config),
@@ -463,6 +646,9 @@ module.exports._test = {
   mapThreadToMessages,
   buildSystemInstruction,
   buildUserPrompt,
+  detectPendingDetailRequest,
+  enforceDetailVerification,
+  looksLikeMapsLocationText,
   buildQuotationBriefPrompt,
   QUOTATION_BUILDER_SCHEMA,
 };

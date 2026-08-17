@@ -27,6 +27,11 @@ const {
   buildProviderAttempts,
   isRetryableProviderError,
 } = require('../netlify/functions/ai-provider');
+const {
+  detectPendingDetailRequest,
+  enforceDetailVerification,
+  looksLikeMapsLocationText,
+} = require('../netlify/functions/ai-inbox-suggest')._test;
 
 function testRequestIgnoresClientProviderFields() {
   const parsed = parseSuggestRequest({
@@ -159,6 +164,68 @@ function testMutationToolsBanned() {
   assert.throws(() => assertNoMutationTools(['execute_sql']), /Disallowed tool/);
   assert.throws(() => assertNoMutationTools(['send_whatsapp']), /Disallowed tool/);
   assert.equal(assertNoMutationTools([]), true);
+}
+
+function testRequestedDetailVerification() {
+  const rows = [
+    {
+      direction: 'outbound',
+      msg_type: 'interactive',
+      body: 'Please tap Send location below',
+      created_at: '2026-08-17T10:00:00.000Z',
+    },
+    {
+      direction: 'inbound',
+      msg_type: 'text',
+      body: 'near the metro station',
+      created_at: '2026-08-17T10:01:00.000Z',
+    },
+  ];
+  const verification = detectPendingDetailRequest(rows, {
+    step: 'await_location',
+    __requestedAt: '2026-08-17T10:00:00.000Z',
+  });
+  assert.equal(verification.kind, 'location');
+  assert.equal(verification.status, 'still_missing');
+  assert.equal(verification.receivedType, 'text');
+  assert.equal(verification.reaskAction, 'request_location');
+
+  const suggestion = enforceDetailVerification(
+    {
+      replyText: 'Thanks!',
+      warnings: [],
+      requiresHuman: false,
+    },
+    verification
+  );
+  assert.match(suggestion.replyText, /Google Maps location pin/i);
+  assert.equal(suggestion.requiresHuman, true);
+  assert.match(suggestion.warnings[0], /Location still missing/i);
+
+  assert.equal(looksLikeMapsLocationText('https://maps.app.goo.gl/abc123'), true);
+  assert.equal(
+    detectPendingDetailRequest(
+      [
+        rows[0],
+        {
+          direction: 'inbound',
+          msg_type: 'location',
+          body: '12.971599,77.594566',
+          created_at: '2026-08-17T10:01:00.000Z',
+        },
+      ],
+      { step: 'await_location', __requestedAt: '2026-08-17T10:00:00.000Z' }
+    ),
+    null
+  );
+  assert.equal(
+    detectPendingDetailRequest(rows, {
+      step: 'await_location',
+      __requestedAt: '2026-08-17T10:02:00.000Z',
+    }),
+    null,
+    'an inbound message from before the request must not be treated as a failed reply'
+  );
 }
 
 function testProviderAllowlist() {
@@ -364,6 +431,7 @@ async function main() {
   testUnknownOperationRejected();
   testQuotationPricesForcedZero();
   testMutationToolsBanned();
+  testRequestedDetailVerification();
   testProviderAllowlist();
   await testMockProviderStructuredOutput();
   testGeminiHelpersDoNotLeakTools();

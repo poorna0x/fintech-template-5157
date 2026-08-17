@@ -3241,7 +3241,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       <div className="rounded-xl border border-[#2a3942] bg-[#202c33] px-3 py-2 text-[#e9edef]">
                         <div className="mb-1 flex items-center justify-between gap-2">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8696a0]">
-                            AI suggestion
+                            AI verified suggestion
                             {aiSuggestion.requiresHuman ? ' · needs human review' : ''}
                           </p>
                           <button
@@ -3262,6 +3262,30 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           <p className="mt-1 text-[11px] text-amber-200/90">
                             {aiSuggestion.warnings.join(' · ')}
                           </p>
+                        ) : null}
+                        {aiSuggestion.detailVerification ? (
+                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/20 bg-amber-400/10 px-2.5 py-2">
+                            <div>
+                              <p className="text-[11px] font-semibold text-amber-100">
+                                {aiSuggestion.detailVerification.label} still missing
+                              </p>
+                              <p className="text-[10px] text-amber-100/75">
+                                Received {aiSuggestion.detailVerification.receivedType} instead
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 border-amber-300/30 bg-transparent px-2.5 text-[11px] text-amber-50 hover:bg-amber-300/10"
+                              disabled={quickActionBusy}
+                              onClick={() =>
+                                setQuickActionConfirm(aiSuggestion.detailVerification!.reaskAction)
+                              }
+                            >
+                              Ask {aiSuggestion.detailVerification.kind} again
+                            </Button>
+                          </div>
                         ) : null}
                         {aiSuggestion.quotation?.items?.length ? (
                           <div className="mt-2 rounded-lg bg-[#111b21] px-2 py-1.5 text-[11px] text-[#cbd5e1]">
