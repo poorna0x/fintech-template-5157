@@ -291,6 +291,32 @@ export default function AdminCrmAiDialog({
                     </ul>
                   ) : null}
 
+                  {turn.result?.entities.technicians?.length ? (
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Technician billing
+                      </p>
+                      {turn.result.entities.technicians.slice(0, 6).map((technician, index) => (
+                        <div
+                          key={technician.technicianId}
+                          className="flex items-center justify-between rounded-lg border bg-muted/30 px-2.5 py-2 text-xs"
+                        >
+                          <span>
+                            <span className="font-medium">
+                              {index + 1}. {technician.name}
+                            </span>
+                            {technician.employeeId ? ` · ${technician.employeeId}` : ''}
+                            <span className="block text-muted-foreground">
+                              {technician.completedJobs} completed{' '}
+                              {technician.completedJobs === 1 ? 'job' : 'jobs'}
+                            </span>
+                          </span>
+                          <span className="font-semibold">{formatInr(technician.billedTotal)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
                   {turn.result?.entities.customers?.length ? (
                     <div className="space-y-1">
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

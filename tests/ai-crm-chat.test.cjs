@@ -16,6 +16,7 @@ const {
   extractQueryHints,
   detectOverviewIntent,
   detectCustomerValueRanking,
+  detectTechnicianBillingRanking,
   formatContextForPrompt,
   resolveCompletedJobValue,
   addDaysKey,
@@ -23,6 +24,7 @@ const {
   JOB_LIMIT,
   OVERVIEW_JOB_LIMIT,
   TOP_CUSTOMER_LIMIT,
+  TOP_TECHNICIAN_LIMIT,
 } = require('../netlify/functions/ai-crm-lookup');
 const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
 
@@ -318,6 +320,61 @@ function testLifetimeCustomerValueRankingIntent() {
   assert.match(context, /completedJobBilledINR=15000/);
 }
 
+function testTechnicianBillingRankingIntentIsNarrow() {
+  const question = 'Which tehcncian did highest billing today';
+  assert.equal(detectTechnicianBillingRanking(question), true);
+  assert.equal(detectCustomerValueRanking(question), false);
+
+  const intent = detectOverviewIntent(question, '2026-08-17');
+  assert.deepEqual([...intent.scopes], ['technician_billing_ranking']);
+  assert.equal(intent.range.label, 'today');
+  assert.ok(TOP_TECHNICIAN_LIMIT <= 10);
+
+  const context = formatContextForPrompt({
+    customers: [],
+    jobs: [],
+    reminders: [],
+    payments: [],
+    documents: [],
+    technicians: [
+      {
+        technicianId: 'tech-1',
+        employeeId: 'T001',
+        name: 'Ravi',
+        billedTotal: 12500,
+        completedJobs: 4,
+      },
+    ],
+    stats: {
+      today: '2026-08-17',
+      technicianBillingPeriod: 'today',
+      technicianBillingBasis: 'completed job billing',
+      technicianBillingRanking: [
+        {
+          rank: 1,
+          technicianId: 'tech-1',
+          employeeId: 'T001',
+          name: 'Ravi',
+          billedTotal: 12500,
+          completedJobs: 4,
+        },
+      ],
+    },
+    truncated: {},
+    intent: {
+      scopes: ['technician_billing_ranking'],
+      statuses: null,
+      range: { start: '2026-08-17', end: '2026-08-17', label: 'today' },
+    },
+  });
+  assert.match(context, /Technician billing ranking \(today/);
+  assert.match(context, /name=Ravi/);
+  assert.match(context, /completedJobBilledINR=12500/);
+  assert.doesNotMatch(context, /Customers: \(none matched\)/);
+  assert.doesNotMatch(context, /Jobs: \(none matched\)/);
+  assert.doesNotMatch(context, /Pending payments:/);
+}
+
 async function testMockCrmChat() {
   const result = await generateWithMock({
     operation: 'crm_chat',
@@ -372,6 +429,7 @@ async function main() {
   testCustomerDraftActionsAreReviewOnlyAndBounded();
   testOverviewIntentDetection();
   testLifetimeCustomerValueRankingIntent();
+  testTechnicianBillingRankingIntentIsNarrow();
   await testMockCrmChat();
   testEndpointSourceHasSafetyGuards();
   testLookupSourceIsBounded();

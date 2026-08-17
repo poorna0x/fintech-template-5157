@@ -18,6 +18,8 @@ const OVERVIEW_REMINDER_LIMIT = 15;
 const OVERVIEW_PAYMENT_SCAN = 60;
 const AMC_EXPIRY_LOOKAHEAD_DAYS = 45;
 const TOP_CUSTOMER_LIMIT = 10;
+const TOP_TECHNICIAN_LIMIT = 10;
+const TECHNICIAN_BILLING_SCAN_LIMIT = 1000;
 const TOP_CUSTOMER_FALLBACK_PAGE_SIZE = 1000;
 const TOP_CUSTOMER_FALLBACK_MAX_PAGES = 50;
 const IST_TZ = 'Asia/Kolkata';
@@ -27,7 +29,7 @@ const CUSTOMER_COLS =
   'id, customer_id, full_name, phone, alternate_phone, email, service_type, brand, model, last_service_date, customer_tier, status';
 
 const JOB_COLS =
-  'id, job_number, customer_id, status, service_type, service_sub_type, service_brand, payment_amount, actual_cost, payment_method, completed_at, scheduled_date';
+  'id, job_number, customer_id, status, service_type, service_sub_type, service_brand, payment_amount, actual_cost, payment_method, completed_at, end_time, scheduled_date, assigned_technician_id, completed_by';
 
 const REMINDER_COLS =
   'id, entity_type, entity_id, title, notes, reminder_at, completed_at, created_at';
@@ -71,8 +73,9 @@ const NAME_STOP_WORDS = new Set(
     'the', 'their', 'them', 'these', 'this', 'time', 'today', 'tomorrow', 'total', 'turnover',
     'unpaid', 'update', 'upcoming', 'us', 'visit', 'visits', 'want', 'was', 'water', 'week', 'were',
     'what', 'when', 'which', 'who', 'will', 'with', 'work', 'year', 'yesterday', 'you', 'your',
-    'alltime', 'billed', 'biggest', 'client', 'entire', 'ever', 'highest', 'largest', 'lifetime',
-    'paying', 'spend', 'spent', 'thing', 'top', 'value',
+    'alltime', 'billed', 'billing', 'biggest', 'client', 'entire', 'ever', 'highest', 'largest', 'lifetime',
+    'paying', 'spend', 'spent', 'thing', 'top', 'value', 'technician', 'technicians', 'tech',
+    'tehcncian', 'tehcnician',
   ].map((w) => w.toLowerCase())
 );
 
@@ -194,7 +197,9 @@ function istDayBounds(startKey, endKey) {
 
 function detectCustomerValueRanking(message) {
   const text = String(message || '').toLowerCase();
-  const mentionsCustomer = /\bcustomers?\b|\bclient\b|\bwho\b|\bwhich\b/.test(text);
+  const mentionsCustomer =
+    /\bcustomers?\b|\bclients?\b/.test(text) ||
+    (/\bwho\b/.test(text) && /\bpaid\b|\bpaying\b|\bspent\b|\bspend\b/.test(text));
   const mentionsRanking = /\bmost\b|\btop\b|\bhighest\b|\bbiggest\b|\blargest\b|\bbest\b/.test(
     text
   );
@@ -203,6 +208,18 @@ function detectCustomerValueRanking(message) {
       text
     );
   return mentionsCustomer && mentionsRanking && mentionsValue;
+}
+
+function detectTechnicianBillingRanking(message) {
+  const text = String(message || '').toLowerCase();
+  const mentionsTechnician =
+    /\btechnicians?\b|\btechs?\b|\bstaff\b|\btehcnc?ians?\b/.test(text);
+  const mentionsRanking = /\bmost\b|\btop\b|\bhighest\b|\bbiggest\b|\blargest\b|\bbest\b/.test(
+    text
+  );
+  const mentionsBilling =
+    /\bbill(?:ed|ing)?\b|\brevenue\b|\bearn(?:ed|ing|ings)?\b|\bsales\b|\bvalue\b/.test(text);
+  return mentionsTechnician && mentionsRanking && mentionsBilling;
 }
 
 /**
@@ -226,9 +243,17 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     scopes.add('payments');
   if (has(/\bamc\b|\bexpir|\brenew/)) scopes.add('amc');
   if (has(/\bnew customers?\b|\brecent customers?\b|\bnew leads?\b/)) scopes.add('customers');
-  if (has(/\brevenue|\bcollect|\bearn|\bincome|\bturnover|\bsales\b/)) scopes.add('revenue');
-  if (detectCustomerValueRanking(message)) scopes.add('customer_value_ranking');
-  if (has(/\bsummary|\boverview|\bstatus\b|\bhow many|\bcount\b|\btotal\b|\btoday\b|\breport\b/))
+  const wantsCustomerRanking = detectCustomerValueRanking(message);
+  const wantsTechnicianRanking = detectTechnicianBillingRanking(message);
+  if (
+    !wantsCustomerRanking &&
+    !wantsTechnicianRanking &&
+    has(/\brevenue|\bcollect|\bearn|\bincome|\bturnover|\bsales\b/)
+  )
+    scopes.add('revenue');
+  if (wantsCustomerRanking) scopes.add('customer_value_ranking');
+  if (wantsTechnicianRanking) scopes.add('technician_billing_ranking');
+  if (has(/\bsummary|\boverview|\bstatus\b|\bhow many|\bcount\b|\btotal\b|\breport\b/))
     scopes.add('summary');
 
   let statuses = null;
@@ -335,8 +360,12 @@ function slimJob(row) {
     actualCost:
       typeof row.actual_cost === 'number' ? row.actual_cost : Number(row.actual_cost) || null,
     paymentMethod: row.payment_method || null,
-    completedAt: row.completed_at || null,
+    completedAt: row.completed_at || row.end_time || null,
     scheduledDate: row.scheduled_date || null,
+    assignedTechnicianId: row.assigned_technician_id
+      ? String(row.assigned_technician_id)
+      : null,
+    completedBy: row.completed_by ? String(row.completed_by) : null,
   };
 }
 
@@ -654,6 +683,92 @@ function resolveCompletedJobValue(row) {
   return Math.max(0, paymentAmount > 0 ? paymentAmount : actualCost);
 }
 
+async function loadTechnicianBillingRanking(db, intent, todayKey) {
+  const bounds = istDayBounds(intent.range.start || todayKey, intent.range.end || todayKey);
+  const select =
+    'id,assigned_technician_id,completed_by,payment_amount,actual_cost,completed_at,end_time';
+  const queries = [
+    db
+      .from('jobs')
+      .select(select)
+      .eq('status', 'COMPLETED')
+      .gte('completed_at', bounds.fromTs)
+      .lt('completed_at', bounds.toTs)
+      .limit(TECHNICIAN_BILLING_SCAN_LIMIT),
+    db
+      .from('jobs')
+      .select(select)
+      .eq('status', 'COMPLETED')
+      .is('completed_at', null)
+      .gte('end_time', bounds.fromTs)
+      .lt('end_time', bounds.toTs)
+      .limit(TECHNICIAN_BILLING_SCAN_LIMIT),
+  ];
+  const results = await Promise.all(queries);
+  const jobs = [];
+  const seen = new Set();
+  let truncated = false;
+  for (const result of results) {
+    if (result.error) {
+      console.warn('[ai-crm-lookup] technician billing scan failed', result.error.message);
+      continue;
+    }
+    if ((result.data || []).length >= TECHNICIAN_BILLING_SCAN_LIMIT) truncated = true;
+    for (const row of result.data || []) {
+      if (!row?.id || seen.has(row.id)) continue;
+      seen.add(row.id);
+      jobs.push(row);
+    }
+  }
+
+  const grouped = new Map();
+  for (const job of jobs) {
+    // The person who actually completed the job is authoritative; assignment is
+    // the fallback for older rows that predate completed_by.
+    const technicianId = String(job.completed_by || job.assigned_technician_id || '').trim();
+    if (!technicianId) continue;
+    const current = grouped.get(technicianId) || {
+      technicianId,
+      name: 'Technician',
+      billedTotal: 0,
+      completedJobs: 0,
+    };
+    current.billedTotal += resolveCompletedJobValue(job);
+    current.completedJobs += 1;
+    grouped.set(technicianId, current);
+  }
+
+  const technicianIds = [...grouped.keys()];
+  if (technicianIds.length) {
+    const { data, error } = await db
+      .from('technicians')
+      .select('id,full_name,employee_id')
+      .in('id', technicianIds);
+    if (error) {
+      console.warn('[ai-crm-lookup] technician names failed', error.message);
+    } else {
+      for (const row of data || []) {
+        const current = grouped.get(String(row.id));
+        if (!current) continue;
+        current.name = String(row.full_name || 'Technician').trim();
+        current.employeeId = row.employee_id ? String(row.employee_id) : null;
+      }
+    }
+  }
+
+  const technicians = [...grouped.values()]
+    .map((row) => ({ ...row, billedTotal: Math.round(row.billedTotal) }))
+    .sort(
+      (a, b) =>
+        b.billedTotal - a.billedTotal ||
+        b.completedJobs - a.completedJobs ||
+        a.name.localeCompare(b.name)
+    )
+    .slice(0, TOP_TECHNICIAN_LIMIT);
+
+  return { technicians, scannedJobs: jobs.length, truncated };
+}
+
 async function loadTopCustomerValueRanking(db, intent, todayKey) {
   let fromTs = null;
   let toTs = null;
@@ -773,6 +888,7 @@ async function loadOverview(db, intent, todayKey) {
     payments: [],
     documents: [],
     customers: [],
+    technicians: [],
     stats: {},
     truncated: {},
   };
@@ -783,6 +899,7 @@ async function loadOverview(db, intent, todayKey) {
   const wantsAmc = scopes.has('amc');
   const wantsCustomers = scopes.has('customers');
   const wantsCustomerValueRanking = scopes.has('customer_value_ranking');
+  const wantsTechnicianBillingRanking = scopes.has('technician_billing_ranking');
 
   if (wantsCustomerValueRanking) {
     const ranking = await loadTopCustomerValueRanking(db, intent, todayKey);
@@ -803,6 +920,20 @@ async function loadOverview(db, intent, todayKey) {
     out.stats.customerValueRankingPeriod = intent.explicitDate ? range.label : 'lifetime';
     out.stats.customerValueRankingSource = ranking.source;
     out.truncated.customerValueRanking = ranking.truncated;
+  }
+
+  if (wantsTechnicianBillingRanking) {
+    const ranking = await loadTechnicianBillingRanking(db, intent, todayKey);
+    out.technicians.push(...ranking.technicians);
+    out.stats.technicianBillingRanking = ranking.technicians.map((technician, index) => ({
+      rank: index + 1,
+      ...technician,
+    }));
+    out.stats.technicianBillingPeriod = range.label || 'today';
+    out.stats.technicianBillingCompletedJobsScanned = ranking.scannedJobs;
+    out.stats.technicianBillingBasis =
+      'billedTotal is completed-job billing (payment_amount when positive, otherwise actual_cost); attribution uses completed_by, falling back to assigned_technician_id';
+    out.truncated.technicianBillingRanking = ranking.truncated;
   }
 
   if (wantsJobs) {
@@ -918,7 +1049,12 @@ async function loadOverview(db, intent, todayKey) {
 
   // Ranking-only questions are already answered by one grouped RPC. Avoid the
   // unrelated jobs/reminders/count queries used by the general ops dashboard.
-  if (wantsCustomerValueRanking && scopes.size === 1) {
+  if (
+    (wantsCustomerValueRanking || wantsTechnicianBillingRanking) &&
+    [...scopes].every((scope) =>
+      ['customer_value_ranking', 'technician_billing_ranking'].includes(scope)
+    )
+  ) {
     out.stats.today = todayKey;
     out.stats.rangeLabel = intent.explicitDate ? range.label : 'lifetime';
     return out;
@@ -984,6 +1120,7 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
       reminders: [],
       payments: [],
       documents: [],
+      technicians: [],
       stats: { today: todayKey },
       hints: extractQueryHints(message),
       error: 'Database unavailable',
@@ -996,10 +1133,12 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
   const hasSpecificTarget = Boolean(
     hints.phone || hints.jobNumber || (hints.nameTokens || []).length || focusCustomerId
   );
-  const isCustomerValueRanking = detected.scopes.has('customer_value_ranking');
+  const isRankingIntent =
+    detected.scopes.has('customer_value_ranking') ||
+    detected.scopes.has('technician_billing_ranking');
   const intent = {
     ...detected,
-    active: detected.active && (!hasSpecificTarget || isCustomerValueRanking),
+    active: detected.active && (!hasSpecificTarget || isRankingIntent),
   };
   const customers = await searchCustomers(db, hints, focusCustomerId, {
     allowRawFallback: !intent.active,
@@ -1029,11 +1168,13 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
 
   let stats = { today: todayKey, weekday: istWeekdayName(todayKey) };
   let truncated = {};
+  let technicians = [];
 
   if (intent.active) {
     const overview = await loadOverview(db, intent, todayKey);
     stats = { ...stats, ...overview.stats };
     truncated = overview.truncated || {};
+    technicians = overview.technicians || [];
 
     const jobIds = new Set(jobs.map((j) => j.id));
     for (const job of overview.jobs) {
@@ -1093,6 +1234,7 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
     reminders: reminders.slice(0, reminderCap),
     payments: payments.slice(0, PAYMENT_LIMIT * 2),
     documents: documents.slice(0, DOCUMENT_LIMIT * 2),
+    technicians: technicians.slice(0, TOP_TECHNICIAN_LIMIT),
     stats,
     truncated,
     intent: {
@@ -1121,6 +1263,9 @@ function formatContextForPrompt(pack) {
     const periodLabel =
       pack.intent.scopes.includes('customer_value_ranking') && stats.customerValueRankingPeriod
         ? stats.customerValueRankingPeriod
+        : pack.intent.scopes.includes('technician_billing_ranking') &&
+            stats.technicianBillingPeriod
+          ? stats.technicianBillingPeriod
         : pack.intent.range?.label || 'today';
     lines.push(
       `Interpreted request: ${pack.intent.scopes.join(', ')}; period = ${periodLabel}${
@@ -1168,9 +1313,34 @@ function formatContextForPrompt(pack) {
     }
   }
 
-  if (!pack.customers.length) {
+  if (Array.isArray(stats.technicianBillingRanking)) {
+    lines.push(
+      `Technician billing ranking (${stats.technicianBillingPeriod || 'today'}; authoritative order):`
+    );
+    lines.push(`- Basis: ${stats.technicianBillingBasis}`);
+    if (!stats.technicianBillingRanking.length) {
+      lines.push('- No completed jobs attributable to a technician were found in this period.');
+    }
+    for (const row of stats.technicianBillingRanking) {
+      lines.push(
+        `- rank=${row.rank}; technicianId=${row.technicianId}; employeeId=${row.employeeId || '—'}; name=${row.name}; completedJobBilledINR=${row.billedTotal}; completedJobs=${row.completedJobs}`
+      );
+    }
+    if (pack.truncated?.technicianBillingRanking) {
+      lines.push('- Warning: technician billing scan hit its safety cap; ranking may be incomplete.');
+    }
+  }
+
+  const scopes = new Set(pack.intent?.scopes || []);
+  const isTargetedLookup = scopes.size === 0;
+  const showCustomers =
+    isTargetedLookup || scopes.has('customers') || scopes.has('customer_value_ranking');
+  const showJobs =
+    isTargetedLookup || scopes.has('jobs') || scopes.has('summary') || scopes.has('revenue');
+
+  if (showCustomers && !pack.customers.length) {
     lines.push('Customers: (none matched)');
-  } else {
+  } else if (showCustomers) {
     lines.push('Customers:');
     for (const c of pack.customers) {
       lines.push(
@@ -1179,9 +1349,9 @@ function formatContextForPrompt(pack) {
     }
   }
 
-  if (!pack.jobs.length) {
+  if (showJobs && !pack.jobs.length) {
     lines.push('Jobs: (none matched)');
-  } else {
+  } else if (showJobs) {
     lines.push('Jobs:');
     for (const j of pack.jobs) {
       lines.push(
@@ -1226,10 +1396,12 @@ module.exports = {
   JOB_LIMIT,
   OVERVIEW_JOB_LIMIT,
   TOP_CUSTOMER_LIMIT,
+  TOP_TECHNICIAN_LIMIT,
   ONGOING_JOB_STATUSES,
   extractQueryHints,
   detectOverviewIntent,
   detectCustomerValueRanking,
+  detectTechnicianBillingRanking,
   resolveCompletedJobValue,
   istDateKey,
   addDaysKey,

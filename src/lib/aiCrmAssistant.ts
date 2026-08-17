@@ -80,6 +80,14 @@ export type AiCrmDocumentEntity = {
   createdAt?: string | null;
 };
 
+export type AiCrmTechnicianEntity = {
+  technicianId: string;
+  employeeId?: string | null;
+  name: string;
+  billedTotal: number;
+  completedJobs: number;
+};
+
 export type AiCrmCreateJobDraft = {
   customerId: string;
   serviceType?: 'RO' | 'SOFTENER';
@@ -161,6 +169,7 @@ export type AiCrmChatResult =
         reminders: AiCrmReminderEntity[];
         payments: AiCrmPaymentEntity[];
         documents: AiCrmDocumentEntity[];
+        technicians: AiCrmTechnicianEntity[];
       };
       proposedActions: AiCrmProposedAction[];
       meta: {
@@ -228,6 +237,7 @@ export async function requestAiCrmChat(opts: {
         reminders: Array.isArray(data.entities?.reminders) ? data.entities.reminders : [],
         payments: Array.isArray(data.entities?.payments) ? data.entities.payments : [],
         documents: Array.isArray(data.entities?.documents) ? data.entities.documents : [],
+        technicians: Array.isArray(data.entities?.technicians) ? data.entities.technicians : [],
       },
       proposedActions,
       meta: {
