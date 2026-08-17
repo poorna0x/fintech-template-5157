@@ -17,8 +17,12 @@
  *   GEMINI_API_KEY=...
  *   GROQ_API_KEY=...
  *   AI_ASSISTANT_MODEL=gemini-2.5-flash
+ *   AI_ASSISTANT_FALLBACK_CHAIN=none|off|[]  (disable auto cross-provider fallback)
  *   AI_ASSISTANT_DAILY_REQUESTS=80
  *   AI_ASSISTANT_DAILY_TOKENS=200000
+ *
+ * Default: Gemini primary may fall back to another Gemini model then Groq.
+ * Groq primary does NOT auto-fall back to Gemini (avoids surprise Google spend).
  */
 
 const { getServiceSupabase } = require('./whatsapp-helper');
@@ -87,6 +91,20 @@ function normalizePositiveInt(raw, fallback, max) {
   return Math.min(max, Math.floor(n));
 }
 
+function parseFallbackChainHint(raw) {
+  if (raw == null) return undefined;
+  if (Array.isArray(raw)) return raw;
+  const text = String(raw).trim();
+  if (!text) return undefined;
+  if (/^(?:none|off|false|0|\[\]|null)$/i.test(text)) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function normalizeFallbackChain(rawChain, context) {
   const {
     primaryProvider,
@@ -95,6 +113,8 @@ function normalizeFallbackChain(rawChain, context) {
     groqApiKey,
   } = context;
   const explicit = Array.isArray(rawChain);
+  // Groq-primary stays Groq-only unless an admin explicitly configures a fallback.
+  // Auto Gemini fallback after Groq errors was silently burning Google spend.
   const candidates = explicit
     ? rawChain
     : primaryProvider === 'gemini'
@@ -104,9 +124,7 @@ function normalizeFallbackChain(rawChain, context) {
             : [{ provider: 'gemini', model: DEFAULT_GEMINI_FALLBACK_MODEL }]),
           ...(groqApiKey ? [{ provider: 'groq', model: DEFAULT_GROQ_MODEL }] : []),
         ]
-      : primaryProvider === 'groq' && geminiApiKey
-        ? [{ provider: 'gemini', model: DEFAULT_GEMINI_FALLBACK_MODEL }]
-        : [];
+      : [];
 
   const seen = new Set([`${primaryProvider}:${primaryModel}`]);
   const normalized = [];
@@ -209,6 +227,7 @@ function getConfigFromEnv() {
       geminiApiKey,
       groqApiKey,
       model: process.env.AI_ASSISTANT_MODEL,
+      fallbackChain: parseFallbackChainHint(process.env.AI_ASSISTANT_FALLBACK_CHAIN),
       dailyRequestLimit: process.env.AI_ASSISTANT_DAILY_REQUESTS,
       dailyTokenLimit: process.env.AI_ASSISTANT_DAILY_TOKENS,
     },
@@ -392,6 +411,15 @@ async function saveAiAssistantModelSelection({ provider, model }) {
   if (groqApiKey) {
     merged.groqApiKey = groqApiKey;
     delete merged.groq_api_key;
+  }
+  // Choosing Groq explicitly means Groq-only until Gemini is selected again.
+  // Prevent leftover auto Gemini fallback from continuing to bill Google.
+  if (nextProvider === 'groq') {
+    merged.fallbackChain = [];
+  } else if (nextProvider === 'gemini' && Array.isArray(existing.fallbackChain)) {
+    merged.fallbackChain = existing.fallbackChain;
+  } else if (nextProvider === 'gemini') {
+    delete merged.fallbackChain;
   }
   delete merged.tools;
   delete merged.systemInstruction;

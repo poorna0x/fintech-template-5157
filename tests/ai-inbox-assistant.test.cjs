@@ -203,6 +203,7 @@ function testProviderAllowlist() {
   const groqConfig = normalizeConfig(
     {
       provider: 'groq',
+      geminiApiKey: 'gemini-test-key',
       groqApiKey: 'groq-test-key',
       model: 'openai/gpt-oss-120b',
     },
@@ -210,6 +211,24 @@ function testProviderAllowlist() {
   );
   assert.equal(groqConfig.provider, 'groq');
   assert.equal(groqConfig.model, 'openai/gpt-oss-120b');
+  assert.deepEqual(groqConfig.fallbackChain, []);
+  assert.deepEqual(buildProviderAttempts(groqConfig), [
+    { provider: 'groq', model: 'openai/gpt-oss-120b' },
+  ]);
+
+  const groqWithExplicitGeminiFallback = normalizeConfig(
+    {
+      provider: 'groq',
+      geminiApiKey: 'gemini-test-key',
+      groqApiKey: 'groq-test-key',
+      model: 'openai/gpt-oss-120b',
+      fallbackChain: [{ provider: 'gemini', model: 'gemini-3.1-flash-lite' }],
+    },
+    'env'
+  );
+  assert.deepEqual(groqWithExplicitGeminiFallback.fallbackChain, [
+    { provider: 'gemini', model: 'gemini-3.1-flash-lite' },
+  ]);
 }
 
 async function testMockProviderStructuredOutput() {
