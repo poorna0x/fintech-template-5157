@@ -69,6 +69,10 @@ import {
   documentAddressForChoice,
   type DocumentAddressChoice,
 } from '@/components/document/DocumentAddressSelector';
+import {
+  getPrimaryLocationLabel,
+  getSecondaryLocationLabel,
+} from '@/lib/customer-locations';
 
 type BillMode = 'normal' | 'set';
 type ExtraChargeKind = 'service' | 'visiting';
@@ -990,8 +994,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Name and phone are enough. Choose Primary or Secondary above to print an address,
-                  or keep Omit address.
+                  Name and phone are enough. Pick a site above to print its address, or choose No
+                  address.
                 </p>
               </div>
             ) : (
@@ -1003,7 +1007,15 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                   {editableCustomer.gst && <div>GST: {editableCustomer.gst}</div>}
                   {addressChoice !== 'omit' ? (
                     <div>
-                      Address:{' '}
+                      Address
+                      {customer
+                        ? ` (${
+                            addressChoice === 'secondary'
+                              ? getSecondaryLocationLabel(customer)
+                              : getPrimaryLocationLabel(customer)
+                          })`
+                        : ''}
+                      :{' '}
                       {[
                         editableCustomer.address.street,
                         editableCustomer.address.area,

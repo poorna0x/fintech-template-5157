@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { AddressChoiceCards } from '@/components/document/DocumentAddressSelector';
 import {
   Select,
   SelectContent,
@@ -215,6 +216,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     customerId: string;
     primary: DirectSaleAddress;
     secondary: DirectSaleAddress | null;
+    primaryLabel: string;
+    secondaryLabel: string;
   } | null>(null);
   const [billMode, setBillMode] = useState<BillPriceMode>('set');
   /** Per-line sell prices (inventory id / custom id → text). Used in Normal mode. */
@@ -282,7 +285,13 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       const primary = normalizeDirectSaleAddress(row.address);
       const secondaryRaw = normalizeDirectSaleAddress(row.alternate_address);
       const secondary = directSaleAddressLabel(secondaryRaw) ? secondaryRaw : null;
-      setMatchedAddresses({ customerId: String(row.id), primary, secondary });
+      setMatchedAddresses({
+        customerId: String(row.id),
+        primary,
+        secondary,
+        primaryLabel: String(row.visible_address || '').trim() || 'Primary',
+        secondaryLabel: String(row.alternate_visible_address || '').trim() || 'Secondary',
+      });
       setAddressChoice('omit');
       setCustomerName((prev) => prev.trim() || String(row.full_name || ''));
     })();
@@ -1111,31 +1120,34 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
               sale bucket.
             </p>
             {matchedAddresses ? (
-              <div className="space-y-1.5">
-                <Label>Address for bill</Label>
-                <Select
-                  value={addressChoice}
-                  onValueChange={(raw) => setAddressChoice(raw as DirectSaleAddressChoice)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="omit">Omit address</SelectItem>
-                    <SelectItem value="primary">
-                      Primary
-                      {directSaleAddressLabel(matchedAddresses.primary)
-                        ? ` · ${directSaleAddressLabel(matchedAddresses.primary)}`
-                        : ' · No address saved'}
-                    </SelectItem>
-                    {matchedAddresses.secondary ? (
-                      <SelectItem value="secondary">
-                        Secondary · {directSaleAddressLabel(matchedAddresses.secondary)}
-                      </SelectItem>
-                    ) : null}
-                  </SelectContent>
-                </Select>
-              </div>
+              <AddressChoiceCards<DirectSaleAddressChoice>
+                label="Address for bill"
+                value={addressChoice}
+                options={[
+                  {
+                    value: 'primary' as DirectSaleAddressChoice,
+                    title: matchedAddresses.primaryLabel,
+                    subtitle:
+                      directSaleAddressLabel(matchedAddresses.primary) || 'No address saved',
+                  },
+                  ...(matchedAddresses.secondary
+                    ? [
+                        {
+                          value: 'secondary' as DirectSaleAddressChoice,
+                          title: matchedAddresses.secondaryLabel,
+                          subtitle: directSaleAddressLabel(matchedAddresses.secondary),
+                        },
+                      ]
+                    : []),
+                  {
+                    value: 'omit' as DirectSaleAddressChoice,
+                    title: 'No address',
+                    subtitle: 'Print name and phone only',
+                    icon: 'omit' as const,
+                  },
+                ]}
+                onSelect={setAddressChoice}
+              />
             ) : null}
 
             <div className="space-y-2">

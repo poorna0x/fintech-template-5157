@@ -73,6 +73,7 @@ import {
 } from '@/lib/service-brands';
 import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
 import { filterInventoryByApproxSearch } from '@/lib/inventorySearch';
+import { AddressChoiceCards } from '@/components/document/DocumentAddressSelector';
 
 const DEFAULT_WARRANTY_CARD_BRAND: DocumentBrand = 'elevenro';
 
@@ -97,6 +98,8 @@ interface SelectedCustomer extends CustomerPick {
   addressText: string;
   primaryAddressText: string;
   secondaryAddressText: string;
+  primaryAddressLabel: string;
+  secondaryAddressLabel: string;
   email?: string | null;
 }
 
@@ -335,6 +338,10 @@ export default function WarrantyManagementDialog({
         addressText: primaryAddressText,
         primaryAddressText,
         secondaryAddressText,
+        primaryAddressLabel:
+          String(addrRow.visible_address || pick.visible_address || '').trim() || 'Primary',
+        secondaryAddressLabel:
+          String(addrRow.alternate_visible_address || '').trim() || 'Secondary',
         email: typeof addrRow.email === 'string' ? addrRow.email : null,
       });
       setAddressChoice('primary');
@@ -935,12 +942,23 @@ export default function WarrantyManagementDialog({
                     {customer.customer_id} · {customer.phone}
                   </p>
                   {customer.secondaryAddressText ? (
-                    <div className="mt-2 max-w-md space-y-1">
-                      <Label className="text-xs">Address for warranty card</Label>
-                      <Select
+                    <div className="mt-2 max-w-xl">
+                      <AddressChoiceCards
+                        label="Address for warranty card"
                         value={addressChoice}
-                        onValueChange={(raw) => {
-                          const choice = raw === 'secondary' ? 'secondary' : 'primary';
+                        options={[
+                          {
+                            value: 'primary',
+                            title: customer.primaryAddressLabel,
+                            subtitle: customer.primaryAddressText || 'No address saved',
+                          },
+                          {
+                            value: 'secondary',
+                            title: customer.secondaryAddressLabel,
+                            subtitle: customer.secondaryAddressText,
+                          },
+                        ]}
+                        onSelect={(choice) => {
                           setAddressChoice(choice);
                           setCustomer((prev) =>
                             prev
@@ -954,19 +972,7 @@ export default function WarrantyManagementDialog({
                               : prev
                           );
                         }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="primary">
-                            Primary · {customer.primaryAddressText || 'No address saved'}
-                          </SelectItem>
-                          <SelectItem value="secondary">
-                            Secondary · {customer.secondaryAddressText}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                      />
                     </div>
                   ) : null}
                   {customer.addressText && (
