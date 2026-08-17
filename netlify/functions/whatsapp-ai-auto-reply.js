@@ -22,6 +22,9 @@ const SENSITIVE_RE =
   /₹|\brs\.?\s*\d|\b(?:price|pricing|cost|charge|charges|quote|quotation|estimate|discount|offer|payment|paid|refund|invoice|bill|gst|upi|cash|complaint|angry|fraud|legal|consumer court|guarantee|promise|compensation|cancel|cancellation|warranty claim|when will|what time|how long|eta|technician arrive)\b/i;
 const BOOKING_RE =
   /\b(?:book|booking|appointment|schedule|reschedule|visit|send technician|need technician|service tomorrow|service today)\b/i;
+/** Greetings and menu words belong to the deterministic booking bot. */
+const GREETING_RE =
+  /^(?:hi|hey|hello|hii+|hlo|namaste|start|menu|help|good\s*(?:morning|afternoon|evening)|yes|no|ok|okay|thanks?|thank you)[\s!.]*$/i;
 const OUTPUT_RESTRICTED_RE =
   /₹|\brs\.?\b|\b\d+\s*(?:minutes?|hours?|days?)\b|\b(?:price|cost|charge|payment|refund|guarantee|promise|definitely|technician will|will arrive|confirmed booking|job is booked)\b/i;
 
@@ -35,6 +38,9 @@ function classifyAutoReplyInbound({ msgType, text, priorBotState }) {
   }
   const clean = String(text || '').trim();
   if (!clean) return { action: 'yield', reason: 'empty_message' };
+  if (GREETING_RE.test(clean)) {
+    return { action: 'yield', reason: 'greeting_or_menu' };
+  }
   if (SENSITIVE_RE.test(clean)) {
     return { action: 'escalate', reason: 'sensitive_or_commitment_request' };
   }
@@ -177,9 +183,19 @@ async function handleWhatsAppAiAutoReplyInbound({
     claimed = await claimInbound(db, msg.id, phone);
   } catch (error) {
     console.warn('[whatsapp-ai-auto-reply] claim failed', error?.message || error);
-    return { handled: true, escalated: true, reason: 'claim_failed' };
+    return { handled: false, escalated: true, reason: 'claim_failed' };
   }
-  if (!claimed) return { handled: true, duplicate: true, reason: 'duplicate' };
+  if (!claimed) {
+    // Meta retried this message. Only keep ownership if we already replied,
+    // otherwise let the deterministic bot run exactly as it would have.
+    const { data: prior } = await db
+      .from('whatsapp_ai_auto_reply_claims')
+      .select('status')
+      .eq('inbound_wa_message_id', msg.id)
+      .maybeSingle();
+    const alreadyReplied = prior?.status === 'sent' || prior?.status === 'processing';
+    return { handled: alreadyReplied, duplicate: true, reason: 'duplicate' };
+  }
 
   if (classification.action === 'yield') {
     await updateClaim(db, msg.id, 'yielded', classification.reason);
@@ -187,13 +203,13 @@ async function handleWhatsAppAiAutoReplyInbound({
   }
   if (classification.action === 'escalate') {
     await updateClaim(db, msg.id, 'escalated', classification.reason);
-    return { handled: true, escalated: true, reason: classification.reason };
+    return { handled: false, escalated: true, reason: classification.reason };
   }
 
   const config = await getAiAssistantConfig();
   if (!config) {
     await updateClaim(db, msg.id, 'failed', 'ai_not_configured');
-    return { handled: true, escalated: true, reason: 'ai_not_configured' };
+    return { handled: false, escalated: true, reason: 'ai_not_configured' };
   }
 
   const dayKey = localDayKey();
@@ -210,7 +226,7 @@ async function handleWhatsAppAiAutoReplyInbound({
   });
   if (!quota.ok || (quota.skipped && process.env.CONTEXT === 'production')) {
     await updateClaim(db, msg.id, 'escalated', quota.error || 'quota_unavailable');
-    return { handled: true, escalated: true, reason: 'quota_unavailable' };
+    return { handled: false, escalated: true, reason: 'quota_unavailable' };
   }
 
   const started = Date.now();
@@ -258,7 +274,7 @@ async function handleWhatsAppAiAutoReplyInbound({
     if (!decision.shouldSend) {
       status = 'ok';
       await updateClaim(db, msg.id, 'escalated', decision.reason || 'model_requires_human');
-      return { handled: true, escalated: true, reason: 'model_requires_human' };
+      return { handled: false, escalated: true, reason: 'model_requires_human' };
     }
 
     const sent = await sendText({
@@ -276,7 +292,7 @@ async function handleWhatsAppAiAutoReplyInbound({
     errorCategory = 'auto_reply_failed';
     await updateClaim(db, msg.id, 'failed', error?.message || 'auto reply failed');
     console.warn('[whatsapp-ai-auto-reply] failed', error?.message || error);
-    return { handled: true, escalated: true, reason: 'auto_reply_failed' };
+    return { handled: false, escalated: true, reason: 'auto_reply_failed' };
   } finally {
     await finalizeAiInvocation({
       invocationId: quota.invocationId,

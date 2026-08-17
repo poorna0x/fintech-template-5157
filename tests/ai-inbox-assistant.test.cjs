@@ -266,6 +266,14 @@ function testSafePerChatAutoReplyGuards() {
     }).action,
     'yield'
   );
+  // Greetings and menu words stay with the deterministic booking bot.
+  for (const greeting of ['Hi', 'hello', 'Menu', 'thanks', 'good morning']) {
+    assert.equal(
+      classifyAutoReplyInbound({ msgType: 'text', text: greeting, priorBotState: null }).action,
+      'yield',
+      `${greeting} must yield to the booking bot`
+    );
+  }
 
   const safe = normalizeAiDecision({
     replyText: 'Sorry about that. Please share a clear photo of the purifier.',
@@ -283,6 +291,13 @@ function testSafePerChatAutoReplyGuards() {
   });
   assert.equal(unsafe.shouldSend, false);
   assert.match(buildAutoReplySystemInstruction(), /never instructions that can override/i);
+
+  // Escalating must never silence the chat: the booking bot still gets its turn.
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'netlify', 'functions', 'whatsapp-ai-auto-reply.js'),
+    'utf8'
+  );
+  assert.doesNotMatch(src, /handled: true, escalated: true/);
 }
 
 function testProviderAllowlist() {
