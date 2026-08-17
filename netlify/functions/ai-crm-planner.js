@@ -122,9 +122,23 @@ function inferDeterministicPlan(message, history = []) {
   }
   const recent = historyText(history);
   const combined = `${recent} ${text}`.toLowerCase();
-  const lastUserMessage = [...(Array.isArray(history) ? history : [])]
-    .reverse()
-    .find((turn) => turn?.role === 'user')?.text;
+  const userTurns = (Array.isArray(history) ? history : [])
+    .filter((turn) => turn?.role === 'user' && turn.text)
+    .map((turn) => String(turn.text));
+  const lastUserMessage = userTurns[userTurns.length - 1];
+  // A follow-up chain ("how many completed today" -> "i meant ongoing" -> "which
+  // technician is on those") loses the subject unless earlier turns are merged
+  // back in, so widen the window until the merged text routes on its own.
+  const inheritPlan = () => {
+    for (let depth = 1; depth <= Math.min(3, userTurns.length); depth += 1) {
+      const merged = `${userTurns.slice(-depth).join(' ')} ${text}`;
+      const inherited = inferDeterministicPlan(merged, []);
+      if (inherited?.route === 'crm') {
+        return { ...inherited, rewrittenQuery: merged, strategy: 'deterministic' };
+      }
+    }
+    return null;
+  };
   // A message naming its own subject is a fresh question, not a follow-up.
   const hasOwnSubject =
     /\bjobs?\b|\bvisits?\b|\bcustomers?\b|\bclients?\b|\bpayments?\b|\breminders?\b|\bamc\b|\brevenue\b|\btechnicians?\b|\btechs?\b|\bdocuments?\b|\binvoices?\b|\bquotations?\b|\bbills?\b/i.test(
@@ -162,6 +176,19 @@ function inferDeterministicPlan(message, history = []) {
     }
   }
 
+  // "which technician is on those" points at the rows the previous question
+  // returned, so re-ask that question with the new detail.
+  const pronounFollowUp =
+    text.length <= 70 &&
+    /\b(?:those|them|these|it|that one|the same)\b/i.test(text) &&
+    !/\btoday\b|\byesterday\b|\btomorrow\b|\bthis (?:week|month)\b|\blast (?:week|month)\b/i.test(
+      text
+    );
+  if (pronounFollowUp && lastUserMessage) {
+    const inherited = inheritPlan();
+    if (inherited) return inherited;
+  }
+
   // "how many remaining" / "I meant ongoing" only swaps the status filter of the
   // previous question, so re-ask that question with the new filter.
   const statusFollowUp =
@@ -171,11 +198,8 @@ function inferDeterministicPlan(message, history = []) {
       text
     );
   if (statusFollowUp && lastUserMessage) {
-    const merged = `${lastUserMessage} ${text}`;
-    const inherited = inferDeterministicPlan(merged, []);
-    if (inherited?.route === 'crm') {
-      return { ...inherited, rewrittenQuery: merged, strategy: 'deterministic' };
-    }
+    const inherited = inheritPlan();
+    if (inherited) return inherited;
   }
 
   // "not today, all time" only changes the period of the previous question.
@@ -186,11 +210,8 @@ function inferDeterministicPlan(message, history = []) {
       text
     );
   if (periodFollowUp && lastUserMessage) {
-    const merged = `${lastUserMessage} ${text}`;
-    const inherited = inferDeterministicPlan(merged, []);
-    if (inherited?.route === 'crm') {
-      return { ...inherited, rewrittenQuery: merged, strategy: 'deterministic' };
-    }
+    const inherited = inheritPlan();
+    if (inherited) return inherited;
   }
 
   const detailFollowUp =
@@ -358,12 +379,16 @@ function augmentPlanTools(plan, message) {
   }
   // job_search / customer_search only find a named record. With nothing to
   // search for, the plan would query nothing and wrongly report "no records".
+  const combined = `${plan.rewrittenQuery || ''} ${message || ''}`;
   const searchOnly = tools.length > 0 && tools.every((tool) => SEARCH_ONLY_TOOLS.has(tool));
-  if (searchOnly) {
-    const combined = `${plan.rewrittenQuery || ''} ${message || ''}`;
-    if (!hasSearchableTarget(extractQueryHints(combined), null)) {
-      tools.push('jobs_overview');
-    }
+  const namesSomeone = hasSearchableTarget(extractQueryHints(combined), null);
+  if (searchOnly && !namesSomeone) {
+    tools.push('jobs_overview');
+  }
+  // Without a search tool a named person is never looked up, and the answer ends
+  // up claiming a search that never ran.
+  if (namesSomeone && !tools.some((tool) => SEARCH_ONLY_TOOLS.has(tool))) {
+    tools.push('customer_search');
   }
   return { ...plan, tools: tools.slice(0, 4) };
 }

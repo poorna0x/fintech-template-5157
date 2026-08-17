@@ -20,6 +20,7 @@ const AMC_EXPIRY_LOOKAHEAD_DAYS = 45;
 const TOP_CUSTOMER_LIMIT = 10;
 const TOP_TECHNICIAN_LIMIT = 10;
 const TECHNICIAN_BILLING_SCAN_LIMIT = 1000;
+const REVENUE_SCAN_LIMIT = 2000;
 const FUZZY_NAME_SCAN_LIMIT = 40;
 const NAMED_CUSTOMER_VALUE_SCAN_LIMIT = 600;
 const TECHNICIAN_TOP_JOB_SCAN = 25;
@@ -136,6 +137,13 @@ const NAME_STOP_WORDS = new Set(
     'bye', 'cool', 'everything', 'fine', 'good', 'great', 'greetings', 'hai', 'hello', 'hey',
     'hii', 'hiii', 'holdon', 'hola', 'namaste', 'nice', 'okay', 'okey', 'please', 'sorry',
     'sure', 'thank', 'thanks', 'thankyou', 'there', 'welcome', 'yeah', 'yes',
+    // Ranking follow-ups ("who is second") point at the previous list, not a person.
+    'best', 'compare', 'comparison', 'expect', 'estimate', 'first', 'forecast', 'growth',
+    'least', 'less', 'other', 'project', 'projection', 'rank', 'ranking', 'second', 'smallest',
+    'third', 'trend', 'versus', 'worst',
+    // Pronouns point back at the previous answer, never at a person to search.
+    'both', 'each', 'everyone', 'him', 'his', 'it', 'its', 'none', 'one', 'ones', 'people',
+    'same', 'she', 'somebody', 'someone', 'such', 'they', 'those',
   ].map((w) => w.toLowerCase())
 );
 
@@ -260,6 +268,14 @@ function addDaysKey(dateKey, days) {
   const d = new Date(`${dateKey}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+/** Inclusive day count between two YYYY-MM-DD keys. */
+function dayCountBetween(startKey, endKey) {
+  const start = Date.parse(`${startKey}T00:00:00Z`);
+  const end = Date.parse(`${endKey}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 1;
+  return Math.max(1, Math.round((end - start) / 86400000) + 1);
 }
 
 function monthBoundsKey(dateKey, monthOffset = 0) {
@@ -457,6 +473,15 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
       ? 'billed'
       : 'paid';
 
+  // Trend and forecast facts cost extra queries and clutter a plain "how much
+  // today", so only gather them when the question actually asks.
+  const wantsComparison = has(
+    /\bcompare|\bcomparison\b|\bversus\b|\bvs\.?\b|\bgrowth\b|\bgrew\b|\btrend|\bbetter\b|\bworse\b|\bup or down\b|\bthan (?:last|previous)\b|\bagainst (?:last|previous)\b/
+  );
+  const wantsProjection = has(
+    /\bproject|\bforecast|\bestimate|\bexpect|\bon track\b|\brun[\s-]?rate\b|\bend (?:of|up)\b|\bwill (?:it|we|this)\b|\bcan be\b|\bcould be\b|\bmight be\b|\blikely\b|\bpace\b/
+  );
+
   return {
     scopes,
     statuses,
@@ -464,6 +489,8 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     explicitDate,
     allTime,
     rankingBasis,
+    wantsComparison,
+    wantsProjection,
     active: scopes.size > 0,
   };
 }
@@ -1620,17 +1647,86 @@ async function loadOverview(db, intent, todayKey) {
   }
 
   if (scopes.has('revenue') || scopes.has('summary')) {
-    const { data, error } = await withDayBounds(
-      db.from('jobs').select('payment_amount, actual_cost').eq('status', 'COMPLETED'),
-      'completed_at'
-    ).limit(500);
-    if (error) console.warn('[ai-crm-lookup] revenue failed', error.message);
-    let sum = 0;
-    for (const row of data || []) {
-      const n = Number(row.payment_amount ?? row.actual_cost);
-      if (Number.isFinite(n)) sum += n;
+    const sumCompletedValue = async (fromTs, toTs) => {
+      let query = db.from('jobs').select('payment_amount, actual_cost').eq('status', 'COMPLETED');
+      if (fromTs && toTs) query = query.gte('completed_at', fromTs).lt('completed_at', toTs);
+      const { data, error } = await query.limit(REVENUE_SCAN_LIMIT);
+      if (error) {
+        console.warn('[ai-crm-lookup] revenue failed', error.message);
+        return null;
+      }
+      let sum = 0;
+      for (const row of data || []) {
+        const n = Number(row.payment_amount ?? row.actual_cost);
+        if (Number.isFinite(n)) sum += n;
+      }
+      if ((data || []).length >= REVENUE_SCAN_LIMIT) out.truncated.revenue = true;
+      return Math.round(sum);
+    };
+
+    const value = await sumCompletedValue(dayBounds.fromTs, dayBounds.toTs);
+    if (value != null) out.stats.completedJobValueInRange = value;
+
+    const wantsTrend = intent.wantsComparison || intent.wantsProjection;
+    if (
+      value != null &&
+      wantsTrend &&
+      scopes.has('revenue') &&
+      !intent.allTime &&
+      range.start &&
+      range.end
+    ) {
+      const periodDays = dayCountBetween(range.start, range.end);
+      const previousEnd = addDaysKey(range.start, -1);
+      const previousStart = addDaysKey(previousEnd, -(periodDays - 1));
+      if (intent.wantsComparison) {
+        const previousBounds = istDayBounds(previousStart, previousEnd);
+        const previousValue = await sumCompletedValue(previousBounds.fromTs, previousBounds.toTs);
+        if (previousValue != null) {
+          out.stats.completedJobValuePrevious = {
+            label: `${previousStart} to ${previousEnd}`,
+            value: previousValue,
+            changePct:
+              previousValue > 0
+                ? Math.round(((value - previousValue) / previousValue) * 1000) / 10
+                : null,
+          };
+        }
+      }
+      // Straight-line run rate, only while the period is still running.
+      if (range.start <= todayKey && range.end > todayKey) {
+        const elapsedDays = dayCountBetween(range.start, todayKey);
+        if (elapsedDays > 0 && value > 0) {
+          const perDay = value / elapsedDays;
+          if (intent.wantsProjection) {
+            out.stats.completedJobValueProjection = {
+              elapsedDays,
+              periodDays,
+              perDay: Math.round(perDay),
+              projectedPeriodTotal: Math.round(perDay * periodDays),
+            };
+          }
+          // A part-month total only compares fairly with the same part of the
+          // previous period.
+          const priorPartialEnd = addDaysKey(previousStart, elapsedDays - 1);
+          const priorPartialBounds = istDayBounds(previousStart, priorPartialEnd);
+          const priorPartialValue = await sumCompletedValue(
+            priorPartialBounds.fromTs,
+            priorPartialBounds.toTs
+          );
+          if (priorPartialValue != null) {
+            out.stats.completedJobValuePreviousToDate = {
+              label: `${previousStart} to ${priorPartialEnd}`,
+              value: priorPartialValue,
+              changePct:
+                priorPartialValue > 0
+                  ? Math.round(((value - priorPartialValue) / priorPartialValue) * 1000) / 10
+                  : null,
+            };
+          }
+        }
+      }
     }
-    out.stats.completedJobValueInRange = Math.round(sum);
   }
 
   return out;
@@ -1922,6 +2018,26 @@ function formatContextForPrompt(pack) {
   if (stats.completedJobValueInRange != null)
     statLines.push(
       `billed value of jobs completed in period (INR, may include not-yet-collected amounts) = ${stats.completedJobValueInRange}`
+    );
+  if (stats.completedJobValuePrevious)
+    statLines.push(
+      `same-length previous period (${stats.completedJobValuePrevious.label}) billed INR ${stats.completedJobValuePrevious.value}${
+        stats.completedJobValuePrevious.changePct != null
+          ? `, change ${stats.completedJobValuePrevious.changePct > 0 ? '+' : ''}${stats.completedJobValuePrevious.changePct}%`
+          : ''
+      }`
+    );
+  if (stats.completedJobValuePreviousToDate)
+    statLines.push(
+      `same elapsed window of the previous period (${stats.completedJobValuePreviousToDate.label}) billed INR ${stats.completedJobValuePreviousToDate.value}${
+        stats.completedJobValuePreviousToDate.changePct != null
+          ? `, change ${stats.completedJobValuePreviousToDate.changePct > 0 ? '+' : ''}${stats.completedJobValuePreviousToDate.changePct}%`
+          : ''
+      } — this is the fair like-for-like comparison while the period is still running`
+    );
+  if (stats.completedJobValueProjection)
+    statLines.push(
+      `straight-line projection for the full period = INR ${stats.completedJobValueProjection.projectedPeriodTotal} (${stats.completedJobValueProjection.elapsedDays} of ${stats.completedJobValueProjection.periodDays} days elapsed, INR ${stats.completedJobValueProjection.perDay} per day so far) — state it as an estimate at the current run rate`
     );
   if (stats.pendingPaymentsListed != null)
     statLines.push(

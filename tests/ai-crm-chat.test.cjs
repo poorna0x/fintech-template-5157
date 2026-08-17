@@ -181,6 +181,31 @@ function testPeriodAndRankingBasisFollowTheQuestion() {
   );
 }
 
+function testTrendFactsOnlyWhenAsked() {
+  const plain = detectOverviewIntent('revenue this month', '2026-08-17');
+  assert.equal(plain.wantsProjection, false);
+  assert.equal(plain.wantsComparison, false);
+
+  const forecast = detectOverviewIntent(
+    'how much revneue this month happend and what do you project how much it can be',
+    '2026-08-17'
+  );
+  assert.equal(forecast.wantsProjection, true);
+  assert.equal(forecast.range.start, '2026-08-01');
+
+  assert.equal(
+    detectOverviewIntent('how does revenue compare with last month', '2026-08-17').wantsComparison,
+    true
+  );
+}
+
+function testRankingFollowUpsAreNotTreatedAsNames() {
+  // "who is second" ranks the previous list; it must never become a name search.
+  for (const message of ['who is second', 'which technician is on those', 'compare them']) {
+    assert.deepEqual(extractQueryHints(message).nameTokens, [], message);
+  }
+}
+
 function testAllTimeRangeIsSupported() {
   const allTime = detectOverviewIntent(
     'technician jyotirling highest billing in entire all time',
@@ -258,6 +283,20 @@ function testDeterministicFastRoutesStayReadOnlyAndNarrow() {
   assert.deepEqual(allTime.tools, ['technician_billing_ranking']);
   assert.match(allTime.rewrittenQuery, /jyotirling/i);
   assert.match(allTime.rewrittenQuery, /all time/i);
+
+  // "which technician is on those" must reach back past the correction turn to
+  // the question that produced the rows.
+  const pronoun = inferDeterministicPlan('which technician is on those', [
+    { role: 'user', text: 'how many jobs completed today' },
+    { role: 'assistant', text: '4 jobs were completed today.' },
+    { role: 'user', text: 'i meant ongoing' },
+    { role: 'assistant', text: 'There are 3 ongoing jobs today.' },
+  ]);
+  assert.deepEqual(pronoun.tools, ['jobs_overview']);
+  assert.deepEqual(
+    detectOverviewIntent(pronoun.rewrittenQuery, '2026-08-17').statuses,
+    ONGOING_JOB_STATUSES
+  );
 
   assert.deepEqual(inferDeterministicPlan('pending payments').tools, ['payments']);
   assert.deepEqual(inferDeterministicPlan('AMC expiring this month').tools, ['amc']);
@@ -685,6 +724,8 @@ async function main() {
   testDeterministicFastRoutesStayReadOnlyAndNarrow();
   testMisspelledNamesResolveWithoutMatchingSentenceGlue();
   testAllTimeRangeIsSupported();
+  testTrendFactsOnlyWhenAsked();
+  testRankingFollowUpsAreNotTreatedAsNames();
   testFreshQuestionsAreNotTreatedAsFollowUps();
   testPeriodAndRankingBasisFollowTheQuestion();
   testShortMessageRejected();

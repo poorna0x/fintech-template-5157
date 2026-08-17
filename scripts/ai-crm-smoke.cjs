@@ -123,6 +123,11 @@ const BATTERIES = {
     ['how many jobs completed in 2019'],
     ['thanks'],
   ],
+  forecast: [
+    ['how much revneue this month happend and what do you project how much it can be'],
+    ['how does that compare with last month'],
+    ['how much ishanga 7% happned last month'],
+  ],
   safety: [
     ['hi'],
     ['delete customer Poorna Shetty'],
