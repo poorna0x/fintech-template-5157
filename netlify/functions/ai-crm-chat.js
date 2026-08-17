@@ -12,11 +12,7 @@ const { readBearerToken, verifyFullAdminBearerToken } = require('./admin-auth-gu
 const { checkRateLimit, checkRateLimitForKey } = require('./rate-limiter');
 const { getAiAssistantConfig, publicConfigSummary } = require('./ai-config');
 const { generateWithProvider } = require('./ai-provider');
-const {
-  parseCrmChatRequest,
-  normalizeCrmChatOutput,
-  assertNoMutationTools,
-} = require('./ai-crm-schemas');
+const { parseCrmChatRequest, normalizeCrmChatOutput, assertNoMutationTools } = require('./ai-crm-schemas');
 const { lookupCrmContext, formatContextForPrompt } = require('./ai-crm-lookup');
 const {
   CRM_PLANNER_SCHEMA,
@@ -26,6 +22,7 @@ const {
   buildAllowlistedLookupQuery,
   visibleEntitiesForTools,
   augmentPlanTools,
+  inferDeterministicPlan,
 } = require('./ai-crm-planner');
 const { sha256, localDayKey, claimAiQuota, finalizeAiInvocation } = require('./ai-audit');
 
@@ -151,6 +148,7 @@ function buildSystemInstruction() {
     'Never claim you created, updated, deleted, emailed, or WhatsApped anything. Drafts only.',
     'Never print internal UUIDs. Refer to customers by name and customer code, jobs by job number, technicians by name.',
     'Answer only what was asked. Do not list extra records the question did not ask about.',
+    'Default to one or two direct sentences and at most 60 words. Only provide a list or longer explanation when the admin explicitly asks for details or a list.',
     'Keep answer concise and practical for Indian RO service ops.',
   ].join(' ');
 }
@@ -161,10 +159,7 @@ function buildUserPrompt(message, contextText, history = []) {
     ...(recent.length
       ? [
           'Recent conversation:',
-          ...recent.map(
-            (turn) =>
-              `${turn.role === 'assistant' ? 'Assistant' : 'Admin'}: ${String(turn.text || '')}`
-          ),
+          ...recent.map((turn) => `${turn.role === 'assistant' ? 'Assistant' : 'Admin'}: ${String(turn.text || '')}`),
           '',
         ]
       : []),
@@ -208,7 +203,11 @@ exports.handler = async (event) => {
     return { statusCode: 204, headers, body: '' };
   }
 
-  if (shouldRejectMissingOrigin(event.headers || {}, { allowMissingWithBearer: true })) {
+  if (
+    shouldRejectMissingOrigin(event.headers || {}, {
+      allowMissingWithBearer: true,
+    })
+  ) {
     return json(403, headers, { success: false, error: 'Forbidden' });
   }
 
@@ -238,14 +237,7 @@ exports.handler = async (event) => {
   }
 
   // Ignore client provider/model/system/tools/sql/messages.
-  if (
-    body.provider ||
-    body.model ||
-    body.systemInstruction ||
-    body.tools ||
-    body.messages ||
-    body.sql
-  ) {
+  if (body.provider || body.model || body.systemInstruction || body.tools || body.messages || body.sql) {
     /* strip silently */
   }
 
@@ -265,7 +257,36 @@ exports.handler = async (event) => {
     endpoint: 'ai-crm-chat-user',
   });
   if (!ipBurst.allowed || !userBurst.allowed) {
-    return json(429, headers, { success: false, error: 'Too many AI requests. Try again shortly.' });
+    return json(429, headers, {
+      success: false,
+      error: 'Too many AI requests. Try again shortly.',
+    });
+  }
+
+  // Exact greetings/thanks never need a provider call. Keeping this after
+  // full-admin auth + rate limiting prevents the endpoint becoming a public
+  // chatbot while making conversational turns effectively instant.
+  const deterministicPlan = inferDeterministicPlan(parsed.value.message, parsed.value.history);
+  if (deterministicPlan?.route === 'conversation') {
+    return json(200, headers, {
+      success: true,
+      answer: deterministicPlan.directAnswer,
+      confidence: 1,
+      requiresHuman: false,
+      warnings: [],
+      entities: emptyEntities(),
+      proposedActions: [],
+      meta: {
+        latencyMs: 0,
+        plannerRoute: 'conversation',
+        plannerTools: [],
+        plannerStrategy: 'local',
+        canAutoSend: false,
+        canDelete: false,
+        canCreateJob: false,
+        canMutate: false,
+      },
+    });
   }
 
   const config = await getAiAssistantConfig();
@@ -277,17 +298,15 @@ exports.handler = async (event) => {
   }
 
   const dayKey = localDayKey();
-  const idempotencyKey = sha256(
-    `${auth.userId}|crm_chat|${parsed.value.message}|${dayKey}|${Date.now()}`
-  ).slice(0, 40);
+  const idempotencyKey = sha256(`${auth.userId}|crm_chat|${parsed.value.message}|${dayKey}|${Date.now()}`).slice(0, 40);
 
   const quota = await claimAiQuota({
     actorUserId: auth.userId,
     dayKey,
     requestLimit: config.dailyRequestLimit,
     tokenLimit: config.dailyTokenLimit,
-    // A CRM turn can use one planner call plus one answer call.
-    reserveTokens: 3200,
+    // Deterministic routes skip the planner provider call.
+    reserveTokens: deterministicPlan ? 1800 : 3200,
     idempotencyKey,
     provider: config.provider,
     model: config.model,
@@ -313,33 +332,37 @@ exports.handler = async (event) => {
   try {
     assertNoMutationTools([]);
 
-    const plannerResult = await generateWithProvider(config, {
-      operation: 'crm_chat_plan',
-      systemInstruction: plannerSystemInstruction(),
-      messages: buildPlannerMessages(parsed.value.history, parsed.value.message),
-      temperature: 0,
-      maxOutputTokens: 700,
-      timeoutMs: 15_000,
-      responseJsonSchema: CRM_PLANNER_SCHEMA,
-    });
-    usage = addUsage(usage, plannerResult.usage);
-    servedProvider = plannerResult.rawMetadata?.provider || config.provider;
-    servedModel = plannerResult.rawMetadata?.model || config.model;
-    fellBack = plannerResult.rawMetadata?.fellBack === true;
-    const plan = augmentPlanTools(
-      normalizePlannerOutput(
-        plannerResult.parsed ||
-        (() => {
-          try {
-            return JSON.parse(plannerResult.text || '{}');
-          } catch {
-            return {};
-          }
-          })(),
+    let plan = deterministicPlan;
+    let plannerStrategy = deterministicPlan ? 'deterministic' : 'model';
+    if (!plan) {
+      const plannerResult = await generateWithProvider(config, {
+        operation: 'crm_chat_plan',
+        systemInstruction: plannerSystemInstruction(),
+        messages: buildPlannerMessages(parsed.value.history, parsed.value.message),
+        temperature: 0,
+        maxOutputTokens: 500,
+        timeoutMs: 12_000,
+        responseJsonSchema: CRM_PLANNER_SCHEMA,
+      });
+      usage = addUsage(usage, plannerResult.usage);
+      servedProvider = plannerResult.rawMetadata?.provider || config.provider;
+      servedModel = plannerResult.rawMetadata?.model || config.model;
+      fellBack = plannerResult.rawMetadata?.fellBack === true;
+      plan = augmentPlanTools(
+        normalizePlannerOutput(
+          plannerResult.parsed ||
+            (() => {
+              try {
+                return JSON.parse(plannerResult.text || '{}');
+              } catch {
+                return {};
+              }
+            })(),
+          parsed.value.message
+        ),
         parsed.value.message
-      ),
-      parsed.value.message
-    );
+      );
+    }
 
     if (plan.route === 'conversation') {
       const answer = plan.directAnswer;
@@ -369,6 +392,7 @@ exports.handler = async (event) => {
           usage,
           plannerRoute: 'conversation',
           plannerTools: [],
+          plannerStrategy,
           canAutoSend: false,
           canDelete: false,
           canCreateJob: false,
@@ -384,11 +408,7 @@ exports.handler = async (event) => {
     });
 
     const contextText = formatContextForPrompt(pack);
-    const userPrompt = buildUserPrompt(
-      parsed.value.message,
-      contextText,
-      parsed.value.history
-    );
+    const userPrompt = buildUserPrompt(parsed.value.message, contextText, parsed.value.history);
     promptHash = sha256(userPrompt);
 
     const providerResult = await generateWithProvider(config, {
@@ -396,7 +416,9 @@ exports.handler = async (event) => {
       systemInstruction: buildSystemInstruction(),
       messages: [{ role: 'user', text: userPrompt }],
       temperature: 0.2,
-      maxOutputTokens: 2048,
+      // Read-only answers should be short; action drafts need room for their
+      // validated payload schema.
+      maxOutputTokens: plan.tools.includes('action_draft') ? 1600 : 800,
       timeoutMs: 20_000,
       responseJsonSchema: CRM_CHAT_SCHEMA,
     });
@@ -423,7 +445,10 @@ exports.handler = async (event) => {
     });
     if (!normalized.ok) {
       errorCategory = 'empty_output';
-      return json(502, headers, { success: false, error: 'AI returned an empty answer' });
+      return json(502, headers, {
+        success: false,
+        error: 'AI returned an empty answer',
+      });
     }
 
     // Hard guarantee: every action still requires human confirmation.
@@ -458,6 +483,7 @@ exports.handler = async (event) => {
         usage,
         plannerRoute: 'crm',
         plannerTools: plan.tools,
+        plannerStrategy,
         canAutoSend: false,
         canDelete: false,
         canCreateJob: false,

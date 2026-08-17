@@ -52,6 +52,155 @@ function plannerSystemInstruction() {
   ].join(' ');
 }
 
+function exactConversationalReply(message) {
+  const text = String(message || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[!?.,]+$/g, '')
+    .trim();
+  if (/^(hi|hii+|hey|hello|hai|hola|namaste|good (morning|afternoon|evening))$/.test(text)) {
+    return 'Hello! How can I help with your CRM?';
+  }
+  if (/^(thanks|thank you|thankyou|thx|okay thanks|ok thanks)$/.test(text)) {
+    return 'You’re welcome!';
+  }
+  if (/^(bye|goodbye|see you|see you later)$/.test(text)) {
+    return 'Goodbye!';
+  }
+  return '';
+}
+
+function periodMarker(text) {
+  const value = String(text || '').toLowerCase();
+  if (/\byesterday\b/.test(value)) return 'yesterday';
+  if (/\btomorrow\b/.test(value)) return 'tomorrow';
+  if (/\blast week\b/.test(value)) return 'last week';
+  if (/\bthis week\b/.test(value)) return 'this week';
+  if (/\blast month\b/.test(value)) return 'last month';
+  if (/\bthis month\b/.test(value)) return 'this month';
+  return 'today';
+}
+
+function historyText(history) {
+  return (Array.isArray(history) ? history : [])
+    .slice(-4)
+    .map((turn) => String(turn?.text || '').slice(0, 600))
+    .join(' ');
+}
+
+/**
+ * Fast path for high-frequency, unambiguous requests. This is deliberately
+ * narrow: it can only choose the same read-only allowlisted tools as the LLM
+ * planner and never constructs filters, SQL, IDs or mutation payloads.
+ */
+function inferDeterministicPlan(message, history = []) {
+  const directAnswer = exactConversationalReply(message);
+  if (directAnswer) {
+    return {
+      route: 'conversation',
+      tools: [],
+      rewrittenQuery: '',
+      directAnswer,
+      strategy: 'local',
+    };
+  }
+
+  const text = String(message || '').trim();
+  const lower = text.toLowerCase();
+  if (
+    /\b(create|add|edit|update|change|delete|remove|send|whatsapp|email|book|schedule|set)\b/.test(
+      lower
+    )
+  ) {
+    return null;
+  }
+  const recent = historyText(history);
+  const combined = `${recent} ${text}`.toLowerCase();
+  const detailFollowUp =
+    /^(for |which |what )?(customer|job)( was it| is it)?[?!.]*$/i.test(text) ||
+    /\bfor which customer\b|\bwhich customer\b|\bwhich job\b/i.test(text);
+  const period = periodMarker(detailFollowUp ? combined : text);
+
+  if (
+    (/\btechnicians?\b|\btechs?\b|\btechcnians?\b|\btehcnc?ians?\b/.test(lower) &&
+      /\bhighest\b|\btop\b|\bmost\b/.test(lower) &&
+      /\bbill(?:ed|ing)?\b|\brevenue\b|\bsales\b/.test(lower)) ||
+    (detailFollowUp &&
+      /\btechnicians?\b|\btechs?\b|\btechcnians?\b|\btehcnc?ians?\b/.test(combined) &&
+      /\bhighest\b|\btop\b|\bmost\b/.test(combined) &&
+      /\bbill(?:ed|ing)?\b|\brevenue\b|\bsales\b/.test(combined))
+  ) {
+    return {
+      route: 'crm',
+      tools: detailFollowUp ? ['technician_billing_ranking', 'jobs_overview'] : ['technician_billing_ranking'],
+      rewrittenQuery: detailFollowUp
+        ? `For the highest-billing technician ${period}, identify the underlying job and customer.`
+        : text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
+    /\b(customers?|clients?)\b/.test(lower) &&
+    /\bhighest\b|\btop\b|\bmost\b|\bbiggest\b/.test(lower) &&
+    /\bpaid\b|\bspent\b|\bbill(?:ed|ing)?\b|\bvalue\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['customer_value_ranking'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (/\bpending payments?\b|\bpayments? pending\b|\bpayment dues?\b/.test(lower)) {
+    return {
+      route: 'crm',
+      tools: ['payments'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (/\bamc\b/.test(lower) && /\bexpir(?:y|ing|e)|\bdue\b|\brenew/.test(lower)) {
+    return {
+      route: 'crm',
+      tools: ['amc'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (/\breminders?\b/.test(lower) && !/\bcreate\b|\badd\b|\bset\b/.test(lower)) {
+    return {
+      route: 'crm',
+      tools: ['reminders'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
+    /\b(today'?s?|yesterday'?s?) jobs?\b|\bjobs? (today|yesterday)\b/.test(lower) &&
+    !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['jobs_overview'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  return null;
+}
+
 function normalizePlannerOutput(raw, fallbackMessage) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const route = src.route === 'conversation' ? 'conversation' : 'crm';
@@ -70,15 +219,17 @@ function normalizePlannerOutput(raw, fallbackMessage) {
       tools: [],
       rewrittenQuery: '',
       directAnswer:
-        String(src.directAnswer || '').trim().slice(0, 1200) ||
-        'How can I help with your CRM today?',
+        String(src.directAnswer || '')
+          .trim()
+          .slice(0, 1200) || 'How can I help with your CRM today?',
     };
   }
   return {
     route,
     tools,
-    rewrittenQuery:
-      String(src.rewrittenQuery || fallbackMessage || '').trim().slice(0, 1500),
+    rewrittenQuery: String(src.rewrittenQuery || fallbackMessage || '')
+      .trim()
+      .slice(0, 1500),
     directAnswer: '',
   };
 }
@@ -90,11 +241,8 @@ function normalizePlannerOutput(raw, fallbackMessage) {
 function augmentPlanTools(plan, message) {
   if (plan?.route !== 'crm') return plan;
   const tools = [...(plan.tools || [])];
-  const isRanking =
-    tools.includes('technician_billing_ranking') || tools.includes('customer_value_ranking');
-  const wantsRecordDetail = /\bcustomers?\b|\bjobs?\b/i.test(
-    `${message || ''} ${plan.rewrittenQuery || ''}`
-  );
+  const isRanking = tools.includes('technician_billing_ranking') || tools.includes('customer_value_ranking');
+  const wantsRecordDetail = /\bcustomers?\b|\bjobs?\b/i.test(`${message || ''} ${plan.rewrittenQuery || ''}`);
   if (isRanking && wantsRecordDetail && !tools.includes('jobs_overview')) {
     tools.push('jobs_overview');
   }
@@ -111,7 +259,9 @@ function buildPlannerMessages(history, message) {
 }
 
 function buildAllowlistedLookupQuery(plan, fallbackMessage) {
-  const base = String(plan?.rewrittenQuery || fallbackMessage || '').trim().slice(0, 1500);
+  const base = String(plan?.rewrittenQuery || fallbackMessage || '')
+    .trim()
+    .slice(0, 1500);
   const markers = {
     jobs_overview: 'jobs',
     payments: 'pending payments',
@@ -122,7 +272,10 @@ function buildAllowlistedLookupQuery(plan, fallbackMessage) {
     technician_billing_ranking: 'top technician highest billing',
     documents: 'documents',
   };
-  const suffix = (plan?.tools || []).map((tool) => markers[tool]).filter(Boolean).join(' ');
+  const suffix = (plan?.tools || [])
+    .map((tool) => markers[tool])
+    .filter(Boolean)
+    .join(' ');
   return `${base}${suffix ? `\n${suffix}` : ''}`.slice(0, 1800);
 }
 
@@ -144,9 +297,7 @@ function visibleEntitiesForTools(pack, tools) {
 
   const shows = (...names) => names.some((name) => selected.includes(name));
   return {
-    customers: shows('customer_search', 'customer_value_ranking', 'action_draft')
-      ? all.customers
-      : [],
+    customers: shows('customer_search', 'customer_value_ranking', 'action_draft') ? all.customers : [],
     jobs: shows('job_search', 'jobs_overview', 'revenue', 'action_draft') ? all.jobs : [],
     reminders: shows('reminders') ? all.reminders : [],
     payments: shows('payments') ? all.payments : [],
@@ -164,4 +315,5 @@ module.exports = {
   buildAllowlistedLookupQuery,
   visibleEntitiesForTools,
   augmentPlanTools,
+  inferDeterministicPlan,
 };

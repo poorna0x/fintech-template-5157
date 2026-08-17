@@ -62,6 +62,11 @@ function formatInr(amount: number | null | undefined) {
   return `₹${amount.toLocaleString('en-IN')}`;
 }
 
+function entityCount(result: Extract<AiCrmChatResult, { ok: true }> | undefined) {
+  if (!result) return 0;
+  return Object.values(result.entities).reduce((total, rows) => total + (Array.isArray(rows) ? rows.length : 0), 0);
+}
+
 export default function AdminCrmAiDialog({
   open,
   onOpenChange,
@@ -77,6 +82,7 @@ export default function AdminCrmAiDialog({
   const [loading, setLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [expandedDetails, setExpandedDetails] = useState<Set<string>>(() => new Set());
   const [attachments, setAttachments] = useState<Array<{ file: File; previewUrl: string }>>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const { ref: inputRef } = useAutoGrowTextarea(input);
@@ -92,6 +98,7 @@ export default function AdminCrmAiDialog({
       setInput('');
       setLoading(false);
       setActionBusy(false);
+      setExpandedDetails(new Set());
       setAttachments((current) => {
         current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
         return [];
@@ -195,14 +202,15 @@ export default function AdminCrmAiDialog({
     try {
       if (
         attachments.length &&
-        (action.type === 'create_customer' ||
-          action.type === 'create_customer_and_job' ||
-          action.type === 'create_job')
+        (action.type === 'create_customer' || action.type === 'create_customer_and_job' || action.type === 'create_job')
       ) {
         photoUrls = await uploadAttachedImages();
       }
       if (action.type === 'create_customer') {
-        onConfirmCreateCustomer({ ...(action.payload as AiCrmCustomerDraft), photoUrls });
+        onConfirmCreateCustomer({
+          ...(action.payload as AiCrmCustomerDraft),
+          photoUrls,
+        });
         return;
       }
       if (action.type === 'create_customer_and_job') {
@@ -216,17 +224,20 @@ export default function AdminCrmAiDialog({
         onConfirmEditCustomer(action.payload as AiCrmEditCustomerDraft);
         return;
       }
-    if (action.type === 'create_job') {
-      onConfirmCreateJob({ ...(action.payload as AiCrmCreateJobDraft), photoUrls });
-      return;
-    }
-    if (action.type === 'schedule_follow_up') {
-      onConfirmFollowUp(action.payload as AiCrmFollowUpDraft);
-      return;
-    }
-    if (action.type === 'create_reminder') {
-      onConfirmReminder(action.payload as AiCrmReminderDraft);
-    }
+      if (action.type === 'create_job') {
+        onConfirmCreateJob({
+          ...(action.payload as AiCrmCreateJobDraft),
+          photoUrls,
+        });
+        return;
+      }
+      if (action.type === 'schedule_follow_up') {
+        onConfirmFollowUp(action.payload as AiCrmFollowUpDraft);
+        return;
+      }
+      if (action.type === 'create_reminder') {
+        onConfirmReminder(action.payload as AiCrmReminderDraft);
+      }
     } catch (error) {
       console.error('[CRM AI] action preparation failed', error);
       toast.error('Could not prepare the CRM form');
@@ -256,13 +267,7 @@ export default function AdminCrmAiDialog({
               CRM AI
             </DialogTitle>
             <DialogClose asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="-mr-1 h-8 w-8 shrink-0"
-                aria-label="Close"
-              >
+              <Button type="button" variant="ghost" size="icon" className="-mr-1 h-8 w-8 shrink-0" aria-label="Close">
                 <X className="h-4 w-4" />
               </Button>
             </DialogClose>
@@ -279,9 +284,7 @@ export default function AdminCrmAiDialog({
                 <Sparkles className="h-5 w-5 text-muted-foreground" />
               </span>
               <p className="mt-3 text-sm font-medium">How can I help?</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Ask in your own words.
-              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Ask in your own words.</p>
             </div>
           )}
 
@@ -310,134 +313,148 @@ export default function AdminCrmAiDialog({
                     </ul>
                   ) : null}
 
-                  {turn.result?.entities.technicians?.length ? (
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Technician billing
-                      </p>
-                      {turn.result.entities.technicians.slice(0, 6).map((technician, index) => (
-                        <div
-                          key={technician.technicianId}
-                          className="flex items-center justify-between rounded-lg border bg-muted/30 px-2.5 py-2 text-xs"
-                        >
-                          <span>
-                            <span className="font-medium">
-                              {index + 1}. {technician.name}
-                            </span>
-                            {technician.employeeId ? ` · ${technician.employeeId}` : ''}
-                            <span className="block text-muted-foreground">
-                              {technician.completedJobs} completed{' '}
-                              {technician.completedJobs === 1 ? 'job' : 'jobs'}
-                            </span>
-                          </span>
-                          <span className="font-semibold">{formatInr(technician.billedTotal)}</span>
-                        </div>
-                      ))}
-                    </div>
+                  {entityCount(turn.result) > 0 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-muted-foreground"
+                      onClick={() =>
+                        setExpandedDetails((current) => {
+                          const next = new Set(current);
+                          if (next.has(turn.id)) next.delete(turn.id);
+                          else next.add(turn.id);
+                          return next;
+                        })
+                      }
+                    >
+                      {expandedDetails.has(turn.id) ? 'Hide details' : 'Show details'}
+                    </Button>
                   ) : null}
 
-                  {turn.result?.entities.customers?.length ? (
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {turn.result.entities.customers.some((customer) => customer.confirmedPaidTotal != null)
-                          ? 'Top customers'
-                          : 'Customers'}
-                      </p>
-                      {turn.result.entities.customers.slice(0, 6).map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => onSearchCustomer(c.phone || c.name, c.id)}
-                          className="flex w-full items-start justify-between rounded-lg border bg-muted/30 px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted"
-                        >
-                          <span>
-                            <span className="font-medium">{c.name}</span>
-                            {c.customerCode ? ` · ${c.customerCode}` : ''}
-                            <span className="block text-muted-foreground">
-                              {c.phone || 'No phone'}
-                              {c.lastServiceDate ? ` · last ${c.lastServiceDate}` : ''}
-                            </span>
-                            {c.confirmedPaidTotal != null ? (
-                              <span className="mt-0.5 block font-medium text-emerald-700">
-                                Confirmed paid {formatInr(c.confirmedPaidTotal)}
-                                {c.billedTotal != null ? ` · billed ${formatInr(c.billedTotal)}` : ''}
+                  {expandedDetails.has(turn.id) && turn.result ? (
+                    <>
+                      {turn.result.entities.technicians?.length ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Technician billing
+                          </p>
+                          {turn.result.entities.technicians.slice(0, 6).map((technician, index) => (
+                            <div
+                              key={technician.technicianId}
+                              className="flex items-center justify-between rounded-lg border bg-muted/30 px-2.5 py-2 text-xs"
+                            >
+                              <span>
+                                <span className="font-medium">
+                                  {index + 1}. {technician.name}
+                                </span>
+                                {technician.employeeId ? ` · ${technician.employeeId}` : ''}
+                                <span className="block text-muted-foreground">
+                                  {technician.completedJobs} completed {technician.completedJobs === 1 ? 'job' : 'jobs'}
+                                </span>
                               </span>
-                            ) : null}
-                          </span>
-                          <Search className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  {turn.result?.entities.jobs?.length ? (
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Jobs
-                      </p>
-                      {turn.result.entities.jobs.slice(0, 6).map((j) => (
-                        <div
-                          key={j.id}
-                          className="rounded-lg border bg-muted/30 px-2.5 py-2 text-xs"
-                        >
-                          <span className="font-medium">{j.jobNumber || j.id.slice(0, 8)}</span>
-                          {j.status ? ` · ${j.status}` : ''}
-                          {j.serviceSubType ? ` · ${j.serviceSubType}` : ''}
-                          {j.paymentAmount != null ? ` · ${formatInr(j.paymentAmount)}` : ''}
+                              <span className="font-semibold">{formatInr(technician.billedTotal)}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : null}
+                      ) : null}
 
-                  {turn.result?.entities.payments?.length ? (
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Pending payments
-                      </p>
-                      {turn.result.entities.payments.slice(0, 5).map((p) => (
-                        <div
-                          key={p.reminderId}
-                          className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-950"
-                        >
-                          {formatInr(p.amountPending)}
-                          {p.jobNumber ? ` · ${p.jobNumber}` : ''}
-                          {p.dueAt ? ` · due ${p.dueAt}` : ''}
+                      {turn.result.entities.customers?.length ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {turn.result.entities.customers.some((customer) => customer.confirmedPaidTotal != null)
+                              ? 'Top customers'
+                              : 'Customers'}
+                          </p>
+                          {turn.result.entities.customers.slice(0, 6).map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => onSearchCustomer(c.phone || c.name, c.id)}
+                              className="flex w-full items-start justify-between rounded-lg border bg-muted/30 px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted"
+                            >
+                              <span>
+                                <span className="font-medium">{c.name}</span>
+                                {c.customerCode ? ` · ${c.customerCode}` : ''}
+                                <span className="block text-muted-foreground">
+                                  {c.phone || 'No phone'}
+                                  {c.lastServiceDate ? ` · last ${c.lastServiceDate}` : ''}
+                                </span>
+                                {c.confirmedPaidTotal != null ? (
+                                  <span className="mt-0.5 block font-medium text-emerald-700">
+                                    Confirmed paid {formatInr(c.confirmedPaidTotal)}
+                                    {c.billedTotal != null ? ` · billed ${formatInr(c.billedTotal)}` : ''}
+                                  </span>
+                                ) : null}
+                              </span>
+                              <Search className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            </button>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : null}
+                      ) : null}
 
-                  {turn.result?.entities.reminders?.length ? (
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Reminders
-                      </p>
-                      {turn.result.entities.reminders.slice(0, 5).map((r) => (
-                        <div
-                          key={r.id}
-                          className="rounded-lg border bg-muted/30 px-2.5 py-2 text-xs"
-                        >
-                          {r.title}
-                          {r.reminderAt ? ` · ${r.reminderAt}` : ''}
+                      {turn.result.entities.jobs?.length ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Jobs</p>
+                          {turn.result.entities.jobs.slice(0, 6).map((j) => (
+                            <div key={j.id} className="rounded-lg border bg-muted/30 px-2.5 py-2 text-xs">
+                              <span className="font-medium">{j.jobNumber || j.id.slice(0, 8)}</span>
+                              {j.status ? ` · ${j.status}` : ''}
+                              {j.serviceSubType ? ` · ${j.serviceSubType}` : ''}
+                              {j.paymentAmount != null ? ` · ${formatInr(j.paymentAmount)}` : ''}
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : null}
+                      ) : null}
 
-                  {turn.result?.entities.documents?.length ? (
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Documents
-                      </p>
-                      {turn.result.entities.documents.slice(0, 6).map((d) => (
-                        <div
-                          key={`${d.kind}-${d.id}`}
-                          className="rounded-lg border bg-muted/30 px-2.5 py-2 text-xs"
-                        >
-                          {d.label}
+                      {turn.result.entities.payments?.length ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Pending payments
+                          </p>
+                          {turn.result.entities.payments.slice(0, 5).map((p) => (
+                            <div
+                              key={p.reminderId}
+                              className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-950"
+                            >
+                              {formatInr(p.amountPending)}
+                              {p.jobNumber ? ` · ${p.jobNumber}` : ''}
+                              {p.dueAt ? ` · due ${p.dueAt}` : ''}
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      ) : null}
+
+                      {turn.result.entities.reminders?.length ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Reminders
+                          </p>
+                          {turn.result.entities.reminders.slice(0, 5).map((r) => (
+                            <div key={r.id} className="rounded-lg border bg-muted/30 px-2.5 py-2 text-xs">
+                              {r.title}
+                              {r.reminderAt ? ` · ${r.reminderAt}` : ''}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {turn.result.entities.documents?.length ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Documents
+                          </p>
+                          {turn.result.entities.documents.slice(0, 6).map((d) => (
+                            <div
+                              key={`${d.kind}-${d.id}`}
+                              className="rounded-lg border bg-muted/30 px-2.5 py-2 text-xs"
+                            >
+                              {d.label}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
                   ) : null}
 
                   {turn.result?.proposedActions?.length ? (
@@ -466,8 +483,7 @@ export default function AdminCrmAiDialog({
                           >
                             {actionBusy ? (
                               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                            ) : action.type === 'create_customer' ||
-                              action.type === 'create_customer_and_job' ? (
+                            ) : action.type === 'create_customer' || action.type === 'create_customer_and_job' ? (
                               <UserPlus className="mr-1.5 h-3.5 w-3.5" />
                             ) : action.type === 'edit_customer' ? (
                               <Pencil className="mr-1.5 h-3.5 w-3.5" />
@@ -490,9 +506,7 @@ export default function AdminCrmAiDialog({
                   {turn.result?.meta?.model ? (
                     <p className="text-[11px] text-muted-foreground/70">
                       {turn.result.meta.model}
-                      {turn.result.meta.latencyMs != null
-                        ? ` · ${turn.result.meta.latencyMs}ms`
-                        : ''}
+                      {turn.result.meta.latencyMs != null ? ` · ${turn.result.meta.latencyMs}ms` : ''}
                     </p>
                   ) : null}
                 </div>
@@ -514,11 +528,7 @@ export default function AdminCrmAiDialog({
             <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
               {attachments.map((item, index) => (
                 <div key={`${item.file.name}-${index}`} className="relative shrink-0">
-                  <img
-                    src={item.previewUrl}
-                    alt=""
-                    className="h-14 w-14 rounded-lg border object-cover"
-                  />
+                  <img src={item.previewUrl} alt="" className="h-14 w-14 rounded-lg border object-cover" />
                   <button
                     type="button"
                     onClick={() => removeAttachment(index)}
