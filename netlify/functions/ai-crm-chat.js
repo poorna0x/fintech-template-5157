@@ -91,6 +91,7 @@ function buildSystemInstruction() {
     'Answer using ONLY the provided CRM lookup facts. Never invent customers, jobs, amounts, or dates.',
     'The facts include today\'s IST date, exact counts, and capped lists. Use the exact counts for "how many" and totals; never count the rows in a list yourself, because lists are truncated.',
     'Job value figures are billed amounts for completed jobs, not confirmed cash collection — word it that way.',
+    'For customer value rankings, preserve the authoritative rank order. "confirmedFullyPaidINR" counts only completed jobs marked PAID; "completedJobBilledINR" can include unpaid or partially paid work. State both when useful and never call billed value collected cash.',
     'Never add up amounts yourself: only quote money totals that appear in the exact counts section, or the individual amounts shown on a row.',
     'When the facts contain jobs, reminders, payments or counts, summarise them directly instead of saying nothing was found.',
     'Only say no records were found when the relevant fact sections are empty or zero.',

@@ -17,6 +17,9 @@ const OVERVIEW_JOB_LIMIT = 20;
 const OVERVIEW_REMINDER_LIMIT = 15;
 const OVERVIEW_PAYMENT_SCAN = 60;
 const AMC_EXPIRY_LOOKAHEAD_DAYS = 45;
+const TOP_CUSTOMER_LIMIT = 10;
+const TOP_CUSTOMER_FALLBACK_PAGE_SIZE = 1000;
+const TOP_CUSTOMER_FALLBACK_MAX_PAGES = 50;
 const IST_TZ = 'Asia/Kolkata';
 const ONGOING_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'];
 
@@ -66,8 +69,10 @@ const NAME_STOP_WORDS = new Set(
     'reminders', 'rupees', 'sales', 'schedule', 'scheduled', 'search', 'service', 'services',
     'set', 'show', 'slot', 'softener', 'status', 'summary', 'system', 'task', 'tasks', 'that',
     'the', 'their', 'them', 'these', 'this', 'time', 'today', 'tomorrow', 'total', 'turnover',
-    'unpaid', 'update', 'upcoming', 'visit', 'visits', 'want', 'was', 'water', 'week', 'were',
+    'unpaid', 'update', 'upcoming', 'us', 'visit', 'visits', 'want', 'was', 'water', 'week', 'were',
     'what', 'when', 'which', 'who', 'will', 'with', 'work', 'year', 'yesterday', 'you', 'your',
+    'alltime', 'billed', 'biggest', 'client', 'entire', 'ever', 'highest', 'largest', 'lifetime',
+    'paying', 'spend', 'spent', 'thing', 'top', 'value',
   ].map((w) => w.toLowerCase())
 );
 
@@ -187,6 +192,19 @@ function istDayBounds(startKey, endKey) {
   };
 }
 
+function detectCustomerValueRanking(message) {
+  const text = String(message || '').toLowerCase();
+  const mentionsCustomer = /\bcustomers?\b|\bclient\b|\bwho\b|\bwhich\b/.test(text);
+  const mentionsRanking = /\bmost\b|\btop\b|\bhighest\b|\bbiggest\b|\blargest\b|\bbest\b/.test(
+    text
+  );
+  const mentionsValue =
+    /\bpaid\b|\bpaying\b|\bspent\b|\bspend\b|\brevenue\b|\bsales\b|\bvalue\b|\bbilled\b/.test(
+      text
+    );
+  return mentionsCustomer && mentionsRanking && mentionsValue;
+}
+
 /**
  * Detect an operational ("show me the CRM") intent: what to list and for when.
  * Purely keyword-based; never turns into free-form SQL.
@@ -209,6 +227,7 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   if (has(/\bamc\b|\bexpir|\brenew/)) scopes.add('amc');
   if (has(/\bnew customers?\b|\brecent customers?\b|\bnew leads?\b/)) scopes.add('customers');
   if (has(/\brevenue|\bcollect|\bearn|\bincome|\bturnover|\bsales\b/)) scopes.add('revenue');
+  if (detectCustomerValueRanking(message)) scopes.add('customer_value_ranking');
   if (has(/\bsummary|\boverview|\bstatus\b|\bhow many|\bcount\b|\btotal\b|\btoday\b|\breport\b/))
     scopes.add('summary');
 
@@ -607,6 +626,142 @@ async function loadCustomersByIds(db, ids) {
   return (data || []).map(slimCustomer).filter(Boolean);
 }
 
+function normalizeCustomerValueRow(row) {
+  if (!row?.customer_id) return null;
+  return {
+    id: String(row.customer_id),
+    customerCode: row.customer_code ? String(row.customer_code) : null,
+    name: row.customer_name ? String(row.customer_name).trim() : 'Customer',
+    phone: row.phone ? String(row.phone) : null,
+    alternatePhone: null,
+    email: null,
+    serviceType: null,
+    brand: null,
+    model: null,
+    lastServiceDate: null,
+    tier: null,
+    status: null,
+    confirmedPaidTotal: Math.round(Number(row.confirmed_paid_total) || 0),
+    billedTotal: Math.round(Number(row.billed_total) || 0),
+    fullyPaidJobs: Math.max(0, Math.round(Number(row.fully_paid_jobs) || 0)),
+    completedJobs: Math.max(0, Math.round(Number(row.completed_jobs) || 0)),
+  };
+}
+
+function resolveCompletedJobValue(row) {
+  const paymentAmount = Number(row?.payment_amount) || 0;
+  const actualCost = Number(row?.actual_cost) || 0;
+  return Math.max(0, paymentAmount > 0 ? paymentAmount : actualCost);
+}
+
+async function loadTopCustomerValueRanking(db, intent, todayKey) {
+  let fromTs = null;
+  let toTs = null;
+  if (intent.explicitDate) {
+    const bounds = istDayBounds(intent.range.start || todayKey, intent.range.end || todayKey);
+    fromTs = bounds.fromTs;
+    toTs = bounds.toTs;
+  }
+
+  const { data: rpcData, error: rpcError } = await db.rpc('ai_crm_top_customers', {
+    p_limit: TOP_CUSTOMER_LIMIT,
+    p_from: fromTs,
+    p_to: toTs,
+  });
+  if (!rpcError && Array.isArray(rpcData)) {
+    return {
+      customers: rpcData.map(normalizeCustomerValueRow).filter(Boolean),
+      source: 'database_aggregate',
+      truncated: false,
+    };
+  }
+
+  // Local/WIP fallback until the optimized RPC is installed. It reads only five
+  // thin columns in bounded pages and aggregates in memory; no customer history,
+  // notes, requirements, photos or documents leave Supabase.
+  if (rpcError) {
+    console.warn('[ai-crm-lookup] top customer RPC unavailable; using thin fallback');
+  }
+  const grouped = new Map();
+  let exhausted = false;
+  for (let page = 0; page < TOP_CUSTOMER_FALLBACK_MAX_PAGES; page += 1) {
+    const from = page * TOP_CUSTOMER_FALLBACK_PAGE_SIZE;
+    let query = db
+      .from('jobs')
+      .select('id,customer_id,payment_status,payment_amount,actual_cost')
+      .eq('status', 'COMPLETED')
+      .not('customer_id', 'is', null)
+      .order('id', { ascending: true })
+      .range(from, from + TOP_CUSTOMER_FALLBACK_PAGE_SIZE - 1);
+    if (fromTs) query = query.gte('completed_at', fromTs);
+    if (toTs) query = query.lt('completed_at', toTs);
+    const { data, error } = await query;
+    if (error) {
+      console.warn('[ai-crm-lookup] top customer fallback failed', error.message);
+      return { customers: [], source: 'unavailable', truncated: false };
+    }
+    for (const row of data || []) {
+      if (!row.customer_id) continue;
+      const amount = resolveCompletedJobValue(row);
+      const current = grouped.get(row.customer_id) || {
+        customerId: String(row.customer_id),
+        confirmedPaidTotal: 0,
+        billedTotal: 0,
+        fullyPaidJobs: 0,
+        completedJobs: 0,
+      };
+      current.billedTotal += amount;
+      current.completedJobs += 1;
+      if (row.payment_status === 'PAID') {
+        current.confirmedPaidTotal += amount;
+        current.fullyPaidJobs += 1;
+      }
+      grouped.set(row.customer_id, current);
+    }
+    if ((data || []).length < TOP_CUSTOMER_FALLBACK_PAGE_SIZE) {
+      exhausted = true;
+      break;
+    }
+  }
+
+  const ranked = [...grouped.values()]
+    .sort(
+      (a, b) =>
+        b.confirmedPaidTotal - a.confirmedPaidTotal ||
+        b.billedTotal - a.billedTotal ||
+        a.customerId.localeCompare(b.customerId)
+    )
+    .slice(0, TOP_CUSTOMER_LIMIT);
+  const customerIds = ranked.map((row) => row.customerId);
+  const { data: customerRows, error: customerError } = customerIds.length
+    ? await db
+        .from('customers')
+        .select('id,customer_id,full_name,phone')
+        .in('id', customerIds)
+    : { data: [], error: null };
+  if (customerError) {
+    console.warn('[ai-crm-lookup] top customer hydrate failed', customerError.message);
+  }
+  const customerById = new Map((customerRows || []).map((row) => [String(row.id), row]));
+  return {
+    customers: ranked.map((row) => {
+      const customer = customerById.get(row.customerId) || {};
+      return normalizeCustomerValueRow({
+        customer_id: row.customerId,
+        customer_code: customer.customer_id,
+        customer_name: customer.full_name,
+        phone: customer.phone,
+        confirmed_paid_total: row.confirmedPaidTotal,
+        billed_total: row.billedTotal,
+        fully_paid_jobs: row.fullyPaidJobs,
+        completed_jobs: row.completedJobs,
+      });
+    }),
+    source: 'thin_fallback',
+    truncated: !exhausted,
+  };
+}
+
 /**
  * Operational lists + exact counts for "what's happening" questions.
  * Every query is allowlisted, thin-column and row-capped.
@@ -627,6 +782,28 @@ async function loadOverview(db, intent, todayKey) {
   const wantsPayments = scopes.has('payments') || scopes.has('summary');
   const wantsAmc = scopes.has('amc');
   const wantsCustomers = scopes.has('customers');
+  const wantsCustomerValueRanking = scopes.has('customer_value_ranking');
+
+  if (wantsCustomerValueRanking) {
+    const ranking = await loadTopCustomerValueRanking(db, intent, todayKey);
+    out.customers.push(...ranking.customers);
+    out.stats.customerValueRanking = ranking.customers.map((customer, index) => ({
+      rank: index + 1,
+      customerId: customer.id,
+      customerCode: customer.customerCode,
+      name: customer.name,
+      phone: customer.phone,
+      confirmedPaidTotal: customer.confirmedPaidTotal,
+      billedTotal: customer.billedTotal,
+      fullyPaidJobs: customer.fullyPaidJobs,
+      completedJobs: customer.completedJobs,
+    }));
+    out.stats.customerValueRankingBasis =
+      'confirmedPaidTotal counts completed jobs whose payment_status is PAID; billedTotal counts completed-job value and may include unpaid or partially paid work';
+    out.stats.customerValueRankingPeriod = intent.explicitDate ? range.label : 'lifetime';
+    out.stats.customerValueRankingSource = ranking.source;
+    out.truncated.customerValueRanking = ranking.truncated;
+  }
 
   if (wantsJobs) {
     const completedOnly = Array.isArray(statuses) && statuses.length === 1 && statuses[0] === 'COMPLETED';
@@ -739,6 +916,14 @@ async function loadOverview(db, intent, todayKey) {
     }
   }
 
+  // Ranking-only questions are already answered by one grouped RPC. Avoid the
+  // unrelated jobs/reminders/count queries used by the general ops dashboard.
+  if (wantsCustomerValueRanking && scopes.size === 1) {
+    out.stats.today = todayKey;
+    out.stats.rangeLabel = intent.explicitDate ? range.label : 'lifetime';
+    return out;
+  }
+
   // Exact counts (cheap head queries) so "how many" answers are accurate.
   const dayBounds = istDayBounds(range.start || todayKey, range.end || todayKey);
   out.stats.today = todayKey;
@@ -811,7 +996,11 @@ async function lookupCrmContext({ message, focusCustomerId } = {}) {
   const hasSpecificTarget = Boolean(
     hints.phone || hints.jobNumber || (hints.nameTokens || []).length || focusCustomerId
   );
-  const intent = { ...detected, active: detected.active && !hasSpecificTarget };
+  const isCustomerValueRanking = detected.scopes.has('customer_value_ranking');
+  const intent = {
+    ...detected,
+    active: detected.active && (!hasSpecificTarget || isCustomerValueRanking),
+  };
   const customers = await searchCustomers(db, hints, focusCustomerId, {
     allowRawFallback: !intent.active,
   });
@@ -929,8 +1118,12 @@ function formatContextForPrompt(pack) {
   );
   if (pack.intent?.scopes?.length) {
     const showStatuses = pack.intent.statuses && pack.intent.scopes.includes('jobs');
+    const periodLabel =
+      pack.intent.scopes.includes('customer_value_ranking') && stats.customerValueRankingPeriod
+        ? stats.customerValueRankingPeriod
+        : pack.intent.range?.label || 'today';
     lines.push(
-      `Interpreted request: ${pack.intent.scopes.join(', ')}; period = ${pack.intent.range?.label || 'today'}${
+      `Interpreted request: ${pack.intent.scopes.join(', ')}; period = ${periodLabel}${
         showStatuses ? `; job status filter = ${pack.intent.statuses.join('/')}` : ''
       }.`
     );
@@ -960,13 +1153,28 @@ function formatContextForPrompt(pack) {
     for (const s of statLines) lines.push(`- ${s}`);
   }
 
+  if (Array.isArray(stats.customerValueRanking) && stats.customerValueRanking.length) {
+    lines.push(
+      `Customer value ranking (${stats.customerValueRankingPeriod || 'lifetime'}; authoritative order):`
+    );
+    lines.push(`- Basis: ${stats.customerValueRankingBasis}`);
+    for (const row of stats.customerValueRanking) {
+      lines.push(
+        `- rank=${row.rank}; customerId=${row.customerId}; code=${row.customerCode || '—'}; name=${row.name}; phone=${row.phone || '—'}; confirmedFullyPaidINR=${row.confirmedPaidTotal}; completedJobBilledINR=${row.billedTotal}; fullyPaidJobs=${row.fullyPaidJobs}; completedJobs=${row.completedJobs}`
+      );
+    }
+    if (pack.truncated?.customerValueRanking) {
+      lines.push('- Warning: fallback scan hit its safety cap; ranking may be incomplete.');
+    }
+  }
+
   if (!pack.customers.length) {
     lines.push('Customers: (none matched)');
   } else {
     lines.push('Customers:');
     for (const c of pack.customers) {
       lines.push(
-        `- id=${c.id}; code=${c.customerCode || '—'}; name=${c.name}; phone=${c.phone || '—'}; lastService=${c.lastServiceDate || '—'}; type=${c.serviceType || '—'}`
+        `- id=${c.id}; code=${c.customerCode || '—'}; name=${c.name}; phone=${c.phone || '—'}; lastService=${c.lastServiceDate || '—'}; type=${c.serviceType || '—'}${c.confirmedPaidTotal != null ? `; confirmedFullyPaidINR=${c.confirmedPaidTotal}; completedJobBilledINR=${c.billedTotal}; fullyPaidJobs=${c.fullyPaidJobs}; completedJobs=${c.completedJobs}` : ''}`
       );
     }
   }
@@ -1017,9 +1225,12 @@ module.exports = {
   CUSTOMER_LIMIT,
   JOB_LIMIT,
   OVERVIEW_JOB_LIMIT,
+  TOP_CUSTOMER_LIMIT,
   ONGOING_JOB_STATUSES,
   extractQueryHints,
   detectOverviewIntent,
+  detectCustomerValueRanking,
+  resolveCompletedJobValue,
   istDateKey,
   addDaysKey,
   lookupCrmContext,

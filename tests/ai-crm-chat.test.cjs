@@ -15,10 +15,14 @@ const {
 const {
   extractQueryHints,
   detectOverviewIntent,
+  detectCustomerValueRanking,
+  formatContextForPrompt,
+  resolveCompletedJobValue,
   addDaysKey,
   CUSTOMER_LIMIT,
   JOB_LIMIT,
   OVERVIEW_JOB_LIMIT,
+  TOP_CUSTOMER_LIMIT,
 } = require('../netlify/functions/ai-crm-lookup');
 const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
 
@@ -193,6 +197,64 @@ function testOverviewIntentDetection() {
   assert.ok(OVERVIEW_JOB_LIMIT <= 25);
 }
 
+function testLifetimeCustomerValueRankingIntent() {
+  const question = 'which customer has paid us the most in this entire thing';
+  assert.equal(detectCustomerValueRanking(question), true);
+  const intent = detectOverviewIntent(question, '2026-08-17');
+  assert.equal(intent.active, true);
+  assert.equal(intent.scopes.has('customer_value_ranking'), true);
+  assert.ok(TOP_CUSTOMER_LIMIT <= 10);
+  assert.equal(resolveCompletedJobValue({ payment_amount: 0, actual_cost: 2400 }), 2400);
+  assert.equal(resolveCompletedJobValue({ payment_amount: 1800, actual_cost: 2400 }), 1800);
+
+  const context = formatContextForPrompt({
+    customers: [
+      {
+        id: 'customer-1',
+        customerCode: 'C001',
+        name: 'Top Customer',
+        phone: '9999999999',
+        confirmedPaidTotal: 12000,
+        billedTotal: 15000,
+        fullyPaidJobs: 4,
+        completedJobs: 5,
+      },
+    ],
+    jobs: [],
+    reminders: [],
+    payments: [],
+    documents: [],
+    stats: {
+      today: '2026-08-17',
+      customerValueRankingPeriod: 'lifetime',
+      customerValueRankingBasis:
+        'confirmed paid counts PAID jobs; billed may include unpaid work',
+      customerValueRanking: [
+        {
+          rank: 1,
+          customerId: 'customer-1',
+          customerCode: 'C001',
+          name: 'Top Customer',
+          phone: '9999999999',
+          confirmedPaidTotal: 12000,
+          billedTotal: 15000,
+          fullyPaidJobs: 4,
+          completedJobs: 5,
+        },
+      ],
+    },
+    truncated: {},
+    intent: {
+      scopes: ['customer_value_ranking'],
+      statuses: null,
+      range: { start: '2026-08-17', end: '2026-08-17', label: 'today' },
+    },
+  });
+  assert.match(context, /period = lifetime/);
+  assert.match(context, /confirmedFullyPaidINR=12000/);
+  assert.match(context, /completedJobBilledINR=15000/);
+}
+
 async function testMockCrmChat() {
   const result = await generateWithMock({
     operation: 'crm_chat',
@@ -245,6 +307,7 @@ async function main() {
   testNameSurvivesActionSentences();
   testJobDraftTimeNormalization();
   testOverviewIntentDetection();
+  testLifetimeCustomerValueRankingIntent();
   await testMockCrmChat();
   testEndpointSourceHasSafetyGuards();
   testLookupSourceIsBounded();

@@ -23,6 +23,10 @@ export type AiCrmCustomerEntity = {
   lastServiceDate?: string | null;
   tier?: string | null;
   status?: string | null;
+  confirmedPaidTotal?: number | null;
+  billedTotal?: number | null;
+  fullyPaidJobs?: number | null;
+  completedJobs?: number | null;
 };
 
 export type AiCrmJobEntity = {

@@ -181,7 +181,9 @@ export default function AdminCrmAiDialog({
                   {turn.result?.entities.customers?.length ? (
                     <div className="space-y-1">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Customers
+                        {turn.result.entities.customers.some((customer) => customer.confirmedPaidTotal != null)
+                          ? 'Top customers'
+                          : 'Customers'}
                       </p>
                       {turn.result.entities.customers.slice(0, 6).map((c) => (
                         <button
@@ -197,6 +199,12 @@ export default function AdminCrmAiDialog({
                               {c.phone || 'No phone'}
                               {c.lastServiceDate ? ` · last ${c.lastServiceDate}` : ''}
                             </span>
+                            {c.confirmedPaidTotal != null ? (
+                              <span className="mt-0.5 block font-medium text-emerald-700">
+                                Confirmed paid {formatInr(c.confirmedPaidTotal)}
+                                {c.billedTotal != null ? ` · billed ${formatInr(c.billedTotal)}` : ''}
+                              </span>
+                            ) : null}
                           </span>
                           <Search className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
                         </button>
