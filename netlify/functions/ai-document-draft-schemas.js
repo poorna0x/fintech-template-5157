@@ -193,7 +193,9 @@ function sanitizeDraft(kind, rawDraft) {
     const value =
       kind === 'letterhead' && field === 'blocks'
         ? normalizeLetterheadBlocks(rawDraft[field], rawDraft[field])
-        : sanitizeJsonValue(rawDraft[field]);
+        : kind === 'letterhead' && (field === 'leftSignatory' || field === 'rightSignatory')
+          ? normalizeLetterheadSignatory(rawDraft[field], rawDraft[field])
+          : sanitizeJsonValue(rawDraft[field]);
     if (value !== undefined) out[field] = value;
   }
   const json = JSON.stringify(out);
@@ -253,6 +255,24 @@ function normalizeItems(kind, value) {
     .filter(Boolean);
 }
 
+function stubLetterheadImageSrc(src, id) {
+  const value = String(src || '').trim();
+  if (!value) return '';
+  if (value.startsWith('data:') || value.length > 240) return `[kept-image:${id}]`;
+  return value.slice(0, 240);
+}
+
+function normalizeLetterheadSignatory(value, currentValue) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return {
+    name: cleanString(value.name, 160),
+    designation: cleanString(value.designation, 160),
+    ...(currentValue?.imageUrl
+      ? { imageUrl: stubLetterheadImageSrc(currentValue.imageUrl, 'signatory') }
+      : {}),
+  };
+}
+
 function normalizeLetterheadBlocks(value, currentValue) {
   if (!Array.isArray(value)) return null;
   const currentBlocks = Array.isArray(currentValue) ? currentValue : [];
@@ -298,7 +318,7 @@ function normalizeLetterheadBlocks(value, currentValue) {
         return {
           id,
           kind: 'image',
-          src: String(existing.src).slice(0, 2_000_000),
+          src: stubLetterheadImageSrc(existing.src, id),
           caption: cleanString(raw.caption, 300),
           widthPercent: Math.min(100, Math.max(10, Number(raw.widthPercent) || 80)),
           align: raw.align === 'left' || raw.align === 'right' ? raw.align : 'center',
@@ -340,14 +360,7 @@ function normalizeFieldValue(kind, field, value, currentValue) {
     kind === 'letterhead' &&
     (field === 'leftSignatory' || field === 'rightSignatory')
   ) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    return {
-      name: cleanString(value.name, 160),
-      designation: cleanString(value.designation, 160),
-      ...(currentValue?.imageUrl
-        ? { imageUrl: String(currentValue.imageUrl).slice(0, 2_000_000) }
-        : {}),
-    };
+    return normalizeLetterheadSignatory(value, currentValue);
   }
   if (field === 'termItems') {
     if (!Array.isArray(value)) return null;

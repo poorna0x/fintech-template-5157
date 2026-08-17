@@ -153,6 +153,24 @@ function testLetterheadCanEditFormattingButCannotReplaceImagesOrIds() {
   });
   assert.equal(parsed.ok, true);
   assert.equal('customerId' in parsed.value.currentDraft, false);
+  assert.equal(parsed.value.currentDraft.blocks[1].src, 'https://cdn.example.com/existing.png');
+
+  const withDataUrl = parseDocumentDraftRequest({
+    kind: 'letterhead',
+    message: 'Center the photo',
+    currentDraft: {
+      blocks: [
+        {
+          id: 'image-1',
+          kind: 'image',
+          src: `data:image/png;base64,${'A'.repeat(800)}`,
+          caption: 'Old caption',
+        },
+      ],
+    },
+  });
+  assert.equal(withDataUrl.ok, true);
+  assert.equal(withDataUrl.value.currentDraft.blocks[0].src, '[kept-image:image-1]');
 
   const normalized = normalizeDocumentDraftOutput(
     'letterhead',

@@ -68,6 +68,8 @@ import {
   getLetterheadCss,
   newBlockId,
   normalizeLetterheadData,
+  redactLetterheadMediaForAi,
+  restoreLetterheadMedia,
 } from '@/lib/letterhead-pdf-generator';
 import {
   DocumentBrand,
@@ -294,11 +296,18 @@ export default function LetterheadDocumentsPage({
     []
   );
   const getAiDraftSnapshot = useCallback(
-    () => ({ ...data }) as unknown as Record<string, unknown>,
+    () => redactLetterheadMediaForAi(data) as unknown as Record<string, unknown>,
     [data]
   );
   const applyAiDraftSnapshot = useCallback((snapshot: Record<string, unknown>) => {
-    setData(normalizeLetterheadData(snapshot));
+    setData((previous) => {
+      const merged = {
+        ...previous,
+        ...snapshot,
+        blocks: Array.isArray(snapshot.blocks) ? snapshot.blocks : previous.blocks,
+      } as LetterheadDocumentData;
+      return normalizeLetterheadData(restoreLetterheadMedia(merged, previous));
+    });
   }, []);
 
   const switchDocumentType = useCallback((nextType: LetterheadDocumentType) => {

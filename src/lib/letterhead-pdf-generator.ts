@@ -136,6 +136,75 @@ function normalizeLetterheadBlocks(rawBlocks: unknown, fallback: LetterheadBlock
   return blocks.length ? blocks : fallback;
 }
 
+function isKeptImageStub(src: unknown): boolean {
+  return /^\[kept-image:[^\]]+\]$/.test(String(src || '').trim());
+}
+
+/** Strip binary media and CRM IDs before sending a draft to the AI editor. */
+export function redactLetterheadMediaForAi(
+  data: LetterheadDocumentData
+): LetterheadDocumentData {
+  return {
+    ...data,
+    customerId: undefined,
+    customerCode: undefined,
+    customStampUrl: undefined,
+    leftSignatory: data.leftSignatory
+      ? {
+          name: data.leftSignatory.name,
+          designation: data.leftSignatory.designation,
+        }
+      : data.leftSignatory,
+    rightSignatory: data.rightSignatory
+      ? {
+          name: data.rightSignatory.name,
+          designation: data.rightSignatory.designation,
+        }
+      : data.rightSignatory,
+    blocks: (data.blocks || []).map((block) =>
+      block.kind === 'image'
+        ? { ...block, src: `[kept-image:${block.id}]` }
+        : block
+    ),
+  };
+}
+
+/** Reattach uploaded images/stamps/IDs after an AI patch is applied. */
+export function restoreLetterheadMedia(
+  next: LetterheadDocumentData,
+  previous: LetterheadDocumentData
+): LetterheadDocumentData {
+  const previousImages = new Map(
+    (previous.blocks || [])
+      .filter((block): block is Extract<LetterheadBlock, { kind: 'image' }> => block.kind === 'image')
+      .map((block) => [block.id, block])
+  );
+  return {
+    ...next,
+    customerId: previous.customerId,
+    customerCode: previous.customerCode,
+    customStampUrl: previous.customStampUrl,
+    leftSignatory: next.leftSignatory
+      ? { ...next.leftSignatory, imageUrl: previous.leftSignatory?.imageUrl }
+      : next.leftSignatory,
+    rightSignatory: next.rightSignatory
+      ? { ...next.rightSignatory, imageUrl: previous.rightSignatory?.imageUrl }
+      : next.rightSignatory,
+    blocks: (next.blocks || []).map((block) => {
+      if (block.kind !== 'image') return block;
+      const previousImage = previousImages.get(block.id);
+      if (!previousImage) return block;
+      return {
+        ...block,
+        src:
+          !block.src || isKeptImageStub(block.src)
+            ? previousImage.src
+            : block.src,
+      };
+    }),
+  };
+}
+
 export type LetterheadDocumentType =
   | 'service_report'
   | 'amc_report'
