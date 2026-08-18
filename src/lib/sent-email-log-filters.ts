@@ -18,6 +18,9 @@ export type SentEmailLogTemplateFilter =
   | 'invoice'
   | 'service_bill'
   | 'quotation'
+  | 'warranty_document'
+  | 'document_accept_preview'
+  | 'document_accept_original'
   | 'service_reminder'
   | 'general';
 

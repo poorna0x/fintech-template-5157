@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar, Phone, MessageCircle, MapPin, User, Clock, ChevronLeft, ChevronRight, Check, Settings, Filter, Upload, Camera, Loader2 } from 'lucide-react';
+import { Calendar, Phone, MessageCircle, MapPin, User, Clock, ChevronLeft, ChevronRight, Check, Settings, Filter, Upload, Camera, Loader2, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, generateJobNumber } from '@/lib/supabase';
 import { createBookingCustomer } from '@/lib/bookingCustomer';
@@ -14,6 +14,16 @@ import { emailService } from '@/lib/email';
 import ImageUpload from './ImageUpload';
 
 const normalizePhone10 = (phone: string): string => phone.replace(/\D/g, '').slice(-10);
+
+function bookingCanonicalServiceType(serviceType: string): 'RO' | 'SOFTENER' {
+  return serviceType === 'softener' ? 'SOFTENER' : 'RO';
+}
+
+function bookingServiceTypeLabel(serviceType: string): string {
+  if (serviceType === 'softener') return 'Water Softener';
+  if (serviceType === 'commercial') return 'Commercial RO Plant';
+  return 'RO Water Purifier';
+}
 
 const BookingSection = () => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -358,7 +368,7 @@ const BookingSection = () => {
             ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
             : null
         },
-        service_type: formData.serviceType.toUpperCase() as 'RO' | 'SOFTENER',
+        service_type: bookingCanonicalServiceType(formData.serviceType),
         brand: formData.brandName,
         model: formData.modelName,
         status: 'ACTIVE' as const,
@@ -389,9 +399,9 @@ const BookingSection = () => {
 
       // Create job record
       const jobData = {
-        job_number: generateJobNumber(formData.serviceType.toUpperCase()),
+        job_number: generateJobNumber(bookingCanonicalServiceType(formData.serviceType)),
         customer_id: customer.id,
-        service_type: formData.serviceType.toUpperCase() as 'RO' | 'SOFTENER',
+        service_type: bookingCanonicalServiceType(formData.serviceType),
         service_sub_type: formData.service,
         brand: formData.brandName,
         model: formData.modelName,
@@ -472,13 +482,30 @@ const BookingSection = () => {
     { value: "ro-troubleshooting", label: "RO Troubleshooting" }
   ];
 
+  const commercialServices = [
+    { value: "25 LPH Commercial Installation", label: "25 LPH Commercial Installation" },
+    { value: "50 LPH Commercial Installation", label: "50 LPH Commercial Installation" },
+    { value: "500 LPH Commercial Installation", label: "500 LPH Commercial Installation" },
+    { value: "1000 LPH Commercial Installation", label: "1000 LPH Commercial Installation" },
+    { value: "Commercial RO Service", label: "Commercial RO Service" },
+    { value: "Commercial RO Repair", label: "Commercial RO Repair" },
+    { value: "Commercial RO AMC", label: "Commercial RO AMC" }
+  ];
+
   const softenerServices = [
-    { value: "softener-installation", label: "Water Softener Installation" },
+    { value: "New Softener Installation", label: "New Softener Installation" },
     { value: "softener-repair", label: "Water Softener Repair" },
     { value: "softener-maintenance", label: "Softener Maintenance" },
     { value: "salt-refill", label: "Salt Refill Service" },
     { value: "softener-calibration", label: "System Calibration" }
   ];
+
+  const servicesForType =
+    formData.serviceType === 'softener'
+      ? softenerServices
+      : formData.serviceType === 'commercial'
+        ? commercialServices
+        : roServices;
 
   const isStepValid = (step: number) => {
     switch (step) {
@@ -567,7 +594,7 @@ const BookingSection = () => {
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-            Book RO Service in Bengaluru
+            Book RO, commercial plant or softener service in Bengaluru
           </h2>
           <p className="text-lg text-muted-foreground">
             Schedule your RO water purifier service with our certified technicians across Bangalore, Karnataka
@@ -685,7 +712,7 @@ const BookingSection = () => {
                       
                       <div>
                         <Label>What type of service do you need? *</Label>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
                           <div 
                             className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
                               formData.serviceType === 'ro' 
@@ -720,7 +747,26 @@ const BookingSection = () => {
                                 <Settings className="w-6 h-6 text-primary" />
                               </div>
                               <h4 className="font-semibold text-foreground">Water Softener</h4>
-                              <p className="text-sm text-muted-foreground mt-1">Installation, repair, maintenance</p>
+                              <p className="text-sm text-muted-foreground mt-1">New installation, service, salt</p>
+                            </div>
+                          </div>
+
+                          <div 
+                            className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                              formData.serviceType === 'commercial' 
+                                ? 'border-primary bg-primary/10' 
+                                : 'border-border hover:border-primary/50'
+                            }`}
+                            onClick={() => {
+                              setFormData(prev => ({ ...prev, serviceType: 'commercial', service: '' }));
+                            }}
+                          >
+                            <div className="text-center">
+                              <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center mx-auto mb-3">
+                                <Building2 className="w-6 h-6 text-primary" />
+                              </div>
+                              <h4 className="font-semibold text-foreground">Commercial RO</h4>
+                              <p className="text-sm text-muted-foreground mt-1">25 to 1000 LPH, service</p>
                             </div>
                           </div>
                         </div>
@@ -735,7 +781,7 @@ const BookingSection = () => {
                          <SelectValue placeholder="Choose specific service" />
                        </SelectTrigger>
                        <SelectContent>
-                         {(formData.serviceType === 'ro' ? roServices : softenerServices).map((service) => (
+                         {servicesForType.map((service) => (
                            <SelectItem key={service.value} value={service.value}>
                              {service.label}
                            </SelectItem>
@@ -957,7 +1003,7 @@ const BookingSection = () => {
                           <div>
                             <h5 className="font-medium text-foreground mb-2">Service Details</h5>
                             <div className="space-y-1 text-sm text-muted-foreground">
-                              <p><span className="font-medium">Service Type:</span> {formData.serviceType === 'ro' ? 'RO Water Purifier' : 'Water Softener'}</p>
+                              <p><span className="font-medium">Service Type:</span> {bookingServiceTypeLabel(formData.serviceType)}</p>
                               <p><span className="font-medium">Service:</span> {formData.service}</p>
                               <p><span className="font-medium">Brand:</span> {formData.brandName}</p>
                               <p><span className="font-medium">Model:</span> {formData.modelName}</p>

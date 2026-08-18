@@ -68,7 +68,7 @@ async function verifyAdminBearerToken(token) {
 
   if (!serviceKey) {
     if (metaRole === 'admin') {
-      return { ok: true, userId: user.id };
+      return { ok: true, userId: user.id, role: 'ADMIN' };
     }
     return { ok: false, error: 'Server misconfigured' };
   }
@@ -93,7 +93,7 @@ async function verifyAdminBearerToken(token) {
 
   const { data: adminRow, error: adminErr } = await adminClient
     .from('admin_users')
-    .select('id')
+    .select('id, role')
     .ilike('email', email)
     .eq('is_active', true)
     .maybeSingle();
@@ -106,7 +106,27 @@ async function verifyAdminBearerToken(token) {
     return { ok: false, error: 'Forbidden' };
   }
 
-  return { ok: true, userId: user.id };
+  const role = String(adminRow.role || '').trim().toUpperCase();
+  return {
+    ok: true,
+    userId: user.id,
+    role: role || null,
+  };
+}
+
+/**
+ * Full admin only (ADMIN / SUPER_ADMIN). Managers and technicians are rejected.
+ * Use for privileged AI / WhatsApp-style tools that managers must not access.
+ */
+async function verifyFullAdminBearerToken(token) {
+  const auth = await verifyAdminBearerToken(token);
+  if (!auth.ok) return auth;
+  const role = String(auth.role || '').toUpperCase();
+  // When role is missing (misconfigured service key path / legacy), deny for safety.
+  if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
+    return { ok: false, error: 'Forbidden' };
+  }
+  return auth;
 }
 
 /** Admin or technician JWT — never default unknown users to admin. */
@@ -247,6 +267,7 @@ module.exports = {
   authorizeStaffAmcEmailRequest,
   authorizeStaffRequest,
   verifyAdminBearerToken,
+  verifyFullAdminBearerToken,
   verifyStaffBearerToken,
   isPreviewSecretAuthorized,
   readBearerToken,

@@ -113,16 +113,6 @@ const ContactSection = () => {
           </Card>
         </div>
 
-        <div className="seo-hidden">
-          <h3>RO Service Areas in Bengaluru</h3>
-          <p>We serve all areas of Bangalore, Karnataka including Whitefield, Electronic City, Koramangala, Indiranagar, HSR Layout, Marathahalli, BTM Layout, Jayanagar, Malleshwaram, Rajajinagar, and all major localities.</p>
-          
-          <h3>RO Service Hours in Bengaluru</h3>
-          <p>Mon-Fri: 8AM - 8PM, Saturday: 9AM - 6PM, Sunday: Emergency RO Service Only, 24/7 Emergency RO Repair Available</p>
-          
-          <h3>Contact Information</h3>
-          <p>Phone: {brand.phones.join(', ')}, Email: {brand.email}, WhatsApp: {brand.primaryPhone}</p>
-        </div>
       </div>
     </section>
   );

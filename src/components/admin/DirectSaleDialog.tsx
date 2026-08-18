@@ -20,6 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { AddressChoiceCards } from '@/components/document/DocumentAddressSelector';
 import {
   Select,
   SelectContent,
@@ -110,6 +111,7 @@ type PendingBillDraft = {
   amount: number;
   paymentMode: PaymentMode;
   lines: Array<{ description: string; quantity: number; unitPrice: number }>;
+  address?: { street: string; area: string; city: string; state: string; pincode: string };
   onlineAmount?: number;
   upiId?: string;
   payeeName?: string;
@@ -133,6 +135,33 @@ const formatCurrency = (amount: number): string => {
 };
 
 const digitsPhone = (raw: string): string => String(raw || '').replace(/\D/g, '').slice(-10);
+
+type DirectSaleAddressChoice = 'omit' | 'primary' | 'secondary';
+type DirectSaleAddress = { street: string; area: string; city: string; state: string; pincode: string };
+const EMPTY_DIRECT_SALE_ADDRESS: DirectSaleAddress = {
+  street: '',
+  area: '',
+  city: '',
+  state: '',
+  pincode: '',
+};
+
+function normalizeDirectSaleAddress(raw: unknown): DirectSaleAddress {
+  const value = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return {
+    street: String(value.street || ''),
+    area: String(value.area || ''),
+    city: String(value.city || ''),
+    state: String(value.state || ''),
+    pincode: String(value.pincode || ''),
+  };
+}
+
+function directSaleAddressLabel(address: DirectSaleAddress): string {
+  return [address.street, address.area, address.city, address.state, address.pincode]
+    .filter(Boolean)
+    .join(', ');
+}
 
 const UPI_SHARE_BRANDS: DocumentBrand[] = ['hydrogenro', 'elevenro'];
 
@@ -182,6 +211,14 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [addressChoice, setAddressChoice] = useState<DirectSaleAddressChoice>('omit');
+  const [matchedAddresses, setMatchedAddresses] = useState<{
+    customerId: string;
+    primary: DirectSaleAddress;
+    secondary: DirectSaleAddress | null;
+    primaryLabel: string;
+    secondaryLabel: string;
+  } | null>(null);
   const [billMode, setBillMode] = useState<BillPriceMode>('set');
   /** Per-line sell prices (inventory id / custom id → text). Used in Normal mode. */
   const [sellPrices, setSellPrices] = useState<Record<string, string>>({});
@@ -223,6 +260,45 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const skipResetOnCloseRef = React.useRef(false);
   /** After Resume / Start over this open cycle, don't re-prompt. */
   const resumePromptHandledRef = React.useRef(false);
+
+  useEffect(() => {
+    const phone = digitsPhone(customerPhone);
+    if (phone.length !== 10) {
+      setMatchedAddresses(null);
+      setAddressChoice('omit');
+      return;
+    }
+    setMatchedAddresses(null);
+    setAddressChoice('omit');
+    let cancelled = false;
+    void (async () => {
+      const { data } = await db.customers.searchSlim(phone, 5);
+      const exact = (data || []).find(
+        (row: any) =>
+          digitsPhone(String(row.phone || '')) === phone ||
+          digitsPhone(String(row.alternate_phone || '')) === phone
+      ) as any;
+      if (!exact?.id || cancelled) return;
+      const full = await db.customers.getByIdForDocuments(String(exact.id));
+      if (cancelled || !full.data) return;
+      const row = full.data as any;
+      const primary = normalizeDirectSaleAddress(row.address);
+      const secondaryRaw = normalizeDirectSaleAddress(row.alternate_address);
+      const secondary = directSaleAddressLabel(secondaryRaw) ? secondaryRaw : null;
+      setMatchedAddresses({
+        customerId: String(row.id),
+        primary,
+        secondary,
+        primaryLabel: String(row.visible_address || '').trim() || 'Primary',
+        secondaryLabel: String(row.alternate_visible_address || '').trim() || 'Secondary',
+      });
+      setAddressChoice('omit');
+      setCustomerName((prev) => prev.trim() || String(row.full_name || ''));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerPhone]);
 
   useEffect(() => {
     if (!open) return;
@@ -327,6 +403,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     setSaleDate(todayInputValue());
     setCustomerName('');
     setCustomerPhone('');
+    setAddressChoice('omit');
+    setMatchedAddresses(null);
     setBillMode('set');
     setSellPrices({});
     setPaymentMode('CASH');
@@ -441,6 +519,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         setSaleDate(todayInputValue());
         setCustomerName('');
         setCustomerPhone('');
+        setAddressChoice('omit');
+        setMatchedAddresses(null);
         setBillMode('set');
         setSellPrices({});
         setPaymentMode('CASH');
@@ -668,6 +748,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         : billItems.reduce((s, it) => s + it.total, 0);
 
     const stamp = Date.now().toString().slice(-6);
+    const address = draft.address || EMPTY_DIRECT_SALE_ADDRESS;
     return {
       id: `office-${stamp}`,
       billNumber: `BILL-OFFICE-${stamp}`,
@@ -676,10 +757,10 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       customer: {
         id: '',
         name: draft.customerName,
-        address: '',
-        city: '',
-        state: '',
-        pincode: '',
+        address: [address.street, address.area].filter(Boolean).join(', '),
+        city: address.city,
+        state: address.state,
+        pincode: address.pincode,
         phone: draft.customerPhone,
         email: '',
       },
@@ -863,6 +944,12 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         billMode,
         amount: amountNum,
         paymentMode,
+        address:
+          addressChoice === 'primary'
+            ? matchedAddresses?.primary
+            : addressChoice === 'secondary'
+              ? matchedAddresses?.secondary || undefined
+              : undefined,
         lines,
         ...(needsQr && selectedQr?.upiId && onlineAmountForQr > 0
           ? {
@@ -1032,6 +1119,36 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
               Both name and phone → new or existing customer (C01234…). Neither → walk-in office
               sale bucket.
             </p>
+            {matchedAddresses ? (
+              <AddressChoiceCards
+                label="Address for bill"
+                value={addressChoice}
+                options={[
+                  {
+                    value: 'primary' as const,
+                    title: matchedAddresses.primaryLabel,
+                    subtitle:
+                      directSaleAddressLabel(matchedAddresses.primary) || 'No address saved',
+                  },
+                  ...(matchedAddresses.secondary
+                    ? [
+                        {
+                          value: 'secondary' as const,
+                          title: matchedAddresses.secondaryLabel,
+                          subtitle: directSaleAddressLabel(matchedAddresses.secondary),
+                        },
+                      ]
+                    : []),
+                  {
+                    value: 'omit' as const,
+                    title: 'No address',
+                    subtitle: 'Print name and phone only',
+                    icon: 'omit' as const,
+                  },
+                ]}
+                onSelect={(choice) => setAddressChoice(choice as DirectSaleAddressChoice)}
+              />
+            ) : null}
 
             <div className="space-y-2">
               <Label className="text-sm font-medium">Bill pricing</Label>

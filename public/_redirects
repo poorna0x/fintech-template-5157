@@ -30,5 +30,6 @@
 /booking /book 301
 /booking/ /book 301
 
-# SPA fallback — must be last
-/* /index.html 200
+# SPA fallback — must be last.
+# app.html is the unprerendered shell; index.html is the prerendered homepage.
+/* /app.html 200

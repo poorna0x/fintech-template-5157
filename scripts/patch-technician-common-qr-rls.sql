@@ -3,12 +3,26 @@
 -- Safe to re-run.
 
 CREATE OR REPLACE FUNCTION public.is_admin_user()
-RETURNS boolean LANGUAGE sql STABLE AS $$
-  SELECT coalesce(
-    auth.jwt() -> 'app_metadata' ->> 'role',
-    auth.jwt() -> 'user_metadata' ->> 'role',
-    'admin'
-  ) IS DISTINCT FROM 'technician';
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    auth.uid() IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.technicians t WHERE t.id = auth.uid()
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM public.admin_users a
+      WHERE lower(a.email) = lower(coalesce(
+              nullif(auth.jwt() ->> 'email', ''),
+              ''
+            ))
+        AND coalesce(a.is_active, true) = true
+    );
 $$;
 
 ALTER TABLE public.technician_common_qr ENABLE ROW LEVEL SECURITY;
@@ -20,7 +34,7 @@ DROP POLICY IF EXISTS technician_common_qr_delete ON public.technician_common_qr
 
 CREATE POLICY technician_common_qr_select
   ON public.technician_common_qr FOR SELECT TO authenticated
-  USING (true);
+  USING (public.is_admin_user() OR public.is_active_technician());
 
 CREATE POLICY technician_common_qr_insert
   ON public.technician_common_qr FOR INSERT TO authenticated

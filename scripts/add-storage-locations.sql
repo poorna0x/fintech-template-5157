@@ -121,7 +121,7 @@ DROP POLICY IF EXISTS storage_places_admin_update ON public.storage_places;
 DROP POLICY IF EXISTS storage_places_admin_delete ON public.storage_places;
 
 CREATE POLICY storage_places_select_auth ON public.storage_places
-  FOR SELECT TO authenticated USING (true);
+  FOR SELECT TO authenticated USING (public.is_admin_user() OR public.is_active_technician());
 CREATE POLICY storage_places_admin_insert ON public.storage_places
   FOR INSERT TO authenticated WITH CHECK (public.is_admin_user());
 CREATE POLICY storage_places_admin_update ON public.storage_places
@@ -135,7 +135,7 @@ DROP POLICY IF EXISTS storage_blocks_admin_update ON public.storage_blocks;
 DROP POLICY IF EXISTS storage_blocks_admin_delete ON public.storage_blocks;
 
 CREATE POLICY storage_blocks_select_auth ON public.storage_blocks
-  FOR SELECT TO authenticated USING (true);
+  FOR SELECT TO authenticated USING (public.is_admin_user() OR public.is_active_technician());
 CREATE POLICY storage_blocks_admin_insert ON public.storage_blocks
   FOR INSERT TO authenticated WITH CHECK (public.is_admin_user());
 CREATE POLICY storage_blocks_admin_update ON public.storage_blocks
@@ -149,7 +149,7 @@ DROP POLICY IF EXISTS storage_block_items_admin_update ON public.storage_block_i
 DROP POLICY IF EXISTS storage_block_items_admin_delete ON public.storage_block_items;
 
 CREATE POLICY storage_block_items_select_auth ON public.storage_block_items
-  FOR SELECT TO authenticated USING (true);
+  FOR SELECT TO authenticated USING (public.is_admin_user() OR public.is_active_technician());
 CREATE POLICY storage_block_items_admin_insert ON public.storage_block_items
   FOR INSERT TO authenticated WITH CHECK (public.is_admin_user());
 CREATE POLICY storage_block_items_admin_update ON public.storage_block_items

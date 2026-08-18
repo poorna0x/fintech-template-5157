@@ -67,6 +67,12 @@ import {
 } from '@/components/ui/dialog';
 import { normalizeRecipientList } from '@/lib/email-recipients';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
+import {
+  DocumentAddressSelector,
+  documentAddressForChoice,
+  type DocumentAddressChoice,
+} from '@/components/document/DocumentAddressSelector';
+import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
 
 interface AMCGeneratorProps {
   customer: Customer;
@@ -74,6 +80,7 @@ interface AMCGeneratorProps {
   embedded?: boolean;
   /** Prefill amount / validity / prefilter / auto-visit from a completed job. */
   initialFromJob?: JobAmcPrefill | null;
+  initialAiInstruction?: string | null;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -94,6 +101,7 @@ export default function AMCGenerator({
   onAMCSaved,
   embedded = false,
   initialFromJob = null,
+  initialAiInstruction,
 }: AMCGeneratorProps) {
   const jobPrefillAppliedRef = useRef<string | null>(null);
   const sourceJobIdRef = useRef<string | null>(initialFromJob?.jobId ?? null);
@@ -170,6 +178,9 @@ export default function AMCGenerator({
     if (jobPrefillAppliedRef.current === initialFromJob.jobId) return;
     jobPrefillAppliedRef.current = initialFromJob.jobId;
     sourceJobIdRef.current = initialFromJob.jobId;
+    if (initialFromJob.serviceSite === 'secondary') {
+      setAddressChoice('secondary');
+    }
 
     const amc = initialFromJob.amcInfo;
     const start = typeof amc.date_given === 'string' ? amc.date_given.split('T')[0] : '';
@@ -256,11 +267,9 @@ export default function AMCGenerator({
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [addressChoice, setAddressChoice] = useState<DocumentAddressChoice>('primary');
   const resolveCustomerAddress = () =>
-    normalizeCustomerAddress(customer.address, {
-      visible_address: customer.address?.visible_address,
-      formattedAddress: customer.location?.formattedAddress,
-    });
+    normalizeCustomerAddress(documentAddressForChoice(customer, addressChoice));
 
   const [editableCustomer, setEditableCustomer] = useState(() => {
     const addr = resolveCustomerAddress();
@@ -295,7 +304,7 @@ export default function AMCGenerator({
         pincode: addr.pincode,
       },
     });
-  }, [customer, isEditingCustomer]);
+  }, [customer, isEditingCustomer, addressChoice]);
 
   // Calculate totals - use direct AMC cost instead of items
   const subtotal = num(amcCost);
@@ -793,6 +802,7 @@ export default function AMCGenerator({
     agreementIntro,
     description,
     documentBrand,
+    addressChoice,
     editableCustomer,
   });
 
@@ -829,6 +839,9 @@ export default function AMCGenerator({
     if (typeof snap.paymentDueDate === 'string') setPaymentDueDate(snap.paymentDueDate);
     if (typeof snap.agreementIntro === 'string') setAgreementIntro(snap.agreementIntro);
     if (typeof snap.description === 'string') setDescription(snap.description);
+    if (snap.addressChoice === 'primary' || snap.addressChoice === 'secondary') {
+      setAddressChoice(snap.addressChoice);
+    }
     if (snap.documentBrand === 'hydrogenro' || snap.documentBrand === 'elevenro') {
       setDocumentBrand(snap.documentBrand);
       // Keep company info in sync so the preview/PDF picks up the right brand.
@@ -971,6 +984,14 @@ export default function AMCGenerator({
         }
       />
 
+      <AiDocumentDraftAssistant
+        kind="amc"
+        documentNoun="AMC agreement"
+        getSnapshot={getDraftSnapshot}
+        onApply={applyDraftSnapshot}
+        initialInstruction={initialAiInstruction}
+      />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
         {/* Form Section */}
         <div className="space-y-4 sm:space-y-6">
@@ -1094,6 +1115,14 @@ export default function AMCGenerator({
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              <DocumentAddressSelector
+                customer={customer}
+                value={addressChoice}
+                onChange={(choice, address) => {
+                  setAddressChoice(choice);
+                  setEditableCustomer((prev) => ({ ...prev, address }));
+                }}
+              />
               {/* RO Model Field - Always visible and editable */}
               <div>
                 <Label htmlFor="roModel">RO Model *</Label>

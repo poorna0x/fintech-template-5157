@@ -37,6 +37,8 @@ export const TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES = [
   'cash_handover',
   'wrong_line',
   'pay_qr_screenshot',
+  'job_reviews',
+  'worked_hours',
 ] as const satisfies readonly TechPushCategory[];
 
 export type TechWhatsAppAutoMirrorCategory =
@@ -92,6 +94,14 @@ export const TECH_WHATSAPP_LABELS: Record<
     label: TECH_PUSH_LABELS.pay_qr_screenshot.label + ' (WhatsApp)',
     description:
       'Payment screenshot after you send a pay QR — also WhatsApp when enabled (photo when the 24h window is open).',
+  },
+  job_reviews: {
+    label: TECH_PUSH_LABELS.job_reviews.label + ' (WhatsApp)',
+    description: 'Customer review alerts — also WhatsApp the technician when enabled.',
+  },
+  worked_hours: {
+    label: TECH_PUSH_LABELS.worked_hours.label + ' (WhatsApp)',
+    description: '9:00 PM worked-hours summary — also WhatsApp when enabled.',
   },
   tech_assigned_customer: {
     label: 'Technician assigned (to customer)',

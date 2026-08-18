@@ -1,5 +1,5 @@
 /**
- * Document Accept (preview PDF → WhatsApp I Accept → original on WhatsApp).
+ * Document Accept (preview PDF → WhatsApp button or secure email link → original).
  * Client helpers — watermark + admin send API.
  */
 import { toast } from 'sonner';
@@ -70,7 +70,7 @@ const PREVIEW_WATERMARK_CSS = `
 /** Inject PREVIEW – NOT VALID watermark into document HTML (preview PDF only). */
 export function withDocumentAcceptPreviewWatermark(html: string): string {
   const banner =
-    '<div class="wa-preview-watermark-banner" aria-hidden="true">PREVIEW – NOT VALID · Accept on WhatsApp to receive the original</div>';
+    '<div class="wa-preview-watermark-banner" aria-hidden="true">PREVIEW – NOT VALID · Accept securely to receive the original</div>';
   const diag =
     '<div class="wa-preview-watermark-diag" aria-hidden="true"><span>PREVIEW – NOT VALID</span></div>';
   const style = `<style id="wa-preview-watermark">${PREVIEW_WATERMARK_CSS}</style>`;
@@ -195,7 +195,10 @@ export async function generateDocumentAcceptPdfPair(
   );
 
   const [original, preview] = await Promise.all([
-    generateDocumentPdfBase64({ html: originalHtml, filename }),
+    generateDocumentPdfBase64({
+      html: originalHtml,
+      filename,
+    }),
     generateDocumentPdfBase64({
       html: previewHtml,
       filename: `PREVIEW_${filename}`,
@@ -282,7 +285,7 @@ export async function generateAmcAcceptPdfPair(
     }),
   ]);
   const sourceKey = String(bill.billNumber || '').trim() || `amc-${Date.now()}`;
-  await Promise.all([
+  const [originalRecord, previewRecord] = await Promise.all([
     recordDocumentPdfAuthenticity({
       docType: 'amc',
       sourceKey,
@@ -304,6 +307,12 @@ export async function generateAmcAcceptPdfPair(
       generatedOnYmd,
     }),
   ]);
+  if (!originalRecord.ok) {
+    throw new Error(originalRecord.error || 'Original PDF authenticity fingerprint was not saved');
+  }
+  if (!previewRecord.ok) {
+    throw new Error(previewRecord.error || 'Preview PDF authenticity fingerprint was not saved');
+  }
   return {
     originalPdfBase64: original.pdfBase64,
     previewPdfBase64: preview.pdfBase64,
@@ -356,7 +365,7 @@ export async function generateWarrantyAcceptPdfPair(
     fingerprinted.warranty.id && fingerprinted.warranty.id !== 'draft'
       ? fingerprinted.warranty.id
       : `draft:${fingerprinted.customer.customer_id}:${fingerprinted.warranty.start_date || 'na'}`;
-  await Promise.all([
+  const [originalRecord, previewRecord] = await Promise.all([
     recordDocumentPdfAuthenticity({
       docType: 'warranty',
       sourceKey,
@@ -378,6 +387,12 @@ export async function generateWarrantyAcceptPdfPair(
       generatedOnYmd,
     }),
   ]);
+  if (!originalRecord.ok) {
+    throw new Error(originalRecord.error || 'Original PDF authenticity fingerprint was not saved');
+  }
+  if (!previewRecord.ok) {
+    throw new Error(previewRecord.error || 'Preview PDF authenticity fingerprint was not saved');
+  }
   return {
     originalPdfBase64: original.pdfBase64,
     previewPdfBase64: preview.pdfBase64,
@@ -459,6 +474,116 @@ export async function sendDocumentAcceptInvite(
     expiresAt: data.expiresAt,
     via: data.via,
   };
+}
+
+export async function sendDocumentEmailAcceptInvite(
+  params: SendDocumentAcceptInviteParams
+): Promise<{
+  ok: boolean;
+  error?: string;
+  inviteId?: string;
+  expiresAt?: string;
+}> {
+  const sessionReady = await ensureSupabaseSessionForWrite();
+  if (!sessionReady.ok) return { ok: false, error: 'Could not verify your session' };
+  const token = await resolveSupabaseAccessTokenForApi();
+  if (!token) return { ok: false, error: 'Not signed in' };
+
+  const res = await fetch('/.netlify/functions/document-accept-email-send', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      to: params.to,
+      brand: params.brand,
+      docType: params.docType,
+      documentLabel: params.documentLabel,
+      documentRef: params.documentRef,
+      sourceKey: params.sourceKey,
+      customerId: params.customerId,
+      customerName: params.customerName,
+      amountDisplay: params.amountDisplay,
+      filename: params.filename,
+      verifyCode: params.verifyCode,
+      previewVerifyCode: params.previewVerifyCode,
+      originalPdfBase64: params.originalPdfBase64,
+      previewPdfBase64: params.previewPdfBase64,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    return {
+      ok: false,
+      error: data?.error || data?.details || `Email Accept send failed (${res.status})`,
+    };
+  }
+  return {
+    ok: true,
+    inviteId: data.inviteId,
+    expiresAt: data.expiresAt,
+  };
+}
+
+export type PublicDocumentAcceptInvite = {
+  brand: DocumentBrand;
+  documentLabel: string;
+  documentRef: string | null;
+  customerName: string;
+  status: 'pending' | 'accepted' | 'expired' | 'revoked' | 'failed';
+  expiresAt: string;
+  acceptedAt: string | null;
+  confirmationId: string | null;
+  deliveryStatus: 'pending' | 'sending' | 'sent' | 'failed';
+};
+
+function publicAcceptFunctionUrl(): string {
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('elevenro.com')) {
+    return 'https://hydrogenro.com/.netlify/functions/document-accept-public';
+  }
+  return '/.netlify/functions/document-accept-public';
+}
+
+async function callPublicAccept(
+  token: string,
+  action: 'get' | 'accept'
+): Promise<Record<string, unknown>> {
+  const response = await fetch(publicAcceptFunctionUrl(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, action }),
+  });
+  return response.json().catch(() => ({ ok: false, error: 'failed' }));
+}
+
+export async function fetchPublicDocumentAcceptInvite(token: string): Promise<{
+  invite: PublicDocumentAcceptInvite | null;
+  error?: string;
+}> {
+  const data = await callPublicAccept(token, 'get');
+  return {
+    invite: data.ok && data.invite ? data.invite as PublicDocumentAcceptInvite : null,
+    error: typeof data.error === 'string' ? data.error : undefined,
+  };
+}
+
+export async function acceptPublicDocument(token: string): Promise<{
+  ok: boolean;
+  accepted?: boolean;
+  alreadyAccepted?: boolean;
+  confirmationId?: string;
+  deliveryStatus?: string;
+  error?: string;
+}> {
+  return callPublicAccept(token, 'accept') as Promise<{
+    ok: boolean;
+    accepted?: boolean;
+    alreadyAccepted?: boolean;
+    confirmationId?: string;
+    deliveryStatus?: string;
+    error?: string;
+  }>;
 }
 
 export function showAcceptPreviewSentToast(

@@ -12,7 +12,7 @@
         'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. Same-day RO installation, repair, maintenance and filter replacement across all Bangalore areas. Call +91-8884944288.',
       keywords:
         'Hydrogen RO, best RO service Bengaluru, RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Attibele, RO service Chandapura, RO service Bommasandra, RO service Jigani, RO service Hosur Road, RO service Silk Board, RO service Sarjapur Road, RO installation Bengaluru, RO repair Bangalore, same day RO service South Bangalore',
-      ogImage: 'https://hydrogenro.com/og-image.jpg',
+      ogImage: 'https://hydrogenro.com/og-image.jpg', // TODO(seo): add a proper 1200x630 brand OG image (placeholder removed)
       logoPath: 'https://hydrogenro.com/fulllogo.png',
       phones: ['+91-8884944288', '+91-9886944288'],
       primaryPhone: '+91-8884944288',
@@ -30,7 +30,7 @@
       legalName: 'ELEVEN RO',
       defaultTitle: 'Eleven RO - Best RO Water Purifier Service in Bengaluru | Same-Day Service',
       defaultDescription:
-        'Eleven RO - trusted RO water purifier service in Bengaluru, Karnataka. Professional RO installation, repair, maintenance and filter replacement. Same-day service across Bangalore including Anjanapura, JP Nagar, Bannerghatta and South Bangalore. Call 9880693311.',
+        'Eleven RO - trusted RO water purifier service in Bengaluru, Karnataka. Professional RO installation, repair, maintenance and filter replacement. Same-day service across Bangalore including Anjanapura, JP Nagar, Bannerghatta and South Bangalore. Call +91-9880693311.',
       keywords:
         'Eleven RO, Eleven RO service Bengaluru, RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Attibele, RO service Chandapura, RO service Bommasandra, RO service Jigani, RO service Hosur Road, RO installation Anjanapura, RO repair South Bangalore, same day RO service Eleven RO',
       ogImage: 'https://elevenro.com/elevenro-og.webp',
@@ -71,11 +71,11 @@
     el.setAttribute('content', content);
   }
 
-  function injectJsonLd(data, id) {
+  function injectJsonLd(data, id, brandKey) {
     var script = document.createElement('script');
     script.type = 'application/ld+json';
     if (id) script.id = id;
-    script.setAttribute('data-brand-seo', 'elevenro');
+    script.setAttribute('data-brand-seo', brandKey || detectSiteKey());
     script.textContent = JSON.stringify(data);
     document.head.appendChild(script);
   }
@@ -235,20 +235,20 @@
       var slug = clean.replace('/ro-service-', '');
       var area = titleCaseSlug(slug);
       // AUTO:BENGALURU_LOCALITY_SLUGS
-      var BENGALURU_LOCALITY_SLUGS = new Set(["adugodi","aecs-layout","agara","allalasandra","ambalipura","anjanapura","arekere","attibele","attur-layout","bagalur","banashankari","banaswadi","bannerghatta","basavanagudi","basaveshwaranagar","begur","bellandur","benniganahalli","benson-town","bharath-nagar","bilekahalli","bommanahalli","bommasandra","bommasandra-industrial-area","brookefield","btm-layout","budigere-cross","carmelaram","chamrajpet","chandapura","chickpet","chikkajala","cooke-town","cox-town","cv-raman-nagar","dasarahalli","doddaballapur-road","doddakannelli","doddanekundi","domlur","dommasandra","ejipura","electronic-city","frazer-town","ganganagar","girinagar","goraguntepalya","gottigere","graphite-india-road","hal","halasuru","haralur","hbr-layout","hebbal","hennur","hennur-road","hesaraghatta","hongasandra","hoodi","hope-farm","horamavu","hosa-road","hosur-road","hrbr-layout","hsr-layout","hulimavu","iblur","indiranagar","itpl","jakkur","jalahalli","jayanagar","jeevan-bima-nagar","jigani","jp-nagar","kacharakanahalli","kadubeesanahalli","kadugodi","kaggadasapura","kaikondrahalli","kalyan-nagar","kammanahalli","kannamangala","kasavanahalli","kasturi-nagar","kathriguppe","kempapura","kengeri","kodathi","kodigehalli","kogilu","konanakunte","koramangala","kr-puram","kudlu-gate","kumaraswamy-layout","kumbalgodu","kundalahalli","laggere","lingarajapuram","madiwala","magadi-road","mahadevapura","mahalakshmi-layout","majestic","malleshwaram","manyata-tech-park","marathahalli","munnekollal","murugeshpalya","mysore-road","nagarbhavi","nagarbhavi-2nd-stage","nagasandra","nagawara","nallurahalli","nandini-layout","nayandahalli","old-airport-road","outer-ring-road","padmanabhanagar","panathur","parappana-agrahara","peenya","pulakeshinagar","pulikeshi-nagar","rajajinagar","rajanukunte","ramamurthy-nagar","richmond-town","rr-nagar","rt-nagar","sadashivanagar","sahakar-nagar","sanjaynagar","sarakki","sarjapur","seegehalli","seshadripuram","silk-board","singasandra","sunkadakatte","thanisandra","thurahalli","tilak-nagar","tin-factory","ulsoor","uttarahalli","varthur","vidyapeeta","vijayanagar","whitefield","wilson-garden","wipro-gate","yelahanka","yelahanka-new-town","yeshwanthpur"]);
+      var BENGALURU_LOCALITY_SLUGS = new Set(["adugodi","aecs-layout","aerospace-park","agara","allalasandra","ambalipura","anjanapura","arekere","attibele","attur-layout","avalahalli-yelahanka","bagalur","banashankari","banaswadi","bannerghatta","basavanagudi","basaveshwaranagar","begur","bellandur","benniganahalli","benson-town","bharath-nagar","bilekahalli","bommanahalli","bommasandra","bommasandra-industrial-area","brookefield","btm-layout","budigere-cross","carmelaram","chamrajpet","chandapura","chickpet","chikkajala","cooke-town","cox-town","cv-raman-nagar","dasarahalli","doddaballapur-road","doddakannelli","doddanekundi","domlur","dommasandra","ejipura","electronic-city","frazer-town","ganganagar","girinagar","goraguntepalya","gottigere","graphite-india-road","gummanahalli","hal","halasuru","haralur","hbr-layout","hebbal","hennur","hennur-road","hesaraghatta","hongasandra","hoodi","hope-farm","horamavu","hosa-road","hosur-road","hrbr-layout","hsr-layout","hulimavu","iblur","indiranagar","itpl","jakkur","jalahalli","jayanagar","jeevan-bima-nagar","jigani","jp-nagar","kacharakanahalli","kadubeesanahalli","kadugodi","kaggadasapura","kaikondrahalli","kalyan-nagar","kammanahalli","kannamangala","kasavanahalli","kasturi-nagar","kathriguppe","kattigenahalli","kempapura","kengeri","kodathi","kodigehalli","kogilu","konanakunte","koramangala","kr-puram","kudlu-gate","kumaraswamy-layout","kumbalgodu","kundalahalli","laggere","lingarajapuram","madiwala","magadi-road","mahadevapura","mahalakshmi-layout","majestic","malleshwaram","manyata-tech-park","marathahalli","ms-palya","munnekollal","murugeshpalya","mysore-road","nagarbhavi","nagarbhavi-2nd-stage","nagasandra","nagawara","nallurahalli","nandini-layout","nayandahalli","old-airport-road","outer-ring-road","padmanabhanagar","panathur","parappana-agrahara","peenya","pulakeshinagar","pulikeshi-nagar","rajajinagar","rajanukunte","ramamurthy-nagar","richmond-town","rk-hegde-nagar","rr-nagar","rt-nagar","sadashivanagar","sahakar-nagar","sanjaynagar","sarakki","sarjapur","seegehalli","seshadripuram","silk-board","singasandra","sunkadakatte","thanisandra","thurahalli","tilak-nagar","tin-factory","ulsoor","uttarahalli","varthur","vidyapeeta","vijayanagar","whitefield","wilson-garden","wipro-gate","yelahanka","yelahanka-new-town","yeshwanthpur"]);
       // END:BENGALURU_LOCALITY_SLUGS
       if (slug === 'hosur') {
         return {
-          title: 'RO Service in Hosur | Installation & Repair | ' + profile.brandName,
-          description: 'RO water purifier service in Hosur near Bengaluru border by ' + profile.brandName + '. Same-day installation, repair and AMC. Call ' + profile.primaryPhone + '.',
+          title: 'RO, Commercial Plant & Softener in Hosur | ' + profile.brandName,
+          description: 'Home RO, commercial 25/50/500/1000 LPH plants and new water softener installation in Hosur near Bengaluru. Site visit, install and AMC up to 250 km. Call ' + profile.primaryPhone + '.',
           keywords: 'RO service Hosur, RO repair Hosur, ' + profile.brandName,
         };
       }
       if (!BENGALURU_LOCALITY_SLUGS.has(slug)) {
         return {
-          title: 'RO Service in ' + area + ' Karnataka | Installation & Repair | ' + profile.brandName,
-          description: 'Best RO water purifier service in ' + area + ', Karnataka by ' + profile.brandName + '. Same-day RO installation, repair, filter replacement and AMC. Call ' + profile.primaryPhone + '.',
-          keywords: 'RO service ' + area + ' Karnataka, RO repair ' + area + ', RO installation ' + area + ', water purifier service ' + area + ', ' + profile.brandName,
+          title: 'RO, Commercial Plant & Softener in ' + area + ' Karnataka | ' + profile.brandName,
+          description: 'Home RO, commercial 25/50/500/1000 LPH plants and new water softener installation in ' + area + ', Karnataka by ' + profile.brandName + '. Based in Bengaluru, covering up to 250 km. Call ' + profile.primaryPhone + '.',
+          keywords: 'RO service ' + area + ' Karnataka, commercial RO plant ' + area + ', water softener ' + area + ', 25 LPH RO plant, 1000 LPH RO plant, ' + profile.brandName,
         };
       }
       var southAreas = ['electronic-city', 'bommanahalli', 'sarjapur', 'attibele', 'chandapura', 'bommasandra', 'jigani', 'singasandra', 'anekal', 'bellandur', 'hsr-layout', 'haralur', 'varthur', 'kadubeesanahalli', 'panathur', 'silk-board'];
@@ -260,9 +260,9 @@
         corridorExtra = ' Serving Yelahanka, Thanisandra, Jakkur, Bagalur, Budigere Cross, Devanahalli, Manyata Tech Park, Hebbal and North Bangalore corridor.';
       }
       return {
-        title: 'RO Service in ' + area + ' Bengaluru | Installation & Repair | ' + profile.brandName,
-        description: 'Best RO water purifier service in ' + area + ', Bengaluru by ' + profile.brandName + '. Same-day RO installation, repair, filter replacement and AMC.' + corridorExtra + ' Call ' + profile.primaryPhone + '.',
-        keywords: 'RO service ' + area + ', RO repair ' + area + ', RO installation ' + area + ' Bangalore, ' + profile.brandName + ' ' + area + ', RO service Yelahanka, RO service Sarjapur, RO service Budigere Cross, RO service Devanahalli, RO service Attibele',
+        title: 'RO, Commercial Plant & Softener in ' + area + ' Bengaluru | ' + profile.brandName,
+        description: 'Home RO, commercial 25/50/500/1000 LPH plants and new water softener installation in ' + area + ', Bengaluru by ' + profile.brandName + '. Same-day service plus site visit up to 250 km.' + corridorExtra + ' Call ' + profile.primaryPhone + '.',
+        keywords: 'RO service ' + area + ', commercial RO plant ' + area + ', water softener ' + area + ', 25 LPH RO plant Bangalore, 1000 LPH RO plant, ' + profile.brandName + ' ' + area,
       };
     }
     // AUTO:CITY_SERVICE_TITLES
@@ -316,6 +316,69 @@
         "/apartment-water-softener-in-tumakuru": "Apartment Water Softener in Tumakuru",
         "/industrial-ro-plant-in-tumakuru": "Industrial RO Plant in Tumakuru",
         "/ro-amc-in-tumakuru": "RO AMC in Tumakuru",
+        "/ro-installation-in-ramanagara": "RO Installation in Ramanagara",
+        "/commercial-ro-plant-in-ramanagara": "Commercial RO Plant Installation in Ramanagara",
+        "/water-softener-installation-in-ramanagara": "Water Softener Installation in Ramanagara",
+        "/borewell-water-filter-in-ramanagara": "Borewell Water Filter in Ramanagara",
+        "/apartment-water-softener-in-ramanagara": "Apartment Water Softener in Ramanagara",
+        "/industrial-ro-plant-in-ramanagara": "Industrial RO Plant in Ramanagara",
+        "/ro-amc-in-ramanagara": "RO AMC in Ramanagara",
+        "/ro-installation-in-kolar": "RO Installation in Kolar",
+        "/commercial-ro-plant-in-kolar": "Commercial RO Plant Installation in Kolar",
+        "/water-softener-installation-in-kolar": "Water Softener Installation in Kolar",
+        "/borewell-water-filter-in-kolar": "Borewell Water Filter in Kolar",
+        "/apartment-water-softener-in-kolar": "Apartment Water Softener in Kolar",
+        "/industrial-ro-plant-in-kolar": "Industrial RO Plant in Kolar",
+        "/ro-amc-in-kolar": "RO AMC in Kolar",
+        "/ro-installation-in-chikkaballapura": "RO Installation in Chikkaballapura",
+        "/commercial-ro-plant-in-chikkaballapura": "Commercial RO Plant Installation in Chikkaballapura",
+        "/water-softener-installation-in-chikkaballapura": "Water Softener Installation in Chikkaballapura",
+        "/borewell-water-filter-in-chikkaballapura": "Borewell Water Filter in Chikkaballapura",
+        "/apartment-water-softener-in-chikkaballapura": "Apartment Water Softener in Chikkaballapura",
+        "/industrial-ro-plant-in-chikkaballapura": "Industrial RO Plant in Chikkaballapura",
+        "/ro-amc-in-chikkaballapura": "RO AMC in Chikkaballapura",
+        "/ro-installation-in-mandya": "RO Installation in Mandya",
+        "/commercial-ro-plant-in-mandya": "Commercial RO Plant Installation in Mandya",
+        "/water-softener-installation-in-mandya": "Water Softener Installation in Mandya",
+        "/borewell-water-filter-in-mandya": "Borewell Water Filter in Mandya",
+        "/apartment-water-softener-in-mandya": "Apartment Water Softener in Mandya",
+        "/industrial-ro-plant-in-mandya": "Industrial RO Plant in Mandya",
+        "/ro-amc-in-mandya": "RO AMC in Mandya",
+        "/ro-installation-in-hassan": "RO Installation in Hassan",
+        "/commercial-ro-plant-in-hassan": "Commercial RO Plant Installation in Hassan",
+        "/water-softener-installation-in-hassan": "Water Softener Installation in Hassan",
+        "/borewell-water-filter-in-hassan": "Borewell Water Filter in Hassan",
+        "/apartment-water-softener-in-hassan": "Apartment Water Softener in Hassan",
+        "/industrial-ro-plant-in-hassan": "Industrial RO Plant in Hassan",
+        "/ro-amc-in-hassan": "RO AMC in Hassan",
+        "/ro-installation-in-hosur": "RO Installation in Hosur",
+        "/commercial-ro-plant-in-hosur": "Commercial RO Plant Installation in Hosur",
+        "/water-softener-installation-in-hosur": "Water Softener Installation in Hosur",
+        "/borewell-water-filter-in-hosur": "Borewell Water Filter in Hosur",
+        "/apartment-water-softener-in-hosur": "Apartment Water Softener in Hosur",
+        "/industrial-ro-plant-in-hosur": "Industrial RO Plant in Hosur",
+        "/ro-amc-in-hosur": "RO AMC in Hosur",
+        "/ro-installation-in-devanahalli": "RO Installation in Devanahalli",
+        "/commercial-ro-plant-in-devanahalli": "Commercial RO Plant Installation in Devanahalli",
+        "/water-softener-installation-in-devanahalli": "Water Softener Installation in Devanahalli",
+        "/borewell-water-filter-in-devanahalli": "Borewell Water Filter in Devanahalli",
+        "/apartment-water-softener-in-devanahalli": "Apartment Water Softener in Devanahalli",
+        "/industrial-ro-plant-in-devanahalli": "Industrial RO Plant in Devanahalli",
+        "/ro-amc-in-devanahalli": "RO AMC in Devanahalli",
+        "/ro-installation-in-nelamangala": "RO Installation in Nelamangala",
+        "/commercial-ro-plant-in-nelamangala": "Commercial RO Plant Installation in Nelamangala",
+        "/water-softener-installation-in-nelamangala": "Water Softener Installation in Nelamangala",
+        "/borewell-water-filter-in-nelamangala": "Borewell Water Filter in Nelamangala",
+        "/apartment-water-softener-in-nelamangala": "Apartment Water Softener in Nelamangala",
+        "/industrial-ro-plant-in-nelamangala": "Industrial RO Plant in Nelamangala",
+        "/ro-amc-in-nelamangala": "RO AMC in Nelamangala",
+        "/ro-installation-in-doddaballapur": "RO Installation in Doddaballapur",
+        "/commercial-ro-plant-in-doddaballapur": "Commercial RO Plant Installation in Doddaballapur",
+        "/water-softener-installation-in-doddaballapur": "Water Softener Installation in Doddaballapur",
+        "/borewell-water-filter-in-doddaballapur": "Borewell Water Filter in Doddaballapur",
+        "/apartment-water-softener-in-doddaballapur": "Apartment Water Softener in Doddaballapur",
+        "/industrial-ro-plant-in-doddaballapur": "Industrial RO Plant in Doddaballapur",
+        "/ro-amc-in-doddaballapur": "RO AMC in Doddaballapur",
         "/ro-installation-in-shivamogga": "RO Installation in Shivamogga",
         "/commercial-ro-plant-in-shivamogga": "Commercial RO Plant Installation in Shivamogga",
         "/water-softener-installation-in-shivamogga": "Water Softener Installation in Shivamogga",
@@ -505,6 +568,62 @@
         "/apartment-water-softener-in-jakkur": "Apartment Water Softener in Jakkur, Bengaluru",
         "/industrial-ro-plant-in-jakkur": "Industrial RO Plant in Jakkur, Bengaluru",
         "/ro-amc-in-jakkur": "RO AMC in Jakkur, Bengaluru",
+        "/ro-installation-in-bagalur": "RO Installation in Bagalur, Bengaluru",
+        "/commercial-ro-plant-in-bagalur": "Commercial RO Plant Installation in Bagalur, Bengaluru",
+        "/water-softener-installation-in-bagalur": "Water Softener Installation in Bagalur, Bengaluru",
+        "/borewell-water-filter-in-bagalur": "Borewell Water Filter in Bagalur, Bengaluru",
+        "/apartment-water-softener-in-bagalur": "Apartment Water Softener in Bagalur, Bengaluru",
+        "/industrial-ro-plant-in-bagalur": "Industrial RO Plant in Bagalur, Bengaluru",
+        "/ro-amc-in-bagalur": "RO AMC in Bagalur, Bengaluru",
+        "/ro-installation-in-kogilu": "RO Installation in Kogilu, Bengaluru",
+        "/commercial-ro-plant-in-kogilu": "Commercial RO Plant Installation in Kogilu, Bengaluru",
+        "/water-softener-installation-in-kogilu": "Water Softener Installation in Kogilu, Bengaluru",
+        "/borewell-water-filter-in-kogilu": "Borewell Water Filter in Kogilu, Bengaluru",
+        "/apartment-water-softener-in-kogilu": "Apartment Water Softener in Kogilu, Bengaluru",
+        "/industrial-ro-plant-in-kogilu": "Industrial RO Plant in Kogilu, Bengaluru",
+        "/ro-amc-in-kogilu": "RO AMC in Kogilu, Bengaluru",
+        "/ro-installation-in-chikkajala": "RO Installation in Chikkajala, Bengaluru",
+        "/commercial-ro-plant-in-chikkajala": "Commercial RO Plant Installation in Chikkajala, Bengaluru",
+        "/water-softener-installation-in-chikkajala": "Water Softener Installation in Chikkajala, Bengaluru",
+        "/borewell-water-filter-in-chikkajala": "Borewell Water Filter in Chikkajala, Bengaluru",
+        "/apartment-water-softener-in-chikkajala": "Apartment Water Softener in Chikkajala, Bengaluru",
+        "/industrial-ro-plant-in-chikkajala": "Industrial RO Plant in Chikkajala, Bengaluru",
+        "/ro-amc-in-chikkajala": "RO AMC in Chikkajala, Bengaluru",
+        "/ro-installation-in-budigere-cross": "RO Installation in Budigere Cross, Bengaluru",
+        "/commercial-ro-plant-in-budigere-cross": "Commercial RO Plant Installation in Budigere Cross, Bengaluru",
+        "/water-softener-installation-in-budigere-cross": "Water Softener Installation in Budigere Cross, Bengaluru",
+        "/borewell-water-filter-in-budigere-cross": "Borewell Water Filter in Budigere Cross, Bengaluru",
+        "/apartment-water-softener-in-budigere-cross": "Apartment Water Softener in Budigere Cross, Bengaluru",
+        "/industrial-ro-plant-in-budigere-cross": "Industrial RO Plant in Budigere Cross, Bengaluru",
+        "/ro-amc-in-budigere-cross": "RO AMC in Budigere Cross, Bengaluru",
+        "/ro-installation-in-allalasandra": "RO Installation in Allalasandra, Bengaluru",
+        "/commercial-ro-plant-in-allalasandra": "Commercial RO Plant Installation in Allalasandra, Bengaluru",
+        "/water-softener-installation-in-allalasandra": "Water Softener Installation in Allalasandra, Bengaluru",
+        "/borewell-water-filter-in-allalasandra": "Borewell Water Filter in Allalasandra, Bengaluru",
+        "/apartment-water-softener-in-allalasandra": "Apartment Water Softener in Allalasandra, Bengaluru",
+        "/industrial-ro-plant-in-allalasandra": "Industrial RO Plant in Allalasandra, Bengaluru",
+        "/ro-amc-in-allalasandra": "RO AMC in Allalasandra, Bengaluru",
+        "/ro-installation-in-rajanukunte": "RO Installation in Rajanukunte, Bengaluru",
+        "/commercial-ro-plant-in-rajanukunte": "Commercial RO Plant Installation in Rajanukunte, Bengaluru",
+        "/water-softener-installation-in-rajanukunte": "Water Softener Installation in Rajanukunte, Bengaluru",
+        "/borewell-water-filter-in-rajanukunte": "Borewell Water Filter in Rajanukunte, Bengaluru",
+        "/apartment-water-softener-in-rajanukunte": "Apartment Water Softener in Rajanukunte, Bengaluru",
+        "/industrial-ro-plant-in-rajanukunte": "Industrial RO Plant in Rajanukunte, Bengaluru",
+        "/ro-amc-in-rajanukunte": "RO AMC in Rajanukunte, Bengaluru",
+        "/ro-installation-in-ms-palya": "RO Installation in MS Palya, Bengaluru",
+        "/commercial-ro-plant-in-ms-palya": "Commercial RO Plant Installation in MS Palya, Bengaluru",
+        "/water-softener-installation-in-ms-palya": "Water Softener Installation in MS Palya, Bengaluru",
+        "/borewell-water-filter-in-ms-palya": "Borewell Water Filter in MS Palya, Bengaluru",
+        "/apartment-water-softener-in-ms-palya": "Apartment Water Softener in MS Palya, Bengaluru",
+        "/industrial-ro-plant-in-ms-palya": "Industrial RO Plant in MS Palya, Bengaluru",
+        "/ro-amc-in-ms-palya": "RO AMC in MS Palya, Bengaluru",
+        "/ro-installation-in-avalahalli-yelahanka": "RO Installation in Avalahalli, Bengaluru",
+        "/commercial-ro-plant-in-avalahalli-yelahanka": "Commercial RO Plant Installation in Avalahalli, Bengaluru",
+        "/water-softener-installation-in-avalahalli-yelahanka": "Water Softener Installation in Avalahalli, Bengaluru",
+        "/borewell-water-filter-in-avalahalli-yelahanka": "Borewell Water Filter in Avalahalli, Bengaluru",
+        "/apartment-water-softener-in-avalahalli-yelahanka": "Apartment Water Softener in Avalahalli, Bengaluru",
+        "/industrial-ro-plant-in-avalahalli-yelahanka": "Industrial RO Plant in Avalahalli, Bengaluru",
+        "/ro-amc-in-avalahalli-yelahanka": "RO AMC in Avalahalli, Bengaluru",
         "/ro-installation-in-rajajinagar": "RO Installation in Rajajinagar, Bengaluru",
         "/commercial-ro-plant-in-rajajinagar": "Commercial RO Plant Installation in Rajajinagar, Bengaluru",
         "/water-softener-installation-in-rajajinagar": "Water Softener Installation in Rajajinagar, Bengaluru",
@@ -532,14 +651,104 @@
         "/borewell-water-filter-in-kengeri": "Borewell Water Filter in Kengeri, Bengaluru",
         "/apartment-water-softener-in-kengeri": "Apartment Water Softener in Kengeri, Bengaluru",
         "/industrial-ro-plant-in-kengeri": "Industrial RO Plant in Kengeri, Bengaluru",
-        "/ro-amc-in-kengeri": "RO AMC in Kengeri, Bengaluru"
+        "/ro-amc-in-kengeri": "RO AMC in Kengeri, Bengaluru",
+        "/ro-installation-in-koramangala": "RO Installation in Koramangala, Bengaluru",
+        "/commercial-ro-plant-in-koramangala": "Commercial RO Plant Installation in Koramangala, Bengaluru",
+        "/water-softener-installation-in-koramangala": "Water Softener Installation in Koramangala, Bengaluru",
+        "/borewell-water-filter-in-koramangala": "Borewell Water Filter in Koramangala, Bengaluru",
+        "/apartment-water-softener-in-koramangala": "Apartment Water Softener in Koramangala, Bengaluru",
+        "/industrial-ro-plant-in-koramangala": "Industrial RO Plant in Koramangala, Bengaluru",
+        "/ro-amc-in-koramangala": "RO AMC in Koramangala, Bengaluru",
+        "/ro-installation-in-indiranagar": "RO Installation in Indiranagar, Bengaluru",
+        "/commercial-ro-plant-in-indiranagar": "Commercial RO Plant Installation in Indiranagar, Bengaluru",
+        "/water-softener-installation-in-indiranagar": "Water Softener Installation in Indiranagar, Bengaluru",
+        "/borewell-water-filter-in-indiranagar": "Borewell Water Filter in Indiranagar, Bengaluru",
+        "/apartment-water-softener-in-indiranagar": "Apartment Water Softener in Indiranagar, Bengaluru",
+        "/industrial-ro-plant-in-indiranagar": "Industrial RO Plant in Indiranagar, Bengaluru",
+        "/ro-amc-in-indiranagar": "RO AMC in Indiranagar, Bengaluru",
+        "/ro-installation-in-malleshwaram": "RO Installation in Malleshwaram, Bengaluru",
+        "/commercial-ro-plant-in-malleshwaram": "Commercial RO Plant Installation in Malleshwaram, Bengaluru",
+        "/water-softener-installation-in-malleshwaram": "Water Softener Installation in Malleshwaram, Bengaluru",
+        "/borewell-water-filter-in-malleshwaram": "Borewell Water Filter in Malleshwaram, Bengaluru",
+        "/apartment-water-softener-in-malleshwaram": "Apartment Water Softener in Malleshwaram, Bengaluru",
+        "/industrial-ro-plant-in-malleshwaram": "Industrial RO Plant in Malleshwaram, Bengaluru",
+        "/ro-amc-in-malleshwaram": "RO AMC in Malleshwaram, Bengaluru",
+        "/ro-installation-in-bommanahalli": "RO Installation in Bommanahalli, Bengaluru",
+        "/commercial-ro-plant-in-bommanahalli": "Commercial RO Plant Installation in Bommanahalli, Bengaluru",
+        "/water-softener-installation-in-bommanahalli": "Water Softener Installation in Bommanahalli, Bengaluru",
+        "/borewell-water-filter-in-bommanahalli": "Borewell Water Filter in Bommanahalli, Bengaluru",
+        "/apartment-water-softener-in-bommanahalli": "Apartment Water Softener in Bommanahalli, Bengaluru",
+        "/industrial-ro-plant-in-bommanahalli": "Industrial RO Plant in Bommanahalli, Bengaluru",
+        "/ro-amc-in-bommanahalli": "RO AMC in Bommanahalli, Bengaluru",
+        "/ro-installation-in-anjanapura": "RO Installation in Anjanapura, Bengaluru",
+        "/commercial-ro-plant-in-anjanapura": "Commercial RO Plant Installation in Anjanapura, Bengaluru",
+        "/water-softener-installation-in-anjanapura": "Water Softener Installation in Anjanapura, Bengaluru",
+        "/borewell-water-filter-in-anjanapura": "Borewell Water Filter in Anjanapura, Bengaluru",
+        "/apartment-water-softener-in-anjanapura": "Apartment Water Softener in Anjanapura, Bengaluru",
+        "/industrial-ro-plant-in-anjanapura": "Industrial RO Plant in Anjanapura, Bengaluru",
+        "/ro-amc-in-anjanapura": "RO AMC in Anjanapura, Bengaluru",
+        "/ro-installation-in-attibele": "RO Installation in Attibele, Bengaluru",
+        "/commercial-ro-plant-in-attibele": "Commercial RO Plant Installation in Attibele, Bengaluru",
+        "/water-softener-installation-in-attibele": "Water Softener Installation in Attibele, Bengaluru",
+        "/borewell-water-filter-in-attibele": "Borewell Water Filter in Attibele, Bengaluru",
+        "/apartment-water-softener-in-attibele": "Apartment Water Softener in Attibele, Bengaluru",
+        "/industrial-ro-plant-in-attibele": "Industrial RO Plant in Attibele, Bengaluru",
+        "/ro-amc-in-attibele": "RO AMC in Attibele, Bengaluru",
+        "/ro-installation-in-chandapura": "RO Installation in Chandapura, Bengaluru",
+        "/commercial-ro-plant-in-chandapura": "Commercial RO Plant Installation in Chandapura, Bengaluru",
+        "/water-softener-installation-in-chandapura": "Water Softener Installation in Chandapura, Bengaluru",
+        "/borewell-water-filter-in-chandapura": "Borewell Water Filter in Chandapura, Bengaluru",
+        "/apartment-water-softener-in-chandapura": "Apartment Water Softener in Chandapura, Bengaluru",
+        "/industrial-ro-plant-in-chandapura": "Industrial RO Plant in Chandapura, Bengaluru",
+        "/ro-amc-in-chandapura": "RO AMC in Chandapura, Bengaluru",
+        "/ro-installation-in-yeshwanthpur": "RO Installation in Yeshwanthpur, Bengaluru",
+        "/commercial-ro-plant-in-yeshwanthpur": "Commercial RO Plant Installation in Yeshwanthpur, Bengaluru",
+        "/water-softener-installation-in-yeshwanthpur": "Water Softener Installation in Yeshwanthpur, Bengaluru",
+        "/borewell-water-filter-in-yeshwanthpur": "Borewell Water Filter in Yeshwanthpur, Bengaluru",
+        "/apartment-water-softener-in-yeshwanthpur": "Apartment Water Softener in Yeshwanthpur, Bengaluru",
+        "/industrial-ro-plant-in-yeshwanthpur": "Industrial RO Plant in Yeshwanthpur, Bengaluru",
+        "/ro-amc-in-yeshwanthpur": "RO AMC in Yeshwanthpur, Bengaluru",
+        "/ro-installation-in-basavanagudi": "RO Installation in Basavanagudi, Bengaluru",
+        "/commercial-ro-plant-in-basavanagudi": "Commercial RO Plant Installation in Basavanagudi, Bengaluru",
+        "/water-softener-installation-in-basavanagudi": "Water Softener Installation in Basavanagudi, Bengaluru",
+        "/borewell-water-filter-in-basavanagudi": "Borewell Water Filter in Basavanagudi, Bengaluru",
+        "/apartment-water-softener-in-basavanagudi": "Apartment Water Softener in Basavanagudi, Bengaluru",
+        "/industrial-ro-plant-in-basavanagudi": "Industrial RO Plant in Basavanagudi, Bengaluru",
+        "/ro-amc-in-basavanagudi": "RO AMC in Basavanagudi, Bengaluru",
+        "/ro-installation-in-kalyan-nagar": "RO Installation in Kalyan Nagar, Bengaluru",
+        "/commercial-ro-plant-in-kalyan-nagar": "Commercial RO Plant Installation in Kalyan Nagar, Bengaluru",
+        "/water-softener-installation-in-kalyan-nagar": "Water Softener Installation in Kalyan Nagar, Bengaluru",
+        "/borewell-water-filter-in-kalyan-nagar": "Borewell Water Filter in Kalyan Nagar, Bengaluru",
+        "/apartment-water-softener-in-kalyan-nagar": "Apartment Water Softener in Kalyan Nagar, Bengaluru",
+        "/industrial-ro-plant-in-kalyan-nagar": "Industrial RO Plant in Kalyan Nagar, Bengaluru",
+        "/ro-amc-in-kalyan-nagar": "RO AMC in Kalyan Nagar, Bengaluru",
+        "/ro-installation-in-banaswadi": "RO Installation in Banaswadi, Bengaluru",
+        "/commercial-ro-plant-in-banaswadi": "Commercial RO Plant Installation in Banaswadi, Bengaluru",
+        "/water-softener-installation-in-banaswadi": "Water Softener Installation in Banaswadi, Bengaluru",
+        "/borewell-water-filter-in-banaswadi": "Borewell Water Filter in Banaswadi, Bengaluru",
+        "/apartment-water-softener-in-banaswadi": "Apartment Water Softener in Banaswadi, Bengaluru",
+        "/industrial-ro-plant-in-banaswadi": "Industrial RO Plant in Banaswadi, Bengaluru",
+        "/ro-amc-in-banaswadi": "RO AMC in Banaswadi, Bengaluru",
+        "/ro-installation-in-sahakar-nagar": "RO Installation in Sahakar Nagar, Bengaluru",
+        "/commercial-ro-plant-in-sahakar-nagar": "Commercial RO Plant Installation in Sahakar Nagar, Bengaluru",
+        "/water-softener-installation-in-sahakar-nagar": "Water Softener Installation in Sahakar Nagar, Bengaluru",
+        "/borewell-water-filter-in-sahakar-nagar": "Borewell Water Filter in Sahakar Nagar, Bengaluru",
+        "/apartment-water-softener-in-sahakar-nagar": "Apartment Water Softener in Sahakar Nagar, Bengaluru",
+        "/industrial-ro-plant-in-sahakar-nagar": "Industrial RO Plant in Sahakar Nagar, Bengaluru",
+        "/ro-amc-in-sahakar-nagar": "RO AMC in Sahakar Nagar, Bengaluru"
       };
       // END:CITY_SERVICE_TITLES
     if (CITY_SERVICE_TITLES[clean]) {
       var cityServiceLabel = CITY_SERVICE_TITLES[clean];
+      var cityDesc =
+        cityServiceLabel.indexOf('Commercial') !== -1
+          ? cityServiceLabel + ' — 25, 50, 500 and 1000 LPH. Site visit, installation and AMC from Bengaluru, up to 250 km. Call ' + profile.primaryPhone + '.'
+          : cityServiceLabel.indexOf('Softener') !== -1
+            ? cityServiceLabel + ' for hard borewell and tanker water. New install, salt and resin service up to 250 km from Bengaluru. Call ' + profile.primaryPhone + '.'
+            : cityServiceLabel + ' by ' + profile.brandName + '. Same-day RO water purifier service. Call ' + profile.primaryPhone + '.';
       return {
         title: cityServiceLabel + ' | ' + profile.brandName,
-        description: cityServiceLabel + ' by ' + profile.brandName + '. Same-day RO water purifier service across Karnataka. Call ' + profile.primaryPhone + '.',
+        description: cityDesc,
         keywords: profile.keywords,
       };
     }
@@ -548,7 +757,12 @@
       '/ro-repair': 'RO Repair in Bengaluru',
       '/filter-replacement': 'RO Filter Replacement in Bengaluru',
       '/ro-maintenance': 'RO Maintenance in Bengaluru',
-      '/water-softener': 'Water Softener Service in Bengaluru',
+      '/water-softener': 'Water Softener Service in Bengaluru | Install, Salt & Resin',
+      '/water-softener-installation': 'New Water Softener Installation in Bengaluru | Up to 250 km',
+      '/commercial-ro-25-lph': '25 LPH Commercial RO Plant in Bengaluru | Install & AMC',
+      '/commercial-ro-50-lph': '50 LPH Commercial RO Plant in Bengaluru | Install & AMC',
+      '/commercial-ro-500-lph': '500 LPH Commercial RO Plant in Bengaluru | Install & AMC',
+      '/commercial-ro-1000-lph': '1000 LPH Commercial RO Plant in Bengaluru | Install & AMC',
       '/ro-troubleshooting': 'RO Troubleshooting in Bengaluru',
       '/ro-spare-parts': 'RO Spare Parts in Bengaluru',
       '/ro-brands': 'All RO Brands Service in Bengaluru',
@@ -559,7 +773,7 @@
       '/ro-amc': 'RO AMC Karnataka',
       '/ro-service': 'RO Service Karnataka',
       '/water-purifier-repair': 'Water Purifier Repair Karnataka',
-      '/commercial-ro-service': 'Commercial RO Service Karnataka',
+      '/commercial-ro-service': 'Commercial RO Plants 25 to 1000 LPH in Bengaluru',
       '/industrial-ro-service': 'Industrial RO Service Karnataka',
       '/ro-annual-maintenance': 'RO Annual Maintenance Karnataka',
       '/membrane-replacement': 'RO Membrane Replacement Karnataka',
@@ -574,9 +788,15 @@
       '/warranty': 'RO Warranty & AMC Bengaluru',
     };
     if (serviceTitles[clean]) {
+      var serviceDesc =
+        clean.indexOf('commercial') !== -1
+          ? serviceTitles[clean] + ' by ' + profile.brandName + '. Site visit, installation, service and AMC from Bengaluru, covering up to 250 km. Call ' + profile.primaryPhone + '.'
+          : clean.indexOf('softener') !== -1
+            ? serviceTitles[clean] + ' by ' + profile.brandName + '. New install, salt and resin service up to 250 km from Bengaluru. Call ' + profile.primaryPhone + '.'
+            : serviceTitles[clean] + ' by ' + profile.brandName + '. Same-day RO water purifier service across Bangalore. Call ' + profile.primaryPhone + '.';
       return {
         title: serviceTitles[clean] + ' | ' + profile.brandName,
-        description: serviceTitles[clean] + ' by ' + profile.brandName + '. Same-day RO water purifier service across Bangalore. Call ' + profile.primaryPhone + '.',
+        description: serviceDesc,
         keywords: profile.keywords,
       };
     }
@@ -596,7 +816,7 @@
   var p = (window.location.pathname || '/').replace(/\/$/, '') || '';
   var pathForTest = '/' + (p || '');
   var noIndex =
-    /^\/(technician-id|technician\/|technician$|admin|dashboard|search|settings|calling|product-verify)(\/|$)/.test(
+    /^\/(technician-id|technician\/|technician$|admin|dashboard|search|settings|calling|product-verify|review|accept|c)(\/|$)/.test(
       pathForTest
     );
   var canonical = profile.origin + (p ? p : '');
@@ -636,7 +856,17 @@
   }
   setMetaName('author', profile.brandName + ' - Water Purifier Services');
   setMetaName('robots', 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1');
+  setMetaName('geo.region', 'IN-KA');
+  setMetaName('geo.placename', profile.city);
+  setMetaName('geo.position', profile.geo.latitude + ';' + profile.geo.longitude);
+  setMetaName('ICBM', profile.geo.latitude + ', ' + profile.geo.longitude);
+  setMetaName('business:contact_data:street_address', profile.streetAddress);
+  setMetaName('business:contact_data:locality', profile.city);
+  setMetaName('business:contact_data:region', profile.state);
+  setMetaName('business:contact_data:postal_code', profile.pincode);
+  setMetaName('business:contact_data:country_name', 'India');
   setMetaName('business:contact_data:phone_number', profile.primaryPhone);
+  setMetaName('business:contact_data:email', profile.email);
   setMetaName('business:contact_data:website', profile.origin);
   setMetaName('apple-mobile-web-app-title', profile.brandName);
   setMetaName('application-name', profile.brandName);

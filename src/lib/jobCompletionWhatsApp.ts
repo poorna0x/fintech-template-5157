@@ -11,7 +11,7 @@ import { db } from '@/lib/supabase';
 import { supabase } from '@/lib/supabaseClient';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { parseRequirements } from '@/lib/followUpToOngoing';
-import { jobHasSkipReview, jobReviewColdUrlButtonParam, jobReviewTokenFromUrl } from '@/lib/jobReviews';
+import { jobHasSkipReview, jobReviewColdUrlButtonParam, jobReviewTokenFromUrl, ensureJobReviewInviteOnJob } from '@/lib/jobReviews';
 import { getLeadSourceFromJob } from '@/lib/adminUtils';
 import { ensureLeadCatalogLoaded, isDirectCallOrCustomLeadSource } from '@/lib/leadCatalog';
 import { getCompletedJobMissingMedia } from '@/lib/jobReportPhotos';
@@ -470,23 +470,9 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       return 'skipped';
     }
 
-    if (!jobHasSkipReview(job)) {
-      try {
-        const { createJobReviewInvite } = await import('@/lib/jobReviews');
-        const technicianId =
-          (job.completed_by as string) ||
-          (job.completedBy as string) ||
-          (job.assigned_technician_id as string) ||
-          (job.assignedTechnicianId as string) ||
-          null;
-        const invite = await createJobReviewInvite({ jobId, technicianId });
-        if (invite?.url) {
-          job.reviewUrl = invite.url;
-          job.reviewToken = invite.token;
-        }
-      } catch (err) {
-        console.warn('[job-completion-wa] review invite failed', err);
-      }
+    const invite = await ensureJobReviewInviteOnJob(job, { attempts: 3 });
+    if (!jobHasSkipReview(job) && !invite?.url && notify) {
+      toast.message('Review us link could not be created — sending completion without it');
     }
 
     const customerId = resolveCustomerId(job);

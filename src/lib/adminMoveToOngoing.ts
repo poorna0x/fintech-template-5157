@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { toast } from 'sonner';
+import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
 import {
@@ -19,30 +20,10 @@ import type { Job, Technician } from '@/types';
 export type AdminMoveToOngoingTimeSlot = 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM';
 
 export function getDefaultAdminMoveToOngoingSchedule(now = new Date()) {
-  const today = getLocalTodayYmd(now);
-  const currentHour = now.getHours();
-
-  let defaultTimeSlot: AdminMoveToOngoingTimeSlot = 'MORNING';
-  let defaultTime = '09:00';
-
-  if (currentHour >= 5 && currentHour < 12) {
-    defaultTimeSlot = 'MORNING';
-    defaultTime = '09:00';
-  } else if (currentHour >= 12 && currentHour < 17) {
-    defaultTimeSlot = 'AFTERNOON';
-    defaultTime = '14:00';
-  } else if (currentHour >= 17 && currentHour < 20) {
-    defaultTimeSlot = 'EVENING';
-    defaultTime = '17:00';
-  } else {
-    defaultTimeSlot = 'CUSTOM';
-    defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  }
-
   return {
-    date: today,
-    timeSlot: defaultTimeSlot,
-    customTime: defaultTimeSlot === 'CUSTOM' ? defaultTime : '',
+    date: getLocalTodayYmd(now),
+    timeSlot: 'CUSTOM' as const,
+    customTime: nextPresetAppointmentTime(now),
   };
 }
 

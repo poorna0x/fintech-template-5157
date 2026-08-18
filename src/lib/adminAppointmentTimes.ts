@@ -31,3 +31,19 @@ export const OTHER_TIME_SELECT_VALUE = 'other-time';
 export function isPresetAppointmentTime(hhmm: string | null | undefined): boolean {
   return Boolean(hhmm && APPOINTMENT_PRESET_VALUES.has(hhmm));
 }
+
+/** Next half-hour slot at or after `now`, clamped to the offered range. */
+export function nextPresetAppointmentTime(now = new Date()): string {
+  const first = APPOINTMENT_HALF_HOUR_OPTIONS[0].value;
+  const last = APPOINTMENT_HALF_HOUR_OPTIONS[APPOINTMENT_HALF_HOUR_OPTIONS.length - 1].value;
+  const minutesNow = now.getHours() * 60 + now.getMinutes();
+  const rounded = Math.ceil(minutesNow / 30) * 30;
+  const hh = Math.floor(rounded / 60)
+    .toString()
+    .padStart(2, '0');
+  const mm = (rounded % 60).toString().padStart(2, '0');
+  const candidate = `${hh}:${mm}`;
+  if (candidate < first) return first;
+  if (candidate > last) return last;
+  return APPOINTMENT_PRESET_VALUES.has(candidate) ? candidate : first;
+}

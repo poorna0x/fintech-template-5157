@@ -20,6 +20,7 @@ import {
 import Logo from '@/components/Logo';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import TechnicianOtpRequestCard from '@/components/technician/TechnicianOtpRequestCard';
+import TechnicianReviewsDialog from '@/components/technician/TechnicianReviewsDialog';
 import {
   buildAdminPhotoViewerSelection,
   resolveAdminPhotoViewerSources,
@@ -116,7 +117,7 @@ import { withTimeout, isSlowNetworkError, isTimeoutError } from '@/lib/networkTi
 import TechnicianInventoryView from '@/components/TechnicianInventoryView';
 import JobPartsUsedDialog from '@/components/admin/JobPartsUsedDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
-import { bangaloreAreas } from '@/lib/adminUtils';
+import { extractLocationFromAddressString } from '@/lib/adminUtils';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import {
   CustomerLocationVariant,
@@ -199,124 +200,6 @@ import CompletionFinishSection, {
 const TECH_JOBS_POLL_MS = 12_000;
 /** Debounce full list refetch after sync ping / admin broadcast. */
 const TECH_JOB_SYNC_DEBOUNCE_MS = 250;
-
-// Calculate Levenshtein distance for fuzzy matching
-const levenshteinDistance = (str1: string, str2: string): number => {
-  const s1 = str1.toLowerCase();
-  const s2 = str2.toLowerCase();
-  const matrix: number[][] = [];
-
-  for (let i = 0; i <= s2.length; i++) {
-    matrix[i] = [i];
-  }
-
-  for (let j = 0; j <= s1.length; j++) {
-    matrix[0][j] = j;
-  }
-
-  for (let i = 1; i <= s2.length; i++) {
-    for (let j = 1; j <= s1.length; j++) {
-      if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
-    }
-  }
-
-  return matrix[s2.length][s1.length];
-};
-
-// Calculate similarity score (0-1, where 1 is perfect match)
-const calculateSimilarity = (str1: string, str2: string): number => {
-  const maxLen = Math.max(str1.length, str2.length);
-  if (maxLen === 0) return 1;
-  const distance = levenshteinDistance(str1, str2);
-  return 1 - distance / maxLen;
-};
-
-
-
-// Extract location from address string (same as admin dashboard)
-const extractLocationFromAddressString = (completeAddress: string): string | null => {
-  if (!completeAddress || completeAddress.trim().length === 0) {
-    return null;
-  }
-
-  const uniqueAreas = [...new Set(bangaloreAreas)];
-  
-  const addressParts = completeAddress
-    .split(/[,\s]+/)
-    .map(part => part.trim())
-    .filter(part => part.length > 2);
-
-  // First, try exact matches
-  for (const part of addressParts) {
-    const partLower = part.toLowerCase();
-    const exactMatch = uniqueAreas.find(area => 
-      area.toLowerCase() === partLower
-    );
-    if (exactMatch) {
-      return exactMatch;
-    }
-  }
-
-  // Second, try multi-word exact matches
-  for (let i = 0; i < addressParts.length - 1; i++) {
-    const twoWordPart = `${addressParts[i]} ${addressParts[i + 1]}`.toLowerCase();
-    const multiWordMatch = uniqueAreas.find(area => 
-      area.toLowerCase() === twoWordPart
-    );
-    if (multiWordMatch) {
-      return multiWordMatch;
-    }
-  }
-
-  // Third, try strict partial matches
-  for (const part of addressParts) {
-    if (part.length < 5) continue;
-    const partLower = part.toLowerCase();
-    const partialMatch = uniqueAreas.find(area => {
-      const areaLower = area.toLowerCase();
-      if (areaLower.includes(partLower)) {
-        return partLower.length >= areaLower.length * 0.7;
-      }
-      if (partLower.includes(areaLower)) {
-        return areaLower.length >= partLower.length * 0.7;
-      }
-      return false;
-    });
-    if (partialMatch) {
-      return partialMatch;
-    }
-  }
-
-  // Last resort: fuzzy matching
-  let bestMatch: string | null = null;
-  let bestScore = 0.85;
-
-  for (const part of addressParts) {
-    if (part.length < 6) continue;
-
-    for (const area of uniqueAreas) {
-      const lengthDiff = Math.abs(area.length - part.length) / Math.max(area.length, part.length);
-      if (lengthDiff > 0.3) continue;
-
-      const similarity = calculateSimilarity(part, area);
-      
-      if (similarity > bestScore) {
-        bestScore = similarity;
-        bestMatch = area;
-      }
-    }
-  }
-
-  return bestMatch;
-};
 
 type ServiceBrand = 'elevenro' | 'hydrogenro';
 
@@ -766,6 +649,7 @@ const TechnicianDashboard = () => {
 
   // Header 3-dot menu → centered options dialog
   const [headerOptionsDialogOpen, setHeaderOptionsDialogOpen] = useState(false);
+  const [reviewsDialogOpen, setReviewsDialogOpen] = useState(false);
   // Technician ID Card QR Code Dialog
   const [technicianIdCardDialogOpen, setTechnicianIdCardDialogOpen] = useState(false);
   const [selectedIdCardBrand, setSelectedIdCardBrand] = useState<DocumentBrand | null>(null);
@@ -3423,6 +3307,32 @@ const TechnicianDashboard = () => {
     }
   };
 
+  /** Undo accidental "going to job" — EN_ROUTE back to ASSIGNED. */
+  const performRevertEnRoute = async (job: Job): Promise<boolean> => {
+    if (!user?.technicianId) return false;
+    if (normalizeJobStatus(job.status) !== 'EN_ROUTE') return false;
+
+    try {
+      setIsUpdating(true);
+      const { error } = await db.jobs.update(job.id, {
+        status: 'ASSIGNED' as any,
+      });
+      if (error) throw new Error(error.message);
+
+      setJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, status: 'ASSIGNED' as any } : j))
+      );
+      toast.success('Marked as Assigned (not en route)');
+      return true;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Could not update job status';
+      toast.error(message);
+      return false;
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   /** Maps dialog Yes: start job (with visit-order check) then open Maps. */
   const startJobAndOpenMap = (job: Job) => {
     const skip = getVisitOrderSkipInfo(job);
@@ -3688,6 +3598,10 @@ const TechnicianDashboard = () => {
       includesPrefilter: amcIncludesPrefilter === true,
       servicePeriodKind: amcServicePeriodKind,
       servicePeriodCustomMonths: amcServicePeriodCustomMonths,
+      serviceAddress:
+        ((selectedJobForComplete as any).service_address ||
+          (selectedJobForComplete as any).serviceAddress ||
+          null) as Customer['address'] | null,
     });
   }, [
     hasAMC,
@@ -6714,6 +6628,17 @@ const TechnicianDashboard = () => {
             </Button>
             <Button
               variant="ghost"
+              className="cursor-pointer justify-start h-12 px-4 text-base"
+              onClick={() => {
+                setHeaderOptionsDialogOpen(false);
+                setReviewsDialogOpen(true);
+              }}
+            >
+              <Star className="w-5 h-5 mr-3" />
+              My Reviews
+            </Button>
+            <Button
+              variant="ghost"
               className="justify-start h-12 px-4 text-base"
               onClick={() => window.location.reload()}
             >
@@ -6734,6 +6659,12 @@ const TechnicianDashboard = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <TechnicianReviewsDialog
+        open={reviewsDialogOpen}
+        onOpenChange={setReviewsDialogOpen}
+        technicianId={String(user?.technicianId || '')}
+      />
 
       {/* Location Error Banner */}
       {locationError && (
@@ -10733,18 +10664,36 @@ const TechnicianDashboard = () => {
                 );
               })()}
               {(normalizeJobStatus(selectedJobForOptions.status) === 'ASSIGNED' || normalizeJobStatus(selectedJobForOptions.status) === 'EN_ROUTE') && (
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
-                  onClick={() => {
-                    setOptionsDialogOpen(prev => ({ ...prev, [selectedJobForOptions.id]: false }));
-                    handleDenyJob(selectedJobForOptions);
-                    setSelectedJobForOptions(null);
-                  }}
-                >
-                  <XCircle className="w-4 h-4 mr-2" />
-                  Deny Job
-                </Button>
+                <>
+                  {normalizeJobStatus(selectedJobForOptions.status) === 'EN_ROUTE' && (
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                      disabled={isUpdating}
+                      onClick={() => {
+                        const job = selectedJobForOptions;
+                        setOptionsDialogOpen((prev) => ({ ...prev, [job.id]: false }));
+                        setSelectedJobForOptions(null);
+                        void performRevertEnRoute(job);
+                      }}
+                    >
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Not en route — back to Assigned
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => {
+                      setOptionsDialogOpen(prev => ({ ...prev, [selectedJobForOptions.id]: false }));
+                      handleDenyJob(selectedJobForOptions);
+                      setSelectedJobForOptions(null);
+                    }}
+                  >
+                    <XCircle className="w-4 h-4 mr-2" />
+                    Deny Job
+                  </Button>
+                </>
               )}
             </div>
             <DialogFooter>

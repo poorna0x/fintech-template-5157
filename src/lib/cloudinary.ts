@@ -273,7 +273,12 @@ class CloudinaryService {
    * We attach it via `Authorization: Bearer …`. Calls made without an active session
    * receive a 401 from the server — that is the intended behaviour.
    */
-  async deleteImage(publicId: string, useSecondary: boolean = false): Promise<{ success: boolean; error?: string }> {
+  async deleteImage(
+    publicId: string,
+    useSecondary: boolean = false,
+    jobId?: string | null,
+    resourceType?: string
+  ): Promise<{ success: boolean; error?: string }> {
     const functionUrl = getCloudinaryDeleteFunctionUrl();
     try {
       // Lazy import to avoid pulling the Supabase auth chunk into pages that never delete.
@@ -294,7 +299,12 @@ class CloudinaryService {
       const response = await fetch(functionUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ publicId: publicId.trim(), useSecondary }),
+      body: JSON.stringify({
+        publicId: publicId.trim(),
+        useSecondary,
+        ...(jobId ? { jobId } : {}),
+        ...(resourceType ? { resourceType } : {}),
+      }),
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && data.deleted === true) {

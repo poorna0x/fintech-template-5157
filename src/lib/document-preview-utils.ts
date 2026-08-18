@@ -45,7 +45,10 @@ export function billToQuotationPdfData(bill: Bill) {
     company: bill.company,
     customer: {
       name: customer.fullName || customer.name || 'Customer Name',
-      address: customerAddress.street || customer.address || '',
+      address:
+        [customerAddress.street, customerAddress.area].filter(Boolean).join(', ') ||
+        customer.address ||
+        '',
       city: customerAddress.city || customer.city || '',
       state: customerAddress.state || customer.state || '',
       pincode: customerAddress.pincode || customer.pincode || '',

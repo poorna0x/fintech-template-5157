@@ -35,9 +35,20 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT auth.uid() IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM public.technicians t WHERE t.id = auth.uid())
-    AND public.auth_user_role() IS DISTINCT FROM 'technician';
+  SELECT
+    auth.uid() IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.technicians t WHERE t.id = auth.uid()
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM public.admin_users a
+      WHERE lower(a.email) = lower(coalesce(
+              nullif(auth.jwt() ->> 'email', ''),
+              ''
+            ))
+        AND coalesce(a.is_active, true) = true
+    );
 $$;
 
 -- ---------------------------------------------------------------------------

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Wrench, Filter, RefreshCw, Settings, CheckCircle, Clock, Shield, Phone, AlertCircle } from 'lucide-react';
+import { Wrench, Filter, RefreshCw, Settings, CheckCircle, Clock, Shield, Phone, AlertCircle, Building2, Droplets } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const ServicesSection = () => {
   const navigate = useNavigate();
@@ -47,9 +48,9 @@ const ServicesSection = () => {
     },
     {
       icon: Wrench,
-      title: "Water Softener Service",
-      description: "Beat hard water — installation, resin and salt level management.",
-      features: ["Softener installation", "Re-installation", "Resin level management", "Salt level monitoring"],
+      title: "Water Softener — New Installation & Service",
+      description: "New softener installation for homes and apartments, plus salt, resin and repair.",
+      features: ["New water softener installation", "Re-installation", "Resin & salt service", "Apartment / home setups"],
       pricing: "Starting from ₹499",
       details: {
         includes: [
@@ -74,7 +75,39 @@ const ServicesSection = () => {
         terms: [
           "Starting from ₹499 is visiting charge, not including resin"
         ]
-      }
+      },
+      href: '/water-softener',
+    },
+    {
+      icon: Building2,
+      title: "Commercial RO — 25 to 1000 LPH",
+      description: "25, 50, 500 and 1000 LPH plants for offices, restaurants, hotels and factories. Based in Bengaluru, up to 250 km.",
+      features: ["25 & 50 LPH office / restaurant plants", "500 & 1000 LPH hotel / factory plants", "New installation & commissioning", "Service, repair and AMC"],
+      pricing: "Site visit + AMC from Bengaluru",
+      details: {
+        includes: [
+          "25 LPH commercial RO for small offices, clinics and pantries",
+          "50 LPH commercial RO for restaurants, larger offices and schools",
+          "500 LPH commercial RO for hotels, hostels and mid-size factories",
+          "1000 LPH commercial RO for large commercial, hospital and factory sites",
+          "Site survey and capacity recommendation before you buy",
+          "Plant supply, plumbing, electricals and commissioning",
+          "TDS check and operator briefing",
+          "Membrane / filter service and breakdown repair",
+          "Commercial AMC — Bengaluru and up to 250 km"
+        ],
+        benefits: [
+          "Same team for site visit, install and after-sales",
+          "Cover up to 250 km from Bengaluru",
+          "Sized for real occupancy, not a catalogue guess",
+          "AMC you can call for breakdowns",
+          "Home RO, commercial plants and softeners from one company"
+        ],
+        terms: [
+          "Plant price depends on capacity, raw-water TDS and site plumbing — we quote after a visit"
+        ]
+      },
+      href: '/commercial-ro-service',
     },
     {
       icon: RefreshCw,
@@ -104,6 +137,81 @@ const ServicesSection = () => {
         ],
         terms: [
           "Price starting from ₹1799 does not include RO membrane"
+        ]
+      }
+    },
+    {
+      icon: Shield,
+      title: "RO AMC Plans",
+      description: "Annual maintenance with scheduled visits, genuine filters and priority breakdown support.",
+      features: ["1 / 2 / 3 year plans", "Scheduled service visits", "Filter & membrane as per plan", "Priority breakdown support"],
+      pricing: "Plans on quote",
+      href: '/ro-amc',
+      details: {
+        includes: [
+          "Scheduled RO service visits through the year",
+          "Filter replacement as per the AMC plan",
+          "Membrane check and replacement when covered",
+          "Sanitization and TDS check",
+          "Priority booking for breakdowns",
+          "Genuine spare parts as per plan"
+        ],
+        benefits: [
+          "Fewer surprise repair bills",
+          "Consistent drinking-water quality",
+          "Same technician team as installation",
+          "Plans for homes and offices"
+        ],
+        terms: [
+          "AMC price depends on brand, model and visit frequency — final quote after inspection"
+        ]
+      }
+    },
+    {
+      icon: Clock,
+      title: "Emergency 24/7 RO Repair",
+      description: "Urgent leak, no-water or breakdown support across Bengaluru — same-day slots when available.",
+      features: ["Leak & no-water calls", "Same-day emergency slots", "All major RO brands", "Night & weekend support"],
+      pricing: "Service from ₹399",
+      href: '/emergency-ro-repair',
+      details: {
+        includes: [
+          "Emergency diagnosis for leak, no output or sudden TDS jump",
+          "Pump, leak and electrical checks",
+          "Temporary fix so you have water the same day when parts are in van",
+          "Follow-up part replacement if needed"
+        ],
+        benefits: [
+          "24/7 phone support",
+          "Certified technicians",
+          "Genuine parts when replaced",
+          "Transparent visit charge"
+        ],
+        terms: [
+          "Service charge (₹399) is the visit fee; filters and parts are extra"
+        ]
+      }
+    },
+    {
+      icon: Droplets,
+      title: "Water Quality & TDS Testing",
+      description: "On-site TDS and hardness check so we size RO, commercial plant or softener correctly.",
+      features: ["TDS reading", "Hardness check for softeners", "Capacity recommendation", "Free with booked service"],
+      pricing: "Free with booked service",
+      details: {
+        includes: [
+          "TDS reading at the tap and after RO",
+          "Hardness check when a softener is being considered",
+          "Simple explanation of results",
+          "Recommendation for home RO, commercial LPH or softener"
+        ],
+        benefits: [
+          "Know if the purifier is performing",
+          "Right plant size before you buy",
+          "No charge when you book a service visit"
+        ],
+        terms: [
+          "Complimentary testing applies with a booked service visit; standalone lab reports may be quoted separately"
         ]
       }
     },
@@ -186,9 +294,10 @@ const ServicesSection = () => {
                       ))}
                     </ul>
                     
+                    <div className="mt-auto space-y-2">
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button variant="outline" className="w-full mt-auto border-sky-200 dark:border-sky-500/30 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-500/10">
+                        <Button variant="outline" className="w-full border-sky-200 dark:border-sky-500/30 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-500/10 cursor-pointer">
                           Learn More
                         </Button>
                       </DialogTrigger>
@@ -290,6 +399,12 @@ const ServicesSection = () => {
                         </div>
                       </DialogContent>
                     </Dialog>
+                    {'href' in service && service.href ? (
+                      <Button asChild variant="ghost" className="w-full text-sky-700 dark:text-sky-300 cursor-pointer">
+                        <Link to={service.href}>View full page</Link>
+                      </Button>
+                    ) : null}
+                    </div>
                   </div>
                 </div>
               </CardContent>

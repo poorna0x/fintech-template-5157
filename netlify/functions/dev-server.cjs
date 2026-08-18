@@ -48,7 +48,6 @@ const bookingCustomerMutate = require('./booking-customer-mutate');
 const bookingCustomerLookup = require('./booking-customer-lookup');
 const bookingNotify = require('./booking-notify');
 const warrantyLookup = require('./warranty-lookup');
-const generatePdf = require('./generate-pdf');
 const saveAmcContract = require('./save-amc-contract');
 const sendEmailPreview = require('./send-email-preview');
 // Push notification senders (FCM credential comes from app_secrets via the
@@ -70,6 +69,8 @@ const dialCall = require('./dial-call');
 const pdfAuthenticityOtpVerify = require('./pdf-authenticity-otp-verify');
 const pdfAuthenticityCheck = require('./pdf-authenticity-check');
 const documentAcceptSend = require('./document-accept-send');
+const documentAcceptEmailSend = require('./document-accept-email-send');
+const documentAcceptPublic = require('./document-accept-public');
 const whatsappTrayClearPush = require('./whatsapp-tray-clear-push');
 const whatsappInboxApplyToCustomer = require('./whatsapp-inbox-apply-to-customer');
 const salarySlipMonthEnd = require('./salary-slip-month-end');
@@ -146,7 +147,9 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/warranty-lookup')) {
     handler = warrantyLookup;
   } else if (req.url.startsWith('/.netlify/functions/generate-pdf')) {
-    handler = generatePdf;
+    delete require.cache[require.resolve('./ilovepdf-compress-helper')];
+    delete require.cache[require.resolve('./pdf-compression-setting')];
+    handler = loadFn('generate-pdf');
   } else if (req.url.startsWith('/.netlify/functions/save-amc-contract')) {
     handler = saveAmcContract;
   } else if (req.url.startsWith('/.netlify/functions/send-email-preview')) {
@@ -165,10 +168,22 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./fcm-helper')];
     delete require.cache[require.resolve('./push-prefs-helper')];
     handler = require('./notify-admins');
+  } else if (req.url.startsWith('/.netlify/functions/job-review-public')) {
+    delete require.cache[require.resolve('./job-review-public')];
+    delete require.cache[require.resolve('./cors-helper')];
+    delete require.cache[require.resolve('./rate-limiter')];
+    handler = require('./job-review-public');
+  } else if (req.url.startsWith('/.netlify/functions/job-review-invite')) {
+    delete require.cache[require.resolve('./job-review-invite')];
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./cors-helper')];
+    delete require.cache[require.resolve('./rate-limiter')];
+    handler = require('./job-review-invite');
   } else if (req.url.startsWith('/.netlify/functions/job-review-notify')) {
     delete require.cache[require.resolve('./job-review-notify')];
     delete require.cache[require.resolve('./fcm-helper')];
     delete require.cache[require.resolve('./push-prefs-helper')];
+    delete require.cache[require.resolve('./rate-limiter')];
     handler = require('./job-review-notify');
   } else if (req.url.startsWith('/.netlify/functions/send-location-ping')) {
     handler = sendLocationPing;
@@ -206,12 +221,22 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/document-accept-send')) {
     delete require.cache[require.resolve('./admin-auth-guard')];
     handler = loadFn('document-accept-send');
+  } else if (req.url.startsWith('/.netlify/functions/document-accept-email-send')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    handler = loadFn('document-accept-email-send');
+  } else if (req.url.startsWith('/.netlify/functions/document-accept-public')) {
+    handler = loadFn('document-accept-public');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-tray-clear-push')) {
     handler = whatsappTrayClearPush;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-inbox-apply-to-customer')) {
     delete require.cache[require.resolve('./resolve-maps-link')];
     delete require.cache[require.resolve('./whatsapp-location-enrich')];
     handler = loadFn('whatsapp-inbox-apply-to-customer');
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-ai-chat-settings')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ai-audit')];
+    delete require.cache[require.resolve('./whatsapp-ai-chat-settings')];
+    handler = loadFn('whatsapp-ai-chat-settings');
   } else if (req.url.startsWith('/.netlify/functions/geocode')) {
     handler = loadFn('geocode');
   } else if (req.url.startsWith('/.netlify/functions/resolve-maps-link')) {
@@ -219,6 +244,58 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/db-storage-stats')) {
     delete require.cache[require.resolve('./r2-helper')];
     handler = loadFn('db-storage-stats');
+  } else if (req.url.startsWith('/.netlify/functions/cloudinary-usage')) {
+    delete require.cache[require.resolve('./cloudinary-usage-helper')];
+    handler = loadFn('cloudinary-usage');
+  } else if (req.url.startsWith('/.netlify/functions/ilovepdf-usage')) {
+    delete require.cache[require.resolve('./ilovepdf-compress-helper')];
+    delete require.cache[require.resolve('./pdf-compression-setting')];
+    handler = loadFn('ilovepdf-usage');
+  } else if (req.url.startsWith('/.netlify/functions/ai-inbox-suggest')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ai-config')];
+    delete require.cache[require.resolve('./ai-provider')];
+    delete require.cache[require.resolve('./ai-provider-mock')];
+    delete require.cache[require.resolve('./ai-provider-gemini')];
+    delete require.cache[require.resolve('./ai-provider-groq')];
+    delete require.cache[require.resolve('./ai-schemas')];
+    delete require.cache[require.resolve('./ai-audit')];
+    delete require.cache[require.resolve('./ai-inbox-suggest')];
+    handler = loadFn('ai-inbox-suggest');
+  } else if (req.url.startsWith('/.netlify/functions/ai-crm-chat')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ai-config')];
+    delete require.cache[require.resolve('./ai-provider')];
+    delete require.cache[require.resolve('./ai-provider-mock')];
+    delete require.cache[require.resolve('./ai-provider-gemini')];
+    delete require.cache[require.resolve('./ai-provider-groq')];
+    delete require.cache[require.resolve('./ai-crm-schemas')];
+    delete require.cache[require.resolve('./ai-crm-lookup')];
+    delete require.cache[require.resolve('./ai-audit')];
+    delete require.cache[require.resolve('./ai-crm-chat')];
+    handler = loadFn('ai-crm-chat');
+  } else if (req.url.startsWith('/.netlify/functions/ai-document-draft')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ai-config')];
+    delete require.cache[require.resolve('./ai-provider')];
+    delete require.cache[require.resolve('./ai-provider-mock')];
+    delete require.cache[require.resolve('./ai-provider-gemini')];
+    delete require.cache[require.resolve('./ai-provider-groq')];
+    delete require.cache[require.resolve('./ai-audit')];
+    delete require.cache[require.resolve('./ai-document-draft-schemas')];
+    delete require.cache[require.resolve('./ai-document-draft')];
+    handler = loadFn('ai-document-draft');
+  } else if (req.url.startsWith('/.netlify/functions/ai-usage')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ai-config')];
+    delete require.cache[require.resolve('./ai-audit')];
+    delete require.cache[require.resolve('./ai-usage')];
+    handler = loadFn('ai-usage');
+  } else if (req.url.startsWith('/.netlify/functions/ai-config-save')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ai-config')];
+    delete require.cache[require.resolve('./ai-config-save')];
+    handler = loadFn('ai-config-save');
   } else if (req.url.startsWith('/.netlify/functions/salary-slip-month-end')) {
     handler = salarySlipMonthEnd;
   } else {

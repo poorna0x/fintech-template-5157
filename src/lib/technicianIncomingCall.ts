@@ -19,6 +19,7 @@ type RecentCallPlugin = {
     at?: number;
     callLogDate?: number;
     callId?: string;
+    missed?: boolean;
     alerted?: boolean;
   }>;
 };
@@ -61,6 +62,7 @@ export async function peekRecentTechnicianCaller(): Promise<{
   at: number;
   callAt?: number;
   callId?: string;
+  missed?: boolean;
   alreadyAlerted?: boolean;
 } | null> {
   if (!isAvailable()) return null;
@@ -90,7 +92,14 @@ export async function peekRecentTechnicianCaller(): Promise<{
         : callAt
           ? `${digits}:${callAt}`
           : undefined;
-    return { digits, at: result.at, callAt, callId, alreadyAlerted: false };
+    return {
+      digits,
+      at: result.at,
+      callAt,
+      callId,
+      missed: result.missed === true,
+      alreadyAlerted: false,
+    };
   } catch {
     return null;
   }
@@ -100,6 +109,10 @@ export function reportRecentTechnicianCallToAdmins(): void {
   if (!isTechnicianCallDetectEnabled()) return;
   void peekRecentTechnicianCaller().then((hit) => {
     if (!hit || hit.alreadyAlerted || !hit.callId || !hit.callAt) return;
-    notifyAdminsTechnicianCall(hit.digits, { callId: hit.callId, callAt: hit.callAt });
+    notifyAdminsTechnicianCall(hit.digits, {
+      callId: hit.callId,
+      callAt: hit.callAt,
+      missed: hit.missed,
+    });
   });
 }

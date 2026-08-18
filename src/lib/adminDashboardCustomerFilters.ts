@@ -86,7 +86,6 @@ export type GetFilteredCustomersParams = {
   jobs: Job[];
   baseCustomers: Customer[];
   customersWithJobs: CustomerJobGroup[];
-  showAllFollowups: boolean;
   completedDateFilter: string;
   currentPage: number;
   totalPages: number;
@@ -100,7 +99,6 @@ export function getFilteredCustomersForDashboard({
   jobs,
   baseCustomers,
   customersWithJobs,
-  showAllFollowups,
   completedDateFilter,
   currentPage,
   totalPages,
@@ -255,7 +253,7 @@ export function getFilteredCustomersForDashboard({
         customerMap.get(customerId)!.allJobs.push(job);
       });
 
-      let customersList = Array.from(customerMap.values()).map(
+      const customersList = Array.from(customerMap.values()).map(
         ({ customer, allJobs }) => {
           const completedJobs = allJobs
             .filter((job) => job.status === 'COMPLETED')
@@ -279,48 +277,12 @@ export function getFilteredCustomersForDashboard({
         }
       );
 
-      if (!showAllFollowups) {
-        const weekFromNow = new Date();
-        weekFromNow.setDate(weekFromNow.getDate() + 7);
-
-        customersList = customersList.filter(({ allJobs }) => {
-          const followUpJobs = allJobs.filter((job) =>
-            ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)
-          );
-          return followUpJobs.some((job: any) => {
-            const followUpDate = job.follow_up_date || job.followUpDate;
-            if (!followUpDate) return true;
-            const followUpDateObj = new Date(followUpDate);
-            if (isNaN(followUpDateObj.getTime())) return true;
-            return followUpDateObj <= weekFromNow;
-          });
-        });
-      }
-
       return customersList;
     }
 
     filteredCustomers = customersWithJobs.filter(({ allJobs }) =>
       allJobs.some((job) => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status))
     );
-
-    if (!showAllFollowups) {
-      const weekFromNow = new Date();
-      weekFromNow.setDate(weekFromNow.getDate() + 7);
-
-      filteredCustomers = filteredCustomers.filter(({ allJobs }) => {
-        const followUpJobs = allJobs.filter((job) =>
-          ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)
-        );
-        return followUpJobs.some((job: any) => {
-          const followUpDate = job.follow_up_date || job.followUpDate;
-          if (!followUpDate) return true;
-          const followUpDateObj = new Date(followUpDate);
-          if (isNaN(followUpDateObj.getTime())) return true;
-          return followUpDateObj <= weekFromNow;
-        });
-      });
-    }
   } else if (statusFilter === 'CANCELLED') {
     filteredCustomers = customersWithJobs.filter(({ allJobs }) =>
       allJobs.some((job) => ['DENIED', 'CANCELLED'].includes(job.status as any))

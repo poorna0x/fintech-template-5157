@@ -19,7 +19,13 @@ import {
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
-import { createJobReviewInvite } from '@/lib/jobReviews';
+import {
+  buildAskReviewWhatsAppMessage,
+  createJobReviewInvite,
+  jobHasSkipReview,
+  jobReviewTokenFromUrl,
+  sendAskReviewForJob,
+} from '@/lib/jobReviews';
 
 type DeliveryMode = 'api' | 'wa_me';
 
@@ -57,6 +63,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   const [cloudApiAllowed, setCloudApiAllowed] = useState(false);
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [reviewLinkReady, setReviewLinkReady] = useState(false);
+  /** On an already-sent job, review-only is offered first but the full message stays available. */
+  const [reviewOnlyChoice, setReviewOnlyChoice] = useState(true);
   const jobId = job?.id ? String(job.id) : '';
 
   useEffect(() => {
@@ -67,6 +75,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       setCloudApiAllowed(false);
       setReviewUrl(null);
       setReviewLinkReady(false);
+      setReviewOnlyChoice(true);
       return;
     }
     let cancelled = false;
@@ -90,9 +99,11 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
         })
         .catch(() => false);
 
-      const inviteTask = jobId
-        ? createJobReviewInvite({ jobId, technicianId })
-        : Promise.resolve(null);
+      const skipReview = rec ? jobHasSkipReview(rec) : false;
+      const inviteTask =
+        jobId && !skipReview
+          ? createJobReviewInvite({ jobId, technicianId })
+          : Promise.resolve(null);
 
       const [allowCloud, invite] = await Promise.all([settingsTask, inviteTask]);
       if (cancelled) return;
@@ -101,6 +112,9 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       const url = String(invite?.url || '').trim();
       setReviewUrl(url || null);
       setReviewLinkReady(true);
+      if (!skipReview && !url && !invite?.alreadySubmitted) {
+        toast.error('Could not create the Review us link for this job.');
+      }
     })();
     return () => {
       cancelled = true;
@@ -119,6 +133,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     customer?.id || (job as any).customer_id || (job as any).customerId || null;
 
   const alreadySent = jobHasCompletionMessageSent(jobRec);
+  const canSendReviewOnly = alreadySent && !jobHasSkipReview(jobRec);
+  const sendReviewOnly = canSendReviewOnly && reviewOnlyChoice;
   const dontSend = jobHasDontSendCompletionMessage(jobRec);
   const requirements = parseRequirements((job as any).requirements || job.requirements);
   const messageSentAt = requirements.find((r: any) => r?.message_sent_at)?.message_sent_at as
@@ -153,10 +169,77 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     const mode: DeliveryMode = cloudApiAllowed ? deliveryMode : 'wa_me';
     setSending(true);
     try {
+      let url = String(reviewUrl || '').trim();
+      if (!jobHasSkipReview(jobRec) && !url) {
+        const technicianId =
+          String(
+            jobRec.completed_by ||
+              jobRec.completedBy ||
+              jobRec.assigned_technician_id ||
+              jobRec.assignedTechnicianId ||
+              ''
+          ).trim() || null;
+        const invite = await createJobReviewInvite({
+          jobId: String(job.id),
+          technicianId,
+        });
+        url = String(invite?.url || '').trim();
+        if (url) setReviewUrl(url);
+      }
+      if (!jobHasSkipReview(jobRec) && !url) {
+        toast.error('Could not add the Review us link. Try Send Message again.');
+        return;
+      }
+
+      if (sendReviewOnly) {
+        if (!url) {
+          toast.error('Could not create the review request link.');
+          return;
+        }
+        const technicianId =
+          String(
+            jobRec.completed_by ||
+              jobRec.completedBy ||
+              jobRec.assigned_technician_id ||
+              jobRec.assignedTechnicianId ||
+              ''
+          ).trim() || null;
+        const reviewResult = await sendAskReviewForJob({
+          to,
+          customerId: customerId ? String(customerId) : '',
+          customerName,
+          jobId: String(job.id),
+          technicianId,
+          brand: completion.documentBrand,
+          jobNumber: completion.jobNumber || null,
+          reviewUrl: url,
+          forceWaMe: mode === 'wa_me',
+          source: 'job_completion',
+        });
+        if (!reviewResult.ok) {
+          toast.error(reviewResult.error || 'Could not send review request');
+          return;
+        }
+        toast.success(
+          reviewResult.via === 'wa_me'
+            ? 'Opened WhatsApp with review request'
+            : reviewResult.usedTemplate
+              ? 'Review request template sent'
+              : 'Review request sent'
+        );
+        onOpenChange(false);
+        return;
+      }
+
+      const text = buildJobCompletionMessageFromJob({
+        ...jobRec,
+        reviewUrl: url || undefined,
+      }).whatsappMessage;
+
       if (mode === 'wa_me') {
         const result = await sendAdminWhatsAppText({
           to,
-          text: whatsappMessage,
+          text,
           customerId: customerId ? String(customerId) : null,
           source: 'job_completion',
           forceWaMe: true,
@@ -174,7 +257,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
       const result = await sendJobCompletionWhatsApp({
         to,
-        text: whatsappMessage,
+        text,
         customerId: customerId ? String(customerId) : null,
         customerName: completion.customerName,
         amountCollected: completion.amountCollected,
@@ -184,7 +267,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
         amountPending: completion.amountPendingValue,
         pendingDueDate: completion.pendingDueDate || null,
         jobRef: completion.jobNumber || null,
-        reviewUrl,
+        reviewUrl: url || null,
+        reviewToken: jobReviewTokenFromUrl(url),
         fallbackWaMe: false,
       });
 
@@ -220,11 +304,11 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
   const isPhoneOpen = deliveryMode === 'wa_me' || !cloudApiAllowed;
   const sendPrimaryLabel = isPhoneOpen
-    ? alreadySent
-      ? 'Open WhatsApp again'
+    ? sendReviewOnly
+      ? 'Open review request'
       : 'Open WhatsApp'
-    : alreadySent
-      ? 'Send again via Cloud API'
+    : sendReviewOnly
+      ? 'Send review request'
       : 'Send via Cloud API';
   const primaryDigits = formatPhoneForWhatsApp(customerPhone).slice(-10);
   const altDigits = formatPhoneForWhatsApp(alternatePhone).slice(-10);
@@ -239,10 +323,12 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       >
         <DialogHeader className="shrink-0 space-y-1.5 border-b px-4 pb-3 pt-5 pr-12 text-left sm:px-6">
           <DialogTitle className="text-base leading-snug sm:text-lg">
-            Send Completion Confirmation Message
+            {sendReviewOnly ? 'Send Review Request' : 'Send Completion Confirmation Message'}
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
-            Send confirmation message to customer for completed job
+            {canSendReviewOnly
+              ? 'Completion is already sent. Send just the review link, or the full message again.'
+              : 'Send confirmation message to customer for completed job'}
           </DialogDescription>
         </DialogHeader>
 
@@ -268,8 +354,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                     <p className="font-medium">Already marked Message Sent</p>
                     <p className="mt-0.5 text-xs text-emerald-800">
                       {messageSentAt
-                        ? `Last sent ${formatSentAt(String(messageSentAt))}. You can send again — status will update.`
-                        : 'You can send again — status will update.'}
+                        ? `Completion sent ${formatSentAt(String(messageSentAt))}. Next you can pick the review request or the full message.`
+                        : 'Next you can pick the review request or the full message.'}
                     </p>
                   </div>
                 </div>
@@ -306,6 +392,42 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                   </div>
                 )}
               </div>
+
+              {canSendReviewOnly ? (
+                <div className="space-y-1.5">
+                  <Label>What to send</Label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      className={
+                        reviewOnlyChoice
+                          ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
+                          : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
+                      }
+                      onClick={() => setReviewOnlyChoice(true)}
+                    >
+                      <span className="block">Review request only</span>
+                      <span className="block text-[11px] font-normal opacity-80">
+                        Short message with the review link
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        !reviewOnlyChoice
+                          ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
+                          : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
+                      }
+                      onClick={() => setReviewOnlyChoice(false)}
+                    >
+                      <span className="block">Full completion message</span>
+                      <span className="block text-[11px] font-normal opacity-80">
+                        Send the whole message again
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               {cloudApiAllowed ? (
                 <>
@@ -344,10 +466,17 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 </div>
 
               <div>
-                <Label>Message preview (24h chat)</Label>
-                <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+                <Label>{sendReviewOnly ? 'Review request preview' : 'Message preview (24h chat)'}</Label>
+                <div className="mt-2 max-h-52 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm text-foreground/90 sm:max-h-64">
                   {reviewLinkReady ? (
-                    whatsappMessage
+                    sendReviewOnly && reviewUrl
+                      ? buildAskReviewWhatsAppMessage({
+                          customerName,
+                          brand: completion.documentBrand,
+                          reviewUrl,
+                          jobRef: completion.jobNumber || null,
+                        })
+                      : whatsappMessage
                   ) : (
                     <span className="inline-flex items-center gap-2 text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -356,10 +485,10 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                   )}
                 </div>
               </div>
-              {completion.amountPendingValue <= 0 ? (
+              {!sendReviewOnly && completion.amountPendingValue <= 0 ? (
                 <div>
                   <Label>If the 24h window is closed (cold template)</Label>
-                  <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+                  <div className="mt-2 max-h-52 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm text-foreground/90 sm:max-h-64">
                     {formatJobCompletionColdTemplatePreview({
                       customerName: completion.customerName,
                       amountCollected: completion.amountCollected,
@@ -378,10 +507,17 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 </>
               ) : (
                 <div>
-                  <Label>Message Preview</Label>
-                  <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+                  <Label>{sendReviewOnly ? 'Review request preview' : 'Message Preview'}</Label>
+                  <div className="mt-2 max-h-52 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm text-foreground/90 sm:max-h-64">
                     {reviewLinkReady ? (
-                      whatsappMessage
+                      sendReviewOnly && reviewUrl
+                        ? buildAskReviewWhatsAppMessage({
+                            customerName,
+                            brand: completion.documentBrand,
+                            reviewUrl,
+                            jobRef: completion.jobNumber || null,
+                          })
+                        : whatsappMessage
                     ) : (
                       <span className="inline-flex items-center gap-2 text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -410,7 +546,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 className="h-10 w-full rounded-xl bg-black text-white hover:bg-gray-800 sm:w-auto"
                 onClick={() => setBrandConfirmed(true)}
               >
-                Confirm and Continue
+                {alreadySent ? 'Continue to Send Options' : 'Confirm and Continue'}
               </Button>
             </div>
           ) : (

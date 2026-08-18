@@ -26,6 +26,7 @@ const { handleUnsolicitedInboundMedia } = require('./whatsapp-unsolicited-media'
 const { handlePayQrWatchInbound } = require('./whatsapp-pay-qr-helper');
 const { handlePdfAuthenticityOtpInbound } = require('./whatsapp-pdf-authenticity-otp');
 const { handleDocumentAcceptInbound } = require('./document-accept-inbound');
+const { handleWhatsAppAiAutoReplyInbound } = require('./whatsapp-ai-auto-reply');
 
 function readRawBody(event) {
   if (!event.body) return '';
@@ -157,8 +158,43 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       }
     }
 
+    // Explicitly opted-in AI chat goes first for safe service conversation.
+    // It yields booking intents and active booking steps back to the deterministic bot.
+    let aiAutoReplyHandled = false;
+    if (
+      !authenticityOtpHandled &&
+      !documentAcceptHandled &&
+      !skipBookingBot &&
+      accessToken &&
+      phoneNumberId
+    ) {
+      try {
+        const aiResult = await handleWhatsAppAiAutoReplyInbound({
+          db,
+          accessToken,
+          phoneNumberId,
+          phone,
+          msg,
+          body,
+          priorBotState,
+        });
+        aiAutoReplyHandled = Boolean(aiResult?.handled);
+      } catch (err) {
+        // Fail closed for auto reply but keep the webhook and admin alert alive.
+        aiAutoReplyHandled = true;
+        console.warn('[whatsapp-webhook] AI auto reply error', err?.message || err);
+      }
+    }
+
     // 24h-window booking bot (reply buttons). Failures must not break webhook ACK.
-    if (!authenticityOtpHandled && !documentAcceptHandled && !skipBookingBot && accessToken && phoneNumberId) {
+    if (
+      !authenticityOtpHandled &&
+      !documentAcceptHandled &&
+      !skipBookingBot &&
+      !aiAutoReplyHandled &&
+      accessToken &&
+      phoneNumberId
+    ) {
       try {
         await handleBookingBotInbound({
           db,

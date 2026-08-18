@@ -329,6 +329,8 @@ export const CUSTOMER_DOCUMENT_COLUMNS = [
   'email',
   'address',
   'visible_address',
+  'alternate_address',
+  'alternate_visible_address',
   'service_type',
   'brand',
   'model',
@@ -660,6 +662,9 @@ type AdminCompletedListFilters = {
   completedByUserId?: string;
   serviceSubTypeIn?: string[];
   leadRequirementsContainVariants?: string[];
+  excludeServiceSubType?: string;
+  /** When excluding AMC Service, retain rows explicitly opted into follow-up. */
+  includeAmcFollowUpOverrides?: boolean;
 };
 
 function applyAdminCompletedListFilters(query: any, listFilters?: AdminCompletedListFilters) {
@@ -669,6 +674,16 @@ function applyAdminCompletedListFilters(query: any, listFilters?: AdminCompleted
   }
   if (listFilters.serviceSubTypeIn?.length) {
     query = query.in('service_sub_type', listFilters.serviceSubTypeIn);
+  }
+  if (listFilters.excludeServiceSubType) {
+    const filters = [
+      'service_sub_type.is.null',
+      `service_sub_type.neq.${listFilters.excludeServiceSubType}`,
+    ];
+    if (listFilters.includeAmcFollowUpOverrides) {
+      filters.push('include_amc_follow_up.eq.true');
+    }
+    query = query.or(filters.join(','));
   }
   if (listFilters.leadRequirementsContainVariants?.length) {
     const variants = listFilters.leadRequirementsContainVariants;
@@ -1711,11 +1726,11 @@ export const db = {
       return { data, error };
     },
 
-    /** Tiny fetch: address + email (e.g. warranty dialog). */
+    /** Tiny fetch: both document-address choices + email (e.g. warranty dialog). */
     async getAddressById(id: string) {
       const { data, error } = await supabase
         .from('customers')
-        .select('address, email')
+        .select('address, alternate_address, visible_address, alternate_visible_address, email')
         .eq('id', id)
         .single();
       return { data, error };
@@ -1968,7 +1983,7 @@ export const db = {
     async getByCustomerIdForPicker(customerId: string) {
       const { data, error } = await supabase
         .from('jobs')
-        .select('id, job_number, status, service_type, service_sub_type, scheduled_date, completed_at')
+        .select('id, job_number, status, service_type, service_sub_type, scheduled_date, completed_at, service_site, service_address')
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false })
         .limit(100);
@@ -2907,7 +2922,10 @@ export const db = {
     },
 
     // Get job counts by status (for stats without loading all data)
-    async getCounts() {
+    async getCounts(opts?: {
+      countOnlyNonAmcFollowUps?: boolean;
+      followUpsDueWithinDays?: number;
+    }) {
       try {
         // Get today's date range (start and end of today) for today-specific counts
         // Use local timezone date, then convert to UTC for database comparison
@@ -2917,7 +2935,13 @@ export const db = {
         const day = today.getDate();
 
         const dayKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const countsCacheKey = `job_counts_v1:${dayKey}`;
+        const countOnlyNonAmcFollowUps = opts?.countOnlyNonAmcFollowUps === true;
+        const followUpsDueWithinDays = Number.isFinite(opts?.followUpsDueWithinDays)
+          ? Math.max(0, Math.floor(opts?.followUpsDueWithinDays ?? 0))
+          : null;
+        const countsCacheKey =
+          `job_counts_v1:${dayKey}:non_amc_${countOnlyNonAmcFollowUps}` +
+          `:due_${followUpsDueWithinDays ?? 'all'}`;
         const cached = cacheGet<{
           ongoing: number;
           followup: number;
@@ -2941,7 +2965,11 @@ export const db = {
         // one round-trip (vs four separate count queries). The client passes the
         // same UTC day bounds, so results are identical to the fallback below.
         // Falls back transparently if the function isn't present yet.
-        if (!adminJobCountsRpcMissing) {
+        if (
+          !countOnlyNonAmcFollowUps &&
+          followUpsDueWithinDays === null &&
+          !adminJobCountsRpcMissing
+        ) {
           const rpc = await supabase.rpc('get_admin_job_counts', {
             p_today_start: todayStart,
             p_today_next: todayStartNextDay,
@@ -2968,6 +2996,23 @@ export const db = {
           }
         }
 
+        let followupCountQuery = supabase
+          .from('jobs')
+          .select('id', { count: 'exact', head: true })
+          .in('status', ['FOLLOW_UP', 'RESCHEDULED']);
+        if (countOnlyNonAmcFollowUps) {
+          followupCountQuery = followupCountQuery.or(
+            'service_sub_type.is.null,service_sub_type.neq.AMC Service,include_amc_follow_up.eq.true'
+          );
+        }
+        if (followUpsDueWithinDays !== null) {
+          const dueCutoff = new Date(year, month, day + followUpsDueWithinDays);
+          const dueCutoffYmd = `${dueCutoff.getFullYear()}-${String(
+            dueCutoff.getMonth() + 1
+          ).padStart(2, '0')}-${String(dueCutoff.getDate()).padStart(2, '0')}`;
+          followupCountQuery = followupCountQuery.lte('follow_up_date', dueCutoffYmd);
+        }
+
         // Count jobs in parallel for better performance
         const [ongoingResult, followupResult, deniedResult, completedResult] = await Promise.all([
           // Ongoing: ALL current jobs with status PENDING, ASSIGNED, EN_ROUTE, or IN_PROGRESS
@@ -2976,10 +3021,7 @@ export const db = {
           .select('id', { count: 'exact', head: true })
             .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']),
           // Followup: ALL jobs with status FOLLOW_UP or RESCHEDULED
-          supabase
-            .from('jobs')
-            .select('id', { count: 'exact', head: true })
-            .in('status', ['FOLLOW_UP', 'RESCHEDULED']),
+          followupCountQuery,
           // Denied: Only TODAY's jobs with status DENIED or CANCELLED (using denied_at field)
           supabase
             .from('jobs')
@@ -3031,6 +3073,9 @@ export const db = {
         serviceSubTypeIn?: string[];
         /** `lead_source` values for jsonb `requirements` contains (see adminUtils). */
         leadRequirementsContainVariants?: string[];
+        /** Keep rows with null subtype, but omit this exact subtype. */
+        excludeServiceSubType?: string;
+        includeAmcFollowUpOverrides?: boolean;
       }
     ) {
       const from = (page - 1) * pageSize;
@@ -3194,6 +3239,9 @@ export const db = {
         completedByUserId?: string;
         serviceSubTypeIn?: string[];
         leadRequirementsContainVariants?: string[];
+        /** Keep rows with null subtype, but omit this exact subtype. */
+        excludeServiceSubType?: string;
+        includeAmcFollowUpOverrides?: boolean;
         /** When true, drop `requirements` jsonb from rows (admin “minimal” list; details on demand). */
         omitRequirements?: boolean;
         /** Prefer Postgres `estimated` count for faster pagination metadata (slight variance vs `exact` on huge tables). */
@@ -3215,6 +3263,7 @@ export const db = {
         'priority',
         'service_type',
         'service_sub_type',
+        'include_amc_follow_up',
         'service_brand',
         'scheduled_date',
         'scheduled_time_slot',
@@ -3354,6 +3403,8 @@ export const db = {
         completedByUserId: opts?.completedByUserId,
         serviceSubTypeIn: opts?.serviceSubTypeIn,
         leadRequirementsContainVariants: opts?.leadRequirementsContainVariants,
+        excludeServiceSubType: opts?.excludeServiceSubType,
+        includeAmcFollowUpOverrides: opts?.includeAmcFollowUpOverrides,
       });
 
       const deniedCancelledList =
@@ -3382,19 +3433,25 @@ export const db = {
       };
     },
 
-    /** Minimal fetch for follow-up glow: only jobs with follow_up_date today or tomorrow (local date). Returns id, status, follow_up_date only. */
-    async getFollowUpForGlow() {
+    /** Minimal fetch for follow-up glow: only jobs with follow_up_date today or tomorrow (local date). */
+    async getFollowUpForGlow(opts?: { excludeAmc?: boolean }) {
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
       const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
-      const { data, error } = await supabase
+      let query = supabase
         .from('jobs')
-        .select('id, status, follow_up_date')
+        .select('id, status, follow_up_date, service_sub_type')
         .in('status', ['FOLLOW_UP', 'RESCHEDULED'])
         .in('follow_up_date', [todayStr, tomorrowStr])
         .limit(200);
+      if (opts?.excludeAmc) {
+        query = query.or(
+          'service_sub_type.is.null,service_sub_type.neq.AMC Service,include_amc_follow_up.eq.true'
+        );
+      }
+      const { data, error } = await query;
       return { data: data || [], error };
     },
 

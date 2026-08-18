@@ -24,7 +24,8 @@ function getCached(url: string): string | undefined {
 }
 
 export async function resolveSensitiveMediaUrl(
-  rawUrl: string | null | undefined
+  rawUrl: string | null | undefined,
+  opts?: { jobId?: string | null }
 ): Promise<string | null> {
   if (!rawUrl) return null;
   if (!isSensitiveMediaUrl(rawUrl)) return rawUrl;
@@ -43,6 +44,7 @@ export async function resolveSensitiveMediaUrl(
         accessToken: session.access_token,
         urls: [rawUrl],
         ttlSeconds: 3600,
+        ...(opts?.jobId ? { jobId: opts.jobId } : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -58,6 +60,9 @@ export async function resolveSensitiveMediaUrl(
   return rawUrl;
 }
 
-export async function resolveSensitiveMediaUrls(urls: string[]): Promise<string[]> {
-  return Promise.all(urls.map((u) => resolveSensitiveMediaUrl(u).then((r) => r || u)));
+export async function resolveSensitiveMediaUrls(
+  urls: string[],
+  opts?: { jobId?: string | null }
+): Promise<string[]> {
+  return Promise.all(urls.map((u) => resolveSensitiveMediaUrl(u, opts).then((r) => r || u)));
 }

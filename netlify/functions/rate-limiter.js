@@ -13,14 +13,15 @@ function isRateLimitEnabled() {
 }
 
 // Cleanup old entries periodically
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, value] of rateLimitStore.entries()) {
     if (value.resetTime < now) {
       rateLimitStore.delete(key);
     }
   }
-}, 60000); // Cleanup every minute
+}, 60000);
+if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref();
 
 /**
  * Get client identifier from request
@@ -276,6 +277,7 @@ function enforceSendEmailRateLimits(event, recipientEmail) {
 }
 
 module.exports = {
+  isRateLimitEnabled,
   checkRateLimit,
   checkRateLimitForKey,
   peekRateLimit,
