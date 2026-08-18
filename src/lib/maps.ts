@@ -36,11 +36,11 @@ export const generateGoogleMapsDirections = (destination: LocationData, address?
   const { latitude, longitude } = destination;
   // Always use coordinates for exact location, only use address as fallback if no coordinates
   if (latitude && longitude) {
-    return `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+    return `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}&travelmode=driving&avoid=tolls`;
   }
   // Fallback to address if no coordinates available
   const query = address || 'Unknown Location';
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(query)}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(query)}&travelmode=driving&avoid=tolls`;
 };
 
 type LatLngPoint = { lat: number; lng: number };
@@ -60,6 +60,7 @@ export const generateGoogleMapsDirectionsBetween = (
     destination: `${destination.lat},${destination.lng}`,
     travelmode: travelMode,
   });
+  if (travelMode === 'driving') params.set('avoid', 'tolls');
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 };
 
@@ -81,6 +82,7 @@ export const generateGoogleMapsMultiStopDirections = (
     destination: `${destination.lat},${destination.lng}`,
     travelmode: travelMode,
   });
+  if (travelMode === 'driving') params.set('avoid', 'tolls');
   if (middle.length > 0) {
     params.set(
       'waypoints',

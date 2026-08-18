@@ -44,6 +44,7 @@ export async function calculateDistances(
         origins,
         destinations,
         mode: 'driving',
+        avoid: 'tolls',
       }),
     });
 

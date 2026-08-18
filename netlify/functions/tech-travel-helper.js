@@ -65,6 +65,16 @@ function parseOfficeValue(value) {
   return readLatLng(value);
 }
 
+function roundKm(km) {
+  return Math.round(Number(km) * 10) / 10;
+}
+
+function saneKm(km) {
+  const n = Number(km);
+  if (!Number.isFinite(n) || n < 0 || n > 500) return null;
+  return n;
+}
+
 function getTravelLegKm(job) {
   const reqs = parseRequirements(job?.requirements);
   const row = reqs.find((r) => r && r.travel_leg && Number.isFinite(Number(r.travel_leg.km)));
@@ -73,13 +83,24 @@ function getTravelLegKm(job) {
   return km >= 0 ? km : null;
 }
 
-function applyTravelLeg(requirements, km, fromLabel) {
+function getTravelReturnKm(job) {
+  const reqs = parseRequirements(job?.requirements);
+  const row = reqs.find((r) => r && r.travel_leg && Number.isFinite(Number(r.travel_leg.return_km)));
+  if (!row) return null;
+  const km = Number(row.travel_leg.return_km);
+  return km >= 0 ? km : null;
+}
+
+function applyTravelLeg(requirements, km, fromLabel, extra) {
   const reqs = parseRequirements(requirements).filter((r) => !r.travel_leg);
+  const returnKm = extra && extra.returnKm != null ? saneKm(extra.returnKm) : null;
   reqs.push({
     travel_leg: {
-      km: Math.round(km * 10) / 10,
+      km: roundKm(km),
       from: fromLabel,
       computed_at: new Date().toISOString(),
+      avoid_tolls: true,
+      ...(returnKm != null ? { return_km: roundKm(returnKm) } : {}),
     },
   });
   return reqs;
@@ -145,7 +166,7 @@ async function findPreviousJobToday(db, technicianId, jobId, startIso, nowMs = D
   return data || null;
 }
 
-async function computeAndStoreLegForJob(db, jobId, nowMs = Date.now()) {
+async function loadJobForTravel(db, jobId) {
   const { data: job, error } = await db
     .from('jobs')
     .select(
@@ -153,12 +174,13 @@ async function computeAndStoreLegForJob(db, jobId, nowMs = Date.now()) {
     )
     .eq('id', jobId)
     .maybeSingle();
-  if (error || !job) return { ok: false, reason: 'no_job' };
-  if (getTravelLegKm(job) != null) return { ok: true, skipped: 'already', km: getTravelLegKm(job) };
+  if (error || !job) return null;
+  return job;
+}
 
+async function resolveLegContext(db, job, nowMs = Date.now()) {
   const dest = jobCoords(job);
   if (!dest) return { ok: false, reason: 'no_dest_coords' };
-
   const office = await getOfficeLocation(db);
   const previous = job.assigned_technician_id
     ? await findPreviousJobToday(db, job.assigned_technician_id, job.id, job.start_time, nowMs)
@@ -167,17 +189,57 @@ async function computeAndStoreLegForJob(db, jobId, nowMs = Date.now()) {
   const origin = prevCoords || office;
   const fromLabel = prevCoords ? `job:${previous.id}` : 'office';
   if (!origin) return { ok: false, reason: prevCoords ? 'no_origin_coords' : 'no_office' };
+  return { ok: true, dest, office, origin, fromLabel };
+}
 
-  const meters = await drivingDistanceMetersAvoidTolls(origin, dest);
-  if (meters == null) return { ok: false, reason: 'no_route' };
-  const km = meters / 1000;
-  const nextReqs = applyTravelLeg(job.requirements, km, fromLabel);
+async function saveTravelLeg(db, job, km, fromLabel, returnKm) {
+  const nextReqs = applyTravelLeg(job.requirements, km, fromLabel, { returnKm });
   const { error: upErr } = await db.from('jobs').update({ requirements: nextReqs }).eq('id', job.id);
   if (upErr) {
     console.warn('[tech-travel] save leg failed', upErr.message);
     return { ok: false, reason: 'save_failed', km };
   }
   return { ok: true, km, from: fromLabel };
+}
+
+async function computeAndStoreLegForJob(db, jobId, nowMs = Date.now()) {
+  const job = await loadJobForTravel(db, jobId);
+  if (!job) return { ok: false, reason: 'no_job' };
+  if (getTravelLegKm(job) != null) return { ok: true, skipped: 'already', km: getTravelLegKm(job) };
+
+  const ctx = await resolveLegContext(db, job, nowMs);
+  if (!ctx.ok) return ctx;
+
+  const meters = await drivingDistanceMetersAvoidTolls(ctx.origin, ctx.dest);
+  if (meters == null) {
+    return {
+      ok: false,
+      reason: 'need_client',
+      origin: ctx.origin,
+      dest: ctx.dest,
+      office: ctx.office,
+    };
+  }
+  const km = meters / 1000;
+  let returnKm = null;
+  if (ctx.office) {
+    const retMeters = await drivingDistanceMetersAvoidTolls(ctx.dest, ctx.office);
+    if (retMeters != null) returnKm = retMeters / 1000;
+  }
+  return saveTravelLeg(db, job, km, ctx.fromLabel, returnKm);
+}
+
+async function storeClientLegForJob(db, jobId, kmRaw, returnKmRaw, nowMs = Date.now()) {
+  const km = saneKm(kmRaw);
+  if (km == null) return { ok: false, reason: 'bad_km' };
+  const job = await loadJobForTravel(db, jobId);
+  if (!job) return { ok: false, reason: 'no_job' };
+  if (getTravelLegKm(job) != null) return { ok: true, skipped: 'already', km: getTravelLegKm(job) };
+
+  const ctx = await resolveLegContext(db, job, nowMs);
+  if (!ctx.ok) return ctx;
+  const returnKm = returnKmRaw != null ? saneKm(returnKmRaw) : null;
+  return saveTravelLeg(db, job, km, ctx.fromLabel, returnKm);
 }
 
 async function backfillMissingLegs(db, jobs, nowMs = Date.now()) {
@@ -211,7 +273,8 @@ async function totalTravelKmForTechnician(db, jobs, nowMs = Date.now()) {
   const sorted = jobsStartedTodaySorted(refreshed && refreshed.length ? refreshed : jobs, nowMs);
   const outbound = sumStoredTravelKm(sorted);
   const last = sorted.length ? sorted[sorted.length - 1] : null;
-  const ret = last ? await returnToOfficeKm(last, office) : null;
+  const storedReturn = last ? getTravelReturnKm(last) : null;
+  const ret = storedReturn != null ? storedReturn : last ? await returnToOfficeKm(last, office) : null;
   const total = outbound + (ret || 0);
   return {
     km: total > 0 ? Math.round(total * 10) / 10 : null,
@@ -230,7 +293,9 @@ module.exports = {
   jobCoords,
   parseOfficeValue,
   getTravelLegKm,
+  getTravelReturnKm,
   applyTravelLeg,
+  storeClientLegForJob,
   formatTravelKm,
   sumStoredTravelKm,
   jobsStartedTodaySorted,

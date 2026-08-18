@@ -1,7 +1,6 @@
 /**
- * Driving distance for one origin × one destination.
- * Prefer Google Distance Matrix (avoid=tolls). Fall back to OSRM if the
- * Maps key is browser/referrer-restricted (typical VITE_GOOGLE_MAPS_API_KEY).
+ * Google Distance Matrix, driving, avoid tolls. Server-side key only.
+ * Browser/referrer-restricted VITE keys cannot call this web service.
  */
 
 function trim(s) {
@@ -23,57 +22,10 @@ function cacheKey(origin, dest) {
   return `${o}|${d}|driving|tolls`;
 }
 
-async function googleDistanceMetersAvoidTolls(origin, dest, apiKey) {
-  const url = new URL('https://maps.googleapis.com/maps/api/distancematrix/json');
-  url.searchParams.set('origins', `${origin.lat},${origin.lng}`);
-  url.searchParams.set('destinations', `${dest.lat},${dest.lng}`);
-  url.searchParams.set('mode', 'driving');
-  url.searchParams.set('avoid', 'tolls');
-  url.searchParams.set('units', 'metric');
-  url.searchParams.set('key', apiKey);
-
-  const res = await fetch(url.toString());
-  if (!res.ok) return null;
-  const data = await res.json();
-  const status = data?.status;
-  if (status && status !== 'OK') {
-    if (status === 'REQUEST_DENIED' || status === 'OVER_QUERY_LIMIT') {
-      googleUnusableUntil = Date.now() + CACHE_TTL_MS;
-    }
-    if (!loggedGoogleSkip) {
-      loggedGoogleSkip = true;
-      console.warn(
-        '[tech-travel] Google Distance Matrix',
-        status,
-        data.error_message || '',
-        '— using road fallback'
-      );
-    }
-    return null;
-  }
-  const el = data?.rows?.[0]?.elements?.[0];
-  if (el?.status === 'OK' && el.distance && Number.isFinite(el.distance.value)) {
-    return Number(el.distance.value);
-  }
-  return null;
-}
-
-async function osrmDrivingMeters(origin, dest) {
-  const url = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=false`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'HydrogenRO-CRM/tech-travel' },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  const meters = data?.routes?.[0]?.distance;
-  return Number.isFinite(meters) && meters >= 0 ? Number(meters) : null;
-}
-
 /**
  * @param {{ lat: number, lng: number }} origin
  * @param {{ lat: number, lng: number }} dest
- * @returns {Promise<number | null>} meters, or null if no route
+ * @returns {Promise<number | null>} meters, or null if Google cannot route
  */
 async function drivingDistanceMetersAvoidTolls(origin, dest) {
   if (!origin || !dest) return null;
@@ -81,31 +33,56 @@ async function drivingDistanceMetersAvoidTolls(origin, dest) {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.meters;
 
-  let meters = null;
-  const apiKey = getGoogleMapsServerKey();
-  if (apiKey && Date.now() >= googleUnusableUntil) {
-    try {
-      meters = await googleDistanceMetersAvoidTolls(origin, dest, apiKey);
-    } catch (err) {
-      console.warn('[tech-travel] Google Distance Matrix failed', err?.message || err);
-    }
-  }
-  if (meters == null) {
-    try {
-      meters = await osrmDrivingMeters(origin, dest);
-    } catch (err) {
-      console.warn('[tech-travel] OSRM fallback failed', err?.message || err);
-    }
-  }
+  if (Date.now() < googleUnusableUntil) return null;
 
-  if (meters != null) cache.set(key, { meters, at: Date.now() });
-  if (cache.size > 200) {
-    const now = Date.now();
-    for (const [k, v] of cache.entries()) {
-      if (now - v.at >= CACHE_TTL_MS) cache.delete(k);
+  const apiKey = getGoogleMapsServerKey();
+  if (!apiKey) return null;
+
+  try {
+    const url = new URL('https://maps.googleapis.com/maps/api/distancematrix/json');
+    url.searchParams.set('origins', `${origin.lat},${origin.lng}`);
+    url.searchParams.set('destinations', `${dest.lat},${dest.lng}`);
+    url.searchParams.set('mode', 'driving');
+    url.searchParams.set('avoid', 'tolls');
+    url.searchParams.set('units', 'metric');
+    url.searchParams.set('key', apiKey);
+
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const data = await res.json();
+    const status = data?.status;
+    if (status && status !== 'OK') {
+      if (status === 'REQUEST_DENIED' || status === 'OVER_QUERY_LIMIT') {
+        googleUnusableUntil = Date.now() + CACHE_TTL_MS;
+      }
+      if (!loggedGoogleSkip) {
+        loggedGoogleSkip = true;
+        console.warn(
+          '[tech-travel] Google Distance Matrix',
+          status,
+          data.error_message || '',
+          '— avoid-tolls km needs the JS Maps call or GOOGLE_MAPS_API_KEY'
+        );
+      }
+      return null;
     }
+    const el = data?.rows?.[0]?.elements?.[0];
+    const meters =
+      el?.status === 'OK' && el.distance && Number.isFinite(el.distance.value)
+        ? Number(el.distance.value)
+        : null;
+    if (meters != null) cache.set(key, { meters, at: Date.now() });
+    if (cache.size > 200) {
+      const now = Date.now();
+      for (const [k, v] of cache.entries()) {
+        if (now - v.at >= CACHE_TTL_MS) cache.delete(k);
+      }
+    }
+    return meters;
+  } catch (err) {
+    console.warn('[tech-travel] Google Distance Matrix failed', err?.message || err);
+    return null;
   }
-  return meters;
 }
 
 module.exports = {

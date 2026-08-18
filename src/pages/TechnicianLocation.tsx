@@ -469,6 +469,7 @@ const TechnicianLocation = () => {
           destinations: [destination],
           travelMode: google.maps.TravelMode.DRIVING,
           unitSystem: google.maps.UnitSystem.METRIC,
+          avoidTolls: true,
         },
         (response, status) => {
           setIsCalculating(false);

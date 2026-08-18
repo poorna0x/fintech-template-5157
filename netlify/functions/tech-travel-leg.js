@@ -4,7 +4,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
-const { computeAndStoreLegForJob } = require('./tech-travel-helper');
+const { computeAndStoreLegForJob, storeClientLegForJob } = require('./tech-travel-helper');
 
 exports.handler = async (event) => {
   const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
@@ -65,7 +65,10 @@ exports.handler = async (event) => {
   }
 
   try {
-    const result = await computeAndStoreLegForJob(db, jobId);
+    const clientKm = body.km != null ? Number(body.km) : null;
+    const result = Number.isFinite(clientKm)
+      ? await storeClientLegForJob(db, jobId, clientKm, body.returnKm)
+      : await computeAndStoreLegForJob(db, jobId);
     return { statusCode: 200, headers, body: JSON.stringify(result) };
   } catch (err) {
     console.warn('[tech-travel-leg] failed', err?.message || err);

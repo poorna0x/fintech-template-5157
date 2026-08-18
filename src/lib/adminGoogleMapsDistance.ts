@@ -191,6 +191,9 @@ setCustomerDistances: Dispatch<SetStateAction<CustomerDistanceState>>
           destinations: [destCoords],
           travelMode: travelMode,
           unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+          ...(travelMode === (window as any).google.maps.TravelMode.DRIVING
+            ? { avoidTolls: true }
+            : {}),
         },
         (response, status) => {
           console.log(`Distance Matrix callback (${modeName}):`, { status, response });
