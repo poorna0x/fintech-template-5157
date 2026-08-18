@@ -101,7 +101,7 @@ export const TECH_WHATSAPP_LABELS: Record<
   },
   worked_hours: {
     label: TECH_PUSH_LABELS.worked_hours.label + ' (WhatsApp)',
-    description: '9:00 PM worked-hours summary — also WhatsApp when enabled.',
+    description: '9:00 PM hours + travel km summary — also WhatsApp when enabled.',
   },
   tech_assigned_customer: {
     label: 'Technician assigned (to customer)',

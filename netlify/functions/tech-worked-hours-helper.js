@@ -104,10 +104,11 @@ function formatWorkedHoursPushBody(summary, extra) {
   const hours = formatWorkedDuration(summary.durationMs);
   const from = formatIstClock(summary.firstStartMs);
   const to = formatIstClock(summary.lastCompleteMs);
-  let msg = `Today you worked ${hours} (${from} \u2192 ${to}).`;
   const kmLabel = extra && extra.kmLabel ? String(extra.kmLabel).trim() : '';
-  if (kmLabel) msg += ` \u00b7 ~${kmLabel}`;
-  return msg;
+  if (kmLabel) {
+    return `Today you worked ${hours} (${from} \u2192 ${to}) \u00b7 travelled ~${kmLabel}.`;
+  }
+  return `Today you worked ${hours} (${from} \u2192 ${to}).`;
 }
 
 module.exports = {

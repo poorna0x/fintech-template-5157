@@ -3919,10 +3919,6 @@ const Settings = () => {
                   <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
                     Office location
                   </h3>
-                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
-                    Used for technician travel km: office → first Start Work, then job to job
-                    (avoid tolls), and last job → office at 9 PM.
-                  </p>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <Input

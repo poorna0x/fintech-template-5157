@@ -152,7 +152,7 @@ export const TECH_PUSH_LABELS: Record<TechPushCategory, { label: string; descrip
   worked_hours: {
     label: 'Daily worked hours',
     description:
-      '9:00 PM summary of hours from the first job you started today to the last job you completed.',
+      '9:00 PM summary: hours from first Start Work to last job completed, plus driving km (office → jobs → office).',
   },
 };
 
