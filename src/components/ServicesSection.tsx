@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Wrench, Filter, RefreshCw, Settings, CheckCircle, Clock, Shield, Phone, AlertCircle, Building2 } from 'lucide-react';
+import { Wrench, Filter, RefreshCw, Settings, CheckCircle, Clock, Shield, Phone, AlertCircle, Building2, Droplets } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const ServicesSection = () => {
@@ -137,6 +137,81 @@ const ServicesSection = () => {
         ],
         terms: [
           "Price starting from ₹1799 does not include RO membrane"
+        ]
+      }
+    },
+    {
+      icon: Shield,
+      title: "RO AMC Plans",
+      description: "Annual maintenance with scheduled visits, genuine filters and priority breakdown support.",
+      features: ["1 / 2 / 3 year plans", "Scheduled service visits", "Filter & membrane as per plan", "Priority breakdown support"],
+      pricing: "Plans on quote",
+      href: '/ro-amc',
+      details: {
+        includes: [
+          "Scheduled RO service visits through the year",
+          "Filter replacement as per the AMC plan",
+          "Membrane check and replacement when covered",
+          "Sanitization and TDS check",
+          "Priority booking for breakdowns",
+          "Genuine spare parts as per plan"
+        ],
+        benefits: [
+          "Fewer surprise repair bills",
+          "Consistent drinking-water quality",
+          "Same technician team as installation",
+          "Plans for homes and offices"
+        ],
+        terms: [
+          "AMC price depends on brand, model and visit frequency — final quote after inspection"
+        ]
+      }
+    },
+    {
+      icon: Clock,
+      title: "Emergency 24/7 RO Repair",
+      description: "Urgent leak, no-water or breakdown support across Bengaluru — same-day slots when available.",
+      features: ["Leak & no-water calls", "Same-day emergency slots", "All major RO brands", "Night & weekend support"],
+      pricing: "Service from ₹399",
+      href: '/emergency-ro-repair',
+      details: {
+        includes: [
+          "Emergency diagnosis for leak, no output or sudden TDS jump",
+          "Pump, leak and electrical checks",
+          "Temporary fix so you have water the same day when parts are in van",
+          "Follow-up part replacement if needed"
+        ],
+        benefits: [
+          "24/7 phone support",
+          "Certified technicians",
+          "Genuine parts when replaced",
+          "Transparent visit charge"
+        ],
+        terms: [
+          "Service charge (₹399) is the visit fee; filters and parts are extra"
+        ]
+      }
+    },
+    {
+      icon: Droplets,
+      title: "Water Quality & TDS Testing",
+      description: "On-site TDS and hardness check so we size RO, commercial plant or softener correctly.",
+      features: ["TDS reading", "Hardness check for softeners", "Capacity recommendation", "Free with booked service"],
+      pricing: "Free with booked service",
+      details: {
+        includes: [
+          "TDS reading at the tap and after RO",
+          "Hardness check when a softener is being considered",
+          "Simple explanation of results",
+          "Recommendation for home RO, commercial LPH or softener"
+        ],
+        benefits: [
+          "Know if the purifier is performing",
+          "Right plant size before you buy",
+          "No charge when you book a service visit"
+        ],
+        terms: [
+          "Complimentary testing applies with a booked service visit; standalone lab reports may be quoted separately"
         ]
       }
     },
