@@ -12,6 +12,10 @@ import {
   locationUploadErrorMessage,
 } from '@/lib/ensureSupabaseSession';
 import { isIOS } from '@/lib/cameraUtils';
+import {
+  generateGoogleMapsDirections,
+  generateGoogleMapsDirectionsBetween,
+} from '@/lib/maps';
 
 interface LocationData {
   latitude: number;
@@ -432,7 +436,7 @@ const TechnicianLocation = () => {
     }
 
     const { latitude, longitude } = location;
-    const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+    const googleMapsUrl = generateGoogleMapsDirections({ latitude, longitude });
     window.open(googleMapsUrl, '_blank');
     toast.success('Opening location in Google Maps...');
   };
@@ -444,7 +448,11 @@ const TechnicianLocation = () => {
     }
 
     const { latitude, longitude } = location;
-    const googleMapsUrl = `https://www.google.com/maps/dir/${latitude},${longitude}/${destination.lat},${destination.lng}`;
+    const googleMapsUrl = generateGoogleMapsDirectionsBetween(
+      { lat: latitude, lng: longitude },
+      destination,
+      'driving'
+    );
     window.open(googleMapsUrl, '_blank');
     toast.success('Opening directions in Google Maps...');
   };
@@ -874,7 +882,11 @@ const TechnicianLocation = () => {
                         {location && searchedLocation && (
                           <Button
                             onClick={() => {
-                              const googleMapsUrl = `https://www.google.com/maps/dir/${location.latitude},${location.longitude}/${searchedLocation.lat},${searchedLocation.lng}`;
+                              const googleMapsUrl = generateGoogleMapsDirectionsBetween(
+                                { lat: location.latitude, lng: location.longitude },
+                                searchedLocation,
+                                'driving'
+                              );
                               window.open(googleMapsUrl, '_blank');
                               toast.success('Opening directions in Google Maps...');
                             }}
