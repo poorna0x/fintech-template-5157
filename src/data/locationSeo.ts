@@ -439,7 +439,7 @@ export const BENGALURU_LOCALITY_SLUGS: string[] = locationSeoList
   .filter((loc) => loc.region === 'Bengaluru')
   .map((loc) => loc.slug.replace(/^ro-service-/, ''));
 
-const SERVICES_LABEL = 'RO installation, repair, filter replacement & water softener';
+const SERVICES_LABEL = 'home RO, commercial 25/50/500/1000 LPH plants and new water softener installation';
 
 /** Maps nearby-area labels to a location page when names differ slightly */
 const NEARBY_ALIASES: Record<string, string> = {
@@ -497,7 +497,7 @@ export function buildLocationFaqItems(
   return [
     {
       question: `How do I book RO service in ${loc.name}?`,
-      answer: `Book online on our website or call ${phone}. ${brandName} offers same-day RO installation, repair, filter replacement and AMC in ${place}${pincodeText}.`,
+      answer: `Book online on our website or call ${phone}. ${brandName} offers same-day home RO, commercial 25/50/500/1000 LPH plants and new water softener installation in ${place}${pincodeText}. Based in Bengaluru, covering up to 250 km.`,
     },
     {
       question: `Which RO brands do you service in ${loc.name}?`,
@@ -514,6 +514,14 @@ export function buildLocationFaqItems(
     {
       question: `Do you provide RO AMC in ${loc.name}?`,
       answer: `Yes. Annual Maintenance Contract (AMC) plans are available in ${place} with scheduled filter replacement, sanitization and priority support from ${brandName}.`,
+    },
+    {
+      question: `Do you install commercial RO plants in ${loc.name}?`,
+      answer: `Yes. ${brandName} supplies and installs commercial RO plants from 25 LPH and 50 LPH up to 500 LPH and 1000 LPH in ${place}. Site visit, installation, service and AMC from Bengaluru, covering up to 250 km. Call ${phone}.`,
+    },
+    {
+      question: `Do you install water softeners in ${loc.name}?`,
+      answer: `Yes. ${brandName} does new water softener installation in ${place} for hard borewell and tanker water, plus salt refill and resin service. We work from Bengaluru and cover up to 250 km.`,
     },
   ];
 }
@@ -579,6 +587,13 @@ export function buildLocationKeywords(loc: LocationSEO, brandName: string): stri
     `RO service ${loc.name}`,
     `RO repair ${loc.name}`,
     `RO installation ${loc.name}`,
+    `commercial RO ${loc.name}`,
+    `25 LPH RO plant ${loc.name}`,
+    `50 LPH RO plant ${loc.name}`,
+    `500 LPH RO plant ${loc.name}`,
+    `1000 LPH RO plant ${loc.name}`,
+    `water softener ${loc.name}`,
+    `new water softener installation ${loc.name}`,
     ...(loc.region === 'Bengaluru'
       ? [`RO service ${loc.name} Bangalore`, `RO service ${loc.name} Bengaluru`]
       : [`RO service ${loc.name} Karnataka`, `water purifier service ${loc.name}`]),
@@ -593,7 +608,7 @@ export function buildLocationKeywords(loc: LocationSEO, brandName: string): stri
 
 export function buildLocationTitle(loc: LocationSEO, brandName = 'Hydrogen RO'): string {
   const suffix = loc.region === 'Bengaluru' ? 'Bengaluru' : 'Karnataka';
-  return `RO Service in ${loc.name} ${suffix} | Installation, Repair & AMC - ${brandName}`;
+  return `RO, Commercial Plant & Softener in ${loc.name} ${suffix} | ${brandName}`;
 }
 
 export function buildLocationDescription(loc: LocationSEO, brandName = 'Hydrogen RO', phone = '+91-8884944288'): string {
@@ -604,10 +619,10 @@ export function buildLocationDescription(loc: LocationSEO, brandName = 'Hydrogen
         ? `${loc.name}, Karnataka`
         : loc.name;
   const nearbyText = loc.nearby.length ? ` Also serving ${loc.nearby.slice(0, 5).join(', ')}.` : '';
-  return `Looking for RO service in ${place}? ${brandName} offers same-day ${SERVICES_LABEL} by certified technicians${loc.pincode ? ` (pincode ${loc.pincode})` : ''}.${nearbyText} Genuine spare parts, transparent pricing, 24/7 support. Call ${phone}.`;
+  return `Looking for RO service in ${place}? ${brandName} offers same-day ${SERVICES_LABEL} by certified technicians${loc.pincode ? ` (pincode ${loc.pincode})` : ''}.${nearbyText} Based in Bengaluru, covering up to 250 km. Call ${phone}.`;
 }
 
 export function buildLocationIntro(loc: LocationSEO, brandName = 'Hydrogen RO'): string {
   const place = loc.region === 'Bengaluru' ? `${loc.name}, Bengaluru` : `${loc.name}, ${loc.region}`;
-  return `${brandName} is the trusted choice for RO water purifier service in ${place}. Our certified technicians provide same-day RO installation, repair, filter & membrane replacement, water softener service and annual maintenance (AMC) for all major brands${loc.pincode ? ` across pincode ${loc.pincode}` : ''}. We also cover nearby areas including ${loc.nearby.join(', ')}. Book online or call us for fast, doorstep service.`;
+  return `${brandName} serves ${place} with home RO installation and repair, commercial RO plants (25, 50, 500 and 1000 LPH) and new water softener installation. Certified technicians handle same-day RO service, filter replacement and AMC${loc.pincode ? ` across pincode ${loc.pincode}` : ''}. We work from Bengaluru and cover up to 250 km, including ${loc.nearby.join(', ')}. Book a site visit or same-day service.`;
 }

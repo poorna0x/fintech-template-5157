@@ -32,7 +32,7 @@ export interface BrandSeoProfile {
 }
 
 const SHARED_SERVICE_AREAS =
-  'Bengaluru, Bangalore, Whitefield, ITPL, Electronic City, Mysuru, Mangaluru, Hubballi, Belagavi, Tumakuru, Shivamogga, Hassan, Mandya, Davanagere, Ballari, Raichur, Kalaburagi, Bidar, Vijayapura, Bagalkote, Udupi, Karwar, Chikkamagaluru, Kodagu, Kolar, Ramanagara, Chikkaballapura, Chamarajanagar, Dakshina Kannada, Uttara Kannada, Vijayanagara, Gadag, Haveri, Koppal, Yadgir, Chitradurga, Dharwad';
+  'Bengaluru, Bangalore, Whitefield, ITPL, Electronic City, Mysuru, Mangaluru, Hubballi, Belagavi, Tumakuru, Shivamogga, Hassan, Mandya, Davanagere, Ballari, Raichur, Kalaburagi, Bidar, Vijayapura, Bagalkote, Udupi, Karwar, Chikkamagaluru, Kodagu, Kolar, Ramanagara, Chikkaballapura, Chamarajanagar, Hosur, Nelamangala, Doddaballapur, Anjanapura, Koramangala, Indiranagar, Dakshina Kannada, Uttara Kannada, Vijayanagara, Gadag, Haveri, Koppal, Yadgir, Chitradurga, Dharwad';
 
 const KARNATAKA_DISTRICTS = [
   'Bengaluru Urban', 'Bengaluru Rural', 'Mysuru', 'Dakshina Kannada', 'Udupi', 'Uttara Kannada',
@@ -71,9 +71,9 @@ const ELEVEN_SEO: BrandSeoProfile = {
   legalName: 'ELEVEN RO',
   defaultTitle: 'Eleven RO - Best RO Water Purifier Service in Bengaluru | Same-Day Service',
   defaultDescription:
-    'Eleven RO - trusted RO water purifier service in Bengaluru, Karnataka. Professional RO installation, repair, maintenance and filter replacement. Same-day service across Bangalore including Anjanapura, JP Nagar, Bannerghatta and South Bangalore. Call +91-9880693311.',
+    'Eleven RO — home RO, commercial 25/50/500/1000 LPH plants and new water softener installation. Based in Bengaluru, covering up to 250 km including Anjanapura, JP Nagar, Bannerghatta and nearby districts. Call +91-9880693311.',
   keywords:
-    'Eleven RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, water purifier service Karnataka, RO repair Karnataka, RO installation Karnataka, RO AMC Karnataka, RO maintenance Karnataka, RO technician Karnataka, Kent RO service, Aquaguard service, Livpure service, Pureit service, AO Smith service, best RO service near me, RO service Anjanapura, RO service Mysuru, RO service Mangaluru, RO service Hubballi, same day RO service Eleven RO',
+    'Eleven RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, commercial RO 25 LPH Bangalore, 50 LPH RO plant Bengaluru, 500 LPH RO plant, 1000 LPH RO plant Karnataka, new water softener installation Bangalore, water softener service Karnataka, RO AMC Karnataka, Kent RO service, Aquaguard service, RO service Anjanapura, RO service Tumakuru, RO service Ramanagara, RO service Kolar, RO service Hosur, RO service Nelamangala, same day RO service Eleven RO',
   ogImage: 'https://elevenro.com/elevenro-og.webp',
   logoPath: 'https://elevenro.com/elevenrofulloogo.webp',
   phones: ['+91-9880693311', '+91-8792467611'],

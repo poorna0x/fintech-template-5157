@@ -225,22 +225,22 @@ const STATIC_PAGE_SEO: Record<string, Partial<Record<PublicSiteKey, RouteSeo>>> 
       keywords: 'RO services Bengaluru, commercial RO 25 LPH, 50 LPH RO plant Bangalore, 500 LPH RO plant, 1000 LPH RO plant Karnataka, new water softener installation Bangalore, water softener service Bangalore',
     },
     elevenro: {
-      title: 'RO Services in Bengaluru | Installation, Repair & Maintenance | Eleven RO',
+      title: 'RO Services in Bengaluru | Installation, Commercial Plants & Softener | Eleven RO',
       description:
-        'Complete RO water purifier services in Bengaluru by Eleven RO — installation, repair, filter replacement, AMC and emergency support. Same-day service.',
-      keywords: 'Eleven RO services, RO installation Bengaluru, RO repair Bangalore, RO AMC Anjanapura',
+        'RO, commercial 25/50/500/1000 LPH plants and new water softener installation by Eleven RO — Bengaluru and up to 250 km. Same-day service.',
+      keywords: 'Eleven RO services, commercial RO 25 LPH, 50 LPH RO plant Bangalore, 500 LPH RO plant, 1000 LPH RO plant, new water softener installation Bangalore, RO AMC Anjanapura',
     },
   },
   '/service-areas': {
     hydrogenro: {
       title: 'RO Service Areas in Bengaluru | All Localities Covered | Hydrogen RO',
       description:
-        'Hydrogen RO serves all areas of Bengaluru and Bangalore — Whitefield, Electronic City, BTM, HSR, Koramangala, Hebbal, Sarjapur, Tumakuru and more.',
+        'Hydrogen RO serves Bengaluru and nearby districts up to 250 km — Whitefield, Electronic City, Koramangala, Tumakuru, Ramanagara, Kolar, Chikkaballapura, Mandya, Hassan, Hosur, Nelamangala and Doddaballapur.',
     },
     elevenro: {
       title: 'RO Service Areas in Bengaluru | South & Central Bangalore | Eleven RO',
       description:
-        'Eleven RO provides RO service across Bengaluru including Anjanapura, JP Nagar, Bannerghatta, Electronic City, BTM, HSR, Koramangala and all major localities.',
+        'Eleven RO provides RO, commercial plants and water softener service across Bengaluru including Anjanapura, JP Nagar, Bannerghatta, Electronic City, BTM, HSR, Koramangala and nearby districts up to 250 km.',
     },
   },
   '/book': {
@@ -249,8 +249,8 @@ const STATIC_PAGE_SEO: Record<string, Partial<Record<PublicSiteKey, RouteSeo>>> 
       description: 'Book home RO, commercial 25/50/500/1000 LPH plant or new water softener installation. Bengaluru and up to 250 km. Call +91-8884944288.',
     },
     elevenro: {
-      title: 'Book RO Service in Bengaluru | Same-Day Booking | Eleven RO',
-      description: 'Book RO water purifier service online in Bengaluru with Eleven RO. Same-day installation, repair and maintenance. Call 9880693311.',
+      title: 'Book RO, Commercial Plant or Softener Service | Eleven RO',
+      description: 'Book home RO, commercial 25/50/500/1000 LPH plant or new water softener installation. Bengaluru and up to 250 km. Call 9880693311.',
     },
   },
   '/contact': {
