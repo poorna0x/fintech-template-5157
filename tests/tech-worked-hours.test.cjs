@@ -43,7 +43,8 @@ const noonIst = Date.parse(isoAtIst(2026, 8, 18, 12, 0));
   assert.match(body, /9:12/);
   assert.match(body, /6:36/);
   const withKm = formatWorkedHoursPushBody(summary, { kmLabel: '42 km' });
-  assert.match(withKm, /~42 km/);
+  assert.match(withKm, /travelled ~42 km/);
+  assert.match(withKm, /Today you worked 9h 24m/);
 }
 
 {
