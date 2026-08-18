@@ -70,6 +70,20 @@ const Services = () => {
       "priceCurrency": "INR",
       "availability": "https://schema.org/InStock"
     },
+    {
+      "@type": "Offer",
+      "name": "500 LPH Commercial RO Plant",
+      "description": "500 LPH commercial RO plant supply, installation and service for hotels, hostels and factories",
+      "priceCurrency": "INR",
+      "availability": "https://schema.org/InStock"
+    },
+    {
+      "@type": "Offer",
+      "name": "1000 LPH Commercial RO Plant",
+      "description": "1000 LPH commercial RO plant supply, installation and service for large commercial sites and factories",
+      "priceCurrency": "INR",
+      "availability": "https://schema.org/InStock"
+    },
     ...(isHydrogenRo
       ? PUBLIC_AMC_PLANS.map((plan) => ({
           "@type": "Offer" as const,
@@ -94,7 +108,7 @@ const Services = () => {
               ? 'Water Softener Installation & Service'
               : 'RO Water Purifier Services',
           "description": productKind?.startsWith('commercial')
-            ? `Commercial 25 LPH and 50 LPH RO plant installation, service and AMC in Karnataka by ${brand.brandName}, a local Bengaluru company.`
+            ? `Commercial 25, 50, 500 and 1000 LPH RO plant installation, service and AMC by ${brand.brandName}. Based in Bengaluru, covering up to 250 km.`
             : productKind
               ? `New water softener installation, salt/resin service and repair in Karnataka by ${brand.brandName}.`
               : `Professional RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka by ${brand.brandName}`,
@@ -295,17 +309,17 @@ const Services = () => {
                   <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mb-6">
                     <Building2 className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
-                  <h3 className="text-2xl font-semibold mb-3 text-foreground">Commercial RO — 25 LPH &amp; 50 LPH</h3>
+                  <h3 className="text-2xl font-semibold mb-3 text-foreground">Commercial RO — 25 to 1000 LPH</h3>
                   <div className="mb-4 min-h-[3.5rem]">
                     <p className="text-sky-600 dark:text-sky-400 font-bold text-lg">
-                      Local Bengaluru company
+                      Bengaluru + 250 km
                     </p>
                   </div>
                   <ul className="space-y-2 text-muted-foreground flex-1">
-                    <li>• 25 LPH plants for small offices and clinics</li>
-                    <li>• 50 LPH plants for restaurants, schools and larger offices</li>
+                    <li>• 25 LPH &amp; 50 LPH for offices, clinics and restaurants</li>
+                    <li>• 500 LPH &amp; 1000 LPH for hotels, factories and large sites</li>
                     <li>• New installation, service, repair and AMC</li>
-                    <li>• Site visit before you buy — we stay for after-sales</li>
+                    <li>• Site visit before you buy — cover up to 250 km from Bengaluru</li>
                   </ul>
                   <Button asChild variant="outline" className="mt-6 w-full border-sky-200 dark:border-sky-500/30">
                     <Link to="/commercial-ro-service">Commercial RO details</Link>

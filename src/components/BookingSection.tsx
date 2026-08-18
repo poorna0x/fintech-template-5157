@@ -485,6 +485,8 @@ const BookingSection = () => {
   const commercialServices = [
     { value: "25 LPH Commercial Installation", label: "25 LPH Commercial Installation" },
     { value: "50 LPH Commercial Installation", label: "50 LPH Commercial Installation" },
+    { value: "500 LPH Commercial Installation", label: "500 LPH Commercial Installation" },
+    { value: "1000 LPH Commercial Installation", label: "1000 LPH Commercial Installation" },
     { value: "Commercial RO Service", label: "Commercial RO Service" },
     { value: "Commercial RO Repair", label: "Commercial RO Repair" },
     { value: "Commercial RO AMC", label: "Commercial RO AMC" }
@@ -764,7 +766,7 @@ const BookingSection = () => {
                                 <Building2 className="w-6 h-6 text-primary" />
                               </div>
                               <h4 className="font-semibold text-foreground">Commercial RO</h4>
-                              <p className="text-sm text-muted-foreground mt-1">25 LPH, 50 LPH, service</p>
+                              <p className="text-sm text-muted-foreground mt-1">25 to 1000 LPH, service</p>
                             </div>
                           </div>
                         </div>

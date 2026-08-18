@@ -20,7 +20,7 @@ const HeroSection = () => {
 
   const trustPoints = [
     'Same-day service',
-    '25 & 50 LPH plants',
+    '25 to 1000 LPH plants',
     'New softener install',
     'Service from ₹399',
   ];
@@ -48,10 +48,10 @@ const HeroSection = () => {
             </h1>
 
             <p className="text-base md:text-lg text-muted-foreground max-w-xl mx-auto lg:mx-0">
-              Home RO, <Link to="/commercial-ro-service" className="text-sky-700 dark:text-sky-400 font-medium hover:underline underline-offset-2">commercial 25/50 LPH plants</Link>
+              Home RO, <Link to="/commercial-ro-service" className="text-sky-700 dark:text-sky-400 font-medium hover:underline underline-offset-2">commercial 25 to 1000 LPH plants</Link>
               {' '}and{' '}
               <Link to="/water-softener" className="text-sky-700 dark:text-sky-400 font-medium hover:underline underline-offset-2">new water softener installation</Link>
-              {' '}— local Bengaluru company, certified technicians. Book in 60 seconds.
+              {' '}— based in Bengaluru, covering up to 250 km. Book in 60 seconds.
             </p>
 
             {/* Rating row */}

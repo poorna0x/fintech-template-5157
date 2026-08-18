@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Building2, Droplets, Phone, Settings, Wrench } from 'lucide-react';
+import { Building2, Droplets, Factory, Phone, Settings, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
@@ -18,6 +18,13 @@ type Props = {
 };
 
 const cardClass = 'border-sky-100 dark:border-sky-500/15 h-full';
+
+const CAPACITY_HEADING: Partial<Record<ProductServiceKind, string>> = {
+  'commercial-25': '25 LPH commercial RO plant',
+  'commercial-50': '50 LPH commercial RO plant',
+  'commercial-500': '500 LPH commercial RO plant',
+  'commercial-1000': '1000 LPH commercial RO plant',
+};
 
 function telHref(phone: string) {
   const digits = phone.replace(/[^\d+]/g, '');
@@ -38,6 +45,7 @@ export default function PublicProductServiceBody({
   const zoneNote = zone ? ` in ${zone} Bengaluru` : '';
   const faqs = productServiceFaqs(kind, place, brandName);
   const isCommercial = kind.startsWith('commercial');
+  const capacityHeading = CAPACITY_HEADING[kind];
 
   return (
     <>
@@ -62,26 +70,32 @@ export default function PublicProductServiceBody({
             {isCommercial ? (
               <>
                 <h2 className="text-2xl md:text-3xl font-bold text-foreground">
-                  {kind === 'commercial-25'
-                    ? `25 LPH commercial RO plant in ${place}`
-                    : kind === 'commercial-50'
-                      ? `50 LPH commercial RO plant in ${place}`
-                      : `Commercial RO plants for offices and businesses in ${place}`}
+                  {capacityHeading
+                    ? `${capacityHeading} in ${place}`
+                    : `Commercial RO plants for offices and businesses in ${place}`}
                 </h2>
                 <p className="text-muted-foreground leading-relaxed">
-                  {brandName} is a <strong className="text-foreground">local Bengaluru company</strong> —
-                  not an outstation dealer. Many offices, restaurants, clinics and schools in {place}
+                  {brandName} supplies, installs and services commercial RO plants in {place}
                   {districtNote}
-                  {zoneNote} want to buy from a team that will actually visit the site, install the plant,
-                  and come back for service. We supply and install commercial RO plants (including{' '}
+                  {zoneNote} — from{' '}
                   <Link to="/commercial-ro-25-lph" className="text-sky-700 dark:text-sky-400 underline-offset-2 hover:underline">
                     25 LPH
-                  </Link>{' '}
-                  and{' '}
+                  </Link>
+                  {' '}and{' '}
                   <Link to="/commercial-ro-50-lph" className="text-sky-700 dark:text-sky-400 underline-offset-2 hover:underline">
                     50 LPH
                   </Link>
-                  ), plus repair, membrane/filter service and AMC.
+                  {' '}up to{' '}
+                  <Link to="/commercial-ro-500-lph" className="text-sky-700 dark:text-sky-400 underline-offset-2 hover:underline">
+                    500 LPH
+                  </Link>
+                  {' '}and{' '}
+                  <Link to="/commercial-ro-1000-lph" className="text-sky-700 dark:text-sky-400 underline-offset-2 hover:underline">
+                    1000 LPH
+                  </Link>
+                  . Based in Bengaluru, we cover offices, restaurants, hotels, clinics, schools and
+                  factories <strong className="text-foreground">up to 250 km from the city</strong>
+                  — site visit, installation, repair, membrane/filter service and AMC.
                 </p>
               </>
             ) : (
@@ -98,8 +112,8 @@ export default function PublicProductServiceBody({
                   <strong className="text-foreground">new water softener installation</strong>,
                   re-installation, salt refill, resin service and repair in {place}
                   {districtNote}
-                  {zoneNote}. Homes, apartments and small commercial sites can book the same local
-                  technician team that already services RO purifiers across Bengaluru.
+                  {zoneNote}. Homes, apartments and commercial sites can book the same technician
+                  team that services RO across Bengaluru and <strong className="text-foreground">up to 250 km</strong> from the city.
                 </p>
               </>
             )}
@@ -114,9 +128,8 @@ export default function PublicProductServiceBody({
                   </div>
                   <h3 className="text-xl font-semibold text-foreground">25 LPH commercial RO</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    About 25 litres per hour — a practical size for small offices, clinics, salons and
-                    pantries (roughly 10–25 people). Site survey, installation, commissioning and AMC in{' '}
-                    {place}.
+                    About 25 litres per hour — small offices, clinics, salons and pantries (roughly
+                    10–25 people). Site survey, installation, commissioning and AMC in {place}.
                   </p>
                   <Link
                     to="/commercial-ro-25-lph"
@@ -133,14 +146,52 @@ export default function PublicProductServiceBody({
                   </div>
                   <h3 className="text-xl font-semibold text-foreground">50 LPH commercial RO</h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    About 50 litres per hour — restaurants, larger offices, schools and small factories
-                    that need more drinking water through the day. Local installation and service in {place}.
+                    About 50 litres per hour — restaurants, larger offices, schools and small
+                    factories that need more drinking water through the day. Installation and
+                    service in {place}.
                   </p>
                   <Link
                     to="/commercial-ro-50-lph"
                     className="inline-block text-sm font-medium text-sky-700 dark:text-sky-400 hover:underline underline-offset-2"
                   >
                     50 LPH plant details
+                  </Link>
+                </CardContent>
+              </Card>
+              <Card className={cardClass}>
+                <CardContent className="p-6 space-y-3">
+                  <div className="w-12 h-12 rounded-xl bg-sky-100 dark:bg-sky-500/15 flex items-center justify-center">
+                    <Factory className="w-6 h-6 text-sky-700 dark:text-sky-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-foreground">500 LPH commercial RO</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    About 500 litres per hour — hotels, hostels, large offices and mid-size
+                    factories. Plant supply, commissioning and AMC within 250 km of Bengaluru.
+                  </p>
+                  <Link
+                    to="/commercial-ro-500-lph"
+                    className="inline-block text-sm font-medium text-sky-700 dark:text-sky-400 hover:underline underline-offset-2"
+                  >
+                    500 LPH plant details
+                  </Link>
+                </CardContent>
+              </Card>
+              <Card className={cardClass}>
+                <CardContent className="p-6 space-y-3">
+                  <div className="w-12 h-12 rounded-xl bg-sky-100 dark:bg-sky-500/15 flex items-center justify-center">
+                    <Factory className="w-6 h-6 text-sky-700 dark:text-sky-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-foreground">1000 LPH commercial RO</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    About 1000 litres per hour — large commercial sites, hospitals, apartment
+                    complexes and factories. Site visit, installation and ongoing service from
+                    Bengaluru.
+                  </p>
+                  <Link
+                    to="/commercial-ro-1000-lph"
+                    className="inline-block text-sm font-medium text-sky-700 dark:text-sky-400 hover:underline underline-offset-2"
+                  >
+                    1000 LPH plant details
                   </Link>
                 </CardContent>
               </Card>
@@ -195,12 +246,12 @@ export default function PublicProductServiceBody({
             <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-muted-foreground text-sm">
               {(isCommercial
                 ? [
-                    'New commercial RO plant installation (25 LPH, 50 LPH and other capacities)',
+                    'New commercial RO plant installation (25, 50, 500 and 1000 LPH)',
                     'Site visit and capacity recommendation before you buy',
                     'Commissioning, TDS check and operator briefing',
                     'Commercial RO service, repair and membrane replacement',
-                    'AMC for offices, restaurants, clinics and schools',
-                    'Local technician support from Bengaluru — no outstation wait',
+                    'AMC for offices, restaurants, hotels, clinics and factories',
+                    'Install and service up to 250 km from Bengaluru',
                   ]
                 : [
                     'New water softener installation for homes and apartments',
@@ -208,7 +259,7 @@ export default function PublicProductServiceBody({
                     'Salt refill and resin level service',
                     'Control valve repair and calibration',
                     'Hardness testing for borewell and tanker water',
-                    'Apartment and small commercial softener setups',
+                    'Apartment and commercial softener setups up to 250 km from Bengaluru',
                   ]
               ).map((item) => (
                 <li key={item} className="flex gap-2">
@@ -221,13 +272,12 @@ export default function PublicProductServiceBody({
 
           <div className="rounded-2xl border border-sky-100 dark:border-sky-500/15 bg-sky-50/60 dark:bg-sky-500/5 p-6 md:p-8">
             <h3 className="text-xl font-semibold text-foreground mb-3">
-              Buy from a local Bengaluru company
+              Site visit, install and after-sales from Bengaluru
             </h3>
             <p className="text-muted-foreground leading-relaxed mb-6">
-              National brands still need a local team for plumbing, electricals and after-sales.
-              Companies in {place} book {brandName} because we already run same-day RO service across
-              Bengaluru — so commercial plants and softeners get the same on-ground support, not a
-              distant call centre.
+              Companies in {place} book {brandName} for a site visit before purchase, installation
+              by the same team, and AMC they can call. We work from Bengaluru and cover up to 250 km
+              — commercial plants and softeners get on-ground support, not a distant call centre.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <Button
@@ -276,7 +326,7 @@ export default function PublicProductServiceBody({
             ) : (
               <>
                 <Link to="/commercial-ro-service" className="text-sky-700 dark:text-sky-400 hover:underline">
-                  commercial 25 LPH &amp; 50 LPH plants
+                  commercial 25 to 1000 LPH plants
                 </Link>
                 {' · '}
                 <Link

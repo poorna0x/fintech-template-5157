@@ -80,26 +80,28 @@ const ServicesSection = () => {
     },
     {
       icon: Building2,
-      title: "Commercial RO — 25 LPH & 50 LPH",
-      description: "Local Bengaluru company for offices, restaurants and clinics that want to buy and get service locally.",
-      features: ["25 LPH small office / clinic plants", "50 LPH restaurant / school plants", "New installation & commissioning", "Service, repair and AMC"],
-      pricing: "Site visit + local after-sales",
+      title: "Commercial RO — 25 to 1000 LPH",
+      description: "25, 50, 500 and 1000 LPH plants for offices, restaurants, hotels and factories. Based in Bengaluru, up to 250 km.",
+      features: ["25 & 50 LPH office / restaurant plants", "500 & 1000 LPH hotel / factory plants", "New installation & commissioning", "Service, repair and AMC"],
+      pricing: "Site visit + AMC from Bengaluru",
       details: {
         includes: [
           "25 LPH commercial RO for small offices, clinics and pantries",
           "50 LPH commercial RO for restaurants, larger offices and schools",
+          "500 LPH commercial RO for hotels, hostels and mid-size factories",
+          "1000 LPH commercial RO for large commercial, hospital and factory sites",
           "Site survey and capacity recommendation before you buy",
           "Plant supply, plumbing, electricals and commissioning",
           "TDS check and operator briefing",
           "Membrane / filter service and breakdown repair",
-          "Commercial AMC with local technicians"
+          "Commercial AMC — Bengaluru and up to 250 km"
         ],
         benefits: [
-          "Buy from a local company — we install and we service",
-          "No waiting on an outstation dealer for breakdowns",
-          "Same technician network as our home RO service",
+          "Same team for site visit, install and after-sales",
+          "Cover up to 250 km from Bengaluru",
           "Sized for real occupancy, not a catalogue guess",
-          "AMC you can actually call in Bengaluru"
+          "AMC you can call for breakdowns",
+          "Home RO, commercial plants and softeners from one company"
         ],
         terms: [
           "Plant price depends on capacity, raw-water TDS and site plumbing — we quote after a visit"
