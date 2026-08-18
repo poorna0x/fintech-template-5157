@@ -14,7 +14,7 @@ import { findServicePage } from '@/lib/publicSeoPages';
 import { getCityServicePage } from '@/data/cityServiceSeo';
 import { PUBLIC_AMC_PLANS, formatPublicAmcInr, PUBLIC_AMC_TAGLINE } from '@/lib/public-amc-info';
 import { getPublicSiteKey } from '@/lib/websiteSiteKey';
-import { resolveProductServiceKind } from '@/lib/publicProductService';
+import { resolveProductServiceKind, productServicePageCopy } from '@/lib/publicProductService';
 import PublicProductServiceBody from '@/components/public/PublicProductServiceBody';
 
 const serviceCardClass =
@@ -30,6 +30,10 @@ const Services = () => {
   const brand = getBrandSeoProfile(siteKey);
   const [amcLearnMoreOpen, setAmcLearnMoreOpen] = useState(false);
   const productKind = resolveProductServiceKind(pathname, cityServicePage, servicePage);
+  const productPlace = cityServicePage?.cityName || 'Bengaluru';
+  const productCopy = productKind
+    ? productServicePageCopy(productKind, productPlace, brand.brandName)
+    : null;
 
   const serviceOffers = [
     {
@@ -102,16 +106,10 @@ const Services = () => {
         {JSON.stringify({
           "@context": "https://schema.org",
           "@type": "Service",
-          "name": productKind?.startsWith('commercial')
-            ? 'Commercial RO Plant Installation & Service'
-            : productKind
-              ? 'Water Softener Installation & Service'
-              : 'RO Water Purifier Services',
-          "description": productKind?.startsWith('commercial')
-            ? `Commercial 25, 50, 500 and 1000 LPH RO plant installation, service and AMC by ${brand.brandName}. Based in Bengaluru, covering up to 250 km.`
-            : productKind
-              ? `New water softener installation, salt/resin service and repair in Karnataka by ${brand.brandName}.`
-              : `Professional RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka by ${brand.brandName}`,
+          "name": productCopy?.schemaName
+            ?? 'RO Water Purifier Services',
+          "description": productCopy?.description
+            ?? `Professional RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka by ${brand.brandName}`,
           "image": brand.ogImage,
           "provider": buildPublicLocalBusinessJsonLd(),
           "offers": serviceOffers,
@@ -131,16 +129,18 @@ const Services = () => {
         <SeoBreadcrumbs />
         <PageHero 
           title={
-            cityServicePage
-              ? `${cityServicePage.serviceName} in ${cityServicePage.cityName}`
-              : servicePage
-                ? `${servicePage.serviceName} in Karnataka`
-                : 'RO Water Purifier Services in Bengaluru'
+            productCopy?.title
+              ?? (cityServicePage
+                ? `${cityServicePage.serviceName} in ${cityServicePage.cityName}`
+                : servicePage
+                  ? `${servicePage.serviceName} in Karnataka`
+                  : 'RO Water Purifier Services in Bengaluru')
           }
           description={
-            cityServicePage?.shortDescription ??
-            servicePage?.shortDescription ??
-            'Professional RO water purifier installation, repair, and maintenance services by certified technicians in Bengaluru, Karnataka. Same-day service, 24/7 emergency support across all areas of Bangalore.'
+            productCopy?.description
+              ?? cityServicePage?.shortDescription
+              ?? servicePage?.shortDescription
+              ?? 'Professional RO water purifier installation, repair, and maintenance services by certified technicians in Bengaluru, Karnataka. Same-day service, 24/7 emergency support across all areas of Bangalore.'
           }
         />
 
@@ -155,6 +155,7 @@ const Services = () => {
           />
         )}
 
+        {!productKind && (
         {/* Why Choose Section */}
         <section className="py-16 px-2 md:px-12 bg-background">
           <div className="max-w-6xl mx-auto">
@@ -223,6 +224,7 @@ const Services = () => {
             </div>
           </div>
         </section>
+        )}
 
         {/* Main Services */}
         <section className="py-16 px-2 md:px-12 bg-background">

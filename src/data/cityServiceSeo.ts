@@ -285,9 +285,20 @@ export function buildCityServicePageSeo(
 ): { title: string; description: string; keywords: string } {
   const altNote =
     page.alternateCityNames.length > 0 ? ` Also serving ${page.alternateCityNames.join(', ')}.` : '';
+  const commercialNote =
+    page.serviceKey === 'commercial-ro-plant'
+      ? ` 25, 50, 500 and 1000 LPH. Site visit, install and AMC up to 250 km from Bengaluru.`
+      : page.serviceKey.includes('softener')
+        ? ` New install, salt and resin service up to 250 km from Bengaluru.`
+        : '';
   return {
-    title: `${page.serviceName} in ${page.cityName} | ${brandName}`,
-    description: `${page.shortDescription} Book with ${brandName}.${altNote} Call ${primaryPhone}.`,
+    title:
+      page.serviceKey === 'commercial-ro-plant'
+        ? `Commercial RO 25–1000 LPH in ${page.cityName} | ${brandName}`
+        : page.serviceKey.includes('softener')
+          ? `${page.serviceName} in ${page.cityName} | ${brandName}`
+          : `${page.serviceName} in ${page.cityName} | ${brandName}`,
+    description: `${page.shortDescription}${commercialNote} Book with ${brandName}.${altNote} Call ${primaryPhone}.`,
     keywords: buildCityServiceKeywords(page, brandName),
   };
 }

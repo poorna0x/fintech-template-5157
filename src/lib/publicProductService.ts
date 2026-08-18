@@ -37,6 +37,118 @@ export function resolveProductServiceKind(
 
 const SERVICE_RADIUS = 'up to 250 km from Bengaluru';
 
+export function productServicePageCopy(
+  kind: ProductServiceKind,
+  place: string,
+  brandName: string
+): { title: string; description: string; schemaName: string } {
+  if (kind === 'commercial-25') {
+    return {
+      title: `25 LPH Commercial RO Plant in ${place}`,
+      description: `${brandName} supplies, installs and services 25 LPH commercial RO plants in ${place} for small offices, clinics and pantries. Site visit, commissioning and AMC — based in Bengaluru, covering ${SERVICE_RADIUS}.`,
+      schemaName: `25 LPH Commercial RO Plant Installation in ${place}`,
+    };
+  }
+  if (kind === 'commercial-50') {
+    return {
+      title: `50 LPH Commercial RO Plant in ${place}`,
+      description: `${brandName} supplies, installs and services 50 LPH commercial RO plants in ${place} for restaurants, larger offices and schools. Site visit, commissioning and AMC ${SERVICE_RADIUS}.`,
+      schemaName: `50 LPH Commercial RO Plant Installation in ${place}`,
+    };
+  }
+  if (kind === 'commercial-500') {
+    return {
+      title: `500 LPH Commercial RO Plant in ${place}`,
+      description: `${brandName} supplies, installs and services 500 LPH commercial RO plants in ${place} for hotels, hostels and mid-size factories. Site visit, install and AMC ${SERVICE_RADIUS}.`,
+      schemaName: `500 LPH Commercial RO Plant Installation in ${place}`,
+    };
+  }
+  if (kind === 'commercial-1000') {
+    return {
+      title: `1000 LPH Commercial RO Plant in ${place}`,
+      description: `${brandName} supplies, installs and services 1000 LPH commercial RO plants in ${place} for large commercial sites, hospitals and factories. Site visit, install and AMC ${SERVICE_RADIUS}.`,
+      schemaName: `1000 LPH Commercial RO Plant Installation in ${place}`,
+    };
+  }
+  if (kind === 'commercial') {
+    return {
+      title: `Commercial RO Plants in ${place} — 25 to 1000 LPH`,
+      description: `${brandName} supplies 25, 50, 500 and 1000 LPH commercial RO plants in ${place}. New installation, service and AMC from Bengaluru, covering ${SERVICE_RADIUS}.`,
+      schemaName: `Commercial RO Plant Installation & Service in ${place}`,
+    };
+  }
+  if (kind === 'softener-install') {
+    return {
+      title: `New Water Softener Installation in ${place}`,
+      description: `New water softener installation in ${place} for hard borewell and tanker water. ${brandName} sizes, plumbs and services softeners ${SERVICE_RADIUS}.`,
+      schemaName: `New Water Softener Installation in ${place}`,
+    };
+  }
+  if (kind === 'apartment-softener') {
+    return {
+      title: `Apartment Water Softener in ${place}`,
+      description: `Apartment and gated-community water softener installation in ${place}. Flat-wise or centralized setups with salt and resin service ${SERVICE_RADIUS}.`,
+      schemaName: `Apartment Water Softener Installation in ${place}`,
+    };
+  }
+  return {
+    title: `Water Softener Service in ${place}`,
+    description: `New water softener installation, salt refill, resin service and repair in ${place} by ${brandName}. Coverage ${SERVICE_RADIUS}.`,
+    schemaName: `Water Softener Installation & Service in ${place}`,
+  };
+}
+
+function commercialCapacityFaqs(
+  lph: 25 | 50 | 500 | 1000,
+  audience: string,
+  place: string,
+  brandName: string,
+  call: string
+): Array<{ q: string; a: string }> {
+  return [
+    {
+      q: `Do you supply ${lph} LPH commercial RO plants in ${place}?`,
+      a: `Yes. ${brandName} supplies, installs and services ${lph} LPH commercial RO plants in ${place} for ${audience}. We also cover ${SERVICE_RADIUS} for site visit, commissioning and AMC.`,
+    },
+    {
+      q: `Who should choose a ${lph} LPH commercial RO plant?`,
+      a: `A ${lph} LPH plant produces about ${lph} litres of purified water per hour. It is typically right for ${audience} in ${place}. We confirm after checking occupancy, peak demand and raw-water TDS.`,
+    },
+    {
+      q: `How far from Bengaluru do you install ${lph} LPH RO plants?`,
+      a: `${brandName} is based in Bengaluru and installs ${lph} LPH commercial RO plants ${SERVICE_RADIUS}, including ${place}.`,
+    },
+    {
+      q: `Do you only sell ${lph} LPH plants, or also service and AMC?`,
+      a: `${brandName} does new ${lph} LPH installation, repair, membrane/filter service and annual maintenance — not supply-only.`,
+    },
+    {
+      q: `Do you do a site visit in ${place} before we buy a ${lph} LPH plant?`,
+      a: `Yes. Book a site visit in ${place}. We check plumbing, electricals, tanks and TDS, then confirm whether ${lph} LPH is the right capacity or whether 25, 50, 500 or 1000 LPH fits better.`,
+    },
+    {
+      q: `What is included in ${lph} LPH commercial RO installation?`,
+      a: `Plant supply as quoted, inlet/outlet plumbing, electricals, commissioning, TDS check and operator briefing for the ${lph} LPH unit. Extra civil work or tanks are quoted after the visit.`,
+    },
+    {
+      q: `Can you AMC or repair an existing ${lph} LPH plant in ${place}?`,
+      a: `Yes. ${brandName} services existing ${lph} LPH plants in ${place} — filters, membranes, pumps and AMC — even if another company installed the original plant.`,
+    },
+    {
+      q: `How is ${lph} LPH different from your other commercial plants?`,
+      a: `We supply 25 LPH and 50 LPH for smaller sites, and 500 LPH and 1000 LPH for hotels and factories. ${lph} LPH is the fit when demand matches ${audience}. The site visit decides, not a catalogue page.`,
+    },
+    {
+      q: `Which nearby districts get ${lph} LPH commercial RO installation?`,
+      a: `${brandName} installs ${lph} LPH plants ${SERVICE_RADIUS}, including Tumakuru, Ramanagara, Kolar, Chikkaballapura, Mandya, Hassan, Hosur, Nelamangala and Doddaballapur.`,
+    },
+    {
+      q: `How do I book a ${lph} LPH commercial RO plant in ${place}?`,
+      a: `Book online or call ${brandName}.${call} Choose Commercial RO and ${lph} LPH Commercial Installation, or ask for a site visit if you are unsure of capacity.`,
+    },
+  ];
+}
+
 export function productServiceFaqs(
   kind: ProductServiceKind,
   place: string,
@@ -46,7 +158,19 @@ export function productServiceFaqs(
   const call = phone ? ` Call ${phone}.` : '';
 
   if (kind.startsWith('commercial')) {
-    const shared = [
+    if (kind === 'commercial-25') {
+      return commercialCapacityFaqs(25, 'small offices, clinics, salons and pantries (about 10–25 people)', place, brandName, call);
+    }
+    if (kind === 'commercial-50') {
+      return commercialCapacityFaqs(50, 'restaurants, larger offices and schools', place, brandName, call);
+    }
+    if (kind === 'commercial-500') {
+      return commercialCapacityFaqs(500, 'hotels, hostels, large offices and mid-size factories', place, brandName, call);
+    }
+    if (kind === 'commercial-1000') {
+      return commercialCapacityFaqs(1000, 'large commercial sites, hospitals, apartment complexes and factories', place, brandName, call);
+    }
+    return [
       {
         q: `Do you supply 25, 50, 500 and 1000 LPH commercial RO plants in ${place}?`,
         a: `Yes. ${brandName} supplies, installs and services commercial RO plants from 25 LPH and 50 LPH up to 500 LPH and 1000 LPH for offices, restaurants, hotels, schools, clinics and factories in ${place}. We cover ${SERVICE_RADIUS}.`,
@@ -96,33 +220,9 @@ export function productServiceFaqs(
         a: `Book online or call ${brandName}.${call} Choose Commercial RO and the capacity you need (25, 50, 500 or 1000 LPH), or ask for a site visit if you are unsure.`,
       },
     ];
-
-    if (kind === 'commercial-25') {
-      shared.splice(4, 0, {
-        q: `Is a 25 LPH commercial RO plant enough for a small office in ${place}?`,
-        a: `25 LPH (about 25 litres per hour) is sized for small offices, clinics, salons and pantries in ${place} — roughly 10–25 people. If occupancy or kitchen demand is higher, we usually recommend 50 LPH after the site visit.`,
-      });
-    } else if (kind === 'commercial-50') {
-      shared.splice(4, 0, {
-        q: `Is 50 LPH the right commercial RO plant for a restaurant in ${place}?`,
-        a: `50 LPH suits restaurants, larger offices and schools in ${place} that need drinking water through the day. Very busy kitchens or hotels usually need 500 LPH. We confirm after checking peak demand and TDS.`,
-      });
-    } else if (kind === 'commercial-500') {
-      shared.splice(4, 0, {
-        q: `Who should choose a 500 LPH commercial RO plant in ${place}?`,
-        a: `500 LPH is for hotels, hostels, large offices and mid-size factories in ${place}. It produces about 500 litres per hour. We survey tanks, plumbing and occupancy before quoting supply, install and AMC.`,
-      });
-    } else if (kind === 'commercial-1000') {
-      shared.splice(4, 0, {
-        q: `Who needs a 1000 LPH commercial RO plant in ${place}?`,
-        a: `1000 LPH is for large commercial sites, hospitals, apartment complexes and factories in ${place} that need about 1000 litres per hour. Site visit, installation and ongoing service are from Bengaluru, covering ${SERVICE_RADIUS}.`,
-      });
-    }
-
-    return shared;
   }
 
-  return [
+  const softenerFaqs = [
     {
       q: `Do you do new water softener installation in ${place}?`,
       a: `Yes. ${brandName} installs new water softeners for homes, apartments and small commercial sites in ${place}, plus salt refill, resin service and repair of existing units. Coverage is ${SERVICE_RADIUS}.`,
@@ -164,4 +264,24 @@ export function productServiceFaqs(
       a: `Book online or call ${brandName}.${call} Choose Water Softener and New Softener Installation, or describe hard-water issues if you need a diagnosis first.`,
     },
   ];
+
+  if (kind === 'apartment-softener') {
+    return [
+      {
+        q: `Do you install apartment water softeners in ${place}?`,
+        a: `Yes. ${brandName} installs flat-wise and centralized apartment water softeners in ${place} for multi-storey buildings and gated communities, with salt setup and after-sales ${SERVICE_RADIUS}.`,
+      },
+      ...softenerFaqs,
+    ];
+  }
+  if (kind === 'softener-install') {
+    return [
+      {
+        q: `What is included in new water softener installation in ${place}?`,
+        a: `In ${place}, ${brandName} sizes the unit for hardness, plumbs inlet and drain, sets the valve, loads salt/resin as quoted, and shows you how to refill. Starting visit from ₹499 (resin extra).`,
+      },
+      ...softenerFaqs,
+    ];
+  }
+  return softenerFaqs;
 }

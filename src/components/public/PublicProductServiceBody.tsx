@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
 import {
   productServiceFaqs,
+  productServicePageCopy,
   type ProductServiceKind,
 } from '@/lib/publicProductService';
 
@@ -44,6 +45,7 @@ export default function PublicProductServiceBody({
   const districtNote = district ? ` (${district} district)` : '';
   const zoneNote = zone ? ` in ${zone} Bengaluru` : '';
   const faqs = productServiceFaqs(kind, place, brandName, primaryPhone);
+  const pageCopy = productServicePageCopy(kind, place, brandName);
   const isCommercial = kind.startsWith('commercial');
   const capacityHeading = CAPACITY_HEADING[kind];
 
@@ -298,7 +300,7 @@ export default function PublicProductServiceBody({
 
           <div>
             <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6">
-              {isCommercial ? `Commercial RO FAQs in ${place}` : `Water softener FAQs in ${place}`}
+              FAQs — {pageCopy.title}
             </h2>
             <div className="space-y-3">
               {faqs.map((f) => (

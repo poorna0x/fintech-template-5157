@@ -1,6 +1,6 @@
 import type { PublicSiteKey } from '@/lib/websiteSiteKey';
 import { buildCityServicePageSeo, areaServicePageList, getCityServicePage } from '@/data/cityServiceSeo';
-import { buildLocationKeywords, getLocationSeo, locationSeoList } from '@/data/locationSeo';
+import { buildLocationDescription, buildLocationKeywords, buildLocationTitle, getLocationSeo, locationSeoList } from '@/data/locationSeo';
 
 export interface RouteSeo {
   title: string;
@@ -356,22 +356,55 @@ export function buildServicePageSeo(
     : isSoftener
       ? `new water softener installation Bangalore, water softener service Bengaluru, apartment water softener Karnataka, ${page.serviceName} Bangalore`
       : `RO water purifier ${page.serviceName.toLowerCase()}`;
+
+  if (page.path === '/commercial-ro-25-lph') {
+    return {
+      title: `25 LPH Commercial RO Plant in Bengaluru | Install & AMC | ${brandName}`,
+      description: `25 LPH commercial RO plant supply, installation and AMC in Bengaluru for small offices and clinics. Site visit from Bengaluru, covering up to 250 km. Call ${primaryPhone}.`,
+      keywords: extraKeywords,
+    };
+  }
+  if (page.path === '/commercial-ro-50-lph') {
+    return {
+      title: `50 LPH Commercial RO Plant in Bengaluru | Install & AMC | ${brandName}`,
+      description: `50 LPH commercial RO plant supply, installation and AMC in Bengaluru for restaurants, offices and schools. Up to 250 km from Bengaluru. Call ${primaryPhone}.`,
+      keywords: extraKeywords,
+    };
+  }
+  if (page.path === '/commercial-ro-500-lph') {
+    return {
+      title: `500 LPH Commercial RO Plant in Bengaluru | Install & AMC | ${brandName}`,
+      description: `500 LPH commercial RO plant supply, installation and AMC in Bengaluru for hotels, hostels and factories. Site visit up to 250 km. Call ${primaryPhone}.`,
+      keywords: extraKeywords,
+    };
+  }
+  if (page.path === '/commercial-ro-1000-lph') {
+    return {
+      title: `1000 LPH Commercial RO Plant in Bengaluru | Install & AMC | ${brandName}`,
+      description: `1000 LPH commercial RO plant supply, installation and AMC in Bengaluru for large commercial, hospital and factory sites. Covering up to 250 km. Call ${primaryPhone}.`,
+      keywords: extraKeywords,
+    };
+  }
+  if (page.path === '/commercial-ro-service') {
+    return {
+      title: `Commercial RO Plants 25 to 1000 LPH in Bengaluru | ${brandName}`,
+      description: `Commercial 25, 50, 500 and 1000 LPH RO plants — supply, installation, service and AMC. Based in Bengaluru, covering up to 250 km. Call ${primaryPhone}.`,
+      keywords: extraKeywords,
+    };
+  }
+  if (isSoftener) {
+    return {
+      title: `${page.serviceName} in Bengaluru | Hard Water Treatment | ${brandName}`,
+      description: `${page.shortDescription} Based in Bengaluru, covering up to 250 km. Call ${primaryPhone}.`,
+      keywords: extraKeywords,
+    };
+  }
+
   return {
-    title: `${page.serviceName} in Karnataka | Bengaluru & All Districts | ${brandName}`,
-    description: `${page.shortDescription} Serving Bengaluru, Bangalore and all Karnataka districts. Book with ${brandName}. Call ${primaryPhone}.`,
+    title: `${page.serviceName} in Karnataka | Bengaluru & Nearby Districts | ${brandName}`,
+    description: `${page.shortDescription} Serving Bengaluru and nearby districts up to 250 km. Book with ${brandName}. Call ${primaryPhone}.`,
     keywords: `${page.serviceName} Karnataka, ${page.serviceName} Bangalore, ${page.serviceName} Bengaluru, ${extraKeywords}, Kent RO service Karnataka, Aquaguard service Karnataka, ${brandName}`,
   };
-}
-
-function locationPlaceLabel(locData: NonNullable<ReturnType<typeof getLocationSeo>>): string {
-  if (locData.region === 'Bengaluru') return `${locData.name}, Bengaluru`;
-  if (locData.region === 'Karnataka') return `${locData.name}, Karnataka`;
-  return locData.name;
-}
-
-function locationTitleSuffix(locData: NonNullable<ReturnType<typeof getLocationSeo>>): string {
-  if (locData.region === 'Bengaluru') return 'Bengaluru';
-  return 'Karnataka';
 }
 
 export function buildLocationPageSeo(
@@ -383,19 +416,15 @@ export function buildLocationPageSeo(
   const slug = page.path.replace(/^\//, '');
   const locData = getLocationSeo(slug);
   if (locData) {
-    const nearbySnippet = locData.nearby.slice(0, 6).join(', ');
-    const suffix = locationTitleSuffix(locData);
-    const place = locationPlaceLabel(locData);
-    const districtNote = locData.district ? ` ${locData.district} district.` : '';
     return {
-      title: `RO Service in ${area} ${suffix} | Installation & Repair | ${brandName}`,
-      description: `Best RO water purifier service in ${place} by ${brandName}. Same-day RO installation, repair, filter replacement and AMC.${districtNote}${nearbySnippet ? ` Serving ${nearbySnippet}.` : ''} Call ${primaryPhone}.`,
+      title: buildLocationTitle(locData, brandName),
+      description: buildLocationDescription(locData, brandName, primaryPhone),
       keywords: buildLocationKeywords(locData, brandName),
     };
   }
   return {
-    title: `RO Service in ${area} Bengaluru | Installation & Repair | ${brandName}`,
-    description: `Best RO water purifier service in ${area}, Bengaluru by ${brandName}. Same-day RO installation, repair, filter replacement and AMC. Call ${primaryPhone}.`,
+    title: `RO, Commercial Plant & Softener in ${area} Bengaluru | ${brandName}`,
+    description: `Home RO, commercial 25/50/500/1000 LPH plants and new water softener installation in ${area}, Bengaluru by ${brandName}. Based in Bengaluru, covering up to 250 km. Call ${primaryPhone}.`,
     keywords: `RO service ${area}, RO repair ${area} Bangalore, RO installation ${area} Bengaluru, ${brandName} ${area}`,
   };
 }

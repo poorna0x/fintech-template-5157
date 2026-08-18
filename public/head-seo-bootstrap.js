@@ -239,16 +239,16 @@
       // END:BENGALURU_LOCALITY_SLUGS
       if (slug === 'hosur') {
         return {
-          title: 'RO Service in Hosur | Installation & Repair | ' + profile.brandName,
-          description: 'RO water purifier service in Hosur near Bengaluru border by ' + profile.brandName + '. Same-day installation, repair and AMC. Call ' + profile.primaryPhone + '.',
+          title: 'RO, Commercial Plant & Softener in Hosur | ' + profile.brandName,
+          description: 'Home RO, commercial 25/50/500/1000 LPH plants and new water softener installation in Hosur near Bengaluru. Site visit, install and AMC up to 250 km. Call ' + profile.primaryPhone + '.',
           keywords: 'RO service Hosur, RO repair Hosur, ' + profile.brandName,
         };
       }
       if (!BENGALURU_LOCALITY_SLUGS.has(slug)) {
         return {
-          title: 'RO Service in ' + area + ' Karnataka | Installation & Repair | ' + profile.brandName,
-          description: 'Best RO water purifier service in ' + area + ', Karnataka by ' + profile.brandName + '. Same-day RO installation, repair, filter replacement and AMC. Call ' + profile.primaryPhone + '.',
-          keywords: 'RO service ' + area + ' Karnataka, RO repair ' + area + ', RO installation ' + area + ', water purifier service ' + area + ', ' + profile.brandName,
+          title: 'RO, Commercial Plant & Softener in ' + area + ' Karnataka | ' + profile.brandName,
+          description: 'Home RO, commercial 25/50/500/1000 LPH plants and new water softener installation in ' + area + ', Karnataka by ' + profile.brandName + '. Based in Bengaluru, covering up to 250 km. Call ' + profile.primaryPhone + '.',
+          keywords: 'RO service ' + area + ' Karnataka, commercial RO plant ' + area + ', water softener ' + area + ', 25 LPH RO plant, 1000 LPH RO plant, ' + profile.brandName,
         };
       }
       var southAreas = ['electronic-city', 'bommanahalli', 'sarjapur', 'attibele', 'chandapura', 'bommasandra', 'jigani', 'singasandra', 'anekal', 'bellandur', 'hsr-layout', 'haralur', 'varthur', 'kadubeesanahalli', 'panathur', 'silk-board'];
@@ -260,9 +260,9 @@
         corridorExtra = ' Serving Yelahanka, Thanisandra, Jakkur, Bagalur, Budigere Cross, Devanahalli, Manyata Tech Park, Hebbal and North Bangalore corridor.';
       }
       return {
-        title: 'RO Service in ' + area + ' Bengaluru | Installation & Repair | ' + profile.brandName,
-        description: 'Best RO water purifier service in ' + area + ', Bengaluru by ' + profile.brandName + '. Same-day RO installation, repair, filter replacement and AMC.' + corridorExtra + ' Call ' + profile.primaryPhone + '.',
-        keywords: 'RO service ' + area + ', RO repair ' + area + ', RO installation ' + area + ' Bangalore, ' + profile.brandName + ' ' + area + ', RO service Yelahanka, RO service Sarjapur, RO service Budigere Cross, RO service Devanahalli, RO service Attibele',
+        title: 'RO, Commercial Plant & Softener in ' + area + ' Bengaluru | ' + profile.brandName,
+        description: 'Home RO, commercial 25/50/500/1000 LPH plants and new water softener installation in ' + area + ', Bengaluru by ' + profile.brandName + '. Same-day service plus site visit up to 250 km.' + corridorExtra + ' Call ' + profile.primaryPhone + '.',
+        keywords: 'RO service ' + area + ', commercial RO plant ' + area + ', water softener ' + area + ', 25 LPH RO plant Bangalore, 1000 LPH RO plant, ' + profile.brandName + ' ' + area,
       };
     }
     // AUTO:CITY_SERVICE_TITLES
@@ -677,9 +677,15 @@
       // END:CITY_SERVICE_TITLES
     if (CITY_SERVICE_TITLES[clean]) {
       var cityServiceLabel = CITY_SERVICE_TITLES[clean];
+      var cityDesc =
+        cityServiceLabel.indexOf('Commercial') !== -1
+          ? cityServiceLabel + ' — 25, 50, 500 and 1000 LPH. Site visit, installation and AMC from Bengaluru, up to 250 km. Call ' + profile.primaryPhone + '.'
+          : cityServiceLabel.indexOf('Softener') !== -1
+            ? cityServiceLabel + ' for hard borewell and tanker water. New install, salt and resin service up to 250 km from Bengaluru. Call ' + profile.primaryPhone + '.'
+            : cityServiceLabel + ' by ' + profile.brandName + '. Same-day RO water purifier service. Call ' + profile.primaryPhone + '.';
       return {
         title: cityServiceLabel + ' | ' + profile.brandName,
-        description: cityServiceLabel + ' by ' + profile.brandName + '. Same-day RO water purifier service across Karnataka. Call ' + profile.primaryPhone + '.',
+        description: cityDesc,
         keywords: profile.keywords,
       };
     }
@@ -688,12 +694,12 @@
       '/ro-repair': 'RO Repair in Bengaluru',
       '/filter-replacement': 'RO Filter Replacement in Bengaluru',
       '/ro-maintenance': 'RO Maintenance in Bengaluru',
-      '/water-softener': 'Water Softener Service in Bengaluru',
-      '/water-softener-installation': 'New Water Softener Installation in Bengaluru',
-      '/commercial-ro-25-lph': '25 LPH Commercial RO Plant Bengaluru',
-      '/commercial-ro-50-lph': '50 LPH Commercial RO Plant Bengaluru',
-      '/commercial-ro-500-lph': '500 LPH Commercial RO Plant Bengaluru',
-      '/commercial-ro-1000-lph': '1000 LPH Commercial RO Plant Bengaluru',
+      '/water-softener': 'Water Softener Service in Bengaluru | Install, Salt & Resin',
+      '/water-softener-installation': 'New Water Softener Installation in Bengaluru | Up to 250 km',
+      '/commercial-ro-25-lph': '25 LPH Commercial RO Plant in Bengaluru | Install & AMC',
+      '/commercial-ro-50-lph': '50 LPH Commercial RO Plant in Bengaluru | Install & AMC',
+      '/commercial-ro-500-lph': '500 LPH Commercial RO Plant in Bengaluru | Install & AMC',
+      '/commercial-ro-1000-lph': '1000 LPH Commercial RO Plant in Bengaluru | Install & AMC',
       '/ro-troubleshooting': 'RO Troubleshooting in Bengaluru',
       '/ro-spare-parts': 'RO Spare Parts in Bengaluru',
       '/ro-brands': 'All RO Brands Service in Bengaluru',
@@ -704,7 +710,7 @@
       '/ro-amc': 'RO AMC Karnataka',
       '/ro-service': 'RO Service Karnataka',
       '/water-purifier-repair': 'Water Purifier Repair Karnataka',
-      '/commercial-ro-service': 'Commercial 25 to 1000 LPH RO Plant Karnataka',
+      '/commercial-ro-service': 'Commercial RO Plants 25 to 1000 LPH in Bengaluru',
       '/industrial-ro-service': 'Industrial RO Service Karnataka',
       '/ro-annual-maintenance': 'RO Annual Maintenance Karnataka',
       '/membrane-replacement': 'RO Membrane Replacement Karnataka',
@@ -719,9 +725,15 @@
       '/warranty': 'RO Warranty & AMC Bengaluru',
     };
     if (serviceTitles[clean]) {
+      var serviceDesc =
+        clean.indexOf('commercial') !== -1
+          ? serviceTitles[clean] + ' by ' + profile.brandName + '. Site visit, installation, service and AMC from Bengaluru, covering up to 250 km. Call ' + profile.primaryPhone + '.'
+          : clean.indexOf('softener') !== -1
+            ? serviceTitles[clean] + ' by ' + profile.brandName + '. New install, salt and resin service up to 250 km from Bengaluru. Call ' + profile.primaryPhone + '.'
+            : serviceTitles[clean] + ' by ' + profile.brandName + '. Same-day RO water purifier service across Bangalore. Call ' + profile.primaryPhone + '.';
       return {
         title: serviceTitles[clean] + ' | ' + profile.brandName,
-        description: serviceTitles[clean] + ' by ' + profile.brandName + '. Same-day RO water purifier service across Bangalore. Call ' + profile.primaryPhone + '.',
+        description: serviceDesc,
         keywords: profile.keywords,
       };
     }
