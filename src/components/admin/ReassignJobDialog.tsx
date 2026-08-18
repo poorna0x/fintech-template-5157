@@ -254,6 +254,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
           destinations: destinations,
           travelMode: (window as any).google.maps.TravelMode.DRIVING,
           unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+          avoidTolls: true,
         },
         (response: any, status: any) => {
           if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {

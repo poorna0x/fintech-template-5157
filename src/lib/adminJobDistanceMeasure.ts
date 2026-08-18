@@ -160,6 +160,7 @@ export async function calculateAdminCustomDistanceBetweenStops(
         destinations: [dest],
         travelMode: (window as any).google.maps.TravelMode.DRIVING,
         unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+        avoidTolls: true,
       },
       (response: any, status: any) => {
         ctx.setIsLoadingCustomDistance(false);
@@ -388,6 +389,7 @@ export async function openAdminJobDistanceMeasure(
         destinations: [destination],
         travelMode: (window as any).google.maps.TravelMode.DRIVING,
         unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+        avoidTolls: true,
       },
       (response: any, status: any) => {
         ctx.setIsCalculatingDistances(false);
@@ -541,6 +543,7 @@ export async function getAdminJobEtaForShareDialog(
           destinations: [destination],
           travelMode: (window as any).google.maps.TravelMode.DRIVING,
           unitSystem: (window as any).google.maps.UnitSystem.METRIC,
+          avoidTolls: true,
         },
         (response: any, status: any) => {
           if (status !== (window as any).google.maps.DistanceMatrixStatus.OK || !response) {

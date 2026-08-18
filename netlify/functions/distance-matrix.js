@@ -23,7 +23,7 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
 
 // Generate cache key
 function getCacheKey(origins, destinations, mode = 'driving') {
-  return `${origins.join('|')}_${destinations.join('|')}_${mode}`;
+  return `${origins.join('|')}_${destinations.join('|')}_${mode}_tolls`;
 }
 
 // Check if cache entry is still valid
@@ -214,6 +214,7 @@ exports.handler = async (event, context) => {
     url.searchParams.append('destinations', formattedDestinations.join('|'));
     url.searchParams.append('mode', mode); // driving, walking, bicycling, transit
     url.searchParams.append('units', 'metric'); // metric or imperial
+    if (mode === 'driving') url.searchParams.append('avoid', 'tolls');
     url.searchParams.append('key', apiKey);
 
     console.log('🌐 Calling Google Distance Matrix API:', {

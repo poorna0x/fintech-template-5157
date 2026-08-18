@@ -76,6 +76,7 @@ const noonIst = Date.parse(isoAtIst(2026, 8, 18, 12, 0));
     formatTravelKm,
     applyTravelLeg,
     getTravelLegKm,
+    getTravelReturnKm,
     sumStoredTravelKm,
     parseOfficeValue,
   } = require('../netlify/functions/tech-travel-helper');
@@ -89,8 +90,9 @@ const noonIst = Date.parse(isoAtIst(2026, 8, 18, 12, 0));
   assert.equal(formatTravelKm(42.4), '42 km');
   assert.deepEqual(parseOfficeValue({ lat: 12.9, lng: 77.6 }), { lat: 12.9, lng: 77.6 });
 
-  const withLeg = { requirements: applyTravelLeg([], 12.34, 'office') };
+  const withLeg = { requirements: applyTravelLeg([], 12.34, 'office', { returnKm: 8.88 }) };
   assert.equal(getTravelLegKm(withLeg), 12.3);
+  assert.equal(getTravelReturnKm(withLeg), 8.9);
   assert.equal(sumStoredTravelKm([withLeg, { requirements: applyTravelLeg([], 5, 'job:x') }]), 17.3);
 }
 

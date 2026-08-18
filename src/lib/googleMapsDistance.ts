@@ -125,6 +125,7 @@ function requestDistanceMatrix(
         destinations: [dest],
         travelMode,
         unitSystem: g.maps.UnitSystem.METRIC,
+        ...(travelMode === g.maps.TravelMode.DRIVING ? { avoidTolls: true } : {}),
       },
       (response: any, status: string) => {
         if (status === g.maps.DistanceMatrixStatus.OK && response) {

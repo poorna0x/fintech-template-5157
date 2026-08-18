@@ -786,6 +786,7 @@ const Booking: React.FC = () => {
           destinations: [destination],
           travelMode: window.google.maps.TravelMode.DRIVING,
           unitSystem: window.google.maps.UnitSystem.METRIC,
+          avoidTolls: true,
         },
         (response, status) => {
           setIsCalculatingDistance(false);
