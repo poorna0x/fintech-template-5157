@@ -30,7 +30,8 @@ exports.handler = async (event) => {
   const { dayStartUtc, dayEndUtc } = istDayBounds(nowMs);
   const dayStartIso = new Date(dayStartUtc).toISOString();
   const dayEndIso = new Date(dayEndUtc).toISOString();
-  const cols = 'id,assigned_technician_id,start_time,completed_at,end_time';
+  const cols =
+    'id,assigned_technician_id,start_time,completed_at,end_time,service_location,service_address,requirements';
 
   const [{ data: started, error: startErr }, { data: completed, error: doneErr }] =
     await Promise.all([
@@ -77,7 +78,17 @@ exports.handler = async (event) => {
 
   for (const [technicianId, jobs] of byTech.entries()) {
     const summary = computeTechWorkedHours(jobs, nowMs);
-    const body = formatWorkedHoursPushBody(summary);
+    let kmLabel = '';
+    try {
+      const { totalTravelKmForTechnician, formatTravelKm } = require('./tech-travel-helper');
+      const travel = await totalTravelKmForTechnician(db, jobs, nowMs);
+      if (travel?.km != null && travel.km > 0) {
+        kmLabel = formatTravelKm(travel.km) || '';
+      }
+    } catch (err) {
+      console.warn('[tech-worked-hours] travel km skipped', err?.message || err);
+    }
+    const body = formatWorkedHoursPushBody(summary, kmLabel ? { kmLabel } : undefined);
     if (!body) {
       skipped += 1;
       continue;

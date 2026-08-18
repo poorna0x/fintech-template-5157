@@ -3488,6 +3488,9 @@ const TechnicianDashboard = () => {
       ));
 
       // Work started silently
+      void import('@/lib/recordTechTravelLeg').then(({ recordTechTravelLeg }) => {
+        recordTechTravelLeg(job.id);
+      });
       
       setTimeout(() => {
         processingJobsRef.current.delete(job.id);
