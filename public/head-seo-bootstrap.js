@@ -235,7 +235,7 @@
       var slug = clean.replace('/ro-service-', '');
       var area = titleCaseSlug(slug);
       // AUTO:BENGALURU_LOCALITY_SLUGS
-      var BENGALURU_LOCALITY_SLUGS = new Set(["adugodi","aecs-layout","agara","allalasandra","ambalipura","anjanapura","arekere","attibele","attur-layout","bagalur","banashankari","banaswadi","bannerghatta","basavanagudi","basaveshwaranagar","begur","bellandur","benniganahalli","benson-town","bharath-nagar","bilekahalli","bommanahalli","bommasandra","bommasandra-industrial-area","brookefield","btm-layout","budigere-cross","carmelaram","chamrajpet","chandapura","chickpet","chikkajala","cooke-town","cox-town","cv-raman-nagar","dasarahalli","doddaballapur-road","doddakannelli","doddanekundi","domlur","dommasandra","ejipura","electronic-city","frazer-town","ganganagar","girinagar","goraguntepalya","gottigere","graphite-india-road","hal","halasuru","haralur","hbr-layout","hebbal","hennur","hennur-road","hesaraghatta","hongasandra","hoodi","hope-farm","horamavu","hosa-road","hosur-road","hrbr-layout","hsr-layout","hulimavu","iblur","indiranagar","itpl","jakkur","jalahalli","jayanagar","jeevan-bima-nagar","jigani","jp-nagar","kacharakanahalli","kadubeesanahalli","kadugodi","kaggadasapura","kaikondrahalli","kalyan-nagar","kammanahalli","kannamangala","kasavanahalli","kasturi-nagar","kathriguppe","kempapura","kengeri","kodathi","kodigehalli","kogilu","konanakunte","koramangala","kr-puram","kudlu-gate","kumaraswamy-layout","kumbalgodu","kundalahalli","laggere","lingarajapuram","madiwala","magadi-road","mahadevapura","mahalakshmi-layout","majestic","malleshwaram","manyata-tech-park","marathahalli","munnekollal","murugeshpalya","mysore-road","nagarbhavi","nagarbhavi-2nd-stage","nagasandra","nagawara","nallurahalli","nandini-layout","nayandahalli","old-airport-road","outer-ring-road","padmanabhanagar","panathur","parappana-agrahara","peenya","pulakeshinagar","pulikeshi-nagar","rajajinagar","rajanukunte","ramamurthy-nagar","richmond-town","rr-nagar","rt-nagar","sadashivanagar","sahakar-nagar","sanjaynagar","sarakki","sarjapur","seegehalli","seshadripuram","silk-board","singasandra","sunkadakatte","thanisandra","thurahalli","tilak-nagar","tin-factory","ulsoor","uttarahalli","varthur","vidyapeeta","vijayanagar","whitefield","wilson-garden","wipro-gate","yelahanka","yelahanka-new-town","yeshwanthpur"]);
+      var BENGALURU_LOCALITY_SLUGS = new Set(["adugodi","aecs-layout","aerospace-park","agara","allalasandra","ambalipura","anjanapura","arekere","attibele","attur-layout","bagalur","banashankari","banaswadi","bannerghatta","basavanagudi","basaveshwaranagar","begur","bellandur","benniganahalli","benson-town","bharath-nagar","bilekahalli","bommanahalli","bommasandra","bommasandra-industrial-area","brookefield","btm-layout","budigere-cross","carmelaram","chamrajpet","chandapura","chickpet","chikkajala","cooke-town","cox-town","cv-raman-nagar","dasarahalli","doddaballapur-road","doddakannelli","doddanekundi","domlur","dommasandra","ejipura","electronic-city","frazer-town","ganganagar","girinagar","goraguntepalya","gottigere","graphite-india-road","gummanahalli","hal","halasuru","haralur","hbr-layout","hebbal","hennur","hennur-road","hesaraghatta","hongasandra","hoodi","hope-farm","horamavu","hosa-road","hosur-road","hrbr-layout","hsr-layout","hulimavu","iblur","indiranagar","itpl","jakkur","jalahalli","jayanagar","jeevan-bima-nagar","jigani","jp-nagar","kacharakanahalli","kadubeesanahalli","kadugodi","kaggadasapura","kaikondrahalli","kalyan-nagar","kammanahalli","kannamangala","kasavanahalli","kasturi-nagar","kathriguppe","kattigenahalli","kempapura","kengeri","kodathi","kodigehalli","kogilu","konanakunte","koramangala","kr-puram","kudlu-gate","kumaraswamy-layout","kumbalgodu","kundalahalli","laggere","lingarajapuram","madiwala","magadi-road","mahadevapura","mahalakshmi-layout","majestic","malleshwaram","manyata-tech-park","marathahalli","munnekollal","murugeshpalya","mysore-road","nagarbhavi","nagarbhavi-2nd-stage","nagasandra","nagawara","nallurahalli","nandini-layout","nayandahalli","old-airport-road","outer-ring-road","padmanabhanagar","panathur","parappana-agrahara","peenya","pulakeshinagar","pulikeshi-nagar","rajajinagar","rajanukunte","ramamurthy-nagar","richmond-town","rk-hegde-nagar","rr-nagar","rt-nagar","sadashivanagar","sahakar-nagar","sanjaynagar","sarakki","sarjapur","seegehalli","seshadripuram","silk-board","singasandra","sunkadakatte","thanisandra","thurahalli","tilak-nagar","tin-factory","ulsoor","uttarahalli","varthur","vidyapeeta","vijayanagar","whitefield","wilson-garden","wipro-gate","yelahanka","yelahanka-new-town","yeshwanthpur"]);
       // END:BENGALURU_LOCALITY_SLUGS
       if (slug === 'hosur') {
         return {
@@ -358,6 +358,13 @@
         "/apartment-water-softener-in-hosur": "Apartment Water Softener in Hosur",
         "/industrial-ro-plant-in-hosur": "Industrial RO Plant in Hosur",
         "/ro-amc-in-hosur": "RO AMC in Hosur",
+        "/ro-installation-in-devanahalli": "RO Installation in Devanahalli",
+        "/commercial-ro-plant-in-devanahalli": "Commercial RO Plant Installation in Devanahalli",
+        "/water-softener-installation-in-devanahalli": "Water Softener Installation in Devanahalli",
+        "/borewell-water-filter-in-devanahalli": "Borewell Water Filter in Devanahalli",
+        "/apartment-water-softener-in-devanahalli": "Apartment Water Softener in Devanahalli",
+        "/industrial-ro-plant-in-devanahalli": "Industrial RO Plant in Devanahalli",
+        "/ro-amc-in-devanahalli": "RO AMC in Devanahalli",
         "/ro-installation-in-nelamangala": "RO Installation in Nelamangala",
         "/commercial-ro-plant-in-nelamangala": "Commercial RO Plant Installation in Nelamangala",
         "/water-softener-installation-in-nelamangala": "Water Softener Installation in Nelamangala",
@@ -561,6 +568,34 @@
         "/apartment-water-softener-in-jakkur": "Apartment Water Softener in Jakkur, Bengaluru",
         "/industrial-ro-plant-in-jakkur": "Industrial RO Plant in Jakkur, Bengaluru",
         "/ro-amc-in-jakkur": "RO AMC in Jakkur, Bengaluru",
+        "/ro-installation-in-bagalur": "RO Installation in Bagalur, Bengaluru",
+        "/commercial-ro-plant-in-bagalur": "Commercial RO Plant Installation in Bagalur, Bengaluru",
+        "/water-softener-installation-in-bagalur": "Water Softener Installation in Bagalur, Bengaluru",
+        "/borewell-water-filter-in-bagalur": "Borewell Water Filter in Bagalur, Bengaluru",
+        "/apartment-water-softener-in-bagalur": "Apartment Water Softener in Bagalur, Bengaluru",
+        "/industrial-ro-plant-in-bagalur": "Industrial RO Plant in Bagalur, Bengaluru",
+        "/ro-amc-in-bagalur": "RO AMC in Bagalur, Bengaluru",
+        "/ro-installation-in-kogilu": "RO Installation in Kogilu, Bengaluru",
+        "/commercial-ro-plant-in-kogilu": "Commercial RO Plant Installation in Kogilu, Bengaluru",
+        "/water-softener-installation-in-kogilu": "Water Softener Installation in Kogilu, Bengaluru",
+        "/borewell-water-filter-in-kogilu": "Borewell Water Filter in Kogilu, Bengaluru",
+        "/apartment-water-softener-in-kogilu": "Apartment Water Softener in Kogilu, Bengaluru",
+        "/industrial-ro-plant-in-kogilu": "Industrial RO Plant in Kogilu, Bengaluru",
+        "/ro-amc-in-kogilu": "RO AMC in Kogilu, Bengaluru",
+        "/ro-installation-in-chikkajala": "RO Installation in Chikkajala, Bengaluru",
+        "/commercial-ro-plant-in-chikkajala": "Commercial RO Plant Installation in Chikkajala, Bengaluru",
+        "/water-softener-installation-in-chikkajala": "Water Softener Installation in Chikkajala, Bengaluru",
+        "/borewell-water-filter-in-chikkajala": "Borewell Water Filter in Chikkajala, Bengaluru",
+        "/apartment-water-softener-in-chikkajala": "Apartment Water Softener in Chikkajala, Bengaluru",
+        "/industrial-ro-plant-in-chikkajala": "Industrial RO Plant in Chikkajala, Bengaluru",
+        "/ro-amc-in-chikkajala": "RO AMC in Chikkajala, Bengaluru",
+        "/ro-installation-in-budigere-cross": "RO Installation in Budigere Cross, Bengaluru",
+        "/commercial-ro-plant-in-budigere-cross": "Commercial RO Plant Installation in Budigere Cross, Bengaluru",
+        "/water-softener-installation-in-budigere-cross": "Water Softener Installation in Budigere Cross, Bengaluru",
+        "/borewell-water-filter-in-budigere-cross": "Borewell Water Filter in Budigere Cross, Bengaluru",
+        "/apartment-water-softener-in-budigere-cross": "Apartment Water Softener in Budigere Cross, Bengaluru",
+        "/industrial-ro-plant-in-budigere-cross": "Industrial RO Plant in Budigere Cross, Bengaluru",
+        "/ro-amc-in-budigere-cross": "RO AMC in Budigere Cross, Bengaluru",
         "/ro-installation-in-rajajinagar": "RO Installation in Rajajinagar, Bengaluru",
         "/commercial-ro-plant-in-rajajinagar": "Commercial RO Plant Installation in Rajajinagar, Bengaluru",
         "/water-softener-installation-in-rajajinagar": "Water Softener Installation in Rajajinagar, Bengaluru",

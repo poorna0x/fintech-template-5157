@@ -29,7 +29,7 @@ export const SOUTH_CORRIDOR_KEYWORDS =
 
 /** North & northeast Bengaluru corridor — Yelahanka, Devanahalli, airport belt */
 export const NORTH_CORRIDOR_KEYWORDS =
-  'RO service Yelahanka, RO service Thanisandra, RO service Jakkur, RO service Bagalur, RO service Budigere Cross, RO service Devanahalli, RO service Kempegowda Airport, RO service Manyata Tech Park, RO service RT Nagar, RO service Nagawara, RO service Hebbal, RO service Hoskote, RO service ITPL, RO repair North Bangalore, RO installation Yelahanka, RO service Doddaballapur Road';
+  'RO service Yelahanka, RO service Thanisandra, RO service Jakkur, RO service Bagalur, RO service Budigere Cross, RO service Devanahalli, RO service Kempegowda Airport, RO service Kogilu, RO service Kattigenahalli, RO service Chikkajala, RO service RK Hegde Nagar, RO service Gummanahalli, RO service Aerospace Park, RO service Manyata Tech Park, RO service RT Nagar, RO service Nagawara, RO service Hebbal, RO service Hoskote, RO repair North Bangalore, RO installation Yelahanka, RO service Doddaballapur Road';
 
 const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
   { slug: 'ro-service-whitefield', name: 'Whitefield', pincode: '560066', region: 'Bengaluru', nearby: ['ITPL', 'Kadugodi', 'Brookefield', 'Hoodi', 'Varthur', 'Kundalahalli', 'Mahadevapura'], extraKeywords: ['RO service ITPL Whitefield', 'RO service Varthur Whitefield', 'RO service Kadugodi', '560066 RO service'] },
@@ -245,8 +245,8 @@ const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
     name: 'Budigere Cross',
     pincode: '562110',
     region: 'Bengaluru',
-    nearby: ['Devanahalli', 'Bagalur', 'Hoskote', 'Whitefield', 'Mahadevapura', 'Old Madras Road', 'Budigere'],
-    extraKeywords: ['RO service Budigere', 'RO service Budigere Cross Bangalore', 'RO repair Budigere Cross', '562110 RO service', 'RO service near Devanahalli Budigere'],
+    nearby: ['Devanahalli', 'Bagalur', 'Hoskote', 'Whitefield', 'Mahadevapura', 'Old Madras Road', 'Budigere', 'Nimbekaipura'],
+    extraKeywords: ['RO service Budigere', 'RO service Budigere Cross Bangalore', 'RO repair Budigere Cross', '562110 RO service', 'RO service near Devanahalli Budigere', 'RO service Prestige Tranquility Budigere', 'RO service Brigade Buena Vista Budigere', 'RO service Shriram Greenfield Budigere'],
   },
   {
     slug: 'ro-service-varthur',
@@ -285,24 +285,24 @@ const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
     name: 'Thanisandra',
     pincode: '560077',
     region: 'Bengaluru',
-    nearby: ['Hebbal', 'Yelahanka', 'Nagawara', 'Hennur', 'Kalyan Nagar', 'Manyata Tech Park', 'Banaswadi'],
-    extraKeywords: ['RO service Thanisandra Main Road', 'RO repair Thanisandra Bangalore', '560077 RO service', 'RO service near Manyata Thanisandra'],
+    nearby: ['Hebbal', 'Yelahanka', 'Nagawara', 'Hennur', 'Kalyan Nagar', 'Manyata Tech Park', 'RK Hegde Nagar', 'Bhartiya City'],
+    extraKeywords: ['RO service Thanisandra Main Road', 'RO repair Thanisandra Bangalore', '560077 RO service', 'RO service near Manyata Thanisandra', 'RO service RK Hegde Nagar', 'RO service Bhartiya City', 'RO service Sobha City Thanisandra', 'RO service NR Windgates Thanisandra'],
   },
   {
     slug: 'ro-service-jakkur',
     name: 'Jakkur',
     pincode: '560064',
     region: 'Bengaluru',
-    nearby: ['Yelahanka', 'Hebbal', 'Sahakar Nagar', 'Thanisandra', 'Bagalur', 'Kogilu'],
-    extraKeywords: ['RO service Jakkur Bangalore', 'RO repair Jakkur', 'RO service Jakkur Lake area'],
+    nearby: ['Yelahanka', 'Hebbal', 'Sahakar Nagar', 'Thanisandra', 'Bagalur', 'Kogilu', 'Jakkur Plantation', 'Airport Road'],
+    extraKeywords: ['RO service Jakkur Bangalore', 'RO repair Jakkur', 'RO service Jakkur Lake area', 'RO service Jakkur Plantation', 'RO service Brigade Bricklane', 'RO service Century Breeze Jakkur'],
   },
   {
     slug: 'ro-service-bagalur',
     name: 'Bagalur',
     pincode: '560064',
     region: 'Bengaluru',
-    nearby: ['Yelahanka', 'Devanahalli', 'Budigere Cross', 'Jakkur', 'Hosur border', 'Kempegowda Airport'],
-    extraKeywords: ['RO service Bagalur Bangalore', 'RO repair Bagalur', 'RO service near Airport Bagalur', 'RO service Bagalur Main Road'],
+    nearby: ['Yelahanka', 'Devanahalli', 'Budigere Cross', 'Jakkur', 'Kattigenahalli', 'Aerospace Park', 'Gummanahalli', 'Kempegowda Airport'],
+    extraKeywords: ['RO service Bagalur Bangalore', 'RO repair Bagalur', 'RO service near Airport Bagalur', 'RO service Bagalur Main Road', 'RO service Bagalur KIADB', 'RO service Aerospace Park Bagalur', 'RO service Prestige Finsbury Park', 'RO service Brigade El Dorado', 'RO service Godrej Ananda Bagalur'],
   },
   {
     slug: 'ro-service-manyata-tech-park',
@@ -408,7 +408,7 @@ const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
   { slug: 'ro-service-ramanagara', name: 'Ramanagara', region: 'Karnataka', nearby: ['Channapatna', 'Bidadi', 'Kanakapura', 'Magadi', 'Harohalli', 'Mysore Road'] },
   { slug: 'ro-service-nelamangala', name: 'Nelamangala', region: 'Karnataka', nearby: ['Dabaspete', 'Tumkur Road', 'Doddaballapur', 'Sompura', 'Bashettihalli', 'Solur'] },
   { slug: 'ro-service-doddaballapur', name: 'Doddaballapur', region: 'Karnataka', nearby: ['Yelahanka', 'Devanahalli', 'Nelamangala', 'Bashettihalli', 'Rajanukunte', 'Chikkaballapur'] },
-  { slug: 'ro-service-devanahalli', name: 'Devanahalli', region: 'Karnataka', nearby: ['Kempegowda Airport', 'Yelahanka', 'Doddaballapur', 'Vijayapura', 'Bagalur', 'Budigere Cross', 'Budigere'], extraKeywords: ['RO service Kempegowda International Airport', 'RO service near Airport Devanahalli', 'RO repair Devanahalli Bangalore', 'RO service Budigere Cross Devanahalli', 'RO service Vijayapura Devanahalli'] },
+  { slug: 'ro-service-devanahalli', name: 'Devanahalli', region: 'Karnataka', nearby: ['Kempegowda Airport', 'Yelahanka', 'Doddaballapur', 'Vijayapura', 'Bagalur', 'Budigere Cross', 'Budigere', 'Chikkajala', 'Aerospace Park'], extraKeywords: ['RO service Kempegowda International Airport', 'RO service near Airport Devanahalli', 'RO repair Devanahalli Bangalore', 'RO service Budigere Cross Devanahalli', 'RO service Vijayapura Devanahalli', 'RO service Devanahalli new apartments', 'RO service Devanahalli township', 'RO service Brigade Orchards Devanahalli', 'RO service Ozone Urbana Devanahalli', 'RO service Embassy Springs Devanahalli', 'RO service Embassy Boulevard Devanahalli'] },
   {
     slug: 'ro-service-anekal',
     name: 'Anekal',
