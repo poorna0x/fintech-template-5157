@@ -50,7 +50,7 @@ const HYDROGEN_SEO: BrandSeoProfile = {
   defaultDescription:
     'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. Same-day RO installation, repair, maintenance and filter replacement across all Bangalore areas. Call +91-8884944288.',
   keywords:
-    'Hydrogen RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, water purifier service Karnataka, RO repair Karnataka, RO installation Karnataka, RO AMC Karnataka, RO maintenance Karnataka, RO technician Karnataka, Kent RO service, Aquaguard service, Livpure service, Pureit service, AO Smith service, best RO service near me, RO service Mysuru, RO service Mangaluru, RO service Hubballi, RO service Belagavi, same day RO service Karnataka',
+    'Hydrogen RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, water purifier service Karnataka, RO repair Karnataka, RO installation Karnataka, commercial RO 25 LPH Bangalore, 50 LPH RO plant Bengaluru, new water softener installation Bangalore, water softener service Karnataka, RO AMC Karnataka, RO maintenance Karnataka, RO technician Karnataka, Kent RO service, Aquaguard service, Livpure service, Pureit service, AO Smith service, best RO service near me, RO service Mysuru, RO service Mangaluru, RO service Hubballi, RO service Belagavi, same day RO service Karnataka',
   ogImage: 'https://hydrogenro.com/og-image.jpg', // TODO(seo): add a proper 1200x630 brand OG image (placeholder removed)
   logoPath: 'https://hydrogenro.com/fulllogo.png',
   phones: ['+91-8884944288', '+91-9886944288'],
@@ -273,8 +273,26 @@ export function buildLocalBusinessJsonLd(profile: BrandSeoProfile, pageUrl: stri
       },
       {
         '@type': 'Offer',
+        name: 'Commercial 25 LPH RO Plant',
+        description: '25 LPH commercial RO plant supply, installation and AMC from a local Bengaluru company',
+        url: `${profile.origin}/commercial-ro-25-lph`,
+      },
+      {
+        '@type': 'Offer',
+        name: 'Commercial 50 LPH RO Plant',
+        description: '50 LPH commercial RO plant supply, installation and AMC for restaurants and offices',
+        url: `${profile.origin}/commercial-ro-50-lph`,
+      },
+      {
+        '@type': 'Offer',
+        name: 'New Water Softener Installation',
+        description: 'New water softener installation and service for Karnataka homes and apartments',
+        url: `${profile.origin}/water-softener-installation`,
+      },
+      {
+        '@type': 'Offer',
         name: 'Commercial RO Service',
-        description: 'Commercial RO plant service for offices and businesses',
+        description: 'Commercial 25 LPH and 50 LPH RO plant installation and AMC for offices and businesses',
         url: `${profile.origin}/commercial-ro-service`,
       },
     ],

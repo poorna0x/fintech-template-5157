@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Wrench, Filter, RefreshCw, Settings, CheckCircle, Clock, Shield, Phone, AlertCircle } from 'lucide-react';
+import { Wrench, Filter, RefreshCw, Settings, CheckCircle, Clock, Shield, Phone, AlertCircle, Building2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const ServicesSection = () => {
   const navigate = useNavigate();
@@ -47,9 +48,9 @@ const ServicesSection = () => {
     },
     {
       icon: Wrench,
-      title: "Water Softener Service",
-      description: "Beat hard water — installation, resin and salt level management.",
-      features: ["Softener installation", "Re-installation", "Resin level management", "Salt level monitoring"],
+      title: "Water Softener — New Installation & Service",
+      description: "New softener installation for homes and apartments, plus salt, resin and repair.",
+      features: ["New water softener installation", "Re-installation", "Resin & salt service", "Apartment / home setups"],
       pricing: "Starting from ₹499",
       details: {
         includes: [
@@ -74,7 +75,37 @@ const ServicesSection = () => {
         terms: [
           "Starting from ₹499 is visiting charge, not including resin"
         ]
-      }
+      },
+      href: '/water-softener',
+    },
+    {
+      icon: Building2,
+      title: "Commercial RO — 25 LPH & 50 LPH",
+      description: "Local Bengaluru company for offices, restaurants and clinics that want to buy and get service locally.",
+      features: ["25 LPH small office / clinic plants", "50 LPH restaurant / school plants", "New installation & commissioning", "Service, repair and AMC"],
+      pricing: "Site visit + local after-sales",
+      details: {
+        includes: [
+          "25 LPH commercial RO for small offices, clinics and pantries",
+          "50 LPH commercial RO for restaurants, larger offices and schools",
+          "Site survey and capacity recommendation before you buy",
+          "Plant supply, plumbing, electricals and commissioning",
+          "TDS check and operator briefing",
+          "Membrane / filter service and breakdown repair",
+          "Commercial AMC with local technicians"
+        ],
+        benefits: [
+          "Buy from a local company — we install and we service",
+          "No waiting on an outstation dealer for breakdowns",
+          "Same technician network as our home RO service",
+          "Sized for real occupancy, not a catalogue guess",
+          "AMC you can actually call in Bengaluru"
+        ],
+        terms: [
+          "Plant price depends on capacity, raw-water TDS and site plumbing — we quote after a visit"
+        ]
+      },
+      href: '/commercial-ro-service',
     },
     {
       icon: RefreshCw,
@@ -186,9 +217,10 @@ const ServicesSection = () => {
                       ))}
                     </ul>
                     
+                    <div className="mt-auto space-y-2">
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button variant="outline" className="w-full mt-auto border-sky-200 dark:border-sky-500/30 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-500/10">
+                        <Button variant="outline" className="w-full border-sky-200 dark:border-sky-500/30 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-500/10 cursor-pointer">
                           Learn More
                         </Button>
                       </DialogTrigger>
@@ -290,6 +322,12 @@ const ServicesSection = () => {
                         </div>
                       </DialogContent>
                     </Dialog>
+                    {'href' in service && service.href ? (
+                      <Button asChild variant="ghost" className="w-full text-sky-700 dark:text-sky-300 cursor-pointer">
+                        <Link to={service.href}>View full page</Link>
+                      </Button>
+                    ) : null}
+                    </div>
                   </div>
                 </div>
               </CardContent>

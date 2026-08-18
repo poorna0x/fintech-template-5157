@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Star, ShieldCheck, Clock, Phone, Droplets, CheckCircle2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
 
 const HeroSection = () => {
@@ -20,8 +20,8 @@ const HeroSection = () => {
 
   const trustPoints = [
     'Same-day service',
-    'All RO brands',
-    'Genuine spare parts',
+    '25 & 50 LPH plants',
+    'New softener install',
     'Service from ₹399',
   ];
 
@@ -48,8 +48,10 @@ const HeroSection = () => {
             </h1>
 
             <p className="text-base md:text-lg text-muted-foreground max-w-xl mx-auto lg:mx-0">
-              Installation, repair &amp; maintenance at your doorstep by certified
-              technicians. Book in 60 seconds.
+              Home RO, <Link to="/commercial-ro-service" className="text-sky-700 dark:text-sky-400 font-medium hover:underline underline-offset-2">commercial 25/50 LPH plants</Link>
+              {' '}and{' '}
+              <Link to="/water-softener" className="text-sky-700 dark:text-sky-400 font-medium hover:underline underline-offset-2">new water softener installation</Link>
+              {' '}— local Bengaluru company, certified technicians. Book in 60 seconds.
             </p>
 
             {/* Rating row */}

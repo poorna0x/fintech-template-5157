@@ -66,7 +66,7 @@ export const SEO_SERVICE_PAGES: SeoServicePage[] = [
   {
     path: '/water-softener',
     serviceName: 'Water Softener Service',
-    shortDescription: 'Water softener installation and maintenance in Bengaluru for hard water problems in Karnataka homes.',
+    shortDescription: 'New water softener installation, salt/resin service and repair in Bengaluru for hard borewell and tanker water in Karnataka homes and apartments.',
   },
   {
     path: '/ro-troubleshooting',
@@ -121,7 +121,22 @@ export const SEO_SERVICE_PAGES: SeoServicePage[] = [
   {
     path: '/commercial-ro-service',
     serviceName: 'Commercial RO Service',
-    shortDescription: 'Commercial RO plant installation, repair and AMC for offices, restaurants, schools and businesses across Karnataka.',
+    shortDescription: 'Commercial 25 LPH and 50 LPH RO plant supply, installation, service and AMC from a local Bengaluru company — offices, restaurants, clinics and schools across Karnataka.',
+  },
+  {
+    path: '/commercial-ro-25-lph',
+    serviceName: '25 LPH Commercial RO Plant',
+    shortDescription: '25 LPH commercial RO plant for small offices, clinics and pantries in Bengaluru. Local company supply, installation, service and AMC.',
+  },
+  {
+    path: '/commercial-ro-50-lph',
+    serviceName: '50 LPH Commercial RO Plant',
+    shortDescription: '50 LPH commercial RO plant for restaurants, larger offices and schools in Bengaluru. Local company supply, installation, service and AMC.',
+  },
+  {
+    path: '/water-softener-installation',
+    serviceName: 'New Water Softener Installation',
+    shortDescription: 'New water softener installation in Bengaluru for homes and apartments. Hard-water treatment, salt setup and local after-sales service.',
   },
   {
     path: '/industrial-ro-service',
@@ -196,8 +211,8 @@ const STATIC_PAGE_SEO: Record<string, Partial<Record<PublicSiteKey, RouteSeo>>> 
     hydrogenro: {
       title: 'RO Services in Bengaluru | Installation, Repair & Maintenance | Hydrogen RO',
       description:
-        'Complete RO water purifier services in Bengaluru by Hydrogen RO — installation, repair, filter replacement, AMC, water softener and emergency support. Same-day service.',
-      keywords: 'RO services Bengaluru, RO installation Bangalore, RO repair, RO AMC, water softener service Bangalore',
+        'RO, commercial 25/50 LPH plants and new water softener installation in Bengaluru by Hydrogen RO — local company for homes, offices and restaurants. Same-day service.',
+      keywords: 'RO services Bengaluru, commercial RO 25 LPH, 50 LPH RO plant Bangalore, new water softener installation Bangalore, water softener service Bangalore',
     },
     elevenro: {
       title: 'RO Services in Bengaluru | Installation, Repair & Maintenance | Eleven RO',
@@ -220,8 +235,8 @@ const STATIC_PAGE_SEO: Record<string, Partial<Record<PublicSiteKey, RouteSeo>>> 
   },
   '/book': {
     hydrogenro: {
-      title: 'Book RO Service in Bengaluru | Same-Day Booking | Hydrogen RO',
-      description: 'Book RO water purifier service online in Bengaluru with Hydrogen RO. Same-day installation, repair and maintenance. Call +91-8884944288.',
+      title: 'Book RO, Commercial Plant or Softener Service | Hydrogen RO',
+      description: 'Book home RO, commercial 25/50 LPH plant or new water softener installation in Bengaluru. Local company. Call +91-8884944288.',
     },
     elevenro: {
       title: 'Book RO Service in Bengaluru | Same-Day Booking | Eleven RO',
@@ -324,10 +339,17 @@ export function buildServicePageSeo(
   brandName: string,
   primaryPhone: string
 ): RouteSeo {
+  const isCommercial = page.path.includes('commercial');
+  const isSoftener = page.path.includes('softener');
+  const extraKeywords = isCommercial
+    ? `25 LPH RO plant Bangalore, 50 LPH RO plant Bangalore, commercial RO plant Bengaluru, commercial water purifier local company, ${page.serviceName} Bangalore`
+    : isSoftener
+      ? `new water softener installation Bangalore, water softener service Bengaluru, apartment water softener Karnataka, ${page.serviceName} Bangalore`
+      : `RO water purifier ${page.serviceName.toLowerCase()}`;
   return {
     title: `${page.serviceName} in Karnataka | Bengaluru & All Districts | ${brandName}`,
     description: `${page.shortDescription} Serving Bengaluru, Bangalore and all Karnataka districts. Book with ${brandName}. Call ${primaryPhone}.`,
-    keywords: `${page.serviceName} Karnataka, ${page.serviceName} Bangalore, ${page.serviceName} Bengaluru, RO water purifier ${page.serviceName.toLowerCase()}, Kent RO service Karnataka, Aquaguard service Karnataka, ${brandName}`,
+    keywords: `${page.serviceName} Karnataka, ${page.serviceName} Bangalore, ${page.serviceName} Bengaluru, ${extraKeywords}, Kent RO service Karnataka, Aquaguard service Karnataka, ${brandName}`,
   };
 }
 

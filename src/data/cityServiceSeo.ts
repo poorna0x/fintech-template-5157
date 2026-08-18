@@ -112,13 +112,13 @@ const CITY_SERVICE_TEMPLATES: CityServiceTemplate[] = [
     pathPrefix: 'commercial-ro-plant-in',
     serviceName: 'Commercial RO Plant Installation',
     description: (place, district) =>
-      `Commercial RO plant installation in ${place} for offices, restaurants, schools and businesses${district ? ` across ${district}` : ''}. Design, setup and AMC support.`,
+      `Commercial 25 LPH and 50 LPH RO plant installation in ${place} for offices, restaurants, clinics and schools${district ? ` across ${district}` : ''}. Local Bengaluru company — site visit, installation, service and AMC.`,
   },
   {
     pathPrefix: 'water-softener-installation-in',
     serviceName: 'Water Softener Installation',
     description: (place) =>
-      `Water softener installation in ${place} for hard borewell and tanker water. Residential and commercial softener setup with maintenance support.`,
+      `New water softener installation in ${place} for hard borewell and tanker water. Homes, apartments and small commercial sites — salt setup, resin service and local after-sales.`,
   },
   {
     pathPrefix: 'borewell-water-filter-in',
@@ -130,7 +130,7 @@ const CITY_SERVICE_TEMPLATES: CityServiceTemplate[] = [
     pathPrefix: 'apartment-water-softener-in',
     serviceName: 'Apartment Water Softener',
     description: (place) =>
-      `Apartment water softener installation in ${place} for multi-storey buildings and gated communities. Centralized and flat-wise softener solutions.`,
+      `Apartment water softener installation in ${place} for multi-storey buildings and gated communities. New install, centralized or flat-wise softener, plus salt and resin service.`,
   },
   {
     pathPrefix: 'industrial-ro-plant-in',
@@ -228,6 +228,12 @@ export function buildCityServiceKeywords(page: CityServicePage, brandName: strin
     `${page.serviceName} ${name}`,
     `RO service ${name}`,
   ]);
+  const extra =
+    page.serviceKey === 'commercial-ro-plant'
+      ? [`25 LPH RO plant ${page.cityName}`, `50 LPH RO plant ${page.cityName}`, `commercial RO plant ${page.cityName}`]
+      : page.serviceKey.includes('softener')
+        ? [`new water softener installation ${page.cityName}`, `water softener service ${page.cityName}`]
+        : [];
   return [
     `${page.serviceName} ${page.cityName}`,
     `${page.serviceName} ${page.cityName} Karnataka`,
@@ -235,6 +241,7 @@ export function buildCityServiceKeywords(page: CityServicePage, brandName: strin
     `water purifier ${page.cityName}`,
     `${page.district} RO service`,
     brandName,
+    ...extra,
     ...altNames,
   ].join(', ');
 }

@@ -34,7 +34,7 @@ const Footer = () => {
               <Logo inFooter brandName={brand.brandName} />
             </div>
             <p className="text-muted-foreground max-w-xs mx-auto md:mx-0">
-              Expert RO water purifier solutions for homes and offices across Bengaluru, Karnataka. Clean, safe water guaranteed with professional installation and maintenance services.
+              Expert RO, commercial 25/50 LPH plants and new water softener installation for homes and offices across Bengaluru. Local company — we install and we service.
             </p>
             <p className="text-xs text-muted-foreground max-w-md mx-auto md:mx-0 leading-relaxed">
               Place of business: Bengaluru, Karnataka, India. Statutory business name, address, and GSTIN appear on
@@ -64,7 +64,8 @@ const Footer = () => {
               <li><Link to="/ro-installation" className="text-muted-foreground hover:text-foreground transition-colors">RO Installation Bengaluru</Link></li>
               <li><Link to="/ro-repair" className="text-muted-foreground hover:text-foreground transition-colors">RO Repair & Maintenance</Link></li>
               <li><Link to="/filter-replacement" className="text-muted-foreground hover:text-foreground transition-colors">RO Filter Replacement</Link></li>
-              <li><Link to="/water-softener" className="text-muted-foreground hover:text-foreground transition-colors">Water Softener Installation</Link></li>
+              <li><Link to="/water-softener" className="text-muted-foreground hover:text-foreground transition-colors">New Water Softener Installation</Link></li>
+              <li><Link to="/commercial-ro-service" className="text-muted-foreground hover:text-foreground transition-colors">Commercial RO 25 LPH &amp; 50 LPH</Link></li>
             </ul>
           </div>
           
