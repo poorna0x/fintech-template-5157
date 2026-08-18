@@ -42,6 +42,8 @@ const noonIst = Date.parse(isoAtIst(2026, 8, 18, 12, 0));
   assert.match(body, /Today you worked 9h 24m/);
   assert.match(body, /9:12/);
   assert.match(body, /6:36/);
+  const withKm = formatWorkedHoursPushBody(summary, { kmLabel: '42 km' });
+  assert.match(withKm, /~42 km/);
 }
 
 {
@@ -65,6 +67,30 @@ const noonIst = Date.parse(isoAtIst(2026, 8, 18, 12, 0));
 {
   assert.equal(formatWorkedDuration(45 * 60 * 1000), '45m');
   assert.equal(formatWorkedDuration(2 * 60 * 60 * 1000), '2h');
+}
+
+{
+  const {
+    jobCoords,
+    formatTravelKm,
+    applyTravelLeg,
+    getTravelLegKm,
+    sumStoredTravelKm,
+    parseOfficeValue,
+  } = require('../netlify/functions/tech-travel-helper');
+
+  assert.deepEqual(jobCoords({ service_location: { latitude: 12.97, longitude: 77.59 } }), {
+    lat: 12.97,
+    lng: 77.59,
+  });
+  assert.equal(jobCoords({ service_location: { lat: 0, lng: 0 } }), null);
+  assert.equal(formatTravelKm(4.24), '4.2 km');
+  assert.equal(formatTravelKm(42.4), '42 km');
+  assert.deepEqual(parseOfficeValue({ lat: 12.9, lng: 77.6 }), { lat: 12.9, lng: 77.6 });
+
+  const withLeg = { requirements: applyTravelLeg([], 12.34, 'office') };
+  assert.equal(getTravelLegKm(withLeg), 12.3);
+  assert.equal(sumStoredTravelKm([withLeg, { requirements: applyTravelLeg([], 5, 'job:x') }]), 17.3);
 }
 
 console.log('tech-worked-hours tests passed');

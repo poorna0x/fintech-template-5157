@@ -92,7 +92,7 @@ function formatIstClock(ms) {
   });
 }
 
-function formatWorkedHoursPushBody(summary) {
+function formatWorkedHoursPushBody(summary, extra) {
   if (
     !summary ||
     summary.durationMs == null ||
@@ -104,7 +104,10 @@ function formatWorkedHoursPushBody(summary) {
   const hours = formatWorkedDuration(summary.durationMs);
   const from = formatIstClock(summary.firstStartMs);
   const to = formatIstClock(summary.lastCompleteMs);
-  return `Today you worked ${hours} (${from} \u2192 ${to}).`;
+  let msg = `Today you worked ${hours} (${from} \u2192 ${to}).`;
+  const kmLabel = extra && extra.kmLabel ? String(extra.kmLabel).trim() : '';
+  if (kmLabel) msg += ` \u00b7 ~${kmLabel}`;
+  return msg;
 }
 
 module.exports = {

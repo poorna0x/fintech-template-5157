@@ -298,6 +298,8 @@ const server = http.createServer((req, res) => {
     handler = loadFn('ai-config-save');
   } else if (req.url.startsWith('/.netlify/functions/salary-slip-month-end')) {
     handler = salarySlipMonthEnd;
+  } else if (req.url.startsWith('/.netlify/functions/tech-travel-leg')) {
+    handler = loadFn('tech-travel-leg');
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }

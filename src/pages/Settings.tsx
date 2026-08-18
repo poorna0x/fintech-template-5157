@@ -107,6 +107,12 @@ import {
   fetchPdfCompressionEnabled,
   savePdfCompressionEnabled,
 } from '@/lib/pdfCompressionSettings';
+import { fetchOfficeLocation, saveOfficeLocation } from '@/lib/officeLocationSettings';
+import {
+  extractCoordinatesFromGoogleMapsLink,
+  extractMapsUrlFromText,
+  resolveGoogleMapsLinkViaApi,
+} from '@/lib/googleMapsLink';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
@@ -340,6 +346,10 @@ const Settings = () => {
   const [jobWaNotifySaving, setJobWaNotifySaving] = useState(false);
   const [pdfCompressionEnabled, setPdfCompressionEnabled] = useState(true);
   const [pdfCompressionSaving, setPdfCompressionSaving] = useState(false);
+  const [officeMapsUrl, setOfficeMapsUrl] = useState('');
+  const [officeLatLng, setOfficeLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  const [officeSaving, setOfficeSaving] = useState(false);
+  const [officeFetching, setOfficeFetching] = useState(false);
 
   // Download data state
   const [isDownloading, setIsDownloading] = useState(false);
@@ -680,6 +690,11 @@ const Settings = () => {
     void fetchPdfCompressionEnabled().then(({ enabled }) => {
       if (!cancelled) setPdfCompressionEnabled(enabled);
     });
+    void fetchOfficeLocation().then(({ office }) => {
+      if (cancelled || !office) return;
+      setOfficeLatLng({ lat: office.lat, lng: office.lng });
+      setOfficeMapsUrl(office.mapsUrl || '');
+    });
     return () => {
       cancelled = true;
     };
@@ -756,6 +771,54 @@ const Settings = () => {
       );
     } finally {
       setPdfCompressionSaving(false);
+    }
+  };
+
+  const resolveOfficeFromMapsInput = async (raw: string) => {
+    const cleaned = extractMapsUrlFromText(raw) || raw.trim();
+    if (!cleaned) {
+      toast.error('Paste a Google Maps link or coordinates');
+      return;
+    }
+    const extracted = extractCoordinatesFromGoogleMapsLink(cleaned);
+    if (extracted) {
+      setOfficeLatLng({ lat: extracted.latitude, lng: extracted.longitude });
+      setOfficeMapsUrl(cleaned);
+      return;
+    }
+    setOfficeFetching(true);
+    try {
+      const resolved = await resolveGoogleMapsLinkViaApi(cleaned);
+      if (resolved.ok && resolved.data?.latitude != null && resolved.data?.longitude != null) {
+        setOfficeLatLng({ lat: resolved.data.latitude, lng: resolved.data.longitude });
+        setOfficeMapsUrl(resolved.data.expandedUrl || cleaned);
+        return;
+      }
+      toast.error(resolved.ok ? 'Could not read coordinates from that link' : resolved.error || 'Could not fetch location');
+    } finally {
+      setOfficeFetching(false);
+    }
+  };
+
+  const handleSaveOfficeLocation = async () => {
+    if (!officeLatLng) {
+      toast.error('Fetch the office pin first');
+      return;
+    }
+    setOfficeSaving(true);
+    try {
+      const result = await saveOfficeLocation({
+        lat: officeLatLng.lat,
+        lng: officeLatLng.lng,
+        mapsUrl: officeMapsUrl.trim() || undefined,
+      });
+      if (!result.ok) {
+        toast.error(result.error || 'Could not save office location');
+        return;
+      }
+      toast.success('Office location saved — used for technician km at 9 PM');
+    } finally {
+      setOfficeSaving(false);
     }
   };
 
@@ -3847,6 +3910,50 @@ const Settings = () => {
                   onCheckedChange={(v) => void handlePdfCompressionToggle(v)}
                   className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
+              </div>
+              ) : null}
+
+              {!isManager ? (
+              <div id="office-location" className="p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700 space-y-3">
+                <div>
+                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
+                    Office location
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
+                    Used for technician travel km: office → first Start Work, then job to job
+                    (avoid tolls), and last job → office at 9 PM.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    value={officeMapsUrl}
+                    onChange={(e) => setOfficeMapsUrl(e.target.value)}
+                    placeholder="Google Maps link for the office"
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={officeFetching}
+                    onClick={() => void resolveOfficeFromMapsInput(officeMapsUrl)}
+                  >
+                    {officeFetching ? 'Fetching…' : 'Fetch pin'}
+                  </Button>
+                </div>
+                {officeLatLng ? (
+                  <p className="text-xs text-muted-foreground">
+                    Saved pin: {officeLatLng.lat.toFixed(5)}, {officeLatLng.lng.toFixed(5)}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No office pin saved yet.</p>
+                )}
+                <Button
+                  type="button"
+                  disabled={officeSaving || !officeLatLng}
+                  onClick={() => void handleSaveOfficeLocation()}
+                >
+                  {officeSaving ? 'Saving…' : 'Save office location'}
+                </Button>
               </div>
               ) : null}
 
