@@ -32,6 +32,7 @@ const TECH_PUSH_CATEGORIES = [
   'wrong_line',
   'pay_qr_screenshot',
   'job_reviews',
+  'worked_hours',
 ];
 
 const DEFAULT_ADMIN_PREFS = Object.fromEntries(ADMIN_PUSH_CATEGORIES.map((k) => [k, true]));

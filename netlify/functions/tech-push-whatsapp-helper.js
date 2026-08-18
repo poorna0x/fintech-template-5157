@@ -24,6 +24,7 @@ const MIRROR_CATEGORIES = new Set([
   'wrong_line',
   'pay_qr_screenshot',
   'job_reviews',
+  'worked_hours',
 ]);
 
 function isCategoryOn(prefs, category) {
@@ -93,7 +94,7 @@ async function maybeSendTechnicianPushWhatsApp(db, opts) {
     const waId = result?.data?.messages?.[0]?.id || null;
     await insertWhatsAppMessage(db, {
       wa_message_id: waId,
-      direction: 'out',
+      direction: 'outbound',
       phone_e164: phone,
       msg_type: 'text',
       body: text,

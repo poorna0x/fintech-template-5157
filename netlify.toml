@@ -52,6 +52,11 @@
 [functions."evening-summary"]
   schedule = "30 16 * * *"
 
+# Technician worked hours: 9:00 PM IST = 15:30 UTC. First job start → last
+# job completed today, pushed to each technician (WhatsApp when enabled).
+[functions."tech-worked-hours"]
+  schedule = "30 15 * * *"
+
 # Parts reminder: 10:10 PM IST = 16:40 UTC. Reminds technicians who worked
 # today to log all the parts they used.
 [functions."parts-reminder"]
