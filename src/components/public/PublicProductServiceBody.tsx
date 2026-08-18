@@ -43,7 +43,7 @@ export default function PublicProductServiceBody({
   const place = placeName || 'Bengaluru';
   const districtNote = district ? ` (${district} district)` : '';
   const zoneNote = zone ? ` in ${zone} Bengaluru` : '';
-  const faqs = productServiceFaqs(kind, place, brandName);
+  const faqs = productServiceFaqs(kind, place, brandName, primaryPhone);
   const isCommercial = kind.startsWith('commercial');
   const capacityHeading = CAPACITY_HEADING[kind];
 
@@ -297,15 +297,25 @@ export default function PublicProductServiceBody({
           </div>
 
           <div>
-            <h3 className="text-xl font-semibold text-foreground mb-4">Questions</h3>
-            <dl className="space-y-4">
+            <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6">
+              {isCommercial ? `Commercial RO FAQs in ${place}` : `Water softener FAQs in ${place}`}
+            </h2>
+            <div className="space-y-3">
               {faqs.map((f) => (
-                <div key={f.q}>
-                  <dt className="font-medium text-foreground">{f.q}</dt>
-                  <dd className="mt-1 text-sm text-muted-foreground leading-relaxed">{f.a}</dd>
-                </div>
+                <details
+                  key={f.q}
+                  className="group rounded-xl border border-sky-100 dark:border-sky-500/15 bg-card p-4"
+                >
+                  <summary className="cursor-pointer font-medium text-foreground list-none flex justify-between items-center gap-2">
+                    {f.q}
+                    <span className="text-sky-600 dark:text-sky-400 text-sm group-open:rotate-180 transition-transform shrink-0">
+                      ▼
+                    </span>
+                  </summary>
+                  <p className="mt-3 text-muted-foreground text-sm leading-relaxed">{f.a}</p>
+                </details>
               ))}
-            </dl>
+            </div>
           </div>
 
           <p className="text-sm text-muted-foreground">
