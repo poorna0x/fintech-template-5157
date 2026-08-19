@@ -13,7 +13,19 @@ const { checkRateLimit, checkRateLimitForKey } = require('./rate-limiter');
 const { getAiAssistantConfig, publicConfigSummary } = require('./ai-config');
 const { generateWithProvider, describeProviderRateLimit } = require('./ai-provider');
 const { parseCrmChatRequest, normalizeCrmChatOutput, assertNoMutationTools } = require('./ai-crm-schemas');
-const { lookupCrmContext, formatContextForPrompt } = require('./ai-crm-lookup');
+const {
+  lookupCrmContext,
+  formatContextForPrompt,
+  formatLiveOpsAnswer,
+  publicLiveOpsSnapshot,
+  formatStatsAnswerForTools,
+  extractQuickPaymentAmount,
+  isQuickPaymentQrGenerationRequest,
+  isQuickPaymentQrSendRequest,
+  extractQueryHints,
+  AI_READONLY_SCHEMA,
+  runReadonlyQuery,
+} = require('./ai-crm-lookup');
 const {
   CRM_PLANNER_SCHEMA,
   plannerSystemInstruction,
@@ -23,6 +35,8 @@ const {
   visibleEntitiesForTools,
   augmentPlanTools,
   inferDeterministicPlan,
+  coerceCustomerPaymentQrPlan,
+  inferUniversalCrmPlan,
 } = require('./ai-crm-planner');
 const { sha256, localDayKey, claimAiQuota, finalizeAiInvocation } = require('./ai-audit');
 
@@ -56,6 +70,7 @@ const CRM_CHAT_SCHEMA = {
               'open_document_draft',
               'open_job',
               'open_customer_composer',
+              'send_payment_qr',
             ],
           },
           label: { type: 'string' },
@@ -154,7 +169,7 @@ function buildSystemInstruction() {
     'Reminder facts explicitly exclude pending-payment reminders. Never rename non-payment reminders as payment reminders; payment-reminder questions use the payments facts.',
     'Only say no records were found when the relevant fact sections are empty or zero.',
     'Return ONLY JSON with keys: answer, confidence (0-1), requiresHuman (boolean), warnings (string[]), proposedActions (array).',
-    'proposedActions types are limited to: open_customer, create_customer, create_customer_and_job, edit_customer, create_job, schedule_follow_up, create_reminder, open_app, open_document_draft, open_job, open_customer_composer.',
+    'proposedActions types are limited to: open_customer, create_customer, create_customer_and_job, edit_customer, create_job, schedule_follow_up, create_reminder, open_app, open_document_draft, open_job, open_customer_composer, send_payment_qr.',
     'Every proposed action MUST set requiresConfirm=true. Drafts only open normal CRM forms for admin review.',
     'Propose create, edit, job, follow-up, or reminder actions only when the user explicitly asks to perform or draft that action. A lookup such as "AMC expiring soon" must not invent reminder drafts.',
     'Use open_app when the admin asks to open, go to, show, manage, configure, or edit an app screen/settings area. payload.target MUST be one of: dashboard, ongoing_jobs, completed_jobs, followup_jobs, payments, billing, analytics, inventory, gst_invoices, amc_contracts, letterhead_documents, settings, dashboard_settings, whatsapp_inbox, whatsapp_settings, calling, reminders, pending_payments, recurring_service, advanced_search, warranty, privacy_center, pdf_authenticity, ai_usage, database_storage, direct_sale, lead_catalog, job_reviews, technicians, technician_locations, todo_tasks, payment_qr, quick_upi_qr, product_qr, data_export, app_lock, recent_accounts, quick_customer, amount_trackers, sent_email_log, measure_distance, arrange_visit_order, nearby_jobs, technician_live_location, message_technician. Use dashboard_settings for PDF compression, follow-up glow, non-AMC follow-up count, or job-assignment WhatsApp preferences. Use ai_usage for AI provider/model selection and usage statistics. Never invent a URL or target.',
@@ -175,6 +190,7 @@ function buildSystemInstruction() {
     'Never print internal UUIDs. Refer to customers by name and customer code, jobs by job number, technicians by name.',
     'Answer only what was asked. Do not list extra records the question did not ask about.',
     'Default to one or two direct sentences and at most 60 words. Only provide a list or longer explanation when the admin explicitly asks for details or a list.',
+    'Live operations snapshots are formatted separately — never merge them into one paragraph.',
     'Keep answer concise and practical for Indian RO service ops.',
   ].join(' ');
 }
@@ -186,7 +202,9 @@ function filterProposedActionsForPlan(actions, tools) {
     .filter(
       (action) =>
         action?.type === 'open_customer' ||
-        (action?.type === 'open_app' && mayNavigate) ||
+        (action?.type === 'open_app' &&
+          (mayNavigate ||
+            (mayDraft && action.payload?.target === 'quick_upi_qr'))) ||
         (action?.type === 'open_document_draft' && mayDraft) ||
         (mayDraft && !['open_app', 'open_document_draft'].includes(action?.type))
     )
@@ -206,11 +224,407 @@ function filterProposedActionsForRequest(actions, message) {
   });
 }
 
+function deriveNavigationActions(message) {
+  const lower = String(message || '').toLowerCase();
+  if (isQuickPaymentQrGenerationRequest(message, extractQueryHints(message))) {
+    return [];
+  }
+  const rules = [
+    [/whatsapp settings|whatsapp crm|disable whatsapp/, 'whatsapp_settings', 'WhatsApp settings'],
+    [/analytics/, 'analytics', 'Analytics'],
+    [/completed jobs/, 'completed_jobs', 'Completed jobs'],
+    [/ongoing jobs|open jobs/, 'ongoing_jobs', 'Ongoing jobs'],
+    [/follow[\s-]?up jobs/, 'followup_jobs', 'Follow-up jobs'],
+    [
+      /quick(?:\s+payment)?\s+(?:upi\s+)?qr|quick upi|generate.*(?:upi\s+)?qr/,
+      'quick_upi_qr',
+      'Quick payment QR',
+    ],
+    [/payment qr|common payment qr|upi qr settings/, 'payment_qr', 'Payment QR settings'],
+    [/ai usage|change the ai model|ai model/, 'ai_usage', 'AI usage settings'],
+    [/pdf compression|turn off pdf/, 'dashboard_settings', 'Dashboard settings'],
+    [/notification settings|notification prefs/, 'settings', 'Settings'],
+    [/technician locations|live location/, 'technician_locations', 'Technician locations'],
+    [/whatsapp inbox/, 'whatsapp_inbox', 'WhatsApp inbox'],
+    [/pending payments/, 'pending_payments', 'Pending payments'],
+    [/billing/, 'billing', 'Billing'],
+    [/payments?/, 'payments', 'Payments'],
+    [/technicians?/, 'technicians', 'Technicians'],
+    [/inventory/, 'inventory', 'Inventory'],
+    [/settings/, 'settings', 'Settings'],
+    [/dashboard/, 'dashboard', 'Dashboard'],
+  ];
+  for (const [pattern, target, label] of rules) {
+    if (pattern.test(lower)) {
+      return [
+        {
+          type: 'open_app',
+          label: `Open ${label}`,
+          confidence: 0.95,
+          requiresConfirm: true,
+          payload: { target },
+        },
+      ];
+    }
+  }
+  return [];
+}
+
+function navigationAnswer(message, actions) {
+  const label =
+    String(actions?.[0]?.label || 'that screen')
+      .replace(/^Open /i, '')
+      .trim() || 'that screen';
+  const lower = String(message || '').toLowerCase();
+  if (/\bturn off\b|\bdisable\b/.test(lower)) {
+    return `Opening ${label} so you can turn it off.`;
+  }
+  if (/\bchange\b|\bswitch\b|\bselect\b|\bconfigure\b|\bmanage\b/.test(lower)) {
+    return `Opening ${label} so you can change it.`;
+  }
+  return `Opening ${label}.`;
+}
+
+function buildDeterministicActionAnswer(message, actions, entities = {}) {
+  const action = actions?.[0];
+  if (!action) return 'Ready — tap the action button to continue.';
+  const customerName = entities.customers?.[0]?.name || 'customer';
+  const jobNumber = entities.jobs?.[0]?.jobNumber || action.payload?.jobNumber || 'job';
+  if (action.type === 'open_document_draft') {
+    const labels = {
+      quotation: 'Quotation',
+      service_bill: 'Service bill',
+      tax_invoice: 'Tax invoice',
+      amc: 'AMC',
+      warranty: 'Warranty',
+    };
+    const label = labels[action.payload?.documentType] || 'Document';
+    return `${label} draft is ready for ${customerName} — tap the button to open the form.`;
+  }
+  if (action.type === 'open_job') {
+    const mode = action.payload?.mode || 'details';
+    if (mode === 'follow_up') {
+      return `Follow-up for job ${jobNumber} is ready — tap the button to review it.`;
+    }
+    return `Job ${jobNumber} review is ready — tap the button to open it.`;
+  }
+  if (action.type === 'open_customer_composer') {
+    const channel = action.payload?.channel === 'email' ? 'Email' : 'WhatsApp';
+    return `${channel} composer is ready for ${customerName} — tap the button to open it.`;
+  }
+  if (action.type === 'send_payment_qr') {
+    const amount = Number(action.payload?.amount);
+    const phone = String(action.payload?.phone || '').trim();
+    const amountText =
+      Number.isFinite(amount) && amount > 0 ? `₹${amount.toLocaleString('en-IN')}` : 'payment';
+    return `Payment QR for ${amountText}${phone ? ` to ${phone}` : ''} is ready — tap Send on WhatsApp to deliver it.`;
+  }
+  if (action.type === 'schedule_follow_up') {
+    return `Follow-up for job ${jobNumber} is ready — tap the button to schedule it.`;
+  }
+  if (action.type === 'create_job') {
+    return `Job draft is ready for ${customerName} — tap the button to open the form.`;
+  }
+  if (action.type === 'create_customer' || action.type === 'create_customer_and_job') {
+    const name = action.payload?.fullName || customerName;
+    return action.type === 'create_customer_and_job'
+      ? `Customer and job draft for ${name || 'the new customer'} is ready — tap the button to open the form.`
+      : `Customer draft for ${name || 'the new customer'} is ready — tap the button to open the form.`;
+  }
+  if (action.type === 'open_app') {
+    if (
+      action.payload?.target === 'quick_upi_qr' &&
+      (action.payload?.customerId || action.payload?.amount)
+    ) {
+      const amount = Number(action.payload?.amount);
+      const amountText =
+        Number.isFinite(amount) && amount > 0
+          ? ` (₹${amount.toLocaleString('en-IN')})`
+          : '';
+      if (action.payload?.customerId) {
+        return `Quick payment QR for ${customerName}${amountText} is ready — tap the button to open it.`;
+      }
+      return `Quick payment QR${amountText} is ready — tap the button to open it.`;
+    }
+    return navigationAnswer(message, actions);
+  }
+  return 'Ready — tap the action button to continue.';
+}
+
+function buildDeterministicCrmResponse({ plan, pack, message, config, servedProvider, servedModel, fellBack, started, usage, plannerStrategy }) {
+  const entities = visibleEntitiesForTools(pack, plan.tools);
+
+  if (plan.tools.includes('live_ops') && pack.stats?.liveOps) {
+    const liveOps = pack.stats.liveOps;
+    const answer = formatLiveOpsAnswer(liveOps);
+    const liveOpsSnapshot = publicLiveOpsSnapshot(liveOps, pack.truncated);
+    const warnings = liveOpsSnapshot?.truncated
+      ? ['Open-job list was truncated; counts are from the loaded slice.']
+      : [];
+    return {
+      answer,
+      confidence: 0.95,
+      requiresHuman: false,
+      warnings,
+      entities,
+      proposedActions: [],
+      metaExtra: { liveOpsSnapshot },
+      promptHash: sha256(JSON.stringify({ message, route: 'live_ops', liveOpsSnapshot })),
+    };
+  }
+
+  if (isQuickPaymentQrGenerationRequest(message, extractQueryHints(message))) {
+    const derivedActions = filterActionsForEntityState(
+      filterProposedActionsForPlan(
+        deriveSafeUiActions({
+          message,
+          tools: ['action_draft', 'customer_search'],
+          customers: pack.customers,
+          jobs: pack.jobs,
+        }),
+        ['action_draft', 'customer_search']
+      ),
+      pack.jobs
+    );
+    if (derivedActions.length) {
+      return {
+        answer: buildDeterministicActionAnswer(message, derivedActions, {
+          customers: pack.customers,
+          jobs: pack.jobs,
+        }),
+        confidence: 0.95,
+        requiresHuman: false,
+        warnings: [],
+        entities,
+        proposedActions: derivedActions.map((action) => ({ ...action, requiresConfirm: true })),
+        metaExtra: {},
+        promptHash: sha256(JSON.stringify({ message, route: 'quick_payment_qr' })),
+      };
+    }
+    if (!derivedActions.length) {
+      const amount = extractQuickPaymentAmount(message);
+      const hints = extractQueryHints(message);
+      if (amount && isQuickPaymentQrSendRequest(message, hints) && hints.phone) {
+        const sendAction = {
+          type: 'send_payment_qr',
+          label: `Send payment QR · ₹${amount.toLocaleString('en-IN')} to ${hints.phone}`,
+          confidence: 0.95,
+          requiresConfirm: true,
+          payload: { phone: hints.phone, amount },
+        };
+        return {
+          answer: buildDeterministicActionAnswer(message, [sendAction], {
+            customers: pack.customers,
+            jobs: pack.jobs,
+          }),
+          confidence: 0.95,
+          requiresHuman: false,
+          warnings: [],
+          entities,
+          proposedActions: [{ ...sendAction, requiresConfirm: true }],
+          metaExtra: {},
+          promptHash: sha256(JSON.stringify({ message, route: 'quick_payment_qr_send' })),
+        };
+      }
+      if (amount) {
+        const fallbackAction = {
+          type: 'open_app',
+          label: `Quick payment QR · ₹${amount.toLocaleString('en-IN')}`,
+          confidence: 0.95,
+          requiresConfirm: true,
+          payload: {
+            target: 'quick_upi_qr',
+            amount,
+            ...(hints.phone ? { phone: hints.phone } : {}),
+          },
+        };
+        return {
+          answer: buildDeterministicActionAnswer(message, [fallbackAction], {
+            customers: pack.customers,
+            jobs: pack.jobs,
+          }),
+          confidence: 0.95,
+          requiresHuman: false,
+          warnings: [],
+          entities,
+          proposedActions: [{ ...fallbackAction, requiresConfirm: true }],
+          metaExtra: {},
+          promptHash: sha256(JSON.stringify({ message, route: 'quick_payment_qr_amount_only' })),
+        };
+      }
+      return {
+        answer: pack.customers?.length
+          ? 'Could not prepare that Quick payment QR request.'
+          : 'Enter an amount for Quick payment QR, e.g. quick payment QR of 1000.',
+        confidence: 0.9,
+        requiresHuman: false,
+        warnings: [],
+        entities,
+        proposedActions: [],
+        metaExtra: {},
+        promptHash: sha256(JSON.stringify({ message, route: 'quick_payment_qr_missing_customer' })),
+      };
+    }
+  }
+
+  const navActions = plan.tools.includes('app_navigation')
+    ? filterProposedActionsForPlan(deriveNavigationActions(message), plan.tools)
+    : [];
+  if (plan.tools.includes('app_navigation') && navActions.length) {
+    return {
+      answer: navigationAnswer(message, navActions),
+      confidence: 0.95,
+      requiresHuman: false,
+      warnings: [],
+      entities,
+      proposedActions: navActions.map((action) => ({ ...action, requiresConfirm: true })),
+      metaExtra: {},
+      promptHash: sha256(JSON.stringify({ message, route: 'app_navigation', target: navActions[0]?.payload?.target })),
+    };
+  }
+
+  const derivedActions = filterActionsForEntityState(
+    filterProposedActionsForPlan(
+      deriveSafeUiActions({
+        message,
+        tools: plan.tools,
+        customers: pack.customers,
+        jobs: pack.jobs,
+      }),
+      plan.tools
+    ),
+    pack.jobs
+  );
+  if (plan.tools.includes('action_draft') && derivedActions.length) {
+    return {
+      answer: buildDeterministicActionAnswer(message, derivedActions, {
+        customers: pack.customers,
+        jobs: pack.jobs,
+      }),
+      confidence: 0.95,
+      requiresHuman: false,
+      warnings: [],
+      entities,
+      proposedActions: derivedActions.map((action) => ({ ...action, requiresConfirm: true })),
+      metaExtra: {},
+      promptHash: sha256(JSON.stringify({ message, route: 'action_draft', actions: derivedActions.map((a) => a.type) })),
+    };
+  }
+
+  if (plan.tools.includes('action_draft') && plan.tools.includes('job_search') && pack.jobs?.[0]) {
+    const job = pack.jobs[0];
+    const lower = String(message || '').toLowerCase();
+    if (
+      String(job.status || '').toUpperCase() === 'COMPLETED' &&
+      /\b(?:edit|assign|reassign|complete|finish|close)\b/.test(lower)
+    ) {
+      const detailsAction = {
+        type: 'open_job',
+        label: `Open job ${job.jobNumber || ''}`.trim(),
+        confidence: 0.95,
+        requiresConfirm: true,
+        payload: { jobId: String(job.id), mode: 'details' },
+      };
+      return {
+        answer: `Job ${job.jobNumber} is already completed. You can still open its details.`,
+        confidence: 0.95,
+        requiresHuman: false,
+        warnings: [],
+        entities,
+        proposedActions: [detailsAction],
+        metaExtra: {},
+        promptHash: sha256(JSON.stringify({ message, route: 'completed_job', jobId: job.id })),
+      };
+    }
+  }
+
+  if (!plan.tools.includes('action_draft')) {
+    const statsAnswer = formatStatsAnswerForTools(pack, plan.tools);
+    if (statsAnswer) {
+      return {
+        answer: statsAnswer,
+        confidence: 0.92,
+        requiresHuman: false,
+        warnings: [],
+        entities,
+        proposedActions: [],
+        metaExtra: {},
+        promptHash: sha256(JSON.stringify({ message, route: 'stats', tools: plan.tools })),
+      };
+    }
+  }
+
+  return null;
+}
+
 function deriveSafeUiActions({ message, tools, customers, jobs }) {
   const lower = String(message || '').toLowerCase();
   const rows = Array.isArray(customers) ? customers : [];
   const jobRows = Array.isArray(jobs) ? jobs : [];
   const actions = [];
+
+  if (
+    Array.isArray(tools) &&
+    tools.includes('action_draft') &&
+    /\bcreate\s+(?:a\s+)?customers?\b/.test(lower)
+  ) {
+    const hints = extractQueryHints(message);
+    const nameMatch = String(message || '').match(
+      /\bcustomers?\s+([A-Za-z][A-Za-z\s.'-]{1,60}?)(?:\s+phone\b|\s+and\b|\s+with\b|$)/i
+    );
+    const fullName = (nameMatch?.[1] || hints.nameTokens.join(' ') || '').trim();
+    const phone = hints.phone || '';
+    const withJob = /\b(?:service )?job\b/.test(lower);
+    if (withJob) {
+      actions.push({
+        type: 'create_customer_and_job',
+        label: `Create customer${fullName ? ` ${fullName}` : ''} and job`,
+        confidence: 0.95,
+        requiresConfirm: true,
+        payload: {
+          fullName,
+          phone,
+          instruction: String(message || '').slice(0, 500),
+          serviceSubType: /\binstall/.test(lower) ? 'New Purifier Installation' : 'Service',
+        },
+      });
+      return actions;
+    }
+    if (fullName || phone) {
+      actions.push({
+        type: 'create_customer',
+        label: `Create customer${fullName ? ` ${fullName}` : ''}`,
+        confidence: 0.95,
+        requiresConfirm: true,
+        payload: {
+          fullName,
+          phone,
+          instruction: String(message || '').slice(0, 500),
+        },
+      });
+      return actions;
+    }
+  }
+
+  if (
+    Array.isArray(tools) &&
+    tools.includes('action_draft') &&
+    rows[0]?.id &&
+    (/\bcreate\b/.test(lower) || /\bbook(?:ing)?\s+(?:a\s+)?(?:service\s+)?(?:visit|appointment)\b/.test(lower)) &&
+    /\b(?:service )?job\b|\bvisit\b|\bappointment\b/.test(lower)
+  ) {
+    actions.push({
+      type: 'create_job',
+      label: `Create job for ${rows[0].name || 'customer'}`,
+      confidence: 0.95,
+      requiresConfirm: true,
+      payload: {
+        customerId: String(rows[0].id),
+        serviceSubType: /\binstall/.test(lower) ? 'New Purifier Installation' : 'Service',
+        instruction: String(message || '').slice(0, 500),
+      },
+    });
+  }
 
   if (
     Array.isArray(tools) &&
@@ -266,12 +680,84 @@ function deriveSafeUiActions({ message, tools, customers, jobs }) {
                 ? 'details'
                 : null;
     if (mode) {
+      if (mode === 'follow_up' && /\bschedule\b|\bfollow[\s-]?up\b/.test(lower)) {
+        actions.push({
+          type: 'schedule_follow_up',
+          label: `Schedule follow-up for job ${jobRows[0].jobNumber || ''}`.trim(),
+          confidence: 0.95,
+          requiresConfirm: true,
+          payload: {
+            jobId: String(jobRows[0].id),
+            followUpReason: String(message || '').slice(0, 500),
+          },
+        });
+      } else {
+        actions.push({
+          type: 'open_job',
+          label: `${mode === 'details' ? 'Open' : 'Review'} job ${jobRows[0].jobNumber || ''}`.trim(),
+          confidence: 0.95,
+          requiresConfirm: true,
+          payload: { jobId: String(jobRows[0].id), mode },
+        });
+      }
+    }
+  }
+
+  if (
+    Array.isArray(tools) &&
+    tools.includes('action_draft') &&
+    isQuickPaymentQrGenerationRequest(message, extractQueryHints(message))
+  ) {
+    const hints = extractQueryHints(message);
+    const amount = extractQuickPaymentAmount(message);
+    const sendIntent = isQuickPaymentQrSendRequest(message, hints);
+    const destPhone =
+      hints.phone ||
+      (rows[0]?.phone ? String(rows[0].phone).replace(/\D/g, '').slice(-10) : null);
+
+    if (sendIntent && amount && destPhone && destPhone.length >= 10) {
       actions.push({
-        type: 'open_job',
-        label: `${mode === 'details' ? 'Open' : 'Review'} job ${jobRows[0].jobNumber || ''}`.trim(),
+        type: 'send_payment_qr',
+        label: `Send payment QR · ₹${amount.toLocaleString('en-IN')} to ${destPhone}`,
         confidence: 0.95,
         requiresConfirm: true,
-        payload: { jobId: String(jobRows[0].id), mode },
+        payload: {
+          phone: destPhone,
+          amount,
+          ...(rows[0]?.id
+            ? { customerId: String(rows[0].id), customerName: rows[0].name || undefined }
+            : {}),
+        },
+      });
+      return actions;
+    }
+
+    if (rows[0]?.id) {
+      actions.push({
+        type: 'open_app',
+        label: `Quick payment QR${amount ? ` · ₹${amount.toLocaleString('en-IN')}` : ''} for ${
+          rows[0].name || 'customer'
+        }`,
+        confidence: 0.95,
+        requiresConfirm: true,
+        payload: {
+          target: 'quick_upi_qr',
+          customerId: String(rows[0].id),
+          ...(amount ? { amount } : {}),
+          ...(destPhone && destPhone.length >= 10 ? { phone: destPhone } : {}),
+        },
+      });
+    } else if (amount) {
+      actions.push({
+        type: 'open_app',
+        label: `Quick payment QR · ₹${amount.toLocaleString('en-IN')}`,
+        confidence: 0.95,
+        requiresConfirm: true,
+        payload: {
+          target: 'quick_upi_qr',
+          amount,
+          ...(destPhone && destPhone.length >= 10 ? { phone: destPhone } : {}),
+        },
       });
     }
   }
@@ -511,6 +997,96 @@ exports.handler = async (event) => {
     });
   }
 
+  // Fully deterministic CRM answers (Quick QR, navigation, stats, …) skip quota —
+  // no LLM call, so they should not consume the daily request/token budget.
+  let plan = coerceCustomerPaymentQrPlan(parsed.value.message, deterministicPlan);
+  let cachedPack = null;
+  let plannerStrategy = plan ? 'deterministic' : 'model';
+  if (plan && plan.route !== 'conversation') {
+    if (isQuickPaymentQrGenerationRequest(parsed.value.message, extractQueryHints(parsed.value.message))) {
+      plannerStrategy = 'deterministic';
+    }
+    const startedEarly = Date.now();
+    cachedPack = await lookupCrmContext({
+      message: buildAllowlistedLookupQuery(plan, parsed.value.message),
+      focusCustomerId: parsed.value.focusCustomerId,
+      plannerTools: plan.tools,
+    });
+    // Universal SQL query: generate SQL via AI then execute it read-only
+    if (plan.tools.includes('sql_query') && cachedPack.stats?.sqlQueryAvailable) {
+      try {
+        const sqlGen = await generateWithProvider(config, {
+          operation: 'crm_chat',
+          systemInstruction: [
+            'You are a PostgreSQL expert. The user asked a CRM analytics question.',
+            'Write ONE safe read-only SELECT query to answer it. Return ONLY raw SQL — no markdown, no explanation.',
+            'Rules: SELECT only. LIMIT 100 max. Use (col AT TIME ZONE \'Asia/Kolkata\') for IST times.',
+            'Schema:\n' + AI_READONLY_SCHEMA,
+          ].join('\n'),
+          messages: [{ role: 'user', text: parsed.value.message }],
+          temperature: 0,
+          maxOutputTokens: 400,
+        });
+        const generatedSql = (sqlGen.text || '').trim().replace(/^```sql\s*/i, '').replace(/```\s*$/, '').trim();
+        if (generatedSql.toLowerCase().startsWith('select')) {
+          const { getServiceSupabase } = require('./whatsapp-helper');
+          const db = getServiceSupabase();
+          const result = await runReadonlyQuery(db, generatedSql);
+          cachedPack.stats.sqlQueryResult = {
+            rows: result.rows,
+            query: generatedSql,
+            label: 'Analytics result',
+            error: result.error,
+          };
+        }
+      } catch (sqlErr) {
+        console.warn('[ai-crm-chat] sql_query generation/exec failed:', sqlErr.message);
+        cachedPack.stats.sqlQueryResult = { rows: [], error: sqlErr.message, label: 'Analytics' };
+      }
+    }
+
+    const deterministicEarly = buildDeterministicCrmResponse({
+      plan,
+      pack: cachedPack,
+      message: parsed.value.message,
+      config,
+      servedProvider: config.provider,
+      servedModel: config.model,
+      fellBack: false,
+      started: startedEarly,
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      plannerStrategy,
+    });
+    if (deterministicEarly) {
+      return json(200, headers, {
+        success: true,
+        answer: deterministicEarly.answer,
+        confidence: deterministicEarly.confidence,
+        requiresHuman: deterministicEarly.requiresHuman,
+        warnings: deterministicEarly.warnings,
+        entities: deterministicEarly.entities,
+        proposedActions: deterministicEarly.proposedActions,
+        meta: {
+          ...publicConfigSummary(config),
+          provider: config.provider,
+          model: config.model,
+          fellBack: false,
+          latencyMs: Date.now() - startedEarly,
+          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+          plannerRoute: 'crm',
+          plannerTools: plan.tools,
+          plannerStrategy,
+          quotaSkipped: true,
+          ...deterministicEarly.metaExtra,
+          canAutoSend: false,
+          canDelete: false,
+          canCreateJob: false,
+          canMutate: false,
+        },
+      });
+    }
+  }
+
   const dayKey = localDayKey();
   const idempotencyKey = sha256(`${auth.userId}|crm_chat|${parsed.value.message}|${dayKey}|${Date.now()}`).slice(0, 40);
 
@@ -520,7 +1096,7 @@ exports.handler = async (event) => {
     requestLimit: config.dailyRequestLimit,
     tokenLimit: config.dailyTokenLimit,
     // Deterministic routes skip the planner provider call.
-    reserveTokens: deterministicPlan ? 1800 : 3200,
+    reserveTokens: plan ? 1800 : 3200,
     idempotencyKey,
     provider: config.provider,
     model: config.model,
@@ -546,8 +1122,6 @@ exports.handler = async (event) => {
   try {
     assertNoMutationTools([]);
 
-    let plan = deterministicPlan;
-    let plannerStrategy = deterministicPlan ? 'deterministic' : 'model';
     if (!plan) {
       const plannerResult = await generateWithProvider(config, {
         operation: 'crm_chat_plan',
@@ -576,6 +1150,14 @@ exports.handler = async (event) => {
         ),
         parsed.value.message
       );
+    }
+    if (!plan || (plan.route === 'crm' && !(plan.tools || []).length)) {
+      plan = inferUniversalCrmPlan(parsed.value.message);
+      plannerStrategy = 'deterministic';
+    }
+    plan = coerceCustomerPaymentQrPlan(parsed.value.message, plan);
+    if (isQuickPaymentQrGenerationRequest(parsed.value.message, extractQueryHints(parsed.value.message))) {
+      plannerStrategy = 'deterministic';
     }
 
     if (plan.route === 'conversation') {
@@ -615,11 +1197,56 @@ exports.handler = async (event) => {
       });
     }
 
-    const pack = await lookupCrmContext({
-      message: buildAllowlistedLookupQuery(plan, parsed.value.message),
-      focusCustomerId: parsed.value.focusCustomerId,
-      plannerTools: plan.tools,
+    const pack =
+      cachedPack ||
+      (await lookupCrmContext({
+        message: buildAllowlistedLookupQuery(plan, parsed.value.message),
+        focusCustomerId: parsed.value.focusCustomerId,
+        plannerTools: plan.tools,
+      }));
+
+    const deterministic = buildDeterministicCrmResponse({
+      plan,
+      pack,
+      message: parsed.value.message,
+      config,
+      servedProvider,
+      servedModel,
+      fellBack,
+      started,
+      usage,
+      plannerStrategy,
     });
+    if (deterministic) {
+      promptHash = deterministic.promptHash;
+      responseHash = sha256(deterministic.answer);
+      finalizeStatus = 'ok';
+      return json(200, headers, {
+        success: true,
+        answer: deterministic.answer,
+        confidence: deterministic.confidence,
+        requiresHuman: deterministic.requiresHuman,
+        warnings: deterministic.warnings,
+        entities: deterministic.entities,
+        proposedActions: deterministic.proposedActions,
+        meta: {
+          ...publicConfigSummary(config),
+          provider: servedProvider,
+          model: servedModel,
+          fellBack,
+          latencyMs: Date.now() - started,
+          usage,
+          plannerRoute: 'crm',
+          plannerTools: plan.tools,
+          plannerStrategy,
+          ...deterministic.metaExtra,
+          canAutoSend: false,
+          canDelete: false,
+          canCreateJob: false,
+          canMutate: false,
+        },
+      });
+    }
 
     const contextText = formatContextForPrompt(pack);
     const userPrompt = buildUserPrompt(parsed.value.message, contextText, parsed.value.history);
@@ -754,6 +1381,9 @@ module.exports._test = {
   filterProposedActionsForPlan,
   filterProposedActionsForRequest,
   deriveSafeUiActions,
+  deriveNavigationActions,
+  buildDeterministicCrmResponse,
+  buildDeterministicActionAnswer,
   mergeSafeUiActions,
   filterActionsForEntityState,
   normalizePendingActionAnswer,

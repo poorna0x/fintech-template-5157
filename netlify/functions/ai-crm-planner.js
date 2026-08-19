@@ -34,6 +34,8 @@ const ALLOWED_CRM_TOOLS = Object.freeze([
   'documents',
   'action_draft',
   'app_navigation',
+  'location_search',
+  'sql_query',
 ]);
 
 const CRM_PLANNER_SCHEMA = {
@@ -75,6 +77,8 @@ function plannerSystemInstruction() {
     'For a quotation, bill, tax invoice, AMC, or warranty draft for an existing customer, choose action_draft plus customer_search so the answer can propose open_document_draft.',
     'For view/edit/assign/reassign/complete/follow-up requests about an existing job, choose action_draft plus job_search.',
     'For WhatsApp/email draft or compose requests about an existing customer, choose action_draft plus customer_search. The CRM only opens the composer and never sends automatically.',
+    'Use location_search when the user pastes a Google Maps URL or coordinates and asks for nearby customers.',
+    'Use sql_query for complex analytics questions that cannot be answered by other tools — e.g. busiest day of week, month-by-month trend, service type breakdown, cross-table aggregations.',
     'directAnswer must be empty for route=crm.',
   ].join(' ');
 }
@@ -766,6 +770,21 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
+  // Location / nearby customer search — must come BEFORE field stats so "within X km" doesn't misroute
+  if (
+    /[/@]-?\d{1,3}\.\d+,-?\d{1,3}\.\d+/.test(text) ||
+    (/\b(?:nearby|near|closest|close to|within|around|radius)\b/i.test(lower) &&
+      /-?\d{2,3}\.\d{4,}/.test(text))
+  ) {
+    return {
+      route: 'crm',
+      tools: ['location_search'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
   if (detectTechnicianFieldStats(text)) {
     return {
       route: 'crm',
@@ -788,6 +807,26 @@ function inferDeterministicPlan(message, history = []) {
       directAnswer: '',
       strategy: 'deterministic',
     };
+  }
+
+  // Analytics questions needing SQL GROUP BY / aggregation — route to sql_query
+  if (
+    /\b(?:busiest|slowest|peak|off[\s-]?peak)\b/i.test(lower) &&
+    /\b(?:day|week|hour|month|time|period)\b/i.test(lower)
+  ) {
+    return { route: 'crm', tools: ['sql_query'], rewrittenQuery: text, directAnswer: '', strategy: 'deterministic' };
+  }
+  if (
+    /\bmonth[\s-]?(?:by[\s-]?month|wise|over month)\b|\bmonthly (?:trend|breakdown|revenue|jobs|report)\b/i.test(lower) ||
+    /\b(?:trend|compare month|monthly breakdown|by month|each month)\b/i.test(lower)
+  ) {
+    return { route: 'crm', tools: ['sql_query'], rewrittenQuery: text, directAnswer: '', strategy: 'deterministic' };
+  }
+  if (
+    /\b(?:service type|category|sub[\s-]?type)\b/i.test(lower) &&
+    /\b(?:breakdown|split|distribution|most|highest|busiest|popular|common|revenue|jobs|count)\b/i.test(lower)
+  ) {
+    return { route: 'crm', tools: ['sql_query'], rewrittenQuery: text, directAnswer: '', strategy: 'deterministic' };
   }
 
   // "find customer who visited / came / last service in [month]" — jobs query not customer lookup
@@ -1046,6 +1085,8 @@ function buildAllowlistedLookupQuery(plan, fallbackMessage) {
     technician_field_stats: 'technician km and worked hours',
     documents: 'documents',
     app_navigation: 'open app screen',
+    location_search: 'nearby customers location',
+    sql_query: 'analytics sql query',
   };
   const suffix = (plan?.tools || [])
     .map((tool) => markers[tool])
