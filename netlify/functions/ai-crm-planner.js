@@ -329,7 +329,9 @@ function inferDeterministicPlan(message, history = []) {
     !hasDirectJobReference &&
     !customerPaymentQr &&
     !/\bshow me (?:everything|all|details|their|full)\b/i.test(lower) &&
-    !/\bfor customer\b|\bcustomer c\d+\b/i.test(lower)
+    !/\bfor customer\b|\bcustomer c\d+\b/i.test(lower) &&
+    // "show me jobs from august" is a data query, not navigation
+    !/\b(?:from|in|during|for)\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i.test(lower)
   ) {
     return {
       route: 'crm',
@@ -788,7 +790,7 @@ function inferDeterministicPlan(message, history = []) {
 
   // "find customer who visited / came / last service in [month]" — jobs query not customer lookup
   if (
-    /\b(?:customer|client|who)\b/i.test(lower) &&
+    /\b(?:customer|client|who|which)\b/i.test(lower) &&
     /\b(?:visited|came|last (?:service|visit|job)|service (?:in|during)|was (?:here|serviced))\b/i.test(lower) &&
     /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|last month|this month|yesterday|today)\b/i.test(lower)
   ) {
