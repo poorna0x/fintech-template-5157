@@ -605,7 +605,7 @@ function inferDeterministicPlan(message, history = []) {
       /\bhighest\b|\btop\b|\bmost\b|\blowest\b|\bleast\b|\bcompare\b|\bvs\b|\bversus\b|\beach\b|\bper technician\b/.test(
         lower
       ) &&
-      /\bbill(?:ed|ing)?\b|\brevenue\b|\bsales\b|\bearn(?:ed|ings)?\b/.test(lower)) ||
+      /\bbill(?:ed|ing)?\b|\brevenue\b|\bsales\b|\bearn(?:ed|ings)?\b|\bmost jobs\b|\bmost work\b|\bmost kaam\b/.test(lower)) ||
     (detailFollowUp &&
       /\btechnicians?\b|\btechs?\b|\btechcnians?\b|\btehcnc?ians?\b/.test(combined) &&
       /\bhighest\b|\btop\b|\bmost\b/.test(combined) &&
@@ -623,12 +623,13 @@ function inferDeterministicPlan(message, history = []) {
   }
 
   if (
-    /\b(customers?|clients?)\b/.test(lower) &&
-    /\bhighest\b|\btop\b|\bmost\b|\bbiggest\b|\blowest\b|\bleast\b|\bsmallest\b|\btop\s+\d+\b/.test(
-      lower
-    ) &&
-    (/\bpaid\b|\bspent\b|\bbill(?:ed|ing)?\b|\bvalue\b|\brevenue\b/.test(lower) ||
-      /\btop\s+\d*\s*customers?\b|\bbest customers?\b/.test(lower))
+    /\b(?:who is (?:our )?best customer|top spenders?\b|most loyal customers?\b|biggest customers?\b|best (?:paying )?customer|most valuable customer|highest spending customer)\b/i.test(lower) ||
+    (
+      /\b(customers?|clients?)\b/.test(lower) &&
+      /\bhighest\b|\btop\b|\bmost\b|\bbiggest\b|\blowest\b|\bleast\b|\bsmallest\b|\btop\s+\d+\b/.test(lower) &&
+      (/\bpaid\b|\bspent\b|\bbill(?:ed|ing)?\b|\bvalue\b|\brevenue\b|\bspend(?:ers?)?\b|\bloyal\b/.test(lower) ||
+        /\btop\s+\d*\s*customers?\b|\bbest customers?\b/.test(lower))
+    )
   ) {
     return {
       route: 'crm',
@@ -654,7 +655,7 @@ function inferDeterministicPlan(message, history = []) {
   }
 
   if (
-    /\bpending payments?\b|\bpayments? pending\b|\bpayment dues?\b|\bpayments?\s+reminders?\b|\bpayments?[\s-]+due\b|\boverdue\b|\bwho (?:owes|owe)\b|\bcustomers? (?:owes|owe)\b|\bowe us\b|\boutstanding (?:amount|payments?)\b/.test(
+    /\bpending payments?\b|\bpayments? pending\b|\bpayment dues?\b|\bpayments?\s+reminders?\b|\bpayments?[\s-]+due\b|\boverdue\b|\bwho (?:owes|owe)\b|\bcustomers? (?:owes|owe)\b|\bowe us\b|\boutstanding (?:amount|payments?)\b|\bwho has not paid\b|\bnot (?:yet )?paid\b|\blist customers with dues\b|\bstill outstanding\b|\bhow much is (?:still )?(?:due|owed)\b|\bpaise\b|\bwhen will we get paid\b|\bunpaid invoices?\b/.test(
       lower
     )
   ) {
@@ -667,7 +668,7 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
-  if (/\bexpenses?\b|\bspend\b|\bspent\b|\bspending\b|\bfuel costs?\b|\brent costs?\b/.test(lower)) {
+  if (/\bexpenses?\b|\bspend\b|\bspent\b|\bspending\b|\bfuel costs?\b|\brent costs?\b|\boutgoing\b|\boverheads?\b|\bsalary\b|\bstaff costs?\b|\bhow much did we pay (?:staff|team|technicians?|employees?)\b|\bkharcha\b/.test(lower)) {
     const hasPeriod =
       /\btoday\b|\byesterday\b|\btomorrow\b|\bthis (?:week|month)\b|\blast (?:week|month)\b|\ball[\s-]?time\b|\b20\d{2}(?:-\d{2}-\d{2})?\b/i.test(
         text
@@ -710,7 +711,7 @@ function inferDeterministicPlan(message, history = []) {
   }
 
   if (
-    /\b(?:status update|quick status|daily report|situation report|ops update)\b|\bgive me (?:a )?(?:quick )?(?:status|update|summary)\b/i.test(
+    /\b(?:status update|quick status|daily report|situation report|ops update|daily summary|quick update|any updates?|give me (?:a )?(?:full|quick)? ?(?:status|update|summary|report)|what(?:'s| is) (?:new|happening) today|what happened today)\b/i.test(
       lower
     )
   ) {
@@ -738,7 +739,7 @@ function inferDeterministicPlan(message, history = []) {
   }
 
   if (
-    /\b(?:analytics?|insights?|dashboard numbers?|kpi|kpis|performance report|business snapshot|today'?s? (?:stats?|numbers?|report|summary)|show me (?:today'?s? )?stats?|daily stats?)\b/i.test(
+    /\b(?:analytics?|insights?|dashboard numbers?|kpi|kpis|performance report|business snapshot|today'?s? (?:stats?|numbers?|report|summary)|show me (?:today'?s? )?stats?|daily stats?|give me a full report|full report|everything today|show me everything today)\b/i.test(
       lower
     ) &&
     !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
@@ -818,7 +819,7 @@ function inferDeterministicPlan(message, history = []) {
   }
 
   if (
-    /\brevenue\b|\bcollect(?:ed|ion|ions)?\b|\bincome\b|\bturnover\b|\bearn(?:ed|ings|ing)?\b|\bproject\b|\bforecast\b|\bbusiness (?:did|happened|going|is)\b|\bbusiness today\b|\bhow(?:'s| is) business\b|\bbilling happened\b|\bmonth[\s-]+to[\s-]+date sales\b|\bdoing better\b|\bdoing worse\b|\bat this pace\b|\bwhere will this month end\b/.test(
+    /\brevenue\b|\bcollect(?:ed|ion|ions)?\b|\bincome\b|\bturnover\b|\bearn(?:ed|ings|ing)?\b|\bproject\b|\bforecast\b|\bbusiness (?:did|happened|going|is)\b|\bbusiness today\b|\bhow(?:'s| is) business\b|\bbilling happened\b|\bmonth[\s-]+to[\s-]+date sales\b|\bdoing better\b|\bdoing worse\b|\bat this pace\b|\bwhere will this month end\b|\btotal invoiced\b|\bbilled so far\b|\bmoney came in\b|\bhow much (?:money|cash) (?:came in|received|did we get)\b|\bkamai\b/.test(
       lower
     ) &&
     !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
@@ -855,8 +856,9 @@ function inferDeterministicPlan(message, history = []) {
   if (
     (
       /\bwhat(?:'s| is) (?:going on|happening)\b|\bright now\b|\bat the moment\b|\blive status\b|\bfield status\b|\boperations snapshot\b|\bfloor status\b|\banyone waiting\b|\bwho(?:'s| is) waiting\b|\bwaiting (?:for|jobs?|customers?)\b|\bwhere are (?:the )?technicians?\b|\btechnicians? (?:locations?|whereabouts)\b|\bunassigned jobs?\b|\bjobs? waiting\b|\bwhat are (?:the )?techs?\b|\bwhat are technicians\b/i.test(lower) ||
-      // Hindi live-ops
-      /\bkya hua\b|\bkya ho raha\b|\bfield mein\b|\baaj field\b|\bkya chal raha\b/i.test(lower)
+      // Hindi live-ops — check both normalized and original
+      /\bkya hua\b|\bkya ho raha\b|\bfield mein\b|\baaj field\b|\bkya chal raha\b/i.test(lower) ||
+      /\bkya hua\b|\bkya ho raha\b|\bfield mein\b|\baaj field\b|\bkya chal raha\b/i.test(text.toLowerCase())
     ) &&
     !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
   ) {

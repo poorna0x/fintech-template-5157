@@ -35,22 +35,24 @@ const LIVE_OPS_LOCATION_STALE_MINUTES = 45;
 
 function normalizeCrmQueryText(value) {
   const replacements = {
-    jbos: 'jobs',
-    complted: 'completed',
-    completd: 'completed',
-    tody: 'today',
-    pendng: 'pending',
-    paymnts: 'payments',
-    remidners: 'reminders',
-    remidner: 'reminder',
-    tehcnician: 'technician',
-    tehcncian: 'technician',
-    billng: 'billing',
-    mnth: 'month',
-    custmer: 'customer',
-    detals: 'details',
-    expiary: 'expiry',
-    revneue: 'revenue',
+    // typos
+    jbos: 'jobs', complted: 'completed', completd: 'completed', tody: 'today',
+    pendng: 'pending', paymnts: 'payments', remidners: 'reminders', remidner: 'reminder',
+    tehcnician: 'technician', tehcncian: 'technician', billng: 'billing', mnth: 'month',
+    custmer: 'customer', detals: 'details', expiary: 'expiry', revneue: 'revenue',
+    // Hindi/Hinglish → English CRM keywords
+    aaj: 'today', kal: 'yesterday', abhi: 'now', abhi: 'now',
+    kitne: 'how many', kitna: 'how much', kya: 'what', kab: 'when',
+    kaam: 'jobs', kharcha: 'expenses', kamai: 'revenue', aaya: 'received',
+    aaye: 'received', hua: 'happened', hue: 'done', ho: 'is', raha: 'going',
+    paise: 'payments', paisa: 'payment', milenge: 'pending',
+    pending: 'pending', kiska: 'whose', kaun: 'who', kaunsa: 'which',
+    sabse: 'most', zyada: 'most', kam: 'less', mahine: 'month',
+    mahina: 'month', hafte: 'week', din: 'day', saal: 'year',
+    technician: 'technician', field: 'field', mein: 'in', hai: 'is',
+    karta: 'does', karte: 'do', chala: 'drove', chale: 'drove',
+    gaye: 'went', aaya: 'came', aa: 'come', nahi: 'not', nahin: 'not',
+    paid: 'paid', unpaid: 'unpaid',
   };
   return String(value || '').replace(/\b[\p{L}]+\b/gu, (word) => {
     return replacements[word.toLowerCase()] || word;
@@ -167,6 +169,7 @@ const NAME_STOP_WORDS = new Set(
     'km', 'kms', 'kilometer', 'kilometre', 'kilometers', 'kilometres', 'drove', 'drive', 'driving', 'travelled', 'traveled', 'travel', 'mileage', 'distance',
     'worked', 'shift', 'field', 'hours', 'hour', 'long',
     'the', 'their', 'them', 'these', 'this', 'time', 'today', 'tomorrow', 'total', 'turnover',
+    'ticket', 'tickets', 'calls', 'call', 'outgoing', 'incoming', 'collections', 'collection',
     'unpaid', 'update', 'upcoming', 'us', 'visit', 'visits', 'want', 'was', 'water', 'week', 'were',
     'what', 'when', 'which', 'who', 'will', 'with', 'work', 'year', 'yesterday', 'you', 'your',
     // Sentence glue around a name ("customer having shety") must never be
@@ -482,11 +485,11 @@ function detectTechnicianExpenseRanking(message) {
 function detectTechnicianFieldStats(message) {
   const text = normalizeCrmQueryText(message).toLowerCase();
   const mentionsTravel =
-    /\b(?:km|kms|kilomet(?:er|re)s?|drove|drive|driving|travel(?:led|ed)?|distance|mileage)\b/.test(
+    /\b(?:km|kms|kilomet(?:er|re)s?|drove|drive|driving|travel(?:led|ed)?|distance|mileage|chala|chale)\b/.test(
       text
     );
   const mentionsHours =
-    /\b(?:hours? worked|worked hours|how long (?:did|has|have|was)|time (?:on|in) (?:the )?field|on field)\b/.test(
+    /\b(?:hours? worked|worked hours|how long (?:did|has|have|was)|time (?:on|in) (?:the )?field|on field|who worked (?:the )?most hours?|how (?:long|many hours?) (?:did )?(?:technicians?|techs?|team|guys?) work|field team productivity|productivity (?:of|this|last|for) (?:the )?(?:team|technicians?|month|week|today))\b/.test(
       text
     ) ||
     (/\bhow many hours\b/.test(text) &&
@@ -507,14 +510,15 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   const scopes = new Set();
   if (
     isFollowUp ||
-    has(/\bjobs?\b|\bservices?\b|\bvisits?\b|\bschedule[ds]?\b|\bcomplaints?\b|\bcalls?\b/)
+    has(/\bjobs?\b|\bservices?\b|\bvisits?\b|\bschedule[ds]?\b|\bcomplaints?\b|\bcalls?\b|\btickets?\b|\bservice calls?\b|\bwork orders?\b|\bkaam\b/)
   )
     scopes.add('jobs');
   if (isFollowUp || has(/\breminder|\bdue\b|\btask/)) scopes.add('reminders');
-  if (has(/\bpayment|\bpending amount|\boutstanding|\bbalance|\bcollect|\bunpaid|\bdues?\b/))
+  if (has(/\bpayment|\bpending amount|\boutstanding|\bbalance|\bcollect|\bunpaid|\bnot (?:yet )?paid\b|\bwho (?:has not|hasn't) paid\b|\bhow much (?:is )?(?:due|owed|outstanding)\b|\bpaise\b|\bmilenge\b/) ||
+    (has(/\bdues?\b/) && !has(/\breminder|\btask|\bschedule/)))
     scopes.add('payments');
   if (has(/\bamc\b|\bexpir|\brenew/)) scopes.add('amc');
-  if (has(/\bexpenses?\b|\bspend\b|\bspent\b|\bspending\b|\bfuel costs?\b|\brent costs?\b/))
+  if (has(/\bexpenses?\b|\bspend\b|\bspent\b|\bspending\b|\bfuel costs?\b|\brent costs?\b|\boutgoing\b|\boverheads?\b|\bsalary\b|\bstaff costs?\b|\bhow much (?:did )?we pay(?: (?:staff|team|technicians?|employees?))?\b|\bkharcha\b/))
     scopes.add('expenses');
   if (
     has(
@@ -527,7 +531,7 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   if (
     !wantsCustomerRanking &&
     !wantsTechnicianRanking &&
-    has(/\brevenue|\bcollect|\bearn|\bincome|\bturnover|\bsales\b|\bbusiness\b|\bdid we make\b/)
+    has(/\brevenue|\bcollect|\bearn|\bincome|\bturnover|\bsales\b|\bbusiness\b|\bdid we make\b|\bhow much (?:money|cash) (?:came in|received|got)\b|\btotal invoiced\b|\bbilled so far\b|\binvoiced\b|\bmoney came in\b|\bcash (?:in|received)\b|\bkamai\b/)
   )
     scopes.add('revenue');
   if (wantsCustomerRanking) scopes.add('customer_value_ranking');
@@ -540,8 +544,9 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     has(
       /\bwhat(?:'s| is) (?:going on|happening)\b|\bright now\b|\bat the moment\b|\blive status\b|\bfield status\b|\boperations snapshot\b|\bfloor status\b|\banyone waiting\b|\bwho(?:'s| is) waiting\b|\bwaiting (?:for|jobs?|customers?)\b|\bwhere are (?:the )?technicians?\b|\btechnicians? (?:locations?|whereabouts)\b|\bunassigned jobs?\b|\bjobs? waiting\b|\bwhat are (?:the )?techs?\b|\bwhat are technicians\b/
     ) ||
-    // Hindi live-ops phrases
-    has(/\bkya hua\b|\bkya ho raha\b|\bfield mein\b|\baaj field\b|\bkya chal raha\b/)
+    // Hindi live-ops phrases — check original message too (before normalization)
+    has(/\bkya hua\b|\bkya ho raha\b|\bfield mein\b|\baaj field\b|\bkya chal raha\b/) ||
+    /\bkya hua\b|\bkya ho raha\b|\bfield mein\b|\baaj field\b|\bkya chal raha\b/i.test(String(message || '').toLowerCase())
   )
     scopes.add('live_ops');
 
