@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { prefetchJobReviewInvite } from '@/lib/jobReviews';
 import { CheckCircle, Edit, Images, Loader2, Mail, ShoppingCart, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -157,6 +158,17 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const [sparePartsCost, setSparePartsCost] = useState<number>(0);
   const [profitRevealed, setProfitRevealed] = useState(false);
   const [sendMessageConfirmOpen, setSendMessageConfirmOpen] = useState(false);
+
+  // Pre-warm the review invite so the Send WhatsApp dialog opens instantly
+  const prefetchedRef = useRef(false);
+  useEffect(() => {
+    if (prefetchedRef.current) return;
+    const jobId = String((job as any)?.id || '').trim();
+    if (!jobId) return;
+    prefetchedRef.current = true;
+    const techId = String((job as any)?.completed_by || (job as any)?.assigned_technician_id || '').trim() || undefined;
+    prefetchJobReviewInvite(jobId, techId);
+  }, [(job as any)?.id]);
 
   useEffect(() => {
     if (!profitRevealed) return;
@@ -826,6 +838,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           <Button
             size="sm"
             variant="outline"
+            onMouseEnter={() => {
+              const jobId = String((job as any)?.id || '').trim();
+              if (jobId) prefetchJobReviewInvite(jobId, String((job as any)?.completed_by || (job as any)?.assigned_technician_id || '').trim() || undefined);
+            }}
             onClick={() => {
               if (dontSendMessage) {
                 setSendMessageConfirmOpen(true);

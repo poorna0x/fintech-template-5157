@@ -21,6 +21,20 @@ export type JobReviewInvite = {
   reason?: string;
 };
 
+/** In-memory cache: jobId → invite (valid for the session; refreshed if older than 10 min) */
+const _reviewInviteCache = new Map<string, { invite: JobReviewInvite; ts: number }>();
+const INVITE_CACHE_TTL_MS = 10 * 60 * 1000;
+
+/** Pre-mint the review invite for a job in the background so the dialog opens instantly. */
+export function prefetchJobReviewInvite(jobId: string, technicianId?: string | null): void {
+  if (!jobId) return;
+  const cached = _reviewInviteCache.get(jobId);
+  if (cached && Date.now() - cached.ts < INVITE_CACHE_TTL_MS) return;
+  void createJobReviewInvite({ jobId, technicianId }).then((invite) => {
+    if (invite?.url) _reviewInviteCache.set(jobId, { invite, ts: Date.now() });
+  });
+}
+
 export function jobHasSkipReview(job: Record<string, unknown> | null | undefined): boolean {
   if (!job) return false;
   const raw = job.requirements ?? (job as { Requirements?: unknown }).Requirements;
@@ -380,9 +394,17 @@ function parseInvitePayload(data: unknown): JobReviewInvite | null {
 export async function createJobReviewInvite(opts: {
   jobId: string;
   technicianId?: string | null;
+  skipCache?: boolean;
 }): Promise<JobReviewInvite | null> {
   const jobId = String(opts.jobId || '').trim();
   if (!jobId) return null;
+
+  // Return cached invite immediately (avoids cold-start latency when dialog opens)
+  if (!opts.skipCache) {
+    const cached = _reviewInviteCache.get(jobId);
+    if (cached && Date.now() - cached.ts < INVITE_CACHE_TTL_MS) return cached.invite;
+  }
+
   const technicianId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     String(opts.technicianId || '').trim()
   )
@@ -390,10 +412,16 @@ export async function createJobReviewInvite(opts: {
     : null;
 
   const fromFn = await mintInviteViaFunction(jobId, technicianId);
-  if (fromFn?.url || fromFn?.alreadySubmitted) return fromFn;
+  if (fromFn?.url || fromFn?.alreadySubmitted) {
+    _reviewInviteCache.set(jobId, { invite: fromFn, ts: Date.now() });
+    return fromFn;
+  }
 
   const fromRpc = await mintInviteViaBrowserRpc(jobId, technicianId);
-  if (fromRpc?.url || fromRpc?.alreadySubmitted) return fromRpc;
+  if (fromRpc?.url || fromRpc?.alreadySubmitted) {
+    _reviewInviteCache.set(jobId, { invite: fromRpc, ts: Date.now() });
+    return fromRpc;
+  }
 
   return fromFn || fromRpc;
 }
