@@ -1,9 +1,50 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import {
+  isNumericZeroValue,
+  stripLeadingZerosFromNumericInput,
+} from "@/lib/numericInput"
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, value, onChange, ...props }, ref) => {
+    const isNumber = type === "number"
+    const isControlled = value !== undefined
+    const [showEmptyInsteadOfZero, setShowEmptyInsteadOfZero] = React.useState(false)
+
+    React.useEffect(() => {
+      if (!isNumber || !isControlled) return
+      if (value !== "" && !isNumericZeroValue(value)) {
+        setShowEmptyInsteadOfZero(false)
+      }
+    }, [isNumber, isControlled, value])
+
+    const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (!isNumber) {
+        onChange?.(event)
+        return
+      }
+      const raw = event.target.value
+      if (raw === "") {
+        setShowEmptyInsteadOfZero(true)
+        onChange?.(event)
+        return
+      }
+      setShowEmptyInsteadOfZero(false)
+      const cleaned = stripLeadingZerosFromNumericInput(raw)
+      if (cleaned !== raw) {
+        event.target.value = cleaned
+      }
+      onChange?.(event)
+    }
+
+    const resolvedValue = (() => {
+      if (!isNumber || !isControlled) return value
+      if (showEmptyInsteadOfZero && isNumericZeroValue(value)) return ""
+      if (typeof value === "string") return stripLeadingZerosFromNumericInput(value)
+      return value
+    })()
+
     return (
       <input
         type={type}
@@ -15,6 +56,8 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
         )}
         ref={ref}
         {...props}
+        {...(isControlled ? { value: resolvedValue } : {})}
+        onChange={handleChange}
       />
     )
   }

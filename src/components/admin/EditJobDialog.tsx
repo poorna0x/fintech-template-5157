@@ -66,7 +66,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
     scheduledTimeCustom: '',
     lead_source: '',
     lead_source_custom: '',
-    lead_cost: '0',
+    lead_cost: '',
     cost_agreed: ''
   });
 

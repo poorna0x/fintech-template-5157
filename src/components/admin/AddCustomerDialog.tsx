@@ -91,7 +91,7 @@ const createDefaultStep5JobData = () => ({
   description: '',
   lead_source: '',
   lead_source_custom: '',
-  lead_cost: '0',
+  lead_cost: '',
   cost_agreed: '',
   priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
   assigned_technician_id: '',
@@ -2218,7 +2218,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                             type="number"
                             min="0"
                             step="0.01"
-                            value={step5JobData.lead_cost || '0'}
+                            value={step5JobData.lead_cost}
                             onChange={(e) => setStep5JobData(prev => ({ ...prev, lead_cost: e.target.value }))}
                             placeholder="Enter lead cost"
                             disabled={!step5JobData.lead_source}

@@ -122,7 +122,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     cost_agreed: '',
     lead_source: '',
     lead_source_custom: '',
-    lead_cost: '0',
+    lead_cost: '',
     photos: [],
     require_otp: false
   });
@@ -213,7 +213,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       cost_agreed: '',
       lead_source: '',
       lead_source_custom: '',
-      lead_cost: '0',
+      lead_cost: '',
       photos: [],
       require_otp: false
     });
