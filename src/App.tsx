@@ -61,7 +61,6 @@ const Warranty = lazy(() => import("./pages/Warranty"));
 const PublicPdfAuthenticityPage = lazy(() => import("./pages/PublicPdfAuthenticityPage"));
 const PublicJobReviewPage = lazy(() => import("./pages/PublicJobReviewPage"));
 const PayUpi = lazy(() => import("./pages/PayUpi"));
-const WhatsAppTest = lazy(() => import("./pages/WhatsAppTest"));
 const CallDialPage = lazy(() => import("./pages/CallDialPage"));
 
 /** Plain bounce — used for in-session Suspense (Settings, previews, tech dashboard, …). */
@@ -248,8 +247,6 @@ const App = () => (
                   <Route path="/pay-upi" element={<PayUpi />} />
                   <Route path="/call" element={<CallDialPage />} />
 
-                  {/* WhatsApp Cloud API POC (text + PDF) */}
-                  <Route path="/whatsapp-test" element={<WhatsAppTest />} />
                   
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
