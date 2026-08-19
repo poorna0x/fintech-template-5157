@@ -383,11 +383,16 @@ export function resolveDefaultLeadCostFromCatalog(
 
   if (source) {
     const forSource = catalog.rules.filter((r) => r.lead_source_id === source.id);
-    const ranked = [...forSource].sort((a, b) => {
-      const aSpecific =
-        subType && a.service_sub_type_id === subType.id ? 0 : a.service_sub_type_id ? 2 : 1;
-      const bSpecific =
-        subType && b.service_sub_type_id === subType.id ? 0 : b.service_sub_type_id ? 2 : 1;
+    // Only catch-all (null subtype) rules, or a rule for this exact subtype.
+    // Do not fall through to Installation/Reinstallation when the job is Service.
+    const matching = forSource.filter((r) => {
+      if (!r.service_sub_type_id) return true;
+      if (!subType) return false;
+      return r.service_sub_type_id === subType.id;
+    });
+    const ranked = [...matching].sort((a, b) => {
+      const aSpecific = a.service_sub_type_id ? 0 : 1;
+      const bSpecific = b.service_sub_type_id ? 0 : 1;
       if (aSpecific !== bSpecific) return aSpecific - bSpecific;
       return b.priority - a.priority;
     });
