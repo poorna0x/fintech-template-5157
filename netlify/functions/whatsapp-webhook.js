@@ -8,6 +8,7 @@ const {
   getServiceSupabase,
   getWhatsAppCredentials,
   verifyWhatsAppSignature,
+  isWhatsAppMasterEnabled,
   insertWhatsAppMessage,
   updateWhatsAppMessageStatus,
   findCustomerIdByPhone,
@@ -264,6 +265,17 @@ exports.handler = async (event) => {
     }
     if (sig.skipped) {
       console.warn('[whatsapp-webhook] HMAC skipped (local/dev only)');
+    }
+
+    // Master off: ACK Meta (avoid retries) but do not persist, download media, or send.
+    const masterOn = await isWhatsAppMasterEnabled(db);
+    if (!masterOn) {
+      console.log('[whatsapp-webhook] skipped — Cloud API disabled in settings');
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ success: true, skipped: 'disabled' }),
+      };
     }
 
     let payload = {};
