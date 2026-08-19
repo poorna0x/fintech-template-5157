@@ -93,13 +93,13 @@ const Footer = () => {
         <div className="mt-16 pt-8 border-t border-border relative z-0">
           {/* Mobile Policy Links - Keep as is */}
           <div className="flex justify-center md:hidden mb-8">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm w-full max-w-sm">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm w-full max-w-sm justify-items-center">
               <Link to="/privacy-policy" className="text-muted-foreground hover:text-foreground transition-colors text-center">Privacy Policy</Link>
-              <Link to="/privacy-request" className="text-muted-foreground hover:text-foreground transition-colors text-center">Privacy request</Link>
+              <Link to="/privacy-request" className="text-muted-foreground hover:text-foreground transition-colors text-center">Privacy Request</Link>
               <Link to="/terms-of-service" className="text-muted-foreground hover:text-foreground transition-colors text-center">Terms of Service</Link>
               <Link to="/refund-policy" className="text-muted-foreground hover:text-foreground transition-colors text-center">Refund Policy</Link>
               <Link to="/cookie-policy" className="text-muted-foreground hover:text-foreground transition-colors text-center">Cookie Policy</Link>
-              <Link to="/disclaimer" className="text-muted-foreground hover:text-foreground transition-colors text-center col-span-2">Disclaimer</Link>
+              <Link to="/disclaimer" className="text-muted-foreground hover:text-foreground transition-colors text-center">Disclaimer</Link>
             </div>
           </div>
           
@@ -110,7 +110,7 @@ const Footer = () => {
             </div>
             <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-2">
               <Link to="/privacy-policy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
-              <Link to="/privacy-request" className="hover:text-foreground transition-colors">Privacy request</Link>
+              <Link to="/privacy-request" className="hover:text-foreground transition-colors">Privacy Request</Link>
               <Link to="/terms-of-service" className="hover:text-foreground transition-colors">Terms of Service</Link>
               <Link to="/refund-policy" className="hover:text-foreground transition-colors">Refund Policy</Link>
               <Link to="/cookie-policy" className="hover:text-foreground transition-colors">Cookie Policy</Link>
