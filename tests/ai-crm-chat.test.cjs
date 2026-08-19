@@ -41,6 +41,7 @@ const {
   extractLocationFromMessage,
   formatRadiusLabel,
   formatDistanceLabel,
+  formatSqlRows,
 } = require('../netlify/functions/ai-crm-lookup');
 const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
 const {
@@ -1249,10 +1250,23 @@ function testNearbyRadiusParsesMetres() {
   assert.equal(formatDistanceLabel(0), '< 1 m');
   assert.equal(formatDistanceLabel(0.32), '320 m');
   const loc = extractLocationFromMessage(
-    'https://www.google.com/maps/place/12.7706968,77.75480929999999 find me 50m surrounding'
+    'https://www.google.com/maps/place/12.7706968,77.75480929999999 fine me 50m surrounding'
   );
   assert.equal(loc.lat, 12.7706968);
   assert.equal(loc.radiusKm, 0.05);
+  const days = formatSqlRows(
+    [
+      { day_of_week: 0, job_count: 336 },
+      { day_of_week: 6, job_count: 308 },
+    ],
+    'Analytics result'
+  );
+  assert.match(days, /Sunday/);
+  assert.match(days, /Saturday/);
+  assert.match(days, /336 jobs/);
+  const hours = formatSqlRows([{ hour_ist: 9, job_count: 299 }], 'Analytics result');
+  assert.match(hours, /9 AM/);
+  assert.deepEqual(inferDeterministicPlan('shortest job completed time').tools, ['sql_query']);
 }
 
 async function testMockCrmChat() {

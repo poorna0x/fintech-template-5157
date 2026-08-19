@@ -1013,7 +1013,7 @@ exports.handler = async (event) => {
       plannerTools: plan.tools,
     });
     // Universal SQL query: generate SQL via AI then execute it read-only
-    if (plan.tools.includes('sql_query') && cachedPack.stats?.sqlQueryAvailable) {
+    if (plan.tools.includes('sql_query') && cachedPack.stats?.sqlQueryAvailable && !cachedPack.stats.sqlQueryResult) {
       try {
         const sqlGen = await generateWithProvider(config, {
           operation: 'crm_chat',
@@ -1021,7 +1021,12 @@ exports.handler = async (event) => {
           systemInstruction: [
             'You are a PostgreSQL expert. The user asked a CRM analytics question.',
             'Write ONE safe read-only SELECT query to answer it. Return ONLY raw SQL — no markdown, no explanation.',
-            'Rules: SELECT only. LIMIT 100 max. Use (col AT TIME ZONE \'Asia/Kolkata\') for IST times.',
+            'Rules: SELECT only. Never SELECT *. LIMIT 20. Use (col AT TIME ZONE \'Asia/Kolkata\') for IST times.',
+            'Do not filter to today unless the user said today.',
+            'For busiest day/hour return the full ranking (all 7 days or hours with jobs), not a single row.',
+            'For day-of-week include TO_CHAR(..., \'FMDay\') AS day_name and COUNT(*) AS job_count.',
+            'For hours include EXTRACT(HOUR ...) AS hour_ist and COUNT(*) AS job_count.',
+            'For shortest/longest job duration: COMPLETED jobs only, start_time present, duration_minutes = EXTRACT(EPOCH FROM (COALESCE(end_time, completed_at) - start_time))/60, duration_minutes BETWEEN 1 AND 1440. Return job_number, duration_minutes, scheduled_date only.',
             'Schema:\n' + AI_READONLY_SCHEMA,
           ].join('\n'),
           messages: [{ role: 'user', text: parsed.value.message }],

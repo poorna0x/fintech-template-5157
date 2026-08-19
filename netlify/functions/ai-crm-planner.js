@@ -828,6 +828,12 @@ function inferDeterministicPlan(message, history = []) {
   ) {
     return { route: 'crm', tools: ['sql_query'], rewrittenQuery: text, directAnswer: '', strategy: 'deterministic' };
   }
+  if (
+    /\b(?:shortest|longest|fastest|slowest)\b/i.test(lower) &&
+    /\b(?:job|visit|completion|completed|duration|time)\b/i.test(lower)
+  ) {
+    return { route: 'crm', tools: ['sql_query'], rewrittenQuery: text, directAnswer: '', strategy: 'deterministic' };
+  }
 
   // "find customer who visited / came / last service in [month]" — jobs query not customer lookup
   if (
