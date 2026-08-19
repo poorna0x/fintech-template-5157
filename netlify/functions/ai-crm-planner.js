@@ -330,8 +330,9 @@ function inferDeterministicPlan(message, history = []) {
     !customerPaymentQr &&
     !/\bshow me (?:everything|all|details|their|full)\b/i.test(lower) &&
     !/\bfor customer\b|\bcustomer c\d+\b/i.test(lower) &&
-    // "show me jobs from august" is a data query, not navigation
-    !/\b(?:from|in|during|for)\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i.test(lower)
+    // "show me jobs from august" / "show me pending jobs" are data queries, not navigation
+    !/\b(?:from|in|during|for)\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i.test(lower) &&
+    !/\bshow me\s+(?:pending|completed?|ongoing|open|cancelled?|assigned|unassigned|in[\s-]?progress|follow[\s-]?up|en[\s-]?route)\b/i.test(lower)
   ) {
     return {
       route: 'crm',
@@ -372,7 +373,7 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
   if (
-    /\bbook(?:ing)?\s+(?:a\s+)?(?:service\s+)?(?:visit|appointment)\b/i.test(lower) &&
+    /\bbook(?:ing)?\s+(?:a\s+)?(?:service|visit|appointment|job)\b/i.test(lower) &&
     hasSearchableTarget(directHints, null) &&
     !/\ball customers?\b/.test(lower)
   ) {
@@ -627,7 +628,7 @@ function inferDeterministicPlan(message, history = []) {
       lower
     ) &&
     (/\bpaid\b|\bspent\b|\bbill(?:ed|ing)?\b|\bvalue\b|\brevenue\b/.test(lower) ||
-      /\btop\s+\d+\s+customers?\b/.test(lower))
+      /\btop\s+\d*\s*customers?\b|\bbest customers?\b/.test(lower))
   ) {
     return {
       route: 'crm',
@@ -737,7 +738,7 @@ function inferDeterministicPlan(message, history = []) {
   }
 
   if (
-    /\b(?:analytics?|insights?|dashboard numbers?|kpi|kpis|performance report|business snapshot)\b/i.test(
+    /\b(?:analytics?|insights?|dashboard numbers?|kpi|kpis|performance report|business snapshot|today'?s? (?:stats?|numbers?|report|summary)|show me (?:today'?s? )?stats?|daily stats?)\b/i.test(
       lower
     ) &&
     !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
@@ -790,8 +791,8 @@ function inferDeterministicPlan(message, history = []) {
 
   // "find customer who visited / came / last service in [month]" — jobs query not customer lookup
   if (
-    /\b(?:customer|client|who|which)\b/i.test(lower) &&
-    /\b(?:visited|came|last (?:service|visit|job)|service (?:in|during)|was (?:here|serviced))\b/i.test(lower) &&
+    /\b(?:customer|client|clients?|who|which)\b/i.test(lower) &&
+    /\b(?:visited|came|last (?:service|visit|job)|service(?:d)? (?:in|during)?|was (?:here|serviced)|serviced)\b/i.test(lower) &&
     /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|last month|this month|yesterday|today)\b/i.test(lower)
   ) {
     return {
