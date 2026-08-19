@@ -40,6 +40,7 @@ import {
   X,
   UserPlus,
   ArrowRight,
+  ArrowLeft,
   KeyRound,
   Bell,
 } from 'lucide-react';
@@ -217,6 +218,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
       selectedCustomerForPhotos={selectedCustomerForPhotos}
       onEditCustomer={a.handleEditCustomer}
       onNewJob={a.handleNewJob}
+      onNewFollowUp={(customer) => a.handleNewJob(customer, { asFollowUp: true })}
       onViewPhotos={a.handleViewPhotos}
       onGenerateBill={a.handleGenerateBill}
       onGenerateQuotation={a.handleGenerateQuotation}
@@ -1172,6 +1174,12 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                                 ) : null;
                               })()}
                             </>
+                          )}
+                          {job.status === 'EN_ROUTE' && (
+                            <DropdownMenuItem onClick={() => a.handleJobStatusUpdate(job.id, 'ASSIGNED')}>
+                              <ArrowLeft className="mr-2 h-4 w-4" />
+                              Mark as Assigned (not en route)
+                            </DropdownMenuItem>
                           )}
                           {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'EN_ROUTE' || job.status === 'IN_PROGRESS') && (
                             <>

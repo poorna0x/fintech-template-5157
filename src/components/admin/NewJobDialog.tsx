@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
+import { FollowUpScheduleFields, type FollowUpScheduleValue } from '@/components/admin/FollowUpScheduleFields';
+import { Checkbox } from '@/components/ui/checkbox';
 import { MapPin, Upload } from 'lucide-react';
 import { Customer } from '@/types';
 import { toast } from 'sonner';
@@ -42,6 +44,9 @@ import {
   getDefaultNewJobScheduledDate,
   getIstCalendarDate,
 } from '@/lib/adminDashboardDateHelpers';
+import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
+import { scheduleRootFollowUpOnJob } from '@/lib/adminFollowUpSubmit';
+import { deriveScheduleFromFollowUpTime } from '@/lib/followUpToOngoing';
 
 interface NewJobFormData {
   service_type: 'RO' | 'SOFTENER';
@@ -84,6 +89,19 @@ interface NewJobDialogProps {
   technicianMode?: boolean;
   /** Optional one-time AI / prepared draft. Applied on open; never auto-submits. */
   initialDraft?: Partial<NewJobFormData> | null;
+  /** Open with “create as follow-up” already checked (from customer search). */
+  initialScheduleFollowUp?: boolean;
+  hasActiveAmc?: boolean;
+}
+
+function emptyFollowUpSchedule(): FollowUpScheduleValue {
+  return {
+    followUpDate: getIstCalendarDate(),
+    followUpTime: nextPresetAppointmentTime(),
+    followUpReason: '',
+    autoMoveToOngoingOnDate: false,
+    addAmcReminder: false,
+  };
 }
 
 const NewJobDialog: React.FC<NewJobDialogProps> = ({
@@ -98,11 +116,15 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   onJobAssignedToTechnician,
   technicianMode = false,
   initialDraft = null,
+  initialScheduleFollowUp = false,
+  hasActiveAmc = false,
 }) => {
   const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [isCreatingJob, setIsCreatingJob] = useState(false);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const pendingPhotoBatchesRef = useRef<{ startIndex: number; promise: Promise<string[]> }[]>([]);
+  const [scheduleAsFollowUp, setScheduleAsFollowUp] = useState(false);
+  const [followUpSchedule, setFollowUpSchedule] = useState<FollowUpScheduleValue>(emptyFollowUpSchedule);
 
   const [newJobFormData, setNewJobFormData] = useState<NewJobFormData>({
     service_type: 'RO',
@@ -129,6 +151,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 
   useEffect(() => {
     if (!open) return;
+    setScheduleAsFollowUp(!technicianMode && initialScheduleFollowUp);
+    setFollowUpSchedule(emptyFollowUpSchedule());
     setNewJobFormData((prev) => ({
       ...prev,
       service_sub_type: prev.service_sub_type || 'Service',
@@ -136,7 +160,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         ? getIstCalendarDate()
         : getDefaultNewJobScheduledDate(),
     }));
-  }, [open, technicianMode]);
+  }, [open, technicianMode, initialScheduleFollowUp]);
 
   // Initialize service type, brand, model from customer when dialog opens (supports Softener-only)
   useEffect(() => {
@@ -217,6 +241,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       photos: [],
       require_otp: false
     });
+    setScheduleAsFollowUp(false);
+    setFollowUpSchedule(emptyFollowUpSchedule());
     onOpenChange(false);
   };
 
@@ -348,12 +374,21 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   const handleCreateJob = async () => {
     if (!customer) return;
 
-    if (!newJobFormData.scheduled_date) {
+    if (!newJobFormData.scheduled_date && !scheduleAsFollowUp) {
       toast.error('Please select a scheduled date', TOAST_VALIDATION);
       return;
     }
 
+    const creatingFollowUp = scheduleAsFollowUp && !technicianMode;
+    if (creatingFollowUp) {
+      if (!followUpSchedule.followUpDate?.trim() || !followUpSchedule.followUpTime?.trim()) {
+        toast.error('Please pick a follow-up date and time', TOAST_VALIDATION);
+        return;
+      }
+    }
+
     if (
+      !creatingFollowUp &&
       newJobFormData.scheduled_time_slot === 'CUSTOM' &&
       (!newJobFormData.scheduled_time_custom || !newJobFormData.scheduled_time_custom.trim())
     ) {
@@ -408,8 +443,19 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       let scheduledTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' = 'MORNING';
       let customTimeInRequirements = null;
       let isFlexible = false;
+      const effectiveScheduledDate = creatingFollowUp
+        ? followUpSchedule.followUpDate
+        : newJobFormData.scheduled_date;
+      const assignedTechnicianId = creatingFollowUp
+        ? ''
+        : newJobFormData.assigned_technician_id;
       
-      if (newJobFormData.scheduled_time_slot === 'CUSTOM' && newJobFormData.scheduled_time_custom) {
+      if (creatingFollowUp) {
+        customTimeInRequirements = followUpSchedule.followUpTime;
+        const derived = deriveScheduleFromFollowUpTime(followUpSchedule.followUpTime);
+        scheduledTimeSlot =
+          derived.scheduled_time_slot === 'CUSTOM' ? 'EVENING' : derived.scheduled_time_slot;
+      } else if (newJobFormData.scheduled_time_slot === 'CUSTOM' && newJobFormData.scheduled_time_custom) {
         customTimeInRequirements = newJobFormData.scheduled_time_custom;
         const [hours] = newJobFormData.scheduled_time_custom.split(':').map(Number);
         const hour24 = hours;
@@ -484,20 +530,20 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           : newJobFormData.service_sub_type,
         brand: newJobFormData.brand === 'Not specified' ? '' : newJobFormData.brand,
         model: newJobFormData.model === 'Not specified' ? '' : newJobFormData.model,
-        scheduled_date: newJobFormData.scheduled_date,
+        scheduled_date: effectiveScheduledDate,
         scheduled_time_slot: scheduledTimeSlot,
         service_address: serviceAddress,
         service_location: locationSlice.location,
         service_site: site,
-        status: newJobFormData.assigned_technician_id ? 'ASSIGNED' : 'PENDING',
+        status: assignedTechnicianId ? 'ASSIGNED' : 'PENDING',
         priority: newJobFormData.priority,
         description: newJobFormData.description.trim() || '',
         requirements: requirements,
         estimated_cost: newJobFormData.cost_agreed ? (parseFloat(newJobFormData.cost_agreed.toString().split('-')[0].trim()) || 0) : 0,
         lead_cost: leadCostNum,
         payment_status: 'PENDING',
-        assigned_technician_id: newJobFormData.assigned_technician_id || null,
-        assigned_date: newJobFormData.assigned_technician_id ? new Date().toISOString() : null,
+        assigned_technician_id: assignedTechnicianId || null,
+        assigned_date: assignedTechnicianId ? new Date().toISOString() : null,
         before_photos: photosToUse
       };
 
@@ -509,39 +555,51 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         throw new Error(error.message);
       }
 
+      let createdJob = newJob;
+      if (creatingFollowUp && createdJob?.id) {
+        const followUpPatch = await scheduleRootFollowUpOnJob(createdJob, {
+          followUpDate: followUpSchedule.followUpDate,
+          followUpTime: followUpSchedule.followUpTime,
+          followUpReason: followUpSchedule.followUpReason,
+          autoMoveToOngoingOnDate: followUpSchedule.autoMoveToOngoingOnDate,
+          addAmcReminder: followUpSchedule.addAmcReminder,
+        });
+        createdJob = { ...createdJob, ...followUpPatch };
+      }
+
       if (technicianMode) {
         // Admin-only post-create steps (visit order, tech push, customer
         // brand/model patch, WhatsApp notify) are blocked by RLS for
         // technicians — the job itself is what matters here.
-        onJobCreated(newJob);
-        if ((newJob as { id?: string } | null)?.id) {
+        onJobCreated(createdJob);
+        if ((createdJob as { id?: string } | null)?.id) {
           void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
-            notifyAdminsJobEvent(String((newJob as { id: string }).id), 'job_created')
+            notifyAdminsJobEvent(String((createdJob as { id: string }).id), 'job_created')
           );
         }
-        toast.success(`Job ${(newJob as any)?.job_number || ''} created successfully!`);
+        toast.success(`Job ${(createdJob as any)?.job_number || ''} created successfully!`);
         handleClose();
         return;
       }
 
-      if (newJob?.id && newJobFormData.assigned_technician_id) {
+      if (createdJob?.id && assignedTechnicianId) {
         notifyTechnicianJobPush({
-          technicianId: newJobFormData.assigned_technician_id,
-          jobId: newJob.id,
-          ...jobAssignPushText({ job: newJob as any, customer: customer as any }),
+          technicianId: assignedTechnicianId,
+          jobId: createdJob.id,
+          ...jobAssignPushText({ job: createdJob as any, customer: customer as any }),
         });
         const visitOrder = await appendJobToTechnicianVisitOrder({
-          jobId: newJob.id,
-          technicianId: newJobFormData.assigned_technician_id,
-          scheduledDate: newJobFormData.scheduled_date,
+          jobId: createdJob.id,
+          technicianId: assignedTechnicianId,
+          scheduledDate: effectiveScheduledDate,
         });
         if (visitOrder != null) {
-          (newJob as any).visit_order = visitOrder;
-          (newJob as any).visitOrder = visitOrder;
+          (createdJob as any).visit_order = visitOrder;
+          (createdJob as any).visitOrder = visitOrder;
         }
       }
 
-      onJobCreated(newJob);
+      onJobCreated(createdJob);
 
       // Update customer record if brand/model changed (correct site only)
       const newBrand = newJobFormData.brand === 'Not specified' ? '' : newJobFormData.brand;
@@ -601,24 +659,28 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       }
 
       // Send notification if technician is assigned
-      if (newJobFormData.assigned_technician_id) {
-        const assignedTechnician = technicians.find(t => t.id === newJobFormData.assigned_technician_id);
+      if (assignedTechnicianId) {
+        const assignedTechnician = technicians.find(t => t.id === assignedTechnicianId);
         if (assignedTechnician) {
           const notification = createJobAssignedNotification(
-            newJob.job_number,
+            createdJob.job_number,
             customer.fullName,
             assignedTechnician.fullName,
-            newJob.id,
+            createdJob.id,
             assignedTechnician.id
           );
           await sendNotification(notification);
         }
       }
 
-      toast.success(`Job ${newJob.job_number} created successfully!`);
+      toast.success(
+        creatingFollowUp
+          ? `Job ${createdJob.job_number} created and follow-up scheduled`
+          : `Job ${createdJob.job_number} created successfully!`
+      );
 
       // Capture values needed for the WhatsApp notify dialog BEFORE handleClose() resets the form.
-      const assignedTechIdToNotify = newJobFormData.assigned_technician_id;
+      const assignedTechIdToNotify = assignedTechnicianId;
       const subTypeToNotify = isServiceSubTypeAllowCustomText(newJobFormData.service_sub_type)
         ? newJobFormData.service_sub_type_custom || newJobFormData.service_sub_type
         : newJobFormData.service_sub_type;
@@ -777,6 +839,42 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
             {/* Scheduling */}
             <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/40">
               <h3 className="text-lg font-semibold text-foreground">Scheduling</h3>
+              {!technicianMode && (
+                <div className="flex items-start gap-3 rounded-md border border-indigo-200 bg-indigo-50/70 px-3 py-3">
+                  <Checkbox
+                    id="job_schedule_follow_up"
+                    checked={scheduleAsFollowUp}
+                    onCheckedChange={(checked) => {
+                      const on = checked === true;
+                      setScheduleAsFollowUp(on);
+                      if (on) {
+                        setFollowUpSchedule((prev) => ({
+                          ...prev,
+                          followUpDate: prev.followUpDate || newJobFormData.scheduled_date || getIstCalendarDate(),
+                          followUpTime: prev.followUpTime || nextPresetAppointmentTime(),
+                        }));
+                      }
+                    }}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="job_schedule_follow_up" className="cursor-pointer text-sm font-medium leading-snug">
+                      Create and schedule a follow-up
+                    </Label>
+                    <p className="text-xs leading-snug text-muted-foreground">
+                      Job goes to the Follow-up tab instead of Ongoing. Same date, time, reason, auto-move, and AMC reminder as the follow-up dialog.
+                    </p>
+                  </div>
+                </div>
+              )}
+              {scheduleAsFollowUp && !technicianMode ? (
+                <FollowUpScheduleFields
+                  idPrefix="new-job-followup"
+                  value={followUpSchedule}
+                  onChange={setFollowUpSchedule}
+                  hasActiveAmc={hasActiveAmc}
+                />
+              ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="job_scheduled_date">Scheduled Date</Label>
@@ -813,6 +911,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   )}
                 </div>
               </div>
+              )}
             </div>
 
             {/* Photo Upload */}
@@ -1035,7 +1134,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
               )}
 
               {/* Assign to Technician (Optional) — admin only; technician-created jobs stay PENDING for admin to assign */}
-              {!technicianMode && (
+              {!technicianMode && !scheduleAsFollowUp && (
               <div className="space-y-2 pt-2 border-t border-border">
                 <Label htmlFor="job_technician">Assign to Technician (Optional)</Label>
                 <Select
@@ -1104,11 +1203,21 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
             onClick={handleCreateJob}
             disabled={
               isCreatingJob ||
-              !isJobCreateFormComplete(newJobFormData, { requireLeadCost: !technicianMode })
+              !isJobCreateFormComplete(
+                scheduleAsFollowUp
+                  ? { ...newJobFormData, scheduled_date: followUpSchedule.followUpDate || newJobFormData.scheduled_date }
+                  : newJobFormData,
+                { requireLeadCost: !technicianMode }
+              ) ||
+              (scheduleAsFollowUp && (!followUpSchedule.followUpDate || !followUpSchedule.followUpTime))
             }
             className=""
           >
-            {isCreatingJob ? 'Creating...' : 'Create Job'}
+            {isCreatingJob
+              ? 'Creating...'
+              : scheduleAsFollowUp
+                ? 'Create Follow-up'
+                : 'Create Job'}
           </Button>
         </DialogFooter>
       </DialogContent>

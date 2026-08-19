@@ -71,6 +71,97 @@ async function syncAmcFollowUpReminder(opts: {
   if (result.error) throw new Error(result.error.message);
 }
 
+export type FollowUpJobLike = {
+  id: string;
+  customerId?: string;
+  customer_id?: string;
+  customer?: { id?: string };
+  jobNumber?: string;
+  job_number?: string;
+  requirements?: unknown;
+};
+
+/** Schedule a root follow-up on a newly created (or existing) job. */
+export async function scheduleRootFollowUpOnJob(
+  job: FollowUpJobLike,
+  followUpData: AdminFollowUpSubmitData
+) {
+  const jobId = job.id;
+  const followUpReason = followUpData.followUpReason?.trim() || 'Not confirmed';
+  const { error: followUpError } = await supabase
+    .from('follow_ups')
+    .insert({
+      job_id: jobId,
+      parent_follow_up_id: null,
+      follow_up_date: followUpData.followUpDate,
+      follow_up_time: followUpData.followUpTime,
+      reason: followUpReason,
+      notes: null,
+      scheduled_by: null,
+      completed: false,
+    } as any)
+    .select()
+    .single();
+
+  if (followUpError) {
+    if (
+      followUpError.code === 'PGRST301' ||
+      followUpError.message?.includes('401') ||
+      followUpError.message?.includes('unauthorized')
+    ) {
+      throw new Error('Authentication failed. Please check your login status and try again.');
+    }
+    throw new Error(followUpError.message || 'Failed to create follow-up record');
+  }
+
+  const requirements = applyAutoMoveToOngoingOnDateFlag(
+    job.requirements,
+    Boolean(followUpData.autoMoveToOngoingOnDate)
+  );
+
+  const { error: jobError } = await db.jobs.update(jobId, {
+    status: 'FOLLOW_UP',
+    follow_up_date: followUpData.followUpDate,
+    follow_up_time: followUpData.followUpTime,
+    follow_up_notes: followUpReason,
+    follow_up_scheduled_by: null,
+    follow_up_scheduled_at: new Date().toISOString(),
+    include_amc_follow_up: Boolean(followUpData.addAmcReminder),
+    assigned_technician_id: null,
+    assigned_date: null,
+    requirements,
+  } as any);
+
+  if (jobError) {
+    throw new Error(jobError.message);
+  }
+
+  try {
+    await syncAmcFollowUpReminder({
+      job: job as Job,
+      followUpDate: followUpData.followUpDate,
+      followUpTime: followUpData.followUpTime,
+      followUpReason,
+      enabled: Boolean(followUpData.addAmcReminder),
+    });
+  } catch (reminderError) {
+    console.warn('[follow-up] AMC reminder sync failed', reminderError);
+    toast.warning('Follow-up saved, but the AMC reminder could not be updated');
+  }
+
+  return {
+    status: 'FOLLOW_UP' as const,
+    followUpDate: followUpData.followUpDate,
+    followUpTime: followUpData.followUpTime,
+    followUpNotes: followUpReason,
+    followUpScheduledBy: 'admin',
+    followUpScheduledAt: new Date().toISOString(),
+    includeAmcFollowUp: Boolean(followUpData.addAmcReminder),
+    include_amc_follow_up: Boolean(followUpData.addAmcReminder),
+    requirements,
+  };
+}
+
 export async function submitAdminFollowUp(
   jobId: string,
   followUpData: AdminFollowUpSubmitData,

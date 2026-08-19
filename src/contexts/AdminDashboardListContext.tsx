@@ -54,7 +54,7 @@ export interface AdminDashboardListData {
 
 export interface AdminDashboardListActions {
   handleEditCustomer: (customer: Customer) => void;
-  handleNewJob: (customer: Customer) => void;
+  handleNewJob: (customer: Customer, opts?: { asFollowUp?: boolean }) => void;
   handleViewPhotos: (customer: Customer) => void;
   handleGenerateBill: (customer: Customer) => void;
   handleGenerateQuotation: (customer: Customer) => void;

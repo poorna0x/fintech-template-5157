@@ -984,6 +984,7 @@ const AdminDashboard = () => {
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newJobDialogOpen, setNewJobDialogOpen] = useState(false);
+  const [newJobAsFollowUp, setNewJobAsFollowUp] = useState(false);
   const [selectedCustomerForJob, setSelectedCustomerForJob] = useState<Customer | null>(null);
   const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [newJobFormData, setNewJobFormData] = useState({
@@ -3300,8 +3301,9 @@ const AdminDashboard = () => {
   };
 
   // Job creation functions
-  const handleNewJob = useCallback((customer: Customer) => {
+  const handleNewJob = useCallback((customer: Customer, opts?: { asFollowUp?: boolean }) => {
     setSelectedCustomerForJob(customer);
+    setNewJobAsFollowUp(!!opts?.asFollowUp);
     setIsJobDialogReady(true);
     openAdminModal('new-job', { customerId: customer.id });
     void loadFullCustomerForAction(customer).then(setSelectedCustomerForJob);
@@ -3614,6 +3616,7 @@ const AdminDashboard = () => {
     closeAdminModal();
     setIsJobDialogReady(false);
     setSelectedCustomerForJob(null);
+    setNewJobAsFollowUp(false);
   };
 
   // Photo upload functions for new job
@@ -7324,15 +7327,44 @@ const AdminDashboard = () => {
           setIsJobDialogReady(false);
           setSelectedCustomerForJob(null);
           setAiJobDraft(null);
+          setNewJobAsFollowUp(false);
         })}
         customer={selectedCustomerForJob}
         technicians={technicians}
         initialDraft={aiJobDraft}
+        initialScheduleFollowUp={newJobAsFollowUp}
+        hasActiveAmc={Boolean(
+          selectedCustomerForJob &&
+            customerAMCStatus[
+              String(
+                typeof selectedCustomerForJob.id === 'string' &&
+                  selectedCustomerForJob.id.includes('-')
+                  ? selectedCustomerForJob.id
+                  : ''
+              )
+            ]
+        )}
         onJobCreated={(newJob) => {
           setAiJobDraft(null);
-          setJobs([newJob, ...jobs]);
-          const customerId = selectedCustomerForJob?.customer_id || selectedCustomerForJob?.customerId;
+          setNewJobAsFollowUp(false);
+          const isFollowUp =
+            newJob?.status === 'FOLLOW_UP' || (newJob as any)?.status === 'FOLLOW_UP';
+          if (!isFollowUp) {
+            setJobs([newJob, ...jobs]);
+          } else {
+            db.jobs
+              .getFollowUpForGlow()
+              .then(({ data }) => {
+                if (data) setAllFollowUpJobs(data as Job[]);
+              })
+              .catch(() => {});
+          }
+          const customerId = selectedCustomerForJob?.customer_id || selectedCustomerForJob?.customerId || selectedCustomerForJob?.id;
           if (customerId) {
+            setCustomerJobs((prev) => ({
+              ...prev,
+              [customerId]: [newJob, ...(prev[customerId] || [])],
+            }));
             setTimeout(() => {
               loadCustomerPhotos(customerId);
             }, 1000);

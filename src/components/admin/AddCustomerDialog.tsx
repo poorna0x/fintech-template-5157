@@ -25,6 +25,7 @@ import { ServiceSubTypeSelect } from '@/components/admin/ServiceSubTypeSelect';
 import { isJobCreateFormComplete } from '@/lib/jobCreateRequired';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
+import { FollowUpScheduleFields, type FollowUpScheduleValue } from '@/components/admin/FollowUpScheduleFields';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
@@ -41,7 +42,10 @@ import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
 } from '@/lib/equipment-suggestions';
-import { getDefaultNewJobScheduledDate } from '@/lib/adminDashboardDateHelpers';
+import { getDefaultNewJobScheduledDate, getIstCalendarDate } from '@/lib/adminDashboardDateHelpers';
+import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
+import { scheduleRootFollowUpOnJob } from '@/lib/adminFollowUpSubmit';
+import { deriveScheduleFromFollowUpTime } from '@/lib/followUpToOngoing';
 
 const EMPTY_PHOTO_LIST: string[] = [];
 
@@ -181,6 +185,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       ? initialDraftRef.current.shouldCreateJob
       : true
   ); // Default to true
+  const [scheduleAsFollowUp, setScheduleAsFollowUp] = useState(false);
+  const [followUpSchedule, setFollowUpSchedule] = useState<FollowUpScheduleValue>({
+    followUpDate: getIstCalendarDate(),
+    followUpTime: nextPresetAppointmentTime(),
+    followUpReason: '',
+    autoMoveToOngoingOnDate: false,
+    addAmcReminder: false,
+  });
   const [addFormData, setAddFormData] = useState(() => ({
     ...createDefaultAddFormData(),
     ...(initialDraftRef.current?.addFormData || {}),
@@ -1054,7 +1066,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     
     if (currentStep === 5) {
       if (shouldCreateJob) {
-        if (!step5JobData.scheduled_date) {
+        if (scheduleAsFollowUp) {
+          if (!followUpSchedule.followUpDate?.trim() || !followUpSchedule.followUpTime?.trim()) {
+            toast.error('Please pick a follow-up date and time', TOAST_VALIDATION);
+            return;
+          }
+        } else if (!step5JobData.scheduled_date) {
           toast.error('Please select a scheduled date', TOAST_VALIDATION);
           return;
         }
@@ -1096,7 +1113,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           return;
         }
 
-        if (step5JobData.scheduled_time_slot === 'CUSTOM' && (!step5JobData.scheduled_time_custom || step5JobData.scheduled_time_custom.trim() === '')) {
+        if (
+          !scheduleAsFollowUp &&
+          step5JobData.scheduled_time_slot === 'CUSTOM' &&
+          (!step5JobData.scheduled_time_custom || step5JobData.scheduled_time_custom.trim() === '')
+        ) {
           toast.error('Please choose a visit time (list or exact time)', TOAST_VALIDATION);
           return;
         }
@@ -1260,8 +1281,18 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           let scheduledTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' = 'MORNING';
           let customTimeInRequirements = null;
           let isFlexible = false;
+          const creatingFollowUp = scheduleAsFollowUp;
+          const assignedTechnicianId = creatingFollowUp ? '' : step5JobData.assigned_technician_id;
+          const effectiveScheduledDate = creatingFollowUp
+            ? followUpSchedule.followUpDate
+            : step5JobData.scheduled_date;
 
-          if (step5JobData.scheduled_time_slot === 'CUSTOM' && step5JobData.scheduled_time_custom) {
+          if (creatingFollowUp) {
+            customTimeInRequirements = followUpSchedule.followUpTime;
+            const derived = deriveScheduleFromFollowUpTime(followUpSchedule.followUpTime);
+            scheduledTimeSlot =
+              derived.scheduled_time_slot === 'CUSTOM' ? 'EVENING' : derived.scheduled_time_slot;
+          } else if (step5JobData.scheduled_time_slot === 'CUSTOM' && step5JobData.scheduled_time_custom) {
             customTimeInRequirements = step5JobData.scheduled_time_custom;
             const [hours] = step5JobData.scheduled_time_custom.split(':').map(Number);
             if (hours < 13) {
@@ -1320,11 +1351,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               : step5JobData.service_sub_type,
             brand: newCustomer.brand || customerData.brand || '',
             model: newCustomer.model || customerData.model || '',
-            scheduled_date: step5JobData.scheduled_date,
+            scheduled_date: effectiveScheduledDate,
             scheduled_time_slot: scheduledTimeSlot,
             service_address: serviceAddress,
             service_location: serviceLocation,
-            status: step5JobData.assigned_technician_id ? 'ASSIGNED' as const : 'PENDING' as const,
+            status: assignedTechnicianId ? 'ASSIGNED' as const : 'PENDING' as const,
             priority: step5JobData.priority,
             description: step5JobData.description.trim() || '',
             requirements: requirements,
@@ -1334,8 +1365,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             lead_cost: leadCostNum,
             payment_status: 'PENDING' as const,
             before_photos: allPhotos.length > 0 ? allPhotos : [], // Add photos from Step 3 to job's before_photos
-            assigned_technician_id: step5JobData.assigned_technician_id || null,
-            assigned_date: step5JobData.assigned_technician_id ? new Date().toISOString() : null
+            assigned_technician_id: assignedTechnicianId || null,
+            assigned_date: assignedTechnicianId ? new Date().toISOString() : null
           };
 
           // Debug: Log the job data being created
@@ -1360,13 +1391,29 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               requirements: (newJob as any).requirements
             });
 
-            if (step5JobData.assigned_technician_id) {
+            if (creatingFollowUp && (newJob as any).id) {
+              try {
+                const followUpPatch = await scheduleRootFollowUpOnJob(newJob as any, {
+                  followUpDate: followUpSchedule.followUpDate,
+                  followUpTime: followUpSchedule.followUpTime,
+                  followUpReason: followUpSchedule.followUpReason,
+                  autoMoveToOngoingOnDate: followUpSchedule.autoMoveToOngoingOnDate,
+                  addAmcReminder: followUpSchedule.addAmcReminder,
+                });
+                newJob = { ...newJob, ...followUpPatch };
+              } catch (followUpErr) {
+                console.error('Failed to schedule follow-up on new job:', followUpErr);
+                toast.error('Customer and job created, but follow-up could not be scheduled. Open the job to schedule it.');
+              }
+            }
+
+            if (assignedTechnicianId) {
               try {
                 const { appendJobToTechnicianVisitOrder } = await import('@/lib/adminVisitOrder');
                 const visitOrder = await appendJobToTechnicianVisitOrder({
                   jobId: (newJob as any).id,
-                  technicianId: step5JobData.assigned_technician_id,
-                  scheduledDate: step5JobData.scheduled_date,
+                  technicianId: assignedTechnicianId,
+                  scheduledDate: effectiveScheduledDate,
                 });
                 if (visitOrder != null) {
                   (newJob as any).visit_order = visitOrder;
@@ -1381,7 +1428,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   '@/lib/adminTechPushNotify'
                 );
                 notifyTechnicianJobPush({
-                  technicianId: step5JobData.assigned_technician_id,
+                  technicianId: assignedTechnicianId,
                   jobId: newJob.id,
                   ...jobAssignPushText({ job: newJob as any, customer: newCustomer as any }),
                 });
@@ -1390,11 +1437,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               }
             }
             
-            if (step5JobData.assigned_technician_id) {
+            if (assignedTechnicianId) {
               // Send notification to assigned technician
               try {
                 const { sendNotification, createJobAssignedNotification } = await import('@/lib/notifications');
-                const assignedTechRow = technicians.find((t) => t.id === step5JobData.assigned_technician_id);
+                const assignedTechRow = technicians.find((t) => t.id === assignedTechnicianId);
                 const jobNumberStr =
                   (newJob as any).job_number || (newJob as any).jobNumber || 'Job';
                 const customerNameStr =
@@ -1411,7 +1458,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   customerNameStr,
                   technicianNameStr,
                   (newJob as any).id,
-                  step5JobData.assigned_technician_id
+                  assignedTechnicianId
                 );
                 await sendNotification(notification);
               } catch (notifError) {
@@ -1432,13 +1479,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       // Show combined toast message
       if (shouldCreateJob && newJob) {
         const jobNumber = (newJob as any).job_number || (newJob as any).jobNumber || 'N/A';
-        const assignedTech = step5JobData.assigned_technician_id
-          ? technicians.find((t) => t.id === step5JobData.assigned_technician_id)
-          : null;
-        const techName = assignedTech
-          ? ` and assigned to ${assignedTech.full_name || assignedTech.fullName || 'technician'}`
-          : '';
-        toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} and Job ${jobNumber} created${techName}!`);
+        if (scheduleAsFollowUp) {
+          toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created and follow-up scheduled for Job ${jobNumber}`);
+        } else {
+          const assignedTech = step5JobData.assigned_technician_id
+            ? technicians.find((t) => t.id === step5JobData.assigned_technician_id)
+            : null;
+          const techName = assignedTech
+            ? ` and assigned to ${assignedTech.full_name || assignedTech.fullName || 'technician'}`
+            : '';
+          toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} and Job ${jobNumber} created${techName}!`);
+        }
       } else if (shouldCreateJob && jobError) {
         toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
         toast.error('Failed to create job. Please create it manually.');
@@ -1448,6 +1499,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
       if (
         shouldCreateJob &&
+        !scheduleAsFollowUp &&
         newJob &&
         step5JobData.assigned_technician_id &&
         onJobAssignedToTechnician
@@ -2049,13 +2101,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 </p>
                 
                 <div className="space-y-3">
-                  <label className="flex items-center gap-3 p-3 bg-card rounded-lg border-2 border-blue-500 cursor-pointer transition-all hover:border-blue-300">
+                  <label className={`flex items-center gap-3 p-3 bg-card rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300 ${shouldCreateJob && !scheduleAsFollowUp ? 'border-blue-500' : 'border-border'}`}>
                     <input
                       type="radio"
                       name="createJob"
-                      checked={shouldCreateJob === true}
+                      checked={shouldCreateJob === true && !scheduleAsFollowUp}
                       onChange={() => {
                         setShouldCreateJob(true);
+                        setScheduleAsFollowUp(false);
                         setStep5JobData(prev => ({
                           ...prev,
                           scheduled_date: prev.scheduled_date_touched
@@ -2071,13 +2124,46 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       <p className="text-xs text-muted-foreground mt-1">Fill in the job details below</p>
                     </div>
                   </label>
+
+                  <label className={`flex items-center gap-3 p-3 bg-card rounded-lg border-2 cursor-pointer transition-all hover:border-indigo-300 ${shouldCreateJob && scheduleAsFollowUp ? 'border-indigo-500' : 'border-border'}`}>
+                    <input
+                      type="radio"
+                      name="createJob"
+                      checked={shouldCreateJob === true && scheduleAsFollowUp}
+                      onChange={() => {
+                        setShouldCreateJob(true);
+                        setScheduleAsFollowUp(true);
+                        setFollowUpSchedule((prev) => ({
+                          ...prev,
+                          followUpDate: prev.followUpDate || getIstCalendarDate(),
+                          followUpTime: prev.followUpTime || nextPresetAppointmentTime(),
+                        }));
+                        setStep5JobData(prev => ({
+                          ...prev,
+                          scheduled_date: prev.scheduled_date_touched
+                            ? prev.scheduled_date
+                            : getDefaultNewJobScheduledDate(),
+                          service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO',
+                          assigned_technician_id: '',
+                        }));
+                      }}
+                      className="h-4 w-4 text-indigo-600"
+                    />
+                    <div>
+                      <span className="font-medium text-foreground">Yes, create and schedule a follow-up</span>
+                      <p className="text-xs text-muted-foreground mt-1">Same follow-up date, time, reason, auto-move, and AMC reminder</p>
+                    </div>
+                  </label>
                   
-                  <label className="flex items-center gap-3 p-3 bg-card rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300">
+                  <label className={`flex items-center gap-3 p-3 bg-card rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300 ${!shouldCreateJob ? 'border-blue-500' : 'border-border'}`}>
                     <input
                       type="radio"
                       name="createJob"
                       checked={shouldCreateJob === false}
-                      onChange={() => setShouldCreateJob(false)}
+                      onChange={() => {
+                        setShouldCreateJob(false);
+                        setScheduleAsFollowUp(false);
+                      }}
                       className="h-4 w-4 text-blue-600"
                     />
                     <div>
@@ -2139,6 +2225,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
                     <div className="space-y-2">
                       <Label htmlFor="step5_scheduled_date">Scheduled Date</Label>
+                      {scheduleAsFollowUp ? (
+                        <p className="text-xs text-muted-foreground pt-2">Uses the follow-up date below.</p>
+                      ) : (
                       <DatePicker
                         value={step5JobData.scheduled_date || undefined}
                         onChange={(v) =>
@@ -2151,10 +2240,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         }
                         placeholder="Pick date"
                       />
+                      )}
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="step5_scheduled_time_slot">Time Slot</Label>
+                      {scheduleAsFollowUp ? (
+                        <p className="text-xs text-muted-foreground pt-2">Uses the follow-up time below.</p>
+                      ) : (
                       <Select
                         value={step5JobData.scheduled_time_slot}
                         onValueChange={(value) => setStep5JobData(prev => ({ 
@@ -2173,15 +2266,28 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           <SelectItem value="CUSTOM">Custom time</SelectItem>
                         </SelectContent>
                       </Select>
+                      )}
                     </div>
 
-                    {step5JobData.scheduled_time_slot === 'CUSTOM' && (
+                    {!scheduleAsFollowUp && step5JobData.scheduled_time_slot === 'CUSTOM' && (
                       <div className="space-y-2 sm:col-span-2">
                         <Label htmlFor="step5_scheduled_time_custom">Visit time</Label>
                         <CustomAppointmentTimeSelect
                           id="step5_scheduled_time_custom"
                           value={step5JobData.scheduled_time_custom}
                           onChange={(hhmm) => setStep5JobData(prev => ({ ...prev, scheduled_time_custom: hhmm }))}
+                        />
+                      </div>
+                    )}
+
+                    {scheduleAsFollowUp && (
+                      <div className="space-y-2 sm:col-span-2 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+                        <h4 className="text-sm font-semibold text-foreground">Follow-up</h4>
+                        <FollowUpScheduleFields
+                          idPrefix="add-customer-followup"
+                          value={followUpSchedule}
+                          onChange={setFollowUpSchedule}
+                          hasActiveAmc={false}
                         />
                       </div>
                     )}
@@ -2263,6 +2369,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       <p className="text-xs text-muted-foreground">Enter a single amount or a range (e.g., 400-500)</p>
                     </div>
 
+                    {!scheduleAsFollowUp && (
                     <div className="space-y-2 sm:col-span-2">
                       <Label htmlFor="step5_technician">Assign to Technician (Optional)</Label>
                       <Select
@@ -2290,6 +2397,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         </p>
                       )}
                     </div>
+                    )}
 
                     <div className="space-y-2 sm:col-span-2">
                       <Label htmlFor="step5_description">Description (Optional)</Label>
@@ -2351,7 +2459,15 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 onClick={handleCreateCustomer}
                 disabled={
                   isCreating ||
-                  (shouldCreateJob && !isJobCreateFormComplete(step5JobData))
+                  (shouldCreateJob &&
+                    !isJobCreateFormComplete(
+                      scheduleAsFollowUp
+                        ? { ...step5JobData, scheduled_date: followUpSchedule.followUpDate || step5JobData.scheduled_date }
+                        : step5JobData
+                    )) ||
+                  (shouldCreateJob &&
+                    scheduleAsFollowUp &&
+                    (!followUpSchedule.followUpDate || !followUpSchedule.followUpTime))
                 }
                 className="bg-green-600 hover:bg-green-700 w-full sm:w-auto text-sm"
               >

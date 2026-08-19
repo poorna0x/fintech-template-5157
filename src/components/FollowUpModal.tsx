@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { hasAutoMoveToOngoingOnDate } from '@/lib/followUpToOngoing';
 import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
+import { SUGGESTED_FOLLOW_UP_REASONS } from '@/lib/followUpReasons';
 
 interface FollowUp {
   id: string;
@@ -78,20 +79,7 @@ export default function FollowUpModal({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const reasonInputRef = useRef<HTMLInputElement>(null);
 
-  const suggestedReasons = [
-    'Need new RO',
-    'Not picking up call',
-    'Not confirmed',
-    'Customer rescheduled',
-    'Equipment not available',
-    'Waiting for customer decision',
-    'Need to visit again',
-    'Customer wants to think',
-    'Price negotiation needed',
-    'Technical issue pending',
-    'Installation date conflict',
-    'Customer not available'
-  ];
+  const suggestedReasons = SUGGESTED_FOLLOW_UP_REASONS;
 
   const filteredSuggestions = useMemo(() => {
     if (!reason.trim()) return [];

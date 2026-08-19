@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Edit, Plus, Images, FileText, MoreVertical, Receipt, Star, Bell, ShieldCheck } from 'lucide-react';
+import { Edit, Plus, Images, FileText, MoreVertical, Receipt, Star, Bell, ShieldCheck, CalendarPlus } from 'lucide-react';
 import { Customer } from '@/types';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { preloadDocumentGeneratorModals } from '@/lib/document-generator-preload';
@@ -15,6 +15,7 @@ interface CustomerCardHeaderProps {
   selectedCustomerForPhotos: Customer | null;
   onEditCustomer: (customer: Customer) => void;
   onNewJob: (customer: Customer) => void;
+  onNewFollowUp?: (customer: Customer) => void;
   onViewPhotos: (customer: Customer) => void;
   onGenerateBill: (customer: Customer) => void;
   onGenerateQuotation: (customer: Customer) => void;
@@ -38,6 +39,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   selectedCustomerForPhotos,
   onEditCustomer,
   onNewJob,
+  onNewFollowUp,
   onViewPhotos,
   onGenerateBill,
   onGenerateQuotation,
@@ -241,6 +243,17 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
             <Plus className="w-3 h-3" />
             Job
           </Button>
+          {onNewFollowUp && (
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
+            onClick={() => onNewFollowUp(customer)}
+          >
+            <CalendarPlus className="w-3 h-3" />
+            Follow-up
+          </Button>
+          )}
           <Button 
             variant="outline" 
             size="sm" 
@@ -298,6 +311,22 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2 py-4">
+            {onNewFollowUp && (
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
+              onClick={() => {
+                onMoreOptionsOpenChange(false);
+                onNewFollowUp(customer);
+              }}
+            >
+              <CalendarPlus className="mr-3 h-5 w-5 shrink-0" />
+              <div className="text-left">
+                <div className="font-medium">Create follow-up</div>
+                <div className="text-xs text-muted-foreground">Create a job and schedule it as a follow-up</div>
+              </div>
+            </Button>
+            )}
             <Button
               variant="outline"
               className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
