@@ -22,6 +22,7 @@ import {
   resumeWarrantySession,
   endWarrantySession,
 } from '@/lib/otp';
+import { stringifyCustomerAddressForTemplate } from '@/lib/customer-address';
 import { lookupWarrantiesByPhone, warmWarrantyLookup, type WarrantyLookupResponse } from '@/lib/warrantyLookup';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
 import {
@@ -508,7 +509,12 @@ const Warranty: React.FC = () => {
                       {(customer.brand || customer.model) && (
                         <DetailRow label="Unit" value={[customer.brand, customer.model].filter(Boolean).join(' · ')} />
                       )}
-                      {customer.address && <DetailRow label="Address" value={customer.address} />}
+                      {stringifyCustomerAddressForTemplate(customer.address) ? (
+                        <DetailRow
+                          label="Address"
+                          value={stringifyCustomerAddressForTemplate(customer.address)}
+                        />
+                      ) : null}
                       {customer.customer_since && (
                         <DetailRow label="Customer since" value={formatWarrantyDate(customer.customer_since)} />
                       )}

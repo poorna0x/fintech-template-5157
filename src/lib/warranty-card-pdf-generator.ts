@@ -649,7 +649,7 @@ export function generateWarrantyCardHTML(data: WarrantyCardPDFData): string {
           <div><span class="hero-meta-label">Issued</span> ${sanitizeForTemplate(formatWarrantyDate(issued))}</div>
           ${roModel ? `<div><span class="hero-meta-label">RO model</span> ${sanitizeForTemplate(roModel)}</div>` : ''}
           ${
-            data.customer.address?.trim()
+            sanitizeForTemplate(data.customer.address)
               ? `<div style="margin-top:4px"><span class="hero-meta-label">Address</span> ${sanitizeForTemplate(data.customer.address)}</div>`
               : ''
           }

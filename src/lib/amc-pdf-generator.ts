@@ -1,5 +1,6 @@
 import { Bill } from '@/types';
 import { sanitizeForTemplate } from './sanitize';
+import { formatPdfCustomerAddress } from './customer-address';
 import {
   renderPdfCompanyDetailsHtml,
   renderPdfLogoHtml,
@@ -79,12 +80,17 @@ interface AMCPDFOptions {
 export type { AMCPDFOptions };
 
 export function billToAmcPdfData(bill: Bill): AMCPDFData {
+  const addr = formatPdfCustomerAddress(bill.customer);
   return {
     billNumber: bill.billNumber,
     billDate: bill.billDate,
     company: bill.company,
     customer: {
-      ...bill.customer,
+      name: bill.customer.fullName || bill.customer.name || '',
+      ...addr,
+      phone: bill.customer.phone || '',
+      email: bill.customer.email || '',
+      gstNumber: bill.customer.gstNumber,
       roModel: (bill.customer as { roModel?: string }).roModel || '',
     },
     items: bill.items,
@@ -655,10 +661,16 @@ export function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): stri
               <div class="detail-value-new">${sanitizeForTemplate(data.customer.email.trim())}</div>
             </div>
             ` : ''}
+            ${sanitizeForTemplate(data.customer.address) || sanitizeForTemplate(data.customer.city) || sanitizeForTemplate(data.customer.pincode) ? `
             <div class="detail-item-new">
               <div class="detail-label-new">Address</div>
-              <div class="detail-value-new address-value">${sanitizeForTemplate(data.customer.address)}${data.customer.city ? ', ' + sanitizeForTemplate(data.customer.city) : ''}${data.customer.pincode ? ' - ' + sanitizeForTemplate(data.customer.pincode) : ''}</div>
+              <div class="detail-value-new address-value">${[
+                sanitizeForTemplate(data.customer.address),
+                sanitizeForTemplate(data.customer.city),
+                sanitizeForTemplate(data.customer.pincode) ? `- ${sanitizeForTemplate(data.customer.pincode)}` : '',
+              ].filter(Boolean).join(', ').replace(', - ', ' - ')}</div>
             </div>
+            ` : ''}
             ${data.customer.gstNumber && data.customer.gstNumber.trim() ? `
             <div class="detail-item-new">
               <div class="detail-label-new">GST Number</div>
@@ -1076,29 +1088,7 @@ export function generateAMCPDF(
     }
     
     // Popup window opened successfully, proceed with new window method
-    const data: AMCPDFData = {
-      billNumber: bill.billNumber,
-      billDate: bill.billDate,
-      company: bill.company,
-      customer: {
-        ...bill.customer,
-        roModel: (bill.customer as any).roModel || ''
-      },
-      items: bill.items,
-      subtotal: bill.subtotal,
-      totalTax: bill.totalTax,
-      serviceCharge: bill.serviceCharge,
-      totalAmount: bill.totalAmount,
-      paymentStatus: bill.paymentStatus,
-      amountPaid: bill.amountPaid,
-      paymentDueDate: bill.dueDate || (bill as { paymentDueDate?: string }).paymentDueDate,
-      notes: bill.notes,
-      terms: bill.terms,
-      validity: bill.validity,
-      agreementIntro: bill.agreementIntro,
-      documentBrand: (bill as any).documentBrand,
-      sealVariant: (bill as any).sealVariant,
-    };
+    const data: AMCPDFData = billToAmcPdfData(bill);
     
     // Write content to new window
     printWindow.document.write(withAbsoluteAssetUrls(generateAMCHTML(data, options)));
@@ -1190,29 +1180,7 @@ function handleMobilePrint(
   };
   
   try {
-    const data: AMCPDFData = {
-      billNumber: bill.billNumber,
-      billDate: bill.billDate,
-      company: bill.company,
-      customer: {
-        ...bill.customer,
-        roModel: (bill.customer as any).roModel || ''
-      },
-      items: bill.items,
-      subtotal: bill.subtotal,
-      totalTax: bill.totalTax,
-      serviceCharge: bill.serviceCharge,
-      totalAmount: bill.totalAmount,
-      paymentStatus: bill.paymentStatus,
-      amountPaid: bill.amountPaid,
-      paymentDueDate: bill.dueDate || (bill as { paymentDueDate?: string }).paymentDueDate,
-      notes: bill.notes,
-      terms: bill.terms,
-      validity: bill.validity,
-      agreementIntro: bill.agreementIntro,
-      documentBrand: (bill as any).documentBrand,
-      sealVariant: (bill as any).sealVariant,
-    };
+    const data: AMCPDFData = billToAmcPdfData(bill);
     
         // Generate AMC HTML - this is a complete HTML document
     const amcHTML = generateAMCHTML(data, options);

@@ -996,7 +996,7 @@ function createQuotationContent(data: PDFQuotationData): string {
           <div class="section-title">Quotation To:</div>
           <div class="customer-info">
             <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
-            ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
+            ${sanitizeForTemplate(data.customer.address) ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
             ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${sanitizeForTemplate(data.customer.city)}, ${sanitizeForTemplate(data.customer.state)} - ${sanitizeForTemplate(data.customer.pincode)}</div>` : ''}
             ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
             ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}

@@ -880,7 +880,7 @@ export default function TaxInvoiceGenerator({
       customer: {
         id: customer.id || '',
         name: editableCustomer.name,
-        address: `${editAddress.street || ''}, ${editAddress.area || ''}`.trim() || '',
+        address: [editAddress.street, editAddress.area].filter(Boolean).join(', '),
         city: editAddress.city || '',
         state: editAddress.state || '',
         pincode: editAddress.pincode || '',

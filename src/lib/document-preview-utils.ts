@@ -1,5 +1,6 @@
 import { Bill } from '@/types';
 import { getCustomerGstNumber } from '@/lib/customerGst';
+import { formatPdfCustomerAddress } from '@/lib/customer-address';
 import { generateBillHTML } from '@/lib/pdf-generator';
 import { generateQuotationHTML } from '@/lib/quotation-pdf-generator';
 import { generateTaxInvoiceHTML } from '@/lib/tax-invoice-pdf-generator';
@@ -10,11 +11,19 @@ import {
 } from '@/lib/quotation-custom-images';
 
 export function billToBillPdfData(bill: Bill) {
+  const customer = bill.customer;
+  const addr = formatPdfCustomerAddress(customer);
   return {
     billNumber: bill.billNumber,
     billDate: bill.billDate,
     company: bill.company,
-    customer: bill.customer,
+    customer: {
+      name: customer.fullName || customer.name || 'Customer Name',
+      ...addr,
+      phone: customer.phone || '',
+      email: customer.email || '',
+      gstNumber: getCustomerGstNumber(customer),
+    },
     items: bill.items,
     subtotal: bill.subtotal,
     totalTax: bill.totalTax,
@@ -36,7 +45,7 @@ export function billToBillPdfData(bill: Bill) {
 
 export function billToQuotationPdfData(bill: Bill) {
   const customer = bill.customer;
-  const customerAddress = typeof customer.address === 'object' ? customer.address : {};
+  const addr = formatPdfCustomerAddress(customer);
 
   const pdfData = {
     billNumber: bill.billNumber,
@@ -45,13 +54,7 @@ export function billToQuotationPdfData(bill: Bill) {
     company: bill.company,
     customer: {
       name: customer.fullName || customer.name || 'Customer Name',
-      address:
-        [customerAddress.street, customerAddress.area].filter(Boolean).join(', ') ||
-        customer.address ||
-        '',
-      city: customerAddress.city || customer.city || '',
-      state: customerAddress.state || customer.state || '',
-      pincode: customerAddress.pincode || customer.pincode || '',
+      ...addr,
       phone: customer.phone || '',
       email: customer.email || '',
       gstNumber: getCustomerGstNumber(customer),
@@ -93,11 +96,18 @@ export function billToQuotationPdfData(bill: Bill) {
 }
 
 export function billToTaxInvoicePdfData(bill: Bill) {
+  const customer = bill.customer;
+  const addr = formatPdfCustomerAddress(customer);
   return {
     billNumber: bill.billNumber,
     billDate: bill.billDate,
     company: bill.company,
-    customer: bill.customer,
+    customer: {
+      ...customer,
+      name: customer.fullName || customer.name || 'Customer Name',
+      ...addr,
+      gstNumber: getCustomerGstNumber(customer),
+    },
     items: bill.items,
     subtotal: bill.subtotal,
     totalTax: bill.totalTax,

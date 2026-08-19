@@ -5,6 +5,7 @@ import { Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, Customer } from '@/types';
 import { getCustomerGstNumber } from '@/lib/customerGst';
+import { formatPdfCustomerAddress } from '@/lib/customer-address';
 import { generateQuotationPDF } from '@/lib/quotation-pdf-generator';
 import {
   normalizeQuotationImageBlocks,
@@ -33,7 +34,7 @@ export default function QuotationModal({
 
     // Transform customer object from Bill format (fullName) to PDF format (name)
     const customer = quotation.customer;
-    const customerAddress = typeof customer.address === 'object' && customer.address ? customer.address : {};
+    const addr = formatPdfCustomerAddress(customer);
 
     const pdfData = {
       billNumber: quotation.billNumber,
@@ -42,10 +43,7 @@ export default function QuotationModal({
       company: quotation.company,
       customer: {
         name: customer.fullName || customer.name || 'Customer Name',
-        address: (customerAddress as any).street || (typeof customer.address === 'string' ? customer.address : '') || '',
-        city: (customerAddress as any).city || customer.city || '',
-        state: (customerAddress as any).state || customer.state || '',
-        pincode: (customerAddress as any).pincode || customer.pincode || '',
+        ...addr,
         phone: customer.phone || '',
         email: customer.email || '',
         gstNumber: getCustomerGstNumber(customer),

@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { toast } from 'sonner';
 import type { Bill } from '@/types';
+import { stringifyCustomerAddressForTemplate } from '@/lib/customer-address';
 import { generateAMCHTML, billToAmcPdfData } from '@/lib/amc-pdf-generator';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
 import { generateDocumentPdfVerifyCode, todayYmdIst } from '@/lib/documentPdfAuthenticity';
@@ -53,11 +54,8 @@ function esc(s: unknown): string {
 
 function fmtAddress(c: Record<string, unknown>): string {
   if (c.visible_address) return String(c.visible_address);
-  if (c.address && typeof c.address === 'object') {
-    const a = c.address as Record<string, unknown>;
-    return String(a.street || a.formattedAddress || JSON.stringify(a));
-  }
-  return String(c.address || '—');
+  const line = stringifyCustomerAddressForTemplate(c.address);
+  return line || '—';
 }
 
 /** Coords only — no Google Maps URL (safer when ZIP is forwarded). */

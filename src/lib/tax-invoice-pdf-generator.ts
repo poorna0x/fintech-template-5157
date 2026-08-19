@@ -473,7 +473,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
           <div class="customer-info">
             <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
             ${(data as any).invoiceDetails?.invoiceType === 'B2B' ? '<div style="font-size: 11px; color: #059669; font-weight: bold;">(Registered Business - B2B)</div>' : ''}
-            ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
+            ${sanitizeForTemplate(data.customer.address) ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
             ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${sanitizeForTemplate(data.customer.city)}, ${sanitizeForTemplate(data.customer.state)} - ${sanitizeForTemplate(data.customer.pincode)}</div>` : ''}
             ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
             ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}

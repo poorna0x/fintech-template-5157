@@ -2,6 +2,7 @@
 // Prevents XSS attacks by sanitizing user-generated HTML content
 
 import DOMPurify from 'dompurify';
+import { stringifyCustomerAddressForTemplate } from '@/lib/customer-address';
 
 /**
  * Same allow-list as Custom Document / Letterhead rich text editor
@@ -96,12 +97,18 @@ export function escapeHTML(text: string): string {
  * @param input - The input string to sanitize
  * @returns Sanitized string safe for HTML templates
  */
-export function sanitizeForTemplate(input: string | number | undefined | null): string {
+export function sanitizeForTemplate(input: unknown): string {
   if (input === null || input === undefined) {
     return '';
   }
 
-  const str = String(input);
+  const str =
+    typeof input === 'object'
+      ? stringifyCustomerAddressForTemplate(input)
+      : String(input);
+  if (!str || str === '[object Object]') {
+    return '';
+  }
   return escapeHTML(str);
 }
 

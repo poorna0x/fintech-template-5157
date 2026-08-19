@@ -197,3 +197,33 @@ export function formatCustomerAddressForBill(address: NormalizedCustomerAddress)
 
   return { address: fullLine, city, state, pincode };
 }
+
+/** Never return `[object Object]` — empty or missing address becomes `''`. */
+export function stringifyCustomerAddressForTemplate(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (!t || t === '[object Object]') return '';
+    return t;
+  }
+  if (typeof value === 'object') {
+    return formatCustomerFullAddressLine(normalizeCustomerAddress(value)).trim();
+  }
+  return '';
+}
+
+/** Flatten a Bill/PDF customer so address/city/state/pincode are strings. */
+export function formatPdfCustomerAddress(customer: {
+  address?: unknown;
+  city?: string;
+  state?: string;
+  pincode?: string;
+}): { address: string; city: string; state: string; pincode: string } {
+  const fromAddr = normalizeCustomerAddress(customer.address);
+  return formatCustomerAddressForBill({
+    ...fromAddr,
+    city: fromAddr.city || String(customer.city || '').trim(),
+    state: fromAddr.state || String(customer.state || '').trim(),
+    pincode: fromAddr.pincode || String(customer.pincode || '').trim(),
+  });
+}
