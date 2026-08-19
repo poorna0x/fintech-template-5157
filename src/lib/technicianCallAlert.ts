@@ -13,7 +13,7 @@ const recentlyNotified = new Map<string, number>();
 
 export function notifyAdminsTechnicianCall(
   phone: string,
-  opts?: { callId?: string; callAt?: number; missed?: boolean }
+  opts?: { callId?: string; callAt?: number }
 ): void {
   const digits = normalizePhoneForSearch(phone);
   if (digits.length < 10) return;
@@ -54,12 +54,7 @@ export function notifyAdminsTechnicianCall(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          number: digits,
-          callId,
-          callAt: callAt || undefined,
-          missed: opts?.missed === true,
-        }),
+        body: JSON.stringify({ number: digits, callId, callAt: callAt || undefined }),
         keepalive: true,
       });
     } catch {

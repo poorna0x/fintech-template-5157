@@ -68,12 +68,6 @@ import {
 } from '@/lib/service-brands';
 import type { TaxInvoiceEditSnapshot } from '@/lib/tax-invoice-edit-utils';
 import {
-  DocumentAddressSelector,
-  documentAddressForChoice,
-  type DocumentAddressChoice,
-} from '@/components/document/DocumentAddressSelector';
-import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
-import {
   type DocumentPaymentStatus,
   documentPaymentSummaryClass,
   documentPaymentSummaryLabel,
@@ -131,7 +125,6 @@ interface TaxInvoiceGeneratorProps {
   onPrint?: (bill: Bill, action?: 'print' | 'pdf') => void;
   onTaxInvoiceSaved?: () => void;
   embedded?: boolean;
-  initialAiInstruction?: string | null;
   /** Edit mode — loads snapshot and updates existing row instead of creating. */
   editInvoiceId?: string;
   initialEditSnapshot?: TaxInvoiceEditSnapshot;
@@ -184,7 +177,6 @@ export default function TaxInvoiceGenerator({
   onPrint,
   onTaxInvoiceSaved,
   embedded = false,
-  initialAiInstruction,
   editInvoiceId,
   initialEditSnapshot,
   initialCompanyInfo,
@@ -391,7 +383,6 @@ export default function TaxInvoiceGenerator({
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
-  const [addressChoice, setAddressChoice] = useState<DocumentAddressChoice>('primary');
   const [editableCustomer, setEditableCustomer] = useState({
     name: customerName || '',
     phone: customerPhone || '',
@@ -412,7 +403,7 @@ export default function TaxInvoiceGenerator({
     const phone = typeof customer.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
     const email = customer.email || '';
     const gst = getCustomerGstNumber(customer);
-    const addr = documentAddressForChoice(customer, addressChoice);
+    const addr = customer.address || {};
     setEditableCustomer((prev) => ({
       name: name || prev.name,
       phone: phone || prev.phone,
@@ -427,7 +418,7 @@ export default function TaxInvoiceGenerator({
         pincode: addr.pincode || prev.address.pincode || '',
       },
     }));
-  }, [customer, editInvoiceId, addressChoice]);
+  }, [customer, editInvoiceId]);
 
   // Auto-select place of supply / state code from customer GSTIN (first 2 digits)
   useEffect(() => {
@@ -1040,7 +1031,6 @@ export default function TaxInvoiceGenerator({
     amountReceived: num(amountReceived),
     deliveryAddress,
     showDeliveryAddress,
-    addressChoice,
     editableCustomer,
   });
 
@@ -1095,9 +1085,6 @@ export default function TaxInvoiceGenerator({
       setDeliveryAddress((prev) => ({ ...prev, ...snap.deliveryAddress }));
     if (typeof snap.showDeliveryAddress === 'boolean')
       setShowDeliveryAddress(snap.showDeliveryAddress);
-    if (snap.addressChoice === 'primary' || snap.addressChoice === 'secondary') {
-      setAddressChoice(snap.addressChoice);
-    }
     if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
   };
@@ -1232,16 +1219,6 @@ export default function TaxInvoiceGenerator({
           />
         }
       />
-
-      {!readOnly ? (
-        <AiDocumentDraftAssistant
-          kind="tax_invoice"
-          documentNoun="tax invoice"
-          getSnapshot={getDraftSnapshot}
-          onApply={applyDraftSnapshot}
-          initialInstruction={initialAiInstruction}
-        />
-      ) : null}
 
       <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 disabled:opacity-100">
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
@@ -1483,17 +1460,6 @@ export default function TaxInvoiceGenerator({
             </div>
           </CardHeader>
           <CardContent className="space-y-3 sm:space-y-4">
-            {!editInvoiceId ? (
-              <DocumentAddressSelector
-                customer={customer}
-                value={addressChoice}
-                onChange={(choice, address) => {
-                  setAddressChoice(choice);
-                  setEditableCustomer((prev) => ({ ...prev, address }));
-                }}
-                label="Billing address"
-              />
-            ) : null}
             {isEditingCustomer ? (
               <div className="space-y-3 sm:space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">

@@ -1,7 +1,6 @@
 -- Customer “review us” after Complete Job.
 -- Shared by HydrogenRO + ElevenRO. One row per job, attached to the technician
--- who completed / was assigned. Public get/submit is Netlify + service_role only
--- (anon/authenticated must not EXECUTE those RPCs).
+-- who completed / was assigned. Public submit is via RPCs only (no table access).
 -- Run in the Supabase SQL Editor. Safe to re-run.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -77,15 +76,6 @@ CREATE POLICY job_reviews_technician_select
     AND status = 'submitted'
   );
 
--- Admins may delete submitted/pending reviews from Settings → Customer reviews.
-GRANT DELETE ON public.job_reviews TO authenticated;
-DROP POLICY IF EXISTS job_reviews_admin_delete ON public.job_reviews;
-CREATE POLICY job_reviews_admin_delete
-  ON public.job_reviews
-  FOR DELETE
-  TO authenticated
-  USING (public.is_admin_user());
-
 -- ---------------------------------------------------------------------------
 -- Create / reuse invite (admin or the technician on that job)
 -- ---------------------------------------------------------------------------
@@ -106,7 +96,6 @@ DECLARE
   v_existing record;
   v_new_id uuid;
   v_try int := 0;
-  v_i int;
   v_allowed boolean := false;
 BEGIN
   IF p_job_id IS NULL THEN
@@ -142,11 +131,6 @@ BEGIN
     ) THEN
     v_allowed := true;
     v_tech := auth.uid();
-  ELSIF auth.role() = 'service_role' THEN
-    v_allowed := true;
-    IF p_technician_id IS NOT NULL THEN
-      v_tech := p_technician_id;
-    END IF;
   END IF;
 
   IF NOT v_allowed THEN
@@ -169,11 +153,11 @@ BEGIN
         'ok', true,
         'already_submitted', true,
         'id', v_existing.id,
+        'token', v_existing.token,
         'brand', v_brand
       );
     END IF;
-    IF v_existing.expires_at > now()
-      AND char_length(coalesce(v_existing.token, '')) BETWEEN 12 AND 16 THEN
+    IF v_existing.expires_at > now() AND char_length(coalesce(v_existing.token, '')) >= 12 THEN
       UPDATE public.job_reviews
       SET technician_id = v_tech,
           customer_id = v_job.customer_id,
@@ -190,15 +174,7 @@ BEGIN
   END IF;
 
   LOOP
-    -- 16 chars from 32-symbol alphabet (~80 bits). Unique index + retry on collision.
-    v_token := '';
-    FOR v_i IN 1..16 LOOP
-      v_token := v_token || substr(
-        'abcdefghijkmnpqrstuvwxyz23456789',
-        1 + (get_byte(gen_random_bytes(1), 0) % 32),
-        1
-      );
-    END LOOP;
+    v_token := encode(gen_random_bytes(16), 'hex');
 
     BEGIN
       IF v_existing.id IS NOT NULL THEN
@@ -355,15 +331,10 @@ $$;
 REVOKE ALL ON FUNCTION public.create_job_review_invite(uuid, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_job_review_invite(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.submit_job_review(text, integer, text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.get_job_review_invite(text) FROM anon;
-REVOKE EXECUTE ON FUNCTION public.get_job_review_invite(text) FROM authenticated;
-REVOKE EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) FROM anon;
-REVOKE EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) FROM authenticated;
 
 GRANT EXECUTE ON FUNCTION public.create_job_review_invite(uuid, uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.create_job_review_invite(uuid, uuid) TO service_role;
-GRANT EXECUTE ON FUNCTION public.get_job_review_invite(text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_job_review_invite(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_job_review(text, integer, text) TO anon, authenticated;
 
 -- Slim technician averages for Settings → Customer reviews (no comments).
 CREATE OR REPLACE FUNCTION public.job_review_technician_stats()

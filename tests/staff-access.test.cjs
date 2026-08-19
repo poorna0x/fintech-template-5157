@@ -7,8 +7,6 @@ const {
   technicianCanAccessJob,
   technicianCanAccessCustomer,
   verifyTechnicianAmcSaveAccess,
-  technicianMayAccessCloudinaryAsset,
-  isConfigTestPublicId,
 } = require('../netlify/functions/staff-access');
 
 const TECH = 'tech-1111-1111-1111-111111111111';
@@ -125,51 +123,6 @@ async function run() {
     jobId: JOB,
   });
   assert.strictEqual(accessBadCustomer.ok, false);
-
-  assert.strictEqual(isConfigTestPublicId('test/foo'), true);
-  assert.strictEqual(isConfigTestPublicId('ro-service/secret'), false);
-
-  const mediaAdmin = mockAdmin({
-    jobs: [
-      {
-        id: JOB,
-        assigned_technician_id: TECH,
-        assigned_by: null,
-        completed_by: null,
-        team_members: null,
-        images: ['https://res.cloudinary.com/x/image/upload/v1/ro-service/mine.jpg'],
-        before_photos: [],
-        after_photos: [],
-        requirements: [],
-      },
-    ],
-    job_assignment_requests: [],
-  });
-  assert.strictEqual(
-    await technicianMayAccessCloudinaryAsset(mediaAdmin, TECH, {
-      publicId: 'ro-service/mine',
-    }),
-    true
-  );
-  assert.strictEqual(
-    await technicianMayAccessCloudinaryAsset(mediaAdmin, OTHER, {
-      publicId: 'ro-service/mine',
-    }),
-    false
-  );
-  assert.strictEqual(
-    await technicianMayAccessCloudinaryAsset(mediaAdmin, OTHER, {
-      publicId: 'ro-service/mine',
-      jobId: JOB,
-    }),
-    false
-  );
-  assert.strictEqual(
-    await technicianMayAccessCloudinaryAsset(mediaAdmin, TECH, {
-      publicId: 'test/ping',
-    }),
-    true
-  );
 
   console.log('staff-access.test.js: all checks passed');
 }

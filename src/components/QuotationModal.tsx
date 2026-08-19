@@ -17,15 +17,9 @@ interface QuotationModalProps {
   isOpen: boolean;
   onClose: () => void;
   customer: Customer | null;
-  initialAiInstruction?: string | null;
 }
 
-export default function QuotationModal({
-  isOpen,
-  onClose,
-  customer,
-  initialAiInstruction,
-}: QuotationModalProps) {
+export default function QuotationModal({ isOpen, onClose, customer }: QuotationModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handlePrintQuotation = (quotation: Bill, action: 'print' | 'pdf' = 'pdf') => {
@@ -157,7 +151,6 @@ export default function QuotationModal({
                 customer={customer}
                 onPrint={handlePrintQuotation}
                 embedded
-                initialAiInstruction={initialAiInstruction}
               />
             </Suspense>
           ) : (

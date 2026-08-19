@@ -34,15 +34,15 @@ CREATE POLICY "Allow authenticated read booking abandonments"
   ON public.booking_abandonments
   FOR SELECT
   TO authenticated
-  USING (public.is_admin_user());
+  USING (true);
 
 DROP POLICY IF EXISTS "Allow authenticated update booking abandonments" ON public.booking_abandonments;
 CREATE POLICY "Allow authenticated update booking abandonments"
   ON public.booking_abandonments
   FOR UPDATE
   TO authenticated
-  USING (public.is_admin_user())
-  WITH CHECK (public.is_admin_user());
+  USING (true)
+  WITH CHECK (true);
 
 -- Broadcast row changes to authenticated subscribers (admin dashboard instant banner; avoids polling egress).
 -- If this errors with "already member of publication", the table was already added — safe to ignore.

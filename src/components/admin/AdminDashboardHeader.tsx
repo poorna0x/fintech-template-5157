@@ -30,7 +30,6 @@ import {
   Users,
   Wrench,
   X,
-  Sparkles,
 } from 'lucide-react';
 import { hapticTap } from '@/lib/haptics';
 import { focusAndroidInputWithoutScroll } from '@/lib/isNativeApp';
@@ -234,12 +233,6 @@ export function AdminDashboardHeader({
                     <UserPlus className="w-4 h-4 mr-2" />
                     Quick customer
                   </DropdownMenuItem>
-                  {!isManager ? (
-                    <DropdownMenuItem onClick={() => onOpenAdminTool('ai-assistant')}>
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      CRM AI assistant
-                    </DropdownMenuItem>
-                  ) : null}
                   <DropdownMenuItem
                     onClick={() => {
                       hapticTap();

@@ -1,12 +1,9 @@
 // Signed, short-lived Cloudinary delivery URLs for payment receipts / bills.
 // Requires Supabase JWT (admin or technician). Secrets stay server-side.
 const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-auth-guard');
-const { technicianMayAccessCloudinaryAsset } = require('./staff-access');
-const { checkRateLimit, checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
 
 const trim = (s) => (s && typeof s === 'string' ? s.trim() : s);
 
@@ -63,17 +60,6 @@ function configForCloudName(cloudName) {
   return null;
 }
 
-function getServiceDb() {
-  const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
-  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-  if (!supabaseUrl || !serviceKey) return null;
-  return createClient(supabaseUrl, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-}
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 exports.handler = async (event) => {
   const requestOrigin = event.headers.origin || event.headers.Origin;
   const corsHeaders = getCorsHeaders(requestOrigin);
@@ -129,43 +115,9 @@ exports.handler = async (event) => {
     };
   }
 
-  const ipLimit = checkRateLimit(event, {
-    maxRequests: 60,
-    windowMs: 60_000,
-    endpoint: 'cloudinary-signed-url-ip',
-  });
-  if (!ipLimit.allowed) {
-    const base = rateLimitResponseForKey(ipLimit);
-    return {
-      ...base,
-      headers: addSecurityHeaders({ ...base.headers, ...corsHeaders }),
-    };
-  }
-
-  const userLimit = checkRateLimitForKey(`cloudinary-sign-user:${auth.userId}`, {
-    maxRequests: 120,
-    windowMs: 60 * 60 * 1000,
-    endpoint: 'cloudinary-signed-url-user',
-  });
-  if (!userLimit.allowed) {
-    const base = rateLimitResponseForKey(userLimit);
-    return {
-      ...base,
-      headers: addSecurityHeaders({ ...base.headers, ...corsHeaders }),
-    };
-  }
-
   const signed = {};
   const errors = {};
-  const defaultTtl = auth.role === 'technician' ? 900 : 3600;
-  const ttl = Math.min(Math.max(Number(body.ttlSeconds) || defaultTtl, 300), auth.role === 'technician' ? 1800 : 86400);
-  const jobId = UUID_RE.test(String(body.jobId || '').trim()) ? String(body.jobId).trim() : null;
-
-  let techDb = null;
-  if (auth.role === 'technician') {
-    techDb = getServiceDb();
-    // Missing service role must not blank technician photos — skip ACL, still sign.
-  }
+  const ttl = Math.min(Math.max(Number(body.ttlSeconds) || 3600, 300), 86400);
 
   for (const raw of urls.slice(0, 25)) {
     if (typeof raw !== 'string' || !raw.includes('res.cloudinary.com')) {
@@ -181,18 +133,6 @@ exports.handler = async (event) => {
     if (!config) {
       errors[raw] = 'Unknown Cloudinary account';
       continue;
-    }
-    if (techDb) {
-      const allowed = await technicianMayAccessCloudinaryAsset(techDb, auth.userId, {
-        publicId: parsed.publicId,
-        jobId,
-      });
-      // No jobId: in-progress uploads are not on a job row yet — still sign.
-      // jobId present: only that job's technician may sign.
-      if (!allowed && jobId) {
-        errors[raw] = 'Forbidden';
-        continue;
-      }
     }
     try {
       signed[raw] = buildSignedUrl(config, parsed.publicId, ttl);

@@ -18,7 +18,6 @@ export const MANAGER_BLOCKED_ADMIN_VIEWS = new Set<string>([
 export const MANAGER_BLOCKED_ADMIN_TOOLS = new Set<string>([
   'direct-sale',
   'amount-trackers',
-  'ai-assistant',
 ]);
 
 /**
@@ -31,7 +30,6 @@ export const MANAGER_BLOCKED_SETTINGS_PANELS = new Set<string>([
   'privacy-center',
   'pdf-authenticity',
   'db-storage',
-  'ai-usage',
   'direct-sale',
   'merge-customers',
   'add-technician',

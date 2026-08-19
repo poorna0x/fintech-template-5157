@@ -10,7 +10,7 @@ BEGIN
       ON public.website_booking_intent
       FOR DELETE
       TO authenticated
-      USING (public.is_admin_user());
+      USING (true);
   END IF;
 END $$;
 
@@ -24,7 +24,7 @@ BEGIN
       ON public.booking_abandonments
       FOR DELETE
       TO authenticated
-      USING (public.is_admin_user());
+      USING (true);
   END IF;
 END $$;
 

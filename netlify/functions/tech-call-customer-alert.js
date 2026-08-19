@@ -34,45 +34,6 @@ function normalizePhone(raw) {
   return digits.length >= 10 ? digits.slice(-10) : '';
 }
 
-async function recordTechnicianCall(db, {
-  technicianId,
-  customer,
-  phone,
-  callId,
-  callAt,
-  missed,
-}) {
-  const row = {
-    technician_id: technicianId,
-    customer_id: customer.id,
-    customer_name: String(customer.full_name || 'Customer').slice(0, 160),
-    phone,
-    outcome: missed ? 'missed' : 'answered',
-    call_at: new Date(callAt).toISOString(),
-    call_id: callId,
-  };
-  const { error } = await db.from('technician_call_history').insert(row);
-  if (!error) return;
-
-  const duplicate = String(error.code || '') === '23505' || /duplicate|unique/i.test(String(error.message || ''));
-  if (duplicate && missed) {
-    // Never let a JS/native duplicate downgrade a missed call to answered.
-    const { error: updateError } = await db
-      .from('technician_call_history')
-      .update({ outcome: 'missed' })
-      .eq('technician_id', technicianId)
-      .eq('call_id', callId);
-    if (updateError) {
-      console.warn('[tech-call-customer-alert] call history outcome update failed:', updateError.message);
-    }
-    return;
-  }
-  if (!duplicate) {
-    // Soft-fail until the SQL migration is applied; admin alert must still work.
-    console.warn('[tech-call-customer-alert] call history insert failed:', error.message);
-  }
-}
-
 async function resolveAdminCallTokens(db) {
   // Prefer Device Tracker → “Customer call alerts”.
   // Fallback to tech_search if that list is empty (same phones often share both
@@ -116,13 +77,7 @@ exports.handler = async (event) => {
   const deviceToken = String(body.token || '').trim();
   const bearer = readBearerToken(event);
   const callAtRaw = Number(body.callAt);
-  const nowMs = Date.now();
-  const callAt =
-    Number.isFinite(callAtRaw) &&
-    callAtRaw > nowMs - 30 * 24 * 60 * 60_000 &&
-    callAtRaw < nowMs + 5 * 60_000
-      ? Math.floor(callAtRaw)
-      : nowMs;
+  const callAt = Number.isFinite(callAtRaw) && callAtRaw > 1_000_000_000_000 ? Math.floor(callAtRaw) : 0;
   let callId = String(body.callId || '').trim().slice(0, 80);
 
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
@@ -261,20 +216,6 @@ exports.handler = async (event) => {
   }
 
   if (technicianId && !isAdminDevice) {
-    if (!callId) {
-      callId = `${phone}:${callAt}`;
-    }
-    await recordTechnicianCall(db, {
-      technicianId,
-      customer,
-      phone,
-      callId,
-      callAt,
-      missed,
-    });
-  }
-
-  if (technicianId && !isAdminDevice) {
     const { data: activeJob } = await db
       .from('jobs')
       .select('id')
@@ -295,6 +236,9 @@ exports.handler = async (event) => {
   // Idempotent send: same CallLog call_id → one admin push. Re-call = new call_id.
   // Phone window (45s) catches mismatched ids (native ringAt vs JS dateMs / js:bucket).
   if (technicianId && !isAdminDevice) {
+    if (!callId) {
+      callId = callAt > 0 ? `${phone}:${callAt}` : `${phone}:t${Math.floor(Date.now() / 20_000)}`;
+    }
     const sinceIso = new Date(Date.now() - 45_000).toISOString();
     const { data: recentSamePhone } = await db
       .from('tech_call_alert_events')

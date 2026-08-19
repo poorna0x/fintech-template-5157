@@ -107,26 +107,10 @@ async function recordDocumentPdfAuthenticityServer(db, params) {
   };
 
   const { error } = await db.from('document_pdf_authenticity').insert(row);
-  if (!error) return { ok: true, sha256Hex };
-
-  // Client already fingerprints during PDF generate; Accept send may re-insert the
-  // same verify code. Treat an existing matching row as success.
-  const isDuplicate =
-    error.code === '23505' ||
-    /duplicate key|unique constraint/i.test(String(error.message || ''));
-  if (isDuplicate) {
-    const { data: existing } = await db
-      .from('document_pdf_authenticity')
-      .select('sha256_hex')
-      .eq('verify_code', verifyCode)
-      .maybeSingle();
-    if (existing?.sha256_hex === sha256Hex) {
-      return { ok: true, sha256Hex, alreadyRecorded: true };
-    }
-    // Same code, different bytes — rare collision; leave the existing row alone.
-    return { ok: true, sha256Hex, alreadyRecorded: true };
+  if (error) {
+    return { ok: false, error: error.message };
   }
-  return { ok: false, error: error.message };
+  return { ok: true, sha256Hex };
 }
 
 module.exports = {

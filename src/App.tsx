@@ -4,6 +4,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { SecurityProvider } from "./contexts/SecurityContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { AuthPortalCoordinator } from "./components/AuthPortalCoordinator";
 import { Suspense, lazy, useEffect } from "react";
 import { useGlobalButtonHaptics } from "@/hooks/useGlobalButtonHaptics";
 import Index from "./pages/Index";
@@ -12,13 +15,9 @@ import PerformanceMonitor from "./components/PerformanceMonitor";
 import PublicSiteSeo from "./components/PublicSiteSeo";
 import GoogleAnalytics from "./components/GoogleAnalytics";
 import CookieConsentBanner from "./components/CookieConsentBanner";
-import {
-  findCityServicePage,
-  findLocationPage,
-  findServicePage,
-} from "@/lib/publicSeoPages";
+import { SEO_CITY_SERVICE_PAGES, SEO_LOCATION_PAGES, SEO_SERVICE_PAGES } from "@/lib/publicSeoPages";
 import { disablePWA } from "@/lib/pwa";
-import { isTechnicianPortalPath } from "@/lib/portalPaths";
+import { isTechnicianPortalPath } from "@/lib/authPortal";
 import { startNativeBackButtonHandler } from "@/lib/nativeBackButton";
 import { isNativeApp } from "@/lib/isNativeApp";
 import { PortalBootLoader } from "@/components/PortalBootLoader";
@@ -61,28 +60,9 @@ const SpareParts = lazy(() => import("./pages/SpareParts"));
 const Warranty = lazy(() => import("./pages/Warranty"));
 const PublicPdfAuthenticityPage = lazy(() => import("./pages/PublicPdfAuthenticityPage"));
 const PublicJobReviewPage = lazy(() => import("./pages/PublicJobReviewPage"));
-const PublicDocumentAcceptPage = lazy(() => import("./pages/PublicDocumentAcceptPage"));
 const PayUpi = lazy(() => import("./pages/PayUpi"));
 const WhatsAppTest = lazy(() => import("./pages/WhatsAppTest"));
 const CallDialPage = lazy(() => import("./pages/CallDialPage"));
-const PortalProviders = lazy(() => import("./components/PortalProviders"));
-const PublicSecurityProviders = lazy(() => import("./components/PublicSecurityProviders"));
-
-/**
- * One route handles the 1,000+ generated public SEO slugs. Rendering a
- * separate <Route> for every slug added substantial startup work on every
- * page, even though only one can ever match.
- */
-function SeoLandingRoute() {
-  const { pathname } = useLocation();
-  if (findCityServicePage(pathname) || findServicePage(pathname)) {
-    return <Services />;
-  }
-  if (findLocationPage(pathname)) {
-    return <ServiceAreas />;
-  }
-  return <NotFound />;
-}
 
 /** Plain bounce — used for in-session Suspense (Settings, previews, tech dashboard, …). */
 function PlainPortalSuspenseLoader() {
@@ -140,53 +120,38 @@ const queryClient = new QueryClient({
   },
 });
 
-function isPortalPath(pathname: string): boolean {
-  return (
-    pathname.startsWith('/admin') ||
-    pathname.startsWith('/settings') ||
-    isTechnicianPortalPath(pathname)
-  );
-}
-
-/** Public pages that use AltchaWidget / honeypot (need SecurityProvider, not Auth). */
-function isPublicSecurityPath(pathname: string): boolean {
-  return (
-    pathname === '/book' ||
-    pathname === '/booking' ||
-    pathname === '/warranty' ||
-    pathname === '/authenticity' ||
-    pathname === '/privacy-request'
-  );
-}
-
-/**
- * Marketing pages stay provider-light. Portal routes get Auth + Security.
- * Public forms get Security only (ALTCHA / honeypot).
- */
-const RouteProviders = ({ children }: { children: React.ReactNode }) => {
-  const { pathname } = useLocation();
+// Component to handle PWA enable/disable based on route
+const PWARouteHandler = () => {
+  const location = useLocation();
+  const { user, isAdmin } = useAuth();
 
   useEffect(() => {
-    if (!isPortalPath(pathname)) disablePWA();
-  }, [pathname]);
+    // Admin app routes (must match admin-manifest scope / install — do not disablePWA here)
+    const isPWAPage =
+      isTechnicianPortalPath(location.pathname) ||
+      location.pathname.startsWith('/admin') ||
+      location.pathname.startsWith('/settings');
+    
+    if (!isPWAPage) {
+      disablePWA();
+    }
+    // Note: PWA is enabled by registerTechnicianPWA() or registerAdminPWA() 
+    // when those components mount, so we don't need to enable it here
 
-  if (isPortalPath(pathname)) {
-    return (
-      <Suspense fallback={<LoadingSpinner />}>
-        <PortalProviders>{children}</PortalProviders>
-      </Suspense>
-    );
-  }
+    // Security: only warm the admin/data chunks AFTER we know the visitor is
+    // actually an authenticated admin. Otherwise an anonymous visitor to /admin
+    // would download `admin-data-*.js` (which contains all RPC + table names).
+    if (location.pathname.startsWith('/admin')) {
+      if (user && isAdmin) {
+        void import('./components/AdminDashboard');
+        void import('./lib/supabase');
+      }
+    } else if (isTechnicianPortalPath(location.pathname)) {
+      void import('./pages/TechnicianDashboard');
+    }
+  }, [location.pathname, user, isAdmin]);
 
-  if (isPublicSecurityPath(pathname)) {
-    return (
-      <Suspense fallback={<LoadingSpinner />}>
-        <PublicSecurityProviders>{children}</PublicSecurityProviders>
-      </Suspense>
-    );
-  }
-
-  return <>{children}</>;
+  return null;
 };
 
 const GlobalHaptics = () => {
@@ -202,35 +167,23 @@ const NativeBackButton = () => {
   return null;
 };
 
-/**
- * SPA footer/nav links change the path while leaving scroll at the bottom, so
- * the new page looks like "nothing happened". Scroll to top on pathname change;
- * leave hash-only jumps alone so /#testimonials etc. still work.
- */
-const ScrollToTopOnNavigate = () => {
-  const { pathname, hash } = useLocation();
-  useEffect(() => {
-    if (hash) return;
-    window.scrollTo(0, 0);
-  }, [pathname, hash]);
-  return null;
-};
-
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
-      <TooltipProvider>
-        {import.meta.env.DEV ? <PerformanceMonitor /> : null}
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <NativeBackButton />
-          <ScrollToTopOnNavigate />
-          <GlobalHaptics />
-          <PublicSiteSeo />
-          <GoogleAnalytics />
-          <CookieConsentBanner />
-          <RouteProviders>
+      <SecurityProvider>
+        <AuthProvider>
+            <TooltipProvider>
+            {import.meta.env.DEV ? <PerformanceMonitor /> : null}
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <NativeBackButton />
+              <GlobalHaptics />
+              <AuthPortalCoordinator />
+              <PublicSiteSeo />
+              <GoogleAnalytics />
+              <CookieConsentBanner />
+              <PWARouteHandler />
               <Suspense fallback={<LoadingSpinner />}>
                 <Routes>
                   <Route path="/" element={<Index />} />
@@ -265,10 +218,24 @@ const App = () => (
                   <Route path="/warranty" element={<Warranty />} />
                   <Route path="/authenticity" element={<PublicPdfAuthenticityPage />} />
                   <Route path="/review/:token" element={<PublicJobReviewPage />} />
-                  <Route path="/accept/:token" element={<PublicDocumentAcceptPage />} />
                   
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />
+                  
+                  {/* City × service pages — e.g. /ro-installation-in-mysuru */}
+                  {SEO_CITY_SERVICE_PAGES.map(({ path }) => (
+                    <Route key={path} path={path} element={<Services />} />
+                  ))}
+
+                  {/* Service-specific pages — same UI, unique SEO URLs */}
+                  {SEO_SERVICE_PAGES.map(({ path }) => (
+                    <Route key={path} path={path} element={<Services />} />
+                  ))}
+
+                  {/* Location-specific pages — same UI, unique SEO URLs */}
+                  {SEO_LOCATION_PAGES.map(({ path }) => (
+                    <Route key={path} path={path} element={<ServiceAreas />} />
+                  ))}
                   
                   {/* Technician ID Card - Public route */}
                   <Route path="/technician-id/:id" element={<TechnicianIdCard />} />
@@ -283,17 +250,15 @@ const App = () => (
 
                   {/* WhatsApp Cloud API POC (text + PDF) */}
                   <Route path="/whatsapp-test" element={<WhatsAppTest />} />
-
-                  {/* Generated city/service/location SEO landing pages. */}
-                  <Route path="/:slug" element={<SeoLandingRoute />} />
                   
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
-          </RouteProviders>
-        </BrowserRouter>
-      </TooltipProvider>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AuthProvider>
+      </SecurityProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );

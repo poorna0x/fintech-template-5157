@@ -41,7 +41,6 @@ import { generateAmcPdfBase64ForWhatsApp } from '@/lib/send-amc-whatsapp';
 import {
   generateAmcAcceptPdfPair,
   sendDocumentAcceptInvite,
-  sendDocumentEmailAcceptInvite,
   showAcceptPreviewSentToast,
 } from '@/lib/documentAcceptPreview';
 import {
@@ -224,56 +223,6 @@ export default function AmcEmailSendDialog({
     setRecipientRows((prev) => [...prev, emptyRow()]);
   };
 
-  const sendEmailAcceptInvites = async (
-    recipients: string[],
-    pair: Awaited<ReturnType<typeof generateAmcAcceptPdfPair>>,
-    billForSend: Bill,
-    acceptBrand: DocumentBrand,
-    toastId: string | number
-  ): Promise<{ sent: number; lastError?: string }> => {
-    let sent = 0;
-    let lastError: string | undefined;
-    const customerName = resolveBillCustomerDisplayName(billForSend.customer);
-
-    for (let index = 0; index < recipients.length; index += 1) {
-      const to = recipients[index];
-      toast.loading(
-        recipients.length > 1
-          ? `Sending Accept email ${index + 1} of ${recipients.length}…`
-          : 'Sending preview + secure Accept link by email…',
-        { id: toastId }
-      );
-      try {
-        const result = await sendDocumentEmailAcceptInvite({
-          to,
-          brand: acceptBrand,
-          docType: 'amc',
-          documentLabel: 'AMC agreement',
-          documentRef: billForSend.billNumber,
-          sourceKey: billForSend.billNumber,
-          customerId: billForSend.customer?.id || null,
-          customerName,
-          amountDisplay: billForSend.totalAmount,
-          filename: pair.filename,
-          verifyCode: pair.verifyCode,
-          previewVerifyCode: pair.previewVerifyCode,
-          originalPdfBase64: pair.originalPdfBase64,
-          previewPdfBase64: pair.previewPdfBase64,
-        });
-        if (result.ok) {
-          sent += 1;
-        } else {
-          lastError = `${to}: ${result.error || 'Accept email failed'}`;
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Accept email failed';
-        lastError = `${to}: ${message}`;
-      }
-    }
-
-    return { sent, lastError };
-  };
-
   const handleSendEmail = async () => {
     if (!bill || !brand) {
       toast.error('Agreement details are missing');
@@ -350,87 +299,38 @@ export default function AmcEmailSendDialog({
           ? { ...bill, customer: { ...bill.customer, email: recipients[0] } }
           : bill;
 
-      let emailAcceptPartialError: string | undefined;
-      if (requireAccept) {
-        toast.loading('Generating preview + original…', { id: toastId });
-        const pair = await generateAmcAcceptPdfPair(billForSend, pdfOptions);
-        const emailFanout = await sendEmailAcceptInvites(
-          recipients,
-          pair,
-          billForSend,
-          brand,
-          toastId
-        );
-        if (emailFanout.sent === 0) {
-          toast.error('Could not send the Accept email', {
-            id: toastId,
-            description: emailFanout.lastError,
-          });
-          return;
-        }
-        if (emailFanout.sent < recipients.length) {
-          emailAcceptPartialError = `${emailFanout.sent} of ${recipients.length} Accept emails sent${
-            emailFanout.lastError ? ` · ${emailFanout.lastError}` : ''
-          }`;
-        }
-      } else {
-        const result = await sendAmcAgreementEmail({
-          bill: billForSend,
-          brand,
-          recipientEmails: recipients,
-          endDateIso,
-          pdfOptions,
-          customMessage: message.trim() || undefined,
-        });
+      const result = await sendAmcAgreementEmail({
+        bill: billForSend,
+        brand,
+        recipientEmails: recipients,
+        endDateIso,
+        pdfOptions,
+        customMessage: message.trim() || undefined,
+      });
 
-        if (!result.ok) {
-          toast.error(result.error || 'Could not send email', { id: toastId });
-          return;
-        }
+      if (!result.ok) {
+        toast.error(result.error || 'Could not send email', { id: toastId });
+        return;
       }
 
       if (onPersistAfterEmail) {
         toast.loading('Saving AMC to database…', { id: toastId });
         const saved = await onPersistAfterEmail(recipients);
         if (!saved.ok) {
-          toast.warning(
-            requireAccept
-              ? 'Accept email sent, but AMC could not be saved'
-              : 'Email sent, but AMC could not be saved',
-            {
-              id: toastId,
-              description: [
-                emailAcceptPartialError,
-                saved.error || 'Try downloading AMC to save again',
-              ]
-                .filter(Boolean)
-                .join(' | '),
-            }
-          );
+          toast.warning('Email sent, but AMC could not be saved', {
+            id: toastId,
+            description: saved.error || 'Try downloading AMC to save again',
+          });
           onSent?.();
           onOpenChange(false);
           return;
         }
       }
 
-      if (emailAcceptPartialError) {
-        toast.warning('Accept email sent to some recipients', {
-          id: toastId,
-          description: emailAcceptPartialError,
-        });
-        onSent?.();
-        onOpenChange(false);
-        return;
-      }
-
       toast.success(
-        requireAccept
-          ? onPersistAfterEmail
-            ? 'Preview + secure Accept link emailed — saved to database'
-            : 'Preview + secure Accept link emailed'
-          : onPersistAfterEmail
-            ? `${getAmcEmailSuccessMessage(brand, recipients)} — saved to database`
-            : getAmcEmailSuccessMessage(brand, recipients),
+        onPersistAfterEmail
+          ? `${getAmcEmailSuccessMessage(brand, recipients)} — saved to database`
+          : getAmcEmailSuccessMessage(brand, recipients),
         { id: toastId }
       );
       onSent?.();
@@ -706,126 +606,12 @@ export default function AmcEmailSendDialog({
         }
       }
 
+      toast.loading('Sending email…', { id: toastId });
       const billForSend =
         singleRecipient && bill.customer.email !== recipients[0]
           ? { ...bill, customer: { ...bill.customer, email: recipients[0] } }
           : bill;
 
-      if (requireAccept) {
-        toast.loading('Generating one preview + original pair…', { id: toastId });
-        const pair = await generateAmcAcceptPdfPair(billForSend, pdfOptions);
-        const emailFanout = await sendEmailAcceptInvites(
-          recipients,
-          pair,
-          billForSend,
-          brand,
-          toastId
-        );
-        const deliveryNotes: string[] = [];
-        const persistenceNotes: string[] = [];
-
-        if (emailFanout.sent > 0 && onPersistAfterEmail) {
-          const saved = await onPersistAfterEmail(recipients);
-          if (!saved.ok) {
-            persistenceNotes.push(`AMC save after email failed: ${saved.error || 'Unknown error'}`);
-          }
-        }
-
-        const resolved = resolveWhatsAppDestinations(whatsappPhone, extraWhatsappPhone);
-        const destinations = resolved.destinations;
-        const customerName = resolveBillCustomerDisplayName(bill.customer);
-        const customerIdFor = (to: string) =>
-          customerIdForWhatsAppDest(to, bill.customer?.phone, bill.customer?.id || null);
-
-        toast.loading('Sending Accept preview on WhatsApp…', { id: toastId });
-        let fanout: Awaited<ReturnType<typeof sendWhatsAppToMany>>;
-        try {
-          fanout = await sendWhatsAppToMany(destinations, (to, windowClosed) =>
-            sendDocumentAcceptInvite({
-              to,
-              brand,
-              docType: 'amc',
-              documentLabel: 'AMC agreement',
-              documentRef: bill.billNumber,
-              sourceKey: bill.billNumber,
-              customerId: customerIdFor(to),
-              customerName,
-              filename: pair.filename,
-              verifyCode: pair.verifyCode,
-              previewVerifyCode: pair.previewVerifyCode,
-              originalPdfBase64: pair.originalPdfBase64,
-              previewPdfBase64: pair.previewPdfBase64,
-              preferColdTemplate: windowClosed,
-            })
-          );
-        } catch (error) {
-          fanout = {
-            sent: 0,
-            usedTemplate: false,
-            lastError:
-              error instanceof Error ? error.message : 'Could not send Accept preview on WhatsApp',
-          };
-        }
-
-        if (fanout.sent > 0 && onPersistAfterWhatsApp) {
-          const saved = await onPersistAfterWhatsApp();
-          if (!saved.ok) {
-            persistenceNotes.push(
-              `AMC save after WhatsApp failed: ${saved.error || 'Unknown error'}`
-            );
-          }
-        }
-
-        const emailComplete = emailFanout.sent === recipients.length;
-        const whatsappComplete =
-          !resolved.error && destinations.length > 0 && fanout.sent === destinations.length;
-        if (!emailComplete) {
-          deliveryNotes.push(
-            emailFanout.sent > 0
-              ? `Email: ${emailFanout.sent}/${recipients.length} sent${
-                  emailFanout.lastError ? ` · ${emailFanout.lastError}` : ''
-                }`
-              : `Email failed${emailFanout.lastError ? ` · ${emailFanout.lastError}` : ''}`
-          );
-        }
-        if (!whatsappComplete) {
-          deliveryNotes.push(
-            fanout.sent > 0
-              ? `WhatsApp: ${fanout.sent}/${destinations.length} sent${
-                  fanout.lastError ? ` · ${fanout.lastError}` : ''
-                }`
-              : `WhatsApp failed${
-                  resolved.error
-                    ? ` · ${resolved.error}`
-                    : fanout.lastError
-                      ? ` · ${fanout.lastError}`
-                      : ''
-                }`
-          );
-        }
-
-        if (emailFanout.sent === 0 && fanout.sent === 0) {
-          toast.error('Could not send either Accept invite', {
-            id: toastId,
-            description: deliveryNotes.join(' | ') || resolved.error,
-          });
-          return;
-        }
-
-        if (deliveryNotes.length || persistenceNotes.length) {
-          toast.warning('Accept invite sent with partial success', {
-            id: toastId,
-            description: [...deliveryNotes, ...persistenceNotes].join(' | '),
-          });
-        } else {
-          toast.success('Preview + Accept invite sent by email and WhatsApp', { id: toastId });
-        }
-        onSent?.();
-        onOpenChange(false);
-        return;
-      }
-
-      toast.loading('Sending email…', { id: toastId });
       const emailResult = await sendAmcAgreementEmail({
         bill: billForSend,
         brand,
@@ -860,6 +646,44 @@ export default function AmcEmailSendDialog({
         customerIdForWhatsAppDest(to, bill.customer?.phone, bill.customer?.id || null);
 
       toast.loading('Sending WhatsApp…', { id: toastId });
+      if (requireAccept) {
+        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions);
+        const fanout = await sendWhatsAppToMany(destinations, (to, windowClosed) =>
+          sendDocumentAcceptInvite({
+            to,
+            brand,
+            docType: 'amc',
+            documentLabel: 'AMC agreement',
+            documentRef: bill.billNumber,
+            sourceKey: bill.billNumber,
+            customerId: customerIdFor(to),
+            customerName,
+            filename: pair.filename,
+            verifyCode: pair.verifyCode,
+            previewVerifyCode: pair.previewVerifyCode,
+            originalPdfBase64: pair.originalPdfBase64,
+            previewPdfBase64: pair.previewPdfBase64,
+            preferColdTemplate: windowClosed,
+          })
+        );
+        if (fanout.sent === 0) {
+          toast.error(fanout.lastError || 'Email sent, but Accept WhatsApp failed', { id: toastId });
+          return;
+        }
+        if (onPersistAfterWhatsApp) {
+          await onPersistAfterWhatsApp();
+        }
+        if (fanout.sent > 1) {
+          toast.success(`Email + Accept preview sent on WhatsApp to ${fanout.sent} numbers`, {
+            id: toastId,
+          });
+        } else {
+          showAcceptPreviewSentToast(toastId, fanout.lastVia);
+        }
+        onSent?.();
+        onOpenChange(false);
+        return;
+      }
       const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
       const caption = (
         message.trim() ||
@@ -997,24 +821,6 @@ export default function AmcEmailSendDialog({
             </div>
           ) : null}
 
-          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-emerald-700"
-              checked={requireAccept}
-              onChange={(e) => setRequireAccept(e.target.checked)}
-              disabled={sending}
-            />
-            <span className="text-xs leading-snug text-foreground">
-              <span className="font-semibold">Require Accept</span>
-              {channel === 'email'
-                ? ' — emails a watermarked preview with a secure Accept link. The original AMC is emailed only after acceptance.'
-                : channel === 'both'
-                  ? ' — sends a watermarked preview invite by email and WhatsApp. The customer can accept securely from either channel.'
-                  : ' — sends a preview on WhatsApp, then I Accept delivers the original AMC (inside 24h or by cold template when closed).'}
-            </span>
-          </label>
-
           {showWhatsAppFields ? (
             <div className="space-y-2">
               <Label htmlFor="amc-recipient-phone" className="text-sm font-medium">
@@ -1064,6 +870,20 @@ export default function AmcEmailSendDialog({
                   Open window: free-form send. Closed window: cold document / Accept templates.
                 </p>
               )}
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-emerald-700"
+                  checked={requireAccept}
+                  onChange={(e) => setRequireAccept(e.target.checked)}
+                  disabled={sending}
+                />
+                <span className="text-xs leading-snug text-foreground">
+                  <span className="font-semibold">Require Accept</span> — preview on WhatsApp, then{' '}
+                  <span className="font-semibold">I Accept</span> for the original AMC (works inside
+                  24h and via cold template when closed).
+                </span>
+              </label>
             </div>
           ) : null}
 
@@ -1160,14 +980,12 @@ export default function AmcEmailSendDialog({
               onChange={(e) => setMessage(e.target.value)}
               rows={4}
               className="min-h-[96px] resize-y text-sm"
-              disabled={sending || requireAccept}
+              disabled={sending}
             />
             <p className="text-xs text-muted-foreground">
-              {requireAccept
-                ? 'Accept invites use secure standard wording, so this custom message is not included.'
-                : channel === 'whatsapp'
-                  ? 'Shown with the PDF on WhatsApp (max ~1024 characters).'
-                  : 'Uses the standard AMC email template. Edit the message above if needed.'}
+              {channel === 'whatsapp'
+                ? 'Shown with the PDF on WhatsApp (max ~1024 characters).'
+                : 'Uses the standard AMC email template. Edit the message above if needed.'}
             </p>
           </div>
         </div>
@@ -1211,12 +1029,12 @@ export default function AmcEmailSendDialog({
               <>
                 <Mail className="h-4 w-4 mr-1.5" />
                 <WhatsAppIcon className="h-4 w-4 mr-2" />
-                {requireAccept ? 'Send Accept invites' : 'Send both'}
+                Send both
               </>
             ) : (
               <>
                 <Mail className="h-4 w-4 mr-2" />
-                {requireAccept ? 'Send Accept email' : 'Send email'}
+                Send email
               </>
             )}
           </Button>

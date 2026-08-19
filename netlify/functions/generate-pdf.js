@@ -6,10 +6,6 @@ const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyStaffBearerToken } = require('./admin-auth-guard');
 const { checkRateLimit, checkRateLimitForKey, getClientIdentifier } = require('./rate-limiter');
-const { maybeCompressPdfBuffer } = require('./ilovepdf-compress-helper');
-const {
-  isPdfCompressionEnabled,
-} = require('./pdf-compression-setting');
 
 chromium.setGraphicsMode = false;
 
@@ -94,9 +90,8 @@ function isAllowedPdfResourceUrl(url, requestOrigin) {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
 
   const host = parsed.hostname.toLowerCase();
-  // Local / LAN hosts are needed only by the local CRM. Never let production
-  // Chromium reach Lambda/VPC/private-network addresses.
-  if (isPrivateOrLoopbackHost(host)) return !process.env.AWS_LAMBDA_FUNCTION_NAME;
+  // Local / LAN hosts (CRM often opened as http://192.168.x.x:8080)
+  if (isPrivateOrLoopbackHost(host)) return true;
 
   if (requestOrigin) {
     try {
@@ -217,9 +212,8 @@ async function launchBrowser() {
   throw lastError || new Error('Could not launch a local browser for PDF generation');
 }
 
-async function waitForDocumentFonts(page, timeoutMs = 2500) {
-  await Promise.race([
-    page
+async function waitForDocumentFonts(page) {
+  await page
     .evaluate(async () => {
       if (document.fonts?.ready) {
         await document.fonts.ready;
@@ -239,15 +233,12 @@ async function waitForDocumentFonts(page, timeoutMs = 2500) {
         await document.fonts.ready;
       }
     })
-    .catch(() => undefined),
-    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
-  ]);
+    .catch(() => undefined);
   await new Promise((resolve) => setTimeout(resolve, 300));
 }
 
-async function waitForDocumentImages(page, timeoutMs = 2500) {
-  await Promise.race([
-    page
+async function waitForDocumentImages(page) {
+  await page
     .evaluate(async () => {
       const imgs = Array.from(document.images || []);
       await Promise.all(
@@ -265,13 +256,11 @@ async function waitForDocumentImages(page, timeoutMs = 2500) {
         )
       );
     })
-    .catch(() => undefined),
-    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
-  ]);
+    .catch(() => undefined);
   await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
-async function renderHtmlToPdf(html, requestOrigin, options = {}) {
+async function renderHtmlToPdf(html, requestOrigin) {
   let browser;
   try {
     browser = await launchBrowser();
@@ -280,6 +269,10 @@ async function renderHtmlToPdf(html, requestOrigin, options = {}) {
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const resourceType = req.resourceType();
+      if (resourceType === 'document') {
+        req.continue();
+        return;
+      }
       if (isAllowedPdfResourceUrl(req.url(), requestOrigin)) {
         try {
           const host = new URL(req.url()).hostname.toLowerCase();
@@ -304,8 +297,8 @@ async function renderHtmlToPdf(html, requestOrigin, options = {}) {
 
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
     await page.setContent(html, {
-      waitUntil: 'domcontentloaded',
-      timeout: 8000,
+      waitUntil: 'networkidle0',
+      timeout: 45000,
     });
     await waitForDocumentFonts(page);
     await waitForDocumentImages(page);
@@ -318,14 +311,7 @@ async function renderHtmlToPdf(html, requestOrigin, options = {}) {
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
     });
 
-    const raw = Buffer.from(pdfBuffer);
-    if (options.compress !== true) return raw;
-
-    const compressed = await maybeCompressPdfBuffer(raw, {
-      filename: options.filename || 'document.pdf',
-      deadlineAt: options.deadlineAt,
-    });
-    return compressed.buffer;
+    return Buffer.from(pdfBuffer);
   } finally {
     if (browser) {
       await browser.close();
@@ -337,7 +323,6 @@ async function renderHtmlToPdf(html, requestOrigin, options = {}) {
 exports.renderHtmlToPdf = renderHtmlToPdf;
 
 exports.handler = async (event) => {
-  const requestStartedAt = Date.now();
   const requestOrigin = event.headers.origin || event.headers.Origin;
   const corsHeaders = getCorsHeaders(requestOrigin);
 
@@ -395,9 +380,6 @@ exports.handler = async (event) => {
   if (!html) {
     return jsonResponse(400, corsHeaders, { error: 'Missing html content' });
   }
-  if (/<\s*(?:iframe|frame|object|embed)\b/i.test(html)) {
-    return jsonResponse(400, corsHeaders, { error: 'Unsupported embedded document content' });
-  }
 
   const htmlBytes = Buffer.byteLength(html, 'utf8');
   if (htmlBytes > MAX_HTML_BYTES) {
@@ -409,14 +391,7 @@ exports.handler = async (event) => {
   const filename = sanitizeFilename(body.filename);
 
   try {
-    const shouldCompress = await isPdfCompressionEnabled();
-    const pdfBytes = await renderHtmlToPdf(html, requestOrigin, {
-      compress: shouldCompress,
-      filename,
-      // Netlify kills this function at 26s. Stop third-party work early enough
-      // to return the original Chromium bytes and close the browser cleanly.
-      deadlineAt: requestStartedAt + 22_000,
-    });
+    const pdfBytes = await renderHtmlToPdf(html, requestOrigin);
 
     return {
       statusCode: 200,

@@ -2,7 +2,7 @@
 import React from 'react';
 import { Droplets } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { isTechnicianPortalPath } from '@/lib/portalPaths';
+import { isTechnicianPortalPath } from '@/lib/authPortal';
 
 interface LogoProps {
   /** When true, use neutral z-index to avoid overlap on some mobile browsers (e.g. Samsung) */

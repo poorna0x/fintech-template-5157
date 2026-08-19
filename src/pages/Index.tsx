@@ -10,6 +10,7 @@ import Footer from '@/components/Footer';
 const WhyChooseSection = lazy(() => import('@/components/WhyChooseSection'));
 const AboutSection = lazy(() => import('@/components/AboutSection'));
 const ServiceAreasSection = lazy(() => import('@/components/ServiceAreasSection'));
+const PincodeServiceSection = lazy(() => import('@/components/PincodeServiceSection'));
 const Testimonials = lazy(() => import('@/components/Testimonials'));
 const BookingRedirect = lazy(() => import('@/components/BookingRedirect'));
 const ContactSection = lazy(() => import('@/components/ContactSection'));
@@ -39,6 +40,9 @@ const Index = () => {
         </Suspense>
         <Suspense fallback={<SectionFallback minHeight="20rem" />}>
           <ServiceAreasSection />
+        </Suspense>
+        <Suspense fallback={<SectionFallback />}>
+          <PincodeServiceSection />
         </Suspense>
         <Suspense fallback={<SectionFallback minHeight="24rem" />}>
           <Testimonials />

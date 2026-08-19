@@ -14,7 +14,6 @@ export const SETTINGS_PANELS = [
   'warranty',
   'pdf-authenticity',
   'db-storage',
-  'ai-usage',
   'direct-sale',
   'add-technician',
   'edit-technician',

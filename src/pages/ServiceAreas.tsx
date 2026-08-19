@@ -256,29 +256,6 @@ const ServiceAreas = () => {
           </section>
         )}
 
-        {loc && (
-          <section className="py-10 px-4 md:px-12 bg-background border-t border-sky-100/60 dark:border-sky-500/10">
-            <div className="max-w-4xl mx-auto text-center">
-              <h2 className="text-xl md:text-2xl font-bold text-foreground mb-4">
-                Commercial RO plants and water softeners in {loc.name}
-              </h2>
-              <p className="text-muted-foreground leading-relaxed mb-6">
-                Besides home RO, {brand.brandName} supplies and installs commercial RO plants (25, 50, 500 and 1000 LPH)
-                and new water softeners in {placeLabel}. Site visit, installation, service and AMC from Bengaluru —
-                covering up to 250 km.
-              </p>
-              <div className="flex flex-wrap justify-center gap-2">
-                <Link to="/commercial-ro-service" className={nearbyPillClass}>Commercial RO 25 to 1000 LPH</Link>
-                <Link to="/commercial-ro-25-lph" className={nearbyPillClass}>25 LPH plant</Link>
-                <Link to="/commercial-ro-50-lph" className={nearbyPillClass}>50 LPH plant</Link>
-                <Link to="/commercial-ro-500-lph" className={nearbyPillClass}>500 LPH plant</Link>
-                <Link to="/commercial-ro-1000-lph" className={nearbyPillClass}>1000 LPH plant</Link>
-                <Link to="/water-softener-installation" className={nearbyPillClass}>New water softener installation</Link>
-              </div>
-            </div>
-          </section>
-        )}
-
         {loc && zoneSiblings.length > 0 && (
           <section className="py-10 px-4 md:px-12 bg-background border-t border-sky-100/60 dark:border-sky-500/10">
             <div className="max-w-4xl mx-auto text-center">
@@ -406,9 +383,8 @@ const ServiceAreas = () => {
                 RO Services by City in Karnataka
               </h2>
               <p className="text-center text-muted-foreground mb-10 max-w-2xl mx-auto">
-                Service-specific pages for Bengaluru, Tumakuru, Ramanagara, Kolar, Chikkaballapura, Mandya,
-                Hassan, Hosur, Nelamangala, Doddaballapur and other nearby districts — installation, AMC,
-                commercial 25–1000 LPH plants and water softeners.
+                Service-specific pages for Bengaluru, Mysuru, Mangaluru, Hubballi, Belagavi and other
+                priority Karnataka cities — installation, AMC, commercial RO and water softeners.
               </p>
               <div className="space-y-8">
                 {CITY_SERVICE_HUB_GROUPS.map((group) => (

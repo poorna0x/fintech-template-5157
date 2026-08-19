@@ -12,10 +12,9 @@ interface BillModalProps {
   isOpen: boolean;
   onClose: () => void;
   customer: Customer | null;
-  initialAiInstruction?: string | null;
 }
 
-export default function BillModal({ isOpen, onClose, customer, initialAiInstruction }: BillModalProps) {
+export default function BillModal({ isOpen, onClose, customer }: BillModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handlePrintBill = (bill: Bill, action: 'print' | 'pdf' = 'pdf') => {
@@ -97,7 +96,6 @@ export default function BillModal({ isOpen, onClose, customer, initialAiInstruct
                 customer={customer}
                 onPrint={handlePrintBill}
                 embedded
-                initialAiInstruction={initialAiInstruction}
               />
             </Suspense>
           ) : (

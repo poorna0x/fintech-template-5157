@@ -68,6 +68,8 @@ import {
   RefreshCw,
   Navigation,
   ShoppingCart,
+  ChevronDown,
+  ChevronUp,
   Lock
 } from 'lucide-react';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
@@ -90,14 +92,6 @@ import {
   resolveDisplayedCustomers,
 } from '@/lib/adminDashboardCustomerFilters';
 import { loadFilteredJobsForAdmin } from '@/lib/adminLoadFilteredJobs';
-import {
-  FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
-  FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT,
-  readFollowUpDisplaySettings,
-  saveFollowUpDisplaySettings,
-  type FollowUpDisplaySettings,
-} from '@/lib/followUpDisplaySettings';
-import { Switch } from '@/components/ui/switch';
 import {
   applyAdminDashboardSnapshot,
   loadAdminDashboardData,
@@ -276,9 +270,7 @@ import WarrantyManagementDialog from './admin/WarrantyManagementDialog';
 import { CompleteJobDialog } from './admin/CompleteJobDialog';
 import { StatsCards } from './admin/StatsCards';
 import EditCustomerDialog from './admin/EditCustomerDialog';
-import AddCustomerDialog, {
-  type AddCustomerInitialDraft,
-} from './admin/AddCustomerDialog';
+import AddCustomerDialog from './admin/AddCustomerDialog';
 import CustomerReportDialog from './admin/CustomerReportDialog';
 import SendMessageDialog from './admin/SendMessageDialog';
 import AdminEmailComposerDialog from './admin/AdminEmailComposer';
@@ -308,20 +300,6 @@ import AddTeamDialog from './admin/AddTeamDialog';
 import RemoveTeamDialog from './admin/RemoveTeamDialog';
 import NewJobDialog from './admin/NewJobDialog';
 import { AddReminderDialog } from './reminders/AddReminderDialog';
-import AdminCrmAiDialog from './admin/AdminCrmAiDialog';
-import type {
-  AiCrmCreateCustomerAndJobDraft,
-  AiCrmCreateJobDraft,
-  AiCrmCustomerDraft,
-  AiCrmEditCustomerDraft,
-  AiCrmFollowUpDraft,
-  AiCrmReminderDraft,
-  AiCrmAppTarget,
-  AiCrmOpenDocumentDraft,
-  AiCrmOpenJobDraft,
-  AiCrmOpenCustomerComposer,
-} from '@/lib/aiCrmAssistant';
-import { aiCrmTargetPath } from '@/lib/aiCrmNavigation';
 import { TodayRemindersPopup } from './reminders/TodayRemindersPopup';
 import { CustomerRemindersDialog } from './reminders/CustomerRemindersDialog';
 import EditJobDialog from './admin/EditJobDialog';
@@ -391,18 +369,6 @@ const AdminDashboard = () => {
     restoredJobs.length > 0 ? restoredJobs : initialOngoingJobs
   );
   const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
-  const [followUpDisplaySettings, setFollowUpDisplaySettings] = useState(
-    readFollowUpDisplaySettings
-  );
-  useEffect(() => {
-    const onChanged = (event: Event) => {
-      const detail = (event as CustomEvent<FollowUpDisplaySettings>).detail;
-      setFollowUpDisplaySettings(detail ?? readFollowUpDisplaySettings());
-    };
-    window.addEventListener(FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT, onChanged);
-    return () =>
-      window.removeEventListener(FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT, onChanged);
-  }, []);
   const [technicians, setTechnicians] = useState<Technician[]>(() => {
     if (!initialDashboardCache?.technicianRows) return [];
     return (initialDashboardCache.technicianRows as any[]).map((tech) => ({
@@ -465,7 +431,6 @@ const AdminDashboard = () => {
   const [selectedCustomerForBill, setSelectedCustomerForBill] = useState<Customer | null>(null);
   const [quotationModalOpen, setQuotationModalOpen] = useState(false);
   const [selectedCustomerForQuotation, setSelectedCustomerForQuotation] = useState<Customer | null>(null);
-  const [aiDocumentInstruction, setAiDocumentInstruction] = useState<string | null>(null);
   const [amcModalOpen, setAmcModalOpen] = useState(false);
   const [selectedCustomerForAMC, setSelectedCustomerForAMC] = useState<Customer | null>(null);
   const [amcPrefillFromJob, setAmcPrefillFromJob] = useState<import('@/lib/jobAmcInfo').JobAmcPrefill | null>(
@@ -593,55 +558,6 @@ const AdminDashboard = () => {
       { replace: true }
     );
   }, [navigate, location.search]);
-
-  /** New customer + new job assign: same Dashboard job WhatsApp master as ongoing assign. */
-  const notifyWhatsAppAfterCreateAssign = useCallback(
-    (payload: {
-      technicianId: string;
-      serviceSubType: string;
-      customerName: string;
-      visibleAddress?: string;
-      address?: { area?: string; city?: string };
-      leadSource?: string;
-      customTime?: string;
-      description?: string;
-      agreedCost?: string;
-    }) => {
-      const assignedTechnician = techniciansRef.current.find((t) => t.id === payload.technicianId);
-      if (!assignedTechnician) return;
-      const ctx = {
-        scrollPositionBeforeWhatsAppRef,
-        setWhatsappTechnician,
-        setWhatsappServiceSubType,
-        setWhatsappCustomerName,
-        setWhatsappLocation,
-        setWhatsappLeadSource,
-        setWhatsappCustomTime,
-        setWhatsappDescription,
-        setWhatsappAgreedCost,
-        setWhatsappDialogOpen,
-        openAdminWhatsappModal,
-      };
-      void import('@/lib/jobTechnicianWhatsApp').then(({ notifyTechnicianJobWhatsAppOnCreateAssign }) =>
-        notifyTechnicianJobWhatsAppOnCreateAssign({
-          payload,
-          technician: {
-            id: assignedTechnician.id,
-            fullName:
-              assignedTechnician.fullName ||
-              (assignedTechnician as { full_name?: string }).full_name ||
-              'Technician',
-            phone: assignedTechnician.phone,
-            whatsappPhone: (assignedTechnician as { whatsappPhone?: string }).whatsappPhone,
-            whatsapp_phone: (assignedTechnician as { whatsapp_phone?: string }).whatsapp_phone,
-          },
-          ctx,
-          scrollY: window.scrollY,
-        })
-      );
-    },
-    [openAdminWhatsappModal]
-  );
 
   /** Tab switches stay in React state (no ?tab= history). Modals still use ?modal= for swipe-back. */
   const switchJobTab = useCallback(
@@ -1107,32 +1023,6 @@ const AdminDashboard = () => {
   const nearbyJobsOpen = activeAdminTool === 'nearby-jobs';
   const technicianLiveLocationOpen = activeAdminTool === 'technician-live-location';
   const messageTechnicianOpen = activeAdminTool === 'message-technician';
-  const aiAssistantOpen = !isManager && activeAdminTool === 'ai-assistant';
-  const [aiJobDraft, setAiJobDraft] = useState<Partial<{
-    service_type: 'RO' | 'SOFTENER';
-    service_sub_type: string;
-    scheduled_date: string;
-    scheduled_time_slot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM';
-    scheduled_time_custom: string;
-    description: string;
-    priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
-    lead_source: string;
-    photos: string[];
-  }> | null>(null);
-  const [aiCustomerDraft, setAiCustomerDraft] = useState<AddCustomerInitialDraft | null>(null);
-  const [aiEditCustomerPatch, setAiEditCustomerPatch] =
-    useState<AiCrmCustomerDraft | null>(null);
-  const [aiFollowUpDraft, setAiFollowUpDraft] = useState<{
-    followUpDate?: string | null;
-    followUpTime?: string | null;
-    followUpReason?: string | null;
-    addAmcReminder?: boolean;
-  } | null>(null);
-  const [aiReminderDraft, setAiReminderDraft] = useState<{
-    title?: string;
-    notes?: string;
-    reminderAt?: string | null;
-  } | null>(null);
 
   // Close Tools dropdown before paint when URL changes (gesture back / in-app navigate).
   useLayoutEffect(() => {
@@ -1167,7 +1057,7 @@ const AdminDashboard = () => {
   const [moveToOngoingDialogOpen, setMoveToOngoingDialogOpen] = useState(false);
   const [selectedJobForMoveToOngoing, setSelectedJobForMoveToOngoing] = useState<Job | null>(null);
   const [moveToOngoingDate, setMoveToOngoingDate] = useState<string>('');
-  const [moveToOngoingTimeSlot, setMoveToOngoingTimeSlot] = useState<'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM'>('CUSTOM');
+  const [moveToOngoingTimeSlot, setMoveToOngoingTimeSlot] = useState<'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM'>('MORNING');
   const [moveToOngoingCustomTime, setMoveToOngoingCustomTime] = useState<string>('');
   const [assignAfterMoveToOngoing, setAssignAfterMoveToOngoing] = useState(false);
   const [followUpAssignFlow, setFollowUpAssignFlow] = useState(false);
@@ -1271,6 +1161,7 @@ const AdminDashboard = () => {
   const [draftOngoingAssignmentFilter, setDraftOngoingAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   const [draftOngoingAssignedTechnicianFilter, setDraftOngoingAssignedTechnicianFilter] = useState<string>('all');
   const [draftOngoingServiceSubTypeFilter, setDraftOngoingServiceSubTypeFilter] = useState<string>('all');
+  const [showAllFollowups, setShowAllFollowups] = useState<boolean>(false);
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(() => savedUi.currentPage);
   const [pageSize] = useState<number>(20);
@@ -1334,11 +1225,7 @@ const AdminDashboard = () => {
 
   // Job counts for stats cards (loaded separately)
   const [jobCounts, setJobCounts] = useState<{ongoing: number; followup: number; denied: number; completed: number}>(() =>
-    initialDashboardCache?.countsExcludeAmcFollowUps ===
-      followUpDisplaySettings.countOnlyNonAmcFollowUps &&
-    initialDashboardCache?.followUpCountDueWithinDays === FOLLOW_UP_COUNT_DUE_WITHIN_DAYS
-      ? initialDashboardCache.jobCounts
-      : {
+    initialDashboardCache?.jobCounts ?? {
     ongoing: 0,
     followup: 0,
     denied: 0,
@@ -1733,10 +1620,7 @@ const AdminDashboard = () => {
   // Load job counts for stats cards (lightweight query)
   const loadJobCounts = useCallback(async () => {
     try {
-      const { data, error } = await db.jobs.getCounts({
-        countOnlyNonAmcFollowUps: followUpDisplaySettings.countOnlyNonAmcFollowUps,
-        followUpsDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
-      });
+      const { data, error } = await db.jobs.getCounts();
       if (error) {
         // ignore
       } else if (data) {
@@ -1745,7 +1629,7 @@ const AdminDashboard = () => {
     } catch {
       // ignore
     }
-  }, [followUpDisplaySettings.countOnlyNonAmcFollowUps]);
+  }, []);
 
 
   const getJobsListCacheKey = useCallback((
@@ -1757,14 +1641,12 @@ const AdminDashboard = () => {
       completedDateFilter,
       completedRangeStartDate,
       completedRangeEndDate,
-      hideAmcFollowUps: followUpDisplaySettings.hideAmcFollowUps,
     });
   }, [
     completedDatePreset,
     completedDateFilter,
     completedRangeStartDate,
     completedRangeEndDate,
-    followUpDisplaySettings.hideAmcFollowUps,
   ]);
 
   const loadFilteredJobs = useCallback(
@@ -1783,7 +1665,6 @@ const AdminDashboard = () => {
         completedLeadTypeFilter,
         completedServiceSubTypeFilter,
         completedByFilter,
-        hideAmcFollowUps: followUpDisplaySettings.hideAmcFollowUps,
         loadJobsRequestRef,
         jobsListCacheRef,
         ongoingJobsSnapshotRef,
@@ -1807,7 +1688,6 @@ const AdminDashboard = () => {
       completedLeadTypeFilter,
       completedServiceSubTypeFilter,
       completedByFilter,
-      followUpDisplaySettings.hideAmcFollowUps,
     ]
   );
 
@@ -1905,21 +1785,17 @@ const AdminDashboard = () => {
     return { ...cached, customer: mergedCustomer };
   };
 
-  const applyAdminSnapshot = useCallback(
-    (snap: AdminDashboardSnapshot) => {
-      applyAdminDashboardSnapshot(snap, {
-        setJobs,
-        setTotalCount,
-        setTotalPages,
-        setTechnicians,
-        setJobCounts,
-        ongoingJobsSnapshotRef,
-        techniciansRef,
-        countOnlyNonAmcFollowUps: followUpDisplaySettings.countOnlyNonAmcFollowUps,
-      });
-    },
-    [followUpDisplaySettings.countOnlyNonAmcFollowUps]
-  );
+  const applyAdminSnapshot = useCallback((snap: AdminDashboardSnapshot) => {
+    applyAdminDashboardSnapshot(snap, {
+      setJobs,
+      setTotalCount,
+      setTotalPages,
+      setTechnicians,
+      setJobCounts,
+      ongoingJobsSnapshotRef,
+      techniciansRef,
+    });
+  }, []);
 
   const loadDashboardSecondary = useCallback(
     () =>
@@ -1929,9 +1805,8 @@ const AdminDashboard = () => {
         setTechniciansForReports,
         setAllFollowUpJobs,
         loadBrandsAndModels,
-        countOnlyNonAmcFollowUps: followUpDisplaySettings.countOnlyNonAmcFollowUps,
       }),
-    [loadBrandsAndModels, followUpDisplaySettings.countOnlyNonAmcFollowUps]
+    [loadBrandsAndModels]
   );
 
   const amcAutoCreateAttemptedRef = useRef(false);
@@ -1981,7 +1856,6 @@ const AdminDashboard = () => {
         setJobs,
         setTotalCount,
         setTotalPages,
-        countOnlyNonAmcFollowUps: followUpDisplaySettings.countOnlyNonAmcFollowUps,
       }),
     [
       statusFilter,
@@ -1990,7 +1864,6 @@ const AdminDashboard = () => {
       scheduleFollowUpPromotion,
       loadFilteredJobs,
       loadDashboardSecondary,
-      followUpDisplaySettings.countOnlyNonAmcFollowUps,
     ]
   );
 
@@ -2500,34 +2373,6 @@ const AdminDashboard = () => {
       loadJobCounts();
   }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad, getJobsListCacheKey, tabCachesStale]);
 
-  const previousFollowUpDisplaySettingsRef = useRef(followUpDisplaySettings);
-  useEffect(() => {
-    const previous = previousFollowUpDisplaySettingsRef.current;
-    previousFollowUpDisplaySettingsRef.current = followUpDisplaySettings;
-    if (
-      isInitialLoad ||
-      (previous.hideAmcFollowUps === followUpDisplaySettings.hideAmcFollowUps &&
-        previous.countOnlyNonAmcFollowUps ===
-          followUpDisplaySettings.countOnlyNonAmcFollowUps)
-    ) {
-      return;
-    }
-
-    clearModuleJobsListCache();
-    jobsListCacheRef.current.clear();
-    void loadJobCounts();
-    void db.jobs
-      .getFollowUpForGlow({ excludeAmc: followUpDisplaySettings.countOnlyNonAmcFollowUps })
-      .then(({ data }) => {
-        if (data) setAllFollowUpJobs(data as Job[]);
-      })
-      .catch(() => {});
-    if (statusFilter === 'RESCHEDULED') {
-      setCurrentPage(1);
-      void loadFilteredJobs('RESCHEDULED', 1);
-    }
-  }, [followUpDisplaySettings, isInitialLoad, loadFilteredJobs, loadJobCounts, statusFilter]);
-
   const resumeAdminSync = useCallback(async (opts?: { invalidateTabCaches?: boolean }) => {
     if (isInitialLoad || !dashboardLoadedWithSessionRef.current) return;
 
@@ -2552,9 +2397,7 @@ const AdminDashboard = () => {
       await Promise.all([
         loadJobCounts(),
         loadFilteredJobs(statusFilter, currentPage, { silent: true }),
-        db.jobs.getFollowUpForGlow({
-          excludeAmc: followUpDisplaySettings.countOnlyNonAmcFollowUps,
-        }).then(({ data }) => {
+        db.jobs.getFollowUpForGlow().then(({ data }) => {
           if (data) setAllFollowUpJobs(data as Job[]);
         }).catch(() => {}),
       ]);
@@ -2563,14 +2406,7 @@ const AdminDashboard = () => {
         setIsResumeListSyncing(false);
       }
     }
-  }, [
-    isInitialLoad,
-    statusFilter,
-    currentPage,
-    loadJobCounts,
-    loadFilteredJobs,
-    followUpDisplaySettings.countOnlyNonAmcFollowUps,
-  ]);
+  }, [isInitialLoad, statusFilter, currentPage, loadJobCounts, loadFilteredJobs]);
 
   const resumeAdminSyncRef = useRef(resumeAdminSync);
   resumeAdminSyncRef.current = resumeAdminSync;
@@ -5169,9 +5005,8 @@ const AdminDashboard = () => {
     return false;
   };
 
-  const handleGenerateBill = useCallback((customer: Customer, initialAiInstruction?: string | null) => {
+  const handleGenerateBill = useCallback((customer: Customer) => {
     preloadDocumentGeneratorModals();
-    setAiDocumentInstruction(initialAiInstruction || null);
     setSelectedCustomerForBill(customer);
     openAdminModal('bill', { customerId: customer.id });
   }, [openAdminModal]);
@@ -5180,13 +5015,11 @@ const AdminDashboard = () => {
     setBillModalOpen(false);
     closeAdminModal();
     setSelectedCustomerForBill(null);
-    setAiDocumentInstruction(null);
   };
 
-  const handleGenerateQuotation = (customer: Customer, initialAiInstruction?: string | null) => {
+  const handleGenerateQuotation = (customer: Customer) => {
     preloadDocumentGeneratorModals();
     setSelectedCustomerForQuotation(customer);
-    setAiDocumentInstruction(initialAiInstruction || null);
     setQuotationModalOpen(true);
     void loadCustomerForDocuments(customer).then(setSelectedCustomerForQuotation);
   };
@@ -5194,16 +5027,13 @@ const AdminDashboard = () => {
   const handleQuotationModalClose = () => {
     setQuotationModalOpen(false);
     setSelectedCustomerForQuotation(null);
-    setAiDocumentInstruction(null);
   };
 
   const handleGenerateAMC = (
     customer: Customer,
-    fromJob?: import('@/lib/jobAmcInfo').JobAmcPrefill | null,
-    initialAiInstruction?: string | null
+    fromJob?: import('@/lib/jobAmcInfo').JobAmcPrefill | null
   ) => {
     preloadDocumentGeneratorModals();
-    setAiDocumentInstruction(initialAiInstruction || null);
     setSelectedCustomerForAMC(customer);
     setAmcPrefillFromJob(fromJob ?? null);
     setAmcModalOpen(true);
@@ -5241,7 +5071,6 @@ const AdminDashboard = () => {
     setAmcModalOpen(false);
     setSelectedCustomerForAMC(null);
     setAmcPrefillFromJob(null);
-    setAiDocumentInstruction(null);
   };
 
   // Reload AMC status from database
@@ -5312,9 +5141,8 @@ const AdminDashboard = () => {
     }
   }, [statusFilter, currentPage, loadJobCounts, loadFilteredJobs, loadDashboardSecondary]);
 
-  const handleGenerateTaxInvoice = (customer: Customer, initialAiInstruction?: string | null) => {
+  const handleGenerateTaxInvoice = (customer: Customer) => {
     preloadDocumentGeneratorModals();
-    setAiDocumentInstruction(initialAiInstruction || null);
     setSelectedCustomerForTaxInvoice(customer);
     setTaxInvoiceModalOpen(true);
     void loadCustomerForDocuments(customer).then(setSelectedCustomerForTaxInvoice);
@@ -5323,7 +5151,6 @@ const AdminDashboard = () => {
   const handleTaxInvoiceModalClose = () => {
     setTaxInvoiceModalOpen(false);
     setSelectedCustomerForTaxInvoice(null);
-    setAiDocumentInstruction(null);
   };
 
   const handleShowGSTInvoices = () => {
@@ -5584,374 +5411,6 @@ const AdminDashboard = () => {
   const handleScheduleFollowUp = (job: Job) => {
     openAdminModal('follow-up', { jobId: job.id });
   };
-
-  const handleAiSearchCustomer = useCallback(
-    async (query: string, customerId?: string) => {
-      closeAdminTool();
-      if (customerId) {
-        try {
-          const { data } = await db.customers.getById(customerId);
-          if (data) {
-            const customer = transformCustomerData(data);
-            setSearchResults((prev) => {
-              const list = prev || [];
-              if (list.some((c) => c.id === customer.id)) return list;
-              return [customer, ...list];
-            });
-            const q =
-              query.trim() ||
-              customer.phone ||
-              customer.fullName ||
-              customer.customerId ||
-              customer.id;
-            await runCustomerSearch(String(q));
-            return;
-          }
-        } catch {
-          /* fall through */
-        }
-      }
-      if (query.trim()) {
-        await runCustomerSearch(query.trim());
-      }
-    },
-    [closeAdminTool, runCustomerSearch]
-  );
-
-  const buildAiCustomerSeed = useCallback(
-    (
-      draft: AiCrmCustomerDraft | AiCrmCreateCustomerAndJobDraft,
-      shouldCreateJob: boolean
-    ): AddCustomerInitialDraft => {
-      const photos = Array.isArray(draft.photoUrls) ? draft.photoUrls.filter(Boolean) : [];
-      const serviceType =
-        draft.serviceType === 'SOFTENER'
-          ? 'SOFTENER'
-          : draft.serviceType === 'RO'
-            ? 'RO'
-            : photos.length
-              ? 'RO'
-              : null;
-      return {
-        currentStep: 1,
-        shouldCreateJob,
-        addFormData: {
-          full_name: draft.fullName || '',
-          phone: draft.phone || '',
-          alternate_phone: draft.alternatePhone || '',
-          email: draft.email || '',
-          address: draft.address || '',
-          visible_address: draft.visibleAddress || '',
-          google_location: draft.googleLocation || '',
-          notes: draft.notes || '',
-          service_types: serviceType ? [serviceType] : [],
-          equipment: serviceType
-            ? {
-                [serviceType]: {
-                  brand: draft.brand || '',
-                  model: draft.model || '',
-                },
-              }
-            : {},
-          photos: serviceType && photos.length ? { [serviceType]: photos } : {},
-        },
-        ...(shouldCreateJob
-          ? {
-              step5JobData: {
-                service_type:
-                  (draft as AiCrmCreateCustomerAndJobDraft).serviceType === 'SOFTENER'
-                    ? 'SOFTENER'
-                    : 'RO',
-                service_sub_type:
-                  (draft as AiCrmCreateCustomerAndJobDraft).serviceSubType || 'Service',
-                scheduled_date:
-                  (draft as AiCrmCreateCustomerAndJobDraft).scheduledDate || '',
-                scheduled_date_touched: Boolean(
-                  (draft as AiCrmCreateCustomerAndJobDraft).scheduledDate
-                ),
-                scheduled_time_slot:
-                  ((draft as AiCrmCreateCustomerAndJobDraft).scheduledTimeSlot as
-                    | 'MORNING'
-                    | 'AFTERNOON'
-                    | 'EVENING'
-                    | 'FLEXIBLE'
-                    | 'CUSTOM') || 'MORNING',
-                scheduled_time_custom:
-                  (draft as AiCrmCreateCustomerAndJobDraft).scheduledTimeCustom || '',
-                description:
-                  (draft as AiCrmCreateCustomerAndJobDraft).description ||
-                  draft.notes ||
-                  '',
-                lead_source:
-                  (draft as AiCrmCreateCustomerAndJobDraft).leadSource || '',
-                priority:
-                  ((draft as AiCrmCreateCustomerAndJobDraft).priority as
-                    | 'LOW'
-                    | 'MEDIUM'
-                    | 'HIGH'
-                    | 'URGENT') || 'MEDIUM',
-              },
-            }
-          : {}),
-      };
-    },
-    []
-  );
-
-  const handleAiOpenApp = useCallback(
-    (target: AiCrmAppTarget) => {
-      const path = aiCrmTargetPath(target);
-      if (!path) {
-        toast.error('That CRM screen is not available');
-        return;
-      }
-      closeAdminTool();
-      navigate(path);
-    },
-    [closeAdminTool, navigate]
-  );
-
-  const handleAiOpenDocumentDraft = async (draft: AiCrmOpenDocumentDraft) => {
-      closeAdminTool();
-      const { data, error } = await db.customers.getById(draft.customerId);
-      if (error || !data) {
-        toast.error('Customer not found for document draft');
-        return;
-      }
-      const customer = transformCustomerData(data);
-      switch (draft.documentType) {
-        case 'quotation':
-          handleGenerateQuotation(customer, draft.instruction);
-          return;
-        case 'service_bill':
-          handleGenerateBill(customer, draft.instruction);
-          return;
-        case 'tax_invoice':
-          handleGenerateTaxInvoice(customer, draft.instruction);
-          return;
-        case 'amc':
-          handleGenerateAMC(customer, null, draft.instruction);
-          return;
-        case 'warranty':
-          setAiDocumentInstruction(draft.instruction || null);
-          setWarrantyDialogCustomer({
-            id: customer.id,
-            customer_id: customer.customerId || '',
-            full_name: customer.fullName || '',
-            phone: customer.phone || '',
-            model: customer.model || '',
-            brand: customer.brand || '',
-            visible_address: customer.visibleAddress || '',
-          });
-          setWarrantyDialogOpen(true);
-          return;
-      }
-  };
-
-  const handleAiOpenJob = async (draft: AiCrmOpenJobDraft) => {
-    closeAdminTool();
-    const { data, error } = await db.jobs.getById(draft.jobId);
-    if (error || !data) {
-      toast.error('Job not found');
-      return;
-    }
-    const job = data as Job;
-    setJobs((current) => (current.some((row) => row.id === job.id) ? current : [job, ...current]));
-    switch (draft.mode) {
-      case 'assign':
-        handleAssignJob(job);
-        return;
-      case 'reassign':
-        handleReassignJob(job);
-        return;
-      case 'complete':
-        await handleCompleteJob(job);
-        return;
-      case 'follow_up':
-        handleScheduleFollowUp(job);
-        return;
-      case 'details':
-      case 'edit':
-        handleEditJob(job);
-        return;
-    }
-  };
-
-  const handleAiOpenCustomerComposer = (draft: AiCrmOpenCustomerComposer) => {
-    closeAdminTool();
-    if (draft.channel === 'email') {
-      setEmailComposerCustomerId(draft.customerId);
-      setEmailComposerJobId(null);
-      setEmailComposerContext('default');
-      setEmailComposerTemplate(draft.template);
-      setEmailComposerOpen(true);
-      return;
-    }
-    setWhatsappComposerCustomerId(draft.customerId);
-    setWhatsappComposerTemplate(draft.template);
-    setWhatsappComposerOpen(true);
-  };
-
-  const handleAiConfirmCreateCustomer = useCallback(
-    (draft: AiCrmCustomerDraft) => {
-      closeAdminTool();
-      setAiCustomerDraft(buildAiCustomerSeed(draft, false));
-      openAdminModal('add-customer');
-    },
-    [buildAiCustomerSeed, closeAdminTool, openAdminModal]
-  );
-
-  const handleAiConfirmCreateCustomerAndJob = useCallback(
-    (draft: AiCrmCreateCustomerAndJobDraft) => {
-      closeAdminTool();
-      setAiCustomerDraft(buildAiCustomerSeed(draft, true));
-      openAdminModal('add-customer');
-    },
-    [buildAiCustomerSeed, closeAdminTool, openAdminModal]
-  );
-
-  const handleAiConfirmEditCustomer = useCallback(
-    async (draft: AiCrmEditCustomerDraft) => {
-      closeAdminTool();
-      if (!draft.customerId) {
-        toast.error('AI edit draft is missing a customer');
-        return;
-      }
-      const { data, error } = await db.customers.getById(draft.customerId);
-      if (error || !data) {
-        toast.error('Customer not found for AI edit draft');
-        return;
-      }
-      const customer = transformCustomerData(data);
-      setAiEditCustomerPatch(draft.patch || {});
-      setEditingCustomer(customer);
-      openAdminModal('edit-customer', { customerId: customer.id });
-    },
-    [closeAdminTool, openAdminModal]
-  );
-
-  const handleAiConfirmCreateJob = useCallback(
-    async (draft: AiCrmCreateJobDraft) => {
-      closeAdminTool();
-      if (!draft?.customerId) {
-        toast.error('AI job draft is missing a customer');
-        return;
-      }
-      try {
-        const { data, error } = await db.customers.getById(draft.customerId);
-        if (error || !data) {
-          toast.error('Customer not found for AI job draft');
-          return;
-        }
-        const customer = transformCustomerData(data);
-        setSearchResults((prev) => {
-          const list = prev || [];
-          if (list.some((c) => c.id === customer.id)) return list;
-          return [customer, ...list];
-        });
-        const slot = String(draft.scheduledTimeSlot || '').toUpperCase();
-        const customTime = /^\d{2}:\d{2}$/.test(String(draft.scheduledTimeCustom || ''))
-          ? String(draft.scheduledTimeCustom)
-          : '';
-        setAiJobDraft({
-          service_type: draft.serviceType === 'SOFTENER' ? 'SOFTENER' : 'RO',
-          service_sub_type: draft.serviceSubType || 'Service',
-          scheduled_date: draft.scheduledDate || undefined,
-          scheduled_time_slot:
-            slot === 'MORNING' ||
-            slot === 'AFTERNOON' ||
-            slot === 'EVENING' ||
-            slot === 'FLEXIBLE' ||
-            slot === 'CUSTOM'
-              ? slot
-              : undefined,
-          ...(customTime ? { scheduled_time_custom: customTime } : {}),
-          description: draft.description || draft.notes || undefined,
-          priority: (['LOW', 'MEDIUM', 'HIGH', 'URGENT'].includes(
-            String(draft.priority || '').toUpperCase()
-          )
-            ? String(draft.priority).toUpperCase()
-            : 'MEDIUM') as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
-          lead_source: draft.leadSource || undefined,
-          photos: Array.isArray(draft.photoUrls) ? draft.photoUrls : undefined,
-        });
-        handleNewJob(customer);
-      } catch {
-        toast.error('Could not open job form from AI draft');
-      }
-    },
-    [closeAdminTool, handleNewJob]
-  );
-
-  const handleAiConfirmFollowUp = useCallback(
-    async (draft: AiCrmFollowUpDraft) => {
-      closeAdminTool();
-      if (!draft?.jobId) {
-        toast.error('AI follow-up draft is missing a job');
-        return;
-      }
-      let job =
-        jobs.find((j) => j.id === draft.jobId) ||
-        customerJobs.find((j) => j.id === draft.jobId) ||
-        null;
-      if (!job) {
-        const { data, error } = await db.jobs.getById(draft.jobId);
-        if (error || !data) {
-          toast.error('Job not found for AI follow-up draft');
-          return;
-        }
-        job = data as Job;
-        setJobs((prev) => (prev.some((j) => j.id === job!.id) ? prev : [job!, ...prev]));
-      }
-      setAiFollowUpDraft({
-        followUpDate: draft.followUpDate || null,
-        followUpTime: draft.followUpTime || null,
-        followUpReason: draft.followUpReason || 'Not confirmed',
-        addAmcReminder: draft.addAmcReminder === true,
-      });
-      setSelectedJobForFollowUp(job);
-      openAdminModal('follow-up', { jobId: job.id });
-    },
-    [closeAdminTool, jobs, customerJobs, openAdminModal]
-  );
-
-  const handleAiConfirmReminder = useCallback(
-    async (draft: AiCrmReminderDraft) => {
-      closeAdminTool();
-      if (!draft?.title?.trim()) {
-        toast.error('AI reminder draft needs a title');
-        return;
-      }
-      if (!draft.customerId) {
-        toast.error('Link a customer before creating a reminder from AI');
-        return;
-      }
-      try {
-        const { data, error } = await db.customers.getById(draft.customerId);
-        if (error || !data) {
-          toast.error('Customer not found for AI reminder draft');
-          return;
-        }
-        const customer = transformCustomerData(data);
-        setSearchResults((prev) => {
-          const list = prev || [];
-          if (list.some((c) => c.id === customer.id)) return list;
-          return [customer, ...list];
-        });
-        setAiReminderDraft({
-          title: draft.title,
-          notes: draft.notes || '',
-          reminderAt: draft.reminderAt || null,
-        });
-        setReminderEntity({ type: 'customer', id: customer.id });
-        setReminderContextLabel(customer.fullName || customer.phone || 'Customer');
-        openAdminModal('add-reminder', { customerId: customer.id });
-      } catch {
-        toast.error('Could not open reminder form from AI draft');
-      }
-    },
-    [closeAdminTool, openAdminModal]
-  );
 
   const handleFollowUpSubmit = useCallback(
     (jobId: string, followUpData: AdminFollowUpSubmitData) =>
@@ -6276,6 +5735,7 @@ const AdminDashboard = () => {
         jobs,
         baseCustomers,
         customersWithJobs,
+        showAllFollowups,
         completedDateFilter,
         currentPage,
         totalPages,
@@ -6288,6 +5748,7 @@ const AdminDashboard = () => {
       jobs,
       baseCustomers,
       customersWithJobs,
+      showAllFollowups,
       completedDateFilter,
       currentPage,
       totalPages,
@@ -6739,7 +6200,6 @@ const AdminDashboard = () => {
           pendingJobs={pendingJobs}
           inProgressJobs={inProgressJobs}
           allJobs={allFollowUpJobs}
-          excludeAmcFollowUps={followUpDisplaySettings.countOnlyNonAmcFollowUps}
         />
 
         {searchTerm.trim() && displayedCustomers.length > 0 && !showJobsListLoader && (
@@ -6860,33 +6320,6 @@ const AdminDashboard = () => {
                `Customers with ${statusFilter} Jobs`}
             </h2>
 
-            {statusFilter === 'RESCHEDULED' && (
-              <div className="flex items-center gap-2 ml-auto">
-                <Label
-                  htmlFor="followup-show-amc"
-                  className="text-xs sm:text-sm text-gray-600 cursor-pointer whitespace-nowrap"
-                >
-                  Show AMC
-                </Label>
-                <Switch
-                  id="followup-show-amc"
-                  checked={!followUpDisplaySettings.hideAmcFollowUps}
-                  onCheckedChange={(showAmc) => {
-                    const next = {
-                      ...followUpDisplaySettings,
-                      hideAmcFollowUps: !showAmc,
-                      // Keep the Followup stats card in sync with the list.
-                      countOnlyNonAmcFollowUps: !showAmc,
-                    };
-                    setFollowUpDisplaySettings(next);
-                    saveFollowUpDisplaySettings(next);
-                  }}
-                  aria-label="Show AMC follow-ups"
-                  className="border border-gray-300 data-[state=unchecked]:bg-gray-200"
-                />
-              </div>
-            )}
-
             {statusFilter === 'ONGOING' && (
               <Button
                 type="button"
@@ -6912,6 +6345,58 @@ const AdminDashboard = () => {
               </Button>
             )}
             
+            {/* Show all followups button */}
+            {statusFilter === 'RESCHEDULED' && (() => {
+              // Calculate total customers with followups (all dates)
+              const allCustomersWithFollowups = customersWithJobs.filter(({ allJobs }) => 
+                allJobs.some(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status))
+              );
+              
+              // Calculate customers with followups beyond 7 days
+              const now = new Date();
+              const weekFromNow = new Date(now);
+              weekFromNow.setDate(weekFromNow.getDate() + 7);
+              
+              const customersBeyondWeek = allCustomersWithFollowups.filter(({ allJobs }) => {
+                const followUpJobs = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
+                // Check if customer has ONLY followups beyond 7 days (no followups within 7 days)
+                const hasWithinWeek = followUpJobs.some((job: any) => {
+                  const followUpDate = job.follow_up_date || job.followUpDate;
+                  if (!followUpDate) return false;
+                  const followUpDateObj = new Date(followUpDate);
+                  if (isNaN(followUpDateObj.getTime())) return false;
+                  return followUpDateObj <= weekFromNow;
+                });
+                return !hasWithinWeek; // Only show if no followups within week
+              });
+              
+              const hiddenCount = customersBeyondWeek.length;
+              
+              if (hiddenCount === 0) return null;
+              
+              return (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAllFollowups(!showAllFollowups)}
+                  className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap"
+                >
+                  {showAllFollowups ? (
+                    <>
+                      <ChevronUp className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                      <span className="hidden sm:inline">Hide older followups</span>
+                      <span className="sm:hidden">Hide ({hiddenCount})</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                      <span className="hidden sm:inline">Show all followups ({hiddenCount} more)</span>
+                      <span className="sm:hidden">Show all ({hiddenCount})</span>
+                    </>
+                  )}
+                </Button>
+              );
+            })()}
           </div>
           )}
           {!searchTerm.trim() && (
@@ -7099,14 +6584,9 @@ const AdminDashboard = () => {
       {/* Add Customer Dialog */}
       <AddCustomerDialog
         open={addDialogOpen}
-        onOpenChange={bindAdminModalDismiss('add-customer', () => {
-          setAddDialogOpen(false);
-          setAiCustomerDraft(null);
-        })}
-        initialDraft={aiCustomerDraft}
+        onOpenChange={bindAdminModalDismiss('add-customer', () => setAddDialogOpen(false))}
         customers={customers}
         onCustomerCreated={async (newCustomer) => {
-          setAiCustomerDraft(null);
           if (newCustomer) {
             const transformed = transformCustomerData(newCustomer);
             pendingNewCustomersRef.current.set(transformed.id, transformed);
@@ -7117,7 +6597,33 @@ const AdminDashboard = () => {
             loadJobCounts(),
           ]);
         }}
-        onJobAssignedToTechnician={notifyWhatsAppAfterCreateAssign}
+        onJobAssignedToTechnician={(payload) => {
+          const assignedTechnician = technicians.find((t) => t.id === payload.technicianId);
+          const waPhone = assignedTechnician
+            ? getTechnicianAdminWhatsAppPhone(assignedTechnician)
+            : '';
+          if (!waPhone) return;
+          scrollPositionBeforeWhatsAppRef.current = window.scrollY;
+          const vis = payload.visibleAddress;
+          const addr = payload.address;
+          const locationText =
+            vis && String(vis).trim()
+              ? String(vis).trim()
+              : addr?.area || addr?.city || '';
+          setWhatsappTechnician({
+            name: assignedTechnician.fullName || (assignedTechnician as { full_name?: string }).full_name || 'Technician',
+            phone: waPhone,
+          });
+          setWhatsappServiceSubType(payload.serviceSubType);
+          setWhatsappCustomerName(payload.customerName);
+          setWhatsappLocation(locationText || '');
+          setWhatsappLeadSource(payload.leadSource || '');
+          setWhatsappCustomTime(payload.customTime || '');
+          setWhatsappDescription(payload.description || '');
+          setWhatsappAgreedCost(payload.agreedCost || '');
+          setWhatsappDialogOpen(true);
+          openAdminWhatsappModal();
+        }}
         onCheckExistingCustomer={checkExistingCustomer}
         onExistingCustomerFound={(customer) => {
           setExistingCustomer(customer);
@@ -7149,10 +6655,8 @@ const AdminDashboard = () => {
         onOpenChange={bindAdminModalDismiss('edit-customer', () => {
           setEditDialogOpen(false);
           setEditingCustomer(null);
-          setAiEditCustomerPatch(null);
         })}
         customer={editingCustomer}
-        initialPatch={aiEditCustomerPatch}
         dbBrands={dbBrands}
         dbModels={dbModels}
         onCustomerUpdated={(updatedCustomer) => {
@@ -7166,7 +6670,6 @@ const AdminDashboard = () => {
             full_name: (updatedCustomer as any).full_name ?? updatedCustomer.fullName ?? null,
           });
           setEditingCustomer(null);
-          setAiEditCustomerPatch(null);
           closeAdminModal();
           void loadFilteredJobs(statusFilter, currentPage, { silent: true });
         }}
@@ -7309,13 +6812,10 @@ const AdminDashboard = () => {
           setNewJobDialogOpen(false);
           setIsJobDialogReady(false);
           setSelectedCustomerForJob(null);
-          setAiJobDraft(null);
         })}
         customer={selectedCustomerForJob}
         technicians={technicians}
-        initialDraft={aiJobDraft}
         onJobCreated={(newJob) => {
-          setAiJobDraft(null);
           setJobs([newJob, ...jobs]);
           const customerId = selectedCustomerForJob?.customer_id || selectedCustomerForJob?.customerId;
           if (customerId) {
@@ -7331,7 +6831,36 @@ const AdminDashboard = () => {
         }}
         onBrandsModelsReload={loadBrandsAndModels}
         parseDbServiceType={parseDbServiceType}
-        onJobAssignedToTechnician={notifyWhatsAppAfterCreateAssign}
+        onJobAssignedToTechnician={(payload) => {
+          const assignedTechnician = technicians.find((t) => t.id === payload.technicianId);
+          const waPhone = assignedTechnician
+            ? getTechnicianAdminWhatsAppPhone(assignedTechnician)
+            : '';
+          if (!waPhone) return;
+          scrollPositionBeforeWhatsAppRef.current = window.scrollY;
+          const vis = payload.visibleAddress;
+          const addr = payload.address;
+          const locationText =
+            vis && String(vis).trim()
+              ? String(vis).trim()
+              : addr?.area || addr?.city || '';
+          setWhatsappTechnician({
+            name:
+              assignedTechnician.fullName ||
+              (assignedTechnician as { full_name?: string }).full_name ||
+              'Technician',
+            phone: waPhone,
+          });
+          setWhatsappServiceSubType(payload.serviceSubType);
+          setWhatsappCustomerName(payload.customerName);
+          setWhatsappLocation(locationText || '');
+          setWhatsappLeadSource(payload.leadSource || '');
+          setWhatsappCustomTime(payload.customTime || '');
+          setWhatsappDescription(payload.description || '');
+          setWhatsappAgreedCost(payload.agreedCost || '');
+          setWhatsappDialogOpen(true);
+          openAdminWhatsappModal();
+        }}
       />
 
       {/* Customer Photo Gallery Dialog */}
@@ -7473,7 +7002,6 @@ const AdminDashboard = () => {
             isOpen={billModalOpen}
             onClose={handleBillModalClose}
             customer={selectedCustomerForBill}
-            initialAiInstruction={aiDocumentInstruction}
           />
         </Suspense>
       )}
@@ -7494,7 +7022,6 @@ const AdminDashboard = () => {
             isOpen={quotationModalOpen}
             onClose={handleQuotationModalClose}
             customer={selectedCustomerForQuotation}
-            initialAiInstruction={aiDocumentInstruction}
           />
         </Suspense>
       )}
@@ -7517,7 +7044,6 @@ const AdminDashboard = () => {
             customer={selectedCustomerForAMC}
             initialFromJob={amcPrefillFromJob}
             onAMCSaved={reloadAMCStatus}
-            initialAiInstruction={aiDocumentInstruction}
           />
         </Suspense>
       )}
@@ -7538,7 +7064,6 @@ const AdminDashboard = () => {
             isOpen={taxInvoiceModalOpen}
             onClose={handleTaxInvoiceModalClose}
             customer={selectedCustomerForTaxInvoice}
-            initialAiInstruction={aiDocumentInstruction}
           />
         </Suspense>
       )}
@@ -7584,22 +7109,9 @@ const AdminDashboard = () => {
           onClose={() => {
             setFollowUpModalOpen(false);
             setSelectedJobForFollowUp(null);
-            setAiFollowUpDraft(null);
             closeAdminModal();
           }}
           job={selectedJobForFollowUp}
-          initialDraft={aiFollowUpDraft}
-          hasActiveAmc={Boolean(
-            selectedJobForFollowUp &&
-              customerAMCStatus[
-                String(
-                  selectedJobForFollowUp.customerId ||
-                    selectedJobForFollowUp.customer_id ||
-                    selectedJobForFollowUp.customer?.id ||
-                    ''
-                )
-              ]
-          )}
           onScheduleFollowUp={handleFollowUpSubmit}
         />
 
@@ -7610,7 +7122,7 @@ const AdminDashboard = () => {
             setMoveToOngoingDialogOpen(false);
             setSelectedJobForMoveToOngoing(null);
             setMoveToOngoingDate('');
-            setMoveToOngoingTimeSlot('CUSTOM');
+            setMoveToOngoingTimeSlot('MORNING');
             setMoveToOngoingCustomTime('');
           })}
           date={moveToOngoingDate}
@@ -7963,43 +7475,9 @@ const AdminDashboard = () => {
 
       <AddReminderDialog
         open={addReminderDialogOpen}
-        onOpenChange={bindAdminModalDismiss('add-reminder', () => {
-          setAddReminderDialogOpen(false);
-          setAiReminderDraft(null);
-        })}
+        onOpenChange={bindAdminModalDismiss('add-reminder', () => setAddReminderDialogOpen(false))}
         entity={reminderEntity}
         contextLabel={reminderContextLabel || undefined}
-        initialDraft={aiReminderDraft}
-      />
-
-      <AdminCrmAiDialog
-        open={aiAssistantOpen}
-        onOpenChange={(open) => handleAdminToolOpenChange('ai-assistant', open)}
-        onSearchCustomer={(query, customerId) => {
-          void handleAiSearchCustomer(query, customerId);
-        }}
-        onConfirmCreateCustomer={handleAiConfirmCreateCustomer}
-        onConfirmCreateCustomerAndJob={handleAiConfirmCreateCustomerAndJob}
-        onConfirmEditCustomer={(draft) => {
-          void handleAiConfirmEditCustomer(draft);
-        }}
-        onConfirmCreateJob={(draft) => {
-          void handleAiConfirmCreateJob(draft);
-        }}
-        onConfirmFollowUp={(draft) => {
-          void handleAiConfirmFollowUp(draft);
-        }}
-        onConfirmReminder={(draft) => {
-          void handleAiConfirmReminder(draft);
-        }}
-        onOpenApp={handleAiOpenApp}
-        onOpenDocumentDraft={(draft) => {
-          void handleAiOpenDocumentDraft(draft);
-        }}
-        onOpenJob={(draft) => {
-          void handleAiOpenJob(draft);
-        }}
-        onOpenCustomerComposer={handleAiOpenCustomerComposer}
       />
 
       <WarrantyManagementDialog
@@ -8008,12 +7486,10 @@ const AdminDashboard = () => {
           if (!open) {
             setWarrantyDialogOpen(false);
             setWarrantyDialogCustomer(null);
-            setAiDocumentInstruction(null);
             onAdminModalOpenChange('warranty', false);
           }
         }}
         initialCustomer={warrantyDialogCustomer}
-        initialAiInstruction={aiDocumentInstruction}
       />
 
       <TodayRemindersPopup />

@@ -19,15 +19,6 @@ export const PRIORITY_CITIES: PriorityCity[] = [
   { slug: 'dharwad', name: 'Dharwad', tier: 2, district: 'Dharwad' },
   { slug: 'belagavi', name: 'Belagavi', tier: 2, district: 'Belagavi', alternateNames: ['Belgaum'] },
   { slug: 'tumakuru', name: 'Tumakuru', tier: 2, district: 'Tumakuru', alternateNames: ['Tumkur'] },
-  { slug: 'ramanagara', name: 'Ramanagara', tier: 2, district: 'Ramanagara' },
-  { slug: 'kolar', name: 'Kolar', tier: 2, district: 'Kolar' },
-  { slug: 'chikkaballapura', name: 'Chikkaballapura', tier: 2, district: 'Chikkaballapura', alternateNames: ['Chikkaballapur'] },
-  { slug: 'mandya', name: 'Mandya', tier: 2, district: 'Mandya' },
-  { slug: 'hassan', name: 'Hassan', tier: 2, district: 'Hassan' },
-  { slug: 'hosur', name: 'Hosur', tier: 2, district: 'Krishnagiri', alternateNames: ['Hosur Tamil Nadu'] },
-  { slug: 'devanahalli', name: 'Devanahalli', tier: 2, district: 'Bengaluru Rural' },
-  { slug: 'nelamangala', name: 'Nelamangala', tier: 2, district: 'Bengaluru Rural' },
-  { slug: 'doddaballapur', name: 'Doddaballapur', tier: 2, district: 'Bengaluru Rural', alternateNames: ['Doddaballapura'] },
   { slug: 'shivamogga', name: 'Shivamogga', tier: 2, district: 'Shivamogga', alternateNames: ['Shimoga'] },
   { slug: 'davanagere', name: 'Davanagere', tier: 2, district: 'Davanagere' },
   { slug: 'kalaburagi', name: 'Kalaburagi', tier: 2, district: 'Kalaburagi', alternateNames: ['Gulbarga'] },
@@ -61,30 +52,10 @@ export const PRIORITY_BENGALURU_LOCALITY_SLUGS = [
   'ro-service-hennur',
   'ro-service-nagawara',
   'ro-service-jakkur',
-  'ro-service-bagalur',
-  'ro-service-kogilu',
-  'ro-service-chikkajala',
-  'ro-service-budigere-cross',
-  'ro-service-allalasandra',
-  'ro-service-rajanukunte',
-  'ro-service-ms-palya',
-  'ro-service-avalahalli-yelahanka',
   'ro-service-rajajinagar',
   'ro-service-vijayanagar',
   'ro-service-nagarbhavi',
   'ro-service-kengeri',
-  'ro-service-koramangala',
-  'ro-service-indiranagar',
-  'ro-service-malleshwaram',
-  'ro-service-bommanahalli',
-  'ro-service-anjanapura',
-  'ro-service-attibele',
-  'ro-service-chandapura',
-  'ro-service-yeshwanthpur',
-  'ro-service-basavanagudi',
-  'ro-service-kalyan-nagar',
-  'ro-service-banaswadi',
-  'ro-service-sahakar-nagar',
 ] as const;
 
 interface PriorityLocality {
@@ -118,30 +89,10 @@ const PRIORITY_BENGALURU_LOCALITIES: PriorityLocality[] = [
   { slug: 'hennur', name: 'Hennur', zone: 'North' },
   { slug: 'nagawara', name: 'Nagawara', zone: 'North' },
   { slug: 'jakkur', name: 'Jakkur', zone: 'North' },
-  { slug: 'bagalur', name: 'Bagalur', zone: 'North' },
-  { slug: 'kogilu', name: 'Kogilu', zone: 'North' },
-  { slug: 'chikkajala', name: 'Chikkajala', zone: 'North' },
-  { slug: 'budigere-cross', name: 'Budigere Cross', zone: 'North' },
-  { slug: 'allalasandra', name: 'Allalasandra', zone: 'North' },
-  { slug: 'rajanukunte', name: 'Rajanukunte', zone: 'North' },
-  { slug: 'ms-palya', name: 'MS Palya', zone: 'North' },
-  { slug: 'avalahalli-yelahanka', name: 'Avalahalli', zone: 'North' },
   { slug: 'rajajinagar', name: 'Rajajinagar', zone: 'West' },
   { slug: 'vijayanagar', name: 'Vijayanagar', zone: 'West' },
   { slug: 'nagarbhavi', name: 'Nagarbhavi', zone: 'West' },
   { slug: 'kengeri', name: 'Kengeri', zone: 'West' },
-  { slug: 'koramangala', name: 'Koramangala', zone: 'East' },
-  { slug: 'indiranagar', name: 'Indiranagar', zone: 'East' },
-  { slug: 'malleshwaram', name: 'Malleshwaram', zone: 'West' },
-  { slug: 'bommanahalli', name: 'Bommanahalli', zone: 'South' },
-  { slug: 'anjanapura', name: 'Anjanapura', zone: 'South' },
-  { slug: 'attibele', name: 'Attibele', zone: 'East' },
-  { slug: 'chandapura', name: 'Chandapura', zone: 'East' },
-  { slug: 'yeshwanthpur', name: 'Yeshwanthpur', zone: 'West' },
-  { slug: 'basavanagudi', name: 'Basavanagudi', zone: 'South' },
-  { slug: 'kalyan-nagar', name: 'Kalyan Nagar', zone: 'North' },
-  { slug: 'banaswadi', name: 'Banaswadi', zone: 'East' },
-  { slug: 'sahakar-nagar', name: 'Sahakar Nagar', zone: 'North' },
 ];
 
 interface CityServiceTemplate {
@@ -161,13 +112,13 @@ const CITY_SERVICE_TEMPLATES: CityServiceTemplate[] = [
     pathPrefix: 'commercial-ro-plant-in',
     serviceName: 'Commercial RO Plant Installation',
     description: (place, district) =>
-      `Commercial RO plant installation in ${place} — 25 LPH, 50 LPH, 500 LPH and 1000 LPH for offices, restaurants, hotels, clinics and factories${district ? ` across ${district}` : ''}. Site visit, installation, service and AMC from Bengaluru (up to 250 km).`,
+      `Commercial RO plant installation in ${place} for offices, restaurants, schools and businesses${district ? ` across ${district}` : ''}. Design, setup and AMC support.`,
   },
   {
     pathPrefix: 'water-softener-installation-in',
     serviceName: 'Water Softener Installation',
     description: (place) =>
-      `New water softener installation in ${place} for hard borewell and tanker water. Homes, apartments and commercial sites — salt setup, resin service and after-sales within 250 km of Bengaluru.`,
+      `Water softener installation in ${place} for hard borewell and tanker water. Residential and commercial softener setup with maintenance support.`,
   },
   {
     pathPrefix: 'borewell-water-filter-in',
@@ -179,7 +130,7 @@ const CITY_SERVICE_TEMPLATES: CityServiceTemplate[] = [
     pathPrefix: 'apartment-water-softener-in',
     serviceName: 'Apartment Water Softener',
     description: (place) =>
-      `Apartment water softener installation in ${place} for multi-storey buildings and gated communities. New install, centralized or flat-wise softener, plus salt and resin service.`,
+      `Apartment water softener installation in ${place} for multi-storey buildings and gated communities. Centralized and flat-wise softener solutions.`,
   },
   {
     pathPrefix: 'industrial-ro-plant-in',
@@ -277,12 +228,6 @@ export function buildCityServiceKeywords(page: CityServicePage, brandName: strin
     `${page.serviceName} ${name}`,
     `RO service ${name}`,
   ]);
-  const extra =
-    page.serviceKey === 'commercial-ro-plant'
-      ? [`25 LPH RO plant ${page.cityName}`, `50 LPH RO plant ${page.cityName}`, `500 LPH RO plant ${page.cityName}`, `1000 LPH RO plant ${page.cityName}`, `commercial RO plant ${page.cityName}`]
-      : page.serviceKey.includes('softener')
-        ? [`new water softener installation ${page.cityName}`, `water softener service ${page.cityName}`]
-        : [];
   return [
     `${page.serviceName} ${page.cityName}`,
     `${page.serviceName} ${page.cityName} Karnataka`,
@@ -290,7 +235,6 @@ export function buildCityServiceKeywords(page: CityServicePage, brandName: strin
     `water purifier ${page.cityName}`,
     `${page.district} RO service`,
     brandName,
-    ...extra,
     ...altNames,
   ].join(', ');
 }
@@ -302,20 +246,9 @@ export function buildCityServicePageSeo(
 ): { title: string; description: string; keywords: string } {
   const altNote =
     page.alternateCityNames.length > 0 ? ` Also serving ${page.alternateCityNames.join(', ')}.` : '';
-  const commercialNote =
-    page.serviceKey === 'commercial-ro-plant'
-      ? ` 25, 50, 500 and 1000 LPH. Site visit, install and AMC up to 250 km from Bengaluru.`
-      : page.serviceKey.includes('softener')
-        ? ` New install, salt and resin service up to 250 km from Bengaluru.`
-        : '';
   return {
-    title:
-      page.serviceKey === 'commercial-ro-plant'
-        ? `Commercial RO 25–1000 LPH in ${page.cityName} | ${brandName}`
-        : page.serviceKey.includes('softener')
-          ? `${page.serviceName} in ${page.cityName} | ${brandName}`
-          : `${page.serviceName} in ${page.cityName} | ${brandName}`,
-    description: `${page.shortDescription}${commercialNote} Book with ${brandName}.${altNote} Call ${primaryPhone}.`,
+    title: `${page.serviceName} in ${page.cityName} | ${brandName}`,
+    description: `${page.shortDescription} Book with ${brandName}.${altNote} Call ${primaryPhone}.`,
     keywords: buildCityServiceKeywords(page, brandName),
   };
 }

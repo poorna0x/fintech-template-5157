@@ -85,7 +85,6 @@ const createDefaultStep5JobData = () => ({
   service_sub_type: 'Service',
   service_sub_type_custom: '',
   scheduled_date: '',
-  scheduled_date_touched: false,
   scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM',
   scheduled_time_custom: '',
   description: '',
@@ -138,13 +137,6 @@ const draftHasData = (draft: ReturnType<typeof loadAddCustomerDraft>): boolean =
 
 const ADD_CUSTOMER_STEPS = ['Personal', 'Address', 'Services', 'Review', 'Job'] as const;
 
-export type AddCustomerInitialDraft = {
-  addFormData?: Partial<ReturnType<typeof createDefaultAddFormData>>;
-  step5JobData?: Partial<ReturnType<typeof createDefaultStep5JobData>>;
-  currentStep?: number;
-  shouldCreateJob?: boolean;
-};
-
 interface AddCustomerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -156,8 +148,6 @@ interface AddCustomerDialogProps {
   onCheckExistingCustomer?: (phone: string, email?: string) => Promise<Customer | null>;
   /** When a new job is created with a technician assigned (step 5), open WhatsApp notify flow in parent. */
   onJobAssignedToTechnician?: (payload: JobAssignedToTechnicianPayload) => void;
-  /** Review-first AI prefill. Opens the normal form and never submits automatically. */
-  initialDraft?: AddCustomerInitialDraft | null;
 }
 
 const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
@@ -168,7 +158,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   onExistingCustomerFound,
   onCheckExistingCustomer,
   onJobAssignedToTechnician,
-  initialDraft,
 }) => {
   const initialDraftRef = useRef(loadAddCustomerDraft());
   const [currentStep, setCurrentStep] = useState(() =>
@@ -194,7 +183,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // When the dialog opens with a saved (uncreated) draft, ask whether to resume or start fresh.
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const wasOpenRef = useRef(false);
-  const appliedInitialDraftRef = useRef(false);
   const locationManuallyEditedRef = useRef(false);
   // Mirrors addFormData.google_location for race-safe reads across async awaits
   // (e.g. while clipboard.readText is in flight, the user might start typing).
@@ -216,7 +204,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     ...createDefaultStep5JobData(),
     ...(initialDraftRef.current?.step5JobData || {}),
   }));
-  const didInitStep5DateRef = useRef(false);
 
   // Load technicians for assignment
   const [technicians, setTechnicians] = useState<any[]>([]);
@@ -278,27 +265,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // On open, if there's an uncreated draft, ask the admin to resume or start new.
   useEffect(() => {
     if (open && !wasOpenRef.current) {
-      if (initialDraft && !appliedInitialDraftRef.current) {
-        appliedInitialDraftRef.current = true;
-        clearLocationFetchState();
-        setAddFormData({ ...createDefaultAddFormData(), ...(initialDraft.addFormData || {}) });
-        setStep5JobData({
-          ...createDefaultStep5JobData(),
-          ...(initialDraft.step5JobData || {}),
-        });
-        setCurrentStep(initialDraft.currentStep || 1);
-        setShouldCreateJob(initialDraft.shouldCreateJob === true);
-        setShowResumePrompt(false);
-      } else {
-        setShowResumePrompt(draftHasData(loadAddCustomerDraft()));
-      }
+      setShowResumePrompt(draftHasData(loadAddCustomerDraft()));
     }
     if (!open) {
       setShowResumePrompt(false);
-      appliedInitialDraftRef.current = false;
     }
     wasOpenRef.current = open;
-  }, [open, initialDraft, clearLocationFetchState]);
+  }, [open]);
 
   // Persist in-progress input so closing the dialog (or a refresh) doesn't lose it.
   // Only while open, so the post-submit reset doesn't re-write an empty draft.
@@ -342,29 +315,15 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     loadTechnicians();
   }, [open, shouldCreateJob]);
 
-  // Initialize scheduled_date when dialog opens and shouldCreateJob is true.
-  // A saved draft can carry a date from an earlier day (or from before the 7 PM
-  // cutoff), so re-apply the default unless the admin picked the date themselves.
+  // Initialize scheduled_date when dialog opens and shouldCreateJob is true
   useEffect(() => {
-    if (!open) {
-      didInitStep5DateRef.current = false;
-      return;
-    }
-    if (!shouldCreateJob) return;
-    const isFirstPassThisOpen = !didInitStep5DateRef.current;
-    didInitStep5DateRef.current = true;
-    setStep5JobData(prev => {
-      const needsDefault =
-        !prev.scheduled_date || (isFirstPassThisOpen && !prev.scheduled_date_touched);
-      if (!needsDefault) return prev;
-      return {
+    if (open && shouldCreateJob && !step5JobData.scheduled_date) {
+      setStep5JobData(prev => ({
         ...prev,
         scheduled_date: getDefaultNewJobScheduledDate(),
-        service_type: prev.scheduled_date
-          ? prev.service_type
-          : addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
-      };
-    });
+        service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
+      }));
+    }
   }, [open, shouldCreateJob, step5JobData.scheduled_date, addFormData.service_types]);
 
   const handleResumeDraft = () => {
@@ -391,10 +350,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     clearAddCustomerDraft();
     clearLocationFetchState();
     setAddFormData(createDefaultAddFormData());
-    setStep5JobData({
-      ...createDefaultStep5JobData(),
-      scheduled_date: getDefaultNewJobScheduledDate(),
-    });
+    setStep5JobData(createDefaultStep5JobData());
     setCurrentStep(1);
     setFormErrors({});
     setDuplicateFoundOnBlur(null);
@@ -1388,6 +1344,32 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               } catch {
                 // best-effort
               }
+
+              try {
+                const { notifyTechnicianJobWhatsApp } = await import('@/lib/jobTechnicianWhatsApp');
+                const assignedTechRow = technicians.find(
+                  (t) => t.id === step5JobData.assigned_technician_id
+                );
+                if (assignedTechRow) {
+                  void notifyTechnicianJobWhatsApp({
+                    job: { ...(newJob as any), customer: newCustomer } as any,
+                    technician: {
+                      id: assignedTechRow.id,
+                      fullName:
+                        assignedTechRow.fullName ||
+                        (assignedTechRow as any).full_name ||
+                        'Technician',
+                      phone: assignedTechRow.phone,
+                      whatsappPhone: (assignedTechRow as any).whatsappPhone,
+                      whatsapp_phone: (assignedTechRow as any).whatsapp_phone,
+                    },
+                    mode: 'assign',
+                    ctx: null,
+                  });
+                }
+              } catch {
+                // best-effort
+              }
             }
             
             if (step5JobData.assigned_technician_id) {
@@ -2058,9 +2040,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         setShouldCreateJob(true);
                         setStep5JobData(prev => ({
                           ...prev,
-                          scheduled_date: prev.scheduled_date_touched
-                            ? prev.scheduled_date
-                            : getDefaultNewJobScheduledDate(),
+                          scheduled_date: getDefaultNewJobScheduledDate(),
                           service_type: addFormData.service_types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO'
                         }));
                       }}
@@ -2141,14 +2121,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       <Label htmlFor="step5_scheduled_date">Scheduled Date</Label>
                       <DatePicker
                         value={step5JobData.scheduled_date || undefined}
-                        onChange={(v) =>
-                          v &&
-                          setStep5JobData(prev => ({
-                            ...prev,
-                            scheduled_date: v,
-                            scheduled_date_touched: true,
-                          }))
-                        }
+                        onChange={(v) => v && setStep5JobData(prev => ({ ...prev, scheduled_date: v }))}
                         placeholder="Pick date"
                       />
                     </div>

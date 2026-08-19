@@ -15,8 +15,6 @@ import { supabase, FOLLOW_UP_ROW_COLUMNS } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { hasAutoMoveToOngoingOnDate } from '@/lib/followUpToOngoing';
-import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
-import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 
 interface FollowUp {
   id: string;
@@ -40,33 +38,15 @@ interface FollowUpModalProps {
   job: Job | null;
   onScheduleFollowUp: (jobId: string, followUpData: {
     followUpDate: string;
-    followUpTime: string;
     followUpReason: string;
     parentFollowUpId?: string;
     rescheduleFollowUpId?: string;
     autoMoveToOngoingOnDate?: boolean;
-    addAmcReminder?: boolean;
   }) => void;
-  hasActiveAmc?: boolean;
-  /** Optional one-time AI / prepared draft. Applied on open; never auto-submits. */
-  initialDraft?: {
-    followUpDate?: string | null;
-    followUpTime?: string | null;
-    followUpReason?: string | null;
-    addAmcReminder?: boolean;
-  } | null;
 }
 
-export default function FollowUpModal({
-  isOpen,
-  onClose,
-  job,
-  onScheduleFollowUp,
-  hasActiveAmc = false,
-  initialDraft = null,
-}: FollowUpModalProps) {
+export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp }: FollowUpModalProps) {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
-  const [selectedTime, setSelectedTime] = useState(() => nextPresetAppointmentTime());
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [existingFollowUps, setExistingFollowUps] = useState<FollowUp[]>([]);
@@ -74,7 +54,6 @@ export default function FollowUpModal({
   const [selectedParentFollowUp, setSelectedParentFollowUp] = useState<string | null>(null);
   const [rescheduleFollowUpId, setRescheduleFollowUpId] = useState<string | null>(null);
   const [autoMoveToOngoingOnDate, setAutoMoveToOngoingOnDate] = useState(false);
-  const [addAmcReminder, setAddAmcReminder] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const reasonInputRef = useRef<HTMLInputElement>(null);
 
@@ -105,32 +84,18 @@ export default function FollowUpModal({
   useEffect(() => {
     if (isOpen && job) {
       // Reset form fields
-      const draftDate = initialDraft?.followUpDate
-        ? new Date(`${initialDraft.followUpDate}T00:00:00`)
-        : new Date();
-      setSelectedDate(Number.isNaN(draftDate.getTime()) ? new Date() : draftDate);
-      setSelectedTime(
-        initialDraft?.followUpTime && /^\d{1,2}:\d{2}/.test(initialDraft.followUpTime)
-          ? initialDraft.followUpTime.slice(0, 5)
-          : nextPresetAppointmentTime()
-      );
-      setReason(initialDraft?.followUpReason || '');
+      setSelectedDate(new Date());
+      setReason('');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
       setAutoMoveToOngoingOnDate(hasAutoMoveToOngoingOnDate((job as any).requirements));
-      setAddAmcReminder(
-        typeof initialDraft?.addAmcReminder === 'boolean'
-          ? initialDraft.addAmcReminder
-          : Boolean((job as any).include_amc_follow_up ?? (job as any).includeAmcFollowUp)
-      );
     } else {
       setExistingFollowUps([]);
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
       setAutoMoveToOngoingOnDate(false);
-      setAddAmcReminder(false);
     }
-  }, [isOpen, job, initialDraft]);
+  }, [isOpen, job]);
 
   const loadFollowUps = async () => {
     if (!job) return;
@@ -156,7 +121,6 @@ export default function FollowUpModal({
       // If no follow-ups found in table but job has follow-up data, create a record
       if ((!data || data.length === 0) && job.status === 'FOLLOW_UP') {
         const followUpDate = (job as any).follow_up_date || job.followUpDate;
-        const followUpTime = (job as any).follow_up_time || job.followUpTime;
         const followUpNotes = (job as any).follow_up_notes || job.followUpNotes;
         const followUpScheduledAt = (job as any).follow_up_scheduled_at || job.followUpScheduledAt;
         const followUpScheduledBy = (job as any).follow_up_scheduled_by || job.followUpScheduledBy;
@@ -169,7 +133,6 @@ export default function FollowUpModal({
             .insert({
               job_id: job.id,
               follow_up_date: followUpDate,
-              follow_up_time: followUpTime || null,
               reason: followUpNotes,
               scheduled_by: followUpScheduledBy || null, // Must be UUID or null, not a string
               completed: false
@@ -259,8 +222,8 @@ export default function FollowUpModal({
   }, [existingFollowUps]);
 
   const handleSubmit = async () => {
-    if (!job || !selectedDate || !selectedTime) {
-      toast.error('Please pick a follow-up date and time');
+    if (!job || !selectedDate || !reason.trim()) {
+      toast.error('Please fill in all required fields');
       return;
     }
 
@@ -275,24 +238,20 @@ export default function FollowUpModal({
       
       const followUpData = {
         followUpDate: formattedDate,
-        followUpTime: selectedTime,
-        followUpReason: reason.trim() || 'Not confirmed',
+        followUpReason: reason.trim(),
         parentFollowUpId: selectedParentFollowUp || undefined,
         rescheduleFollowUpId: rescheduleFollowUpId || undefined,
         autoMoveToOngoingOnDate: selectedParentFollowUp ? undefined : autoMoveToOngoingOnDate,
-        addAmcReminder: selectedParentFollowUp ? undefined : addAmcReminder,
       };
 
       await onScheduleFollowUp(job.id, followUpData);
       
       // Reset form
       setSelectedDate(new Date());
-      setSelectedTime(nextPresetAppointmentTime());
       setReason('');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
       setAutoMoveToOngoingOnDate(false);
-      setAddAmcReminder(false);
       
       // Reload follow-ups
       await loadFollowUps();
@@ -331,7 +290,6 @@ export default function FollowUpModal({
                 <Badge variant="outline" className="text-xs">
                   <CalendarIcon className="w-3 h-3 mr-1" />
                   {new Date(node.follow_up_date).toLocaleDateString()}
-                  {node.follow_up_time ? ` · ${node.follow_up_time.slice(0, 5)}` : ''}
                 </Badge>
                 {node.completed && (
                   <Badge variant="default" className="text-xs bg-green-500">
@@ -340,11 +298,9 @@ export default function FollowUpModal({
                   </Badge>
                 )}
               </div>
-              {node.reason?.trim() && (
-                <div className="font-medium text-sm text-gray-900 mb-1">
-                  {node.reason}
-                </div>
-              )}
+              <div className="font-medium text-sm text-gray-900 mb-1">
+                {node.reason}
+              </div>
               {node.notes && (
                 <div className="text-xs text-gray-600 mb-2">
                   {node.notes}
@@ -362,7 +318,6 @@ export default function FollowUpModal({
                   onClick={() => {
                     setRescheduleFollowUpId(node.id);
                     setSelectedDate(new Date(node.follow_up_date));
-                    setSelectedTime(node.follow_up_time?.slice(0, 5) || nextPresetAppointmentTime());
                     setReason(node.reason);
                   }}
                   className="text-xs"
@@ -431,7 +386,6 @@ export default function FollowUpModal({
                     setSelectedParentFollowUp(null);
                     setRescheduleFollowUpId(null);
                     setSelectedDate(new Date());
-                    setSelectedTime(nextPresetAppointmentTime());
                     setReason('');
                   }}
                 >
@@ -469,16 +423,7 @@ export default function FollowUpModal({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="followup-time">Follow-up Time *</Label>
-                <CustomAppointmentTimeSelect
-                  id="followup-time"
-                  value={selectedTime}
-                  onChange={setSelectedTime}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="followup-reason">Reason</Label>
+                <Label htmlFor="followup-reason">Reason *</Label>
                 <div className="relative">
                   <Input
                     ref={reasonInputRef}
@@ -537,25 +482,6 @@ export default function FollowUpModal({
                 </div>
               )}
 
-              {hasActiveAmc && !selectedParentFollowUp && (
-                <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
-                  <Checkbox
-                    id="add-amc-reminder"
-                    checked={addAmcReminder}
-                    onCheckedChange={(checked) => setAddAmcReminder(checked === true)}
-                    className="mt-0.5"
-                  />
-                  <div className="space-y-1">
-                    <Label htmlFor="add-amc-reminder" className="text-sm font-medium leading-snug cursor-pointer">
-                      Add reminder and show in Follow-up
-                    </Label>
-                    <p className="text-xs text-muted-foreground leading-snug">
-                      Creates a customer reminder for this date. AMC Service jobs are normally hidden from Follow-up, but this one will appear like a normal follow-up.
-                    </p>
-                  </div>
-                </div>
-              )}
-
               <div className="flex justify-end space-x-2 pt-2">
                   <Button
                     variant="outline"
@@ -564,7 +490,6 @@ export default function FollowUpModal({
                       setRescheduleFollowUpId(null);
                       setReason('');
                       setSelectedDate(new Date());
-                      setSelectedTime(nextPresetAppointmentTime());
                       onClose();
                     }}
                     disabled={isSubmitting}
@@ -573,7 +498,7 @@ export default function FollowUpModal({
                   </Button>
                   <Button
                     onClick={handleSubmit}
-                    disabled={!selectedDate || !selectedTime || isSubmitting}
+                    disabled={!selectedDate || !reason.trim() || isSubmitting}
                   >
                     {isSubmitting ? (rescheduleFollowUpId ? 'Rescheduling...' : 'Scheduling...') : (rescheduleFollowUpId ? 'Reschedule Follow-up' : 'Schedule Follow-up')}
                   </Button>

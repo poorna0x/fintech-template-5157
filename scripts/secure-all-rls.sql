@@ -28,23 +28,8 @@ CREATE OR REPLACE FUNCTION public.is_admin_user()
 RETURNS boolean
 LANGUAGE sql
 STABLE
-SECURITY DEFINER
-SET search_path = public
 AS $$
-  SELECT
-    auth.uid() IS NOT NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM public.technicians t WHERE t.id = auth.uid()
-    )
-    AND EXISTS (
-      SELECT 1
-      FROM public.admin_users a
-      WHERE lower(a.email) = lower(coalesce(
-              nullif(auth.jwt() ->> 'email', ''),
-              ''
-            ))
-        AND coalesce(a.is_active, true) = true
-    );
+  SELECT public.auth_user_role() IS DISTINCT FROM 'technician';
 $$;
 
 CREATE OR REPLACE FUNCTION public.technician_can_access_job(p_job_id uuid)
@@ -203,9 +188,7 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.create_job_for_booking(text, jsonb) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) FROM anon;
-REVOKE EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) FROM authenticated;
-GRANT EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.create_job_for_booking(text, jsonb) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- jobs
@@ -423,7 +406,7 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_admin_delete', t);
 
     EXECUTE format(
-      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (public.is_admin_user() OR public.is_active_technician())',
+      'CREATE POLICY %I ON public.%I FOR SELECT TO authenticated USING (true)',
       t || '_select_auth', t
     );
     EXECUTE format(
@@ -521,7 +504,7 @@ DROP POLICY IF EXISTS technician_common_qr_delete ON public.technician_common_qr
 -- Shared catalog (id, name, qr_code_url only) — technicians read; admin writes
 CREATE POLICY technician_common_qr_select
   ON public.technician_common_qr FOR SELECT TO authenticated
-  USING (public.is_admin_user() OR public.is_active_technician());
+  USING (true);
 
 CREATE POLICY technician_common_qr_insert
   ON public.technician_common_qr FOR INSERT TO authenticated

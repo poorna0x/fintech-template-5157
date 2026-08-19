@@ -40,8 +40,7 @@ import {
   ShieldCheck,
   CalendarPlus,
   Database,
-  Star,
-  Sparkles
+  Star
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -93,20 +92,12 @@ import {
   setFollowUpGlowEnabled,
 } from '@/lib/followUpGlowSettings';
 import {
-  readFollowUpDisplaySettings,
-  saveFollowUpDisplaySettings,
-} from '@/lib/followUpDisplaySettings';
-import {
   JOB_WA_NOTIFY_CHANGED_EVENT,
   fetchJobWhatsAppNotifyPrefs,
   readJobWhatsAppNotifyPrefsCached,
   saveJobWhatsAppMasterEnabled,
   type JobWhatsAppNotifyPrefs,
 } from '@/lib/jobAssignWhatsAppSettingsCache';
-import {
-  fetchPdfCompressionEnabled,
-  savePdfCompressionEnabled,
-} from '@/lib/pdfCompressionSettings';
 import { fetchOfficeLocation, saveOfficeLocation } from '@/lib/officeLocationSettings';
 import {
   extractCoordinatesFromGoogleMapsLink,
@@ -118,14 +109,11 @@ import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
-import QuickUpiQrGenerator from '@/components/admin/QuickUpiQrGenerator';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
-import { SettingsSearch } from '@/components/admin/SettingsSearch';
 import PdfAuthenticityVerifyPage from '@/pages/PdfAuthenticityVerifyPage';
 import JobReviewsPage from '@/pages/JobReviewsPage';
 import DbStorageStatsPage from '@/pages/DbStorageStatsPage';
-import AiUsagePage from '@/pages/AiUsagePage';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
@@ -332,9 +320,6 @@ const Settings = () => {
   });
 
   const [followUpGlowEnabled, setFollowUpGlowEnabledState] = useState<boolean>(isFollowUpGlowEnabled);
-  const [followUpDisplaySettings, setFollowUpDisplaySettingsState] = useState(
-    readFollowUpDisplaySettings
-  );
   const [jobWaNotifyPrefs, setJobWaNotifyPrefs] = useState<JobWhatsAppNotifyPrefs>(
     () =>
       readJobWhatsAppNotifyPrefsCached() || {
@@ -344,8 +329,6 @@ const Settings = () => {
       }
   );
   const [jobWaNotifySaving, setJobWaNotifySaving] = useState(false);
-  const [pdfCompressionEnabled, setPdfCompressionEnabled] = useState(true);
-  const [pdfCompressionSaving, setPdfCompressionSaving] = useState(false);
   const [officeMapsUrl, setOfficeMapsUrl] = useState('');
   const [officeLatLng, setOfficeLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [officeSaving, setOfficeSaving] = useState(false);
@@ -398,9 +381,6 @@ const Settings = () => {
   );
   const [showDbStoragePage, setShowDbStoragePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'db-storage'
-  );
-  const [showAiUsagePage, setShowAiUsagePage] = useState(
-    () => parseSettingsUrl(location.search).panel === 'ai-usage'
   );
   const [showRecurringServicePage, setShowRecurringServicePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'recurring-service'
@@ -517,7 +497,6 @@ const Settings = () => {
     setShowPdfAuthenticityPage(panel === 'pdf-authenticity' && !isManager);
     setShowJobReviewsPage(panel === 'job-reviews');
     setShowDbStoragePage(panel === 'db-storage' && !isManager);
-    setShowAiUsagePage(panel === 'ai-usage' && !isManager);
     setShowRecurringServicePage(panel === 'recurring-service');
     setShowLeadCatalogPage(panel === 'lead-catalog' && !isManager);
     setRemindersDialogOpen(panel === 'reminders');
@@ -684,22 +663,6 @@ const Settings = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (isManager) return;
-    let cancelled = false;
-    void fetchPdfCompressionEnabled().then(({ enabled }) => {
-      if (!cancelled) setPdfCompressionEnabled(enabled);
-    });
-    void fetchOfficeLocation().then(({ office }) => {
-      if (cancelled || !office) return;
-      setOfficeLatLng({ lat: office.lat, lng: office.lng });
-      setOfficeMapsUrl(office.mapsUrl || '');
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isManager]);
-
   // Handle location tracking toggle
   const handleLocationTrackingToggle = (enabled: boolean) => {
     setLocationTrackingEnabled(enabled);
@@ -721,58 +684,20 @@ const Settings = () => {
     );
   };
 
-  const updateFollowUpDisplaySettings = (
-    patch: Partial<typeof followUpDisplaySettings>,
-    successMessage: string
-  ) => {
-    const next = { ...followUpDisplaySettings, ...patch };
-    setFollowUpDisplaySettingsState(next);
-    saveFollowUpDisplaySettings(next);
-    toast.success(successMessage);
-  };
 
-  const handleJobWaMasterToggle = async (enabled: boolean) => {
-    const prev = jobWaNotifyPrefs;
-    setJobWaNotifyPrefs({ ...prev, enabled });
-    setJobWaNotifySaving(true);
-    try {
-      const result = await saveJobWhatsAppMasterEnabled(enabled);
-      if (!result.ok) {
-        setJobWaNotifyPrefs(prev);
-        toast.error(result.error || 'Could not save job WhatsApp setting');
-        return;
-      }
-      if (result.prefs) setJobWaNotifyPrefs(result.prefs);
-      toast.success(
-        enabled
-          ? 'Job WhatsApp on — assign/unassign can show message or auto-send'
-          : 'Job WhatsApp off — no WhatsApp popup on assign/unassign'
-      );
-    } finally {
-      setJobWaNotifySaving(false);
-    }
-  };
+  useEffect(() => {
+    if (isManager) return;
+    let cancelled = false;
+    void fetchOfficeLocation().then(({ office }) => {
+      if (cancelled || !office) return;
+      setOfficeLatLng({ lat: office.lat, lng: office.lng });
+      setOfficeMapsUrl(office.mapsUrl || '');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isManager]);
 
-  const handlePdfCompressionToggle = async (enabled: boolean) => {
-    const previous = pdfCompressionEnabled;
-    setPdfCompressionEnabled(enabled);
-    setPdfCompressionSaving(true);
-    try {
-      const result = await savePdfCompressionEnabled(enabled);
-      if (!result.ok) {
-        setPdfCompressionEnabled(previous);
-        toast.error(result.error || 'Could not save PDF compression setting');
-        return;
-      }
-      toast.success(
-        enabled
-          ? 'PDF compression enabled'
-          : 'PDF compression disabled — original PDFs will be used'
-      );
-    } finally {
-      setPdfCompressionSaving(false);
-    }
-  };
 
   const resolveOfficeFromMapsInput = async (raw: string) => {
     const cleaned = extractMapsUrlFromText(raw) || raw.trim();
@@ -819,6 +744,28 @@ const Settings = () => {
       toast.success('Office location saved — used for technician km at 9 PM');
     } finally {
       setOfficeSaving(false);
+    }
+  };
+
+  const handleJobWaMasterToggle = async (enabled: boolean) => {
+    const prev = jobWaNotifyPrefs;
+    setJobWaNotifyPrefs({ ...prev, enabled });
+    setJobWaNotifySaving(true);
+    try {
+      const result = await saveJobWhatsAppMasterEnabled(enabled);
+      if (!result.ok) {
+        setJobWaNotifyPrefs(prev);
+        toast.error(result.error || 'Could not save job WhatsApp setting');
+        return;
+      }
+      if (result.prefs) setJobWaNotifyPrefs(result.prefs);
+      toast.success(
+        enabled
+          ? 'Job WhatsApp on — assign/unassign can show message or auto-send'
+          : 'Job WhatsApp off — no WhatsApp popup on assign/unassign'
+      );
+    } finally {
+      setJobWaNotifySaving(false);
     }
   };
 
@@ -2033,7 +1980,6 @@ const Settings = () => {
       showPdfAuthenticityPage ||
       showJobReviewsPage ||
       showDbStoragePage ||
-      showAiUsagePage ||
       showRecurringServicePage ||
       showLeadCatalogPage
     ) {
@@ -2078,7 +2024,6 @@ const Settings = () => {
     showPdfAuthenticityPage,
     showJobReviewsPage,
     showDbStoragePage,
-    showAiUsagePage,
     showRecurringServicePage,
     showLeadCatalogPage,
   ]);
@@ -2346,7 +2291,7 @@ const Settings = () => {
                     Storage
                   </h1>
                   <p className="text-xs text-muted-foreground truncate sm:hidden">
-                    Postgres, Cloudflare R2, and Cloudinary
+                    Postgres and Cloudflare R2
                   </p>
                 </div>
               </div>
@@ -2364,44 +2309,6 @@ const Settings = () => {
         </div>
         <div className="container mx-auto px-4 py-5 sm:py-8 pb-10 max-w-6xl">
           <DbStorageStatsPage hideHeader onBack={closeSettingsPanel} />
-        </div>
-      </div>
-    );
-  }
-
-  if (showAiUsagePage) {
-    return (
-      <div className="admin-page">
-        <div className="bg-card border-b border-border">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
-                    AI usage & models
-                  </h1>
-                  <p className="text-xs text-muted-foreground truncate sm:hidden">
-                    Limits, tokens, and model selection
-                  </p>
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={closeSettingsPanel}
-                className="text-muted-foreground hover:text-foreground -ml-2 self-start sm:self-auto cursor-pointer"
-              >
-                <ArrowLeft className="w-4 h-4 mr-1" />
-                Back
-              </Button>
-            </div>
-          </div>
-        </div>
-        <div className="container mx-auto px-4 py-5 sm:py-8 pb-10 max-w-3xl">
-          <AiUsagePage hideHeader onBack={closeSettingsPanel} />
         </div>
       </div>
     );
@@ -2680,19 +2587,15 @@ const Settings = () => {
       {/* Header - sticky so Back stays visible when scrolling */}
       <div className="sticky top-0 z-10 bg-card border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center gap-3 py-3 sm:h-16 sm:flex-nowrap sm:py-0">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
             <div className="flex items-center">
               <SettingsIcon className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 mr-2 sm:mr-3 shrink-0" />
               <div>
                 <h1 className="text-lg sm:text-xl font-bold text-foreground">Settings</h1>
               </div>
             </div>
-
-            <div className="order-3 w-full sm:order-none sm:ml-auto sm:w-auto">
-              <SettingsSearch isManager={isManager} openPanel={openSettingsPanel} />
-            </div>
-
-            <div className="ml-auto flex items-center sm:ml-0">
+            
+            <div className="flex items-center">
               <Button
                 variant="ghost"
                 size="sm"
@@ -2710,7 +2613,7 @@ const Settings = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         <div className="space-y-4 sm:space-y-6">
           {/* Technician Locations */}
-          <Card id="section-technician-locations" className="scroll-mt-24">
+          <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div>
@@ -2806,7 +2709,7 @@ const Settings = () => {
           </Card>
 
           {/* Todo Tasks */}
-          <Card id="section-todo-tasks" className="scroll-mt-24" ref={todosSectionRef}>
+          <Card ref={todosSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -3180,7 +3083,7 @@ const Settings = () => {
           ) : null}
 
           {/* Letterhead Documents / Service Reports */}
-          <Card id="section-letterhead-documents" className="scroll-mt-24">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <FileText className="w-5 h-5" />
@@ -3414,7 +3317,7 @@ const Settings = () => {
 
           {/* Styled QR Image Generator — managers: hide (UPI/payment-adjacent) */}
           {!isManager ? (
-          <Card id="section-qr-image-generator" className="scroll-mt-24">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <QrCode className="w-5 h-5" />
@@ -3466,7 +3369,7 @@ const Settings = () => {
           {/* Common QR Codes Management */}
           {!isManager ? (
           <>
-          <Card id="section-payment-qr-codes" className="scroll-mt-24" ref={commonQrSectionRef}>
+          <Card ref={commonQrSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -3559,10 +3462,8 @@ const Settings = () => {
             </CardContent>
           </Card>
 
-          <QuickUpiQrGenerator />
-
           {/* UPI accounts for pending-payment WhatsApp pay links */}
-          <Card id="section-upi-payment-accounts" className="scroll-mt-24">
+          <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
@@ -3582,7 +3483,7 @@ const Settings = () => {
           </Card>
 
           {/* Common QR (non-payment) - shown below payment QR on technician app */}
-          <Card id="section-common-qr-codes" className="scroll-mt-24" ref={techQrSectionRef}>
+          <Card ref={techQrSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -3663,7 +3564,7 @@ const Settings = () => {
           </Card>
 
           {/* Product QR Codes Management */}
-          <Card id="section-product-qr-codes" className="scroll-mt-24" ref={productQrSectionRef}>
+          <Card ref={productQrSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -3807,7 +3708,7 @@ const Settings = () => {
             </Card>
 
           {!isManager ? (
-          <Card id="section-location-tracking" className="scroll-mt-24">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <MapPin className="w-5 h-5" />
@@ -3845,7 +3746,7 @@ const Settings = () => {
                 Dashboard Settings
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                Dashboard display, PDF compression, and job WhatsApp preferences
+                Dashboard visuals (this device) and job WhatsApp popup (all admins)
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 space-y-3">
@@ -3866,52 +3767,6 @@ const Settings = () => {
                 />
               </div>
 
-              <div className="flex items-center justify-between gap-4 p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
-                    Count only non-AMC follow-ups
-                  </h3>
-                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
-                    The Followup card counts jobs due within the next 2 days. This device setting
-                    additionally excludes AMC jobs from that count.
-                  </p>
-                </div>
-                <Switch
-                  checked={followUpDisplaySettings.countOnlyNonAmcFollowUps}
-                  onCheckedChange={(enabled) =>
-                    updateFollowUpDisplaySettings(
-                      { countOnlyNonAmcFollowUps: enabled },
-                      enabled
-                        ? 'Followup count now excludes AMC jobs'
-                        : 'Followup count now includes AMC jobs'
-                    )
-                  }
-                  aria-label="Count only non-AMC follow-ups"
-                  className="ml-2 sm:ml-6 shrink-0 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
-                />
-              </div>
-
-              {!isManager ? (
-              <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
-                    Compress PDFs
-                  </h3>
-                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
-                    Uses highest-quality iLovePDF compression for document downloads, email,
-                    WhatsApp, and Require Accept (quotations, bills, invoices, AMC, warranty,
-                    salary slips, and more). If credits run out or compression fails, the
-                    original PDF is used automatically.
-                  </p>
-                </div>
-                <Switch
-                  checked={pdfCompressionEnabled}
-                  disabled={pdfCompressionSaving}
-                  onCheckedChange={(v) => void handlePdfCompressionToggle(v)}
-                  className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
-                />
-              </div>
-              ) : null}
 
               {!isManager ? (
               <div id="office-location" className="p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700 space-y-3">
@@ -3981,7 +3836,7 @@ const Settings = () => {
           {!isManager ? <BookingIntentArchiveSettings /> : null}
 
 {!isManager ? (
-          <Card id="section-data-export" className="scroll-mt-24">
+          <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -4035,7 +3890,7 @@ const Settings = () => {
           {!isManager ? (
           <SettingsActionCard
             title="Storage"
-            description="Postgres, Cloudflare R2, and Cloudinary account usage"
+            description="Postgres table sizes plus Cloudflare R2 media space used"
             icon={<Database />}
             actions={
               <Button
@@ -4046,25 +3901,6 @@ const Settings = () => {
               >
                 <Database className="w-4 h-4 shrink-0" />
                 View storage
-              </Button>
-            }
-          />
-          ) : null}
-
-          {!isManager ? (
-          <SettingsActionCard
-            title="AI usage & models"
-            description="CRM AI request/token limits and manual Gemini or Groq model selection"
-            icon={<Sparkles />}
-            actions={
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
-                onClick={() => openSettingsPanel('ai-usage')}
-              >
-                <Sparkles className="w-4 h-4 shrink-0" />
-                Open AI usage
               </Button>
             }
           />

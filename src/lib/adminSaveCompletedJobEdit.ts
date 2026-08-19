@@ -94,37 +94,6 @@ try {
     }
   }
 
-  let normalizedAmcInfo: Record<string, any> | null = null;
-  if (completedJobEditData.amcInfo) {
-    const years = Number(completedJobEditData.amcInfo.years);
-    if (!Number.isInteger(years) || years < 1 || years > 10) {
-      toast.error('AMC duration must be between 1 and 10 years.');
-      return;
-    }
-
-    const amountText = String(completedJobEditData.amcInfo.amount ?? '').trim();
-    const amount = amountText === '' ? null : Number(amountText);
-    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
-      toast.error('Enter a valid AMC amount.');
-      return;
-    }
-
-    const notes = String(
-      completedJobEditData.amcInfo.additional_info ??
-      completedJobEditData.amcInfo.notes ??
-      ''
-    ).trim().slice(0, 2000);
-
-    normalizedAmcInfo = {
-      ...completedJobEditData.amcInfo,
-      years,
-      amount,
-      additional_info: notes,
-      notes,
-      includes_prefilter: Boolean(completedJobEditData.amcInfo.includes_prefilter),
-    };
-  }
-
   // Update requirements with edited data
   let requirements: any[] = [];
   try {
@@ -142,11 +111,11 @@ try {
 
   // Update or add AMC info
   const amcIndex = requirements.findIndex((r: any) => r?.amc_info);
-  if (normalizedAmcInfo) {
+  if (completedJobEditData.amcInfo) {
     if (amcIndex >= 0) {
-      requirements[amcIndex].amc_info = normalizedAmcInfo;
+      requirements[amcIndex].amc_info = completedJobEditData.amcInfo;
     } else {
-      requirements.push({ amc_info: normalizedAmcInfo });
+      requirements.push({ amc_info: completedJobEditData.amcInfo });
     }
   }
 

@@ -82,8 +82,6 @@ interface NewJobDialogProps {
    * skipped.
    */
   technicianMode?: boolean;
-  /** Optional one-time AI / prepared draft. Applied on open; never auto-submits. */
-  initialDraft?: Partial<NewJobFormData> | null;
 }
 
 const NewJobDialog: React.FC<NewJobDialogProps> = ({
@@ -97,7 +95,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   parseDbServiceType,
   onJobAssignedToTechnician,
   technicianMode = false,
-  initialDraft = null,
 }) => {
   const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [isCreatingJob, setIsCreatingJob] = useState(false);
@@ -163,10 +160,9 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       service_type: defaultServiceType as 'RO' | 'SOFTENER',
       service_sub_type: prev.service_sub_type || 'Service',
       brand: brand || prev.brand || 'Not specified',
-      model: model || prev.model || 'Not specified',
-      ...(initialDraft || {}),
+      model: model || prev.model || 'Not specified'
     }));
-  }, [open, customer, parseDbServiceType, initialDraft]);
+  }, [open, customer, parseDbServiceType]);
 
   const applyServiceSiteToForm = (site: CustomerLocationVariant) => {
     if (!customer) return;
@@ -538,6 +534,23 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         if (visitOrder != null) {
           (newJob as any).visit_order = visitOrder;
           (newJob as any).visitOrder = visitOrder;
+        }
+        const assignedTech = technicians.find((t) => t.id === newJobFormData.assigned_technician_id);
+        if (assignedTech) {
+          void import('@/lib/jobTechnicianWhatsApp').then(({ notifyTechnicianJobWhatsApp }) =>
+            notifyTechnicianJobWhatsApp({
+              job: newJob as any,
+              technician: {
+                id: assignedTech.id,
+                fullName: assignedTech.fullName || (assignedTech as any).full_name || 'Technician',
+                phone: assignedTech.phone,
+                whatsappPhone: (assignedTech as any).whatsappPhone,
+                whatsapp_phone: (assignedTech as any).whatsapp_phone,
+              },
+              mode: 'assign',
+              ctx: null,
+            })
+          );
         }
       }
 

@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { ImagePlus, X, ChevronDown, RotateCw } from 'lucide-react';
+import { ImagePlus, X, ChevronDown, RotateCw, Camera } from 'lucide-react';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { rotateImageUrlAndReupload } from '@/lib/imageRotate';
 import {
@@ -33,6 +33,8 @@ import {
   lookupCaptureSource,
   type PhotoCaptureSource,
 } from '@/lib/billPhotoCapture';
+import { isNativeApp } from '@/lib/isNativeApp';
+import { captureNativeCameraPhoto, filesToFileList } from '@/lib/cameraUtils';
 
 function sanitizeMoneyInput(raw: string): string {
   if (raw == null) return '';
@@ -91,6 +93,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
   const [dragOverPayment, setDragOverPayment] = useState(false);
   const [dragOverBill, setDragOverBill] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const billCameraInputRef = useRef<HTMLInputElement>(null);
   const paymentInputRef = useRef<HTMLInputElement>(null);
   // Snapshot of editData when the dialog opened, to detect whether anything changed / discard on dismiss.
   const initialDataSnapshotRef = useRef<string | null>(null);
@@ -155,6 +158,17 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
       setUploadingPhotos(false);
     }
   }, [editData, onEditDataChange, uploadFiles]);
+
+  const openBillCamera = useCallback(async () => {
+    if (isNativeApp()) {
+      const result = await captureNativeCameraPhoto();
+      if (result.status === 'ok') {
+        void handleBillFiles(filesToFileList([result.file]), 'camera');
+      }
+      return;
+    }
+    billCameraInputRef.current?.click();
+  }, [handleBillFiles]);
 
   const handleRotatePhoto = useCallback(
     async (field: 'paymentScreenshots' | 'billPhotos', index: number) => {
@@ -641,13 +655,10 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             </div>
           )}
 
-          {/* Technician-entered AMC reference details */}
+          {/* AMC Details */}
           {editData.amcInfo && (
           <div className="border-t pt-4">
-            <Label className="text-base font-semibold">Technician AMC Details</Label>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Edit the AMC details recorded by the technician for this completed job.
-            </p>
+            <Label className="text-base font-semibold">AMC Details</Label>
             <div className="space-y-3 mt-2">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -685,8 +696,6 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                   <Input
                     id="amc-years"
                     type="number"
-                    min={1}
-                    max={10}
                     value={editData.amcInfo?.years || 1}
                     onChange={(e) => {
                       const amcInfo = { ...editData.amcInfo, years: parseInt(e.target.value) || 1 };
@@ -695,120 +704,72 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                   />
                 </div>
                 <div>
-                  <Label htmlFor="amc-amount">AMC Amount</Label>
-                  <Input
-                    id="amc-amount"
-                    type="text"
-                    inputMode="decimal"
-                    value={
-                      editData.amcInfo?.amount === null ||
-                      editData.amcInfo?.amount === undefined
-                        ? ''
-                        : String(editData.amcInfo.amount)
-                    }
-                    onChange={(e) => {
-                      const value = sanitizeMoneyInput(e.target.value);
-                      const amcInfo = {
-                        ...editData.amcInfo,
-                        amount: value,
-                      };
+                  <Label htmlFor="amc-prefilter">Includes Prefilter</Label>
+                  <Select
+                    value={editData.amcInfo?.includes_prefilter !== undefined ? String(editData.amcInfo.includes_prefilter) : 'false'}
+                    onValueChange={(value) => {
+                      const amcInfo = { ...editData.amcInfo, includes_prefilter: value === 'true' };
                       onEditDataChange({ ...editData, amcInfo });
                     }}
-                    placeholder="AMC amount"
-                  />
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="true">Yes</SelectItem>
+                      <SelectItem value="false">No</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
-              <div>
-                <Label htmlFor="amc-prefilter">Includes Prefilter</Label>
-                <Select
-                  value={editData.amcInfo?.includes_prefilter !== undefined ? String(editData.amcInfo.includes_prefilter) : 'false'}
-                  onValueChange={(value) => {
-                    const amcInfo = { ...editData.amcInfo, includes_prefilter: value === 'true' };
-                    onEditDataChange({ ...editData, amcInfo });
-                  }}
-                >
-                  <SelectTrigger id="amc-prefilter">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="true">Yes</SelectItem>
-                    <SelectItem value="false">No</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
               {(() => {
                 const sp = deriveAmcServicePeriodKind(editData.amcInfo.service_period_months);
                 return (
-                <div>
-                  <Label className="text-sm font-medium">AMC service period (auto visit)</Label>
-                  <Select
-                    value={sp.kind}
-                    onValueChange={(v: AmcServicePeriodKind) => {
-                      const months = resolveAmcServicePeriodMonths(v, sp.custom);
-                      onEditDataChange({
-                        ...editData,
-                        amcInfo: { ...editData.amcInfo, service_period_months: months },
-                      });
-                    }}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="4">Every 4 months</SelectItem>
-                      <SelectItem value="6">Every 6 months</SelectItem>
-                      <SelectItem value="custom">Custom (months)</SelectItem>
-                      <SelectItem value="no_auto">No auto</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {sp.kind === 'custom' && (
-                    <Input
-                      type="number"
-                      min={1}
-                      max={24}
-                      value={sp.custom}
-                      onChange={(e) => {
-                        const customMonths = Math.max(1, parseInt(e.target.value, 10) || 1);
+                  <div>
+                    <Label className="text-sm font-medium">AMC service period (auto visit)</Label>
+                    <Select
+                      value={sp.kind}
+                      onValueChange={(v: AmcServicePeriodKind) => {
+                        const months = resolveAmcServicePeriodMonths(v, sp.custom);
                         onEditDataChange({
                           ...editData,
-                          amcInfo: {
-                            ...editData.amcInfo,
-                            service_period_months: customMonths,
-                          },
+                          amcInfo: { ...editData.amcInfo, service_period_months: months },
                         });
                       }}
-                      className="mt-2"
-                      placeholder="Months"
-                    />
-                  )}
-                </div>
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="4">Every 4 months</SelectItem>
+                        <SelectItem value="6">Every 6 months</SelectItem>
+                        <SelectItem value="custom">Custom (months)</SelectItem>
+                        <SelectItem value="no_auto">No auto</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {sp.kind === 'custom' && (
+                      <Input
+                        type="number"
+                        min={1}
+                        max={24}
+                        value={sp.custom}
+                        onChange={(e) => {
+                          const customMonths = Math.max(1, parseInt(e.target.value, 10) || 1);
+                          onEditDataChange({
+                            ...editData,
+                            amcInfo: {
+                              ...editData.amcInfo,
+                              service_period_months: customMonths,
+                            },
+                          });
+                        }}
+                        className="mt-2"
+                        placeholder="Months"
+                      />
+                    )}
+                  </div>
                 );
               })()}
-              <div>
-                <Label htmlFor="amc-additional-info">Additional Information / Notes</Label>
-                <Textarea
-                  id="amc-additional-info"
-                  value={
-                    typeof editData.amcInfo?.additional_info === 'string'
-                      ? editData.amcInfo.additional_info
-                      : typeof editData.amcInfo?.notes === 'string'
-                        ? editData.amcInfo.notes
-                        : ''
-                  }
-                  onChange={(e) => {
-                    const text = e.target.value;
-                    const amcInfo = {
-                      ...editData.amcInfo,
-                      additional_info: text,
-                      notes: text,
-                    };
-                    onEditDataChange({ ...editData, amcInfo });
-                  }}
-                  placeholder="AMC coverage, exclusions, or technician notes"
-                  rows={3}
-                  maxLength={2000}
-                />
-              </div>
             </div>
           </div>
           )}
@@ -896,6 +857,17 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 e.target.value = '';
               }}
             />
+            <input
+              ref={billCameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                handleBillFiles(e.target.files, 'camera');
+                e.target.value = '';
+              }}
+            />
             <div
               onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverBill(true); }}
               onDragLeave={(e) => { e.preventDefault(); setDragOverBill(false); }}
@@ -915,6 +887,17 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 {uploadingPhotos ? 'Uploading...' : 'Gallery — drag & drop or click'}
               </p>
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2 w-full"
+              disabled={uploadingPhotos}
+              onClick={() => void openBillCamera()}
+            >
+              <Camera className="w-4 h-4 mr-1.5" />
+              Camera
+            </Button>
           </div>
 
           {/* Completed By */}

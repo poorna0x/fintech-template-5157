@@ -1,6 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
 import { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from '@/lib/supabaseConfig';
-import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { sendAdminWhatsAppTemplate, sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
@@ -37,68 +36,55 @@ export function jobHasSkipReview(job: Record<string, unknown> | null | undefined
   return list.some((entry) => entry && typeof entry === 'object' && (entry as { skip_review?: unknown }).skip_review === true);
 }
 
+function isLocalReviewHost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.ngrok-free.dev') ||
+    host.endsWith('.ngrok-free.app') ||
+    host.endsWith('.ngrok.io')
+  );
+}
+
 export function jobReviewPublicUrl(token: string, brand: DocumentBrand): string {
   const t = String(token || '').trim();
   if (!t) return '';
-  const origin = brand === 'elevenro' ? 'https://elevenro.com' : 'https://hydrogenro.com';
+  const origin = isLocalReviewHost()
+    ? window.location.origin.replace(/\/$/, '')
+    : brand === 'elevenro'
+      ? 'https://elevenro.com'
+      : 'https://hydrogenro.com';
   return `${origin}/review/${encodeURIComponent(t)}`;
 }
 
-function jobReviewPublicFunctionUrl(name: 'job-review-public' | 'job-review-notify'): string {
-  const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
-  if (host.includes('elevenro')) {
-    return `https://hydrogenro.com/.netlify/functions/${name}`;
-  }
-  return `/.netlify/functions/${name}`;
-}
-
-async function invokePublicJobReviewFn(
-  action: 'get' | 'submit',
-  body: Record<string, unknown>
-): Promise<{ data: unknown; error: string | null; status?: number }> {
-  try {
-    const res = await fetch(jobReviewPublicFunctionUrl('job-review-public'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...body }),
-    });
-    const json = await res.json().catch(() => null);
-    if (res.status === 429) {
-      return { data: null, error: 'Too many requests. Please wait a moment.', status: 429 };
-    }
-    if (!res.ok) {
-      const msg =
-        (json && typeof json === 'object' && (json as { error?: string }).error) ||
-        `HTTP ${res.status}`;
-      return { data: null, error: String(msg), status: res.status };
-    }
-    return { data: json, error: null, status: res.status };
-  } catch (err) {
-    return { data: null, error: err instanceof Error ? err.message : 'failed' };
-  }
-}
-
-/** Live DB still grants these to anon until hardening SQL is applied. */
+/** Public get/submit must send the anon JWT — the CRM fetch wrapper skips Data API fallbacks. */
 async function invokePublicJobReviewRpc(
-  action: 'get' | 'submit',
+  fn: 'get_job_review_invite' | 'submit_job_review',
   body: Record<string, unknown>
 ): Promise<{ data: unknown; error: string | null }> {
-  if (!isSupabaseConfigured()) return { data: null, error: 'failed' };
+  if (!isSupabaseConfigured() || !supabaseUrl || !supabaseAnonKey) {
+    return { data: null, error: 'Supabase is not configured' };
+  }
   try {
-    if (action === 'get') {
-      const { data, error } = await supabase.rpc('get_job_review_invite', {
-        p_token: body.token,
-      });
-      if (error) return { data: null, error: error.message };
-      return { data, error: null };
-    }
-    const { data, error } = await supabase.rpc('submit_job_review', {
-      p_token: body.token,
-      p_rating: body.rating,
-      p_comment: body.comment ?? '',
+    const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
     });
-    if (error) return { data: null, error: error.message };
-    return { data, error: null };
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      const msg =
+        (json && typeof json === 'object' && (json as { message?: string }).message) ||
+        `HTTP ${res.status}`;
+      return { data: null, error: String(msg) };
+    }
+    return { data: json, error: null };
   } catch (err) {
     return { data: null, error: err instanceof Error ? err.message : 'failed' };
   }
@@ -153,130 +139,6 @@ export type LastCompletedJobForReview = {
   brand: DocumentBrand;
 };
 
-export async function sendAskReviewForJob(opts: {
-  to: string;
-  customerId: string;
-  customerName?: string | null;
-  jobId: string;
-  technicianId?: string | null;
-  brand?: DocumentBrand | null;
-  jobNumber?: string | null;
-  reviewUrl?: string | null;
-  forceWaMe?: boolean;
-  source?: 'inbox' | 'job_completion';
-}): Promise<{
-  ok: boolean;
-  error?: string;
-  via?: 'api' | 'template' | 'wa_me';
-  usedTemplate?: boolean;
-  jobNumber?: string;
-  alreadySubmitted?: boolean;
-}> {
-  const to = String(opts.to || '').trim();
-  const customerId = String(opts.customerId || '').trim();
-  const jobId = String(opts.jobId || '').trim();
-  if (!to) return { ok: false, error: 'Phone required' };
-  if (!customerId) return { ok: false, error: 'Customer required' };
-  if (!jobId) return { ok: false, error: 'Completed job required' };
-
-  let url = String(opts.reviewUrl || '').trim();
-  let token = jobReviewTokenFromUrl(url);
-  let brand = opts.brand || 'hydrogenro';
-
-  if (!url || !token) {
-    const invite = await createJobReviewInvite({
-      jobId,
-      technicianId: opts.technicianId,
-    });
-    if (invite?.alreadySubmitted) {
-      return {
-        ok: false,
-        alreadySubmitted: true,
-        jobNumber: String(opts.jobNumber || ''),
-        error: opts.jobNumber
-          ? `Already reviewed (${opts.jobNumber})`
-          : 'This visit was already reviewed',
-      };
-    }
-    if (!invite?.token || !invite.url) {
-      return {
-        ok: false,
-        error: invite?.skipped
-          ? 'Could not attach a technician to this job'
-          : 'Could not create review link',
-      };
-    }
-    url = invite.url;
-    token = invite.token;
-    brand = invite.brand || brand;
-  }
-
-  const text = buildAskReviewWhatsAppMessage({
-    customerName: opts.customerName,
-    brand,
-    reviewUrl: url,
-    jobRef: opts.jobNumber || null,
-  });
-  const source = opts.source || 'job_completion';
-  const windowClosed =
-    opts.forceWaMe !== true &&
-    isCustomerServiceWindowClosed(await fetchLastInboundAt(to, supabase));
-
-  const textResult: Awaited<ReturnType<typeof sendAdminWhatsAppText>> = windowClosed
-    ? {
-        ok: false,
-        needsWindowOrTemplate: true,
-        error: '24h window closed',
-      }
-    : await sendAdminWhatsAppText({
-        to,
-        text,
-        customerId,
-        source,
-        forceWaMe: opts.forceWaMe === true,
-        fallbackWaMe: false,
-      });
-  if (textResult.ok) {
-    return {
-      ok: true,
-      via: opts.forceWaMe ? 'wa_me' : 'api',
-      usedTemplate: false,
-      jobNumber: String(opts.jobNumber || ''),
-    };
-  }
-  if (opts.forceWaMe || textResult.featureDisabled) {
-    return { ok: false, error: textResult.error || 'Could not send review request' };
-  }
-  if (!textResult.needsWindowOrTemplate) {
-    return { ok: false, error: textResult.error || 'Could not send review request' };
-  }
-
-  const reviewButton = jobReviewColdUrlButtonParam(token, 1);
-  if (!reviewButton) return { ok: false, error: 'Review link is invalid' };
-
-  const cold = await sendAdminWhatsAppTemplate({
-    to,
-    templateName: resolveAskReviewTemplateName(brand),
-    languageCode: 'en',
-    bodyParams: [whatsappGreetingName(opts.customerName, 'there')],
-    buttonUrlParams: [reviewButton],
-    customerId,
-    source,
-  });
-  if (cold.ok) {
-    return {
-      ok: true,
-      via: 'template',
-      usedTemplate: true,
-      jobNumber: String(opts.jobNumber || ''),
-    };
-  }
-  return {
-    ok: false,
-    error: cold.error || '24h window closed and ask-review template is not approved yet.',
-  };
-}
-
 export async function fetchLastCompletedJobForCustomer(
   customerId: string
 ): Promise<LastCompletedJobForReview | null> {
@@ -313,26 +175,99 @@ export async function sendAskReviewForLastCompletedJob(opts: {
 }): Promise<{
   ok: boolean;
   error?: string;
-  via?: 'api' | 'template' | 'wa_me';
+  via?: 'api' | 'template';
   usedTemplate?: boolean;
   jobNumber?: string;
   alreadySubmitted?: boolean;
 }> {
+  const to = String(opts.to || '').trim();
   const customerId = String(opts.customerId || '').trim();
+  if (!to) return { ok: false, error: 'Phone required' };
   if (!customerId) return { ok: false, error: 'Link a CRM customer to this chat first' };
 
   const job = await fetchLastCompletedJobForCustomer(customerId);
   if (!job) return { ok: false, error: 'No completed job for this customer' };
-  return sendAskReviewForJob({
-    to: opts.to,
-    customerId,
-    customerName: opts.customerName,
+
+  const invite = await createJobReviewInvite({
     jobId: job.id,
     technicianId: job.technicianId,
-    brand: job.brand || opts.brand,
-    jobNumber: job.jobNumber,
+  });
+  if (invite?.alreadySubmitted) {
+    return {
+      ok: false,
+      alreadySubmitted: true,
+      jobNumber: job.jobNumber,
+      error: job.jobNumber
+        ? `Already reviewed (${job.jobNumber})`
+        : 'This visit was already reviewed',
+    };
+  }
+  if (!invite?.token || !invite.url) {
+    if (invite?.skipped) {
+      return { ok: false, error: 'Could not attach a technician to this job' };
+    }
+    return { ok: false, error: 'Could not create review link' };
+  }
+
+  const brand = invite.brand || job.brand || opts.brand || 'hydrogenro';
+  const text = buildAskReviewWhatsAppMessage({
+    customerName: opts.customerName,
+    brand,
+    reviewUrl: invite.url,
+    jobRef: job.jobNumber || null,
+  });
+
+  const windowClosed = isCustomerServiceWindowClosed(
+    await fetchLastInboundAt(to, supabase)
+  );
+
+  const textResult: Awaited<ReturnType<typeof sendAdminWhatsAppText>> = windowClosed
+    ? {
+        ok: false,
+        needsWindowOrTemplate: true,
+        error: '24h window closed',
+      }
+    : await sendAdminWhatsAppText({
+        to,
+        text,
+        customerId,
+        source: 'inbox',
+        fallbackWaMe: false,
+      });
+  if (textResult.ok) {
+    return { ok: true, via: 'api', usedTemplate: false, jobNumber: job.jobNumber };
+  }
+  if (textResult.featureDisabled) {
+    return { ok: false, error: textResult.error || 'WhatsApp send is off' };
+  }
+  if (!textResult.needsWindowOrTemplate) {
+    return { ok: false, error: textResult.error || 'Could not send review request' };
+  }
+
+  const reviewButton = jobReviewColdUrlButtonParam(invite.token, 1);
+  if (!reviewButton) {
+    return { ok: false, error: 'Review link is invalid' };
+  }
+
+  const templateName = resolveAskReviewTemplateName(brand);
+  const cold = await sendAdminWhatsAppTemplate({
+    to,
+    templateName,
+    languageCode: 'en',
+    bodyParams: [whatsappGreetingName(opts.customerName, 'there')],
+    buttonUrlParams: [reviewButton],
+    customerId,
     source: 'inbox',
   });
+  if (cold.ok) {
+    return { ok: true, via: 'template', usedTemplate: true, jobNumber: job.jobNumber };
+  }
+  return {
+    ok: false,
+    error:
+      cold.error ||
+      '24h window closed and ask-review template is not approved yet.',
+  };
 }
 
 function parseInvitePayload(data: unknown): JobReviewInvite | null {
@@ -346,15 +281,6 @@ function parseInvitePayload(data: unknown): JobReviewInvite | null {
   }
   const row = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
   if (!row || row.ok !== true) return null;
-  if (row.already_submitted === true) {
-    return {
-      ok: true,
-      token: '',
-      brand: normalizeDocumentBrand(row.brand) || 'hydrogenro',
-      url: '',
-      alreadySubmitted: true,
-    };
-  }
   if (row.skipped === true) {
     return {
       ok: true,
@@ -388,102 +314,20 @@ export async function createJobReviewInvite(opts: {
   )
     ? String(opts.technicianId).trim()
     : null;
-
-  const fromFn = await mintInviteViaFunction(jobId, technicianId);
-  if (fromFn?.url || fromFn?.alreadySubmitted) return fromFn;
-
-  const fromRpc = await mintInviteViaBrowserRpc(jobId, technicianId);
-  if (fromRpc?.url || fromRpc?.alreadySubmitted) return fromRpc;
-
-  return fromFn || fromRpc;
-}
-
-async function mintInviteViaBrowserRpc(
-  jobId: string,
-  technicianId: string | null
-): Promise<JobReviewInvite | null> {
   try {
-    const access = await resolveSupabaseAccessTokenForApi();
-    if (!access || !isSupabaseConfigured() || !supabaseUrl || !supabaseAnonKey) {
-      return null;
-    }
-    const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/rpc/create_job_review_invite`, {
-      method: 'POST',
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${access}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        p_job_id: jobId,
-        p_technician_id: technicianId,
-      }),
+    const { data, error } = await supabase.rpc('create_job_review_invite', {
+      p_job_id: jobId,
+      p_technician_id: technicianId,
     });
-    const json = await res.json().catch(() => null);
-    if (!res.ok) {
-      console.warn('[job-review] create rpc http', res.status, json);
+    if (error) {
+      console.warn('[job-review] create failed', error.message);
       return null;
     }
-    return parseInvitePayload(json);
+    return parseInvitePayload(data);
   } catch (err) {
-    console.warn('[job-review] create rpc error', err);
+    console.warn('[job-review] create error', err);
     return null;
   }
-}
-
-async function mintInviteViaFunction(
-  jobId: string,
-  technicianId: string | null
-): Promise<JobReviewInvite | null> {
-  try {
-    const access = await resolveSupabaseAccessTokenForApi();
-    if (!access) return null;
-    const res = await fetch('/.netlify/functions/job-review-invite', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${access}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ jobId, technicianId }),
-    });
-    const json = await res.json().catch(() => null);
-    if (!res.ok) {
-      console.warn('[job-review] create function failed', res.status, json);
-      return null;
-    }
-    return parseInvitePayload(json);
-  } catch (err) {
-    console.warn('[job-review] create function error', err);
-    return null;
-  }
-}
-
-/** Attach a public review URL on a job row (retries). No-op when skip_review. */
-export async function ensureJobReviewInviteOnJob(
-  job: Record<string, unknown>,
-  opts?: { attempts?: number }
-): Promise<JobReviewInvite | null> {
-  if (jobHasSkipReview(job)) return null;
-  const jobId = String(job.id || '').trim();
-  if (!jobId) return null;
-  const technicianId =
-    String(
-      job.completed_by || job.completedBy || job.assigned_technician_id || job.assignedTechnicianId || ''
-    ).trim() || null;
-  const attempts = Math.max(1, Number(opts?.attempts) || 3);
-  let last: JobReviewInvite | null = null;
-  for (let i = 0; i < attempts; i++) {
-    last = await createJobReviewInvite({ jobId, technicianId });
-    if (last?.url) {
-      job.reviewUrl = last.url;
-      job.reviewToken = last.token;
-      return last;
-    }
-    if (i < attempts - 1) {
-      await new Promise((r) => setTimeout(r, 350));
-    }
-  }
-  return last;
 }
 
 export type PublicJobReviewInvite = {
@@ -500,16 +344,10 @@ export async function fetchPublicJobReviewInvite(token: string): Promise<{
   const t = String(token || '').trim();
   if (!t) return { invite: null, error: 'invalid' };
   try {
-    let { data, error } = await invokePublicJobReviewFn('get', { token: t });
+    const { data, error } = await invokePublicJobReviewRpc('get_job_review_invite', { p_token: t });
     if (error) {
-      const fallback = await invokePublicJobReviewRpc('get', { token: t });
-      if (!fallback.error) {
-        data = fallback.data;
-        error = null;
-      } else {
-        console.warn('[job-review] get failed', error);
-        return { invite: null, error: 'failed' };
-      }
+      console.warn('[job-review] get failed', error);
+      return { invite: null, error: 'failed' };
     }
     const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
     if (!row || row.ok !== true) {
@@ -543,21 +381,14 @@ export async function submitPublicJobReview(opts: {
   const rating = Math.round(Number(opts.rating));
   if (!token || rating < 1 || rating > 5) return { ok: false, error: 'invalid' };
   try {
-    const comment = String(opts.comment || '').trim().slice(0, 1000);
-    let { data, error } = await invokePublicJobReviewFn('submit', {
-      token,
-      rating,
-      comment,
+    const { data, error } = await invokePublicJobReviewRpc('submit_job_review', {
+      p_token: token,
+      p_rating: rating,
+      p_comment: String(opts.comment || '').trim().slice(0, 1000),
     });
     if (error) {
-      const fallback = await invokePublicJobReviewRpc('submit', { token, rating, comment });
-      if (!fallback.error) {
-        data = fallback.data;
-        error = null;
-      } else {
-        console.warn('[job-review] submit failed', error);
-        return { ok: false, error };
-      }
+      console.warn('[job-review] submit failed', error);
+      return { ok: false, error };
     }
     const row = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
     if (!row || row.ok !== true) {
@@ -649,27 +480,6 @@ export async function fetchSubmittedJobReviewsPage(opts: {
 
 const STATS_CACHE_KEY = 'job_review_tech_stats_v1';
 const STATS_TTL_MS = 60 * 1000;
-
-/** Admin Settings — delete one review (RLS: is_admin_user). */
-export async function deleteJobReview(
-  reviewId: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const id = String(reviewId || '').trim();
-  if (!id) return { ok: false, error: 'Review id required' };
-
-  const { error } = await supabase.from('job_reviews').delete().eq('id', id);
-  if (error) {
-    console.warn('[job-review] delete failed', error.message);
-    return { ok: false, error: error.message || 'Could not delete review' };
-  }
-
-  try {
-    sessionStorage.removeItem(STATS_CACHE_KEY);
-  } catch {
-    /* ignore */
-  }
-  return { ok: true };
-}
 
 export async function fetchJobReviewTechnicianStats(opts?: {
   force?: boolean;
@@ -785,7 +595,13 @@ export async function fetchSubmittedJobReviewRatingsByJobIds(
 export function notifyAdminsJobReviewSubmitted(token: string): void {
   const t = String(token || '').trim();
   if (!t) return;
-  void fetch(jobReviewPublicFunctionUrl('job-review-notify'), {
+  const host =
+    typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+  const url =
+    host.includes('elevenro')
+      ? 'https://hydrogenro.com/.netlify/functions/job-review-notify'
+      : '/.netlify/functions/job-review-notify';
+  void fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token: t }),

@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.provider.CallLog;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 import com.google.android.gms.tasks.Tasks;
@@ -47,7 +46,6 @@ public class CallAlertReceiver extends BroadcastReceiver {
     static final String KEY_CLAIMED_CALL_ID = "claimed_call_id";
     private static final String KEY_IN_CALL = "in_call";
     private static final String KEY_HAD_INCOMING_RING = "had_incoming_ring";
-    static final String KEY_INCOMING_ANSWERED = "incoming_answered";
 
     private static final String ALERT_URL =
         "https://hydrogenro.com/.netlify/functions/tech-call-customer-alert";
@@ -100,7 +98,6 @@ public class CallAlertReceiver extends BroadcastReceiver {
                     .putLong(KEY_RING_SEEN_AT, ringAt)
                     .putBoolean(KEY_IN_CALL, true)
                     .putBoolean(KEY_HAD_INCOMING_RING, true)
-                    .putBoolean(KEY_INCOMING_ANSWERED, false)
                     .putLong(KEY_PENDING_RING_AT, ringAt);
 
             String number = extractIncomingNumber(intent);
@@ -126,11 +123,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
         }
 
         if (TelephonyManager.EXTRA_STATE_OFFHOOK.equals(state)) {
-            SharedPreferences.Editor offhookEditor = prefs.edit().putBoolean(KEY_IN_CALL, true);
-            if (prefs.getBoolean(KEY_HAD_INCOMING_RING, false)) {
-                offhookEditor.putBoolean(KEY_INCOMING_ANSWERED, true);
-            }
-            offhookEditor.apply();
+            prefs.edit().putBoolean(KEY_IN_CALL, true).apply();
             // While connected, keep trying to learn the number (Truecaller lag).
             if (prefs.getBoolean(KEY_HAD_INCOMING_RING, false)) {
                 long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
@@ -227,13 +220,9 @@ public class CallAlertReceiver extends BroadcastReceiver {
             CallLogHelper.bestIncomingForSession(context, ringAt, ringAt - 3 * 60_000L);
         String number = null;
         long callAt = ringAt;
-        boolean missed = !prefs.getBoolean(KEY_INCOMING_ANSWERED, false);
         if (log != null && log.number != null && !log.number.trim().isEmpty()) {
             number = log.number.trim();
             callAt = log.dateMs > 0 ? log.dateMs : ringAt;
-            missed =
-                log.type != CallLog.Calls.INCOMING_TYPE &&
-                log.type != 7; // ANSWERED_EXTERNALLY_TYPE on newer Android
         } else if (allowPendingFallback) {
             number = prefs.getString(KEY_PENDING_NUMBER, null);
             if (number == null || number.trim().isEmpty()) {
@@ -265,7 +254,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
             .putLong(RecentCallPlugin.KEY_LAST_CALLLOG_DATE, callAt)
             .apply();
 
-        uploadCallerNow(context, number, ringAt, callAt, missed);
+        uploadCallerNow(context, number, ringAt, callAt);
         return prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt;
     }
 
@@ -280,20 +269,10 @@ public class CallAlertReceiver extends BroadcastReceiver {
     /** Legacy 3-arg entry — callAt defaults to ringAt. */
     @Deprecated
     static void uploadCallerNow(Context context, String cleaned, long ringAt) {
-        uploadCallerNow(context, cleaned, ringAt, ringAt, false);
+        uploadCallerNow(context, cleaned, ringAt, ringAt);
     }
 
     static void uploadCallerNow(Context context, String cleaned, long ringAt, long callAt) {
-        uploadCallerNow(context, cleaned, ringAt, callAt, false);
-    }
-
-    static void uploadCallerNow(
-        Context context,
-        String cleaned,
-        long ringAt,
-        long callAt,
-        boolean missed
-    ) {
         if (cleaned == null || cleaned.trim().isEmpty()) return;
         if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
         cleaned = cleaned.trim();
@@ -360,7 +339,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
             return;
         }
 
-        int code = postOnce(token, cleaned, callId, callAt, missed);
+        int code = postOnce(token, cleaned, callId, callAt);
         Log.i(TAG, "Alert POST code=" + code + " callId=" + callId);
         if (code == 401) {
             try {
@@ -371,7 +350,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
                         TimeUnit.SECONDS
                     );
                 if (fresh != null && fresh.length() >= 20) {
-                    code = postOnce(fresh.trim(), cleaned, callId, callAt, missed);
+                    code = postOnce(fresh.trim(), cleaned, callId, callAt);
                     Log.i(TAG, "Alert POST retry fresh code=" + code);
                     if (code >= 200 && code < 300) {
                         DevicePrefsPlugin.saveFcmToken(context, fresh.trim());
@@ -410,7 +389,6 @@ public class CallAlertReceiver extends BroadcastReceiver {
                 .putString(KEY_ALERTED_CALL_ID, callId != null ? callId : "")
                 .remove(KEY_CLAIMED_CALL_ID)
                 .remove(KEY_RING_SEEN_AT)
-                .remove(KEY_INCOMING_ANSWERED)
                 .commit();
         }
         CallAlertUploadService.cancelKicks(context, ringAt);
@@ -455,21 +433,14 @@ public class CallAlertReceiver extends BroadcastReceiver {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private static int postOnce(
-        String token,
-        String number,
-        String callId,
-        long callAt,
-        boolean missed
-    ) {
+    private static int postOnce(String token, String number, String callId, long callAt) {
         HttpURLConnection conn = null;
         try {
             String payload =
                 "{\"token\":\"" + jsonEscape(token) + "\"," +
                 "\"number\":\"" + jsonEscape(number) + "\"," +
                 "\"callId\":\"" + jsonEscape(callId) + "\"," +
-                "\"callAt\":" + callAt + "," +
-                "\"missed\":" + missed + "}";
+                "\"callAt\":" + callAt + "}";
             conn = (HttpURLConnection) new URL(ALERT_URL).openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
