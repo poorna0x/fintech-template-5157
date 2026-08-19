@@ -818,6 +818,17 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
+  const areaHints = extractQueryHints(text);
+  if (areaHints.placeHint) {
+    return {
+      route: 'crm',
+      tools: ['customer_search'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
   // Location / nearby customer search — must come BEFORE field stats so "within X km" doesn't misroute
   if (
     /[/@]-?\d{1,3}\.\d+,-?\d{1,3}\.\d+/.test(text) ||

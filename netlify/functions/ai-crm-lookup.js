@@ -60,7 +60,7 @@ function normalizeCrmQueryText(value) {
 }
 
 const CUSTOMER_COLS =
-  'id, customer_id, full_name, phone, alternate_phone, email, service_type, brand, model, last_service_date, customer_tier, status';
+  'id, customer_id, full_name, phone, alternate_phone, email, service_type, brand, model, last_service_date, customer_tier, status, visible_address';
 
 const JOB_COLS =
   'id, job_number, customer_id, status, service_type, service_sub_type, service_brand, payment_amount, actual_cost, payment_method, completed_at, end_time, scheduled_date, assigned_technician_id, completed_by, follow_up_date, follow_up_time, follow_up_notes, follow_up_scheduled_at, requirements';
@@ -225,6 +225,48 @@ function looksLikeTomorrowTypo(word) {
   return /^tom+o?r+o?w$/.test(word) || /^tomm?row$/.test(word);
 }
 
+const PLACE_TRAILING_STOP = new Set([
+  'who', 'with', 'that', 'which', 'and', 'for', 'having', 'has', 'have', 'customer', 'customers',
+  'client', 'clients', 'amc', 'job', 'jobs', 'please', 'today', 'tomorrow', 'yesterday',
+]);
+const PLACE_PERIOD_WORDS = new Set([
+  'all', 'entire', 'lifetime', 'history', 'past', 'period', 'range', 'time', 'times', 'alltime',
+]);
+
+/** Area after "in/at/near …" — not a person name. */
+function extractPlaceHint(message) {
+  const text = normalizeCrmQueryText(message).replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  const match = text.match(
+    /\b(?:in|at|from|around|near)\s+([A-Za-z][A-Za-z0-9 .'-]{2,40}?)(?=\s+(?:who|with|that|which|and|for|having|has|have|customer|customers|client|clients|amc|job|jobs)\b|[?.!,]|$)/i
+  );
+  let raw = match?.[1] ? String(match[1]).trim() : '';
+  if (!raw) {
+    const leading = text.match(
+      /\b([A-Za-z][A-Za-z0-9 .'-]{2,40}?)\s+(?:customers?|clients?)(?:\s+with\s+amc)?\b/i
+    );
+    raw = leading?.[1] ? String(leading[1]).trim() : '';
+  }
+  if (!raw) return null;
+  const words = raw
+    .split(/\s+/)
+    .map((w) => w.replace(/^[.'-]+|[.'-]+$/g, ''))
+    .filter(Boolean)
+    .filter((w) => !PLACE_TRAILING_STOP.has(w.toLowerCase()) && !NAME_STOP_WORDS.has(w.toLowerCase()));
+  if (!words.length) return null;
+  if (words.every((w) => PLACE_PERIOD_WORDS.has(w.toLowerCase()))) return null;
+  const place = words.slice(0, 4).join(' ');
+  if (place.length < 4) return null;
+  return place;
+}
+
+function messageWantsAmcCustomers(message) {
+  const lower = normalizeCrmQueryText(message).toLowerCase();
+  if (!/\bamc\b/.test(lower)) return false;
+  if (/\bexpir(?:y|ing|e)|\brenew/.test(lower)) return false;
+  return true;
+}
+
 /**
  * Pull likely customer-name words out of a free-form sentence.
  * Returns single tokens (not the whole phrase) so "Find poorna and add a job…"
@@ -273,6 +315,16 @@ function extractQueryHints(message) {
   const jobNumber = jobMatch?.[1] && /[0-9]/.test(jobMatch[1]) ? jobMatch[1] : null;
 
   const nameTokens = extractNameTokens(text);
+  const placeHint = extractPlaceHint(text);
+  const placeWords = new Set(
+    placeHint
+      ? placeHint
+          .toLowerCase()
+          .split(/\s+/)
+          .filter(Boolean)
+      : []
+  );
+  const filteredNameTokens = nameTokens.filter((token) => !placeWords.has(token.toLowerCase()));
 
   // Partial phones and customer/job codes are the only free-text terms worth a
   // substring search. Searching the whole sentence makes "hi" match "Rohith".
@@ -303,9 +355,11 @@ function extractQueryHints(message) {
     raw: text.slice(0, 1500),
     phone,
     jobNumber,
-    nameTokens,
-    nameHint: nameTokens[0] || null,
+    nameTokens: filteredNameTokens,
+    nameHint: filteredNameTokens[0] || null,
     lookupTerms: lookupTerms.slice(0, 3),
+    placeHint,
+    requireAmc: Boolean(placeHint && messageWantsAmcCustomers(text)),
   };
 }
 
@@ -377,7 +431,8 @@ function hasSearchableTarget(hints, focusCustomerId) {
       hints?.phone ||
       hints?.jobNumber ||
       (hints?.nameTokens || []).length ||
-      (hints?.lookupTerms || []).length
+      (hints?.lookupTerms || []).length ||
+      hints?.placeHint
   );
 }
 
@@ -386,6 +441,7 @@ function hasConcreteCustomerLookupTarget(hints, message, focusCustomerId) {
   if (focusCustomerId || hints?.phone || hints?.jobNumber || (hints?.lookupTerms || []).length) {
     return true;
   }
+  if (hints?.placeHint) return true;
   const text = String(message || '').trim();
   const lower = text.toLowerCase();
   const afterLead = lower.match(/\b(?:on|called|named|for)\s+([a-z]{3,})/i)?.[1];
@@ -793,6 +849,7 @@ function slimCustomer(row) {
     brand: row.brand || null,
     model: row.model || null,
     lastServiceDate: row.last_service_date || null,
+    visibleAddress: row.visible_address ? String(row.visible_address).trim() : null,
     tier: row.customer_tier || null,
     status: row.status || null,
   };
@@ -986,7 +1043,74 @@ async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
     }
   }
 
+  if (hints.placeHint) {
+    const byPlace = await searchCustomersByPlace(db, hints.placeHint, {
+      requireAmc: Boolean(hints.requireAmc),
+    });
+    if (out.length && (hints.nameTokens || []).length) {
+      const placeIds = new Set(byPlace.map((row) => row.id));
+      const filtered = out.filter((row) => placeIds.has(row.id));
+      out.length = 0;
+      out.push(...(filtered.length ? filtered : byPlace));
+    } else {
+      out.length = 0;
+      out.push(...byPlace);
+    }
+  }
+
   return out;
+}
+
+async function searchCustomersByPlace(db, place, { requireAmc = false } = {}) {
+  const escaped = escapeForLike(place);
+  const orParts = [
+    `visible_address.ilike.%${escaped}%`,
+    `address->>street.ilike.%${escaped}%`,
+    `address->>area.ilike.%${escaped}%`,
+    `address->>city.ilike.%${escaped}%`,
+    `alternate_visible_address.ilike.%${escaped}%`,
+  ];
+  const { data, error } = await db
+    .from('customers')
+    .select(CUSTOMER_COLS)
+    .or(orParts.join(','))
+    .order('created_at', { ascending: false })
+    .limit(80);
+  if (error) {
+    console.warn('[ai-crm-lookup] place customer search failed', error.message);
+    return [];
+  }
+  const rows = (data || []).map(slimCustomer).filter(Boolean);
+  if (!requireAmc || !rows.length) return rows.slice(0, CUSTOMER_LIMIT);
+
+  const ids = rows.map((row) => row.id);
+  const todayKey = istDateKey();
+  const { data: amcs, error: amcError } = await db
+    .from('amc_contracts')
+    .select('customer_id, status, end_date')
+    .in('customer_id', ids)
+    .eq('status', 'ACTIVE');
+  if (amcError) {
+    console.warn('[ai-crm-lookup] place AMC filter failed', amcError.message);
+    return rows.slice(0, CUSTOMER_LIMIT);
+  }
+  const active = new Set();
+  const untilByCustomer = new Map();
+  for (const row of amcs || []) {
+    const id = row.customer_id ? String(row.customer_id) : '';
+    if (!id) continue;
+    const end = row.end_date ? String(row.end_date).slice(0, 10) : '';
+    if (end && end < todayKey) continue;
+    active.add(id);
+    if (end) untilByCustomer.set(id, end);
+  }
+  return rows
+    .filter((row) => active.has(row.id))
+    .map((row) => ({
+      ...row,
+      amcEndDate: untilByCustomer.get(row.id) || null,
+    }))
+    .slice(0, CUSTOMER_LIMIT);
 }
 
 function extractSaleLookup(message) {
@@ -2272,11 +2396,22 @@ function formatStatsAnswerForTools(pack, tools) {
 
   if (selected.includes('customer_search')) {
     if (pack.customers?.length) {
-      const rows = pack.customers.slice(0, 6).map(
-        (customer) =>
-          `· ${customer.name || '—'} · ${customer.customerCode || '—'} · ${customer.phone || '—'}`
-      );
-      sections.push(formatStatsSection('Customers', rows));
+      const place = pack.hints?.placeHint;
+      const withAmc = pack.hints?.requireAmc;
+      const heading = place
+        ? `Customers in ${place}${withAmc ? ' with AMC' : ''}`
+        : 'Customers';
+      const rows = pack.customers.slice(0, 6).map((customer) => {
+        const bits = [
+          customer.name || '—',
+          customer.customerCode || '—',
+          customer.phone || '—',
+        ];
+        if (customer.visibleAddress) bits.push(customer.visibleAddress);
+        if (customer.amcEndDate) bits.push(`AMC until ${customer.amcEndDate}`);
+        return `· ${bits.join(' · ')}`;
+      });
+      sections.push(formatStatsSection(heading, rows));
 
       // When a specific customer is found, show their jobs including follow-up details
       if (pack.jobs?.length && !selected.includes('job_search') && !selected.includes('jobs_overview')) {
@@ -3101,6 +3236,9 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
     // dates/statuses, but cannot silently broaden the selected data sections.
     detected.scopes = plannedScopes;
     detected.active = plannedScopes.size > 0;
+  }
+  if (hints.placeHint && detected.scopes.has('amc')) {
+    detected.scopes.delete('amc');
   }
   // A request naming a person or job is about them, not a whole-day sweep.
   const hasSpecificTarget = hasSearchableTarget(hints, focusCustomerId) || Boolean(saleLookup);
@@ -4014,6 +4152,7 @@ module.exports = {
   ONGOING_JOB_STATUSES,
   normalizeCrmQueryText,
   extractQueryHints,
+  extractPlaceHint,
   hasSearchableTarget,
   hasConcreteCustomerLookupTarget,
   extractQuickPaymentAmount,

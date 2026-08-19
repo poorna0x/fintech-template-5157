@@ -933,6 +933,17 @@ function testLookupHintsAndLimits() {
   assert.ok(JOB_LIMIT <= 15);
 }
 
+function testAreaAndAmcCustomerSearch() {
+  const q = 'find me customer who has amc in Devanahalli';
+  const hints = extractQueryHints(q);
+  assert.equal(hints.placeHint, 'Devanahalli');
+  assert.equal(hints.requireAmc, true);
+  assert.deepEqual(hints.nameTokens, []);
+  assert.equal(hasSearchableTarget(hints, null), true);
+  assert.deepEqual(inferDeterministicPlan(q).tools, ['customer_search']);
+  assert.equal(extractQueryHints('not today in entire all time').placeHint, null);
+}
+
 function testNameSurvivesActionSentences() {
   const hints = extractQueryHints(
     'Find poorna and add job for tommrow 10 am it has leakage issue need to change pre filter agrred for 1500'
@@ -1344,6 +1355,7 @@ async function main() {
   testNavigationTargetsAndQrPhrases();
   testMutationToolsBanned();
   testLookupHintsAndLimits();
+  testAreaAndAmcCustomerSearch();
   testNameSurvivesActionSentences();
   testGreetingsDoNotSearchTheCrm();
   testJobDraftTimeNormalization();
