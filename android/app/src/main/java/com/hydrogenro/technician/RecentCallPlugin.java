@@ -2,6 +2,7 @@ package com.hydrogenro.technician;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.provider.CallLog;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -31,6 +32,12 @@ public class RecentCallPlugin extends Plugin {
         return digits.length() >= 10 ? digits.substring(digits.length() - 10) : digits;
     }
 
+    private static boolean isMissed(CallLogHelper.Entry entry) {
+        return entry != null
+            && entry.type != CallLog.Calls.INCOMING_TYPE
+            && entry.type != 7; // ANSWERED_EXTERNALLY_TYPE
+    }
+
     private JSObject readRecent(boolean consume) {
         SharedPreferences prefs = prefs();
         String prefsNumber = prefs.getString(CallAlertReceiver.KEY_LAST_NUMBER, null);
@@ -51,7 +58,6 @@ public class RecentCallPlugin extends Plugin {
             boolean differentNumber =
                 prefsDigits.isEmpty() || !logDigits.equals(prefsDigits);
             boolean newerCallLog = fromLog.dateMs > lastLogDate;
-            boolean prefsStale = prefsAt <= 0 || now - prefsAt > 60_000L;
             boolean consumed = prefsAt > 0 && prefsAt == consumedAt;
             String callId = logDigits.isEmpty() ? "" : (logDigits + ":" + fromLog.dateMs);
 
@@ -61,11 +67,12 @@ public class RecentCallPlugin extends Plugin {
                 ret.put("at", fromLog.dateMs);
                 ret.put("callLogDate", fromLog.dateMs);
                 ret.put("callId", callId);
+                ret.put("missed", isMissed(fromLog));
                 ret.put("source", "call_log_alerted");
                 return ret;
             }
 
-            if (differentNumber || newerCallLog || prefsStale || consumed) {
+            if (differentNumber || newerCallLog || consumed) {
                 prefs
                     .edit()
                     .putString(CallAlertReceiver.KEY_LAST_NUMBER, fromLog.number)
@@ -77,9 +84,10 @@ public class RecentCallPlugin extends Plugin {
                     prefs.edit().putLong(CallAlertReceiver.KEY_CONSUMED_AT, now).apply();
                 }
                 ret.put("number", fromLog.number);
-                ret.put("at", now);
+                ret.put("at", fromLog.dateMs);
                 ret.put("callLogDate", fromLog.dateMs);
                 if (!callId.isEmpty()) ret.put("callId", callId);
+                ret.put("missed", isMissed(fromLog));
                 ret.put("source", "call_log");
                 return ret;
             }
@@ -108,6 +116,10 @@ public class RecentCallPlugin extends Plugin {
             ret.put("at", prefsAt);
             ret.put("callLogDate", stableAt);
             if (!callId.isEmpty()) ret.put("callId", callId);
+            ret.put(
+                "missed",
+                !prefs.getBoolean(CallAlertReceiver.KEY_INCOMING_ANSWERED, false)
+            );
             ret.put("source", "prefs");
         }
         return ret;

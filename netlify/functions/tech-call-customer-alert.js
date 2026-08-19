@@ -102,6 +102,23 @@ exports.handler = async (event) => {
     }
   }
 
+  // JWT backup from the open APK used to POST in a tight loop. Cap per technician
+  // so a stuck WebView cannot burn thousands of invocations (real calls are tens/day).
+  if (authVia === 'jwt' && technicianId) {
+    const jwtLimit = checkRateLimitForKey(`tech-call-jwt:${technicianId}`, {
+      maxRequests: 40,
+      windowMs: 3_600_000,
+      endpoint: 'tech-call-alert-jwt',
+    });
+    if (!jwtLimit.allowed) {
+      return {
+        statusCode: 200,
+        headers: HEADERS,
+        body: JSON.stringify({ found: false, reason: 'throttled' }),
+      };
+    }
+  }
+
   // 2) FCM device token (native ring / admin missed — no JWT available).
   if (!technicianId) {
     if (deviceToken.length < 20) {

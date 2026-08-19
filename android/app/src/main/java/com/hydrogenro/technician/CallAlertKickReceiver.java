@@ -38,8 +38,8 @@ public class CallAlertKickReceiver extends BroadcastReceiver {
             }
 
             Log.i(TAG, "Alarm kick for ring " + ringAt);
-            // Hangup-first path: resolve CallLog then upload once (no second parallel upload).
-            CallAlertUploadService.startWatch(app, ringAt, false);
+            // One POST per kick — do not restart the 400ms watch (that re-spammed Netlify).
+            CallAlertReceiver.finalizeAndUpload(app, ringAt, true);
         } catch (Throwable t) {
             Log.w(TAG, "Alarm kick failed", t);
         }

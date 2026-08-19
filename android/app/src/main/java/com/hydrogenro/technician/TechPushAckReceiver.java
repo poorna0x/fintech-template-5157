@@ -53,6 +53,8 @@ public class TechPushAckReceiver extends BroadcastReceiver {
     private static final String KEY_DONE = "done";
     private static final int MAX_PENDING = 40;
     private static final int MAX_DONE = 80;
+    /** Cap durable retries so a permanent server failure cannot burn Netlify invocations forever. */
+    private static final int MAX_DURABLE_ATTEMPTS = 12;
     private static final int FLUSH_REQ = 0x0ACF01;
     private static final long[] RETRY_DELAYS_MS = {15_000L, 60_000L, 5 * 60_000L, 20 * 60_000L};
 
@@ -418,6 +420,12 @@ public class TechPushAckReceiver extends BroadcastReceiver {
                 removePending(app, key);
                 continue;
             }
+            if (attempts >= MAX_DURABLE_ATTEMPTS) {
+                Log.w(TAG, "Dropping ack after max retries action=" + action + " attempts=" + attempts);
+                markDone(app, key);
+                removePending(app, key);
+                continue;
+            }
             boolean ok = sendOne(app, key, ackUrl, ackToken, action, title, body);
             if (!ok) {
                 anyLeft = true;
@@ -480,7 +488,12 @@ public class TechPushAckReceiver extends BroadcastReceiver {
                 // 200 includes skipped/expired — drop from queue either way.
                 if (code == 200) return true;
                 Log.w(TAG, "Ack rejected: HTTP " + code + " action=" + action);
-                // 4xx (other than transient) — still retry; server may be warming up
+                // Permanent client errors will never succeed — stop retrying.
+                if (code == 400 || code == 401 || code == 403 || code == 404
+                        || code == 410 || code == 422) {
+                    return true;
+                }
+                // 408/429/5xx stay false so the durable queue can retry.
             } catch (Exception e) {
                 Log.w(TAG, "Ack failed action=" + action + " attempt=" + attempt, e);
             } finally {

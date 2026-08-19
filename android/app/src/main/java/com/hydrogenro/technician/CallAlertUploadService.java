@@ -39,11 +39,10 @@ public class CallAlertUploadService extends Service {
     public static final String MODE_UPLOAD = "upload";
     public static final String MODE_WATCH = "watch";
 
-    private static final long POLL_MS = 400L;
-    private static final int WATCH_MAX_TRIES = 150; // ~60s
-
-    /** Retry offsets so we keep trying even if the first FGS start is blocked. */
-    private static final long[] KICK_DELAYS_MS = { 2_000L, 8_000L, 20_000L, 40_000L, 70_000L };
+    private static final long POLL_MS = 500L;
+    /** Truecaller usually writes CallLog within ~15s; don't POST in a 60s tight loop. */
+    private static final int WATCH_MAX_TRIES = 30; // ~15s
+    private static final long[] KICK_DELAYS_MS = { 2_000L, 8_000L, 20_000L };
 
     public static void startUpload(Context context, String number, long ringAt) {
         startUpload(context, number, ringAt, true);
@@ -244,11 +243,15 @@ public class CallAlertUploadService extends Service {
         Log.i(TAG, "Watch CallLog for ring " + session);
         // Truecaller often writes CallLog 2–15s after hangup. Prefer CallLog;
         // after ~5s fall back to RINGING-cached number so admins still get a push.
-        final int earlyPendingTry = 12; // ~4.8s
+        final int earlyPendingTry = 10; // ~5s
         for (int i = 0; i < WATCH_MAX_TRIES; i++) {
             if (prefs.getLong(CallAlertReceiver.KEY_ALERTED_RING_AT, 0L) == session) {
                 Log.i(TAG, "Watch stop — already alerted");
                 cancelKicks(app, session);
+                return;
+            }
+            if (prefs.getLong(CallAlertReceiver.KEY_POST_ATTEMPTED_RING, 0L) == session) {
+                Log.i(TAG, "Watch stop — already POSTed this ring; kicks retry if needed");
                 return;
             }
             boolean allowPending = i >= earlyPendingTry;
