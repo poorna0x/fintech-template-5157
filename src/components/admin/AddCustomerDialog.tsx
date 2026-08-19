@@ -2384,23 +2384,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       </p>
                     </div>
 
-                    <div className="sm:col-span-2">
-                      <FollowUpCreateSection
-                        idPrefix="add-customer-followup"
-                        enabled={scheduleAsFollowUp}
-                        onEnabledChange={setScheduleAsFollowUp}
-                        value={followUpSchedule}
-                        onChange={setFollowUpSchedule}
-                        onEnable={() => {
-                          setStep5JobData((prev) => ({ ...prev, assigned_technician_id: '' }));
-                          setFollowUpSchedule((prev) => ({
-                            ...prev,
-                            followUpDate: prev.followUpDate || step5JobData.scheduled_date || getIstCalendarDate(),
-                            followUpTime: prev.followUpTime || nextPresetAppointmentTime(),
-                          }));
-                        }}
-                      />
-                    </div>
                   </div>
                 </div>
               )}
@@ -2431,15 +2414,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 onClick={handleCreateCustomer}
                 disabled={
                   isCreating ||
-                  (shouldCreateJob &&
-                    !isJobCreateFormComplete(
-                      scheduleAsFollowUp
-                        ? { ...step5JobData, scheduled_date: followUpSchedule.followUpDate || step5JobData.scheduled_date }
-                        : step5JobData
-                    )) ||
-                  (shouldCreateJob &&
-                    scheduleAsFollowUp &&
-                    (!followUpSchedule.followUpDate || !followUpSchedule.followUpTime))
+                  (shouldCreateJob && !isJobCreateFormComplete(step5JobData))
                 }
                 className="bg-green-600 hover:bg-green-700 w-full sm:w-auto text-sm"
               >
