@@ -12,6 +12,7 @@ import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer, Eye, Share2 }
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import { getCustomerGstNumber, normalizeCustomerGstNumber } from '@/lib/customerGst';
+import { normalizeCustomerAddress } from '@/lib/customer-address';
 import {
   type EditableNumber,
   displayEditableNumber,
@@ -195,16 +196,7 @@ export default function TaxInvoiceGenerator({
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
   const customerEmail = customer?.email || '';
-  const customerAddress =
-    customer?.address && typeof customer.address === 'object'
-      ? customer.address
-      : {
-          street: typeof customer?.address === 'string' ? customer.address : '',
-          area: '',
-          city: '',
-          state: '',
-          pincode: '',
-        };
+  const customerAddress = normalizeCustomerAddress(customer?.address);
   const customerGst = getCustomerGstNumber(customer);
   const customerServiceType = customer?.serviceType || 'RO';
 
@@ -420,14 +412,16 @@ export default function TaxInvoiceGenerator({
       // Prefer saved customer GSTIN once document fetch arrives
       gst: gst || prev.gst,
       address: {
-        street: addr.street || prev.address.street || '',
-        area: addr.area || prev.address.area || '',
-        city: addr.city || prev.address.city || '',
-        state: addr.state || prev.address.state || '',
-        pincode: addr.pincode || prev.address.pincode || '',
+        street: addr.street || prev.address?.street || '',
+        area: addr.area || prev.address?.area || '',
+        city: addr.city || prev.address?.city || '',
+        state: addr.state || prev.address?.state || '',
+        pincode: addr.pincode || prev.address?.pincode || '',
       },
     }));
   }, [customer, editInvoiceId, addressChoice]);
+
+  const editAddress = normalizeCustomerAddress(editableCustomer.address);
 
   // Auto-select place of supply / state code from customer GSTIN (first 2 digits)
   useEffect(() => {
@@ -711,13 +705,13 @@ export default function TaxInvoiceGenerator({
       }
 
       // Ensure customer_address is a valid JSONB object (not empty)
-      const customerAddress = editableCustomer.address && Object.keys(editableCustomer.address).length > 0
-        ? editableCustomer.address
-        : {
-            street: '',
-            area: '',
-            city: '',
-            state: '',
+      const customerAddress = {
+        street: editAddress.street,
+        area: editAddress.area,
+        city: editAddress.city,
+        state: editAddress.state,
+        pincode: editAddress.pincode,
+      };
             pincode: ''
           };
 
@@ -886,10 +880,10 @@ export default function TaxInvoiceGenerator({
       customer: {
         id: customer.id || '',
         name: editableCustomer.name,
-        address: `${editableCustomer.address.street || ''}, ${editableCustomer.address.area || ''}`.trim() || '',
-        city: editableCustomer.address.city || '',
-        state: editableCustomer.address.state || '',
-        pincode: editableCustomer.address.pincode || '',
+        address: `${editAddress.street || ''}, ${editAddress.area || ''}`.trim() || '',
+        city: editAddress.city || '',
+        state: editAddress.state || '',
+        pincode: editAddress.pincode || '',
         phone: editableCustomer.phone,
         email: editableCustomer.email,
         gstNumber: editableCustomer.gst
@@ -1564,10 +1558,10 @@ export default function TaxInvoiceGenerator({
                       <Label htmlFor="address-street">Street</Label>
                       <Input
                         id="address-street"
-                        value={editableCustomer.address.street}
+                        value={editAddress.street}
                         onChange={(e) => setEditableCustomer(prev => ({ 
                           ...prev, 
-                          address: { ...prev.address, street: e.target.value }
+                          address: { ...normalizeCustomerAddress(prev.address), street: e.target.value }
                         }))}
                         placeholder="Enter street address"
                       />
@@ -1576,10 +1570,10 @@ export default function TaxInvoiceGenerator({
                       <Label htmlFor="address-area">Area</Label>
                       <Input
                         id="address-area"
-                        value={editableCustomer.address.area}
+                        value={editAddress.area}
                         onChange={(e) => setEditableCustomer(prev => ({ 
                           ...prev, 
-                          address: { ...prev.address, area: e.target.value }
+                          address: { ...normalizeCustomerAddress(prev.address), area: e.target.value }
                         }))}
                         placeholder="Enter area"
                       />
@@ -1588,10 +1582,10 @@ export default function TaxInvoiceGenerator({
                       <Label htmlFor="address-city">City</Label>
                       <Input
                         id="address-city"
-                        value={editableCustomer.address.city}
+                        value={editAddress.city}
                         onChange={(e) => setEditableCustomer(prev => ({ 
                           ...prev, 
-                          address: { ...prev.address, city: e.target.value }
+                          address: { ...normalizeCustomerAddress(prev.address), city: e.target.value }
                         }))}
                         placeholder="Enter city"
                       />
@@ -1600,10 +1594,10 @@ export default function TaxInvoiceGenerator({
                       <Label htmlFor="address-state">State</Label>
                       <Input
                         id="address-state"
-                        value={editableCustomer.address.state}
+                        value={editAddress.state}
                         onChange={(e) => setEditableCustomer(prev => ({ 
                           ...prev, 
-                          address: { ...prev.address, state: e.target.value }
+                          address: { ...normalizeCustomerAddress(prev.address), state: e.target.value }
                         }))}
                         placeholder="Enter state"
                       />
@@ -1612,10 +1606,10 @@ export default function TaxInvoiceGenerator({
                       <Label htmlFor="address-pincode">Pincode</Label>
                       <Input
                         id="address-pincode"
-                        value={editableCustomer.address.pincode}
+                        value={editAddress.pincode}
                         onChange={(e) => setEditableCustomer(prev => ({ 
                           ...prev, 
-                          address: { ...prev.address, pincode: e.target.value }
+                          address: { ...normalizeCustomerAddress(prev.address), pincode: e.target.value }
                         }))}
                         placeholder="Enter pincode"
                       />
@@ -1627,11 +1621,11 @@ export default function TaxInvoiceGenerator({
             <div className="space-y-2">
                 <div className="font-semibold text-lg">{editableCustomer.name}</div>
               <div className="text-sm text-gray-600">
-                  {(editableCustomer.address.street || editableCustomer.address.area) && (
-                    <div>{editableCustomer.address.street || ''}, {editableCustomer.address.area || ''}</div>
+                  {(editAddress.street || editAddress.area) && (
+                    <div>{editAddress.street || ''}, {editAddress.area || ''}</div>
                   )}
-                  {(editableCustomer.address.city || editableCustomer.address.state || editableCustomer.address.pincode) && (
-                    <div>{editableCustomer.address.city || ''}, {editableCustomer.address.state || ''} - {editableCustomer.address.pincode || ''}</div>
+                  {(editAddress.city || editAddress.state || editAddress.pincode) && (
+                    <div>{editAddress.city || ''}, {editAddress.state || ''} - {editAddress.pincode || ''}</div>
                   )}
                   {editableCustomer.phone && <div>Phone: {editableCustomer.phone}</div>}
                   {editableCustomer.email && <div>Email: {editableCustomer.email}</div>}

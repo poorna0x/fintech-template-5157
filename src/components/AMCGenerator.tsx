@@ -306,6 +306,8 @@ export default function AMCGenerator({
     });
   }, [customer, isEditingCustomer, addressChoice]);
 
+  const editAddress = normalizeCustomerAddress(editableCustomer.address);
+
   // Calculate totals - use direct AMC cost instead of items
   const subtotal = num(amcCost);
   const totalAmount = subtotal + num(serviceCharge);
@@ -497,7 +499,7 @@ export default function AMCGenerator({
         customer_phone: editableCustomer.phone,
         customer_email: editableCustomer.email || null,
         customer_gst: editableCustomer.gst || null,
-        customer_address: editableCustomer.address,
+        customer_address: editAddress,
         agreement_intro: resolveAgreementIntroForBrand(agreementIntro, brand),
         document_brand: brand,
         seal_variant: sealVariant,
@@ -631,7 +633,7 @@ export default function AMCGenerator({
     };
 
     const billCustomerAddress = formatCustomerAddressForBill(
-      normalizeCustomerAddress(editableCustomer.address)
+      normalizeCustomerAddress(editAddress)
     );
 
     const bill: Bill = {
@@ -1187,10 +1189,10 @@ export default function AMCGenerator({
                         <Label htmlFor="amc-address-street">Street</Label>
                         <Input
                           id="amc-address-street"
-                          value={editableCustomer.address.street}
+                          value={editAddress.street}
                           onChange={(e) => setEditableCustomer(prev => ({ 
                             ...prev, 
-                            address: { ...prev.address, street: e.target.value }
+                            address: { ...normalizeCustomerAddress(prev.address), street: e.target.value }
                           }))}
                           placeholder="Enter street address"
                         />
@@ -1199,10 +1201,10 @@ export default function AMCGenerator({
                         <Label htmlFor="amc-address-area">Area</Label>
                         <Input
                           id="amc-address-area"
-                          value={editableCustomer.address.area}
+                          value={editAddress.area}
                           onChange={(e) => setEditableCustomer(prev => ({ 
                             ...prev, 
-                            address: { ...prev.address, area: e.target.value }
+                            address: { ...normalizeCustomerAddress(prev.address), area: e.target.value }
                           }))}
                           placeholder="Enter area"
                         />
@@ -1211,10 +1213,10 @@ export default function AMCGenerator({
                         <Label htmlFor="amc-address-city">City</Label>
                         <Input
                           id="amc-address-city"
-                          value={editableCustomer.address.city}
+                          value={editAddress.city}
                           onChange={(e) => setEditableCustomer(prev => ({ 
                             ...prev, 
-                            address: { ...prev.address, city: e.target.value }
+                            address: { ...normalizeCustomerAddress(prev.address), city: e.target.value }
                           }))}
                           placeholder="Enter city"
                         />
@@ -1223,10 +1225,10 @@ export default function AMCGenerator({
                         <Label htmlFor="amc-address-state">State</Label>
                         <Input
                           id="amc-address-state"
-                          value={editableCustomer.address.state}
+                          value={editAddress.state}
                           onChange={(e) => setEditableCustomer(prev => ({ 
                             ...prev, 
-                            address: { ...prev.address, state: e.target.value }
+                            address: { ...normalizeCustomerAddress(prev.address), state: e.target.value }
                           }))}
                           placeholder="Enter state"
                         />
@@ -1235,10 +1237,10 @@ export default function AMCGenerator({
                         <Label htmlFor="amc-address-pincode">Pincode</Label>
                         <Input
                           id="amc-address-pincode"
-                          value={editableCustomer.address.pincode}
+                          value={editAddress.pincode}
                           onChange={(e) => setEditableCustomer(prev => ({ 
                             ...prev, 
-                            address: { ...prev.address, pincode: e.target.value }
+                            address: { ...normalizeCustomerAddress(prev.address), pincode: e.target.value }
                           }))}
                           placeholder="Enter pincode"
                         />
@@ -1265,14 +1267,14 @@ export default function AMCGenerator({
                       <span>{editableCustomer.email}</span>
                     </div>
                   )}
-                  {(editableCustomer.address.street ||
-                    editableCustomer.address.area ||
-                    editableCustomer.address.city) && (
+                  {(editAddress.street ||
+                    editAddress.area ||
+                    editAddress.city) && (
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-gray-500" />
                       <span>
                         {formatCustomerFullAddressLine(
-                          normalizeCustomerAddress(editableCustomer.address)
+                          normalizeCustomerAddress(editAddress)
                         )}
                       </span>
                     </div>

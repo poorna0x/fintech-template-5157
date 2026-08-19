@@ -16,6 +16,7 @@ import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Share2, Loader
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import { getCustomerGstNumber } from '@/lib/customerGst';
+import { normalizeCustomerAddress } from '@/lib/customer-address';
 import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
 import {
   DocumentBrand,
@@ -160,16 +161,7 @@ export default function BillGenerator({
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
   const customerEmail = customer?.email || '';
-  const customerAddress =
-    customer?.address && typeof customer.address === 'object'
-      ? customer.address
-      : {
-          street: typeof customer?.address === 'string' ? customer.address : '',
-          area: '',
-          city: '',
-          state: '',
-          pincode: '',
-        };
+  const customerAddress = normalizeCustomerAddress(customer?.address);
   const customerGst = getCustomerGstNumber(customer);
   const customerServiceType = customer?.serviceType || 'RO';
 
@@ -246,6 +238,8 @@ export default function BillGenerator({
       },
     });
   }, [customerName, customerPhone, customerEmail, customerGst, customerAddress]);
+
+  const editAddress = normalizeCustomerAddress(editableCustomer.address);
 
   useEffect(() => {
     setAddressChoice('omit');
@@ -1032,11 +1026,11 @@ export default function BillGenerator({
                         : ''}
                       :{' '}
                       {[
-                        editableCustomer.address.street,
-                        editableCustomer.address.area,
-                        editableCustomer.address.city,
-                        editableCustomer.address.state,
-                        editableCustomer.address.pincode,
+                        editAddress.street,
+                        editAddress.area,
+                        editAddress.city,
+                        editAddress.state,
+                        editAddress.pincode,
                       ]
                         .filter(Boolean)
                         .join(', ')}

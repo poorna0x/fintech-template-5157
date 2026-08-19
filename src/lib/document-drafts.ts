@@ -84,17 +84,30 @@ export async function deleteDraft(kind: DraftKind, id: string): Promise<void> {
   }
 }
 
+type AddressPatch = Record<string, string | undefined> | null | undefined;
+
+function asAddressRecord(value: unknown): Record<string, string | undefined> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, string | undefined>;
+  }
+  return {};
+}
+
 /** Deep-merge editable customer fields saved in a draft snapshot. */
 export function mergeEditableCustomer<
-  T extends { address?: Record<string, string | undefined> },
+  T extends { address?: AddressPatch },
 >(prev: T, patch: Partial<T> | undefined): T {
   if (!patch || typeof patch !== 'object') return prev;
+  const { address: patchAddress, ...rest } = patch as Partial<T> & { address?: AddressPatch };
+  const prevAddr = asAddressRecord(prev.address);
+  const nextAddr =
+    patchAddress && typeof patchAddress === 'object' && !Array.isArray(patchAddress)
+      ? { ...prevAddr, ...asAddressRecord(patchAddress) }
+      : prevAddr;
   return {
     ...prev,
-    ...patch,
-    ...(patch.address
-      ? { address: { ...prev.address, ...patch.address } }
-      : {}),
+    ...rest,
+    address: nextAddr,
   };
 }
 

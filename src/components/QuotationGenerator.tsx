@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { getCustomerGstNumber, normalizeCustomerGstNumber } from '@/lib/customerGst';
+import { normalizeCustomerAddress } from '@/lib/customer-address';
 import {
   getCompanyStateCode,
   getStateNameByCode,
@@ -127,16 +128,7 @@ export default function QuotationGenerator({
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
   const customerEmail = customer?.email || '';
-  const customerAddress =
-    customer?.address && typeof customer.address === 'object'
-      ? customer.address
-      : {
-          street: typeof customer?.address === 'string' ? customer.address : '',
-          area: '',
-          city: '',
-          state: '',
-          pincode: '',
-        };
+  const customerAddress = normalizeCustomerAddress(customer?.address);
   const customerGst = getCustomerGstNumber(customer);
   const customerServiceType = customer?.serviceType || 'RO';
 
@@ -245,6 +237,8 @@ export default function QuotationGenerator({
       }
     });
   }, [customerName, customerPhone, customerEmail, customerGst, customerAddress, customer, addressChoice]);
+
+  const editAddress = normalizeCustomerAddress(editableCustomer.address);
 
   // Auto-select place of supply / state code from customer GSTIN when Include GST is on
   useEffect(() => {
@@ -485,11 +479,11 @@ export default function QuotationGenerator({
         phone: editableCustomer.phone,
         email: editableCustomer.email,
         address: {
-          street: editableCustomer.address.street,
-          area: editableCustomer.address.area,
-          city: editableCustomer.address.city,
-          state: editableCustomer.address.state,
-          pincode: editableCustomer.address.pincode,
+          street: editAddress.street,
+          area: editAddress.area,
+          city: editAddress.city,
+          state: editAddress.state,
+          pincode: editAddress.pincode,
           country: 'India'
         },
         gstNumber: editableCustomer.gst,
@@ -1029,10 +1023,10 @@ export default function QuotationGenerator({
                       <Label htmlFor="address-street">Street</Label>
                       <Input
                         id="address-street"
-                        value={editableCustomer.address.street}
+                        value={editAddress.street}
                         onChange={(e) => setEditableCustomer(prev => ({ 
                           ...prev, 
-                          address: { ...prev.address, street: e.target.value }
+                          address: { ...normalizeCustomerAddress(prev.address), street: e.target.value }
                         }))}
                         placeholder="Enter street address"
                       />
@@ -1041,10 +1035,10 @@ export default function QuotationGenerator({
                       <Label htmlFor="address-area">Area</Label>
                       <Input
                         id="address-area"
-                        value={editableCustomer.address.area}
+                        value={editAddress.area}
                         onChange={(e) => setEditableCustomer(prev => ({ 
                           ...prev, 
-                          address: { ...prev.address, area: e.target.value }
+                          address: { ...normalizeCustomerAddress(prev.address), area: e.target.value }
                         }))}
                         placeholder="Enter area"
                       />
@@ -1053,10 +1047,10 @@ export default function QuotationGenerator({
                       <Label htmlFor="address-city">City</Label>
                       <Input
                         id="address-city"
-                        value={editableCustomer.address.city}
+                        value={editAddress.city}
                         onChange={(e) => setEditableCustomer(prev => ({ 
                           ...prev, 
-                          address: { ...prev.address, city: e.target.value }
+                          address: { ...normalizeCustomerAddress(prev.address), city: e.target.value }
                         }))}
                         placeholder="Enter city"
                       />
@@ -1065,10 +1059,10 @@ export default function QuotationGenerator({
                       <Label htmlFor="address-state">State</Label>
                       <Input
                         id="address-state"
-                        value={editableCustomer.address.state}
+                        value={editAddress.state}
                         onChange={(e) => setEditableCustomer(prev => ({ 
                           ...prev, 
-                          address: { ...prev.address, state: e.target.value }
+                          address: { ...normalizeCustomerAddress(prev.address), state: e.target.value }
                         }))}
                         placeholder="Enter state"
                       />
@@ -1077,10 +1071,10 @@ export default function QuotationGenerator({
                       <Label htmlFor="address-pincode">Pincode</Label>
                       <Input
                         id="address-pincode"
-                        value={editableCustomer.address.pincode}
+                        value={editAddress.pincode}
                         onChange={(e) => setEditableCustomer(prev => ({ 
                           ...prev, 
-                          address: { ...prev.address, pincode: e.target.value }
+                          address: { ...normalizeCustomerAddress(prev.address), pincode: e.target.value }
                         }))}
                         placeholder="Enter pincode"
                       />
@@ -1107,10 +1101,10 @@ export default function QuotationGenerator({
                     <span>{editableCustomer.email}</span>
                   </div>
                 )}
-                {(editableCustomer.address.street || editableCustomer.address.area || editableCustomer.address.city) && (
+                {(editAddress.street || editAddress.area || editAddress.city) && (
                   <div className="flex items-center gap-2">
                     <Edit className="w-4 h-4 text-gray-500" />
-                    <span>{editableCustomer.address.street}, {editableCustomer.address.area}, {editableCustomer.address.city}</span>
+                    <span>{[editAddress.street, editAddress.area, editAddress.city].filter(Boolean).join(', ')}</span>
                   </div>
                 )}
                 {editableCustomer.gst && (
