@@ -1267,6 +1267,11 @@ function testNearbyRadiusParsesMetres() {
   const hours = formatSqlRows([{ hour_ist: 9, job_count: 299 }], 'Analytics result');
   assert.match(hours, /9 AM/);
   assert.deepEqual(inferDeterministicPlan('shortest job completed time').tools, ['sql_query']);
+  assert.deepEqual(inferDeterministicPlan('average job duration').tools, ['sql_query']);
+  assert.deepEqual(inferDeterministicPlan('which brand has the most jobs').tools, ['sql_query']);
+  assert.deepEqual(inferDeterministicPlan('cancelled vs completed jobs').tools, ['sql_query']);
+  assert.equal(inferDeterministicPlan('customers within 100m').route, 'conversation');
+  assert.deepEqual(inferDeterministicPlan('how many jobs last year').tools, ['jobs_overview']);
 }
 
 async function testMockCrmChat() {

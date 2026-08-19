@@ -168,6 +168,11 @@ const NAME_STOP_WORDS = new Set(
     'interesting', 'pull', 'stats', 'items', 'numbers', 'data', 'query', 'fetch', 'metrics', 'metric', 'item', 'rows', 'row', 'table',
     'km', 'kms', 'kilometer', 'kilometre', 'kilometers', 'kilometres', 'drove', 'drive', 'driving', 'travelled', 'traveled', 'travel', 'mileage', 'distance',
     'worked', 'shift', 'field', 'hours', 'hour', 'long',
+    'average', 'avg', 'mean', 'median', 'duration', 'rating', 'ratings', 'review', 'reviews',
+    'weekday', 'weekdays', 'weekend', 'brand', 'brands', 'area', 'areas', 'locality', 'pincode',
+    'repeat', 'quietest', 'peak', 'bookings', 'breakdown', 'distribution', 'surrounding',
+    'nearby', 'radius', 'meter', 'meters', 'metre', 'metres', 'vs', 'versus', 'yearly', 'night',
+    'shortest', 'longest', 'fastest', 'slowest', 'busiest', 'start',
     'the', 'their', 'them', 'these', 'this', 'time', 'today', 'tomorrow', 'total', 'turnover',
     'ticket', 'tickets', 'calls', 'call', 'outgoing', 'incoming', 'collections', 'collection',
     'unpaid', 'update', 'upcoming', 'us', 'visit', 'visited', 'visits', 'came', 'serviced', 'want', 'was', 'water', 'week', 'were',
@@ -606,6 +611,14 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     ...monthBoundsKey(todayKey, -1),
     label: 'last month',
   }));
+  addDateCandidate(/\blast year\b|\bprevious year\b/g, () => {
+    const year = Number(todayKey.slice(0, 4)) - 1;
+    return { start: `${year}-01-01`, end: `${year}-12-31`, label: String(year) };
+  });
+  addDateCandidate(/\bthis year\b/g, () => {
+    const year = Number(todayKey.slice(0, 4));
+    return { start: `${year}-01-01`, end: todayKey, label: String(year) };
+  });
   addDateCandidate(/\bthis month\b|\bmonth to date\b|(?<!last )(?<!previous )\bmonth\b/g, () => ({
     ...monthBoundsKey(todayKey, 0),
     label: 'this month',
@@ -2407,13 +2420,13 @@ async function loadOverview(db, intent, todayKey) {
   if (wantsSqlQuery && out.stats.sqlQueryResult === undefined) {
     out.stats.sqlQueryAvailable = true;
     out.stats.sqlSchema = AI_READONLY_SCHEMA;
-    const durationDir = detectJobDurationRanking(intent.lookupMessage || '');
-    if (durationDir) {
-      const result = await runReadonlyQuery(db, jobDurationSql(durationDir));
+    const canned = resolveCannedAnalytics(intent.lookupMessage || '');
+    if (canned) {
+      const result = await runReadonlyQuery(db, canned.sql);
       out.stats.sqlQueryResult = {
         rows: result.rows,
-        query: jobDurationSql(durationDir),
-        label: durationDir === 'DESC' ? 'Longest completed jobs' : 'Shortest completed jobs',
+        query: canned.sql,
+        label: canned.label,
         error: result.error,
       };
     }
@@ -3665,7 +3678,14 @@ function formatSqlCell(key, value) {
     return `INR ${Number(value).toLocaleString('en-IN')}`;
   }
   if (/count|jobs/.test(k) && Number.isFinite(Number(value))) {
-    return `${Number(value).toLocaleString('en-IN')} jobs`;
+    const n = Number(value).toLocaleString('en-IN');
+    if (/customer/.test(k)) return `${n} customers`;
+    if (/review/.test(k)) return `${n} reviews`;
+    if (/invite/.test(k)) return `${n} invites`;
+    return `${n} jobs`;
+  }
+  if (/rating/.test(k) && Number.isFinite(Number(value))) {
+    return `${Number(value)} / 5`;
   }
   if (/(_at|time)$/.test(k) && /^\d{4}-\d{2}-\d{2}T/.test(asText)) {
     return asText.slice(0, 10);
@@ -3736,6 +3756,100 @@ WHERE status = 'COMPLETED'
   AND EXTRACT(EPOCH FROM (COALESCE(end_time, completed_at) - start_time)) / 60 BETWEEN 1 AND 1440
 ORDER BY duration_minutes ${order}
 LIMIT 5`.trim();
+}
+
+function resolveCannedAnalytics(message) {
+  const lower = String(message || '').toLowerCase();
+  const durationDir = detectJobDurationRanking(message);
+  if (durationDir) {
+    return {
+      sql: jobDurationSql(durationDir),
+      label: durationDir === 'DESC' ? 'Longest completed jobs' : 'Shortest completed jobs',
+    };
+  }
+  if (
+    /\b(?:average|avg|mean|median)\b/.test(lower) &&
+    /\b(?:job|duration|completion|completed time|time)\b/.test(lower)
+  ) {
+    return {
+      sql: `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (COALESCE(end_time, completed_at) - start_time)) / 60))::int AS duration_minutes,
+       COUNT(*) AS job_count
+FROM jobs
+WHERE status = 'COMPLETED'
+  AND start_time IS NOT NULL
+  AND COALESCE(end_time, completed_at) IS NOT NULL
+  AND EXTRACT(EPOCH FROM (COALESCE(end_time, completed_at) - start_time)) / 60 BETWEEN 1 AND 1440`,
+      label: 'Average completed job duration',
+    };
+  }
+  if (
+    (/\b(?:busiest|quietest|slowest)\b/.test(lower) && /\bday\b/.test(lower)) ||
+    /\bjobs per weekday\b|\bwhich day of the week\b/.test(lower)
+  ) {
+    const quietest = /\b(?:quietest|slowest)\b/.test(lower);
+    return {
+      sql: `SELECT EXTRACT(DOW FROM scheduled_date)::int AS day_of_week,
+       TO_CHAR(scheduled_date, 'FMDay') AS day_name,
+       COUNT(*) AS job_count
+FROM jobs
+WHERE scheduled_date IS NOT NULL AND status <> 'CANCELLED'
+GROUP BY 1, 2
+ORDER BY job_count ${quietest ? 'ASC' : 'DESC'}`,
+      label: quietest ? 'Quietest days of week' : 'Jobs by day of week',
+    };
+  }
+  if (
+    (/\b(?:busiest|quietest|slowest|peak)\b/.test(lower) && /\bhour\b/.test(lower)) ||
+    /\bwhat time do most jobs\b|\bjobs at night\b|\bpeak time\b/.test(lower)
+  ) {
+    return {
+      sql: `SELECT EXTRACT(HOUR FROM (COALESCE(start_time, completed_at) AT TIME ZONE 'Asia/Kolkata'))::int AS hour_ist,
+       COUNT(*) AS job_count
+FROM jobs
+WHERE COALESCE(start_time, completed_at) IS NOT NULL AND status <> 'CANCELLED'
+GROUP BY 1
+ORDER BY job_count DESC`,
+      label: 'Jobs by hour (IST)',
+    };
+  }
+  if (/\bcancelled vs completed\b|\bby status\b|\bstatus breakdown\b/.test(lower)) {
+    return {
+      sql: `SELECT status, COUNT(*) AS job_count FROM jobs GROUP BY status ORDER BY job_count DESC`,
+      label: 'Jobs by status',
+    };
+  }
+  if (/\bservice type\b/.test(lower) && /\b(?:most|breakdown|jobs by|which)\b/.test(lower)) {
+    return {
+      sql: `SELECT COALESCE(service_type, 'Unknown') AS service_type, COUNT(*) AS job_count
+FROM jobs GROUP BY 1 ORDER BY job_count DESC LIMIT 10`,
+      label: 'Jobs by service type',
+    };
+  }
+  if (/\bwhich brand\b|\bbrand has the most\b|\bjobs by brand\b/.test(lower)) {
+    return {
+      sql: `SELECT COALESCE(service_brand, 'Unknown') AS brand, COUNT(*) AS job_count
+FROM jobs WHERE COALESCE(service_brand, '') <> '' GROUP BY 1 ORDER BY job_count DESC LIMIT 10`,
+      label: 'Jobs by brand',
+    };
+  }
+  if (/\baverage (?:review )?rating\b|\breview ratings?\b/.test(lower)) {
+    return {
+      sql: `SELECT ROUND(AVG(rating)::numeric, 2) AS average_rating,
+       COUNT(rating) AS review_count,
+       COUNT(*) AS invite_count
+FROM job_reviews`,
+      label: 'Job review ratings',
+    };
+  }
+  if (/\b(?:which area|top \d+ areas|areas by jobs)\b/.test(lower) || (/\bmost customers\b/.test(lower) && /\barea/.test(lower))) {
+    return {
+      sql: `SELECT COALESCE(NULLIF(visible_address, ''), 'Unknown') AS area, COUNT(*) AS customer_count
+FROM customers WHERE COALESCE(visible_address, '') <> ''
+GROUP BY 1 ORDER BY customer_count DESC LIMIT 10`,
+      label: 'Customers by area',
+    };
+  }
+  return null;
 }
 
 function extractRadiusKm(message) {

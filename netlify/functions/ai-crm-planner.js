@@ -265,6 +265,36 @@ function looksLikeCrmQuestion(text) {
   );
 }
 
+function looksLikeSqlAnalyticsQuestion(lower) {
+  const text = String(lower || '');
+  if (
+    /\b(?:pending payments?|top customers?|most expense|field stats|how much (?:did we )?(?:spend|revenue)|km (?:did|drove))\b/.test(
+      text
+    )
+  ) {
+    return false;
+  }
+  return (
+    /\b(?:busiest|slowest|quietest|peak|off[\s-]?peak)\b/.test(text) ||
+    (/\b(?:average|avg|mean|median)\b/.test(text) &&
+      /\b(?:job|duration|time|rating|review|completion)\b/.test(text)) ||
+    (/\b(?:shortest|longest|fastest)\b/.test(text) &&
+      /\b(?:job|visit|completion|completed|duration|time)\b/.test(text)) ||
+    /\bmonth[\s-]?(?:by[\s-]?month|wise|over month)\b|\bmonthly (?:trend|breakdown|revenue|jobs|report)\b/.test(text) ||
+    /\b(?:trend|compare month|monthly breakdown|by month|each month)\b/.test(text) ||
+    (/\b(?:service type|category|sub[\s-]?type)\b/.test(text) &&
+      /\b(?:breakdown|split|distribution|most|highest|popular|common|revenue|jobs|count)\b/.test(text)) ||
+    /\b(?:per (?:day|hour|week|weekday|month)|jobs per weekday|by (?:day|hour|week|brand|type|area|service|status))\b/.test(
+      text
+    ) ||
+    /\b(?:which|what) (?:brand|area|service type|day|hour|month|locality)\b/.test(text) ||
+    /\b(?:cancelled vs|completed vs|repeat vs|new vs|status breakdown)\b/.test(text) ||
+    /\b(?:jobs? (?:at )?night|night jobs?|after hours|what time do most jobs)\b/.test(text) ||
+    /\b(?:review ratings?|average rating)\b/.test(text) ||
+    /\btop \d+ areas?\b|\bareas by jobs\b/.test(text)
+  );
+}
+
 function inferDeterministicPlan(message, history = []) {
   const directAnswer = exactConversationalReply(message);
   if (directAnswer) {
@@ -810,29 +840,22 @@ function inferDeterministicPlan(message, history = []) {
   }
 
   // Analytics questions needing SQL GROUP BY / aggregation — route to sql_query
-  if (
-    /\b(?:busiest|slowest|peak|off[\s-]?peak)\b/i.test(lower) &&
-    /\b(?:day|week|hour|month|time|period)\b/i.test(lower)
-  ) {
+  if (looksLikeSqlAnalyticsQuestion(lower)) {
     return { route: 'crm', tools: ['sql_query'], rewrittenQuery: text, directAnswer: '', strategy: 'deterministic' };
   }
   if (
-    /\bmonth[\s-]?(?:by[\s-]?month|wise|over month)\b|\bmonthly (?:trend|breakdown|revenue|jobs|report)\b/i.test(lower) ||
-    /\b(?:trend|compare month|monthly breakdown|by month|each month)\b/i.test(lower)
+    /\b(?:within|surrounding|nearby|around|radius)\b/i.test(lower) &&
+    /(\d+(?:\.\d+)?)\s*(?:m|meters?|metres?|mtr|km|kilometers?|kilometres?)\b/i.test(lower) &&
+    !/[/@]-?\d{1,3}\.\d+/.test(text) &&
+    !/-?\d{2,3}\.\d{4,}/.test(text)
   ) {
-    return { route: 'crm', tools: ['sql_query'], rewrittenQuery: text, directAnswer: '', strategy: 'deterministic' };
-  }
-  if (
-    /\b(?:service type|category|sub[\s-]?type)\b/i.test(lower) &&
-    /\b(?:breakdown|split|distribution|most|highest|busiest|popular|common|revenue|jobs|count)\b/i.test(lower)
-  ) {
-    return { route: 'crm', tools: ['sql_query'], rewrittenQuery: text, directAnswer: '', strategy: 'deterministic' };
-  }
-  if (
-    /\b(?:shortest|longest|fastest|slowest)\b/i.test(lower) &&
-    /\b(?:job|visit|completion|completed|duration|time)\b/i.test(lower)
-  ) {
-    return { route: 'crm', tools: ['sql_query'], rewrittenQuery: text, directAnswer: '', strategy: 'deterministic' };
+    return {
+      route: 'conversation',
+      tools: [],
+      rewrittenQuery: '',
+      directAnswer: 'Paste a Google Maps pin or coordinates, and I can list customers within that distance (for example 50m or 3 km).',
+      strategy: 'deterministic',
+    };
   }
 
   // "find customer who visited / came / last service in [month]" — jobs query not customer lookup
