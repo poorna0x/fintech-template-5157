@@ -711,6 +711,26 @@ function extractInboundBody(msg) {
   return null;
 }
 
+/** Settings row missing → treat as on (same as whatsapp-send). */
+function isWhatsAppMasterEnabledFromRow(row) {
+  if (!row) return true;
+  return row.enabled !== false;
+}
+
+async function isWhatsAppMasterEnabled(db) {
+  if (!db) return true;
+  try {
+    const { data } = await db
+      .from('whatsapp_crm_settings')
+      .select('enabled')
+      .eq('id', 1)
+      .maybeSingle();
+    return isWhatsAppMasterEnabledFromRow(data);
+  } catch {
+    return true;
+  }
+}
+
 module.exports = {
   GRAPH_VERSION,
   SECRET_KEYS,
@@ -738,6 +758,8 @@ module.exports = {
   fileBase64ToBuffer,
   resolveInboundMedia,
   extractInboundBody,
+  isWhatsAppMasterEnabled,
+  isWhatsAppMasterEnabledFromRow,
   isR2MediaRef,
   parseR2ObjectKey,
 };

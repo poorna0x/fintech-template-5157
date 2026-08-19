@@ -19,7 +19,7 @@
     "generate:sitemaps": "node scripts/generate-sitemaps.mjs",
     "test": "vitest run && npm run test:pdf-compression && npm run test:whatsapp-templates && npm run test:security",
     "test:pdf-compression": "node tests/pdf-compression.test.cjs",
-    "test:whatsapp-templates": "node tests/whatsapp-template-wiring.test.cjs",
+    "test:whatsapp-templates": "node tests/whatsapp-template-wiring.test.cjs && node tests/whatsapp-master-off.test.cjs",
     "test:ai-inbox": "node tests/ai-inbox-assistant.test.cjs",
     "test:ai-crm": "node tests/ai-crm-chat.test.cjs",
     "test:ai-document": "node tests/ai-document-draft.test.cjs",
