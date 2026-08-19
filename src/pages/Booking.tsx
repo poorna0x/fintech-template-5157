@@ -9,7 +9,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from 'sonner';
@@ -339,11 +338,11 @@ const Booking: React.FC = () => {
   };
 
   const steps = [
-    { id: 1, title: 'Personal Info', icon: User, emoji: '👤' },
-    { id: 2, title: 'Service Details', icon: Wrench, emoji: '🔧' },
-    { id: 3, title: 'Location', icon: MapPin, emoji: '📍' },
-    { id: 4, title: 'Schedule', icon: Clock, emoji: '⏰' },
-    { id: 5, title: 'Review', icon: Check, emoji: '✅' }
+    { id: 1, title: 'You', icon: User },
+    { id: 2, title: 'Service', icon: Wrench },
+    { id: 3, title: 'Location', icon: MapPin },
+    { id: 4, title: 'When', icon: Clock },
+    { id: 5, title: 'Book', icon: Check },
   ];
 
   const totalSteps = steps.length;
@@ -928,6 +927,13 @@ const Booking: React.FC = () => {
   const prevStep = () => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
+    }
+  };
+
+  const goToCompletedStep = (stepId: number) => {
+    if (stepId >= 1 && stepId < currentStep) {
+      setCurrentStep(stepId);
+      setShowValidation(false);
     }
   };
 
@@ -1964,10 +1970,9 @@ const Booking: React.FC = () => {
       case 1:
         return (
           <div className="space-y-6">
-            <div className="text-center mb-6">
-              <User className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
-              <h3 className="text-xl font-semibold text-foreground">Personal Information</h3>
-              <p className="text-muted-foreground">Tell us about yourself</p>
+            <div className="mb-2">
+              <h3 className="text-lg font-semibold tracking-tight text-foreground">Your details</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">We will call this number to confirm the visit</p>
             </div>
             
             <div className="space-y-4">
@@ -2070,10 +2075,9 @@ const Booking: React.FC = () => {
       case 2:
         return (
           <div className="space-y-6">
-            <div className="text-center mb-6">
-              <Wrench className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
-              <h3 className="text-xl font-semibold text-foreground">Service Details</h3>
-              <p className="text-muted-foreground">What service do you need?</p>
+            <div className="mb-2">
+              <h3 className="text-lg font-semibold tracking-tight text-foreground">What do you need?</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">RO, commercial plant, or water softener</p>
             </div>
             
             <div className="space-y-4">
@@ -2232,10 +2236,9 @@ const Booking: React.FC = () => {
       case 3:
         return (
           <div className="space-y-6">
-            <div className="text-center mb-6">
-              <MapPin className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
-              <h3 className="text-xl font-semibold text-foreground">Service Location</h3>
-              <p className="text-muted-foreground">Where should we come?</p>
+            <div className="mb-2">
+              <h3 className="text-lg font-semibold tracking-tight text-foreground">Where should we come?</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">Pin the exact door so the technician finds you</p>
             </div>
 
             <Dialog open={locationTipPopupOpen} onOpenChange={setLocationTipPopupOpen}>
@@ -2685,10 +2688,9 @@ const Booking: React.FC = () => {
       case 4:
         return (
           <div className="space-y-6">
-            <div className="text-center mb-6">
-              <Clock className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
-              <h3 className="text-xl font-semibold text-foreground">Schedule Service</h3>
-              <p className="text-muted-foreground">When would you like us to come?</p>
+            <div className="mb-2">
+              <h3 className="text-lg font-semibold tracking-tight text-foreground">When works for you?</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">Pick a date and morning or afternoon</p>
             </div>
             
             <div className="space-y-4">
@@ -2855,10 +2857,9 @@ const Booking: React.FC = () => {
       case 5:
         return (
           <div className="space-y-6">
-            <div className="text-center mb-6">
-              <Check className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
-              <h3 className="text-xl font-semibold text-foreground">Review Your Booking</h3>
-              <p className="text-muted-foreground">Please review your booking details</p>
+            <div className="mb-2">
+              <h3 className="text-lg font-semibold tracking-tight text-foreground">Check and book</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">Confirm the details, then send the booking</p>
             </div>
             
             <div className="space-y-4">
@@ -3435,76 +3436,88 @@ const Booking: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground">
+    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-background text-foreground">
       <Header />
       
-      <main className="flex-1 bg-background">
-        <div className="container mx-auto px-4 py-6">
-          <div className="max-w-2xl mx-auto">
-            {/* Header */}
-            <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                Book Your Service
-              </h1>
-              <p className="text-gray-600 dark:text-gray-300 mb-4">
-                Get professional RO installation, repair, and maintenance
+      <main className="flex-1">
+        <div className="container mx-auto px-4 sm:px-6 pt-6 sm:pt-10 pb-28 md:pb-10">
+          <div className="max-w-xl mx-auto">
+            <div className="mb-6 sm:mb-8">
+              <p className="text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-400 mb-2">
+                Book a visit
               </p>
-              
-              {/* No Account Required Notice */}
-              <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 max-w-md mx-auto">
-                <div className="flex items-center justify-center gap-2 text-gray-900 dark:text-white">
-                  <Check className="w-5 h-5" />
-                  <span className="text-sm font-medium">
-                    No account required! Book directly and we'll contact you.
-                  </span>
-                </div>
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground text-balance">
+                Tell us where and when
+              </h1>
+              <p className="mt-2 text-sm sm:text-base text-muted-foreground text-pretty">
+                No account needed. We confirm by phone, usually the same day in Bengaluru.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-medium text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+                  <Check className="h-3.5 w-3.5" />
+                  No login
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1 text-xs font-medium text-foreground dark:bg-card">
+                  <MapPin className="h-3.5 w-3.5 text-sky-600" />
+                  Up to 250 km
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1 text-xs font-medium text-foreground dark:bg-card">
+                  <Phone className="h-3.5 w-3.5 text-sky-600" />
+                  We call to confirm
+                </span>
               </div>
             </div>
 
-            {/* Progress Bar - Hidden on step 6 */}
             {currentStep !== 6 && (
-              <div className="mb-8">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Step {currentStep} of {totalSteps}
-                  </span>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    {Math.round(progress)}% Complete
-                  </span>
+              <div className="mb-6">
+                <p className="mb-3 text-sm text-muted-foreground sm:hidden">
+                  Step {currentStep} of {totalSteps}
+                  <span className="font-medium text-foreground"> · {steps[currentStep - 1]?.title}</span>
+                </p>
+                <div className="relative">
+                  <div className="absolute left-[10%] right-[10%] top-4 h-0.5 bg-border" aria-hidden />
+                  <div
+                    className="absolute left-[10%] top-4 h-0.5 bg-sky-600 transition-[width] duration-200 ease-out"
+                    style={{ width: `${Math.max(0, progress) * 0.8}%` }}
+                    aria-hidden
+                  />
+                  <ol className="relative flex justify-between">
+                    {steps.map((step) => {
+                      const Icon = step.icon;
+                      const isActive = currentStep === step.id;
+                      const isCompleted = currentStep > step.id;
+                      return (
+                        <li key={step.id} className="flex flex-1 flex-col items-center">
+                          <button
+                            type="button"
+                            disabled={!isCompleted}
+                            onClick={() => goToCompletedStep(step.id)}
+                            aria-current={isActive ? 'step' : undefined}
+                            aria-label={`${step.title}${isCompleted ? ', completed. Go back' : isActive ? ', current step' : ''}`}
+                            className={`relative z-[1] flex h-8 w-8 items-center justify-center rounded-full border text-xs transition-colors duration-200 ${
+                              isActive
+                                ? 'border-sky-600 bg-sky-600 text-white'
+                                : isCompleted
+                                  ? 'cursor-pointer border-sky-600 bg-white text-sky-700 hover:bg-sky-50 dark:bg-background'
+                                  : 'cursor-default border-border bg-white text-muted-foreground dark:bg-card'
+                            }`}
+                          >
+                            {isCompleted ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                          </button>
+                          <span
+                            className={`mt-2 hidden text-center text-[11px] sm:block ${
+                              isActive || isCompleted
+                                ? 'font-medium text-sky-700 dark:text-sky-400'
+                                : 'text-muted-foreground'
+                            }`}
+                          >
+                            {step.title}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ol>
                 </div>
-                <Progress value={progress} className="h-2" />
-              </div>
-            )}
-
-            {/* Step Indicators - Hidden on step 6 */}
-            {currentStep !== 6 && (
-              <div className="flex justify-between mb-8">
-                {steps.map((step) => {
-                  const Icon = step.icon;
-                  const isActive = currentStep === step.id;
-                  const isCompleted = currentStep > step.id;
-                  
-                  return (
-                    <div key={step.id} className="flex flex-col items-center">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
-                        isActive ? 'bg-sky-600 text-white' :
-                        isCompleted ? 'bg-green-500 text-white' :
-                        'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                      }`}>
-                        {/* Keep Lucide icons as primary, emojis as fallback */}
-                        <Icon className="w-5 h-5" />
-                      </div>
-                      {/* Show text only on desktop */}
-                      <span className={`hidden md:block text-xs text-center ${
-                        isActive ? 'text-sky-600 dark:text-sky-400 font-medium' :
-                        isCompleted ? 'text-green-600 dark:text-green-400 font-medium' :
-                        'text-gray-500 dark:text-gray-400'
-                      }`}>
-                        {step.title}
-                      </span>
-                    </div>
-                  );
-                })}
               </div>
             )}
 
@@ -3539,8 +3552,8 @@ const Booking: React.FC = () => {
 
             {/* Form Content */}
             <BehavioralTracker>
-              <Card className="mb-6">
-                <CardContent className="p-6">
+              <Card className="mb-4 border-border/80 shadow-none">
+                <CardContent className="p-4 sm:p-6">
                   {/* Honeypot field - hidden from users */}
                   <HoneypotField />
                   
@@ -3551,28 +3564,31 @@ const Booking: React.FC = () => {
               </Card>
             </BehavioralTracker>
 
-            {/* Navigation Buttons */}
-            <div className="flex justify-between gap-3 pb-2">
+            <div
+              className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background/95 px-4 py-3 backdrop-blur md:static md:z-auto md:mt-2 md:border-0 md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-none"
+              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+            >
+            <div className="mx-auto flex max-w-xl justify-between gap-3">
               <Button
                 variant="outline"
                 onClick={prevStep}
                 disabled={currentStep === 1}
-                className="flex items-center shrink-0"
+                className="flex h-11 cursor-pointer items-center shrink-0"
               >
                 <ChevronLeft className="w-4 h-4 mr-1" />
-                Previous
+                Back
               </Button>
 
               {currentStep < totalSteps ? (
                 <Button
                   onClick={nextStep}
-                  className={`flex items-center hover:scale-105 transition-transform ${
+                  className={`flex h-11 flex-1 cursor-pointer items-center justify-center bg-sky-600 text-white hover:bg-sky-700 sm:flex-none ${
                     showValidation && hasMissingFields() 
-                      ? 'border-2 border-black dark:border-white' 
+                      ? 'ring-2 ring-sky-600 ring-offset-2' 
                       : ''
                   }`}
                 >
-                  Next
+                  Continue
                   <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>
               ) : OTP_ENABLED && !otpSent && !otpVerified ? (
@@ -3581,8 +3597,8 @@ const Booking: React.FC = () => {
                   onClick={handleSendOtp}
                   disabled={otpSending || !isCaptchaVerified}
                   aria-disabled={!acceptLegal || !isCaptchaVerified}
-                  className={`flex items-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 transition-transform duration-300 hover:scale-105 ${
-                    !acceptLegal || !isCaptchaVerified ? 'opacity-50 hover:scale-100 cursor-not-allowed' : ''
+                  className={`flex h-11 flex-1 cursor-pointer items-center justify-center bg-sky-600 text-white hover:bg-sky-700 sm:flex-none ${
+                    !acceptLegal || !isCaptchaVerified ? 'cursor-not-allowed opacity-50' : ''
                   }`}
                 >
                   {otpSending ? (
@@ -3599,8 +3615,8 @@ const Booking: React.FC = () => {
                   type="button"
                   onClick={handleVerifyOtp}
                   disabled={otpVerifying || otpCode.length < 6}
-                  className={`flex items-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 transition-transform duration-300 hover:scale-105 ${
-                    otpCode.length < 6 ? 'opacity-50 hover:scale-100 cursor-not-allowed' : ''
+                  className={`flex h-11 flex-1 cursor-pointer items-center justify-center bg-sky-600 text-white hover:bg-sky-700 sm:flex-none ${
+                    otpCode.length < 6 ? 'cursor-not-allowed opacity-50' : ''
                   }`}
                 >
                   {otpVerifying ? (
@@ -3625,9 +3641,9 @@ const Booking: React.FC = () => {
                     !isCaptchaVerified ||
                     (OTP_ENABLED && !otpVerified)
                   }
-                  className={`flex items-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 transition-transform duration-300 hover:scale-105 ${
+                  className={`flex h-11 flex-1 cursor-pointer items-center justify-center bg-sky-600 text-white hover:bg-sky-700 sm:flex-none ${
                     !isCaptchaVerified || (OTP_ENABLED && !otpVerified)
-                      ? 'opacity-50 hover:scale-100 cursor-not-allowed'
+                      ? 'cursor-not-allowed opacity-50'
                       : ''
                   }`}
                 >
@@ -3641,6 +3657,7 @@ const Booking: React.FC = () => {
                   )}
                 </Button>
               )}
+            </div>
             </div>
           </div>
         </div>
