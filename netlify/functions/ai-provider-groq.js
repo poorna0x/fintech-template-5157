@@ -90,7 +90,7 @@ async function generateWithGroq(input, config) {
       MAX_OUTPUT_TOKENS,
       Number.isFinite(requestedOut) && requestedOut > 0 ? requestedOut : MAX_OUTPUT_TOKENS
     ),
-    response_format: { type: 'json_object' },
+    response_format: input.rawText ? { type: 'text' } : { type: 'json_object' },
   };
 
   let response;

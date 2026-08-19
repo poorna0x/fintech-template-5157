@@ -24,13 +24,20 @@ GRANT SELECT ON
   public.customers,
   public.jobs,
   public.reminders,
-  public.payments,
   public.technicians,
-  public.expenses,
+  public.technician_expenses,
+  public.business_expenses,
+  public.other_expenses,
+  public.technician_payments,
+  public.amount_trackers,
   public.amc_contracts,
-  public.documents,
+  public.document_drafts,
   public.whatsapp_messages,
-  public.booking_slots
+  public.tax_invoices,
+  public.warranties,
+  public.follow_ups,
+  public.job_reviews,
+  public.inventory
 TO ai_readonly;
 
 -- Also grant SELECT on sequences/views needed by those tables (none needed for reads).
@@ -80,9 +87,8 @@ BEGIN
   -- Enforce row cap by wrapping in a subquery
   v_rows := LEAST(COALESCE(p_max_rows, 200), 200);
 
-  -- Execute in a read-only subtransaction as the restricted role
+  -- Execute in a read-only transaction (SECURITY DEFINER runs as function owner)
   BEGIN
-    SET LOCAL ROLE ai_readonly;
     SET LOCAL transaction_read_only = on;
 
     EXECUTE format(
@@ -91,9 +97,7 @@ BEGIN
       v_rows
     ) INTO v_result;
 
-    RESET ROLE;
   EXCEPTION WHEN OTHERS THEN
-    RESET ROLE;
     RAISE;
   END;
 
@@ -138,27 +142,32 @@ AS $$
     c.full_name,
     c.phone,
     c.service_type,
-    c.latitude::double precision,
-    c.longitude::double precision,
+    (c.location->>'latitude')::double precision  AS latitude,
+    (c.location->>'longitude')::double precision AS longitude,
     -- Haversine distance in km
     6371.0 * 2 * asin(sqrt(
-      power(sin(radians((c.latitude::double precision - p_lat) / 2)), 2) +
-      cos(radians(p_lat)) * cos(radians(c.latitude::double precision)) *
-      power(sin(radians((c.longitude::double precision - p_lng) / 2)), 2)
+      power(sin(radians(((c.location->>'latitude')::double precision - p_lat) / 2)), 2) +
+      cos(radians(p_lat)) * cos(radians((c.location->>'latitude')::double precision)) *
+      power(sin(radians(((c.location->>'longitude')::double precision - p_lng) / 2)), 2)
     )) AS distance_km
   FROM public.customers c
   WHERE
-    c.latitude IS NOT NULL
-    AND c.longitude IS NOT NULL
-    AND c.latitude::double precision != 0
-    AND c.longitude::double precision != 0
-    -- Rough bounding-box filter first (cheap), then exact Haversine
-    AND c.latitude::double precision BETWEEN p_lat - (p_radius_km / 111.0) AND p_lat + (p_radius_km / 111.0)
-    AND c.longitude::double precision BETWEEN p_lng - (p_radius_km / (111.0 * cos(radians(p_lat)))) AND p_lng + (p_radius_km / (111.0 * cos(radians(p_lat))))
+    c.location IS NOT NULL
+    AND c.location->>'latitude'  IS NOT NULL
+    AND c.location->>'longitude' IS NOT NULL
+    AND (c.location->>'latitude')::double precision  != 0
+    AND (c.location->>'longitude')::double precision != 0
+    -- Rough bounding-box pre-filter (cheap), then exact Haversine
+    AND (c.location->>'latitude')::double precision
+          BETWEEN p_lat - (p_radius_km / 111.0)
+              AND p_lat + (p_radius_km / 111.0)
+    AND (c.location->>'longitude')::double precision
+          BETWEEN p_lng - (p_radius_km / (111.0 * cos(radians(p_lat))))
+              AND p_lng + (p_radius_km / (111.0 * cos(radians(p_lat))))
     AND 6371.0 * 2 * asin(sqrt(
-      power(sin(radians((c.latitude::double precision - p_lat) / 2)), 2) +
-      cos(radians(p_lat)) * cos(radians(c.latitude::double precision)) *
-      power(sin(radians((c.longitude::double precision - p_lng) / 2)), 2)
+      power(sin(radians(((c.location->>'latitude')::double precision - p_lat) / 2)), 2) +
+      cos(radians(p_lat)) * cos(radians((c.location->>'latitude')::double precision)) *
+      power(sin(radians(((c.location->>'longitude')::double precision - p_lng) / 2)), 2)
     )) <= p_radius_km
   ORDER BY distance_km ASC
   LIMIT LEAST(COALESCE(p_limit, 20), 50);
@@ -171,6 +180,8 @@ REVOKE ALL ON FUNCTION public.ai_customers_nearby(double precision, double preci
 GRANT EXECUTE ON FUNCTION public.ai_customers_nearby(double precision, double precision, double precision, integer) TO service_role;
 
 -- Done. Run this in Supabase SQL Editor, then deploy the Netlify functions.
--- Tables granted: customers, jobs, reminders, payments, technicians,
---                 expenses, amc_contracts, documents, whatsapp_messages, booking_slots
+-- Tables granted: customers, jobs, reminders, technicians, technician_expenses,
+--                 business_expenses, other_expenses, technician_payments, amount_trackers,
+--                 amc_contracts, document_drafts, whatsapp_messages, tax_invoices,
+--                 warranties, follow_ups, job_reviews, inventory
 -- Blocked: auth.*, app_secrets, admin_users, push token tables, pdf authenticity, wa settings

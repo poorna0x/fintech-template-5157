@@ -1017,6 +1017,7 @@ exports.handler = async (event) => {
       try {
         const sqlGen = await generateWithProvider(config, {
           operation: 'crm_chat',
+          rawText: true,
           systemInstruction: [
             'You are a PostgreSQL expert. The user asked a CRM analytics question.',
             'Write ONE safe read-only SELECT query to answer it. Return ONLY raw SQL — no markdown, no explanation.',

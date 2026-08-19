@@ -3531,43 +3531,59 @@ function formatContextForPrompt(pack) {
 const AI_READONLY_SCHEMA = `
 Tables available (read-only):
 
-customers(id uuid, customer_id text, full_name text, phone text, alternate_phone text,
-  email text, service_type text, brand text, model text, last_service_date date,
-  customer_tier text, status text, latitude numeric, longitude numeric,
-  visible_address text, created_at timestamptz)
+customers(id uuid, customer_id text, full_name text, phone text,
+  email text, service_type text, brand text, model text, last_service_date timestamptz,
+  customer_tier text, status text, visible_address text,
+  location jsonb -- contains latitude/longitude as strings: location->>'latitude'
+  created_at timestamptz)
 
 jobs(id uuid, job_number text, customer_id uuid, status text,
   service_type text, service_sub_type text, service_brand text,
   payment_amount numeric, actual_cost numeric, payment_method text,
-  completed_at timestamptz, end_time timestamptz, scheduled_date date,
+  completed_at timestamptz, scheduled_date date,
   assigned_technician_id uuid, completed_by uuid,
-  follow_up_date date, follow_up_time text, follow_up_notes text,
-  follow_up_scheduled_at timestamptz, created_at timestamptz)
+  follow_up_date date, created_at timestamptz)
   status values: PENDING, ASSIGNED, EN_ROUTE, ONGOING, COMPLETED, CANCELLED, FOLLOW_UP
 
-technicians(id uuid, name text, phone text, email text, is_active boolean, created_at timestamptz)
+technicians(id uuid, name text, phone text, is_active boolean, created_at timestamptz)
 
-expenses(id uuid, category text, amount numeric, expense_date date,
-  description text, expense_type text, technician_id uuid, created_at timestamptz)
-  expense_type: business | technician
+business_expenses(id uuid, category text, amount numeric, expense_date date,
+  description text, created_at timestamptz)
+
+technician_expenses(id uuid, technician_id uuid, category text, amount numeric,
+  expense_date date, description text, created_at timestamptz)
+
+technician_payments(id uuid, technician_id uuid, amount numeric,
+  payment_date date, payment_method text, notes text, created_at timestamptz)
+
+amount_trackers(id uuid, job_id uuid, customer_id uuid, amount numeric,
+  paid_amount numeric, balance numeric, payment_method text,
+  status text, created_at timestamptz)
+  status: pending | partial | paid
 
 reminders(id uuid, entity_type text, entity_id uuid, title text,
   notes text, reminder_at timestamptz, completed_at timestamptz, created_at timestamptz)
 
-payments(id uuid, customer_id uuid, job_id uuid, amount numeric,
-  payment_method text, status text, paid_at timestamptz, created_at timestamptz)
-  status: pending | paid | partial
-
 amc_contracts(id uuid, customer_id uuid, start_date date, end_date date,
   years integer, status text, service_period_months integer)
 
+tax_invoices(id uuid, customer_id uuid, job_id uuid, invoice_number text,
+  total_amount numeric, invoice_date date, status text, created_at timestamptz)
+
+follow_ups(id uuid, customer_id uuid, job_id uuid, scheduled_date date,
+  scheduled_time text, notes text, status text, created_at timestamptz)
+
+job_reviews(id uuid, job_id uuid, customer_id uuid, rating integer,
+  review_text text, submitted_at timestamptz)
+
 Notes:
 - IST = UTC+5:30. Use: (col AT TIME ZONE 'Asia/Kolkata')
-- For day-of-week: EXTRACT(DOW FROM scheduled_date) 0=Sun 1=Mon ... 6=Sat
-- Always use LIMIT (max 100 rows unless counting)
-- scheduled_date is a date column (no time zone conversion needed)
-- Join jobs to technicians via assigned_technician_id = technicians.id
-- Join jobs to customers via jobs.customer_id = customers.id
+- Day-of-week: EXTRACT(DOW FROM scheduled_date) — 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+- Always LIMIT to 100 max. Use COUNT(*) for totals.
+- Join jobs → technicians: jobs.assigned_technician_id = technicians.id
+- Join jobs → customers: jobs.customer_id = customers.id
+- Pending payments = amount_trackers WHERE status IN ('pending','partial')
+- Revenue = SUM(payment_amount) FROM jobs WHERE status='COMPLETED'
 `.trim();
 
 /**
@@ -3576,8 +3592,10 @@ Notes:
  */
 async function runReadonlyQuery(db, sql) {
   if (!sql || typeof sql !== 'string') return { rows: [], error: 'Empty SQL', rowCount: 0 };
+  // Strip trailing semicolons — our wrapper wraps SQL in a subquery, semicolons break it
+  const cleanSql = sql.replace(/;\s*$/, '').trim();
   try {
-    const { data, error } = await db.rpc('ai_readonly_query', { p_sql: sql, p_max_rows: 100 });
+    const { data, error } = await db.rpc('ai_readonly_query', { p_sql: cleanSql, p_max_rows: 100 });
     if (error) {
       console.warn('[ai-crm-lookup] ai_readonly_query error:', error.message);
       return { rows: [], error: error.message, rowCount: 0 };
