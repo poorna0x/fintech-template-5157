@@ -63,7 +63,7 @@ const CUSTOMER_COLS =
   'id, customer_id, full_name, phone, alternate_phone, email, service_type, brand, model, last_service_date, customer_tier, status';
 
 const JOB_COLS =
-  'id, job_number, customer_id, status, service_type, service_sub_type, service_brand, payment_amount, actual_cost, payment_method, completed_at, end_time, scheduled_date, assigned_technician_id, completed_by';
+  'id, job_number, customer_id, status, service_type, service_sub_type, service_brand, payment_amount, actual_cost, payment_method, completed_at, end_time, scheduled_date, assigned_technician_id, completed_by, follow_up_date, follow_up_time, follow_up_notes, follow_up_scheduled_at, requirements';
 
 const REMINDER_COLS =
   'id, entity_type, entity_id, title, notes, reminder_at, completed_at, created_at';
@@ -805,6 +805,13 @@ function slimJob(row) {
       ? String(row.assigned_technician_id)
       : null,
     completedBy: row.completed_by ? String(row.completed_by) : null,
+    followUpDate: row.follow_up_date || null,
+    followUpTime: row.follow_up_time || null,
+    followUpNotes: row.follow_up_notes || null,
+    followUpScheduledAt: row.follow_up_scheduled_at || null,
+    autoMoveToOngoing: Array.isArray(row.requirements)
+      ? row.requirements.some((r) => r && r.auto_move_to_ongoing_on_date === true)
+      : false,
   };
 }
 
@@ -2195,10 +2202,16 @@ function formatStatsAnswerForTools(pack, tools) {
 
   if (selected.includes('job_search') || (selected.includes('jobs_overview') && pack.jobs?.length)) {
     if (pack.jobs?.length) {
-      const rows = pack.jobs.slice(0, 6).map(
-        (job) =>
-          `· ${job.jobNumber || '—'} · ${String(job.status || '—').replace(/_/g, ' ')} · ${job.scheduledDate || '—'}`
-      );
+      const rows = pack.jobs.slice(0, 6).map((job) => {
+        let line = `· ${job.jobNumber || '—'} · ${String(job.status || '—').replace(/_/g, ' ')} · ${job.scheduledDate || '—'}`;
+        if (job.followUpDate) {
+          line += ` · Follow-up: ${job.followUpDate}`;
+          if (job.followUpTime) line += ` ${job.followUpTime}`;
+          if (job.followUpNotes) line += ` (${job.followUpNotes})`;
+          line += job.autoMoveToOngoing ? ' · auto-move ON' : ' · auto-move OFF';
+        }
+        return line;
+      });
       sections.push(formatStatsSection('Jobs', rows));
     } else if (selected.includes('job_search')) {
       sections.push('Jobs\n  No matches found.');
