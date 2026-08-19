@@ -1,9 +1,9 @@
 /**
  * Advanced customer search powering Settings → Advanced customer search dialog.
  *
- * Job-side filters (completed_by / lead_source / service_sub_type / payment range)
- * collapse into ONE jobs query; the resulting customer-id set is then intersected
- * via `customers.id IN (...)` to keep egress tight.
+ * Job-side filters (completed_by / lead_source / service_sub_type / service_type /
+ * payment or actual_cost range) collapse into ONE jobs query; the resulting
+ * customer-id set is then intersected via `customers.id IN (...)` to keep egress tight.
  *
  * Nearby (Maps link + radius) uses admin-only RPC `search_customers_near_point`
  * (Haversine on stored JSONB coords) — no Distance Matrix, no full location dump.
@@ -64,9 +64,9 @@ export type AdvancedSearchFilters = {
   leadSource?: string;
   /** Job-side: only customers with a COMPLETED job whose completed_by is this technician id. */
   completedByTechnicianId?: string;
-  /** Job-side: only customers whose past job's payment_amount is >= this. */
+  /** Job-side: only customers whose past job's payment_amount or actual_cost is >= this. */
   billMin?: number | '';
-  /** Job-side: only customers whose past job's payment_amount is <= this. */
+  /** Job-side: only customers whose past job's payment_amount or actual_cost is <= this. */
   billMax?: number | '';
   /** Customer raw water TDS (ppm) >= this. */
   tdsMin?: number | '';
@@ -116,6 +116,75 @@ const FETCH_PAGE_SIZE = 1000;
 const MAX_JOB_LOOKUP_ROWS = 20_000;
 const MAX_LOCATION_TOKENS = 12;
 const MAX_OR_PARTS = 48;
+
+export const DEFAULT_NEAR_RADIUS_KM = 2;
+export const MAX_NEAR_RADIUS_KM = 50;
+/** 50 m, 100 m, 200 m, then km steps. */
+export const NEAR_RADIUS_PRESETS_KM = [0.05, 0.1, 0.2, 0.5, 1, 2, 3, 5, 10] as const;
+
+/** Parse "50m", "200 m", "0.05", "2km". Bare numbers are kilometres. */
+export function parseNearRadiusKm(raw: string): number | null {
+  const t = raw.trim().toLowerCase().replace(/,/g, '');
+  if (!t) return null;
+  const m = t.match(/^(\d+(?:\.\d+)?)\s*(m|meter|meters|metre|metres|km|kilometer|kilometers|kilometre|kilometres)?$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const unit = m[2] || 'km';
+  const km = unit === 'km' || unit.startsWith('kilo') ? n : n / 1000;
+  return km;
+}
+
+export function clampNearRadiusKm(raw: number, fallback = DEFAULT_NEAR_RADIUS_KM): number {
+  if (!Number.isFinite(raw)) return fallback;
+  const rounded = Math.round(raw * 1000) / 1000;
+  return Math.min(Math.max(rounded, 0), MAX_NEAR_RADIUS_KM);
+}
+
+export function formatNearRadiusLabel(km: number): string {
+  const rounded = Math.round(km * 1000) / 1000;
+  if (rounded > 0 && rounded < 1) {
+    const metres = Math.round(rounded * 1000);
+    return `${metres} m`;
+  }
+  const text = Number.isInteger(rounded)
+    ? String(rounded)
+    : String(rounded).replace(/\.?0+$/, '');
+  return `${text} km`;
+}
+
+export function isNearRadiusDraft(raw: string): boolean {
+  const t = raw.trim();
+  return t === '' || t === '.' || /^\d+\.$/.test(t);
+}
+
+/** PostgREST `or=` clause for jobs.service_type (SOFTENER matches RO_SOFTENER too). */
+export function jobServiceTypeOrClause(type: 'RO' | 'SOFTENER'): string {
+  if (type === 'SOFTENER') {
+    return 'service_type.eq.SOFTENER,service_type.eq.RO_SOFTENER,service_type.ilike.%SOFT%';
+  }
+  return 'service_type.eq.RO,service_type.eq.RO_SOFTENER';
+}
+
+export function customerServiceTypeOrClause(type: 'RO' | 'SOFTENER'): string {
+  return jobServiceTypeOrClause(type);
+}
+
+/** Match bill min/max on payment_amount OR actual_cost (same bounds). */
+export function billAmountOrClause(min: number | null, max: number | null): string | null {
+  if (min == null && max == null) return null;
+  const pay: string[] = [];
+  const act: string[] = [];
+  if (min != null) {
+    pay.push(`payment_amount.gte.${min}`);
+    act.push(`actual_cost.gte.${min}`);
+  }
+  if (max != null) {
+    pay.push(`payment_amount.lte.${max}`);
+    act.push(`actual_cost.lte.${max}`);
+  }
+  return `and(${pay.join(',')}),and(${act.join(',')})`;
+}
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -170,10 +239,11 @@ function tdsBounds(filters: AdvancedSearchFilters) {
   };
 }
 
-/** Technician / lead / sub-type / bill — must not be bypassed by brand "either" OR logic. */
+/** Technician / lead / sub-type / bill / job service type — must not be bypassed by brand "either". */
 function hasRestrictiveJobFilter(filters: AdvancedSearchFilters): boolean {
   const { min, max } = billBounds(filters);
   return !!(
+    filters.serviceType ||
     filters.serviceSubType ||
     filters.leadSource ||
     filters.completedByTechnicianId ||
@@ -344,7 +414,9 @@ async function paginateJobCustomerIds(
     if (error) return { ids: new Set(), error };
     const page = data ?? [];
     for (const row of page) {
-      const cid = (row as { customer_id?: string | null }).customer_id;
+      const cid =
+        (row as { customer_id?: string | null }).customer_id ||
+        (row as { id?: string | null }).id;
       if (cid) ids.add(cid);
     }
     if (page.length < FETCH_PAGE_SIZE) break;
@@ -365,6 +437,7 @@ async function fetchCustomerIdsForJobFilters(
   const { min: billMin, max: billMax } = billBounds(filters);
   const applyJobBrand = options?.applyJobBrand !== false && !!jobBrandIfAny;
   const hasJobFilter =
+    !!filters.serviceType ||
     !!filters.serviceSubType ||
     !!filters.leadSource ||
     !!filters.completedByTechnicianId ||
@@ -373,21 +446,61 @@ async function fetchCustomerIdsForJobFilters(
     applyJobBrand;
   if (!hasJobFilter) return null;
 
+  const billOr = billAmountOrClause(billMin, billMax);
   const { ids, error } = await paginateJobCustomerIds((from, to) => {
     let q = supabase.from('jobs').select('customer_id').range(from, to);
+    if (filters.serviceType === 'SOFTENER') q = q.ilike('service_type', '%SOFT%');
+    else if (filters.serviceType === 'RO') q = q.in('service_type', ['RO', 'RO_SOFTENER']);
     if (filters.serviceSubType) q = q.eq('service_sub_type', filters.serviceSubType);
     if (filters.completedByTechnicianId) {
       q = q.eq('completed_by', filters.completedByTechnicianId).eq('status', 'COMPLETED');
     }
-    if (filters.leadSource) q = applyLeadSourceJobFilter(q, filters.leadSource);
-    if (billMin != null) q = q.gte('payment_amount', billMin);
-    if (billMax != null) q = q.lte('payment_amount', billMax);
-    if (applyJobBrand && jobBrandIfAny) q = q.ilike('brand', `%${escapeForLike(jobBrandIfAny)}%`);
+    if (filters.leadSource) {
+      q = applyLeadSourceJobFilter(q, filters.leadSource);
+      if (billMin != null) q = q.gte('payment_amount', billMin);
+      if (billMax != null) q = q.lte('payment_amount', billMax);
+    } else if (billOr) {
+      q = q.or(billOr);
+    }
+    if (applyJobBrand && jobBrandIfAny) {
+      const e = escapeForLike(jobBrandIfAny);
+      if (billOr) q = q.ilike('brand', `%${e}%`);
+      else q = q.or(`brand.ilike.%${e}%,service_brand.ilike.%${e}%`);
+    }
     return q;
   });
 
   if (error) {
     console.warn('[advancedCustomerSearch] job-filter fetch failed', error);
+    return new Set();
+  }
+
+  const onlyServiceType =
+    !!filters.serviceType &&
+    !filters.serviceSubType &&
+    !filters.leadSource &&
+    !filters.completedByTechnicianId &&
+    billMin == null &&
+    billMax == null &&
+    !applyJobBrand;
+  if (onlyServiceType && filters.serviceType) {
+    const profileIds = await fetchCustomerIdsForProfileServiceType(filters.serviceType);
+    return unionSets(ids, profileIds);
+  }
+  return ids;
+}
+
+async function fetchCustomerIdsForProfileServiceType(
+  type: 'RO' | 'SOFTENER'
+): Promise<Set<string>> {
+  const { ids, error } = await paginateJobCustomerIds((from, to) => {
+    let q = supabase.from('customers').select('id').range(from, to);
+    if (type === 'SOFTENER') q = q.ilike('service_type', '%SOFT%');
+    else q = q.in('service_type', ['RO', 'RO_SOFTENER']);
+    return q;
+  });
+  if (error) {
+    console.warn('[advancedCustomerSearch] profile service-type fetch failed', error);
     return new Set();
   }
   return ids;
@@ -548,7 +661,10 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
     q = q.ilike('brand', `%${escapeForLike(opts.brand)}%`);
   }
 
-  if (filters.serviceType) q = q.eq('service_type', filters.serviceType);
+  if (filters.serviceType && !opts.jobIdSet) {
+    if (filters.serviceType === 'SOFTENER') q = q.ilike('service_type', '%SOFT%');
+    else q = q.in('service_type', ['RO', 'RO_SOFTENER']);
+  }
   if (filters.status) q = q.eq('status', filters.status);
 
   if (filters.hasPrefilter === 'yes') q = q.eq('has_prefilter', true);
