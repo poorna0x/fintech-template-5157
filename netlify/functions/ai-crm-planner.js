@@ -8,7 +8,11 @@
 const {
   extractQueryHints,
   hasSearchableTarget,
+  hasConcreteCustomerLookupTarget,
   normalizeCrmQueryText,
+  isQuickPaymentQrGenerationRequest,
+  detectOverviewIntent,
+  detectTechnicianFieldStats,
 } = require('./ai-crm-lookup');
 
 const SEARCH_ONLY_TOOLS = new Set(['customer_search', 'job_search']);
@@ -18,6 +22,7 @@ const ALLOWED_CRM_TOOLS = Object.freeze([
   'customer_directory',
   'job_search',
   'jobs_overview',
+  'live_ops',
   'payments',
   'reminders',
   'amc',
@@ -25,6 +30,7 @@ const ALLOWED_CRM_TOOLS = Object.freeze([
   'expenses',
   'customer_value_ranking',
   'technician_billing_ranking',
+  'technician_field_stats',
   'documents',
   'action_draft',
   'app_navigation',
@@ -52,11 +58,15 @@ function plannerSystemInstruction() {
     'Use route=conversation for greetings, thanks, casual chat, explanations, or general questions that need no private CRM data.',
     'For conversation, tools=[], rewrittenQuery="", and provide a concise helpful directAnswer.',
     'Use route=crm when the user asks to find, count, compare, rank, summarize, create, or edit CRM records.',
+    'For route=crm you MUST pick at least one tool. Never return an empty tools array for CRM questions.',
+    'When unsure which tool fits, prefer jobs_overview plus payments or revenue for a safe read-only snapshot.',
     `CRM tools are allowlisted: ${ALLOWED_CRM_TOOLS.join(', ')}.`,
     'Choose only tools needed for the request. Never request SQL, database access, deletion, sending, or external URLs.',
     'customer_search and job_search look up specific records the message names, so include the name, phone, code or job number in rewrittenQuery.',
     'customer_directory answers how many customers exist or which ones are new; it never needs a name.',
     'Use jobs_overview when the answer needs the jobs behind a total, such as which customer or job produced an amount.',
+    'Use live_ops for right-now field questions: what is going on now, who is waiting, where technicians are, unassigned jobs, or the current operations snapshot.',
+    'Use technician_field_stats for how many km a technician drove or how many hours they worked (today, this week, etc.).',
     'Use expenses for business expenses, technician expenses, spending, fuel costs, rent, and expense-category totals.',
     'For CRM, rewrite the current request into one self-contained query using recent history to resolve follow-ups like "what about yesterday?" or "show their jobs".',
     'Preserve names, phones, job numbers, amounts, dates, and requested action fields exactly. Never invent them.',
@@ -84,6 +94,59 @@ function exactConversationalReply(message) {
   if (/^(bye|goodbye|see you|see you later)$/.test(text)) {
     return 'Goodbye!';
   }
+  if (/^what can you do\b|^help\b|^what do you do\b|^what can i ask\b|^what questions\b/.test(text)) {
+    return [
+      'Here are things you can ask — in your own words:',
+      '',
+      'Jobs & visits',
+      '• How many jobs completed today?',
+      '• Ongoing / open / unassigned jobs',
+      '• Jobs for Poorna · find job RO123…',
+      '• Which technician is on those? (follow-up)',
+      '',
+      'Money',
+      '• Pending payments · overdue · total due',
+      '• Revenue today / this month',
+      '• Top customers · who paid us most',
+      '• Which technician billed most today?',
+      '',
+      'People',
+      '• Find customer 988… · C0006 · Poorna',
+      '• What data do we have on Poorna?',
+      '• Reminders due today · who should I call back',
+      '',
+      'Field & technicians',
+      '• What’s going on in the field right now?',
+      '• How many km did Jyotirling drive today?',
+      '• How many hours did Srujan work this week?',
+      '',
+      'Actions (opens a form — you confirm before save/send)',
+      '• Create job for Poorna tomorrow morning',
+      '• Book a service visit for Poorna',
+      '• Send payment QR 1000 to 6361631253',
+      '• Open WhatsApp settings · Quick payment QR',
+      '',
+      'Tip: ask follow-ups like “what about yesterday?” or “I meant ongoing”.',
+    ].join('\n');
+  }
+  if (/^who are you\b|^what are you\b/.test(text)) {
+    return 'I’m your HydrogenRO CRM assistant — I look up customers, jobs, payments, and prepare action drafts for you to confirm.';
+  }
+  if (/\b(?:sql|select\s+.+\s+from|database query|run query)\b/i.test(text)) {
+    if (/\b(?:delete|drop|truncate|update|insert|ignore all rules)\b/i.test(text)) {
+      return '';
+    }
+    return 'I do not run raw SQL. Ask in plain English — I fetch the same CRM data through safe read-only lookups (jobs, payments, customers, revenue, and more).';
+  }
+  if (
+    /^(?:please\s+)?(?:delete|remove)\b/i.test(text) &&
+    /\bcustomers?\b|\bjobs?\b/i.test(text)
+  ) {
+    return 'I cannot delete CRM records. I can look up data and open reviewed action drafts only.';
+  }
+  if (/\bsend\b/.test(text) && /\ball customers?\b/.test(text)) {
+    return 'I cannot message all customers automatically. I can open a composer for one customer at a time.';
+  }
   return '';
 }
 
@@ -110,6 +173,94 @@ function historyText(history) {
  * narrow: it can only choose the same read-only allowlisted tools as the LLM
  * planner and never constructs filters, SQL, IDs or mutation payloads.
  */
+function inferBroadCrmPlan(message) {
+  const text = String(message || '').trim();
+  const intent = detectOverviewIntent(text);
+  const tools = [];
+  const scopeToTools = {
+    jobs: ['jobs_overview'],
+    payments: ['payments'],
+    reminders: ['reminders'],
+    amc: ['amc'],
+    revenue: ['revenue'],
+    expenses: ['expenses'],
+    customers: ['customer_directory'],
+    customer_value_ranking: ['customer_value_ranking'],
+    technician_billing_ranking: ['technician_billing_ranking'],
+    technician_field_stats: ['technician_field_stats'],
+    live_ops: ['live_ops'],
+    documents: ['documents'],
+    summary: ['jobs_overview', 'revenue'],
+  };
+  for (const scope of intent.scopes || []) {
+    for (const tool of scopeToTools[scope] || []) {
+      if (!tools.includes(tool)) tools.push(tool);
+    }
+  }
+  const hints = extractQueryHints(text);
+  if (hints.jobNumber && !tools.includes('job_search')) tools.unshift('job_search');
+  else if (hasConcreteCustomerLookupTarget(hints, text, null) && !tools.includes('customer_search')) {
+    tools.unshift('customer_search');
+  }
+  if (!tools.length && hasConcreteCustomerLookupTarget(hints, text, null)) tools.push('customer_search');
+  if (!tools.length) {
+    if (
+      /\b(?:ongoing|technician|techs?|those|remaining|completed|unassigned|assigned|en route|in progress|follow[\s-]?up)\b/i.test(
+        text
+      )
+    ) {
+      tools.push('jobs_overview');
+    } else {
+      tools.push('jobs_overview', 'payments', 'revenue');
+    }
+  }
+  return {
+    route: 'crm',
+    tools: tools.slice(0, 4),
+    rewrittenQuery: text,
+    directAnswer: '',
+    strategy: 'deterministic',
+  };
+}
+
+/** Last-resort read-only plan: every CRM question gets bounded data, never raw SQL. */
+function inferUniversalCrmPlan(message) {
+  const text = String(message || '').trim();
+  const hints = extractQueryHints(text);
+  const tools = [];
+  if (hints.jobNumber) tools.push('job_search');
+  else if (hasSearchableTarget(hints, null)) tools.push('customer_search');
+  tools.push('jobs_overview', 'payments', 'revenue');
+  return {
+    route: 'crm',
+    tools: tools.slice(0, 4),
+    rewrittenQuery: text,
+    directAnswer: '',
+    strategy: 'deterministic',
+  };
+}
+
+function looksLikeCrmQuestion(text) {
+  const raw = String(text || '').trim();
+  const lower = raw.toLowerCase();
+  if (raw.length < 2) return false;
+  if (/\b(?:weather|joke|recipe|movie|cricket score|stock price|bitcoin|politics|poem)\b/.test(lower)) {
+    return false;
+  }
+  if (/\b(?:sql|select\s+.+\s+from|database query|run query)\b/i.test(raw)) return true;
+  if (
+    /^(how|what|who|which|where|when|why|can|could|is|are|do|does|did|will|would|should|tell|give|show|find|list|get|any|count|total|sum|average|query|fetch|pull|search)\b/i.test(
+      lower
+    )
+  ) {
+    return true;
+  }
+  if (/\?/.test(raw)) return true;
+  return /\b(?:customer|client|job|visit|service|payment|remind|amc|revenue|technician|tech|invoice|bill|quot|warranty|expense|billing|purifier|whatsapp|pending|due|owe|outstanding|booking|schedule|follow|business|sales|report|summary|overview|status|check|look up|open|go to|create|add|draft|send|qr|upi|ro\b|completed|ongoing|assigned|waiting|unassigned|field|live|today|yesterday|tomorrow|this month|last month|data|stats|metric|record|row|table)\b/.test(
+    lower
+  );
+}
+
 function inferDeterministicPlan(message, history = []) {
   const directAnswer = exactConversationalReply(message);
   if (directAnswer) {
@@ -125,6 +276,8 @@ function inferDeterministicPlan(message, history = []) {
   const text = String(message || '').trim();
   const lower = normalizeCrmQueryText(text).toLowerCase();
   const directHints = extractQueryHints(text);
+  const quickPaymentQr = isQuickPaymentQrGenerationRequest(text, directHints);
+  const customerPaymentQr = quickPaymentQr;
   const hasDirectJobReference =
     Boolean(directHints.jobNumber) &&
     (!/^C\d+$/i.test(String(directHints.jobNumber)) || /\bjob\b/.test(lower));
@@ -142,13 +295,41 @@ function inferDeterministicPlan(message, history = []) {
       strategy: 'deterministic',
     };
   }
+  if (quickPaymentQr && !hasDirectJobReference) {
+    const hasCustomer = directHints.nameTokens.length > 0 || directHints.phone;
+    return {
+      route: 'crm',
+      tools: hasCustomer ? ['customer_search', 'action_draft'] : ['action_draft'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
   if (
-    (/\b(?:open|go to|take me to|navigate to|manage|configure|edit settings?)\b/.test(lower) ||
+    customerPaymentQr &&
+    hasSearchableTarget(directHints, null) &&
+    !hasDirectJobReference
+  ) {
+    return {
+      route: 'crm',
+      tools: ['customer_search', 'action_draft'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+  if (
+    (/\b(?:open|go to|take me to|navigate to|manage|configure|edit settings?|show me)\b/.test(
+      lower
+    ) ||
       /\b(?:show me|edit|change)\b.{0,40}\bsettings?\b/.test(lower)) &&
-    /\b(?:settings?|dashboard|payments?|billing|analytics|inventory|whatsapp|calling|reminders?|technicians?|qr|reviews?|privacy|database|usage|jobs?|accounts?|customer|trackers?|email|distance|visit|location)\b/.test(
+    /\b(?:settings?|dashboard|payments?|billing|analytics|inventory|whatsapp|calling|reminders?|technicians?|qr|upi|reviews?|privacy|database|usage|jobs?|accounts?|customer|trackers?|email|distance|visit|location)\b/.test(
       lower
     ) &&
-    !hasDirectJobReference
+    !hasDirectJobReference &&
+    !customerPaymentQr &&
+    !/\bshow me (?:everything|all|details|their|full)\b/i.test(lower) &&
+    !/\bfor customer\b|\bcustomer c\d+\b/i.test(lower)
   ) {
     return {
       route: 'crm',
@@ -189,11 +370,67 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
   if (
-    /\b(create|add|edit|update|change|delete|remove|send|whatsapp|email|book|schedule|set|assign|reassign|complete|finish)\b/.test(
-      lower
-    )
+    /\bbook(?:ing)?\s+(?:a\s+)?(?:service\s+)?(?:visit|appointment)\b/i.test(lower) &&
+    hasSearchableTarget(directHints, null) &&
+    !/\ball customers?\b/.test(lower)
   ) {
+    return {
+      route: 'crm',
+      tools: ['customer_search', 'action_draft'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+  const wantsHardMutation =
+    /\b(edit|change|delete|remove|assign|reassign|schedule|set)\b/.test(lower) ||
+    (/\bupdate\b/.test(lower) && !/\b(?:status|quick) update\b/i.test(lower)) ||
+    (/\bbook\b/.test(lower) && !/\bbook(?:ing)?\s+(?:a\s+)?(?:service|visit|job|appointment)\b/i.test(lower)) ||
+    (/\bcreate\b/.test(lower) && !/\b(?:service )?job\b/.test(lower)) ||
+    (/\bsend\b/.test(lower) && !/\b(?:draft|compose|write|prepare|open|payment|pay|qr|link)\b/.test(lower)) ||
+    /\b(?:complete|finish|close)\s+(?:the\s+)?job\b/.test(lower);
+  if (wantsHardMutation) {
     return null;
+  }
+  if (
+    /\bcreate\s+(?:a\s+)?customers?\b/.test(lower) &&
+    /\b(?:service )?job\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['action_draft'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+  if (
+    (/\bcreate\b/.test(lower) || /\badd\b/.test(lower)) &&
+    /\b(?:service )?job\b/.test(lower) &&
+    hasSearchableTarget(directHints, null) &&
+    !/\ball customers?\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['customer_search', 'action_draft'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+  if (
+    /\b(?:draft|compose|write|prepare)\b/.test(lower) &&
+    /\b(?:whatsapp|email|message)\b/.test(lower) &&
+    hasSearchableTarget(directHints, null) &&
+    !/\ball customers?\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['customer_search', 'action_draft'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
   }
   const recent = historyText(history);
   const combined = `${recent} ${text}`.toLowerCase();
@@ -215,7 +452,10 @@ function inferDeterministicPlan(message, history = []) {
     return null;
   };
   // A message naming its own subject is a fresh question, not a follow-up.
+  const possessiveReference =
+    /\b(?:their|his|her)\b/i.test(text) && text.length <= 80;
   const hasOwnSubject =
+    !possessiveReference &&
     /\bjobs?\b|\bvisits?\b|\bcustomers?\b|\bclients?\b|\bpayments?\b|\breminders?\b|\bamc\b|\brevenue\b|\btechnicians?\b|\btechs?\b|\bdocuments?\b|\binvoices?\b|\bquotations?\b|\bbills?\b/i.test(
       text
     );
@@ -225,7 +465,7 @@ function inferDeterministicPlan(message, history = []) {
   const superlativeFollowUp =
     !hasOwnSubject &&
     text.length <= 60 &&
-    /^(?:so\s+)?(?:and\s+)?(?:who|which|what)?\s*(?:one)?\s*(?:has|had|is|was|did)?\s*(?:the)?\s*(?:lowest|highest|least|most|biggest|smallest|top|worst|best)\b/i.test(
+    /^(?:so\s+)?(?:and\s+)?(?:who|which|what)?\s*(?:one\s+)?(?:has|had|is|was|did\s+)?\s*(?:the\s+)?(?:lowest|highest|least|most|biggest|smallest|top|worst|best|second|third|fourth|fifth|sixth|\d+(?:st|nd|rd|th))\b/i.test(
       text
     );
   if (superlativeFollowUp && lastUserMessage) {
@@ -240,10 +480,14 @@ function inferDeterministicPlan(message, history = []) {
         strategy: 'deterministic',
       };
     }
-    if (/\bcustomers?\b|\bclients?\b|\bpaid\b|\bbill(?:ed|ing)?\b/.test(context)) {
+    if (/\bcustomers?\b|\bclients?\b|\bpaid\b|\bbill(?:ed|ing)?\b|\btop\b|\bmost\b/.test(context)) {
+      const tools = ['customer_value_ranking'];
+      if (extractQueryHints(lastUserMessage).nameTokens.length) {
+        tools.unshift('customer_search');
+      }
       return {
         route: 'crm',
-        tools: ['customer_search', 'customer_value_ranking'],
+        tools,
         rewrittenQuery: `${lastUserMessage} ${text}`,
         directAnswer: '',
         strategy: 'deterministic',
@@ -293,17 +537,44 @@ function inferDeterministicPlan(message, history = []) {
     if (inherited) return inherited;
   }
 
-  // "not today, all time" only changes the period of the previous question.
+  // "not today, all time" / "what about tomorrow" only changes the period.
   const periodFollowUp =
     !hasOwnSubject &&
     !hasSearchableTarget(extractQueryHints(text), null) &&
     text.length <= 60 &&
-    /\ball[\s-]?time\b|\bentire\b|\bever\b|\blife[\s-]?time\b|\byesterday\b|\bthis (?:week|month)\b|\blast (?:week|month)\b|\boverall\b|\bso far\b/i.test(
+    /\ball[\s-]?time\b|\bentire\b|\bever\b|\blife[\s-]?time\b|\btoday\b|\byesterday\b|\btomorrow\b|\bthis week\b|\bthis month\b|\blast week\b|\blast month\b|\boverall\b|\bso far\b/i.test(
       text
     );
   if (periodFollowUp && lastUserMessage) {
     const inherited = inheritPlan();
     if (inherited) return inherited;
+  }
+
+  const possessiveFollowUp =
+    !hasOwnSubject &&
+    text.length <= 80 &&
+    /\b(?:their|his|her)\b/i.test(text) &&
+    lastUserMessage;
+  if (possessiveFollowUp) {
+    const merged = `${lastUserMessage} ${text}`;
+    const inherited = inheritPlan();
+    const tools = inherited?.tools?.length
+      ? [...inherited.tools]
+      : hasSearchableTarget(extractQueryHints(lastUserMessage), null)
+        ? ['customer_search']
+        : [];
+    if (tools.length) {
+      if (/\b(?:jobs?|visits?|services?)\b/i.test(text) && !tools.includes('jobs_overview')) {
+        tools.push('jobs_overview');
+      }
+      return {
+        route: 'crm',
+        tools: tools.slice(0, 4),
+        rewrittenQuery: merged,
+        directAnswer: '',
+        strategy: 'deterministic',
+      };
+    }
   }
 
   const detailFollowUp =
@@ -312,6 +583,19 @@ function inferDeterministicPlan(message, history = []) {
   const period = periodMarker(detailFollowUp ? combined : text);
 
   const namesAtLeastTwoPeople = extractQueryHints(text).nameTokens.length >= 2;
+  if (
+    namesAtLeastTwoPeople &&
+    /\bcompare\b|\bvs\b|\bversus\b/.test(lower) &&
+    !/\bcreate\b|\badd\b|\bdelete\b|\bsend\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['technician_billing_ranking'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
   if (
     ((/\btechnicians?\b|\btechs?\b|\btechcnians?\b|\btehcnc?ians?\b/.test(lower) ||
       (namesAtLeastTwoPeople && /\bcompare\b|\bvs\b|\bversus\b/.test(lower))) &&
@@ -337,8 +621,11 @@ function inferDeterministicPlan(message, history = []) {
 
   if (
     /\b(customers?|clients?)\b/.test(lower) &&
-    /\bhighest\b|\btop\b|\bmost\b|\bbiggest\b|\blowest\b|\bleast\b|\bsmallest\b/.test(lower) &&
-    /\bpaid\b|\bspent\b|\bbill(?:ed|ing)?\b|\bvalue\b/.test(lower)
+    /\bhighest\b|\btop\b|\bmost\b|\bbiggest\b|\blowest\b|\bleast\b|\bsmallest\b|\btop\s+\d+\b/.test(
+      lower
+    ) &&
+    (/\bpaid\b|\bspent\b|\bbill(?:ed|ing)?\b|\bvalue\b|\brevenue\b/.test(lower) ||
+      /\btop\s+\d+\s+customers?\b/.test(lower))
   ) {
     return {
       route: 'crm',
@@ -405,7 +692,130 @@ function inferDeterministicPlan(message, history = []) {
 
   // Money we earned, as opposed to money customers still owe us.
   if (
-    /\brevenue\b|\bcollect(?:ed|ion|ions)?\b|\bincome\b|\bturnover\b|\bearn(?:ed|ings|ing)?\b|\bbusiness (?:did|happened)\b|\bbilling happened\b|\bmonth[\s-]+to[\s-]+date sales\b|\bdoing better\b|\bdoing worse\b|\bat this pace\b|\bwhere will this month end\b/.test(
+    /\bhow are we doing\b|\bcompared to last month\b|\bdoing better than last month\b|\bvs last month\b/.test(
+      lower
+    ) &&
+    !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['revenue'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
+    /\b(?:status update|quick status|daily report|situation report|ops update)\b|\bgive me (?:a )?(?:quick )?(?:status|update|summary)\b/i.test(
+      lower
+    )
+  ) {
+    return {
+      route: 'crm',
+      tools: ['live_ops', 'jobs_overview'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
+    /\b(?:anything|what(?:'s| is)) pending\b|\bpending right now\b|\banything due\b|\bwhat needs attention\b/i.test(
+      lower
+    )
+  ) {
+    return {
+      route: 'crm',
+      tools: ['payments', 'reminders'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
+    /\b(?:analytics?|insights?|dashboard numbers?|kpi|kpis|performance report|business snapshot)\b/i.test(
+      lower
+    ) &&
+    !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['jobs_overview', 'payments', 'revenue', 'expenses'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
+    /\b(?:call back|callback|follow[\s-]?up calls?|who should i call)\b/i.test(lower) &&
+    !/\bcreate\b|\badd\b|\bschedule\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['reminders', 'payments'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (detectTechnicianFieldStats(text)) {
+    return {
+      route: 'crm',
+      tools: ['technician_field_stats'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
+    /\b(?:problems?|issues?|trouble)\b.*\b(?:field|floor|site)\b|\b(?:field|floor)\b.*\b(?:problems?|issues?)\b/i.test(
+      lower
+    )
+  ) {
+    return {
+      route: 'crm',
+      tools: ['live_ops'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  // "find customer who visited / came / last service in [month]" — jobs query not customer lookup
+  if (
+    /\b(?:customer|client|who)\b/i.test(lower) &&
+    /\b(?:visited|came|last (?:service|visit|job)|service (?:in|during)|was (?:here|serviced))\b/i.test(lower) &&
+    /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|last month|this month|yesterday|today)\b/i.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['jobs_overview'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
+    /\bshow me (?:everything|all|full details)\b/i.test(lower) &&
+    (hasSearchableTarget(directHints, null) || /\bcustomer\b/i.test(lower))
+  ) {
+    return {
+      route: 'crm',
+      tools: ['customer_search', 'jobs_overview', 'payments', 'documents'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
+    /\brevenue\b|\bcollect(?:ed|ion|ions)?\b|\bincome\b|\bturnover\b|\bearn(?:ed|ings|ing)?\b|\bproject\b|\bforecast\b|\bbusiness (?:did|happened|going|is)\b|\bbusiness today\b|\bhow(?:'s| is) business\b|\bbilling happened\b|\bmonth[\s-]+to[\s-]+date sales\b|\bdoing better\b|\bdoing worse\b|\bat this pace\b|\bwhere will this month end\b/.test(
       lower
     ) &&
     !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
@@ -440,9 +850,37 @@ function inferDeterministicPlan(message, history = []) {
   }
 
   if (
+    (
+      /\bwhat(?:'s| is) (?:going on|happening)\b|\bright now\b|\bat the moment\b|\blive status\b|\bfield status\b|\boperations snapshot\b|\bfloor status\b|\banyone waiting\b|\bwho(?:'s| is) waiting\b|\bwaiting (?:for|jobs?|customers?)\b|\bwhere are (?:the )?technicians?\b|\btechnicians? (?:locations?|whereabouts)\b|\bunassigned jobs?\b|\bjobs? waiting\b|\bwhat are (?:the )?techs?\b|\bwhat are technicians\b/i.test(lower) ||
+      // Hindi live-ops
+      /\bkya hua\b|\bkya ho raha\b|\bfield mein\b|\baaj field\b|\bkya chal raha\b/i.test(lower)
+    ) &&
+    !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['live_ops'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  // "which day of the week are we busiest" — analytical question not yet backed by a tool
+  if (/\bday of the week\b|\bbusiest day\b|\bpeak day\b|\bbusiest\b.*\b(?:day|week)\b/i.test(lower)) {
+    return {
+      route: 'crm',
+      tools: ['jobs_overview'],
+      rewrittenQuery: 'jobs completed this month',
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
     (/\b(today'?s?|yesterday'?s?) jobs?\b|\bjobs? (today|yesterday)\b/.test(lower) ||
       (/\bjobs?\b|\bvisits?\b|\bservices?\b/.test(lower) &&
-        /\bhow many\b|\bcount\b|\bon[\s-]?going\b|\bremaining\b|\bleft\b|\bopen\b|\bpending\b|\bin[\s-]?progress\b|\bunassigned\b|\bassigned\b|\ben[\s-]?route\b|\bcompleted?\b|\bcancell?ed\b/.test(
+        /\bhow many\b|\bcount\b|\bon[\s-]?going\b|\bremaining\b|\bleft\b|\bopen\b|\bpending\b|\bin[\s-]?progress\b|\bunassigned\b|\bassigned\b|\ben[\s-]?route\b|\bcompleted?\b|\bcancell?ed\b|\bfollow[\s-]?up\b/.test(
           lower
         )) ||
       (/\bjobs?\b/.test(lower) &&
@@ -458,6 +896,49 @@ function inferDeterministicPlan(message, history = []) {
       directAnswer: '',
       strategy: 'deterministic',
     };
+  }
+
+  if (
+    directHints.nameTokens.length >= 1 &&
+    /\bjobs?\b/i.test(lower) &&
+    /\b(?:complete|completed|did|finished)\b/i.test(lower) &&
+    !/\bcreate\b|\badd\b|\bbook\b|\bschedule\b/.test(lower)
+  ) {
+    return {
+      route: 'crm',
+      tools: ['jobs_overview'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (
+    hasConcreteCustomerLookupTarget(directHints, text, null) &&
+    !/\b(?:create|add|edit|update|change|delete|remove|send|draft|prepare|turn|disable|enable|assign|complete|book|schedule)\b/i.test(
+      lower
+    )
+  ) {
+    const tools = [];
+    if (directHints.jobNumber && /\bjob\b/i.test(lower) && !/\bcustomer\b/i.test(lower)) {
+      tools.push('job_search');
+    } else {
+      tools.push('customer_search');
+    }
+    if (/\b(?:jobs?|visits?|services?)\b/i.test(lower)) {
+      tools.push('jobs_overview');
+    }
+    return {
+      route: 'crm',
+      tools: tools.slice(0, 4),
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (looksLikeCrmQuestion(text)) {
+    return inferBroadCrmPlan(text);
   }
 
   return null;
@@ -518,8 +999,11 @@ function augmentPlanTools(plan, message) {
   }
   // Without a search tool a named person is never looked up, and the answer ends
   // up claiming a search that never ran.
-  if (namesSomeone && !tools.some((tool) => SEARCH_ONLY_TOOLS.has(tool))) {
+  if (namesSomeone && !tools.some((tool) => SEARCH_ONLY_TOOLS.has(tool)) && !tools.includes('technician_field_stats')) {
     tools.push('customer_search');
+  }
+  if (plan?.route === 'crm' && !tools.length) {
+    return inferUniversalCrmPlan(message);
   }
   return { ...plan, tools: tools.slice(0, 4) };
 }
@@ -546,6 +1030,7 @@ function buildAllowlistedLookupQuery(plan, fallbackMessage) {
     .slice(0, 1500);
   const markers = {
     jobs_overview: 'jobs',
+    live_ops: 'live operations snapshot',
     payments: 'pending payments',
     reminders: 'reminders',
     amc: 'AMC expiry',
@@ -553,6 +1038,7 @@ function buildAllowlistedLookupQuery(plan, fallbackMessage) {
     expenses: 'expenses',
     customer_value_ranking: 'top customer paid most',
     technician_billing_ranking: 'top technician highest billing',
+    technician_field_stats: 'technician km and worked hours',
     documents: 'documents',
     app_navigation: 'open app screen',
   };
@@ -584,11 +1070,26 @@ function visibleEntitiesForTools(pack, tools) {
     customers: shows('customer_search', 'customer_directory', 'customer_value_ranking', 'action_draft')
       ? all.customers
       : [],
-    jobs: shows('job_search', 'jobs_overview', 'revenue', 'action_draft') ? all.jobs : [],
+    jobs: shows('job_search', 'jobs_overview', 'revenue', 'live_ops', 'action_draft') ? all.jobs : [],
     reminders: shows('reminders') ? all.reminders : [],
     payments: shows('payments') ? all.payments : [],
     documents: shows('documents', 'amc') ? all.documents : [],
-    technicians: shows('technician_billing_ranking') ? all.technicians : [],
+    technicians: shows('technician_billing_ranking', 'technician_field_stats', 'live_ops') ? all.technicians : [],
+  };
+}
+
+/** Never treat Quick payment QR as pending-payment lookup or settings. */
+function coerceCustomerPaymentQrPlan(message, plan) {
+  const text = String(message || '').trim();
+  const hints = extractQueryHints(text);
+  if (!text || !isQuickPaymentQrGenerationRequest(text, hints)) return plan;
+  const hasCustomer = hints.nameTokens.length > 0 || hints.phone;
+  return {
+    route: 'crm',
+    tools: hasCustomer ? ['customer_search', 'action_draft'] : ['action_draft'],
+    rewrittenQuery: text,
+    directAnswer: '',
+    strategy: 'deterministic',
   };
 }
 
@@ -602,4 +1103,6 @@ module.exports = {
   visibleEntitiesForTools,
   augmentPlanTools,
   inferDeterministicPlan,
+  coerceCustomerPaymentQrPlan,
+  inferUniversalCrmPlan,
 };

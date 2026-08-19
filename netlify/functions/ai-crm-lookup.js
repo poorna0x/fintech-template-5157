@@ -30,6 +30,8 @@ const TOP_CUSTOMER_FALLBACK_PAGE_SIZE = 1000;
 const TOP_CUSTOMER_FALLBACK_MAX_PAGES = 50;
 const IST_TZ = 'Asia/Kolkata';
 const ONGOING_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'];
+const LIVE_OPS_JOB_LIMIT = 25;
+const LIVE_OPS_LOCATION_STALE_MINUTES = 45;
 
 function normalizeCrmQueryText(value) {
   const replacements = {
@@ -67,6 +69,18 @@ const REMINDER_COLS =
 const AMC_COLS = 'id, customer_id, start_date, end_date, years, status, service_period_months';
 const TAX_COLS = 'id, invoice_number, invoice_date, customer_id, customer_name, total_amount';
 const AUTH_COLS = 'id, doc_type, customer_id, verify_code, created_at';
+
+const {
+  computeTechWorkedHours,
+  formatWorkedDuration,
+  parseMs,
+  jobCompletionMs,
+} = require('./tech-worked-hours-helper');
+const { sumStoredTravelKm, getTravelReturnKm, formatTravelKm } = require('./tech-travel-helper');
+
+const FIELD_STATS_JOB_COLS =
+  'id, assigned_technician_id, start_time, completed_at, end_time, requirements';
+const FIELD_STATS_JOB_SCAN = 500;
 
 function escapeForLike(raw) {
   return String(raw || '')
@@ -148,6 +162,10 @@ const NAME_STOP_WORDS = new Set(
     'received', 'record', 'records', 'renew', 'renewal', 'repair', 'report', 'reminder',
     'reminders', 'rupees', 'sales', 'schedule', 'scheduled', 'search', 'service', 'services',
     'set', 'show', 'slot', 'softener', 'status', 'summary', 'system', 'task', 'tasks', 'that',
+    'tell', 'going', 'anything', 'problems', 'compared', 'link', 'book',
+    'interesting', 'pull', 'stats', 'items', 'numbers', 'data', 'query', 'fetch', 'metrics', 'metric', 'item', 'rows', 'row', 'table',
+    'km', 'kms', 'kilometer', 'kilometre', 'kilometers', 'kilometres', 'drove', 'drive', 'driving', 'travelled', 'traveled', 'travel', 'mileage', 'distance',
+    'worked', 'shift', 'field', 'hours', 'hour', 'long',
     'the', 'their', 'them', 'these', 'this', 'time', 'today', 'tomorrow', 'total', 'turnover',
     'unpaid', 'update', 'upcoming', 'us', 'visit', 'visits', 'want', 'was', 'water', 'week', 'were',
     'what', 'when', 'which', 'who', 'will', 'with', 'work', 'year', 'yesterday', 'you', 'your',
@@ -168,7 +186,7 @@ const NAME_STOP_WORDS = new Set(
     'best', 'compare', 'comparison', 'expect', 'estimate', 'first', 'forecast', 'growth',
     'least', 'less', 'other', 'project', 'projection', 'rank', 'ranking', 'second', 'smallest',
     'ai', 'assistant', 'compression', 'glow', 'model', 'models', 'notification', 'notifications',
-    'pdf', 'push', 'setting', 'settings', 'tracking',
+    'pdf', 'push', 'setting', 'settings', 'tracking', 'quick', 'qr', 'upi', 'generate',
     'third', 'trend', 'versus', 'worst',
     // Pronouns point back at the previous answer, never at a person to search.
     'both', 'each', 'everyone', 'him', 'his', 'it', 'its', 'none', 'one', 'ones', 'people',
@@ -259,6 +277,18 @@ function extractQueryHints(message) {
     }
   }
 
+  const payAmount = extractQuickPaymentAmount(text);
+  if (payAmount != null && isQuickPaymentQrPhrase(text)) {
+    const drop = new Set([
+      String(Math.round(payAmount)),
+      payAmount.toFixed(2),
+      String(payAmount).replace(/\.0+$/, ''),
+    ]);
+    for (let i = lookupTerms.length - 1; i >= 0; i -= 1) {
+      if (drop.has(lookupTerms[i])) lookupTerms.splice(i, 1);
+    }
+  }
+
   return {
     raw: text.slice(0, 1500),
     phone,
@@ -267,6 +297,67 @@ function extractQueryHints(message) {
     nameHint: nameTokens[0] || null,
     lookupTerms: lookupTerms.slice(0, 3),
   };
+}
+
+/** Parse INR amount from phrases like "2000rs", "₹2000", "of 2000". */
+function extractQuickPaymentAmount(message) {
+  const text = String(message || '');
+  const patterns = [
+    /(?:₹|inr|rs\.?)\s*(\d+(?:\.\d{1,2})?)/i,
+    /\b(\d+(?:\.\d{1,2})?)\s*(?:rs\.?|inr|₹)\b/i,
+    /\b(?:of|for)\s+(\d+(?:\.\d{1,2})?)\b/i,
+    /\b(?:qr|payment)\s+(\d+(?:\.\d{1,2})?)\b/i,
+    /\b(\d+(?:\.\d{1,2})?)\s+send\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const amount = Number(match[1]);
+    if (Number.isFinite(amount) && amount > 0) return Number(amount.toFixed(2));
+  }
+  return null;
+}
+
+function isQuickPaymentQrPhrase(text) {
+  const lower = String(text || '').toLowerCase();
+  return (
+    /\b(?:quick(?:\s+payment)?\s+qr|quick\s+upi|qr\s+payment|payment\s+qr|upi\s+qr)\b/i.test(
+      lower
+    ) ||
+    /\b(?:payment|pay|upi)\s+link\b/i.test(lower) ||
+    (/\bquick\b/.test(lower) && /\b(?:qr|upi|link)\b/.test(lower) && /\b(?:payment|pay)\b/.test(lower))
+  );
+}
+
+/** Generate/download Quick payment QR — not Payment QR settings or pending-payment lookup. */
+function isQuickPaymentQrRequest(message, hints) {
+  const lower = String(message || '').toLowerCase();
+  if (/\b(?:settings?|manage|configure|common payment)\b/i.test(lower)) return false;
+  return isQuickPaymentQrPhrase(lower);
+}
+
+/** Open Quick payment QR screen vs generate one for a customer/amount. */
+/** Admin asked to send (not just open) a payment QR — needs a destination phone or WhatsApp. */
+function isQuickPaymentQrSendRequest(message, hints) {
+  const lower = String(message || '').toLowerCase();
+  if (!/\bsend\b/.test(lower)) return false;
+  if (hints?.phone) return true;
+  return /\b(?:to|on)\s+(?:whatsapp|wa)\b/.test(lower);
+}
+
+function isQuickPaymentQrGenerationRequest(message, hints) {
+  if (!isQuickPaymentQrRequest(message, hints)) return false;
+  const lower = String(message || '').toLowerCase();
+  const amount = extractQuickPaymentAmount(message);
+  const hasCustomer = (hints?.nameTokens || []).length > 0 || hints?.phone;
+  const navigationOnly =
+    /\b(?:open|go to|take me to|show me|navigate)\b/.test(lower) && !hasCustomer && !amount;
+  return !navigationOnly;
+}
+
+/** @deprecated use isQuickPaymentQrGenerationRequest */
+function isCustomerPaymentQrRequest(message, hints) {
+  return isQuickPaymentQrGenerationRequest(message, hints);
 }
 
 /** True when there is nothing concrete to look up for this message. */
@@ -278,6 +369,26 @@ function hasSearchableTarget(hints, focusCustomerId) {
       (hints?.nameTokens || []).length ||
       (hints?.lookupTerms || []).length
   );
+}
+
+/** True when the message names a specific customer/job — not vague aggregate wording. */
+function hasConcreteCustomerLookupTarget(hints, message, focusCustomerId) {
+  if (focusCustomerId || hints?.phone || hints?.jobNumber || (hints?.lookupTerms || []).length) {
+    return true;
+  }
+  const text = String(message || '').trim();
+  const lower = text.toLowerCase();
+  const afterLead = lower.match(/\b(?:on|called|named|for)\s+([a-z]{3,})/i)?.[1];
+  if (afterLead && !NAME_STOP_WORDS.has(afterLead)) return true;
+  const afterFind = lower.match(/\b(?:find|search|lookup|look up)\s+(?:customer\s+)?([a-z]{3,})/i)?.[1];
+  if (afterFind && !NAME_STOP_WORDS.has(afterFind)) return true;
+  if (/\bcustomer\s+(?:C\d{3,}|[a-z]{3,})/i.test(lower)) {
+    const customerTail = lower.match(/\bcustomer\s+([a-z0-9]{3,})/i)?.[1];
+    if (customerTail && !NAME_STOP_WORDS.has(customerTail)) return true;
+  }
+  if (/\bC\d{3,}\b/i.test(text)) return true;
+  const tokens = hints?.nameTokens || [];
+  return tokens.length > 0;
 }
 
 function istDateKey(date = new Date()) {
@@ -358,6 +469,31 @@ function detectTechnicianBillingRanking(message) {
   return mentionsTechnician && mentionsRanking && mentionsBilling;
 }
 
+function detectTechnicianExpenseRanking(message) {
+  const text = String(message || '').toLowerCase();
+  const mentionsTechnician = /\btechnicians?\b|\btechs?\b/.test(text);
+  const mentionsExpense = /\bexpenses?\b|\bspend\b|\bspent\b|\bspending\b/.test(text);
+  const mentionsRank =
+    /\bmost\b|\btop\b|\bhighest\b|\bbiggest\b|\blargest\b|\bwho\b|\bwhich\b|\brank\b/.test(text);
+  return mentionsTechnician && mentionsExpense && mentionsRank;
+}
+
+/** Travel km / worked-hours questions about technicians in the field. */
+function detectTechnicianFieldStats(message) {
+  const text = normalizeCrmQueryText(message).toLowerCase();
+  const mentionsTravel =
+    /\b(?:km|kms|kilomet(?:er|re)s?|drove|drive|driving|travel(?:led|ed)?|distance|mileage)\b/.test(
+      text
+    );
+  const mentionsHours =
+    /\b(?:hours? worked|worked hours|how long (?:did|has|have|was)|time (?:on|in) (?:the )?field|on field)\b/.test(
+      text
+    ) ||
+    (/\bhow many hours\b/.test(text) &&
+      /\b(?:work|worked|technician|tech|field|today|yesterday|week|month)\b/.test(text));
+  return mentionsTravel || mentionsHours;
+}
+
 /**
  * Detect an operational ("show me the CRM") intent: what to list and for when.
  * Purely keyword-based; never turns into free-form SQL.
@@ -391,13 +527,23 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   if (
     !wantsCustomerRanking &&
     !wantsTechnicianRanking &&
-    has(/\brevenue|\bcollect|\bearn|\bincome|\bturnover|\bsales\b/)
+    has(/\brevenue|\bcollect|\bearn|\bincome|\bturnover|\bsales\b|\bbusiness\b|\bdid we make\b/)
   )
     scopes.add('revenue');
   if (wantsCustomerRanking) scopes.add('customer_value_ranking');
   if (wantsTechnicianRanking) scopes.add('technician_billing_ranking');
-  if (has(/\bsummary|\boverview|\bstatus report\b|\bdaily report\b|\bfull report\b/))
+  if (detectTechnicianFieldStats(message)) scopes.add('technician_field_stats');
+  if (has(/\bsummary|\boverview|\bstatus report\b|\bdaily report\b|\bfull report\b|\bmetrics?\b|\bstats\b|\bstatistics\b|\bdata\b/))
     scopes.add('summary');
+  if (has(/\bhow many\b|\bcount\b|\bnumber of\b|\btotal\b/) && !scopes.size) scopes.add('jobs');
+  if (
+    has(
+      /\bwhat(?:'s| is) (?:going on|happening)\b|\bright now\b|\bat the moment\b|\blive status\b|\bfield status\b|\boperations snapshot\b|\bfloor status\b|\banyone waiting\b|\bwho(?:'s| is) waiting\b|\bwaiting (?:for|jobs?|customers?)\b|\bwhere are (?:the )?technicians?\b|\btechnicians? (?:locations?|whereabouts)\b|\bunassigned jobs?\b|\bjobs? waiting\b|\bwhat are (?:the )?techs?\b|\bwhat are technicians\b/
+    ) ||
+    // Hindi live-ops phrases
+    has(/\bkya hua\b|\bkya ho raha\b|\bfield mein\b|\baaj field\b|\bkya chal raha\b/)
+  )
+    scopes.add('live_ops');
 
   // The last status word wins so a correction ("completed today — I meant
   // ongoing") overrides the status it is correcting.
@@ -437,7 +583,7 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
 
   const dateCandidates = [];
   const addDateCandidate = (pattern, resolve) => {
-    for (const match of text.matchAll(pattern)) dateCandidates.push({ index: match.index, resolve });
+    for (const match of text.matchAll(pattern)) dateCandidates.push({ index: match.index, resolve: () => resolve(match) });
   };
   addDateCandidate(
     /\ball[\s-]?time\b|\blife[\s-]?time\b|\bever\b|\boverall\b|\bin total\b|\bentire\b|\bso far\b|\bhistor(?:y|ical)\b|\bever since\b|\bfrom the start\b/g,
@@ -477,6 +623,38 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
     end: addDaysKey(todayKey, -1),
     label: 'overdue (before today)',
   }));
+  // Named month only: "in july", "during march", "in july this year", "last july"
+  addDateCandidate(
+    /\b(?:in|during|for|of)\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\blast\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/gi,
+    (match) => {
+      const monthNums = {
+        jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+        may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9,
+        sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+      };
+      const raw = (match[1] || match[2] || '').toLowerCase();
+      const monthNum = monthNums[raw];
+      if (!monthNum) return null;
+      // Determine year: "last july" = previous occurrence; "this year" explicit or implied current
+      const mentionsLastYear = /\blast year\b/i.test(text);
+      const mentionsThisYear = /\bthis year\b/i.test(text);
+      const [todayYear, todayMonth] = todayKey.split('-').map(Number);
+      let year = todayYear;
+      if (mentionsLastYear) {
+        year = todayYear - 1;
+      } else if (!mentionsThisYear && monthNum > todayMonth) {
+        // Named month hasn't arrived yet this year → assume last year
+        year = todayYear - 1;
+      }
+      const mm = String(monthNum).padStart(2, '0');
+      const daysInMonth = new Date(year, monthNum, 0).getDate();
+      return {
+        start: `${year}-${mm}-01`,
+        end: `${year}-${mm}-${String(daysInMonth).padStart(2, '0')}`,
+        label: `${raw} ${year}`,
+      };
+    }
+  );
   addDateCandidate(/\btoday\b|\bnow\b/g, () => ({ start: todayKey, end: todayKey, label: 'today' }));
   dateCandidates.sort((a, b) => a.index - b.index);
   const relative = dateCandidates.at(-1)?.resolve();
@@ -1282,6 +1460,216 @@ async function findTechniciansByName(db, nameTokens) {
   return matches.slice(0, 3);
 }
 
+async function buildTechnicianExpenseRanking(db, rows) {
+  const byTech = new Map();
+  for (const row of rows || []) {
+    const techId = String(row.technician_id || '');
+    if (!techId) continue;
+    byTech.set(techId, (byTech.get(techId) || 0) + (Number(row.amount) || 0));
+  }
+  if (!byTech.size) return [];
+  const ids = [...byTech.keys()];
+  const nameById = new Map();
+  const { data: techRows } = await db
+    .from('technicians')
+    .select('id,full_name')
+    .in('id', ids.slice(0, 50));
+  for (const row of techRows || []) {
+    nameById.set(String(row.id), String(row.full_name || 'Technician').trim());
+  }
+  return [...byTech.entries()]
+    .map(([technicianId, total]) => ({
+      technicianId,
+      name: nameById.get(technicianId) || 'Technician',
+      total: Math.round(total),
+    }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
+    .slice(0, TOP_TECHNICIAN_LIMIT)
+    .map((row, index) => ({ rank: index + 1, ...row }));
+}
+
+function sumStoredDayTravelKm(jobs) {
+  const sorted = (jobs || [])
+    .filter((job) => parseMs(job.start_time))
+    .sort((a, b) => parseMs(a.start_time) - parseMs(b.start_time));
+  let total = sumStoredTravelKm(sorted);
+  const last = sorted[sorted.length - 1];
+  const ret = last ? getTravelReturnKm(last) : null;
+  if (ret != null && ret > 0) total += ret;
+  return total > 0 ? Math.round(total * 10) / 10 : null;
+}
+
+function groupJobsByIstDay(jobs) {
+  const byDay = new Map();
+  for (const job of jobs || []) {
+    const start = parseMs(job.start_time);
+    const complete = jobCompletionMs(job);
+    const anchor = start ?? complete;
+    if (!anchor) continue;
+    const dayKey = istDateKey(new Date(anchor));
+    if (!byDay.has(dayKey)) byDay.set(dayKey, []);
+    byDay.get(dayKey).push(job);
+  }
+  return byDay;
+}
+
+function computeTechFieldStatsRow(jobs, nowMs, todayKey) {
+  const byDay = groupJobsByIstDay(jobs);
+  let totalDurationMs = 0;
+  let totalKm = 0;
+  let kmKnown = false;
+  let live = false;
+  let daysWorked = 0;
+
+  for (const [dayKey, dayJobs] of byDay.entries()) {
+    const isToday = dayKey === todayKey;
+    const dayEndMs = isToday
+      ? nowMs
+      : Date.parse(`${dayKey}T23:59:59.999+05:30`);
+    const summary = computeTechWorkedHours(dayJobs, isToday ? nowMs : dayEndMs);
+    if (summary.durationMs != null && summary.durationMs > 0) {
+      totalDurationMs += summary.durationMs;
+      daysWorked += 1;
+    }
+    if (summary.live) live = true;
+    const dayKm = sumStoredDayTravelKm(dayJobs);
+    if (dayKm != null) {
+      totalKm += dayKm;
+      kmKnown = true;
+    }
+  }
+
+  const jobsStarted = (jobs || []).filter((job) => parseMs(job.start_time)).length;
+  const jobsCompleted = (jobs || []).filter((job) => jobCompletionMs(job)).length;
+  return {
+    durationMs: totalDurationMs > 0 ? totalDurationMs : null,
+    durationLabel: totalDurationMs > 0 ? formatWorkedDuration(totalDurationMs) : null,
+    travelKm: kmKnown ? Math.round(totalKm * 10) / 10 : null,
+    travelLabel: kmKnown ? formatTravelKm(totalKm) : null,
+    daysWorked,
+    jobsStarted,
+    jobsCompleted,
+    live,
+  };
+}
+
+async function loadTechnicianFieldStats(db, intent, todayKey) {
+  const bounds = intentBounds(intent, todayKey);
+  const filterIds = (intent.technicianMatches || []).map((row) => row.id);
+  const buildStarted = () => {
+    let query = db
+      .from('jobs')
+      .select(FIELD_STATS_JOB_COLS)
+      .not('assigned_technician_id', 'is', null);
+    if (bounds.fromTs && bounds.toTs) {
+      query = query.gte('start_time', bounds.fromTs).lt('start_time', bounds.toTs);
+    }
+    if (filterIds.length) query = query.in('assigned_technician_id', filterIds);
+    return query.limit(FIELD_STATS_JOB_SCAN);
+  };
+  const buildCompleted = () => {
+    let query = db
+      .from('jobs')
+      .select(FIELD_STATS_JOB_COLS)
+      .not('assigned_technician_id', 'is', null);
+    if (bounds.fromTs && bounds.toTs) {
+      query = query.or(
+        `and(completed_at.gte.${bounds.fromTs},completed_at.lt.${bounds.toTs}),and(end_time.gte.${bounds.fromTs},end_time.lt.${bounds.toTs})`
+      );
+    }
+    if (filterIds.length) query = query.in('assigned_technician_id', filterIds);
+    return query.limit(FIELD_STATS_JOB_SCAN);
+  };
+
+  const [{ data: started, error: startErr }, { data: completed, error: doneErr }] =
+    await Promise.all([buildStarted(), buildCompleted()]);
+  if (startErr || doneErr) {
+    console.warn(
+      '[ai-crm-lookup] technician field stats jobs failed',
+      startErr?.message || doneErr?.message
+    );
+    return { technicians: [], stats: {}, truncated: {} };
+  }
+
+  const byJobId = new Map();
+  for (const row of [...(started || []), ...(completed || [])]) {
+    if (row?.id) byJobId.set(row.id, row);
+  }
+  const byTech = new Map();
+  for (const job of byJobId.values()) {
+    const techId = String(job.assigned_technician_id || '');
+    if (!techId) continue;
+    if (!byTech.has(techId)) byTech.set(techId, []);
+    byTech.get(techId).push(job);
+  }
+
+  const nowMs = Date.now();
+  const nameById = new Map((intent.technicianMatches || []).map((row) => [row.id, row.name]));
+  const missingIds = [...byTech.keys()].filter((id) => !nameById.has(id));
+  if (missingIds.length) {
+    const { data: techRows } = await db
+      .from('technicians')
+      .select('id,full_name,employee_id')
+      .in('id', missingIds.slice(0, 20));
+    for (const row of techRows || []) {
+      nameById.set(String(row.id), String(row.full_name || 'Technician').trim());
+    }
+  }
+
+  const rows = [];
+  for (const [techId, jobs] of byTech.entries()) {
+    const computed = computeTechFieldStatsRow(jobs, nowMs, todayKey);
+    if (!computed.durationMs && computed.travelKm == null && computed.jobsStarted === 0) continue;
+    rows.push({
+      technicianId: techId,
+      employeeId: null,
+      name: nameById.get(techId) || 'Technician',
+      ...computed,
+    });
+  }
+
+  const preferKm = /\b(?:km|kms|kilomet|drove|drive|travel|mileage|distance)\b/i.test(
+    String(intent.lookupMessage || '')
+  );
+  rows.sort((a, b) => {
+    const primaryA = preferKm ? a.travelKm ?? -1 : a.durationMs ?? -1;
+    const primaryB = preferKm ? b.travelKm ?? -1 : b.durationMs ?? -1;
+    if (primaryB !== primaryA) return primaryB - primaryA;
+    return String(a.name).localeCompare(String(b.name));
+  });
+
+  return {
+    technicians: rows.slice(0, TOP_TECHNICIAN_LIMIT).map((row, index) => ({
+      id: row.technicianId,
+      name: row.name,
+      employeeId: row.employeeId,
+      rank: index + 1,
+    })),
+    stats: {
+      technicianFieldStats: rows.slice(0, TOP_TECHNICIAN_LIMIT).map((row, index) => ({
+        rank: index + 1,
+        technicianId: row.technicianId,
+        name: row.name,
+        durationLabel: row.durationLabel,
+        durationMs: row.durationMs,
+        travelKm: row.travelKm,
+        travelLabel: row.travelLabel,
+        daysWorked: row.daysWorked,
+        jobsStarted: row.jobsStarted,
+        jobsCompleted: row.jobsCompleted,
+        live: row.live,
+      })),
+      technicianFieldStatsPeriod: intent.allTime ? 'all time' : intent.range?.label || 'today',
+      technicianFieldStatsFilteredBy: intent.technicianMatches?.length
+        ? intent.technicianMatches.map((row) => row.name)
+        : null,
+    },
+    truncated: {
+      technicianFieldStats: byJobId.size >= FIELD_STATS_JOB_SCAN,
+    },
+  };
+}
+
 /**
  * A technician's biggest completed jobs. Totals alone cannot answer "what is the
  * highest billing they did for one customer".
@@ -1391,6 +1779,489 @@ async function loadCustomerValuesForShortlist(db, shortlist, intent, todayKey) {
   };
 }
 
+function locationAgeMinutes(iso) {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return Math.round(ms / 60000);
+}
+
+/** Right-now field snapshot: open jobs, waiting unassigned, technician GPS. */
+async function loadLiveOperationsSnapshot(db, todayKey) {
+  const out = {
+    jobs: [],
+    customers: [],
+    technicians: [],
+    stats: {},
+    truncated: {},
+  };
+  const bounds = istDayBounds(todayKey, todayKey);
+
+  const [ongoingRes, followUpCount, completedToday, activeTechRes, locRes] = await Promise.all([
+    db
+      .from('jobs')
+      .select(JOB_COLS)
+      .in('status', ONGOING_JOB_STATUSES)
+      .order('scheduled_date', { ascending: true })
+      .limit(LIVE_OPS_JOB_LIMIT + 1),
+    countRows(
+      db.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'FOLLOW_UP')
+    ),
+    countRows(
+      db
+        .from('jobs')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'COMPLETED')
+        .gte('completed_at', bounds.fromTs)
+        .lt('completed_at', bounds.toTs)
+    ),
+    db
+      .from('technicians')
+      .select('id,full_name,employee_id,account_status')
+      .eq('account_status', 'ACTIVE')
+      .limit(40),
+    db
+      .from('technician_live_locations')
+      .select('technician_id,latitude,longitude,updated_at,fix_time,is_tracking')
+      .limit(40),
+  ]);
+
+  if (ongoingRes.error) {
+    console.warn('[ai-crm-lookup] live ops jobs failed', ongoingRes.error.message);
+  }
+  const ongoingRows = ongoingRes.data || [];
+  out.truncated.liveOps = ongoingRows.length > LIVE_OPS_JOB_LIMIT;
+  const jobs = ongoingRows.slice(0, LIVE_OPS_JOB_LIMIT).map(slimJob).filter(Boolean);
+  out.jobs.push(...jobs);
+
+  const customerIds = [...new Set(jobs.map((j) => j.customerId).filter(Boolean))];
+  out.customers.push(...(await loadCustomersByIds(db, customerIds)));
+
+  const nameByCustomerId = new Map(out.customers.map((c) => [c.id, c.name]));
+  const techNameById = await loadTechnicianNames(
+    db,
+    [
+      ...jobs.map((j) => j.assignedTechnicianId).filter(Boolean),
+      ...(activeTechRes.data || []).map((t) => t.id),
+      ...(locRes.data || []).map((l) => l.technician_id),
+    ],
+    []
+  );
+
+  const byStatus = {};
+  for (const status of ONGOING_JOB_STATUSES) byStatus[status] = 0;
+  let unassignedWaiting = 0;
+  const busyTechIds = new Set();
+  const techniciansOnField = [];
+
+  for (const job of jobs) {
+    const status = String(job.status || '').toUpperCase();
+    if (byStatus[status] != null) byStatus[status] += 1;
+    const techId = job.assignedTechnicianId ? String(job.assignedTechnicianId) : '';
+    if (status === 'PENDING' && !techId) unassignedWaiting += 1;
+    if (techId) busyTechIds.add(techId);
+    techniciansOnField.push({
+      technicianName: techId ? techNameById[techId] || 'Technician' : 'Unassigned',
+      status,
+      jobNumber: job.jobNumber || '—',
+      customerName: nameByCustomerId.get(job.customerId) || '—',
+      scheduledDate: job.scheduledDate || '—',
+    });
+  }
+
+  const activeTechs = (activeTechRes.data || []).map((row) => ({
+    technicianId: String(row.id),
+    name: String(row.full_name || 'Technician').trim(),
+    employeeId: row.employee_id ? String(row.employee_id) : null,
+  }));
+  out.technicians.push(
+    ...activeTechs.map((tech) => ({
+      technicianId: tech.technicianId,
+      name: tech.name,
+      employeeId: tech.employeeId,
+      billedTotal: null,
+      completedJobs: null,
+    }))
+  );
+
+  const techniciansIdle = activeTechs
+    .filter((tech) => !busyTechIds.has(tech.technicianId))
+    .map((tech) => tech.name);
+
+  const technicianLocations = (locRes.data || [])
+    .map((row) => {
+      const technicianId = String(row.technician_id || '');
+      const updatedAt = row.fix_time || row.updated_at || null;
+      const ageMinutes = locationAgeMinutes(updatedAt);
+      const hasCoords =
+        Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude));
+      return {
+        technicianName: techNameById[technicianId] || 'Technician',
+        latitude: hasCoords ? Number(row.latitude) : null,
+        longitude: hasCoords ? Number(row.longitude) : null,
+        ageMinutes,
+        stale:
+          ageMinutes == null ||
+          ageMinutes > LIVE_OPS_LOCATION_STALE_MINUTES ||
+          row.is_tracking === false,
+        isTracking: row.is_tracking !== false,
+      };
+    })
+    .filter((row) => row.latitude != null && row.longitude != null);
+
+  out.stats.liveOps = {
+    snapshotLabel: 'right now',
+    ongoingTotal: jobs.length,
+    unassignedWaiting,
+    followUpTotal: followUpCount ?? 0,
+    completedToday: completedToday ?? 0,
+    byStatus,
+    techniciansOnField,
+    techniciansIdle,
+    technicianLocations,
+    fieldIsClear: jobs.length === 0,
+  };
+  return out;
+}
+
+function formatJobStatusLabel(status) {
+  const key = String(status || '').toUpperCase();
+  const labels = {
+    PENDING: 'Pending',
+    ASSIGNED: 'Assigned',
+    EN_ROUTE: 'En route',
+    IN_PROGRESS: 'In progress',
+  };
+  return (
+    labels[key] ||
+    key
+      .replace(/_/g, ' ')
+      .toLowerCase()
+      .replace(/^\w/, (c) => c.toUpperCase())
+  );
+}
+
+/** Structured multi-section text for live ops (not one paragraph). */
+function formatLiveOpsAnswer(liveOps) {
+  if (!liveOps) return 'No live operations data available.';
+
+  const lines = [];
+  lines.push('Field snapshot');
+  lines.push('');
+
+  if (liveOps.fieldIsClear) {
+    lines.push('No open jobs right now.');
+  } else {
+    lines.push(`Open jobs · ${liveOps.ongoingTotal}`);
+    const bs = liveOps.byStatus || {};
+    const pendingUnassigned = liveOps.unassignedWaiting ?? 0;
+    const pendingTotal = bs.PENDING ?? 0;
+    if (pendingTotal > 0) {
+      lines.push(`  Pending (unassigned) · ${pendingUnassigned}`);
+      const pendingAssigned = pendingTotal - pendingUnassigned;
+      if (pendingAssigned > 0) lines.push(`  Pending (assigned) · ${pendingAssigned}`);
+    }
+    if (bs.ASSIGNED) lines.push(`  Assigned · ${bs.ASSIGNED}`);
+    if (bs.EN_ROUTE) lines.push(`  En route · ${bs.EN_ROUTE}`);
+    if (bs.IN_PROGRESS) lines.push(`  In progress · ${bs.IN_PROGRESS}`);
+  }
+
+  lines.push(`Completed today · ${liveOps.completedToday ?? 0}`);
+  lines.push(`Follow-ups open · ${liveOps.followUpTotal ?? 0}`);
+  lines.push('');
+
+  const waiting = (liveOps.techniciansOnField || []).filter(
+    (r) => String(r.status).toUpperCase() === 'PENDING' && r.technicianName === 'Unassigned'
+  );
+  const onField = (liveOps.techniciansOnField || []).filter(
+    (r) => !(String(r.status).toUpperCase() === 'PENDING' && r.technicianName === 'Unassigned')
+  );
+
+  if (onField.length) {
+    lines.push('On the field');
+    for (const row of onField) {
+      lines.push(
+        `  · ${row.technicianName} · ${formatJobStatusLabel(row.status)} · ${row.jobNumber} · ${row.customerName}`
+      );
+    }
+    lines.push('');
+  }
+
+  if (liveOps.techniciansIdle?.length) {
+    lines.push('Idle');
+    for (const name of liveOps.techniciansIdle) {
+      lines.push(`  · ${name}`);
+    }
+    lines.push('');
+  }
+
+  if (waiting.length) {
+    lines.push('Waiting assignment');
+    for (const row of waiting) {
+      lines.push(`  · ${row.jobNumber} · ${row.customerName}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n').trim();
+}
+
+/** Structured stats answer for read-only CRM tools (skip LLM when counts exist). */
+function formatInr(amount) {
+  return `INR ${Math.round(Number(amount) || 0).toLocaleString('en-IN')}`;
+}
+
+function formatStatsSection(title, rows) {
+  const body = (rows || []).filter(Boolean);
+  if (!body.length) return '';
+  return [title, ...body.map((line) => (line.startsWith('  ') ? line : `  ${line}`))].join('\n');
+}
+
+function formatStatsAnswerForTools(pack, tools) {
+  const selected = Array.isArray(tools) ? tools : [];
+  const stats = pack?.stats || {};
+  const period = stats.rangeLabel || stats.expenses?.period || stats.today || 'the requested period';
+  const sections = [];
+
+  if (selected.includes('jobs_overview')) {
+    const rows = [];
+    if (stats.jobsCompletedInRange != null) rows.push(`Completed · ${stats.jobsCompletedInRange}`);
+    if (stats.jobsScheduledInRange != null) rows.push(`Scheduled · ${stats.jobsScheduledInRange}`);
+    if (stats.openJobsTotal != null) {
+      rows.push(`Open · ${stats.openJobsTotal}`);
+      if (stats.openJobsStatuses?.length) rows.push(`Statuses · ${stats.openJobsStatuses.join(', ')}`);
+    }
+    if (stats.followUpJobsTotal != null) rows.push(`Follow-ups · ${stats.followUpJobsTotal}`);
+    if (stats.jobsCompletedByTechnicianInRange != null) {
+      rows.push(`Completed · ${stats.jobsCompletedByTechnicianInRange}`);
+      if (stats.jobsFilteredByTechnician?.length) {
+        rows.push(`Technician · ${stats.jobsFilteredByTechnician.join(', ')}`);
+      }
+    }
+    const section = formatStatsSection(`Jobs · ${period}`, rows);
+    if (section) sections.push(section);
+  }
+
+  if (selected.includes('payments') && stats.pendingPaymentsListed != null) {
+    const rows = [`Count · ${stats.pendingPaymentsListed}`];
+    if (stats.pendingPaymentsListedTotal != null) {
+      rows.push(`Total due · ${formatInr(stats.pendingPaymentsListedTotal)}`);
+    }
+    if (stats.pendingPaymentsAlreadyDue != null) rows.push(`Overdue · ${stats.pendingPaymentsAlreadyDue}`);
+    sections.push(formatStatsSection('Pending payments', rows));
+  }
+
+  if (selected.includes('reminders') && stats.remindersListed != null) {
+    sections.push(
+      formatStatsSection(`Reminders · ${stats.remindersScope || period}`, [
+        `Count · ${stats.remindersListed}`,
+      ])
+    );
+  }
+
+  if (selected.includes('customer_directory')) {
+    const rows = [];
+    if (stats.customersTotal != null) rows.push(`Total · ${stats.customersTotal}`);
+    if (stats.customersAddedInRange != null) rows.push(`Added in period · ${stats.customersAddedInRange}`);
+    const section = formatStatsSection(`Customers · ${period}`, rows);
+    if (section) sections.push(section);
+  }
+
+  if (selected.includes('revenue') && stats.completedJobValueInRange != null) {
+    const rows = [`Amount · ${formatInr(stats.completedJobValueInRange)}`];
+    const proj = stats.completedJobValueProjection;
+    if (proj?.projectedPeriodTotal != null) {
+      rows.push(`Projected month-end · ${formatInr(proj.projectedPeriodTotal)} (estimate)`);
+      if (proj.elapsedDays && proj.periodDays) {
+        rows.push(`Pace · ${proj.elapsedDays} of ${proj.periodDays} days`);
+      }
+    }
+    const prev = stats.completedJobValuePrevious;
+    if (prev?.value != null) {
+      const change =
+        prev.changePct != null ? ` (${prev.changePct > 0 ? '+' : ''}${prev.changePct}%)` : '';
+      rows.push(`Previous period · ${formatInr(prev.value)}${change}`);
+    }
+    sections.push(formatStatsSection(`Revenue · ${period}`, rows));
+  }
+
+  if (selected.includes('expenses') && stats.expenses) {
+    const exp = stats.expenses;
+    const expPeriod = exp.period || period;
+    const rows = [];
+    if (stats.technicianExpenseRanking?.length) {
+      for (const row of stats.technicianExpenseRanking.slice(0, 6)) {
+        rows.push(`${row.rank}. ${row.name} · ${formatInr(row.total)}`);
+      }
+      if (exp.technician?.total != null) {
+        rows.push(`Technician total · ${formatInr(exp.technician.total)}`);
+      }
+    } else {
+      rows.push(`Total · ${formatInr(exp.combinedTotal ?? 0)}`);
+      if (exp.business?.total != null) rows.push(`Business · ${formatInr(exp.business.total)}`);
+      if (exp.technician?.total != null) rows.push(`Technician · ${formatInr(exp.technician.total)}`);
+      if (exp.incomplete) rows.push('Note · one expense source could not be loaded');
+      const topCats = [
+        ...(exp.business?.byCategory || [])
+          .slice(0, 3)
+          .map((c) => `Business · ${c.category} · ${formatInr(c.amount)}`),
+        ...(exp.technician?.byCategory || [])
+          .slice(0, 3)
+          .map((c) => `Technician · ${c.category} · ${formatInr(c.amount)}`),
+      ];
+      if (topCats.length) {
+        rows.push('Top categories');
+        for (const line of topCats) rows.push(`  · ${line}`);
+      }
+    }
+    const title = stats.technicianExpenseRanking?.length
+      ? `Technician expenses · ${expPeriod}`
+      : `Expenses · ${expPeriod}`;
+    const section = formatStatsSection(title, rows);
+    if (section) sections.push(section);
+  }
+
+  if (selected.includes('amc') && stats.amcExpiryWindow) {
+    const rows = [`Window · ${stats.amcExpiryWindow}`];
+    if (pack.documents?.length) {
+      rows.push('Contracts');
+      for (const doc of pack.documents.slice(0, 6)) {
+        rows.push(`  · ${doc.customerName || '—'} · ends ${doc.endDate || doc.expiryDate || '—'}`);
+      }
+    }
+    sections.push(formatStatsSection('AMC', rows));
+  }
+
+  if (selected.includes('customer_value_ranking') && stats.customerValueRanking?.length) {
+    const rows = stats.customerValueRanking.slice(0, 5).map(
+      (row) =>
+        `${row.rank}. ${row.name} · ${formatInr(row.confirmedPaidTotal ?? row.billedTotal ?? 0)}`
+    );
+    sections.push(
+      formatStatsSection(`Top customers · ${stats.customerValueRankingPeriod || period}`, rows)
+    );
+  }
+
+  if (selected.includes('technician_billing_ranking')) {
+    const rows = stats.technicianBillingRanking?.length
+      ? stats.technicianBillingRanking.slice(0, 5).map(
+          (row) =>
+            `${row.rank}. ${row.name} · ${formatInr(row.billedTotal || 0)} · ${row.completedJobs} jobs`
+        )
+      : ['No completed jobs for a technician in this period.'];
+    sections.push(formatStatsSection(`Technician billing · ${stats.technicianBillingPeriod || period}`, rows));
+  }
+
+  if (selected.includes('technician_field_stats')) {
+    const rows = [];
+    if (stats.technicianFieldStatsFilteredBy?.length) {
+      rows.push(`Technician · ${stats.technicianFieldStatsFilteredBy.join(', ')}`);
+    }
+    if (stats.technicianFieldStats?.length) {
+      for (const row of stats.technicianFieldStats.slice(0, 6)) {
+        const parts = [row.name];
+        if (row.durationLabel) {
+          parts.push(`${row.durationLabel} worked${row.live ? ' (live)' : ''}`);
+        }
+        if (row.travelLabel) parts.push(`${row.travelLabel} travel`);
+        else if (row.travelKm == null && row.jobsStarted > 0) parts.push('km not stored yet');
+        if (row.jobsCompleted > 0) parts.push(`${row.jobsCompleted} jobs done`);
+        rows.push(`· ${parts.join(' · ')}`);
+      }
+    } else {
+      rows.push('No field work in this period.');
+    }
+    sections.push(
+      formatStatsSection(`Field stats · ${stats.technicianFieldStatsPeriod || period}`, rows)
+    );
+  }
+
+  if (selected.includes('customer_search')) {
+    if (pack.customers?.length) {
+      const rows = pack.customers.slice(0, 6).map(
+        (customer) =>
+          `· ${customer.name || '—'} · ${customer.customerCode || '—'} · ${customer.phone || '—'}`
+      );
+      sections.push(formatStatsSection('Customers', rows));
+    } else if (!selected.includes('customer_value_ranking')) {
+      sections.push('Customers\n  No matches found.');
+    }
+  }
+
+  if (selected.includes('job_search') || (selected.includes('jobs_overview') && pack.jobs?.length)) {
+    if (pack.jobs?.length) {
+      const rows = pack.jobs.slice(0, 6).map(
+        (job) =>
+          `· ${job.jobNumber || '—'} · ${String(job.status || '—').replace(/_/g, ' ')} · ${job.scheduledDate || '—'}`
+      );
+      sections.push(formatStatsSection('Jobs', rows));
+    } else if (selected.includes('job_search')) {
+      sections.push('Jobs\n  No matches found.');
+    }
+  }
+
+  if (selected.includes('documents')) {
+    const rows = [];
+    if (stats.documentsListed != null) rows.push(`Count · ${stats.documentsListed}`);
+    if (pack.documents?.length) {
+      rows.push('Recent');
+      for (const doc of pack.documents.slice(0, 6)) {
+        rows.push(
+          `  · ${doc.documentType || doc.kind || 'document'} · ${doc.customerName || '—'} · ${doc.reference || doc.jobNumber || '—'}`
+        );
+      }
+    } else if (!rows.length) {
+      rows.push('No documents found.');
+    }
+    if (rows.length) sections.push(formatStatsSection('Documents', rows));
+  }
+
+  if (!sections.length) return null;
+  return sections.join('\n\n').trim();
+}
+
+/** Slim live-ops payload for CRM AI chat UI cards. */
+function publicLiveOpsSnapshot(liveOps, truncated) {
+  if (!liveOps) return null;
+  const waitingJobs = (liveOps.techniciansOnField || [])
+    .filter(
+      (r) => String(r.status).toUpperCase() === 'PENDING' && r.technicianName === 'Unassigned'
+    )
+    .map((r) => ({ jobNumber: r.jobNumber, customerName: r.customerName }));
+  const onField = (liveOps.techniciansOnField || [])
+    .filter(
+      (r) => !(String(r.status).toUpperCase() === 'PENDING' && r.technicianName === 'Unassigned')
+    )
+    .map((r) => ({
+      technicianName: r.technicianName,
+      status: formatJobStatusLabel(r.status),
+      jobNumber: r.jobNumber,
+      customerName: r.customerName,
+    }));
+  const locs = liveOps.technicianLocations || [];
+  const gpsStale = locs.length === 0 || locs.some((l) => l.stale);
+
+  return {
+    ongoingTotal: liveOps.ongoingTotal,
+    unassignedWaiting: liveOps.unassignedWaiting,
+    followUpTotal: liveOps.followUpTotal,
+    completedToday: liveOps.completedToday,
+    byStatus: {
+      pending: liveOps.byStatus?.PENDING ?? 0,
+      assigned: liveOps.byStatus?.ASSIGNED ?? 0,
+      enRoute: liveOps.byStatus?.EN_ROUTE ?? 0,
+      inProgress: liveOps.byStatus?.IN_PROGRESS ?? 0,
+    },
+    techniciansIdle: liveOps.techniciansIdle || [],
+    onField,
+    waitingJobs,
+    gpsStale,
+    gpsTracked: locs.length,
+    fieldIsClear: liveOps.fieldIsClear,
+    truncated: truncated?.liveOps === true,
+  };
+}
+
 /**
  * Operational lists + exact counts for "what's happening" questions.
  * Every query is allowlisted, thin-column and row-capped.
@@ -1416,6 +2287,24 @@ async function loadOverview(db, intent, todayKey) {
   const wantsTechnicianBillingRanking = scopes.has('technician_billing_ranking');
   const wantsExpenses = scopes.has('expenses');
   const wantsDocuments = scopes.has('documents') && !intent.skipGlobalDocuments;
+  const wantsTechnicianFieldStats = scopes.has('technician_field_stats');
+  const wantsLiveOps = scopes.has('live_ops');
+
+  if (wantsTechnicianFieldStats) {
+    const field = await loadTechnicianFieldStats(db, intent, todayKey);
+    out.technicians.push(...field.technicians);
+    out.stats = { ...out.stats, ...field.stats };
+    out.truncated = { ...out.truncated, ...field.truncated };
+  }
+
+  if (wantsLiveOps) {
+    const snap = await loadLiveOperationsSnapshot(db, todayKey);
+    out.jobs.push(...snap.jobs);
+    out.customers.push(...snap.customers);
+    out.technicians.push(...snap.technicians);
+    out.stats = { ...out.stats, ...snap.stats };
+    out.truncated = { ...out.truncated, ...snap.truncated };
+  }
 
   if (wantsCustomerValueRanking) {
     // "Which Shetty billed most" must rank the matched names, not the global top
@@ -1721,9 +2610,13 @@ async function loadOverview(db, intent, todayKey) {
   if (wantsExpenses) {
     const loadExpenseRows = async (table) => {
       for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const cols =
+          table === 'technician_expenses'
+            ? 'id, amount, description, expense_date, category, technician_id'
+            : 'id, amount, description, expense_date, category';
         let query = db
           .from(table)
-          .select('id, amount, description, expense_date, category')
+          .select(cols)
           .order('expense_date', { ascending: false })
           .limit(EXPENSE_SCAN_LIMIT);
         if (range.start) query = query.gte('expense_date', range.start);
@@ -1772,9 +2665,13 @@ async function loadOverview(db, intent, todayKey) {
       business,
       technician,
       combinedTotal:
-        business && technician ? business.total + technician.total : null,
+        business && technician ? business.total + technician.total : business?.total ?? technician?.total ?? 0,
       incomplete: !business || !technician,
     };
+    const lookupMessage = intent.lookupMessage || '';
+    if (technicianRows && detectTechnicianExpenseRanking(lookupMessage)) {
+      out.stats.technicianExpenseRanking = await buildTechnicianExpenseRanking(db, technicianRows);
+    }
   }
 
   if (wantsCustomers) {
@@ -1996,7 +2893,9 @@ function scopesForPlannerTools(tools) {
     expenses: 'expenses',
     customer_value_ranking: 'customer_value_ranking',
     technician_billing_ranking: 'technician_billing_ranking',
+    technician_field_stats: 'technician_field_stats',
     documents: 'documents',
+    live_ops: 'live_ops',
   };
   return new Set((Array.isArray(tools) ? tools : []).map((tool) => map[tool]).filter(Boolean));
 }
@@ -2034,7 +2933,7 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
   // and customers lists are suppressed, because those would become a whole-day
   // sweep on top of a request about one person.
   const wantsAggregate = [...detected.scopes].some((scope) =>
-    ['revenue', 'expenses', 'payments', 'reminders', 'amc', 'summary', 'customer_value_ranking', 'technician_billing_ranking'].includes(
+    ['revenue', 'expenses', 'payments', 'reminders', 'amc', 'summary', 'customer_value_ranking', 'technician_billing_ranking', 'technician_field_stats', 'live_ops'].includes(
       scope
     )
   );
@@ -2042,14 +2941,19 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
   // resolve it before deciding whether the operational query may run at all.
   const technicianMatches =
     detected.active &&
-    (detected.scopes.has('jobs') || detected.scopes.has('technician_billing_ranking')) &&
+    (detected.scopes.has('jobs') ||
+      detected.scopes.has('technician_billing_ranking') ||
+      detected.scopes.has('technician_field_stats')) &&
     (hints.nameTokens || []).length
       ? await findTechniciansByName(db, hints.nameTokens)
       : [];
   const intent = {
     ...detected,
+    lookupMessage: message,
     technicianMatches,
-    active: detected.active && (!hasSpecificTarget || wantsAggregate || technicianMatches.length > 0),
+    active:
+      detected.active &&
+      (!hasSpecificTarget || wantsAggregate || technicianMatches.length > 0),
   };
 
   // Greetings and chit-chat name no record and ask for no list, so skip the DB
@@ -2347,6 +3251,23 @@ function formatContextForPrompt(pack) {
       `non-payment reminders in ${stats.remindersScope || stats.rangeLabel || 'the requested period'} = ${stats.remindersListed}`
     );
   if (stats.amcExpiryWindow) statLines.push(`AMC contracts listed expire between ${stats.amcExpiryWindow}`);
+  if (stats.liveOps) {
+    const live = stats.liveOps;
+    statLines.push(
+      `live field snapshot (${live.snapshotLabel || 'right now'}): ongoing open jobs = ${live.ongoingTotal}; unassigned/waiting = ${live.unassignedWaiting}; follow-ups open = ${live.followUpTotal}; completed today = ${live.completedToday}`
+    );
+    if (live.fieldIsClear) statLines.push('no open ongoing jobs right now — field is clear aside from follow-ups');
+    if (live.byStatus) {
+      statLines.push(
+        `ongoing by status: ${Object.entries(live.byStatus)
+          .map(([status, count]) => `${status}=${count}`)
+          .join(', ')}`
+      );
+    }
+    if (live.techniciansIdle?.length) {
+      statLines.push(`technicians idle (no ongoing job assigned): ${live.techniciansIdle.join(', ')}`);
+    }
+  }
   if (statLines.length) {
     lines.push('Exact counts (authoritative, use these for "how many"):');
     for (const s of statLines) lines.push(`- ${s}`);
@@ -2388,12 +3309,57 @@ function formatContextForPrompt(pack) {
     }
   }
 
+  if (Array.isArray(stats.technicianFieldStats)) {
+    lines.push(
+      `Technician field stats (${stats.technicianFieldStatsPeriod || 'today'}; authoritative):`
+    );
+    if (stats.technicianFieldStatsFilteredBy?.length) {
+      lines.push(`- Filtered to: ${stats.technicianFieldStatsFilteredBy.join(', ')}`);
+    }
+    if (!stats.technicianFieldStats.length) {
+      lines.push('- No field work found for this period.');
+    }
+    for (const row of stats.technicianFieldStats) {
+      lines.push(
+        `- name=${row.name}; worked=${row.durationLabel || '—'}; travelKm=${row.travelLabel || row.travelKm || '—'}; jobsStarted=${row.jobsStarted}; jobsCompleted=${row.jobsCompleted}; live=${row.live ? 'yes' : 'no'}`
+      );
+    }
+    if (pack.truncated?.technicianFieldStats) {
+      lines.push('- Warning: field-stats job scan hit its safety cap; totals may be incomplete.');
+    }
+  }
+
+  if (stats.liveOps) {
+    const live = stats.liveOps;
+    lines.push(`Live operations snapshot (${live.snapshotLabel || 'right now'}; authoritative):`);
+    if (live.techniciansOnField?.length) {
+      lines.push('- Technicians on open jobs:');
+      for (const row of live.techniciansOnField) {
+        lines.push(
+          `  • ${row.technicianName} — ${row.status} — job ${row.jobNumber} — ${row.customerName} — scheduled ${row.scheduledDate}`
+        );
+      }
+    } else if (live.fieldIsClear) {
+      lines.push('- No open ongoing jobs are assigned right now.');
+    }
+    if (live.unassignedWaiting > 0) {
+      lines.push(`- ${live.unassignedWaiting} job(s) are waiting unassigned (PENDING with no technician).`);
+    }
+    if (pack.truncated?.liveOps) {
+      lines.push('- Warning: open-job list was truncated; counts above are from the loaded slice.');
+    }
+  }
+
   const scopes = new Set(pack.intent?.scopes || []);
   const isTargetedLookup = scopes.size === 0;
   const showCustomers =
     isTargetedLookup || scopes.has('customers') || scopes.has('customer_value_ranking');
   const showJobs =
-    isTargetedLookup || scopes.has('jobs') || scopes.has('summary') || scopes.has('revenue');
+    isTargetedLookup ||
+    scopes.has('jobs') ||
+    scopes.has('summary') ||
+    scopes.has('revenue') ||
+    scopes.has('live_ops');
 
   if (showCustomers && !pack.customers.length) {
     lines.push('Customers: (none matched)');
@@ -2462,16 +3428,29 @@ module.exports = {
   normalizeCrmQueryText,
   extractQueryHints,
   hasSearchableTarget,
+  hasConcreteCustomerLookupTarget,
+  extractQuickPaymentAmount,
+  isQuickPaymentQrRequest,
+  isQuickPaymentQrSendRequest,
+  isQuickPaymentQrGenerationRequest,
+  isQuickPaymentQrPhrase,
+  isCustomerPaymentQrRequest,
   scopesForPlannerTools,
   detectOverviewIntent,
   detectCustomerValueRanking,
   detectTechnicianBillingRanking,
+  detectTechnicianExpenseRanking,
+  detectTechnicianFieldStats,
   nameMatchesToken,
   resolveCompletedJobValue,
   istDateKey,
   addDaysKey,
   lookupCrmContext,
   formatContextForPrompt,
+  formatLiveOpsAnswer,
+  publicLiveOpsSnapshot,
+  formatStatsAnswerForTools,
+  formatJobStatusLabel,
   slimCustomer,
   slimJob,
 };
