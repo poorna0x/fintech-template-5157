@@ -178,6 +178,7 @@ const NAME_STOP_WORDS = new Set(
     'the', 'their', 'them', 'these', 'this', 'time', 'today', 'tomorrow', 'total', 'turnover',
     'ticket', 'tickets', 'calls', 'call', 'outgoing', 'incoming', 'collections', 'collection',
     'unpaid', 'update', 'upcoming', 'us', 'visit', 'visited', 'visits', 'came', 'serviced', 'want', 'was', 'water', 'week', 'were',
+    'active',
     'what', 'when', 'which', 'who', 'will', 'with', 'work', 'year', 'yesterday', 'you', 'your',
     // Sentence glue around a name ("customer having shety") must never be
     // searched itself: short words like "had" substring-match real surnames.
@@ -359,7 +360,7 @@ function extractQueryHints(message) {
     nameHint: filteredNameTokens[0] || null,
     lookupTerms: lookupTerms.slice(0, 3),
     placeHint,
-    requireAmc: Boolean(placeHint && messageWantsAmcCustomers(text)),
+    requireAmc: messageWantsAmcCustomers(text),
   };
 }
 
@@ -990,7 +991,7 @@ async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
       .select(CUSTOMER_COLS)
       .or(orParts.join(','))
       .order('created_at', { ascending: false })
-      .limit(CUSTOMER_LIMIT);
+      .limit(hints.requireAmc ? 40 : CUSTOMER_LIMIT);
     if (error) {
       console.warn('[ai-crm-lookup] customer search failed', error.message);
       continue;
@@ -1058,6 +1059,12 @@ async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
     }
   }
 
+  if (hints.requireAmc && out.length) {
+    const withAmc = await filterCustomersWithActiveAmc(db, out);
+    out.length = 0;
+    out.push(...withAmc);
+  }
+
   return out;
 }
 
@@ -1082,8 +1089,12 @@ async function searchCustomersByPlace(db, place, { requireAmc = false } = {}) {
   }
   const rows = (data || []).map(slimCustomer).filter(Boolean);
   if (!requireAmc || !rows.length) return rows.slice(0, CUSTOMER_LIMIT);
+  return filterCustomersWithActiveAmc(db, rows);
+}
 
-  const ids = rows.map((row) => row.id);
+async function filterCustomersWithActiveAmc(db, rows) {
+  const ids = rows.map((row) => row.id).filter(Boolean);
+  if (!ids.length) return [];
   const todayKey = istDateKey();
   const { data: amcs, error: amcError } = await db
     .from('amc_contracts')
@@ -1091,21 +1102,20 @@ async function searchCustomersByPlace(db, place, { requireAmc = false } = {}) {
     .in('customer_id', ids)
     .eq('status', 'ACTIVE');
   if (amcError) {
-    console.warn('[ai-crm-lookup] place AMC filter failed', amcError.message);
+    console.warn('[ai-crm-lookup] AMC filter failed', amcError.message);
     return rows.slice(0, CUSTOMER_LIMIT);
   }
-  const active = new Set();
   const untilByCustomer = new Map();
   for (const row of amcs || []) {
     const id = row.customer_id ? String(row.customer_id) : '';
     if (!id) continue;
     const end = row.end_date ? String(row.end_date).slice(0, 10) : '';
     if (end && end < todayKey) continue;
-    active.add(id);
-    if (end) untilByCustomer.set(id, end);
+    const prev = untilByCustomer.get(id);
+    if (!prev || (end && end > prev)) untilByCustomer.set(id, end || prev || null);
   }
   return rows
-    .filter((row) => active.has(row.id))
+    .filter((row) => untilByCustomer.has(row.id))
     .map((row) => ({
       ...row,
       amcEndDate: untilByCustomer.get(row.id) || null,
@@ -2344,7 +2354,13 @@ function formatStatsAnswerForTools(pack, tools) {
     if (pack.documents?.length) {
       rows.push('Contracts');
       for (const doc of pack.documents.slice(0, 6)) {
-        rows.push(`  · ${doc.customerName || '—'} · ends ${doc.endDate || doc.expiryDate || '—'}`);
+        rows.push(
+          `  · ${
+            doc.customerName ||
+            pack.customers?.find((c) => c.id === doc.customerId)?.name ||
+            '—'
+          } · ends ${doc.endDate || doc.expiryDate || '—'}`
+        );
       }
     }
     sections.push(formatStatsSection('AMC', rows));
@@ -2414,7 +2430,12 @@ function formatStatsAnswerForTools(pack, tools) {
       sections.push(formatStatsSection(heading, rows));
 
       // When a specific customer is found, show their jobs including follow-up details
-      if (pack.jobs?.length && !selected.includes('job_search') && !selected.includes('jobs_overview')) {
+      if (
+        pack.jobs?.length &&
+        !pack.hints?.requireAmc &&
+        !selected.includes('job_search') &&
+        !selected.includes('jobs_overview')
+      ) {
         const jobRows = pack.jobs.slice(0, 8).map((job) => formatSaleJobLine(job, pack.customers));
         sections.push(formatStatsSection('Jobs', jobRows));
       }
@@ -3240,6 +3261,9 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
   if (hints.placeHint && detected.scopes.has('amc')) {
     detected.scopes.delete('amc');
   }
+  if (hints.requireAmc) {
+    detected.scopes.delete('amc');
+  }
   // A request naming a person or job is about them, not a whole-day sweep.
   const hasSpecificTarget = hasSearchableTarget(hints, focusCustomerId) || Boolean(saleLookup);
   // Aggregates answer "how much / how many overall" and stay correct even when a
@@ -3290,7 +3314,7 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
 
   const customers = await searchCustomers(db, hints, focusCustomerId);
   const customerIds = customers.map((c) => c.id);
-  let jobs = await searchJobs(db, hints, customerIds);
+  let jobs = hints.requireAmc ? [] : await searchJobs(db, hints, customerIds);
   if (saleLookup) {
     const saleJobs = await searchJobsBySale(db, saleLookup);
     const seen = new Set();
@@ -4153,6 +4177,7 @@ module.exports = {
   normalizeCrmQueryText,
   extractQueryHints,
   extractPlaceHint,
+  messageWantsAmcCustomers,
   hasSearchableTarget,
   hasConcreteCustomerLookupTarget,
   extractQuickPaymentAmount,

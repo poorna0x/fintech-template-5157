@@ -13,6 +13,7 @@ const {
   isQuickPaymentQrGenerationRequest,
   detectOverviewIntent,
   detectTechnicianFieldStats,
+  messageWantsAmcCustomers,
 } = require('./ai-crm-lookup');
 
 const SEARCH_ONLY_TOOLS = new Set(['customer_search', 'job_search']);
@@ -267,7 +268,7 @@ function looksLikeCrmQuestion(text) {
 
 function looksLikeSaleLookup(text, lower) {
   const hasAmount = /\b(?:₹|rs\.?|inr)?\s*\d{1,2}(?:,\d{2}){2,}\b|\b\d{4,6}\b|\b\d+(?:\.\d+)?\s*k\b/i.test(text);
-  const hasProduct = /\b(?:softeners?|\bro\b|installation|filter|amc)\b/.test(lower);
+  const hasProduct = /\b(?:softeners?|\bro\b|installation|filter)\b/.test(lower);
   const hasSale =
     /\b(?:sold|sale|billed|charged|invoiced|which customer|whose|who (?:bought|purchased|took))\b/.test(lower);
   return hasSale && (hasAmount || hasProduct);
@@ -483,6 +484,22 @@ function inferDeterministicPlan(message, history = []) {
     .filter((turn) => turn?.role === 'user' && turn.text)
     .map((turn) => String(turn.text));
   const lastUserMessage = userTurns[userTurns.length - 1];
+  const lastHints = lastUserMessage ? extractQueryHints(lastUserMessage) : null;
+  const amcFilterFollowUp =
+    messageWantsAmcCustomers(text) &&
+    !directHints.nameTokens.length &&
+    !directHints.placeHint &&
+    lastUserMessage &&
+    (lastHints.nameTokens.length > 0 || Boolean(lastHints.placeHint) || Boolean(lastHints.phone));
+  if (amcFilterFollowUp) {
+    return {
+      route: 'crm',
+      tools: ['customer_search'],
+      rewrittenQuery: `${lastUserMessage} ${text}`,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
   // A follow-up chain ("how many completed today" -> "i meant ongoing" -> "which
   // technician is on those") loses the subject unless earlier turns are merged
   // back in, so widen the window until the merged text routes on its own.
@@ -820,6 +837,15 @@ function inferDeterministicPlan(message, history = []) {
 
   const areaHints = extractQueryHints(text);
   if (areaHints.placeHint) {
+    return {
+      route: 'crm',
+      tools: ['customer_search'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+  if (areaHints.requireAmc && (areaHints.nameTokens.length || areaHints.phone)) {
     return {
       route: 'crm',
       tools: ['customer_search'],

@@ -942,6 +942,20 @@ function testAreaAndAmcCustomerSearch() {
   assert.equal(hasSearchableTarget(hints, null), true);
   assert.deepEqual(inferDeterministicPlan(q).tools, ['customer_search']);
   assert.equal(extractQueryHints('not today in entire all time').placeHint, null);
+
+  const sunil = 'which customer has active amc with name sunil';
+  const sunilHints = extractQueryHints(sunil);
+  assert.equal(sunilHints.requireAmc, true);
+  assert.ok(sunilHints.nameTokens.some((t) => t.toLowerCase() === 'sunil'));
+  assert.ok(!sunilHints.nameTokens.some((t) => t.toLowerCase() === 'active'));
+  assert.deepEqual(inferDeterministicPlan(sunil).tools, ['customer_search']);
+
+  const follow = inferDeterministicPlan('list me one who has amc', [
+    { role: 'user', text: sunil },
+  ]);
+  assert.deepEqual(follow.tools, ['customer_search']);
+  assert.match(follow.rewrittenQuery, /sunil/i);
+  assert.deepEqual(inferDeterministicPlan('AMC expiring this month').tools, ['amc']);
 }
 
 function testNameSurvivesActionSentences() {
