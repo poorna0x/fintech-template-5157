@@ -6850,40 +6850,54 @@ const AdminDashboard = () => {
         {/* Customers with Jobs */}
         <div className="mb-6 pb-2 sm:pb-0">
           {!searchTerm.trim() && (
-          <div className={`flex items-center justify-between flex-wrap gap-2 ${statusFilter === 'ONGOING' ? 'mb-3 sm:mb-1' : 'mb-1'}`}>
+          <div className={`flex gap-2 ${
+            statusFilter === 'RESCHEDULED'
+              ? 'flex-col sm:flex-row sm:items-center sm:justify-between mb-1'
+              : `items-center justify-between flex-wrap ${statusFilter === 'ONGOING' ? 'mb-3 sm:mb-1' : 'mb-1'}`
+          }`}>
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">
               {statusFilter === 'ALL' ? 'All Customers' :
                statusFilter === 'ONGOING' ? 'Customers with Ongoing Jobs' : 
-               statusFilter === 'RESCHEDULED' ? 'Customers with Follow-up Jobs' :
+               statusFilter === 'RESCHEDULED' ? (
+                 <>
+                   <span className="sm:hidden">Follow-up</span>
+                   <span className="hidden sm:inline">Customers with Follow-up Jobs</span>
+                 </>
+               ) :
                statusFilter === 'CANCELLED' ? 'Customers with Denied Jobs' :
                statusFilter === 'COMPLETED' ? 'Customers with Completed Jobs' :
                `Customers with ${statusFilter} Jobs`}
             </h2>
 
             {statusFilter === 'RESCHEDULED' && (
-              <div className="flex items-center gap-2 ml-auto">
-                <Label
-                  htmlFor="followup-show-amc"
-                  className="text-xs sm:text-sm text-gray-600 cursor-pointer whitespace-nowrap"
-                >
-                  Show AMC
-                </Label>
-                <Switch
-                  id="followup-show-amc"
-                  checked={!followUpDisplaySettings.hideAmcFollowUps}
-                  onCheckedChange={(showAmc) => {
-                    const next = {
-                      ...followUpDisplaySettings,
-                      hideAmcFollowUps: !showAmc,
-                      // Keep the Followup stats card in sync with the list.
-                      countOnlyNonAmcFollowUps: !showAmc,
-                    };
-                    setFollowUpDisplaySettings(next);
-                    saveFollowUpDisplaySettings(next);
-                  }}
-                  aria-label="Show AMC follow-ups"
-                  className="border border-gray-300 data-[state=unchecked]:bg-gray-200"
-                />
+              <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                <p className="text-xs text-gray-500 sm:hidden">
+                  {displayedCustomers.length} customer{displayedCustomers.length === 1 ? '' : 's'}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Label
+                    htmlFor="followup-show-amc"
+                    className="text-xs sm:text-sm text-gray-600 cursor-pointer whitespace-nowrap"
+                  >
+                    Show AMC
+                  </Label>
+                  <Switch
+                    id="followup-show-amc"
+                    checked={!followUpDisplaySettings.hideAmcFollowUps}
+                    onCheckedChange={(showAmc) => {
+                      const next = {
+                        ...followUpDisplaySettings,
+                        hideAmcFollowUps: !showAmc,
+                        // Keep the Followup stats card in sync with the list.
+                        countOnlyNonAmcFollowUps: !showAmc,
+                      };
+                      setFollowUpDisplaySettings(next);
+                      saveFollowUpDisplaySettings(next);
+                    }}
+                    aria-label="Show AMC follow-ups"
+                    className="border border-gray-300 data-[state=unchecked]:bg-gray-200"
+                  />
+                </div>
               </div>
             )}
 
@@ -6915,13 +6929,13 @@ const AdminDashboard = () => {
           </div>
           )}
           {!searchTerm.trim() && (
-            <p className={`text-xs text-gray-500 mb-3 ${statusFilter === 'ONGOING' ? 'hidden sm:block' : ''}`}>
+            <p className={`text-xs text-gray-500 mb-3 ${statusFilter === 'ONGOING' || statusFilter === 'RESCHEDULED' ? 'hidden sm:block' : ''}`}>
               {statusFilter === 'ALL'
                 ? `Showing all ${displayedCustomers.length} customers (including those with no jobs)`
                 : statusFilter === 'ONGOING' 
                 ? `Showing ${displayedCustomers.length} customers with ongoing jobs (pending, assigned, in-progress)`                                           
                 : statusFilter === 'RESCHEDULED'
-                ? `Showing ${displayedCustomers.length} customers with follow-up jobs`                                                                          
+                ? `Showing ${displayedCustomers.length} customer${displayedCustomers.length === 1 ? '' : 's'} with follow-up jobs`                                                                          
                 : statusFilter === 'CANCELLED'
                 ? (() => {
                     const pageInfo = totalPages > 1 ? ` (page ${currentPage}/${totalPages}, ${totalCount} total jobs)` : '';
