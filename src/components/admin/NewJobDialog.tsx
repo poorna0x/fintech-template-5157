@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import { FollowUpCreateSection } from '@/components/admin/FollowUpCreateSection';
 import type { FollowUpScheduleValue } from '@/components/admin/FollowUpScheduleFields';
-import { MapPin, Upload } from 'lucide-react';
+import { MapPin, Upload, ChevronDown } from 'lucide-react';
 import { Customer } from '@/types';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
@@ -125,6 +125,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   const pendingPhotoBatchesRef = useRef<{ startIndex: number; promise: Promise<string[]> }[]>([]);
   const [scheduleAsFollowUp, setScheduleAsFollowUp] = useState(false);
   const [followUpSchedule, setFollowUpSchedule] = useState<FollowUpScheduleValue>(emptyFollowUpSchedule);
+  const [leadCostExpanded, setLeadCostExpanded] = useState(false);
 
   const [newJobFormData, setNewJobFormData] = useState<NewJobFormData>({
     service_type: 'RO',
@@ -150,7 +151,10 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   });
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setLeadCostExpanded(false);
+      return;
+    }
     const asFollowUp = !technicianMode && initialScheduleFollowUp;
     setScheduleAsFollowUp(asFollowUp);
     const schedule = emptyFollowUpSchedule();
@@ -1080,27 +1084,42 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                 onCustomChange={(v) => handleFormChange('lead_source_custom', v)}
               />
 
-              {/* Lead Cost - Required when lead source is selected (hidden for technicians; server applies the default) */}
+              {/* Lead Cost — masked like Add Customer; technicians never see it */}
               {!technicianMode && newJobFormData.lead_source && (
                 <div className="space-y-2">
                   <Label htmlFor="job_lead_cost">Lead Cost (₹) *</Label>
-                  <Input
-                    id="job_lead_cost"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={newJobFormData.lead_cost}
-                    onChange={(e) => handleFormChange('lead_cost', e.target.value)}
-                    placeholder="Enter lead cost"
-                    required
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Default: ₹{getDefaultLeadCost(
-                      newJobFormData.lead_source,
-                      newJobFormData.service_sub_type,
-                      newJobFormData.service_sub_type_custom,
-                    )} (can be changed)
-                  </p>
+                  {leadCostExpanded ? (
+                    <div className="relative">
+                      <Input
+                        id="job_lead_cost"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={newJobFormData.lead_cost}
+                        onChange={(e) => handleFormChange('lead_cost', e.target.value)}
+                        placeholder="Enter lead cost"
+                        className="pr-10 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setLeadCostExpanded(false)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        aria-label="Hide lead cost"
+                      >
+                        <ChevronDown className="h-4 w-4 rotate-180" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setLeadCostExpanded(true)}
+                      className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background hover:bg-accent/50"
+                    >
+                      <span className="font-mono text-sm text-muted-foreground tracking-widest">••••</span>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  )}
                 </div>
               )}
 
