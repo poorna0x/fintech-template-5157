@@ -773,7 +773,7 @@ function inferDeterministicPlan(message, history = []) {
   // Location / nearby customer search — must come BEFORE field stats so "within X km" doesn't misroute
   if (
     /[/@]-?\d{1,3}\.\d+,-?\d{1,3}\.\d+/.test(text) ||
-    (/\b(?:nearby|near|closest|close to|within|around|radius)\b/i.test(lower) &&
+    (/\b(?:nearby|near|closest|close to|within|around|surrounding|radius)\b/i.test(lower) &&
       /-?\d{2,3}\.\d{4,}/.test(text))
   ) {
     return {

@@ -2257,19 +2257,23 @@ function formatStatsAnswerForTools(pack, tools) {
   if (selected.includes('location_search') && stats.nearbySearch) {
     const ns = stats.nearbySearch;
     if (ns.customers?.length) {
-      const rows = ns.customers.map(
-        (c) =>
+      const rows = ns.customers.map((c) => {
+        const dist = formatDistanceLabel(c.distanceKm);
+        return (
           `· ${c.name || '—'} · ${c.customerCode || '—'} · ${c.phone || '—'}` +
-          (c.distanceKm ? ` · ${c.distanceKm} km away` : '')
-      );
+          (dist ? ` · ${dist} away` : '')
+        );
+      });
       sections.push(
         formatStatsSection(
-          `Customers nearby (within ${ns.radiusKm} km · ${ns.lat.toFixed(4)}, ${ns.lng.toFixed(4)})`,
+          `Customers nearby (within ${formatRadiusLabel(ns.radiusKm)} · ${ns.lat.toFixed(4)}, ${ns.lng.toFixed(4)})`,
           rows
         )
       );
     } else {
-      sections.push(`Customers nearby\n  No customers found within ${ns.radiusKm || 5} km of that location.`);
+      sections.push(
+        `Customers nearby\n  No customers found within ${formatRadiusLabel(ns.radiusKm || 5)} of that location.`
+      );
     }
   }
 
@@ -3661,10 +3665,37 @@ function extractLocationFromMessage(message) {
 }
 
 function extractRadiusKm(message) {
-  // "within 3 km", "5 km radius", "nearby" (default 5km)
-  const m = message.match(/(\d+(?:\.\d+)?)\s*(?:km|kilometer|kilometre)/i);
-  if (m) return Math.min(parseFloat(m[1]), 50);
-  return 5; // default 5km
+  const text = String(message || '');
+  // Metres first so "50m" / "50 meters" / "50 metre surrounding" is not treated as 5 km.
+  const metres = text.match(/(\d+(?:\.\d+)?)\s*(?:m|meters?|metres?)\b/i);
+  if (metres && !/\bkm\b|\bkilomet/i.test(metres[0])) {
+    const km = parseFloat(metres[1]) / 1000;
+    if (Number.isFinite(km) && km > 0) return Math.min(km, 50);
+  }
+  const kmMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:km|kilometers?|kilometres?)\b/i);
+  if (kmMatch) return Math.min(parseFloat(kmMatch[1]), 50);
+  return 5;
+}
+
+function formatRadiusLabel(radiusKm) {
+  const km = Number(radiusKm);
+  if (!Number.isFinite(km) || km <= 0) return '5 km';
+  if (km < 1) {
+    const metres = Math.round(km * 1000);
+    return metres === 1 ? '1 m' : `${metres} m`;
+  }
+  const rounded = km >= 10 ? Math.round(km) : Number(km.toFixed(1));
+  return `${rounded} km`;
+}
+
+function formatDistanceLabel(distanceKm) {
+  const km = Number(distanceKm);
+  if (!Number.isFinite(km)) return '';
+  if (km < 1) {
+    const metres = Math.round(km * 1000);
+    return metres < 1 ? '< 1 m' : `${metres} m`;
+  }
+  return `${km.toFixed(2)} km`;
 }
 
 /**
@@ -3691,7 +3722,12 @@ async function findNearbyCustomers(db, lat, lng, radiusKm = 5) {
       serviceType: row.service_type,
       latitude: row.latitude,
       longitude: row.longitude,
-      distanceKm: typeof row.distance_km === 'number' ? row.distance_km.toFixed(2) : null,
+      distanceKm:
+        typeof row.distance_km === 'number'
+          ? row.distance_km
+          : Number.isFinite(Number(row.distance_km))
+            ? Number(row.distance_km)
+            : null,
     }));
   } catch (e) {
     console.warn('[ai-crm-lookup] ai_customers_nearby exception:', e.message);
@@ -3705,7 +3741,7 @@ function detectLocationSearch(message) {
   const lower = message.toLowerCase();
   const hasLocation = extractLocationFromMessage(message) !== null;
   const hasNearbyIntent =
-    /\b(?:nearby|near|closest|close to|around|within|radius|location|map|maps\.google|google\.com\/maps)\b/i.test(
+    /\b(?:nearby|near|closest|close to|around|within|surrounding|radius|location|map|maps\.google|google\.com\/maps)\b/i.test(
       message
     );
   return hasLocation && hasNearbyIntent;
@@ -3752,6 +3788,9 @@ module.exports = {
   formatSqlRows,
   // Location search
   extractLocationFromMessage,
+  extractRadiusKm,
+  formatRadiusLabel,
+  formatDistanceLabel,
   detectLocationSearch,
   findNearbyCustomers,
 };
