@@ -265,6 +265,14 @@ function looksLikeCrmQuestion(text) {
   );
 }
 
+function looksLikeSaleLookup(text, lower) {
+  const hasAmount = /\b(?:₹|rs\.?|inr)?\s*\d{1,2}(?:,\d{2}){2,}\b|\b\d{4,6}\b|\b\d+(?:\.\d+)?\s*k\b/i.test(text);
+  const hasProduct = /\b(?:softeners?|\bro\b|installation|filter|amc)\b/.test(lower);
+  const hasSale =
+    /\b(?:sold|sale|billed|charged|invoiced|which customer|whose|who (?:bought|purchased|took))\b/.test(lower);
+  return hasSale && (hasAmount || hasProduct);
+}
+
 function looksLikeSqlAnalyticsQuestion(lower) {
   const text = String(lower || '');
   if (
@@ -794,6 +802,16 @@ function inferDeterministicPlan(message, history = []) {
     return {
       route: 'crm',
       tools: ['reminders', 'payments'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
+  if (looksLikeSaleLookup(text, lower)) {
+    return {
+      route: 'crm',
+      tools: ['job_search', 'customer_search'],
       rewrittenQuery: text,
       directAnswer: '',
       strategy: 'deterministic',

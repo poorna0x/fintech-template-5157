@@ -173,6 +173,8 @@ const NAME_STOP_WORDS = new Set(
     'repeat', 'quietest', 'peak', 'bookings', 'breakdown', 'distribution', 'surrounding',
     'nearby', 'radius', 'meter', 'meters', 'metre', 'metres', 'vs', 'versus', 'yearly', 'night',
     'shortest', 'longest', 'fastest', 'slowest', 'busiest', 'start',
+    'sold', 'sale', 'around', 'approx', 'approximately', 'about', 'near',
+    'softener', 'installation',
     'the', 'their', 'them', 'these', 'this', 'time', 'today', 'tomorrow', 'total', 'turnover',
     'ticket', 'tickets', 'calls', 'call', 'outgoing', 'incoming', 'collections', 'collection',
     'unpaid', 'update', 'upcoming', 'us', 'visit', 'visited', 'visits', 'came', 'serviced', 'want', 'was', 'water', 'week', 'were',
@@ -985,6 +987,62 @@ async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
   }
 
   return out;
+}
+
+function extractSaleLookup(message) {
+  const text = String(message || '');
+  const lower = text.toLowerCase();
+  let amount = null;
+  const amountMatch =
+    text.match(/\b(?:around|approx(?:imately)?|about|near|of|for)?\s*(?:₹|rs\.?|inr)?\s*(\d{1,3}(?:,\d{2,3})+|\d{4,6})(?:\s*(?:rs\.?|inr|k))?\b/i) ||
+    text.match(/\b(\d+(?:\.\d+)?)\s*k\b/i);
+  if (amountMatch) {
+    let raw = amountMatch[1].replace(/,/g, '');
+    amount = Number(raw);
+    if (/\bk\b/i.test(amountMatch[0]) && amount < 1000) amount *= 1000;
+  }
+  if (!Number.isFinite(amount) || amount < 500) amount = null;
+
+  let serviceNeedle = null;
+  if (/\bsofteners?\b/.test(lower)) serviceNeedle = 'soft';
+  else if (/\b(?:\bro\b|reverse osmosis)\b/.test(lower)) serviceNeedle = 'ro';
+  else if (/\binstall/.test(lower)) serviceNeedle = 'install';
+
+  const asksWhichCustomer =
+    /\b(?:which|whose|who(?:'s| is)?|find|sold|sale|billed|charged|invoiced)\b/.test(lower) &&
+    (amount != null || serviceNeedle);
+  if (!asksWhichCustomer) return null;
+  return { amount, serviceNeedle };
+}
+
+async function searchJobsBySale(db, sale) {
+  if (!sale || (!sale.amount && !sale.serviceNeedle)) return [];
+  let q = db.from('jobs').select(JOB_COLS).order('created_at', { ascending: false }).limit(40);
+  if (sale.serviceNeedle === 'soft') {
+    q = q.or('service_type.ilike.%soft%,service_sub_type.ilike.%soft%');
+  } else if (sale.serviceNeedle === 'ro') {
+    q = q.or('service_type.ilike.%ro%,service_sub_type.ilike.%ro%');
+  } else if (sale.serviceNeedle === 'install') {
+    q = q.ilike('service_sub_type', '%install%');
+  }
+  const { data, error } = await q;
+  if (error) {
+    console.warn('[ai-crm-lookup] sale job search failed', error.message);
+    return [];
+  }
+  let rows = (data || []).map(slimJob).filter(Boolean);
+  if (sale.amount) {
+    const slack = Math.max(sale.amount * 0.15, 2000);
+    rows = rows
+      .map((job) => {
+        const value = Number(job.paymentAmount || job.actualCost || 0);
+        return { job, value, delta: Math.abs(value - sale.amount) };
+      })
+      .filter((row) => row.value > 0 && row.delta <= slack)
+      .sort((a, b) => a.delta - b.delta)
+      .map((row) => row.job);
+  }
+  return rows.slice(0, 8);
 }
 
 async function searchJobs(db, hints, customerIds) {
@@ -1966,6 +2024,17 @@ function formatJobStatusLabel(status) {
   );
 }
 
+function formatSaleJobLine(job, customers) {
+  const customer = (customers || []).find((c) => c.id === job.customerId);
+  const date = String(job.scheduledDate || job.completedAt || '').slice(0, 10) || '—';
+  const amount = job.paymentAmount || job.actualCost;
+  let line = `· ${customer?.name || '—'} · ${customer?.customerCode || '—'} · ${job.jobNumber || '—'}`;
+  line += ` · ${String(job.serviceType || '—')}${job.serviceSubType ? ` ${job.serviceSubType}` : ''}`;
+  line += ` · ${String(job.status || '—').replace(/_/g, ' ')} · ${date}`;
+  if (amount) line += ` · ${formatInr(amount)}`;
+  return line;
+}
+
 /** Structured multi-section text for live ops (not one paragraph). */
 function formatLiveOpsAnswer(liveOps) {
   if (!liveOps) return 'No live operations data available.';
@@ -2210,40 +2279,18 @@ function formatStatsAnswerForTools(pack, tools) {
       sections.push(formatStatsSection('Customers', rows));
 
       // When a specific customer is found, show their jobs including follow-up details
-      if (pack.jobs?.length) {
-        const jobRows = pack.jobs.slice(0, 8).map((job) => {
-          let line = `· ${job.jobNumber || '—'} · ${String(job.status || '—').replace(/_/g, ' ')} · ${job.scheduledDate || '—'}`;
-          if (job.followUpDate) {
-            line += ` · Follow-up: ${job.followUpDate}`;
-            if (job.followUpTime) line += ` ${job.followUpTime}`;
-            if (job.followUpNotes) line += ` (${job.followUpNotes})`;
-            line += job.autoMoveToOngoing ? ' · auto-move ON' : ' · auto-move OFF';
-            if (job.followUpScheduledAt) {
-              const d = new Date(job.followUpScheduledAt);
-              if (!isNaN(d)) line += ` · scheduled ${d.toISOString().slice(0, 10)}`;
-            }
-          }
-          return line;
-        });
+      if (pack.jobs?.length && !selected.includes('job_search') && !selected.includes('jobs_overview')) {
+        const jobRows = pack.jobs.slice(0, 8).map((job) => formatSaleJobLine(job, pack.customers));
         sections.push(formatStatsSection('Jobs', jobRows));
       }
-    } else if (!selected.includes('customer_value_ranking')) {
+    } else if (!selected.includes('customer_value_ranking') && !pack.jobs?.length) {
       sections.push('Customers\n  No matches found.');
     }
   }
 
   if (selected.includes('job_search') || (selected.includes('jobs_overview') && pack.jobs?.length)) {
     if (pack.jobs?.length) {
-      const rows = pack.jobs.slice(0, 6).map((job) => {
-        let line = `· ${job.jobNumber || '—'} · ${String(job.status || '—').replace(/_/g, ' ')} · ${job.scheduledDate || '—'}`;
-        if (job.followUpDate) {
-          line += ` · Follow-up: ${job.followUpDate}`;
-          if (job.followUpTime) line += ` ${job.followUpTime}`;
-          if (job.followUpNotes) line += ` (${job.followUpNotes})`;
-          line += job.autoMoveToOngoing ? ' · auto-move ON' : ' · auto-move OFF';
-        }
-        return line;
-      });
+      const rows = pack.jobs.slice(0, 6).map((job) => formatSaleJobLine(job, pack.customers));
       sections.push(formatStatsSection('Jobs', rows));
     } else if (selected.includes('job_search')) {
       sections.push('Jobs\n  No matches found.');
@@ -3046,6 +3093,7 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
   }
 
   const hints = extractQueryHints(message);
+  const saleLookup = extractSaleLookup(message);
   const detected = detectOverviewIntent(message, todayKey);
   const plannedScopes = scopesForPlannerTools(plannerTools);
   if (Array.isArray(plannerTools) && plannerTools.length) {
@@ -3055,7 +3103,7 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
     detected.active = plannedScopes.size > 0;
   }
   // A request naming a person or job is about them, not a whole-day sweep.
-  const hasSpecificTarget = hasSearchableTarget(hints, focusCustomerId);
+  const hasSpecificTarget = hasSearchableTarget(hints, focusCustomerId) || Boolean(saleLookup);
   // Aggregates answer "how much / how many overall" and stay correct even when a
   // stray word ("revenue", "money") is mistaken for a name. Only the plain jobs
   // and customers lists are suppressed, because those would become a whole-day
@@ -3104,7 +3152,16 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
 
   const customers = await searchCustomers(db, hints, focusCustomerId);
   const customerIds = customers.map((c) => c.id);
-  const jobs = await searchJobs(db, hints, customerIds);
+  let jobs = await searchJobs(db, hints, customerIds);
+  if (saleLookup) {
+    const saleJobs = await searchJobsBySale(db, saleLookup);
+    const seen = new Set();
+    jobs = [...saleJobs, ...jobs].filter((job) => {
+      if (seen.has(job.id)) return false;
+      seen.add(job.id);
+      return true;
+    }).slice(0, JOB_LIMIT);
+  }
 
   // If job search found customers we didn't already have, pull them in (thin).
   const missingCustomerIds = [
@@ -3119,6 +3176,10 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
     for (const row of data || []) {
       const slim = slimCustomer(row);
       if (slim && !customers.find((c) => c.id === slim.id)) customers.push(slim);
+    }
+    if (saleLookup && jobs.length) {
+      const order = new Map(jobs.map((job, index) => [job.customerId, index]));
+      customers.sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
     }
   }
 
@@ -3986,6 +4047,7 @@ module.exports = {
   // Location search
   extractLocationFromMessage,
   extractRadiusKm,
+  extractSaleLookup,
   formatRadiusLabel,
   formatDistanceLabel,
   detectLocationSearch,

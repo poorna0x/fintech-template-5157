@@ -38,6 +38,7 @@ const {
   formatStatsAnswerForTools,
   detectTechnicianExpenseRanking,
   extractRadiusKm,
+  extractSaleLookup,
   extractLocationFromMessage,
   formatRadiusLabel,
   formatDistanceLabel,
@@ -1272,6 +1273,13 @@ function testNearbyRadiusParsesMetres() {
   assert.deepEqual(inferDeterministicPlan('cancelled vs completed jobs').tools, ['sql_query']);
   assert.equal(inferDeterministicPlan('customers within 100m').route, 'conversation');
   assert.deepEqual(inferDeterministicPlan('how many jobs last year').tools, ['jobs_overview']);
+  const sale = extractSaleLookup('for which customer we sold the softener around 35000');
+  assert.equal(sale.amount, 35000);
+  assert.equal(sale.serviceNeedle, 'soft');
+  assert.deepEqual(
+    inferDeterministicPlan('for which customer we sold the softener around 35000').tools,
+    ['job_search', 'customer_search']
+  );
 }
 
 async function testMockCrmChat() {
