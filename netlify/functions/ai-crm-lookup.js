@@ -170,7 +170,7 @@ const NAME_STOP_WORDS = new Set(
     'worked', 'shift', 'field', 'hours', 'hour', 'long',
     'the', 'their', 'them', 'these', 'this', 'time', 'today', 'tomorrow', 'total', 'turnover',
     'ticket', 'tickets', 'calls', 'call', 'outgoing', 'incoming', 'collections', 'collection',
-    'unpaid', 'update', 'upcoming', 'us', 'visit', 'visits', 'want', 'was', 'water', 'week', 'were',
+    'unpaid', 'update', 'upcoming', 'us', 'visit', 'visited', 'visits', 'came', 'serviced', 'want', 'was', 'water', 'week', 'were',
     'what', 'when', 'which', 'who', 'will', 'with', 'work', 'year', 'yesterday', 'you', 'your',
     // Sentence glue around a name ("customer having shety") must never be
     // searched itself: short words like "had" substring-match real surnames.
@@ -630,7 +630,7 @@ function detectOverviewIntent(message, todayKey = istDateKey()) {
   }));
   // Named month only: "in july", "during march", "in july this year", "last july"
   addDateCandidate(
-    /\b(?:in|during|for|of)\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\blast\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/gi,
+    /\b(?:in|during|for|of|last\s+in)\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\blast\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/gi,
     (match) => {
       const monthNums = {
         jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
@@ -2195,6 +2195,25 @@ function formatStatsAnswerForTools(pack, tools) {
           `· ${customer.name || '—'} · ${customer.customerCode || '—'} · ${customer.phone || '—'}`
       );
       sections.push(formatStatsSection('Customers', rows));
+
+      // When a specific customer is found, show their jobs including follow-up details
+      if (pack.jobs?.length) {
+        const jobRows = pack.jobs.slice(0, 8).map((job) => {
+          let line = `· ${job.jobNumber || '—'} · ${String(job.status || '—').replace(/_/g, ' ')} · ${job.scheduledDate || '—'}`;
+          if (job.followUpDate) {
+            line += ` · Follow-up: ${job.followUpDate}`;
+            if (job.followUpTime) line += ` ${job.followUpTime}`;
+            if (job.followUpNotes) line += ` (${job.followUpNotes})`;
+            line += job.autoMoveToOngoing ? ' · auto-move ON' : ' · auto-move OFF';
+            if (job.followUpScheduledAt) {
+              const d = new Date(job.followUpScheduledAt);
+              if (!isNaN(d)) line += ` · scheduled ${d.toISOString().slice(0, 10)}`;
+            }
+          }
+          return line;
+        });
+        sections.push(formatStatsSection('Jobs', jobRows));
+      }
     } else if (!selected.includes('customer_value_ranking')) {
       sections.push('Customers\n  No matches found.');
     }
