@@ -1082,6 +1082,39 @@ function isGenericGeoLocality(name: string): boolean {
   return false;
 }
 
+/** Short CRM area tokens (HAL, BTM, …) must not match inside longer place names (e.g. Halanaykanahalli). */
+function areaRequiresWordBoundary(area: string): boolean {
+  const trimmed = area.trim();
+  if (trimmed.length <= 4) return true;
+  if (/^[A-Z0-9]{2,5}$/.test(trimmed)) return true;
+  return false;
+}
+
+function isWordBoundedTextMatch(text: string, start: number, len: number): boolean {
+  const before = start > 0 ? text[start - 1] : '';
+  const after = start + len < text.length ? text[start + len] : '';
+  return !/[a-z0-9]/i.test(before) && !/[a-z0-9]/i.test(after);
+}
+
+/** Last index of needle in haystack; optional whole-token boundary for abbreviations. */
+function lastIndexOfAreaMatch(haystack: string, needle: string, requireBoundary: boolean): number {
+  const lower = haystack.toLowerCase();
+  const n = needle.toLowerCase();
+  if (!n) return -1;
+
+  let last = -1;
+  let pos = 0;
+  while (pos <= lower.length) {
+    const found = lower.indexOf(n, pos);
+    if (found === -1) break;
+    if (!requireBoundary || isWordBoundedTextMatch(lower, found, n.length)) {
+      last = found;
+    }
+    pos = found + 1;
+  }
+  return last;
+}
+
 /** Longest bangaloreAreas name that appears in the full address text.
  * When several areas match (Google often lists a wrong nearby layout AND the real
  * locality), prefer the rightmost match among near-longest hits — Google's
@@ -1102,15 +1135,13 @@ export function findLongestAreaMatchInText(completeAddress: string): string | nu
     if (trimmed.length < 3) continue;
     const areaLower = trimmed.toLowerCase();
     const areaNorm = normalizeForComparison(trimmed);
+    const requireBoundary = areaRequiresWordBoundary(trimmed);
 
-    let lastIndex = -1;
-    if (haystack.includes(areaLower)) {
-      lastIndex = haystack.lastIndexOf(areaLower);
-    } else if (areaNorm.length >= 3 && hayNorm.includes(areaNorm)) {
+    let lastIndex = lastIndexOfAreaMatch(haystack, areaLower, requireBoundary);
+    if (lastIndex < 0 && !requireBoundary && areaNorm.length >= 5 && hayNorm.includes(areaNorm)) {
       lastIndex = hayNorm.lastIndexOf(areaNorm);
-    } else {
-      continue;
     }
+    if (lastIndex < 0) continue;
 
     hits.push({ name: trimmed, len: trimmed.length, lastIndex });
   }
@@ -1240,9 +1271,10 @@ export function resolveVisibleAddressFromGoogleOnly(options: {
 
 /**
  * Resolve short/visible location after Fetch Address:
- * 1) bangaloreAreas list (longest match in address text / hints / Google components)
- * 2) Place name from Plus Code formatted addresses (e.g. "3Q5F+23 Amanidoddakere, India")
- * 3) Google place components from the same reverse-geocode (no extra API call)
+ * 1) bangaloreAreas list (longest whole-word match in address / Google component text)
+ * 2) Plus Code place name (e.g. "3Q5F+23 Amanidoddakere, India")
+ * 3) Google reverse-geocode address_components — neighborhood / sublocality / locality
+ *    (same Maps API response; no extra call)
  */
 export function resolveVisibleAddressFromGeocode(options: {
   formattedAddress?: string | null;
@@ -1253,6 +1285,8 @@ export function resolveVisibleAddressFromGeocode(options: {
     ? joinGoogleComponentText(options.addressComponents)
     : '';
 
+  // Hints must be from THIS geocode (new formatted line), never the customer's
+  // previous street — that made Fetch Address keep the old Location (e.g. Koramangala).
   const texts = [
     options.formattedAddress,
     componentText,
@@ -1262,11 +1296,8 @@ export function resolveVisibleAddressFromGeocode(options: {
   for (const text of texts) {
     const longest = findLongestAreaMatchInText(text);
     if (longest) return clipVisibleAddress(longest);
-    const legacy = extractLocationFromAddressString(text);
-    if (legacy) return clipVisibleAddress(legacy);
   }
 
-  // Plus Code addresses often omit Hoskote/etc. and only name the village
   if (options.formattedAddress) {
     const plusPlace = extractPlaceFromPlusCodeAddress(options.formattedAddress);
     if (plusPlace) {
@@ -1276,7 +1307,20 @@ export function resolveVisibleAddressFromGeocode(options: {
     }
   }
 
-  return shortLocationFromGoogleComponents(options.addressComponents);
+  // No list match — use Google's place label from the same geocode (not our area DB).
+  return shortLocationFromGoogleComponents(options.addressComponents, { useAreaList: false });
+}
+
+/** Location field after Fetch Address: overwrite from Maps, or clear if Google gave a new line. */
+export function nextVisibleAddressFromMapsFetch(
+  extracted: string | null | undefined,
+  formattedAddress: string | null | undefined,
+  previous: string
+): string {
+  const next = String(extracted || '').trim();
+  if (next) return next;
+  if (String(formattedAddress || '').trim()) return '';
+  return String(previous || '');
 }
 
 export type ReverseGeocodeResult = {
@@ -1401,7 +1445,10 @@ export const extractLocationFromAddressString = (completeAddress: string): strin
         return partLower.length >= areaLower.length * 0.7;
       }
       if (partLower.includes(areaLower)) {
-        // Area must be at least 70% of the part
+        // Area must be at least 70% of the part; short abbrevs need a whole-token match
+        if (areaRequiresWordBoundary(area) && !isWordBoundedTextMatch(partLower, partLower.indexOf(areaLower), areaLower.length)) {
+          return false;
+        }
         return areaLower.length >= partLower.length * 0.7;
       }
       return false;

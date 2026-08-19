@@ -4,8 +4,8 @@
  */
 
 const OFFICE_KEY = 'office_location';
-const { istDayBounds, parseMs } = require('./tech-worked-hours-helper');
-const { drivingDistanceMetersAvoidTolls } = require('./google-avoid-tolls-distance');
+const { istDayBounds, parseMs, lastCompletedJobToday, jobCompletionMs } = require('./tech-worked-hours-helper');
+const { drivingDistanceMetersAvoidTolls, drivingRouteAvoidTolls } = require('./google-avoid-tolls-distance');
 
 function parseRequirements(raw) {
   if (Array.isArray(raw)) return raw.filter((r) => r && typeof r === 'object');
@@ -91,9 +91,29 @@ function getTravelReturnKm(job) {
   return km >= 0 ? km : null;
 }
 
+function getTravelReturnDurationSec(job) {
+  const reqs = parseRequirements(job?.requirements);
+  const row = reqs.find((r) => r && r.travel_leg);
+  const sec = Number(row?.travel_leg?.return_duration_sec);
+  return Number.isFinite(sec) && sec > 0 ? sec : null;
+}
+
+/** ~22 km/h mixed Bengaluru traffic when Maps duration is unavailable. */
+function estimateDriveSecFromKm(km) {
+  const n = Number(km);
+  if (!Number.isFinite(n) || n < 0.05) return null;
+  return (n / 22) * 3600;
+}
+
 function applyTravelLeg(requirements, km, fromLabel, extra) {
   const reqs = parseRequirements(requirements).filter((r) => !r.travel_leg);
   const returnKm = extra && extra.returnKm != null ? saneKm(extra.returnKm) : null;
+  const returnDurationSec =
+    extra && Number.isFinite(Number(extra.returnDurationSec)) && Number(extra.returnDurationSec) > 0
+      ? Math.round(Number(extra.returnDurationSec))
+      : returnKm != null
+        ? Math.round(estimateDriveSecFromKm(returnKm) || 0) || null
+        : null;
   reqs.push({
     travel_leg: {
       km: roundKm(km),
@@ -101,6 +121,7 @@ function applyTravelLeg(requirements, km, fromLabel, extra) {
       computed_at: new Date().toISOString(),
       avoid_tolls: true,
       ...(returnKm != null ? { return_km: roundKm(returnKm) } : {}),
+      ...(returnDurationSec ? { return_duration_sec: returnDurationSec } : {}),
     },
   });
   return reqs;
@@ -192,8 +213,8 @@ async function resolveLegContext(db, job, nowMs = Date.now()) {
   return { ok: true, dest, office, origin, fromLabel };
 }
 
-async function saveTravelLeg(db, job, km, fromLabel, returnKm) {
-  const nextReqs = applyTravelLeg(job.requirements, km, fromLabel, { returnKm });
+async function saveTravelLeg(db, job, km, fromLabel, extra = {}) {
+  const nextReqs = applyTravelLeg(job.requirements, km, fromLabel, extra);
   const { error: upErr } = await db.from('jobs').update({ requirements: nextReqs }).eq('id', job.id);
   if (upErr) {
     console.warn('[tech-travel] save leg failed', upErr.message);
@@ -222,11 +243,15 @@ async function computeAndStoreLegForJob(db, jobId, nowMs = Date.now()) {
   }
   const km = meters / 1000;
   let returnKm = null;
+  let returnDurationSec = null;
   if (ctx.office) {
-    const retMeters = await drivingDistanceMetersAvoidTolls(ctx.dest, ctx.office);
-    if (retMeters != null) returnKm = retMeters / 1000;
+    const retRoute = await drivingRouteAvoidTolls(ctx.dest, ctx.office, { traffic: false });
+    if (retRoute) {
+      returnKm = retRoute.meters / 1000;
+      returnDurationSec = retRoute.durationSec;
+    }
   }
-  return saveTravelLeg(db, job, km, ctx.fromLabel, returnKm);
+  return saveTravelLeg(db, job, km, ctx.fromLabel, { returnKm, returnDurationSec });
 }
 
 async function storeClientLegForJob(db, jobId, kmRaw, returnKmRaw, nowMs = Date.now()) {
@@ -239,7 +264,7 @@ async function storeClientLegForJob(db, jobId, kmRaw, returnKmRaw, nowMs = Date.
   const ctx = await resolveLegContext(db, job, nowMs);
   if (!ctx.ok) return ctx;
   const returnKm = returnKmRaw != null ? saneKm(returnKmRaw) : null;
-  return saveTravelLeg(db, job, km, ctx.fromLabel, returnKm);
+  return saveTravelLeg(db, job, km, ctx.fromLabel, { returnKm });
 }
 
 async function backfillMissingLegs(db, jobs, nowMs = Date.now()) {
@@ -251,12 +276,57 @@ async function backfillMissingLegs(db, jobs, nowMs = Date.now()) {
 }
 
 async function returnToOfficeKm(lastJob, office) {
+  const route = await returnToOfficeRoute(lastJob, office);
+  return route ? route.km : null;
+}
+
+async function returnToOfficeRoute(lastJob, office) {
   if (!office) return null;
   const origin = jobCoords(lastJob);
   if (!origin) return null;
-  const meters = await drivingDistanceMetersAvoidTolls(origin, office);
-  if (meters == null) return null;
-  return meters / 1000;
+  const route = await drivingRouteAvoidTolls(origin, office, { traffic: true });
+  if (!route) return null;
+  return {
+    km: route.meters / 1000,
+    durationSec: route.durationSec,
+  };
+}
+
+function lastCompletedJobPreferringCoords(jobs, nowMs) {
+  const { dayStartUtc, dayEndUtc } = istDayBounds(nowMs);
+  const withCoords = [];
+  for (const job of jobs || []) {
+    const complete = jobCompletionMs(job);
+    if (complete == null || complete < dayStartUtc || complete >= dayEndUtc) continue;
+    if (jobCoords(job)) withCoords.push({ job, complete });
+  }
+  if (withCoords.length) {
+    withCoords.sort((a, b) => b.complete - a.complete);
+    return withCoords[0].job;
+  }
+  return lastCompletedJobToday(jobs, nowMs);
+}
+
+/**
+ * Drive time from last completed job → office.
+ * Maps duration first, then stored return_duration_sec, then estimate from return km.
+ */
+async function resolveOfficeReturnDuration(jobs, office, nowMs, storedReturnKm) {
+  const last = lastCompletedJobPreferringCoords(jobs, nowMs);
+  let durationSec = null;
+  let returnKm = storedReturnKm != null ? storedReturnKm : last ? getTravelReturnKm(last) : null;
+  if (last && office) {
+    try {
+      const route = await returnToOfficeRoute(last, office);
+      if (route?.durationSec != null) durationSec = route.durationSec;
+      if (route?.km != null) returnKm = route.km;
+    } catch {
+      /* fall through */
+    }
+  }
+  if (durationSec == null && last) durationSec = getTravelReturnDurationSec(last);
+  if (durationSec == null) durationSec = estimateDriveSecFromKm(returnKm);
+  return durationSec;
 }
 
 async function totalTravelKmForTechnician(db, jobs, nowMs = Date.now()) {
@@ -294,6 +364,8 @@ module.exports = {
   parseOfficeValue,
   getTravelLegKm,
   getTravelReturnKm,
+  getTravelReturnDurationSec,
+  estimateDriveSecFromKm,
   applyTravelLeg,
   storeClientLegForJob,
   formatTravelKm,
@@ -302,5 +374,7 @@ module.exports = {
   getOfficeLocation,
   computeAndStoreLegForJob,
   returnToOfficeKm,
+  returnToOfficeRoute,
+  resolveOfficeReturnDuration,
   totalTravelKmForTechnician,
 };

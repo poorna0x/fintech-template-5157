@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dialog,
   DialogClose,
@@ -25,10 +25,13 @@ import {
   Sparkles,
   UserPlus,
   X,
+  Users,
+  Clock,
 } from 'lucide-react';
 import {
   requestAiCrmChat,
   type AiCrmChatResult,
+  type AiCrmLiveOpsSnapshot,
   type AiCrmCreateCustomerAndJobDraft,
   type AiCrmCreateJobDraft,
   type AiCrmCustomerDraft,
@@ -37,12 +40,21 @@ import {
   type AiCrmProposedAction,
   type AiCrmReminderDraft,
   type AiCrmAppTarget,
+  type AiCrmOpenAppPayload,
   type AiCrmOpenDocumentDraft,
   type AiCrmOpenJobDraft,
   type AiCrmOpenCustomerComposer,
+  type AiCrmSendPaymentQrPayload,
 } from '@/lib/aiCrmAssistant';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { useAutoGrowTextarea } from '@/lib/useAutoGrowTextarea';
+import { normalizeDocumentBrand } from '@/lib/service-brands';
+import {
+  loadUpiPaymentAccounts,
+  resolvePreferredUpiAccount,
+} from '@/lib/upiPaymentAccounts';
+import { sendPayQrWhatsApp } from '@/lib/whatsappPayQrShare';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { toast } from 'sonner';
 
 type ChatTurn = {
@@ -63,7 +75,7 @@ type AdminCrmAiDialogProps = {
   onConfirmCreateJob: (draft: AiCrmCreateJobDraft) => void;
   onConfirmFollowUp: (draft: AiCrmFollowUpDraft) => void;
   onConfirmReminder: (draft: AiCrmReminderDraft) => void;
-  onOpenApp: (target: AiCrmAppTarget) => void;
+  onOpenApp: (payload: AiCrmOpenAppPayload) => void;
   onOpenDocumentDraft: (draft: AiCrmOpenDocumentDraft) => void;
   onOpenJob: (draft: AiCrmOpenJobDraft) => void;
   onOpenCustomerComposer: (draft: AiCrmOpenCustomerComposer) => void;
@@ -74,9 +86,127 @@ function formatInr(amount: number | null | undefined) {
   return `₹${amount.toLocaleString('en-IN')}`;
 }
 
+function LiveOpsStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border bg-muted/40 px-2.5 py-2 text-center">
+      <p className="text-lg font-semibold leading-none">{value}</p>
+      <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function LiveOpsBrief({ snapshot }: { snapshot: AiCrmLiveOpsSnapshot }) {
+  const { byStatus } = snapshot;
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Field snapshot</p>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <LiveOpsStat label="Open jobs" value={snapshot.fieldIsClear ? 0 : snapshot.ongoingTotal} />
+        <LiveOpsStat label="Unassigned" value={snapshot.unassignedWaiting} />
+        <LiveOpsStat label="Follow-ups" value={snapshot.followUpTotal} />
+        <LiveOpsStat label="Done today" value={snapshot.completedToday} />
+      </div>
+
+      {!snapshot.fieldIsClear && (
+        <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+          {byStatus.pending > 0 ? (
+            <span className="rounded-full border px-2 py-0.5">Pending · {byStatus.pending}</span>
+          ) : null}
+          {byStatus.assigned > 0 ? (
+            <span className="rounded-full border px-2 py-0.5">Assigned · {byStatus.assigned}</span>
+          ) : null}
+          {byStatus.enRoute > 0 ? (
+            <span className="rounded-full border px-2 py-0.5">En route · {byStatus.enRoute}</span>
+          ) : null}
+          {byStatus.inProgress > 0 ? (
+            <span className="rounded-full border px-2 py-0.5">In progress · {byStatus.inProgress}</span>
+          ) : null}
+        </div>
+      )}
+
+      {snapshot.fieldIsClear ? (
+        <p className="text-sm text-muted-foreground">No open jobs right now.</p>
+      ) : null}
+
+      {snapshot.onField.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Briefcase className="h-3.5 w-3.5" />
+            On the field
+          </p>
+          <ul className="space-y-1">
+            {snapshot.onField.map((row) => (
+              <li
+                key={`${row.jobNumber}-${row.technicianName}`}
+                className="rounded-lg border bg-muted/20 px-2.5 py-2 text-xs"
+              >
+                <span className="font-medium">{row.technicianName}</span>
+                <span className="text-muted-foreground"> · {row.status}</span>
+                <span className="mt-0.5 block text-muted-foreground">
+                  {row.jobNumber} · {row.customerName}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {snapshot.techniciansIdle.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Users className="h-3.5 w-3.5" />
+            Idle
+          </p>
+          <ul className="flex flex-wrap gap-1.5">
+            {snapshot.techniciansIdle.map((name) => (
+              <li key={name} className="rounded-full border bg-muted/30 px-2.5 py-1 text-xs">
+                {name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {snapshot.waitingJobs.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Clock className="h-3.5 w-3.5" />
+            Waiting assignment
+          </p>
+          <ul className="space-y-1">
+            {snapshot.waitingJobs.map((row) => (
+              <li
+                key={row.jobNumber}
+                className="rounded-lg border border-amber-200 bg-amber-50/80 px-2.5 py-2 text-xs dark:border-amber-900/40 dark:bg-amber-950/30"
+              >
+                <span className="font-medium">{row.jobNumber}</span>
+                <span className="text-muted-foreground"> · {row.customerName}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function entityCount(result: Extract<AiCrmChatResult, { ok: true }> | undefined) {
   if (!result) return 0;
   return Object.values(result.entities).reduce((total, rows) => total + (Array.isArray(rows) ? rows.length : 0), 0);
+}
+
+function isTypingField(target: EventTarget | null) {
+  const el = target instanceof HTMLElement ? target : null;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (tag === 'INPUT') {
+    const type = (el as HTMLInputElement).type;
+    return type !== 'button' && type !== 'submit' && type !== 'checkbox' && type !== 'radio' && type !== 'file';
+  }
+  return el.isContentEditable;
 }
 
 export default function AdminCrmAiDialog({
@@ -109,6 +239,10 @@ export default function AdminCrmAiDialog({
     [open]
   );
 
+  const focusComposer = useCallback(() => {
+    inputRef.current?.focus({ preventScroll: true });
+  }, [inputRef]);
+
   useEffect(() => {
     if (!open) {
       setInput('');
@@ -122,12 +256,33 @@ export default function AdminCrmAiDialog({
       return;
     }
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    // Keep the composer ready for the next question once a reply lands. Skipped
-    // on touch-only devices so the on-screen keyboard does not cover the answer.
-    if (loading) return;
-    if (typeof window !== 'undefined' && !window.matchMedia('(pointer: fine)').matches) return;
-    inputRef.current?.focus({ preventScroll: true });
-  }, [open, turns, loading, inputRef]);
+    const id = window.setTimeout(focusComposer, 0);
+    return () => window.clearTimeout(id);
+  }, [open, turns, loading, focusComposer]);
+
+  const routeTypingToComposer = (event: React.KeyboardEvent) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (isTypingField(event.target)) return;
+    const key = event.key;
+    if (key === 'Escape' || key === 'Tab') return;
+    if (key === 'Enter') {
+      if (loading) return;
+      event.preventDefault();
+      focusComposer();
+      void send();
+      return;
+    }
+    if (key === 'Backspace') {
+      event.preventDefault();
+      setInput((prev) => prev.slice(0, -1));
+      focusComposer();
+      return;
+    }
+    if (key.length !== 1) return;
+    event.preventDefault();
+    setInput((prev) => (prev + key).slice(0, 1500));
+    focusComposer();
+  };
 
   const send = async () => {
     const message = input.trim();
@@ -141,6 +296,7 @@ export default function AdminCrmAiDialog({
     setTurns((prev) => [...prev, userTurn]);
     setInput('');
     setLoading(true);
+    requestAnimationFrame(focusComposer);
 
     const result = await requestAiCrmChat({
       message,
@@ -219,8 +375,53 @@ export default function AdminCrmAiDialog({
       return;
     }
     if (action.type === 'open_app') {
-      const target = (action.payload as { target?: AiCrmAppTarget }).target;
-      if (target) onOpenApp(target);
+      const payload = action.payload as AiCrmOpenAppPayload;
+      if (payload?.target) onOpenApp(payload);
+      return;
+    }
+    if (action.type === 'send_payment_qr') {
+      const payload = action.payload as AiCrmSendPaymentQrPayload;
+      setActionBusy(true);
+      try {
+        const accounts = loadUpiPaymentAccounts();
+        const account = resolvePreferredUpiAccount(accounts);
+        if (!account) {
+          toast.error('Add a UPI payment account in Settings first');
+          return;
+        }
+        const brand =
+          normalizeDocumentBrand(
+            typeof window !== 'undefined' ? localStorage.getItem('hro_quick_upi_brand') : null
+          ) || 'elevenro';
+        const result = await sendPayQrWhatsApp({
+          to: payload.phone,
+          amount: payload.amount,
+          brand,
+          upiId: account.upiId,
+          payeeName: account.payeeName || account.label,
+          paymentPhone: account.phone,
+          customerName: payload.customerName || 'there',
+          customerId: payload.customerId || null,
+          note: payload.customerName ? `Payment for ${payload.customerName}` : undefined,
+          jobRef: 'payment request',
+          watchPhotos: false,
+          source: 'pending_payment',
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Could not send payment QR');
+          return;
+        }
+        toast.success(
+          result.viaTemplate
+            ? 'Payment QR sent using the WhatsApp template'
+            : 'Payment QR sent on WhatsApp'
+        );
+      } catch (error) {
+        console.error('[CRM AI] payment QR send failed', error);
+        toast.error('Could not send payment QR on WhatsApp');
+      } finally {
+        setActionBusy(false);
+      }
       return;
     }
     if (action.type === 'open_document_draft') {
@@ -289,6 +490,11 @@ export default function AdminCrmAiDialog({
       <DialogContent
         hideCloseButton
         className="flex max-h-[92vh] w-[min(96vw,720px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          requestAnimationFrame(focusComposer);
+        }}
+        onKeyDown={routeTypingToComposer}
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes('Files')) event.preventDefault();
         }}
@@ -321,8 +527,11 @@ export default function AdminCrmAiDialog({
               <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted">
                 <Sparkles className="h-5 w-5 text-muted-foreground" />
               </span>
-              <p className="mt-3 text-sm font-medium">How can I help?</p>
-              <p className="mt-1 text-xs text-muted-foreground">Ask in your own words.</p>
+              <p className="mt-3 text-sm font-medium">Ask anything about your CRM</p>
+              <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+                Ask anything in plain English — jobs, payments, customers, stats, actions, or screens.
+                No SQL needed; safe read-only lookups answer like a live report.
+              </p>
             </div>
           )}
 
@@ -341,7 +550,11 @@ export default function AdminCrmAiDialog({
                 <p className="text-red-700">{turn.error}</p>
               ) : (
                 <div className="space-y-3">
-                  <p className="whitespace-pre-wrap">{turn.text}</p>
+                  {turn.result?.meta?.liveOpsSnapshot ? (
+                    <LiveOpsBrief snapshot={turn.result.meta.liveOpsSnapshot} />
+                  ) : (
+                    <p className="whitespace-pre-wrap">{turn.text}</p>
+                  )}
 
                   {turn.result?.warnings?.length ? (
                     <ul className="list-disc space-y-0.5 pl-4 text-xs text-amber-700">
@@ -508,9 +721,14 @@ export default function AdminCrmAiDialog({
                           <div className="text-xs">
                             <p className="font-medium">{action.label || action.type}</p>
                             <p className="text-muted-foreground">
-                              {action.type === 'open_app'
-                                ? 'Opens this CRM screen — no setting changes automatically.'
-                                : action.type === 'open_document_draft'
+                              {action.type === 'send_payment_qr'
+                                ? 'Sends the payment QR on WhatsApp — review the amount and number before confirming.'
+                                : action.type === 'open_app' &&
+                              (action.payload as AiCrmOpenAppPayload).target === 'quick_upi_qr'
+                                ? 'Opens Quick payment QR with this customer and amount prefilled — download or WhatsApp from there.'
+                                : action.type === 'open_app'
+                                  ? 'Opens this CRM screen — no setting changes automatically.'
+                                  : action.type === 'open_document_draft'
                                   ? 'Opens the customer document with its AI context — review before generating.'
                                   : action.type === 'open_customer_composer'
                                     ? 'Opens a customer composer — review before sending.'
@@ -539,6 +757,8 @@ export default function AdminCrmAiDialog({
                               <Bell className="mr-1.5 h-3.5 w-3.5" />
                             ) : action.type === 'open_document_draft' ? (
                               <FileText className="mr-1.5 h-3.5 w-3.5" />
+                            ) : action.type === 'send_payment_qr' ? (
+                              <WhatsAppIcon className="mr-1.5 h-3.5 w-3.5" />
                             ) : action.type === 'open_app' ? (
                               <Settings className="mr-1.5 h-3.5 w-3.5" />
                             ) : action.type === 'open_customer_composer' ? (
@@ -550,7 +770,14 @@ export default function AdminCrmAiDialog({
                             ) : (
                               <Search className="mr-1.5 h-3.5 w-3.5" />
                             )}
-                            {action.type === 'open_app' ? 'Open screen' : 'Open form'}
+                            {action.type === 'send_payment_qr'
+                              ? 'Send on WhatsApp'
+                              : action.type === 'open_app' &&
+                            (action.payload as AiCrmOpenAppPayload).target === 'quick_upi_qr'
+                              ? 'Open Quick QR'
+                              : action.type === 'open_app'
+                                ? 'Open screen'
+                                : 'Open form'}
                           </Button>
                         </div>
                       ))}
@@ -603,6 +830,7 @@ export default function AdminCrmAiDialog({
               placeholder="Ask anything about your CRM…"
               rows={1}
               maxLength={1500}
+              autoFocus
               className="min-h-0 resize-none overflow-hidden border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-transparent"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {

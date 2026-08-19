@@ -15,7 +15,8 @@ export type AiCrmActionType =
   | 'open_app'
   | 'open_document_draft'
   | 'open_job'
-  | 'open_customer_composer';
+  | 'open_customer_composer'
+  | 'send_payment_qr';
 
 export type AiCrmAppTarget =
   | 'dashboard'
@@ -216,6 +217,20 @@ export type AiCrmReminderDraft = {
   reminderAt?: string | null;
 };
 
+export type AiCrmOpenAppPayload = {
+  target: AiCrmAppTarget;
+  customerId?: string;
+  amount?: number;
+  phone?: string;
+};
+
+export type AiCrmSendPaymentQrPayload = {
+  phone: string;
+  amount: number;
+  customerId?: string;
+  customerName?: string;
+};
+
 export type AiCrmProposedAction = {
   type: AiCrmActionType;
   label: string;
@@ -229,10 +244,43 @@ export type AiCrmProposedAction = {
     | AiCrmCreateJobDraft
     | AiCrmFollowUpDraft
     | AiCrmReminderDraft
-    | { target: AiCrmAppTarget }
+    | AiCrmOpenAppPayload
     | AiCrmOpenDocumentDraft
     | AiCrmOpenJobDraft
-    | AiCrmOpenCustomerComposer;
+    | AiCrmOpenCustomerComposer
+    | AiCrmSendPaymentQrPayload;
+};
+
+export type AiCrmLiveOpsOnFieldRow = {
+  technicianName: string;
+  status: string;
+  jobNumber: string;
+  customerName: string;
+};
+
+export type AiCrmLiveOpsWaitingJob = {
+  jobNumber: string;
+  customerName: string;
+};
+
+export type AiCrmLiveOpsSnapshot = {
+  ongoingTotal: number;
+  unassignedWaiting: number;
+  followUpTotal: number;
+  completedToday: number;
+  byStatus: {
+    pending: number;
+    assigned: number;
+    enRoute: number;
+    inProgress: number;
+  };
+  techniciansIdle: string[];
+  onField: AiCrmLiveOpsOnFieldRow[];
+  waitingJobs: AiCrmLiveOpsWaitingJob[];
+  gpsStale: boolean;
+  gpsTracked: number;
+  fieldIsClear: boolean;
+  truncated?: boolean;
 };
 
 export type AiCrmChatResult =
@@ -255,6 +303,7 @@ export type AiCrmChatResult =
         provider?: string;
         model?: string;
         latencyMs?: number;
+        liveOpsSnapshot?: AiCrmLiveOpsSnapshot | null;
         canMutate: false;
         canCreateJob: false;
         canDelete: false;
@@ -325,6 +374,7 @@ export async function requestAiCrmChat(opts: {
         provider: data?.meta?.provider,
         model: data?.meta?.model,
         latencyMs: data?.meta?.latencyMs,
+        liveOpsSnapshot: data?.meta?.liveOpsSnapshot ?? null,
         canMutate: false,
         canCreateJob: false,
         canDelete: false,

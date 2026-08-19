@@ -11,6 +11,7 @@ const ALLOWED_DOC_TYPES = new Set([
   'warranty',
   'amc',
   'salary_slip',
+  'letterhead',
 ]);
 
 function sha256HexFromBuffer(buf) {
@@ -53,6 +54,9 @@ function normalizeDocType(docType) {
   if (t === 'amc_document') return 'amc';
   if (t === 'warranty_document') return 'warranty';
   if (t === 'salary' || t === 'salary-slip') return 'salary_slip';
+  if (t === 'letterhead' || t === 'service_report' || t === 'amc_report' || t === 'custom_document') {
+    return 'letterhead';
+  }
   return 'quotation';
 }
 

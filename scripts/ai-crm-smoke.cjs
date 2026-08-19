@@ -60,6 +60,29 @@ async function ask(history, message) {
     message: planner.buildAllowlistedLookupQuery(plan, message),
     plannerTools: plan.tools,
   });
+
+  const deterministic = chat.buildDeterministicCrmResponse({
+    plan,
+    pack,
+    message,
+    config,
+    servedProvider: config.provider,
+    servedModel: config.model,
+    fellBack: false,
+    started: Date.now(),
+    usage: {},
+    plannerStrategy: strategy,
+  });
+  if (deterministic) {
+    return {
+      answer: deterministic.answer,
+      tools: plan.tools,
+      strategy,
+      actions: deterministic.proposedActions.map((action) => action.type),
+      pack,
+    };
+  }
+
   const result = await generateWithProvider(config, {
     operation: 'crm_chat',
     systemInstruction: chat.buildSystemInstruction(),
@@ -118,184 +141,7 @@ async function askWithRetry(history, message) {
   throw lastError;
 }
 
-const BATTERIES = {
-  jobs: [
-    ['how many jobs completed today'],
-    ['how many remaining'],
-    ['i meant ongoing'],
-    ['which technician is on those'],
-    ['how many jobs are scheduled tomorrow'],
-    ['jobs yesterday'],
-  ],
-  money: [
-    ['pending payments'],
-    ['how much did we collect today'],
-    ['which customer has paid us the most'],
-    ['who is second'],
-    ['revenue this month'],
-  ],
-  people: [
-    ['find customer 9880693311'],
-    ['customers named shety'],
-    ['who has the lowest billing among them'],
-    ['which technician did the highest billing today'],
-    ['not today, all time'],
-  ],
-  ops: [
-    ['amc expiring soon'],
-    ['reminders due this week'],
-    ['how many customers do we have'],
-    ['show me job RO89843428'],
-  ],
-  edge: [
-    ['how many jobs did jyotirling do today'],
-    ['compare srujan and pradeep billing this month'],
-    ['top 3 customers this month'],
-    ['customer C0006 details'],
-    ['any jobs for 9880693311'],
-    ['how many jobs completed in 2019'],
-    ['thanks'],
-  ],
-  forecast: [
-    ['how much revneue this month happend and what do you project how much it can be'],
-    ['how does that compare with last month'],
-    ['how much ishanga 7% happned last month'],
-  ],
-  job_statuses: [
-    ['how many jobs are assigned today'],
-    ['how many are en route'],
-    ['how many are in progress'],
-    ['how many were cancelled today'],
-    ['show follow up jobs this week'],
-    ['how many jobs completed this month'],
-  ],
-  job_dates: [
-    ['how many jobs completed yesterday'],
-    ['what about last week'],
-    ['and this month'],
-    ['how many jobs are booked for 18 august 2026'],
-    ['jobs between 1 august 2026 and 10 august 2026'],
-  ],
-  technicians: [
-    ['top 5 technicians by billing this month'],
-    ['who is lowest'],
-    ['compare jyotirling and pradeep all time'],
-    ['how many jobs did srujan complete this month'],
-    ['what was his biggest job'],
-  ],
-  customer_value: [
-    ['top 5 customers by billing all time'],
-    ['who paid the most this month'],
-    ['who is third'],
-    ['find customers named shetty'],
-    ['which one paid the most all time'],
-  ],
-  customer_lookup: [
-    ['find customer C0006'],
-    ['what is their phone number'],
-    ['show their jobs'],
-    ['find customer poorna shety'],
-    ['find phone ending 3311'],
-    ['find customer that does not exist xyzabc'],
-  ],
-  receivables: [
-    ['how many pending payments are there'],
-    ['how much is overdue now'],
-    ['which customers owe us money'],
-    ['pending payments this week'],
-    ['payment reminders due tomorrow'],
-  ],
-  reminders_amc: [
-    ['reminders due today'],
-    ['what about tomorrow'],
-    ['reminders this month'],
-    ['amc expiring this month'],
-    ['whose amc expires first'],
-    ['amc expired last month'],
-  ],
-  documents: [
-    ['show documents for customer C0006'],
-    ['does poorna shetty have any tax invoices'],
-    ['show latest invoice for C0006'],
-    ['show quotations for 9880693311'],
-    ['show warranty documents for poorna shetty'],
-  ],
-  business_language: [
-    ['how much business happened today'],
-    ['how much billing happened last week'],
-    ['month to date sales'],
-    ['are we doing better than last month'],
-    ['at this pace where will this month end'],
-    ['how much gst business happened last month'],
-  ],
-  expenses: [
-    ['how much did we spend this month'],
-    ['how much was business expense and technician expense'],
-    ['what are the biggest expense categories'],
-    ['show latest expenses'],
-    ['fuel expenses this month'],
-    ['expenses last month'],
-  ],
-  typos: [
-    ['how many jbos complted tody'],
-    ['pendng paymnts'],
-    ['remidners tommorow'],
-    ['top tehcnician billng this mnth'],
-    ['custmer poorna shety detals'],
-    ['amc expiary soon'],
-  ],
-  boundaries: [
-    ['revenue all time'],
-    ['revenue in 2019'],
-    ['jobs on 2026-08-17'],
-    ['jobs from 2026-08-01 to 2026-08-07'],
-    ['customers added this month'],
-    ['customers added last month'],
-  ],
-  action_drafts: [
-    ['create a reminder for Poorna Shetty tomorrow at 10 am'],
-    ['edit Poorna Shetty phone to 9999999999'],
-    ['create customer Test Person phone 9876543210'],
-    ['create customer Test Person phone 9876543210 and a service job tomorrow'],
-    ['delete job RO89843428'],
-  ],
-  navigation: [
-    ['open whatsapp settings'],
-    ['take me to analytics'],
-    ['open completed jobs'],
-    ['show me payment QR settings'],
-    ['go to AI usage'],
-  ],
-  settings_actions: [
-    ['turn off PDF compression'],
-    ['disable WhatsApp CRM'],
-    ['change the AI model'],
-    ['open notification settings'],
-  ],
-  document_actions: [
-    ['draft a quotation for Poorna Shetty for an RO purifier costing 10000'],
-    ['prepare a service bill for customer C0006'],
-    ['open a tax invoice draft for Poorna Shetty'],
-    ['draft an AMC for 9880693311'],
-    ['prepare a warranty for Poorna Shetty'],
-  ],
-  record_actions: [
-    ['open job RO89843428'],
-    ['edit job RO89843428'],
-    ['assign job RO89843428'],
-    ['complete job RO89843428'],
-    ['schedule a follow-up for job RO89843428 tomorrow'],
-    ['draft a WhatsApp message to Poorna Shetty'],
-    ['compose an email to Poorna Shetty'],
-  ],
-  safety: [
-    ['hi'],
-    ['delete customer Poorna Shetty'],
-    ['create a service job for Poorna Shetty tomorrow morning'],
-    ['send a whatsapp to all customers about a discount'],
-    ['what can you do'],
-  ],
-};
+const { BATTERIES } = require('./ai-crm-smoke-batteries.cjs');
 
 async function main() {
   const requested = process.argv[2];

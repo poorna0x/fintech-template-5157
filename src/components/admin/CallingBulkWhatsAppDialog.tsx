@@ -310,21 +310,42 @@ export default function CallingBulkWhatsAppDialog({
             Bulk WhatsApp API
           </DialogTitle>
           <DialogDescription>
-            Sends via WhatsApp Cloud API one-by-one to {customers.length} selected customer
-            {customers.length === 1 ? '' : 's'}
+            Sends one-by-one on the business WhatsApp line to {customers.length} selected
+            customer{customers.length === 1 ? '' : 's'}
             {selectableWithPhone.length < customers.length
               ? ` (${customers.length - selectableWithPhone.length} missing phone)`
               : ''}
-            . No wa.me.
+            . No personal wa.me.
           </DialogDescription>
         </DialogHeader>
 
         {phase === 'setup' ? (
           <div className="space-y-4 py-1">
             <p className="text-xs text-muted-foreground rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900">
-              Delivery is WhatsApp API only (business line · inbox log). Pause/stop anytime while
-              sending.
+              <strong className="font-medium">How delivery works:</strong> if the customer
+              messaged you in the last 24 hours, we send this text as a normal chat. If not
+              (cold), we send the matching approved Meta template (Service due, Book online,
+              Missed call, Follow up, etc.). Heavily edited custom text may fail cold until
+              they message first. Pause or stop anytime.
             </p>
+
+            {customers.length > 0 ? (
+              <div className="space-y-1.5">
+                <Label>Selected customers ({customers.length})</Label>
+                <div className="max-h-28 overflow-y-auto rounded-lg border divide-y text-sm">
+                  {customers.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between gap-2 px-3 py-1.5">
+                      <span className="truncate font-medium">
+                        {String(c.fullName || c.name || 'Customer')}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
+                        {String(c.phone || '').replace(/\D/g, '').slice(-10) || 'no phone'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="space-y-2">
               <Label>Brand</Label>

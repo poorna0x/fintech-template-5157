@@ -74,9 +74,35 @@ function computeTechWorkedHours(jobs, nowMs = Date.now()) {
   };
 }
 
+/** Last job that was completed on this IST day (not last started). */
+function lastCompletedJobToday(jobs, nowMs = Date.now()) {
+  const { dayStartUtc, dayEndUtc } = istDayBounds(nowMs);
+  let best = null;
+  let bestMs = null;
+  for (const job of jobs || []) {
+    const complete = jobCompletionMs(job);
+    if (complete == null || complete < dayStartUtc || complete >= dayEndUtc) continue;
+    if (bestMs == null || complete > bestMs) {
+      bestMs = complete;
+      best = job;
+    }
+  }
+  return best;
+}
+
 function formatWorkedDuration(ms) {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return '0m';
   const totalMin = Math.round(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h <= 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+function formatDriveDuration(sec) {
+  if (sec == null || !Number.isFinite(sec) || sec < 0) return null;
+  const totalMin = Math.max(1, Math.round(sec / 60));
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   if (h <= 0) return `${m}m`;
@@ -92,6 +118,26 @@ function formatIstClock(ms) {
   });
 }
 
+function officeReturnMs(extra) {
+  const sec = Number(extra && extra.officeReturnSec);
+  if (Number.isFinite(sec) && sec > 0) return Math.round(sec * 1000);
+  return 0;
+}
+
+function slimKmLabel(extra) {
+  let km = extra && extra.kmLabel ? String(extra.kmLabel).trim() : '';
+  if (!km) return '';
+  return km.replace(/^~/, '').trim();
+}
+
+function formatEndClock(summary, extra) {
+  return formatIstClock(summary.lastCompleteMs + officeReturnMs(extra));
+}
+
+/**
+ * Technician overlay / WhatsApp — their numbers only.
+ * End time is last completed job plus drive back to office.
+ */
 function formatWorkedHoursPushBody(summary, extra) {
   if (
     !summary ||
@@ -103,12 +149,46 @@ function formatWorkedHoursPushBody(summary, extra) {
   }
   const hours = formatWorkedDuration(summary.durationMs);
   const from = formatIstClock(summary.firstStartMs);
-  const to = formatIstClock(summary.lastCompleteMs);
-  const kmLabel = extra && extra.kmLabel ? String(extra.kmLabel).trim() : '';
-  if (kmLabel) {
-    return `Today you worked ${hours} (${from} \u2192 ${to}) \u00b7 travelled ~${kmLabel}.`;
+  const to = formatEndClock(summary, extra);
+  const km = slimKmLabel(extra);
+  const bits = [`You worked ${hours}`, `${from} \u2192 ${to}`];
+  if (km) bits.push(km);
+  return bits.join('\n');
+}
+
+function formatWorkedHoursLiveBody(summary) {
+  if (!summary || !summary.live || summary.firstStartMs == null || summary.durationMs == null) {
+    return null;
   }
-  return `Today you worked ${hours} (${from} \u2192 ${to}).`;
+  const hours = formatWorkedDuration(summary.durationMs);
+  const from = formatIstClock(summary.firstStartMs);
+  return `still working \u00b7 ${from} \u00b7 ${hours} so far`;
+}
+
+/** One sleek line per technician so the Android tray can expand all names. */
+function formatWorkedHoursAdminBlock(name, summary, extra) {
+  const who = String(name || 'Technician').trim() || 'Technician';
+  if (
+    summary &&
+    summary.durationMs != null &&
+    summary.firstStartMs != null &&
+    summary.lastCompleteMs != null
+  ) {
+    const hours = formatWorkedDuration(summary.durationMs);
+    const from = formatIstClock(summary.firstStartMs);
+    const to = formatEndClock(summary, extra);
+    const km = slimKmLabel(extra);
+    const parts = [`\u25CF ${who}`, hours, `${from} \u2192 ${to}`];
+    if (km) parts.push(km);
+    return parts.join('  \u00b7  ');
+  }
+  const live = formatWorkedHoursLiveBody(summary);
+  if (live) return `\u25CF ${who}  \u00b7  ${live}`;
+  return null;
+}
+
+function formatWorkedHoursNamedLine(name, summary, extra) {
+  return formatWorkedHoursAdminBlock(name, summary, extra);
 }
 
 module.exports = {
@@ -117,7 +197,11 @@ module.exports = {
   parseMs,
   jobCompletionMs,
   computeTechWorkedHours,
+  lastCompletedJobToday,
   formatWorkedDuration,
+  formatDriveDuration,
   formatIstClock,
   formatWorkedHoursPushBody,
+  formatWorkedHoursAdminBlock,
+  formatWorkedHoursNamedLine,
 };

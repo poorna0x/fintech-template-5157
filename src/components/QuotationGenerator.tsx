@@ -220,8 +220,11 @@ export default function QuotationGenerator({
     }
   });
 
-  // Update editable customer when customer prop changes (incl. async GSTIN load)
+  // Update from customer / site picker only when not typing in this form.
+  // customerAddress is a new object every render — do not put it in deps (that
+  // reset the fields on every keystroke and made the page feel laggy).
   useEffect(() => {
+    if (isEditingCustomer) return;
     const selectedAddress = documentAddressForChoice(customer, addressChoice);
     setEditableCustomer({
       name: customerName,
@@ -236,7 +239,16 @@ export default function QuotationGenerator({
         pincode: selectedAddress.pincode
       }
     });
-  }, [customerName, customerPhone, customerEmail, customerGst, customerAddress, customer, addressChoice]);
+  }, [
+    isEditingCustomer,
+    customer?.id,
+    addressChoice,
+    customerName,
+    customerPhone,
+    customerEmail,
+    customerGst,
+    customer,
+  ]);
 
   const editAddress = normalizeCustomerAddress(editableCustomer.address);
 
@@ -484,7 +496,7 @@ export default function QuotationGenerator({
           city: editAddress.city,
           state: editAddress.state,
           pincode: editAddress.pincode,
-          country: 'India'
+          country: 'India',
         },
         gstNumber: editableCustomer.gst,
         serviceType: customerServiceType,

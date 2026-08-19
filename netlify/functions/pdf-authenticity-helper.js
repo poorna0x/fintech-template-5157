@@ -17,6 +17,8 @@ const DOC_TYPE_LABELS = {
   invoice: 'Tax invoice',
   warranty: 'Warranty card',
   amc: 'AMC agreement',
+  salary_slip: 'Salary slip',
+  letterhead: 'Letterhead document',
 };
 
 function getServiceSupabase() {

@@ -9,10 +9,10 @@ import { Customer } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { customerNameClassName } from '@/lib/customerDisplay';
-import { MapPin, Download, ExternalLink, Trash2 } from 'lucide-react';
+import { MapPin, Download, ExternalLink, Trash2, X } from 'lucide-react';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { MANAGER_RESTRICTED_TITLE } from '@/lib/managerAccess';
-import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
+import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { hasAlternateLocation, getAlternateAddress, getAlternateLocation, getJobServiceSite } from '@/lib/customer-locations';
@@ -591,15 +591,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     }
 
     const address = editFormData?.address?.street || '';
-    const currentLocation = editFormData?.visible_address || '';
 
     if (!address.trim()) {
       toast.error('Please enter a complete address first');
-      return;
-    }
-
-    if (currentLocation.trim()) {
-      toast.info('Location already set. Clear it first if you want to fetch a new one.');
       return;
     }
 
@@ -971,14 +965,11 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         ? removePlusCode(rawFormatted).replace(/\s+/g, ' ').trim() || null
         : null;
       
-      const streetHint = isPrimary
-        ? editFormDataRef.current.address.street
-        : editFormDataRef.current.alternate_address.street;
-      // List/DB match first, then Google place components from the same Fetch (no extra API call)
+      // New Maps result only — do not hint with the previous street (that locked Location).
       const extractedLocation = resolveVisibleAddressFromGeocode({
         formattedAddress: rawFormatted,
         addressComponents: geocodeResult?.addressComponents,
-        addressHints: [streetHint],
+        addressHints: address ? [address] : [],
       });
       
       setEditFormData(prev => {
@@ -1000,9 +991,11 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   state: '',
                   pincode: ''
                 },
-                visible_address: extractedLocation
-                  ? extractedLocation
-                  : prev.visible_address
+                visible_address: nextVisibleAddressFromMapsFetch(
+                  extractedLocation,
+                  address,
+                  prev.visible_address
+                )
               }
             : {
                 alternate_google_location: stableMapsLink,
@@ -1019,9 +1012,11 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   state: '',
                   pincode: ''
                 },
-                alternate_visible_address: extractedLocation
-                  ? extractedLocation
-                  : prev.alternate_visible_address,
+                alternate_visible_address: nextVisibleAddressFromMapsFetch(
+                  extractedLocation,
+                  address,
+                  prev.alternate_visible_address
+                ),
               }),
         };
         editFormDataRef.current = next;
@@ -1718,8 +1713,22 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   }}
                   placeholder="e.g., Bansawadi, Koramangala, Whitefield, etc."
                   maxLength={VISIBLE_ADDRESS_MAX_LEN}
-                  className="text-sm"
+                  className="text-sm pr-9"
                 />
+                {visibleAddress.trim() ? (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    title="Clear location"
+                    onClick={() => {
+                      locationManuallyEditedRef.current = true;
+                      handleEditFormChange('visible_address', '');
+                      setVisibleAddressSuggestions(false);
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
                 {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
                   <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
                     {filteredAddressSuggestions.map((suggestion, idx) => (
@@ -1746,17 +1755,32 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
             </>
           ) : (
             <>
-              <Input
-                id={locationId}
-                value={visibleAddress}
-                onChange={(e) => {
-                  alternateLocationManuallyEditedRef.current = true;
-                  handleEditFormChange('alternate_visible_address', e.target.value);
-                }}
-                placeholder="e.g. Office, Shop, Restaurant"
-                maxLength={VISIBLE_ADDRESS_MAX_LEN}
-                className="text-sm"
-              />
+              <div className="relative">
+                <Input
+                  id={locationId}
+                  value={visibleAddress}
+                  onChange={(e) => {
+                    alternateLocationManuallyEditedRef.current = true;
+                    handleEditFormChange('alternate_visible_address', e.target.value);
+                  }}
+                  placeholder="e.g. Office, Shop, Restaurant"
+                  maxLength={VISIBLE_ADDRESS_MAX_LEN}
+                  className="text-sm pr-9"
+                />
+                {visibleAddress.trim() ? (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    title="Clear location label"
+                    onClick={() => {
+                      alternateLocationManuallyEditedRef.current = true;
+                      handleEditFormChange('alternate_visible_address', '');
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
             </>
           )}
         </div>
@@ -1771,12 +1795,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 size="sm"
                 onClick={() => handleFetchLocationFromAddress('primary')}
                 className="whitespace-nowrap"
-                title={
-                  visibleAddress.trim()
-                    ? 'Location already set. Clear it first to fetch a new one.'
-                    : 'Extract location from complete address'
-                }
-                disabled={!street.trim() || Boolean(visibleAddress.trim())}
+                title="Extract or replace location from complete address"
+                disabled={!street.trim()}
               >
                 <MapPin className="w-3 h-3 mr-1" />
                 Fetch Location

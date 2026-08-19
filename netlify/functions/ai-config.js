@@ -50,7 +50,7 @@ const ALLOWED_GROQ_MODELS = new Set([
   'qwen/qwen3.6-27b',
   'groq/compound-mini',
 ]);
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_GEMINI_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
 

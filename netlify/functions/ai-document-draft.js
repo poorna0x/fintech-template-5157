@@ -15,7 +15,7 @@ const {
   normalizeDocumentDraftOutput,
 } = require('./ai-document-draft-schemas');
 
-const MAX_BODY_BYTES = 72_000;
+const MAX_BODY_BYTES = 140_000;
 
 const RESPONSE_SCHEMA = {
   type: 'object',
@@ -56,7 +56,7 @@ function buildSystemInstruction(kind, allowedFields) {
     kind === 'warranty'
       ? 'Warranty items use {key, category, label, durValue, durUnit ("months" or "days"), include, covered, inventory_id, job_part_id}. Use category OTHER for new manual coverage.'
       : kind === 'letterhead'
-        ? 'Letterhead blocks are an ordered array of text, table, image, and pagebreak blocks. Preserve existing block IDs. Text block html may use p, h1-h4, strong, em, u, s, ul, ol, li, blockquote, hr, table, and safe inline text-align styles. Use style="text-align: left|center|right" for alignment. The main title also has titleAlignment (left/center/right), titleSize (small/medium/large), and titleCase (normal/uppercase). You may rewrite existing text, change heading levels, alignment, emphasis, lists, table titles/columns/rows, reorder blocks, add text/table/pagebreak blocks, and resize/align/wrap/caption existing images. Never add an image block, invent or replace an image src, or change customerId/customerCode.'
+        ? 'Letterhead blocks are an ordered array of text, table, image, and pagebreak blocks. Preserve existing block IDs. Text block html may use p, h1-h4, strong, em, u, s, ul, ol, li, blockquote, hr, table, and safe inline text-align styles. Use style="text-align: left|center|right" for alignment. Layout: layoutMode is letter or certificate; titleAlignment (left/center/right); titleSize (small/medium/large/xlarge); titleCase (normal/uppercase). showRecipientBlock prints the To:/recipient line — leave it false for certificates and internships; do not put the intern or honoree in customerName. showDocumentMeta prints Doc # / Date / Ref. showBrandTag is the small brand pill. hideRightSignatory should be true for certificates. Put names, duration, and body copy in blocks, not the customer header. You may rewrite existing text, change heading levels, alignment, emphasis, lists, table titles/columns/rows, reorder blocks, add text/table/pagebreak blocks, and resize/align/wrap/caption existing images. Never add an image block, invent or replace an image src, or change customerId/customerCode. For long service reports, add tables and pagebreak blocks instead of stuffing everything into one text block.'
       : 'Document line items use the exact current item shape, normally including id, description, quantity, unitPrice, total, taxRate and taxAmount.';
   return [
     `You are a careful conversational editor for an open ${kind.replace('_', ' ')} form in the HydrogenRO / ElevenRO admin CRM.`,

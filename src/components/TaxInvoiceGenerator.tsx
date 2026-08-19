@@ -399,7 +399,7 @@ export default function TaxInvoiceGenerator({
   });
 
   useEffect(() => {
-    if (!customer || editInvoiceId) return;
+    if (!customer || editInvoiceId || isEditingCustomer) return;
     const name = customer.fullName || (customer as any)?.full_name || '';
     const phone = typeof customer.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
     const email = customer.email || '';
@@ -409,17 +409,16 @@ export default function TaxInvoiceGenerator({
       name: name || prev.name,
       phone: phone || prev.phone,
       email: email || prev.email,
-      // Prefer saved customer GSTIN once document fetch arrives
       gst: gst || prev.gst,
       address: {
-        street: addr.street || prev.address?.street || '',
-        area: addr.area || prev.address?.area || '',
-        city: addr.city || prev.address?.city || '',
-        state: addr.state || prev.address?.state || '',
-        pincode: addr.pincode || prev.address?.pincode || '',
+        street: addr.street,
+        area: addr.area,
+        city: addr.city,
+        state: addr.state,
+        pincode: addr.pincode,
       },
     }));
-  }, [customer, editInvoiceId, addressChoice]);
+  }, [customer, editInvoiceId, addressChoice, isEditingCustomer]);
 
   const editAddress = normalizeCustomerAddress(editableCustomer.address);
 
@@ -712,8 +711,6 @@ export default function TaxInvoiceGenerator({
         state: editAddress.state,
         pincode: editAddress.pincode,
       };
-            pincode: ''
-          };
 
       // Ensure notes is an array
       const notesArray = Array.isArray(notes) ? notes : [];

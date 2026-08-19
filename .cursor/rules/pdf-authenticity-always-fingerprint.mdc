@@ -14,7 +14,7 @@ Whenever a **customer-facing PDF is generated for Download, Email, or WhatsApp**
 
 ## Covered doc types
 
-`amc` | `service_bill` | `quotation` | `invoice` | `warranty` | `salary_slip`
+`amc` | `service_bill` | `quotation` | `invoice` | `warranty` | `salary_slip` | `letterhead`
 (and any new customer PDF generators added later — same pattern)
 
 ## Do NOT

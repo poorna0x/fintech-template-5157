@@ -316,6 +316,7 @@ import type {
   AiCrmEditCustomerDraft,
   AiCrmFollowUpDraft,
   AiCrmReminderDraft,
+  AiCrmOpenAppPayload,
   AiCrmAppTarget,
   AiCrmOpenDocumentDraft,
   AiCrmOpenJobDraft,
@@ -5702,11 +5703,24 @@ const AdminDashboard = () => {
   );
 
   const handleAiOpenApp = useCallback(
-    (target: AiCrmAppTarget) => {
-      const path = aiCrmTargetPath(target);
+    (payload: AiCrmOpenAppPayload) => {
+      const path = aiCrmTargetPath(payload.target);
       if (!path) {
         toast.error('That CRM screen is not available');
         return;
+      }
+      if (
+        payload.target === 'quick_upi_qr' &&
+        (payload.customerId || payload.amount || payload.phone)
+      ) {
+        sessionStorage.setItem(
+          'hro_quick_upi_prefill',
+          JSON.stringify({
+            customerId: payload.customerId || null,
+            amount: payload.amount ?? null,
+            phone: payload.phone || null,
+          })
+        );
       }
       closeAdminTool();
       navigate(path);

@@ -122,6 +122,8 @@ function buildSystemInstruction(operation, allowPrices = false) {
     'quotation.items[].description and quantity only. Always set unitPrice to 0. Never invent selling prices.',
     'Do not claim a message was sent. Do not invent job numbers, payments, or customer facts not in the thread.',
     'Be concise, polite, and suitable for WhatsApp (India English).',
+    'Make replyText directly usable: acknowledge the customer message, give one clear next step, and avoid generic filler.',
+    'If customer asks about price/payment/discount or raises a complaint, keep the reply safe and set requiresHuman=true.',
     'A trusted requested-detail verification in the user prompt is server-calculated from message types and booking state. Always honor it. If a requested location/photo is still missing, politely ask for it again and never claim it was received.',
     'If unsure, set requiresHuman=true and ask a clarifying question in replyText.',
     operation === 'suggest_quotation'
@@ -175,6 +177,22 @@ function mapThreadToMessages(rows) {
     messages.push({ role, text });
   }
   return messages;
+}
+
+function detectReplyIntentTags(text, msgType) {
+  const value = String(text || '').toLowerCase();
+  const tags = [];
+  if (msgType === 'location' || looksLikeMapsLocationText(value)) tags.push('location_shared');
+  if (/(?:photo|image|video|attachment)/i.test(String(msgType || ''))) tags.push('media_shared');
+  if (/\b(price|cost|quote|quotation|estimate|charges?)\b/.test(value)) tags.push('pricing');
+  if (/\b(pay(?:ment)?|upi|cash|due|pending|invoice|bill)\b/.test(value)) tags.push('payment');
+  if (/\b(complaint|issue|problem|not working|leak|bad|angry|frustrat)\b/.test(value))
+    tags.push('complaint');
+  if (/\b(book|visit|schedule|tomorrow|today|slot|appointment)\b/.test(value))
+    tags.push('booking');
+  if (/\b(thanks|thank you|ok|okay|done|received)\b/.test(value)) tags.push('acknowledgement');
+  if (!tags.length && value.trim()) tags.push('general_query');
+  return tags;
 }
 
 function isInboundRow(row) {
@@ -298,6 +316,7 @@ async function loadThreadContext(phoneDigits) {
       customerId: null,
       customerName: null,
       detailVerification: null,
+      latestInbound: null,
     };
   }
 
@@ -321,6 +340,7 @@ async function loadThreadContext(phoneDigits) {
       customerId: null,
       customerName: null,
       detailVerification: null,
+      latestInbound: null,
     };
   }
 
@@ -346,12 +366,24 @@ async function loadThreadContext(phoneDigits) {
   const phoneCandidates = [...new Set(e164Candidates)];
   const bookingState = await loadRecentBookingState(db, phoneCandidates);
   const detailVerification = detectPendingDetailRequest(chronological, bookingState);
+  const latestInboundRow = [...chronological].reverse().find((row) => isInboundRow(row)) || null;
+  const latestInbound = latestInboundRow
+    ? {
+        body: String(latestInboundRow.body || '').trim().slice(0, 500),
+        msgType: String(latestInboundRow.msg_type || 'text').toLowerCase(),
+        tags: detectReplyIntentTags(
+          latestInboundRow.body,
+          String(latestInboundRow.msg_type || 'text').toLowerCase()
+        ),
+      }
+    : null;
 
   return {
     messages: mapThreadToMessages(chronological),
     customerId,
     customerName,
     detailVerification,
+    latestInbound,
   };
 }
 
@@ -359,6 +391,16 @@ function buildUserPrompt(ctx, operation) {
   const lines = [];
   lines.push(`Operation: ${operation}`);
   if (ctx.customerName) lines.push(`Customer name: ${ctx.customerName}`);
+  if (ctx.latestInbound?.body || ctx.latestInbound?.msgType) {
+    lines.push(
+      `Latest customer message (${ctx.latestInbound.msgType || 'text'}): ${
+        ctx.latestInbound.body || '[non-text]'
+      }`
+    );
+    if (Array.isArray(ctx.latestInbound.tags) && ctx.latestInbound.tags.length) {
+      lines.push(`Detected customer intent tags: ${ctx.latestInbound.tags.join(', ')}`);
+    }
+  }
   if (operation === 'suggest_reply' && ctx.detailVerification) {
     lines.push('Trusted requested-detail verification (do not contradict):');
     lines.push(

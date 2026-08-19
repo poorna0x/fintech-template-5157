@@ -15,6 +15,7 @@ const ALLOWED_ACTION_TYPES = Object.freeze([
   'open_document_draft',
   'open_job',
   'open_customer_composer',
+  'send_payment_qr',
 ]);
 
 const ALLOWED_APP_TARGETS = Object.freeze([
@@ -284,10 +285,45 @@ function normalizeReminderPayload(raw, knownCustomerIds) {
   };
 }
 
-function normalizeOpenAppPayload(raw) {
-  const target = asTrimmedString(raw?.target, 80);
+function normalizeOpenAppPayload(raw, knownCustomerIds) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const target = asTrimmedString(src.target, 80);
   if (!ALLOWED_APP_TARGETS.includes(target)) return null;
-  return { target };
+  const payload = { target };
+  if (target === 'quick_upi_qr') {
+    const customerId = asTrimmedString(src.customerId || src.customer_id, 64);
+    if (customerId) {
+      if (knownCustomerIds && !knownCustomerIds.has(customerId)) return null;
+      payload.customerId = customerId;
+    }
+    const amount = Number(src.amount);
+    if (Number.isFinite(amount) && amount > 0) {
+      payload.amount = Number(amount.toFixed(2));
+    }
+    const phone = normalizePhone(src.phone || src.whatsapp || src.to);
+    if (phone.length >= 10) payload.phone = phone;
+  }
+  return payload;
+}
+
+function normalizeSendPaymentQrPayload(raw, knownCustomerIds) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const phone = normalizePhone(src.phone || src.whatsapp || src.to);
+  if (phone.length < 10) return null;
+  const amount = Number(src.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const payload = {
+    phone,
+    amount: Number(amount.toFixed(2)),
+  };
+  const customerId = asTrimmedString(src.customerId || src.customer_id, 64);
+  if (customerId) {
+    if (knownCustomerIds && !knownCustomerIds.has(customerId)) return null;
+    payload.customerId = customerId;
+  }
+  const customerName = asTrimmedString(src.customerName || src.customer_name || src.name, 120);
+  if (customerName) payload.customerName = customerName;
+  return payload;
 }
 
 function normalizeOpenDocumentDraftPayload(raw, knownCustomerIds) {
@@ -365,13 +401,15 @@ function normalizeCrmChatOutput(raw, opts = {}) {
     } else if (type === 'create_reminder') {
       payload = normalizeReminderPayload(row.payload || row, knownCustomerIds);
     } else if (type === 'open_app') {
-      payload = normalizeOpenAppPayload(row.payload || row);
+      payload = normalizeOpenAppPayload(row.payload || row, knownCustomerIds);
     } else if (type === 'open_document_draft') {
       payload = normalizeOpenDocumentDraftPayload(row.payload || row, knownCustomerIds);
     } else if (type === 'open_job') {
       payload = normalizeOpenJobPayload(row.payload || row, knownJobIds);
     } else if (type === 'open_customer_composer') {
       payload = normalizeOpenCustomerComposerPayload(row.payload || row, knownCustomerIds);
+    } else if (type === 'send_payment_qr') {
+      payload = normalizeSendPaymentQrPayload(row.payload || row, knownCustomerIds);
     }
     if (!payload) continue;
 

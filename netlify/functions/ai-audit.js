@@ -69,10 +69,20 @@ async function claimAiQuota(opts) {
     }
     const row = Array.isArray(data) ? data[0] : data;
     if (row && row.allowed === false) {
+      const reason = String(row.reason || '').trim();
+      let error = 'Daily AI quota exceeded';
+      if (reason === 'daily_request_limit') {
+        error = `Daily AI request limit reached (${requestLimit}/day). Open Settings → AI usage or try again tomorrow.`;
+      } else if (reason === 'daily_token_limit') {
+        error = `Daily AI token limit reached (${tokenLimit.toLocaleString('en-IN')} tokens/day). Open Settings → AI usage or try again tomorrow.`;
+      } else if (reason) {
+        error = reason;
+      }
       return {
         ok: false,
-        error: row.reason || 'Daily AI quota exceeded',
+        error,
         quotaExceeded: true,
+        reason,
       };
     }
     return {

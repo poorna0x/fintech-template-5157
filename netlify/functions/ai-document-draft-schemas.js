@@ -127,10 +127,15 @@ const ALLOWED_FIELDS = Object.freeze({
     'titleAlignment',
     'titleSize',
     'titleCase',
+    'layoutMode',
     'date',
     'subject',
     'referenceNumber',
     'cc',
+    'showRecipientBlock',
+    'recipientLabel',
+    'showDocumentMeta',
+    'showBrandTag',
     'customerName',
     'customerCompany',
     'siteLocation',
@@ -152,8 +157,8 @@ const ALLOWED_FIELDS = Object.freeze({
 
 const MAX_HISTORY_TURNS = 10;
 const MAX_OPERATION_COUNT = 18;
-const MAX_DRAFT_JSON_CHARS = 42_000;
-const MAX_VALUE_JSON_CHARS = 18_000;
+const MAX_DRAFT_JSON_CHARS = 80_000;
+const MAX_VALUE_JSON_CHARS = 32_000;
 
 function cleanString(value, max = 500) {
   return String(value ?? '').trim().slice(0, max);
@@ -267,6 +272,7 @@ function normalizeLetterheadSignatory(value, currentValue) {
   return {
     name: cleanString(value.name, 160),
     designation: cleanString(value.designation, 160),
+    company: cleanString(value.company, 160),
     ...(currentValue?.imageUrl
       ? { imageUrl: stubLetterheadImageSrc(currentValue.imageUrl, 'signatory') }
       : {}),
@@ -282,7 +288,7 @@ function normalizeLetterheadBlocks(value, currentValue) {
       .map((block) => [String(block.id), block])
   );
   return value
-    .slice(0, 40)
+    .slice(0, 80)
     .map((raw, index) => {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
       const id = cleanString(raw.id || `ai-letterhead-${Date.now()}-${index}`, 100);
@@ -291,7 +297,7 @@ function normalizeLetterheadBlocks(value, currentValue) {
         return {
           id,
           kind: 'text',
-          html: String(raw.html || '').slice(0, 16_000),
+          html: String(raw.html || '').slice(0, 24_000),
         };
       }
       if (raw.kind === 'table') {
@@ -304,7 +310,7 @@ function normalizeLetterheadBlocks(value, currentValue) {
           kind: 'table',
           title: cleanString(raw.title, 200),
           columns,
-          rows: (Array.isArray(raw.rows) ? raw.rows : []).slice(0, 60).map((row) =>
+          rows: (Array.isArray(raw.rows) ? raw.rows : []).slice(0, 120).map((row) =>
             (Array.isArray(row) ? row : [])
               .slice(0, columns.length)
               .map((cell) => String(cell || '').slice(0, 500))
@@ -351,7 +357,10 @@ function normalizeFieldValue(kind, field, value, currentValue) {
     return ['left', 'center', 'right'].includes(value) ? value : null;
   }
   if (kind === 'letterhead' && field === 'titleSize') {
-    return ['small', 'medium', 'large'].includes(value) ? value : null;
+    return ['small', 'medium', 'large', 'xlarge'].includes(value) ? value : null;
+  }
+  if (kind === 'letterhead' && field === 'layoutMode') {
+    return value === 'certificate' || value === 'letter' ? value : null;
   }
   if (kind === 'letterhead' && field === 'titleCase') {
     return value === 'normal' || value === 'uppercase' ? value : null;

@@ -195,6 +195,10 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/tech-field-day': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Proxy remaining Netlify functions to production (legacy default for undeclared routes).
       '/.netlify/functions': {
         // Use production functions so nudges like goingNow work without netlify:dev.

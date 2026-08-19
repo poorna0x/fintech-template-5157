@@ -227,7 +227,10 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [selectedCustomerForWhatsApp, setSelectedCustomerForWhatsApp] = useState<CustomerWithHistory | null>(null);
-  const [selectedBulkIds, setSelectedBulkIds] = useState<Set<string>>(new Set());
+  const [selectedBulk, setSelectedBulk] = useState<Map<string, CustomerWithHistory>>(
+    () => new Map()
+  );
+  const [selectingMatching, setSelectingMatching] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [bulkQueue, setBulkQueue] = useState<CustomerWithHistory[]>([]);
   const [customerPhotoGalleryOpen, setCustomerPhotoGalleryOpen] = useState(false);
@@ -331,9 +334,24 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   ]);
 
   useEffect(() => {
-    // Clear bulk selection when filters/page change so we don't send stale rows.
-    setSelectedBulkIds(new Set());
-  }, [filterSignature, currentPage, itemsPerPage]);
+    // Filters change who is in the list — drop the previous WhatsApp queue.
+    // Keep ticks when only the page number changes so you can pick across pages.
+    setSelectedBulk(new Map());
+  }, [filterSignature]);
+
+  useEffect(() => {
+    setSelectedBulk((prev) => {
+      if (prev.size === 0) return prev;
+      let changed = false;
+      const next = new Map(prev);
+      for (const customer of pageRows) {
+        if (!next.has(customer.id)) continue;
+        next.set(customer.id, customer);
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [pageRows]);
 
   useEffect(() => {
     if (hideHeader || (!authInitializing && user && isAdmin)) {
@@ -475,27 +493,91 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   );
 
   const allPageSelected =
-    pageSelectableIds.length > 0 && pageSelectableIds.every((id) => selectedBulkIds.has(id));
+    pageSelectableIds.length > 0 && pageSelectableIds.every((id) => selectedBulk.has(id));
 
-  const toggleBulkId = (id: string, checked: boolean) => {
-    setSelectedBulkIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
+  const selectedBulkCount = selectedBulk.size;
+  const CALLING_WA_SELECT_CAP = 100;
+
+  const toggleBulkCustomer = (customer: CustomerWithHistory, checked: boolean) => {
+    setSelectedBulk((prev) => {
+      const next = new Map(prev);
+      if (checked) next.set(customer.id, customer);
+      else next.delete(customer.id);
       return next;
     });
   };
 
   const toggleSelectAllPage = (checked: boolean) => {
-    setSelectedBulkIds((prev) => {
-      const next = new Set(prev);
-      if (checked) {
-        for (const id of pageSelectableIds) next.add(id);
-      } else {
-        for (const id of pageSelectableIds) next.delete(id);
+    setSelectedBulk((prev) => {
+      const next = new Map(prev);
+      for (const customer of pageRows) {
+        if (String(customer.phone || '').replace(/\D/g, '').length < 10) continue;
+        if (checked) next.set(customer.id, customer);
+        else next.delete(customer.id);
       }
       return next;
     });
+  };
+
+  const openBulkWhatsApp = (queue = Array.from(selectedBulk.values())) => {
+    const withPhone = queue.filter(
+      (c) => String(c.phone || '').replace(/\D/g, '').length >= 10
+    );
+    if (!withPhone.length) {
+      toast.error('Select at least one customer with a phone number');
+      return;
+    }
+    setBulkQueue(withPhone);
+    setBulkDialogOpen(true);
+  };
+
+  const selectMatchingFilters = async () => {
+    if (totalCount === 0) {
+      toast.info('No customers match these filters');
+      return;
+    }
+    setSelectingMatching(true);
+    try {
+      const { data, error } = await db.calling.getPage({
+        page: 1,
+        limit: CALLING_WA_SELECT_CAP,
+        search: debouncedSearch,
+        serviceFilter,
+        serviceHistoryFilter,
+        serviceSubTypeFilter,
+        showRecentlyContacted,
+        recentContactDays,
+        statusFilter,
+        prefilterFilter,
+      });
+      if (error || !data) {
+        throw error ?? new Error('Could not load matching customers');
+      }
+      const rows = (data.rows ?? []).map(mapCallingRowToCustomer);
+      setSelectedBulk((prev) => {
+        const next = new Map(prev);
+        for (const customer of rows) {
+          if (String(customer.phone || '').replace(/\D/g, '').length < 10) continue;
+          next.set(customer.id, customer);
+        }
+        return next;
+      });
+      const withPhone = rows.filter(
+        (c) => String(c.phone || '').replace(/\D/g, '').length >= 10
+      ).length;
+      if (data.total > CALLING_WA_SELECT_CAP) {
+        toast.message(
+          `Selected the first ${withPhone} matching customers (cap ${CALLING_WA_SELECT_CAP}). Narrow filters or tick more on later pages.`
+        );
+      } else {
+        toast.success(`Selected ${withPhone} matching customer${withPhone === 1 ? '' : 's'}`);
+      }
+    } catch (err) {
+      console.error('Select matching calling customers', err);
+      toast.error('Could not select matching customers');
+    } finally {
+      setSelectingMatching(false);
+    }
   };
 
   // Handle viewing photos
@@ -1064,31 +1146,49 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                         disabled={pageSelectableIds.length === 0}
                         aria-label="Select all on this page"
                       />
-                      <span className="hidden sm:inline">Select page</span>
-                      <span className="sm:hidden">All</span>
+                      <span className="hidden sm:inline">This page</span>
+                      <span className="sm:hidden">Page</span>
                     </label>
-                    {cloudApiOn ? (
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
                       className="h-8 text-xs"
-                      disabled={selectedBulkIds.size === 0}
-                      onClick={() => {
-                        const queue = pageRows.filter((c) => selectedBulkIds.has(c.id));
-                        if (!queue.length) {
-                          toast.error('Select at least one customer');
-                          return;
-                        }
-                        setBulkQueue(queue);
-                        setBulkDialogOpen(true);
-                      }}
+                      disabled={listLoading || selectingMatching || totalCount === 0}
+                      onClick={() => void selectMatchingFilters()}
+                    >
+                      {selectingMatching ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      ) : null}
+                      <span className="hidden sm:inline">
+                        Select matching
+                        {totalCount > CALLING_WA_SELECT_CAP ? ` (${CALLING_WA_SELECT_CAP})` : ''}
+                      </span>
+                      <span className="sm:hidden">Match</span>
+                    </Button>
+                    {selectedBulkCount > 0 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 text-xs"
+                        onClick={() => setSelectedBulk(new Map())}
+                      >
+                        Clear
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs"
+                      disabled={selectedBulkCount === 0}
+                      onClick={() => openBulkWhatsApp()}
                     >
                       <Users className="w-3.5 h-3.5 mr-1.5" />
                       Bulk WA
-                      {selectedBulkIds.size > 0 ? ` (${selectedBulkIds.size})` : ''}
+                      {selectedBulkCount > 0 ? ` (${selectedBulkCount})` : ''}
                     </Button>
-                    ) : null}
                     <Select value={itemsPerPage.toString()} onValueChange={(value) => {
                       setItemsPerPage(parseInt(value));
                       setCurrentPage(1);
@@ -1105,6 +1205,19 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                     </Select>
                   </div>
                 </div>
+                {selectedBulkCount > 0 ? (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    {selectedBulkCount} selected for WhatsApp. Ticks stay when you change page.
+                    {totalCount > itemsPerPage
+                      ? ' Use Match to take the first 100 of this filter, or tick more on other pages.'
+                      : ''}
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    Tick customers, or Match this filter, then Bulk WA. One customer: the green
+                    WhatsApp button. Cold (no 24h chat): uses an approved Meta template.
+                  </p>
+                )}
               </div>
 
               {pageRows.map((customer) => {
@@ -1122,9 +1235,9 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                   {/* Header */}
                   <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
                     <Checkbox
-                      checked={selectedBulkIds.has(customer.id)}
+                      checked={selectedBulk.has(customer.id)}
                       disabled={String(customer.phone || '').replace(/\D/g, '').length < 10}
-                      onCheckedChange={(v) => toggleBulkId(customer.id, v === true)}
+                      onCheckedChange={(v) => toggleBulkCustomer(customer, v === true)}
                       aria-label={`Select ${customer.fullName}`}
                       className="shrink-0"
                     />

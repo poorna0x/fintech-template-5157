@@ -75,6 +75,7 @@ const AUTH_COLS = 'id, doc_type, customer_id, verify_code, created_at';
 const {
   computeTechWorkedHours,
   formatWorkedDuration,
+  formatIstClock,
   parseMs,
   jobCompletionMs,
 } = require('./tech-worked-hours-helper');
@@ -553,12 +554,20 @@ function detectTechnicianFieldStats(message) {
       text
     );
   const mentionsHours =
-    /\b(?:hours? worked|worked hours|how long (?:did|has|have|was)|time (?:on|in) (?:the )?field|on field|who worked (?:the )?most hours?|how (?:long|many hours?) (?:did )?(?:technicians?|techs?|team|guys?) work|field team productivity|productivity (?:of|this|last|for) (?:the )?(?:team|technicians?|month|week|today))\b/.test(
+    /\b(?:hours? worked|worked hours|work(?:ing)? times?|total (?:work )?time|total hours|how long (?:did|has|have|was)|time (?:on|in) (?:the )?field|on field|who worked (?:the )?most hours?|how (?:long|many hours?) (?:did )?(?:technicians?|techs?|team|guys?) work|field team productivity|productivity (?:of|this|last|for) (?:the )?(?:team|technicians?|month|week|today))\b/.test(
       text
     ) ||
     (/\bhow many hours\b/.test(text) &&
-      /\b(?:work|worked|technician|tech|field|today|yesterday|week|month)\b/.test(text));
-  return mentionsTravel || mentionsHours;
+      /\b(?:work|worked|technician|tech|field|today|yesterday|week|month)\b/.test(text)) ||
+    (/\b(?:started|start|began|begun)\b/.test(text) &&
+      /\b(?:job|jobs|work|visit|shift)\b/.test(text) &&
+      /\b(?:when|time|today|am|pm|clock)\b/.test(text));
+  const mentionsTeamWorkTime =
+    /\btechnicians?\b|\btechs?\b/.test(text) &&
+    /\b(?:work(?:ing)? times?|total (?:work )?time|hours? worked|worked hours|total hours)\b/.test(
+      text
+    );
+  return mentionsTravel || mentionsHours || mentionsTeamWorkTime;
 }
 
 /**
@@ -1650,22 +1659,25 @@ async function loadTopCustomerValueRanking(db, intent, todayKey) {
 
 /** Technicians whose name matches a typed token, allowing for misspellings. */
 async function findTechniciansByName(db, nameTokens) {
+  const tokens = (nameTokens || [])
+    .map((token) => String(token || '').toLowerCase().replace(/[^\p{L}]/gu, ''))
+    .filter((token) => token.length >= 4)
+    .slice(0, 2);
+  if (!tokens.length) return [];
+  // Load the small technician list and fuzzy-match in memory. An ILIKE stem
+  // like "joyti" misses "Jyotirling" even when edit-distance would match.
+  const { data, error } = await db
+    .from('technicians')
+    .select('id,full_name,employee_id')
+    .limit(80);
+  if (error) {
+    console.warn('[ai-crm-lookup] technician name search failed', error.message);
+    return [];
+  }
   const matches = [];
-  for (const token of (nameTokens || []).slice(0, 2)) {
-    const clean = token.toLowerCase().replace(/[^\p{L}]/gu, '');
-    if (clean.length < 4) continue;
-    const stem = escapeForLike(clean.slice(0, Math.max(3, Math.ceil(clean.length / 2))));
-    const { data, error } = await db
-      .from('technicians')
-      .select('id,full_name,employee_id')
-      .ilike('full_name', `%${stem}%`)
-      .limit(FUZZY_NAME_SCAN_LIMIT);
-    if (error) {
-      console.warn('[ai-crm-lookup] technician name search failed', error.message);
-      continue;
-    }
+  for (const token of tokens) {
     for (const row of data || []) {
-      if (nameMatchesToken(row.full_name, clean) < 0) continue;
+      if (nameMatchesToken(row.full_name, token) < 0) continue;
       if (matches.find((match) => match.id === String(row.id))) continue;
       matches.push({
         id: String(row.id),
@@ -1737,6 +1749,8 @@ function computeTechFieldStatsRow(jobs, nowMs, todayKey) {
   let kmKnown = false;
   let live = false;
   let daysWorked = 0;
+  let firstStartMs = null;
+  let lastEndMs = null;
 
   for (const [dayKey, dayJobs] of byDay.entries()) {
     const isToday = dayKey === todayKey;
@@ -1749,6 +1763,12 @@ function computeTechFieldStatsRow(jobs, nowMs, todayKey) {
       daysWorked += 1;
     }
     if (summary.live) live = true;
+    if (summary.firstStartMs != null && (firstStartMs == null || summary.firstStartMs < firstStartMs)) {
+      firstStartMs = summary.firstStartMs;
+    }
+    if (summary.endMs != null && (lastEndMs == null || summary.endMs > lastEndMs)) {
+      lastEndMs = summary.endMs;
+    }
     const dayKm = sumStoredDayTravelKm(dayJobs);
     if (dayKm != null) {
       totalKm += dayKm;
@@ -1767,6 +1787,9 @@ function computeTechFieldStatsRow(jobs, nowMs, todayKey) {
     jobsStarted,
     jobsCompleted,
     live,
+    firstStartMs,
+    firstStartLabel: firstStartMs != null ? formatIstClock(firstStartMs) : null,
+    lastEndLabel: lastEndMs != null ? formatIstClock(lastEndMs) : null,
   };
 }
 
@@ -1855,6 +1878,27 @@ async function loadTechnicianFieldStats(db, intent, todayKey) {
     return String(a.name).localeCompare(String(b.name));
   });
 
+  if (!rows.length && filterIds.length) {
+    for (const tech of intent.technicianMatches || []) {
+      rows.push({
+        technicianId: tech.id,
+        employeeId: tech.employeeId,
+        name: tech.name,
+        durationMs: null,
+        durationLabel: null,
+        travelKm: null,
+        travelLabel: null,
+        daysWorked: 0,
+        jobsStarted: 0,
+        jobsCompleted: 0,
+        live: false,
+        firstStartMs: null,
+        firstStartLabel: null,
+        lastEndLabel: null,
+      });
+    }
+  }
+
   return {
     technicians: rows.slice(0, TOP_TECHNICIAN_LIMIT).map((row, index) => ({
       id: row.technicianId,
@@ -1875,6 +1919,8 @@ async function loadTechnicianFieldStats(db, intent, todayKey) {
         jobsStarted: row.jobsStarted,
         jobsCompleted: row.jobsCompleted,
         live: row.live,
+        firstStartLabel: row.firstStartLabel,
+        lastEndLabel: row.lastEndLabel,
       })),
       technicianFieldStatsPeriod: intent.allTime ? 'all time' : intent.range?.label || 'today',
       technicianFieldStatsFilteredBy: intent.technicianMatches?.length
@@ -2392,15 +2438,28 @@ function formatStatsAnswerForTools(pack, tools) {
       rows.push(`Technician · ${stats.technicianFieldStatsFilteredBy.join(', ')}`);
     }
     if (stats.technicianFieldStats?.length) {
+      let teamMs = 0;
+      let teamHasDuration = false;
       for (const row of stats.technicianFieldStats.slice(0, 6)) {
         const parts = [row.name];
+        if (row.firstStartLabel) parts.push(`started ${row.firstStartLabel}`);
+        if (row.lastEndLabel && !row.live) parts.push(`until ${row.lastEndLabel}`);
         if (row.durationLabel) {
           parts.push(`${row.durationLabel} worked${row.live ? ' (live)' : ''}`);
+          if (row.durationMs) {
+            teamMs += row.durationMs;
+            teamHasDuration = true;
+          }
+        } else if (!row.jobsStarted) {
+          parts.push('no job start recorded');
         }
         if (row.travelLabel) parts.push(`${row.travelLabel} travel`);
         else if (row.travelKm == null && row.jobsStarted > 0) parts.push('km not stored yet');
         if (row.jobsCompleted > 0) parts.push(`${row.jobsCompleted} jobs done`);
         rows.push(`· ${parts.join(' · ')}`);
+      }
+      if (teamHasDuration && stats.technicianFieldStats.length > 1) {
+        rows.unshift(`Team total · ${formatWorkedDuration(teamMs)}`);
       }
     } else {
       rows.push('No field work in this period.');
@@ -2440,7 +2499,11 @@ function formatStatsAnswerForTools(pack, tools) {
         sections.push(formatStatsSection('Jobs', jobRows));
       }
     } else if (!selected.includes('customer_value_ranking') && !pack.jobs?.length) {
-      sections.push('Customers\n  No matches found.');
+      sections.push(
+        pack.hints?.requireAmc
+          ? 'Customers\n  No one in that search has an active AMC.'
+          : 'Customers\n  No matches found.'
+      );
     }
   }
 
@@ -3672,7 +3735,7 @@ function formatContextForPrompt(pack) {
     }
     for (const row of stats.technicianFieldStats) {
       lines.push(
-        `- name=${row.name}; worked=${row.durationLabel || '—'}; travelKm=${row.travelLabel || row.travelKm || '—'}; jobsStarted=${row.jobsStarted}; jobsCompleted=${row.jobsCompleted}; live=${row.live ? 'yes' : 'no'}`
+        `- name=${row.name}; started=${row.firstStartLabel || '—'}; until=${row.lastEndLabel || '—'}; worked=${row.durationLabel || '—'}; travelKm=${row.travelLabel || row.travelKm || '—'}; jobsStarted=${row.jobsStarted}; jobsCompleted=${row.jobsCompleted}; live=${row.live ? 'yes' : 'no'}`
       );
     }
     if (pack.truncated?.technicianFieldStats) {

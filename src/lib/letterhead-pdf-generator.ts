@@ -17,7 +17,18 @@ import {
   normalizeDocumentBrand,
   resolveBrandSealSrc,
 } from './service-brands';
-import { downloadDocumentPdf, withAbsoluteAssetUrls } from './server-pdf-download';
+import {
+  downloadDocumentPdfReturningBase64,
+  generateDocumentPdfBase64,
+  withAbsoluteAssetUrls,
+} from './server-pdf-download';
+import {
+  formatDocumentPdfVerifyFooterLine,
+  generateDocumentPdfVerifyCode,
+  recordDocumentPdfAuthenticity,
+  todayYmdIst,
+} from './documentPdfAuthenticity';
+import { toast } from 'sonner';
 
 /**
  * DOMPurify config tuned for the rich text editor inside the letterhead builder.
@@ -83,7 +94,7 @@ function normalizeLetterheadImageSrc(value: unknown): string {
 function normalizeLetterheadBlocks(rawBlocks: unknown, fallback: LetterheadBlock[]): LetterheadBlock[] {
   if (!Array.isArray(rawBlocks)) return fallback;
   const blocks = rawBlocks
-    .slice(0, 40)
+    .slice(0, 80)
     .map((raw, index): LetterheadBlock | null => {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
       const block = raw as Record<string, unknown>;
@@ -92,7 +103,7 @@ function normalizeLetterheadBlocks(rawBlocks: unknown, fallback: LetterheadBlock
         return {
           id,
           kind: 'text',
-          html: sanitizeLetterheadRichTextHtml(String(block.html || '').slice(0, 16_000)),
+          html: sanitizeLetterheadRichTextHtml(String(block.html || '').slice(0, 24_000)),
         };
       }
       if (block.kind === 'table') {
@@ -101,7 +112,7 @@ function normalizeLetterheadBlocks(rawBlocks: unknown, fallback: LetterheadBlock
           .map((value) => String(value || '').slice(0, 160));
         const safeColumns = columns.length ? columns : ['Column 1'];
         const rows = (Array.isArray(block.rows) ? block.rows : [])
-          .slice(0, 60)
+          .slice(0, 120)
           .map((row) =>
             (Array.isArray(row) ? row : [])
               .slice(0, safeColumns.length)
@@ -153,12 +164,14 @@ export function redactLetterheadMediaForAi(
       ? {
           name: data.leftSignatory.name,
           designation: data.leftSignatory.designation,
+          company: data.leftSignatory.company,
         }
       : data.leftSignatory,
     rightSignatory: data.rightSignatory
       ? {
           name: data.rightSignatory.name,
           designation: data.rightSignatory.designation,
+          company: data.rightSignatory.company,
         }
       : data.rightSignatory,
     blocks: (data.blocks || []).map((block) =>
@@ -233,11 +246,15 @@ export type LetterheadBlock =
     }
   | { id: string; kind: 'pagebreak' };
 
+export type LetterheadLayoutMode = 'letter' | 'certificate';
+
 export interface LetterheadSignatory {
   /** Pre-printed name above the signature line. */
   name?: string;
   /** Role / designation printed under the name. */
   designation?: string;
+  /** Optional company line under designation (certificates, official letters). */
+  company?: string;
   /** Optional data URL or URL for a signature image. */
   imageUrl?: string;
 }
@@ -252,13 +269,23 @@ export interface LetterheadDocumentData {
   /** Header form fields. */
   title: string;
   titleAlignment?: 'left' | 'center' | 'right';
-  titleSize?: 'small' | 'medium' | 'large';
+  titleSize?: 'small' | 'medium' | 'large' | 'xlarge';
   titleCase?: 'normal' | 'uppercase';
+  /** Letter = correspondence header; certificate = centered title, no To: block. */
+  layoutMode?: LetterheadLayoutMode;
   date: string;
   subject?: string;
   /** Free-text reference (PO / Work Order / Job ID). */
   referenceNumber?: string;
   cc?: string;
+  /** When false, name/company/site stay in the form but are not printed. */
+  showRecipientBlock?: boolean;
+  /** Label for the recipient line (default "To"). */
+  recipientLabel?: string;
+  /** Print Doc # / Date / Ref in the header. */
+  showDocumentMeta?: boolean;
+  /** Small brand pill beside the title (reports). */
+  showBrandTag?: boolean;
   customerName?: string;
   customerCompany?: string;
   siteLocation?: string;
@@ -273,7 +300,7 @@ export interface LetterheadDocumentData {
 
   /** Left-hand signatory (defaults to "Authorized Signatory" using the brand seal). */
   leftSignatory?: LetterheadSignatory;
-  /** Right-hand signatory (defaults to "Customer Signatory" with a blank line). */
+  /** Right-hand signatory (optional; often hidden on certificates). */
   rightSignatory?: LetterheadSignatory;
   /** Show the brand seal automatically next to the left signatory. */
   useBrandSealAsStamp?: boolean;
@@ -283,7 +310,7 @@ export interface LetterheadDocumentData {
   customStampUrl?: string;
   /** Don't print the left (authorized) signature block. */
   hideLeftSignatory?: boolean;
-  /** Don't print the right (customer) signature block — useful for internal docs. */
+  /** Don't print the right signature block — default on certificates / letterhead. */
   hideRightSignatory?: boolean;
 
   /** Optional final notes printed below signatures. */
@@ -294,6 +321,8 @@ export interface LetterheadDocumentData {
   hideBrandFooter?: boolean;
   /** Print a decorative page frame around the entire document. Defaults to true. */
   showPageBorder?: boolean;
+  /** Footer verify code for CRM authenticity (hash stored separately; not saved in drafts). */
+  authenticityVerifyCode?: string;
 }
 
 export const LETTERHEAD_DOCUMENT_TYPE_LABEL: Record<LetterheadDocumentType, string> = {
@@ -368,6 +397,39 @@ export function createStarterBlocks(type: LetterheadDocumentType): LetterheadBlo
             '<p><strong>Observations &amp; Recommendations:</strong></p>' +
             '<ul><li>Add observation here</li></ul>',
         },
+        {
+          id: newBlockId(),
+          kind: 'table',
+          title: 'Readings / Measurements',
+          columns: ['Parameter', 'Before', 'After', 'Unit', 'Remarks'],
+          rows: [
+            ['TDS', '', '', 'ppm', ''],
+            ['Inlet pressure', '', '', 'psi', ''],
+          ],
+        },
+        {
+          id: newBlockId(),
+          kind: 'pagebreak',
+        },
+        {
+          id: newBlockId(),
+          kind: 'text',
+          html:
+            '<h2>Additional notes (page 2)</h2>' +
+            '<p>Use extra pages for photos, a long work log, or a multi-visit history. ' +
+            'Insert more tables or page breaks from the toolbar as needed.</p>',
+        },
+        {
+          id: newBlockId(),
+          kind: 'table',
+          title: 'Visit log (add rows as needed)',
+          columns: ['Date', 'Engineer', 'Work summary', 'Duration', 'Customer remarks'],
+          rows: [
+            ['', '', '', '', ''],
+            ['', '', '', '', ''],
+            ['', '', '', '', ''],
+          ],
+        },
       ];
     case 'amc_report':
       return [
@@ -411,11 +473,17 @@ export function createStarterBlocks(type: LetterheadDocumentType): LetterheadBlo
   }
 }
 
+function isCorrespondenceType(type: LetterheadDocumentType): boolean {
+  return type === 'service_report' || type === 'amc_report';
+}
+
 /** Build an empty document with safe defaults. */
 export function createEmptyLetterhead(
   type: LetterheadDocumentType,
   brand: DocumentBrand = 'hydrogenro'
 ): LetterheadDocumentData {
+  const correspondence = isCorrespondenceType(type);
+  const company = getCompanyInfoForBrand(brand);
   return {
     documentNumber: buildDefaultLetterheadNumber(type),
     documentType: type,
@@ -424,10 +492,15 @@ export function createEmptyLetterhead(
     titleAlignment: 'left',
     titleSize: 'medium',
     titleCase: 'uppercase',
+    layoutMode: 'letter',
     date: new Date().toISOString().slice(0, 10),
     subject: '',
     referenceNumber: '',
     cc: '',
+    showRecipientBlock: correspondence,
+    recipientLabel: 'To',
+    showDocumentMeta: correspondence,
+    showBrandTag: correspondence,
     customerName: '',
     customerCompany: '',
     siteLocation: '',
@@ -435,17 +508,74 @@ export function createEmptyLetterhead(
     leftSignatory: {
       name: '',
       designation: 'Authorized Signatory',
+      company: company.name,
     },
     rightSignatory: {
       name: '',
-      designation: 'Customer Signatory',
+      designation: correspondence ? 'Customer Signatory' : 'Signatory',
     },
     useBrandSealAsStamp: true,
     brandSealVariant: 'sign',
     customStampUrl: '',
+    hideRightSignatory: !correspondence,
     notes: '',
     terms: '',
     showPageBorder: true,
+  };
+}
+
+/** Official internship certificate on company letterhead (fully editable after insert). */
+export function createInternshipCertificateLetterhead(
+  brand: DocumentBrand,
+  internName = 'Srujan'
+): LetterheadDocumentData {
+  const company = getCompanyInfoForBrand(brand);
+  const companyLabel = getDocumentBrandLabel(brand);
+  const name = internName.trim() || 'Intern';
+  const base = createEmptyLetterhead('custom_document', brand);
+  return {
+    ...base,
+    title: 'Certificate of Internship',
+    titleAlignment: 'center',
+    titleSize: 'xlarge',
+    titleCase: 'uppercase',
+    layoutMode: 'certificate',
+    subject: '',
+    customerName: '',
+    customerCompany: '',
+    siteLocation: '',
+    customerId: '',
+    customerCode: '',
+    customerPhone: '',
+    customerEmail: '',
+    showRecipientBlock: false,
+    showDocumentMeta: false,
+    showBrandTag: false,
+    hideRightSignatory: true,
+    leftSignatory: {
+      name: '',
+      designation: 'Authorized Signatory',
+      company: company.name,
+    },
+    rightSignatory: {
+      name: '',
+      designation: '',
+    },
+    blocks: [
+      {
+        id: newBlockId(),
+        kind: 'text',
+        html:
+          `<p style="text-align:center">This is to certify that</p>` +
+          `<h1 style="text-align:center">${name}</h1>` +
+          `<p style="text-align:center">has successfully completed a <strong>one-year internship in Software Development</strong> with <strong>${companyLabel}</strong>.</p>` +
+          `<p>During the internship, he gained practical experience in software development, web development, programming, debugging, database management, API integration, version control, and working on real-world software projects.</p>` +
+          `<p>He demonstrated <strong>dedication, technical ability, willingness to learn, and professional conduct</strong> throughout the internship.</p>` +
+          `<p>We appreciate his contributions and wish him continued success in his future career.</p>` +
+          `<p><strong>Internship Duration:</strong> [Start Date] – [End Date]<br/>` +
+          `<strong>Date of Issue:</strong> [Date]</p>`,
+      },
+    ],
   };
 }
 
@@ -468,8 +598,30 @@ export function normalizeLetterheadData(raw: any): LetterheadDocumentData {
         ? raw.titleAlignment
         : 'left',
     titleSize:
-      raw?.titleSize === 'small' || raw?.titleSize === 'large' ? raw.titleSize : 'medium',
+      raw?.titleSize === 'small' || raw?.titleSize === 'large' || raw?.titleSize === 'xlarge'
+        ? raw.titleSize
+        : 'medium',
     titleCase: raw?.titleCase === 'normal' ? 'normal' : 'uppercase',
+    layoutMode: raw?.layoutMode === 'certificate' ? 'certificate' : 'letter',
+    showRecipientBlock:
+      typeof raw?.showRecipientBlock === 'boolean'
+        ? raw.showRecipientBlock
+        : isCorrespondenceType(type),
+    showDocumentMeta:
+      typeof raw?.showDocumentMeta === 'boolean'
+        ? raw.showDocumentMeta
+        : isCorrespondenceType(type),
+    showBrandTag:
+      typeof raw?.showBrandTag === 'boolean' ? raw.showBrandTag : isCorrespondenceType(type),
+    hideRightSignatory:
+      typeof raw?.hideRightSignatory === 'boolean'
+        ? raw.hideRightSignatory
+        : !isCorrespondenceType(type),
+    recipientLabel:
+      typeof raw?.recipientLabel === 'string' && raw.recipientLabel.trim()
+        ? raw.recipientLabel
+        : 'To',
+    authenticityVerifyCode: undefined,
   };
 }
 
@@ -542,39 +694,54 @@ function renderBlockHtml(block: LetterheadBlock): string {
 
 function renderHeaderTwoColHtml(data: LetterheadDocumentData): string {
   const left: string[] = [];
-  if (data.customerName) {
-    left.push(`<div><strong>To:</strong> ${sanitizeForTemplate(data.customerName)}</div>`);
-  }
-  if (data.customerCompany) {
-    left.push(`<div>${sanitizeForTemplate(data.customerCompany)}</div>`);
-  }
-  if (data.siteLocation) {
-    left.push(`<div>${sanitizeForTemplate(data.siteLocation)}</div>`);
+  if (data.showRecipientBlock !== false) {
+    const recipientLabel = (data.recipientLabel || 'To').trim() || 'To';
+    if (data.customerName) {
+      left.push(
+        `<div><strong>${sanitizeForTemplate(recipientLabel)}:</strong> ${sanitizeForTemplate(
+          data.customerName
+        )}</div>`
+      );
+    }
+    if (data.customerCompany) {
+      left.push(`<div>${sanitizeForTemplate(data.customerCompany)}</div>`);
+    }
+    if (data.siteLocation) {
+      left.push(`<div>${sanitizeForTemplate(data.siteLocation)}</div>`);
+    }
   }
 
   const right: string[] = [];
-  if (data.documentNumber) {
-    right.push(
-      `<div><strong>Doc #:</strong> ${sanitizeForTemplate(data.documentNumber)}</div>`
-    );
-  }
-  if (data.date) {
-    const formatted = new Date(data.date).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-    right.push(`<div><strong>Date:</strong> ${formatted}</div>`);
-  }
-  if (data.referenceNumber) {
-    right.push(`<div><strong>Ref:</strong> ${sanitizeForTemplate(data.referenceNumber)}</div>`);
+  if (data.showDocumentMeta !== false) {
+    if (data.documentNumber) {
+      right.push(
+        `<div><strong>Doc #:</strong> ${sanitizeForTemplate(data.documentNumber)}</div>`
+      );
+    }
+    if (data.date) {
+      const formatted = new Date(data.date).toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+      right.push(`<div><strong>Date:</strong> ${formatted}</div>`);
+    }
+    if (data.referenceNumber) {
+      right.push(`<div><strong>Ref:</strong> ${sanitizeForTemplate(data.referenceNumber)}</div>`);
+    }
   }
 
-  return `
+  const metaHtml =
+    left.length || right.length
+      ? `
     <div class="lh-meta-grid">
-      <div class="lh-meta-col">${left.join('') || '<div>&nbsp;</div>'}</div>
-      <div class="lh-meta-col lh-meta-col-right">${right.join('') || '<div>&nbsp;</div>'}</div>
-    </div>
+      <div class="lh-meta-col">${left.join('')}</div>
+      <div class="lh-meta-col lh-meta-col-right">${right.join('')}</div>
+    </div>`
+      : '';
+
+  return `
+    ${metaHtml}
     ${
       data.subject
         ? `<div class="lh-subject"><strong>Subject:</strong> ${sanitizeForTemplate(
@@ -604,12 +771,14 @@ function renderSignatureBlockHtml(
     ? `<img src="${safe.imageUrl}" alt="Signature" class="lh-signature-image" />`
     : '<div class="lh-signature-line"></div>';
   const name = safe.name ? sanitizeForTemplate(safe.name) : '';
+  const companyLine = safe.company ? sanitizeForTemplate(safe.company) : '';
   return `
     <div class="lh-signature-box">
       ${stamp}
       ${sigImage}
       <div class="lh-signature-name">${name || '&nbsp;'}</div>
       <div class="lh-signature-designation">${sanitizeForTemplate(designation)}</div>
+      ${companyLine ? `<div class="lh-signature-company">${companyLine}</div>` : ''}
     </div>
   `;
 }
@@ -627,7 +796,7 @@ function renderSignaturesHtml(data: LetterheadDocumentData): string {
     ? renderSignatureBlockHtml(data.leftSignatory, leftStamp, 'Authorized Signatory')
     : '';
   const rightHtml = showRight
-    ? renderSignatureBlockHtml(data.rightSignatory, rightStamp, 'Customer Signatory')
+    ? renderSignatureBlockHtml(data.rightSignatory, rightStamp, 'Signatory')
     : '';
 
   // When only one side is shown, centre it so the single block doesn't look
@@ -668,8 +837,16 @@ export function buildLetterheadInnerHtml(data: LetterheadDocumentData): string {
       ? data.titleAlignment
       : 'left';
   const titleSize =
-    data.titleSize === 'small' ? 15 : data.titleSize === 'large' ? 22 : 18;
+    data.titleSize === 'small'
+      ? 15
+      : data.titleSize === 'large'
+        ? 22
+        : data.titleSize === 'xlarge'
+          ? 28
+          : 18;
   const titleTransform = data.titleCase === 'normal' ? 'none' : 'uppercase';
+  const layoutMode = data.layoutMode === 'certificate' ? 'certificate' : 'letter';
+  const showBrandTag = data.showBrandTag !== false && layoutMode !== 'certificate';
 
   const bodyBlocks = (data.blocks || []).map((b) => renderBlockHtml(b)).join('');
   const headerMeta = renderHeaderTwoColHtml(data);
@@ -680,12 +857,19 @@ export function buildLetterheadInnerHtml(data: LetterheadDocumentData): string {
         data.notes
       )}</div></div>`
     : '';
+  const verifyCode = data.authenticityVerifyCode?.trim();
   const footerHtml = data.hideBrandFooter
-    ? ''
-    : renderPdfFooterHtml(data.brand, company);
+    ? verifyCode
+      ? `<div class="footer"><p style="margin-top: 6px; letter-spacing: 0.02em; color: #9ca3af;">${sanitizeForTemplate(
+          formatDocumentPdfVerifyFooterLine(verifyCode, data.brand)
+        )}</p></div>`
+      : ''
+    : renderPdfFooterHtml(data.brand, company, {
+        authenticityVerifyCode: verifyCode,
+      });
 
   return `
-    <div class="lh-container">
+    <div class="lh-container lh-layout-${layoutMode}">
       <div class="lh-header">
         <div class="lh-logo">${renderPdfLogoHtml(data.brand)}</div>
         <div class="lh-company">${renderPdfCompanyDetailsHtml(company, data.brand)}</div>
@@ -695,7 +879,11 @@ export function buildLetterheadInnerHtml(data: LetterheadDocumentData): string {
         <div class="lh-title" style="text-align: ${titleAlignment}; font-size: ${titleSize}px; text-transform: ${titleTransform};">${sanitizeForTemplate(
           data.title || typeLabel
         )}</div>
-        <div class="lh-brand-tag">${sanitizeForTemplate(brandLabel)}</div>
+        ${
+          showBrandTag
+            ? `<div class="lh-brand-tag">${sanitizeForTemplate(brandLabel)}</div>`
+            : ''
+        }
       </div>
 
       ${headerMeta}
@@ -865,6 +1053,30 @@ const LETTERHEAD_BASE_CSS = `
   .lh-body h3 { font-size: 13px; }
   .lh-body a { color: #0369a1; }
 
+  .lh-layout-certificate .lh-title-row {
+    display: block;
+    margin: 22px 0 8px 0;
+  }
+  .lh-layout-certificate .lh-title {
+    letter-spacing: 2.4px;
+    font-weight: 700;
+  }
+  .lh-layout-certificate .lh-body {
+    font-size: 13px;
+    line-height: 1.7;
+    margin-top: 18px;
+  }
+  .lh-layout-certificate .lh-body p {
+    margin-bottom: 12px;
+  }
+  .lh-layout-certificate .lh-body h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: #0f172a;
+    margin: 18px 0 20px 0;
+  }
+
   .lh-text-block { margin-bottom: 10px; }
 
   .lh-table-block { margin: 10px 0 14px 0; }
@@ -990,6 +1202,12 @@ const LETTERHEAD_BASE_CSS = `
     font-size: 11px;
     color: #4b5563;
   }
+  .lh-signature-company {
+    font-size: 11px;
+    font-weight: 600;
+    color: #0f172a;
+    margin-top: 2px;
+  }
 
   .lh-notes {
     margin-top: 16px;
@@ -1079,27 +1297,106 @@ ${inner}
 </html>`;
 }
 
-/**
- * Open a new window with the rendered letterhead and trigger the browser print dialog.
- * Caller decides whether the user wants to print or save as PDF (both go through the
- * same dialog).
- */
+export function letterheadPdfFilename(data: LetterheadDocumentData): string {
+  const title =
+    data.documentNumber ||
+    data.title ||
+    LETTERHEAD_DOCUMENT_TYPE_LABEL[data.documentType] ||
+    'Document';
+  return `${String(title).replace(/[^\w.-]+/g, '_').slice(0, 80)}.pdf`;
+}
+
+export function letterheadShareLabel(data: LetterheadDocumentData): string {
+  return (
+    data.title?.trim() ||
+    LETTERHEAD_DOCUMENT_TYPE_LABEL[data.documentType] ||
+    'document'
+  ).slice(0, 60);
+}
+
+export function letterheadAuthenticitySourceKey(data: LetterheadDocumentData): string {
+  const num = String(data.documentNumber || '').trim();
+  if (num) return `letterhead:${data.documentType}:${num}`.slice(0, 200);
+  const title = String(data.title || 'doc').trim().slice(0, 40);
+  return `letterhead:${data.documentType}:${data.date || 'na'}:${title}`.slice(0, 200);
+}
+
+function withLetterheadAuthenticity(
+  data: LetterheadDocumentData,
+  verifyCode: string
+): LetterheadDocumentData {
+  return { ...data, authenticityVerifyCode: verifyCode };
+}
+
+async function fingerprintLetterheadPdf(params: {
+  data: LetterheadDocumentData;
+  verifyCode: string;
+  pdfBase64: string;
+  filename: string;
+}): Promise<void> {
+  const recorded = await recordDocumentPdfAuthenticity({
+    docType: 'letterhead',
+    sourceKey: letterheadAuthenticitySourceKey(params.data),
+    verifyCode: params.verifyCode,
+    pdfBase64: params.pdfBase64,
+    filename: params.filename,
+    customerId: params.data.customerId || null,
+    documentRef:
+      `${LETTERHEAD_DOCUMENT_TYPE_LABEL[params.data.documentType] || 'Letterhead'} · ${
+        params.data.documentNumber || letterheadShareLabel(params.data)
+      }`.slice(0, 200),
+    generatedOnYmd: todayYmdIst(),
+  });
+  if (!recorded.ok) {
+    toast.warning('PDF ready, but authenticity fingerprint was not saved', {
+      description: recorded.error,
+    });
+  }
+}
+
+/** Puppeteer PDF + hash-only fingerprint (email / WhatsApp). */
+export async function generateLetterheadPdfBase64(
+  data: LetterheadDocumentData
+): Promise<{ pdfBase64: string; filename: string; size: number }> {
+  const verifyCode = generateDocumentPdfVerifyCode();
+  const fingerprinted = withLetterheadAuthenticity(data, verifyCode);
+  const filename = letterheadPdfFilename(fingerprinted);
+  const pdf = await generateDocumentPdfBase64({
+    html: buildLetterheadDocumentHtml(fingerprinted),
+    filename,
+  });
+  await fingerprintLetterheadPdf({
+    data: fingerprinted,
+    verifyCode,
+    pdfBase64: pdf.pdfBase64,
+    filename: pdf.filename,
+  });
+  return pdf;
+}
+
 export function generateLetterheadPDF(
   data: LetterheadDocumentData,
   action: 'print' | 'pdf' = 'print'
 ): void {
   try {
     if (action === 'pdf') {
-      const title =
-        data.documentNumber ||
-        LETTERHEAD_DOCUMENT_TYPE_LABEL[data.documentType] ||
-        'Document';
-      void downloadDocumentPdf({
-        html: buildLetterheadDocumentHtml(data),
-        filename: `${title.replace(/\s+/g, '_')}.pdf`,
-      }).catch(() => {
-        /* errors surfaced via toast in downloadDocumentPdf */
-      });
+      const verifyCode = generateDocumentPdfVerifyCode();
+      const fingerprinted = withLetterheadAuthenticity(data, verifyCode);
+      void downloadDocumentPdfReturningBase64({
+        html: buildLetterheadDocumentHtml(fingerprinted),
+        filename: letterheadPdfFilename(fingerprinted),
+      })
+        .then((pdf) =>
+          fingerprintLetterheadPdf({
+            data: fingerprinted,
+            verifyCode,
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
+          })
+        )
+        .catch(() => {
+          /* errors surfaced via toast in downloadDocumentPdfReturningBase64 */
+        });
       return;
     }
 

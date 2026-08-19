@@ -39,12 +39,43 @@ const noonIst = Date.parse(isoAtIst(2026, 8, 18, 12, 0));
   assert.equal(summary.completedCount, 2);
   assert.equal(formatWorkedDuration(summary.durationMs), '9h 24m');
   const body = formatWorkedHoursPushBody(summary);
-  assert.match(body, /Today you worked 9h 24m/);
+  assert.match(body, /You worked 9h 24m/);
   assert.match(body, /9:12/);
   assert.match(body, /6:36/);
   const withKm = formatWorkedHoursPushBody(summary, { kmLabel: '42 km' });
-  assert.match(withKm, /travelled ~42 km/);
-  assert.match(withKm, /Today you worked 9h 24m/);
+  assert.match(withKm, /42 km/);
+  assert.match(withKm, /You worked 9h 24m/);
+  assert.doesNotMatch(withKm, /Office return/);
+  const withOffice = formatWorkedHoursPushBody(summary, {
+    kmLabel: '42 km',
+    officeReturnSec: 35 * 60,
+  });
+  assert.match(withOffice, /7:11/);
+  assert.doesNotMatch(withOffice, /Office return/);
+  const {
+    lastCompletedJobToday,
+    formatDriveDuration,
+    formatWorkedHoursAdminBlock,
+  } = require('../netlify/functions/tech-worked-hours-helper');
+  assert.equal(formatDriveDuration(35 * 60), '35m');
+  assert.equal(formatDriveDuration(65 * 60), '1h 5m');
+  const named = formatWorkedHoursAdminBlock('Jyotirling', summary, {
+    kmLabel: '42 km',
+    officeReturnSec: 35 * 60,
+  });
+  assert.equal(named.split('\n').length, 1);
+  assert.match(named, /Jyotirling/);
+  assert.match(named, /9h 24m/);
+  assert.match(named, /7:11/);
+  assert.doesNotMatch(named, /office/i);
+  const last = lastCompletedJobToday(
+    [
+      { id: 'a', completed_at: isoAtIst(2026, 8, 18, 11, 0) },
+      { id: 'b', completed_at: isoAtIst(2026, 8, 18, 18, 36) },
+    ],
+    noonIst
+  );
+  assert.equal(last.id, 'b');
 }
 
 {
@@ -94,6 +125,16 @@ const noonIst = Date.parse(isoAtIst(2026, 8, 18, 12, 0));
   assert.equal(getTravelLegKm(withLeg), 12.3);
   assert.equal(getTravelReturnKm(withLeg), 8.9);
   assert.equal(sumStoredTravelKm([withLeg, { requirements: applyTravelLeg([], 5, 'job:x') }]), 17.3);
+  const { estimateDriveSecFromKm } = require('../netlify/functions/tech-travel-helper');
+  assert.equal(Math.round(estimateDriveSecFromKm(22)), 3600);
+}
+
+{
+  const { nowMsForIstDateKey } = require('../netlify/functions/tech-field-day-helper');
+  const now = Date.parse('2026-08-19T12:00:00+05:30');
+  const { dayEndUtc } = istDayBounds(Date.parse('2026-08-01T12:00:00+05:30'));
+  assert.equal(nowMsForIstDateKey('2026-08-01', now), dayEndUtc - 1);
+  assert.equal(nowMsForIstDateKey('2026-08-19', now), now);
 }
 
 console.log('tech-worked-hours tests passed');

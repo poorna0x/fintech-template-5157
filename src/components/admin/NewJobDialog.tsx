@@ -7,8 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
-import { FollowUpScheduleFields, type FollowUpScheduleValue } from '@/components/admin/FollowUpScheduleFields';
-import { Checkbox } from '@/components/ui/checkbox';
+import { FollowUpCreateSection } from '@/components/admin/FollowUpCreateSection';
+import type { FollowUpScheduleValue } from '@/components/admin/FollowUpScheduleFields';
 import { MapPin, Upload } from 'lucide-react';
 import { Customer } from '@/types';
 import { toast } from 'sonner';
@@ -151,8 +151,14 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 
   useEffect(() => {
     if (!open) return;
-    setScheduleAsFollowUp(!technicianMode && initialScheduleFollowUp);
-    setFollowUpSchedule(emptyFollowUpSchedule());
+    const asFollowUp = !technicianMode && initialScheduleFollowUp;
+    setScheduleAsFollowUp(asFollowUp);
+    const schedule = emptyFollowUpSchedule();
+    if (asFollowUp) {
+      schedule.followUpDate = getIstCalendarDate();
+      schedule.followUpTime = nextPresetAppointmentTime();
+    }
+    setFollowUpSchedule(schedule);
     setNewJobFormData((prev) => ({
       ...prev,
       service_sub_type: prev.service_sub_type || 'Service',
@@ -837,44 +843,9 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
             </div>
 
             {/* Scheduling */}
+            {!scheduleAsFollowUp && (
             <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/40">
               <h3 className="text-lg font-semibold text-foreground">Scheduling</h3>
-              {!technicianMode && (
-                <div className="flex items-start gap-3 rounded-md border border-indigo-200 bg-indigo-50/70 px-3 py-3">
-                  <Checkbox
-                    id="job_schedule_follow_up"
-                    checked={scheduleAsFollowUp}
-                    onCheckedChange={(checked) => {
-                      const on = checked === true;
-                      setScheduleAsFollowUp(on);
-                      if (on) {
-                        setFollowUpSchedule((prev) => ({
-                          ...prev,
-                          followUpDate: prev.followUpDate || newJobFormData.scheduled_date || getIstCalendarDate(),
-                          followUpTime: prev.followUpTime || nextPresetAppointmentTime(),
-                        }));
-                      }
-                    }}
-                    className="mt-0.5"
-                  />
-                  <div className="space-y-1">
-                    <Label htmlFor="job_schedule_follow_up" className="cursor-pointer text-sm font-medium leading-snug">
-                      Create and schedule a follow-up
-                    </Label>
-                    <p className="text-xs leading-snug text-muted-foreground">
-                      Job goes to the Follow-up tab instead of Ongoing. Same date, time, reason, auto-move, and AMC reminder as the follow-up dialog.
-                    </p>
-                  </div>
-                </div>
-              )}
-              {scheduleAsFollowUp && !technicianMode ? (
-                <FollowUpScheduleFields
-                  idPrefix="new-job-followup"
-                  value={followUpSchedule}
-                  onChange={setFollowUpSchedule}
-                  hasActiveAmc={hasActiveAmc}
-                />
-              ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="job_scheduled_date">Scheduled Date</Label>
@@ -911,8 +882,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   )}
                 </div>
               </div>
-              )}
             </div>
+            )}
 
             {/* Photo Upload */}
             <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/40">
@@ -1189,6 +1160,25 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                 </p>
               </div>
             </div>
+
+            {!technicianMode && (
+              <FollowUpCreateSection
+                idPrefix="new-job-followup"
+                enabled={scheduleAsFollowUp}
+                onEnabledChange={setScheduleAsFollowUp}
+                value={followUpSchedule}
+                onChange={setFollowUpSchedule}
+                hasActiveAmc={hasActiveAmc}
+                onEnable={() => {
+                  handleFormChange('assigned_technician_id', '');
+                  setFollowUpSchedule((prev) => ({
+                    ...prev,
+                    followUpDate: prev.followUpDate || newJobFormData.scheduled_date || getIstCalendarDate(),
+                    followUpTime: prev.followUpTime || nextPresetAppointmentTime(),
+                  }));
+                }}
+              />
+            )}
           </div>
         )}
         

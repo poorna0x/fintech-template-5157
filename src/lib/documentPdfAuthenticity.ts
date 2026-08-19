@@ -13,7 +13,8 @@ export type DocumentPdfDocType =
   | 'invoice'
   | 'warranty'
   | 'amc'
-  | 'salary_slip';
+  | 'salary_slip'
+  | 'letterhead';
 
 export const DOCUMENT_PDF_DOC_TYPE_LABELS: Record<DocumentPdfDocType, string> = {
   service_bill: 'Service bill',
@@ -22,6 +23,7 @@ export const DOCUMENT_PDF_DOC_TYPE_LABELS: Record<DocumentPdfDocType, string> = 
   warranty: 'Warranty card',
   amc: 'AMC agreement',
   salary_slip: 'Salary slip',
+  letterhead: 'Letterhead document',
 };
 
 export type DocumentPdfAuthenticityRow = {

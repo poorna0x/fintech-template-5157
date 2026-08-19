@@ -9,6 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { generateUpiQrPngBase64 } from '@/lib/generateUpiQrPng';
+import {
+  getDocumentBrandLabel,
+  normalizeDocumentBrand,
+  type DocumentBrand,
+} from '@/lib/service-brands';
+import { cn } from '@/lib/utils';
 import { db } from '@/lib/supabase';
 import {
   fetchUpiPaymentAccounts,
@@ -34,9 +40,18 @@ function parseAmount(value: string): number | null {
   return Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : null;
 }
 
+const LAST_QUICK_UPI_BRAND_KEY = 'hro_quick_upi_brand';
+const QUICK_UPI_PREFILL_KEY = 'hro_quick_upi_prefill';
+
+function getLastQuickUpiBrand(): DocumentBrand {
+  if (typeof window === 'undefined') return 'elevenro';
+  return normalizeDocumentBrand(localStorage.getItem(LAST_QUICK_UPI_BRAND_KEY)) || 'elevenro';
+}
+
 export default function QuickUpiQrGenerator() {
   const [accounts, setAccounts] = useState<UpiPaymentAccount[]>(() => loadUpiPaymentAccounts());
   const [selectedId, setSelectedId] = useState(() => getLastSelectedUpiAccountId() || '');
+  const [brand, setBrand] = useState<DocumentBrand>(() => getLastQuickUpiBrand());
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -76,15 +91,57 @@ export default function QuickUpiQrGenerator() {
     };
   }, []);
 
+  useEffect(() => {
+    const raw = sessionStorage.getItem(QUICK_UPI_PREFILL_KEY);
+    if (!raw) return;
+    sessionStorage.removeItem(QUICK_UPI_PREFILL_KEY);
+    let prefill: { customerId?: string | null; amount?: number | null; phone?: string | null } = {};
+    try {
+      prefill = JSON.parse(raw) as typeof prefill;
+    } catch {
+      return;
+    }
+    if (prefill.amount != null && Number(prefill.amount) > 0) {
+      setAmount(String(prefill.amount));
+    }
+    if (prefill.phone) {
+      setWhatsAppPhone(String(prefill.phone));
+    }
+    const customerId = String(prefill.customerId || '').trim();
+    if (!customerId) return;
+    void db.customers.getById(customerId).then(({ data, error }) => {
+      if (error || !data) return;
+      const row = data as Record<string, unknown>;
+      const phone = String(row.phone || '');
+      const alternatePhone = String(row.alternate_phone || '');
+      setSelectedCustomer({
+        id: String(row.id || customerId),
+        customerId: String(row.customer_id || ''),
+        name: String(row.full_name || 'Customer'),
+        phone,
+        alternatePhone,
+      });
+      setWhatsAppPhone(phone || alternatePhone);
+    });
+  }, []);
+
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.id === selectedId) || null,
     [accounts, selectedId]
   );
   const qrAmount = parseAmount(amount);
+  const paymentNote = useMemo(() => `Payment to ${getDocumentBrandLabel(brand)}`, [brand]);
 
   const selectAccount = (id: string) => {
     setSelectedId(id);
     setLastSelectedUpiAccountId(id);
+  };
+
+  const selectBrand = (next: DocumentBrand) => {
+    setBrand(next);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LAST_QUICK_UPI_BRAND_KEY, next);
+    }
   };
 
   const searchCustomers = async () => {
@@ -132,7 +189,7 @@ export default function QuickUpiQrGenerator() {
       const result = await sendPayQrWhatsApp({
         to: phone,
         amount: qrAmount,
-        brand: 'hydrogenro',
+        brand,
         upiId: selectedAccount.upiId,
         payeeName: selectedAccount.payeeName || selectedAccount.label,
         paymentPhone: selectedAccount.phone,
@@ -140,7 +197,7 @@ export default function QuickUpiQrGenerator() {
         customerId: selectedCustomer?.id || null,
         note: selectedCustomer?.name
           ? `Payment for ${selectedCustomer.name}`
-          : 'Payment to Hydrogen RO',
+          : paymentNote,
         jobRef: 'payment request',
         watchPhotos: false,
         source: 'pending_payment',
@@ -172,8 +229,8 @@ export default function QuickUpiQrGenerator() {
           payeeName: selectedAccount.payeeName || selectedAccount.label,
           phone: selectedAccount.phone,
           amount: qrAmount,
-          note: 'Payment to Hydrogen RO',
-          brand: 'hydrogenro',
+          note: paymentNote,
+          brand,
         },
         { size: 420 }
       );
@@ -217,6 +274,30 @@ export default function QuickUpiQrGenerator() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Brand</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['hydrogenro', 'elevenro'] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => selectBrand(option)}
+                  className={cn(
+                    'h-11 rounded-md border px-3 text-sm font-medium transition-colors',
+                    brand === option
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border bg-background text-foreground hover:bg-muted'
+                  )}
+                >
+                  {getDocumentBrandLabel(option)}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              WhatsApp pay links and templates use the selected brand site.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -383,12 +464,12 @@ export default function QuickUpiQrGenerator() {
         <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-3">
           {selectedAccount && qrAmount ? (
             <DynamicUpiQrDisplay
-              key={`${selectedAccount.id}-${qrAmount}`}
+              key={`${selectedAccount.id}-${qrAmount}-${brand}`}
               upiId={selectedAccount.upiId}
               payeeName={selectedAccount.payeeName || selectedAccount.label}
               phone={selectedAccount.phone}
               amount={qrAmount}
-              note="Payment to Hydrogen RO"
+              note={paymentNote}
               label={selectedAccount.label}
               size={230}
             />

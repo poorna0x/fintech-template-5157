@@ -175,6 +175,7 @@ function testMisspelledNamesResolveWithoutMatchingSentenceGlue() {
   // A shorter real name is a different person, not a fuzzy match.
   assert.equal(nameMatchesToken('Jyoti', 'jyotirling'), -1);
   assert.equal(nameMatchesToken('Jyotirling', 'jyotirling'), 0);
+  assert.ok(nameMatchesToken('Jyotirling', 'joytirling') >= 0);
 }
 
 function testFreshQuestionsAreNotTreatedAsFollowUps() {
@@ -440,6 +441,13 @@ function testDeterministicFastRoutesStayReadOnlyAndNarrow() {
   assert.deepEqual(inferDeterministicPlan('how many km did jyotirling drive today').tools, [
     'technician_field_stats',
   ]);
+  assert.deepEqual(
+    inferDeterministicPlan('when did joytirling started job today at what time').tools,
+    ['technician_field_stats']
+  );
+  assert.deepEqual(inferDeterministicPlan('all technician total work time today').tools, [
+    'technician_field_stats',
+  ]);
   assert.deepEqual(inferDeterministicPlan('how many hours did srujan work this week').tools, [
     'technician_field_stats',
   ]);
@@ -524,6 +532,44 @@ function testStructuredStatsAnswers() {
   );
   assert.match(techExpenseRank, /Technician expenses · this month/);
   assert.match(techExpenseRank, /1\. Jyotirling · INR 12,000/);
+
+  const field = formatStatsAnswerForTools(
+    {
+      stats: {
+        technicianFieldStatsPeriod: 'today',
+        technicianFieldStatsFilteredBy: ['Jyotirling'],
+        technicianFieldStats: [
+          {
+            name: 'Jyotirling',
+            firstStartLabel: '9:12 am',
+            lastEndLabel: '1:20 pm',
+            durationLabel: '4h 8m',
+            durationMs: 14880000,
+            jobsStarted: 2,
+            jobsCompleted: 1,
+            live: false,
+          },
+        ],
+      },
+    },
+    ['technician_field_stats']
+  );
+  assert.match(field, /started 9:12 am/);
+  assert.match(field, /4h 8m worked/);
+
+  const teamTime = formatStatsAnswerForTools(
+    {
+      stats: {
+        technicianFieldStatsPeriod: 'today',
+        technicianFieldStats: [
+          { name: 'Jyotirling', durationLabel: '4h', durationMs: 14400000, jobsStarted: 1, live: false },
+          { name: 'Pradeep', durationLabel: '2h', durationMs: 7200000, jobsStarted: 1, live: false },
+        ],
+      },
+    },
+    ['technician_field_stats']
+  );
+  assert.match(teamTime, /Team total · 6h/);
 }
 
 function testLiveOpsAnswerFormatting() {

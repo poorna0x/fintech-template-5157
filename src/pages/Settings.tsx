@@ -122,6 +122,7 @@ import QuickUpiQrGenerator from '@/components/admin/QuickUpiQrGenerator';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
 import { SettingsSearch } from '@/components/admin/SettingsSearch';
+import { SettingsTechnicianLocations } from '@/components/admin/SettingsTechnicianLocations';
 import PdfAuthenticityVerifyPage from '@/pages/PdfAuthenticityVerifyPage';
 import JobReviewsPage from '@/pages/JobReviewsPage';
 import DbStorageStatsPage from '@/pages/DbStorageStatsPage';
@@ -2716,78 +2717,12 @@ const Settings = () => {
                 <MapPin className="w-5 h-5" />
                 Technician Locations
               </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                View last known location and update time for all technicians
-              </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {technicians.map((technician) => {
-                  const hasLocation = technician.currentLocation && 
-                                     technician.currentLocation.latitude && 
-                                     technician.currentLocation.longitude;
-                  const lastUpdated = technician.currentLocation?.lastUpdated 
-                    ? new Date(technician.currentLocation.lastUpdated).toLocaleString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                      })
-                    : null;
-
-                  return (
-                    <Card key={technician.id} className="hover:shadow-md transition-shadow">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-3 gap-2">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">
-                              {technician.fullName}
-                            </h3>
-                            <p className="text-xs text-muted-foreground truncate">{technician.employeeId}</p>
-                          </div>
-                        </div>
-
-                        {hasLocation ? (
-                          <div className="space-y-2">
-                            <button
-                              onClick={() => {
-                                const url = `https://www.google.com/maps?q=${technician.currentLocation?.latitude},${technician.currentLocation?.longitude}`;
-                                window.open(url, '_blank');
-                              }}
-                              className="flex items-center gap-2 w-full p-2 rounded-lg border border-blue-200 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors group"
-                              title="Click to open location in Google Maps"
-                            >
-                              <MapPin className="w-5 h-5 text-blue-600 group-hover:text-blue-700 shrink-0" />
-                              <div className="flex-1 min-w-0 text-left">
-                                <div className="text-xs font-medium text-foreground/90 dark:text-gray-300">
-                                  View Location
-                                </div>
-                              </div>
-                            </button>
-                            {lastUpdated && (
-                              <div className="text-xs text-muted-foreground dark:text-muted-foreground/70">
-                                Last updated: {lastUpdated}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 text-muted-foreground/70 p-2">
-                            <MapPin className="w-5 h-5 shrink-0" />
-                            <span className="text-xs">No location data available</span>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-                {technicians.length === 0 && (
-                  <div className="col-span-full text-center py-8 text-muted-foreground">
-                    No technicians found.
-                  </div>
-                )}
-              </div>
+              <SettingsTechnicianLocations
+                technicians={technicians}
+                canLoadHours={!isManager}
+              />
             </CardContent>
           </Card>
 
@@ -3886,8 +3821,8 @@ const Settings = () => {
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
                     Uses highest-quality iLovePDF compression for document downloads, email,
                     WhatsApp, and Require Accept (quotations, bills, invoices, AMC, warranty,
-                    salary slips, and more). If credits run out or compression fails, the
-                    original PDF is used automatically.
+                    salary slips, letterhead documents, and more). If credits run out or
+                    compression fails, the original PDF is used automatically.
                   </p>
                 </div>
                 <Switch

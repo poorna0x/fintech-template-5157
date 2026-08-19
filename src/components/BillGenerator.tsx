@@ -224,6 +224,7 @@ export default function BillGenerator({
 
   // Keep editable customer in sync when async full customer load brings GSTIN / address
   useEffect(() => {
+    if (isEditingCustomer) return;
     setEditableCustomer({
       name: customerName || '',
       phone: customerPhone || '',
@@ -237,7 +238,15 @@ export default function BillGenerator({
         pincode: customerAddress.pincode || '',
       },
     });
-  }, [customerName, customerPhone, customerEmail, customerGst, customerAddress]);
+  }, [
+    isEditingCustomer,
+    customer?.id,
+    addressChoice,
+    customerName,
+    customerPhone,
+    customerEmail,
+    customerGst,
+  ]);
 
   const editAddress = normalizeCustomerAddress(editableCustomer.address);
 

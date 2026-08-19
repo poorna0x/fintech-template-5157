@@ -31,11 +31,12 @@ const {
   generateDocumentPdfVerifyCode,
   todayYmdIst,
 } = require('./document-pdf-authenticity-record');
-// Scheduled batch has a 26-second Netlify ceiling and may render several slips.
-// Keep this path local-only; interactive salary-slip download/send uses generate-pdf
-// and gets optional iLovePDF compression like every other interactive document.
-function renderHtmlToPdf(html, requestOrigin) {
-  return require('./generate-pdf').renderHtmlToPdf(html, requestOrigin);
+const { isPdfCompressionEnabled } = require('./pdf-compression-setting');
+// Interactive salary-slip download/send uses generate-pdf (compress on).
+// Month-end also compresses when the setting is on, with a short deadline so
+// the 26s Lambda still has time to send WhatsApp.
+function renderHtmlToPdf(html, requestOrigin, options) {
+  return require('./generate-pdf').renderHtmlToPdf(html, requestOrigin, options);
 }
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -358,7 +359,12 @@ exports.handler = async (event) => {
         process.env.URL || process.env.DEPLOY_PRIME_URL || 'https://hydrogenro.com'
       );
       const filename = getSalarySlipFilename(breakdown, loaded.period);
-      const pdfBuffer = await renderHtmlToPdf(html, process.env.URL || null);
+      const shouldCompress = await isPdfCompressionEnabled();
+      const pdfBuffer = await renderHtmlToPdf(html, process.env.URL || null, {
+        compress: shouldCompress,
+        filename,
+        deadlineAt: Date.now() + 10_000,
+      });
       if (!pdfBuffer?.length) {
         throw new Error('PDF generation returned empty buffer');
       }

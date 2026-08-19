@@ -23,6 +23,7 @@ import {
   X,
   ChevronRight,
   Loader2,
+  Share2,
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -53,6 +54,7 @@ import { toast } from 'sonner';
 
 import RichTextEditor from '@/components/letterhead/RichTextEditor';
 import TableBlockEditor from '@/components/letterhead/TableBlockEditor';
+import LetterheadShareDialog from '@/components/letterhead/LetterheadShareDialog';
 import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
 import {
   LETTERHEAD_DOCUMENT_TYPE_LABEL,
@@ -74,6 +76,7 @@ import {
 import {
   DocumentBrand,
   getDocumentBrandLabel,
+  getCompanyInfoForBrand,
   getDocumentSealVariantLabel,
   resolveBrandSealSrc,
 } from '@/lib/service-brands';
@@ -254,6 +257,7 @@ export default function LetterheadDocumentsPage({
     void refreshDrafts();
   }, [refreshDrafts]);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [showMobilePreview, setShowMobilePreview] = useState(false);
 
   // If user just deep-linked to a specific type and there's no active draft yet,
@@ -301,27 +305,49 @@ export default function LetterheadDocumentsPage({
   }, []);
 
   const switchDocumentType = useCallback((nextType: LetterheadDocumentType) => {
-    setData((prev) => ({
-      ...prev,
-      documentType: nextType,
-      title:
-        prev.title && prev.title !== LETTERHEAD_DOCUMENT_TYPE_LABEL[prev.documentType]
-          ? prev.title
-          : LETTERHEAD_DOCUMENT_TYPE_LABEL[nextType],
-      documentNumber:
-        // Only regenerate the number when the user hasn't touched it manually.
-        /^[A-Z-]+\d{4}-\d{4}$/.test(prev.documentNumber)
-          ? buildDefaultLetterheadNumber(nextType)
-          : prev.documentNumber,
-      blocks:
-        prev.blocks.length === 0 || allBlocksEmpty(prev.blocks)
-          ? createStarterBlocks(nextType)
-          : prev.blocks,
-    }));
+    setData((prev) => {
+      const emptyBody = prev.blocks.length === 0 || allBlocksEmpty(prev.blocks);
+      const correspondence = nextType === 'service_report' || nextType === 'amc_report';
+      return {
+        ...prev,
+        documentType: nextType,
+        title:
+          prev.title && prev.title !== LETTERHEAD_DOCUMENT_TYPE_LABEL[prev.documentType]
+            ? prev.title
+            : LETTERHEAD_DOCUMENT_TYPE_LABEL[nextType],
+        documentNumber:
+          /^[A-Z-]+\d{4}-\d{4}$/.test(prev.documentNumber)
+            ? buildDefaultLetterheadNumber(nextType)
+            : prev.documentNumber,
+        blocks: emptyBody ? createStarterBlocks(nextType) : prev.blocks,
+        ...(emptyBody
+          ? {
+              layoutMode: 'letter' as const,
+              showRecipientBlock: correspondence,
+              showDocumentMeta: correspondence,
+              showBrandTag: correspondence,
+              hideRightSignatory: !correspondence,
+            }
+          : {}),
+      };
+    });
   }, []);
 
   const switchBrand = useCallback((nextBrand: DocumentBrand) => {
-    setData((prev) => ({ ...prev, brand: nextBrand }));
+    setData((prev) => {
+      const nextCompany = getCompanyInfoForBrand(nextBrand);
+      const prevCompany = getCompanyInfoForBrand(prev.brand);
+      const left = prev.leftSignatory || {};
+      const company =
+        !left.company || left.company === prevCompany.name
+          ? nextCompany.name
+          : left.company;
+      return {
+        ...prev,
+        brand: nextBrand,
+        leftSignatory: { ...left, company },
+      };
+    });
   }, []);
 
   // --- Block helpers ---
@@ -463,6 +489,9 @@ export default function LetterheadDocumentsPage({
   const handleDownload = () => {
     generateLetterheadPDF(data, 'pdf');
   };
+  const handleShare = () => {
+    setShareDialogOpen(true);
+  };
 
   const handleBack = () => {
     if (onBack) onBack();
@@ -540,6 +569,16 @@ export default function LetterheadDocumentsPage({
               <Button
                 variant="outline"
                 size="sm"
+                onClick={handleShare}
+                className="border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-100"
+                aria-label="Share by email or WhatsApp"
+              >
+                <Share2 className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">Share</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleDownload}
                 className="border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-100"
                 aria-label="Save as PDF"
@@ -603,6 +642,33 @@ export default function LetterheadDocumentsPage({
                   </button>
                 );
               })}
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-sm font-semibold text-slate-900">Quick templates</CardTitle>
+              <CardDescription className="text-[11px] text-slate-500">
+                Replaces the current body. Logo and company details follow Brand (Eleven RO / Hydrogen RO).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 gap-2 px-3 pb-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-auto justify-start py-2 text-left whitespace-normal"
+                onClick={() => {
+                  setData((prev) => ({
+                    ...createEmptyLetterhead('service_report', prev.brand),
+                    documentNumber: prev.documentNumber,
+                    date: prev.date,
+                  }));
+                  toast.success('Long service report starter loaded');
+                }}
+              >
+                Long service report
+              </Button>
             </CardContent>
           </Card>
 
@@ -712,10 +778,11 @@ export default function LetterheadDocumentsPage({
                 <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-blue-50 text-blue-600">
                   <UserCheck className="w-4 h-4" />
                 </span>
-                Customer
+                Customer (optional)
               </CardTitle>
               <CardDescription className="text-xs text-slate-500">
-                Search a saved customer to auto-fill name, site, phone &amp; email.
+                Only for service reports and letters that need a <strong>To:</strong> line.
+                Certificates should leave this empty. Linking a customer does not change the company letterhead.
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 sm:px-6 pb-4">
@@ -725,7 +792,14 @@ export default function LetterheadDocumentsPage({
                     ? buildCustomerSummary(data)
                     : null
                 }
-                onPick={(picked) => setData((prev) => ({ ...prev, ...picked }))}
+                onPick={(picked) =>
+                  setData((prev) => ({
+                    ...prev,
+                    ...picked,
+                    showRecipientBlock: true,
+                    showDocumentMeta: true,
+                  }))
+                }
                 onClear={() =>
                   setData((prev) => ({
                     ...prev,
@@ -733,6 +807,10 @@ export default function LetterheadDocumentsPage({
                     customerCode: '',
                     customerPhone: '',
                     customerEmail: '',
+                    customerName: '',
+                    customerCompany: '',
+                    siteLocation: '',
+                    showRecipientBlock: false,
                   }))
                 }
               />
@@ -750,10 +828,56 @@ export default function LetterheadDocumentsPage({
             <CardHeader className="py-3 px-4 sm:px-6">
               <CardTitle className="text-sm sm:text-base font-semibold text-slate-900">Header</CardTitle>
               <CardDescription className="text-xs text-slate-500">
-                These fields print under the company letterhead.
+                Every field is editable. Recipient and Doc # only print when the boxes below are on.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <Label htmlFor="lh-layout">Page layout</Label>
+                <Select
+                  value={data.layoutMode || 'letter'}
+                  onValueChange={(value: 'letter' | 'certificate') =>
+                    updateData('layoutMode', value)
+                  }
+                >
+                  <SelectTrigger id="lh-layout">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="letter">Letter / report (correspondence)</SelectItem>
+                    <SelectItem value="certificate">Certificate (centered, no To:)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="sm:col-span-2 flex flex-col gap-2 rounded-md border border-slate-200 bg-slate-50/70 p-3">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={data.showRecipientBlock === true}
+                    onChange={(e) => updateData('showRecipientBlock', e.target.checked)}
+                  />
+                  Print recipient / To: line
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={data.showDocumentMeta !== false}
+                    onChange={(e) => updateData('showDocumentMeta', e.target.checked)}
+                  />
+                  Print Doc #, date and reference in the header
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={data.showBrandTag === true}
+                    onChange={(e) => updateData('showBrandTag', e.target.checked)}
+                  />
+                  Show brand pill beside the title
+                </label>
+              </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="lh-title">Document Title</Label>
                 <Input
@@ -786,7 +910,7 @@ export default function LetterheadDocumentsPage({
                   <Label htmlFor="lh-title-size">Title size</Label>
                   <Select
                     value={data.titleSize || 'medium'}
-                    onValueChange={(value: 'small' | 'medium' | 'large') =>
+                    onValueChange={(value: 'small' | 'medium' | 'large' | 'xlarge') =>
                       updateData('titleSize', value)
                     }
                   >
@@ -797,6 +921,7 @@ export default function LetterheadDocumentsPage({
                       <SelectItem value="small">Small</SelectItem>
                       <SelectItem value="medium">Medium</SelectItem>
                       <SelectItem value="large">Large</SelectItem>
+                      <SelectItem value="xlarge">Certificate</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -835,15 +960,25 @@ export default function LetterheadDocumentsPage({
                 />
               </div>
               <div>
-                <Label htmlFor="lh-cust-name">Customer Name</Label>
+                <Label htmlFor="lh-recipient-label">Recipient label</Label>
+                <Input
+                  id="lh-recipient-label"
+                  value={data.recipientLabel || 'To'}
+                  onChange={(e) => updateData('recipientLabel', e.target.value)}
+                  placeholder="To"
+                />
+              </div>
+              <div>
+                <Label htmlFor="lh-cust-name">Recipient name (To:)</Label>
                 <Input
                   id="lh-cust-name"
                   value={data.customerName || ''}
                   onChange={(e) => updateData('customerName', e.target.value)}
+                  placeholder="Leave blank for certificates"
                 />
               </div>
               <div>
-                <Label htmlFor="lh-cust-company">Customer Company</Label>
+                <Label htmlFor="lh-cust-company">Recipient company</Label>
                 <Input
                   id="lh-cust-company"
                   value={data.customerCompany || ''}
@@ -1104,7 +1239,7 @@ export default function LetterheadDocumentsPage({
             <CardHeader className="py-3 px-4 sm:px-6">
               <CardTitle className="text-sm sm:text-base font-semibold text-slate-900">Signatures &amp; Stamp</CardTitle>
               <CardDescription className="text-xs text-slate-500">
-                Brand seal is auto-attached on the left; you can replace either side.
+                Brand seal is auto-attached on the left. Hide the right block for certificates.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-4">
@@ -1139,6 +1274,7 @@ export default function LetterheadDocumentsPage({
                 hideLabel="Hide authorized signature on this document"
                 signatoryName={data.leftSignatory?.name || ''}
                 signatoryDesignation={data.leftSignatory?.designation || ''}
+                signatoryCompany={data.leftSignatory?.company || ''}
                 signatoryImage={data.leftSignatory?.imageUrl}
                 onChangeName={(name) =>
                   setData((prev) => ({
@@ -1150,6 +1286,12 @@ export default function LetterheadDocumentsPage({
                   setData((prev) => ({
                     ...prev,
                     leftSignatory: { ...(prev.leftSignatory || {}), designation },
+                  }))
+                }
+                onChangeCompany={(company) =>
+                  setData((prev) => ({
+                    ...prev,
+                    leftSignatory: { ...(prev.leftSignatory || {}), company },
                   }))
                 }
                 onUpload={(file) => onSignatureUpload('leftSignatory', file)}
@@ -1164,12 +1306,13 @@ export default function LetterheadDocumentsPage({
                 onStampToggle={(v) => updateData('useBrandSealAsStamp', v)}
               />
               <SignatorySection
-                title="Customer Signatory (right)"
+                title="Second signatory (right)"
                 hidden={!!data.hideRightSignatory}
                 onHiddenChange={(v) => updateData('hideRightSignatory', v)}
-                hideLabel="Hide customer signature on this document"
+                hideLabel="Hide the right-hand signature on this document"
                 signatoryName={data.rightSignatory?.name || ''}
                 signatoryDesignation={data.rightSignatory?.designation || ''}
+                signatoryCompany={data.rightSignatory?.company || ''}
                 signatoryImage={data.rightSignatory?.imageUrl}
                 onChangeName={(name) =>
                   setData((prev) => ({
@@ -1181,6 +1324,12 @@ export default function LetterheadDocumentsPage({
                   setData((prev) => ({
                     ...prev,
                     rightSignatory: { ...(prev.rightSignatory || {}), designation },
+                  }))
+                }
+                onChangeCompany={(company) =>
+                  setData((prev) => ({
+                    ...prev,
+                    rightSignatory: { ...(prev.rightSignatory || {}), company },
                   }))
                 }
                 onUpload={(file) => onSignatureUpload('rightSignatory', file)}
@@ -1304,7 +1453,7 @@ export default function LetterheadDocumentsPage({
           without scrolling on phones. Hidden on lg+ where the top header bar
           already exposes Save / PDF / Print. */}
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur shadow-[0_-2px_6px_rgba(15,23,42,0.05)]">
-        <div className="mx-auto w-full max-w-[1600px] grid grid-cols-4 gap-1 px-2 py-2">
+        <div className="mx-auto w-full max-w-[1600px] grid grid-cols-5 gap-1 px-2 py-2">
           <Button
             variant="ghost"
             size="sm"
@@ -1327,6 +1476,15 @@ export default function LetterheadDocumentsPage({
           <Button
             variant="ghost"
             size="sm"
+            onClick={handleShare}
+            className="flex flex-col items-center justify-center h-12 gap-0.5 text-[11px]"
+          >
+            <Share2 className="w-4 h-4" />
+            Share
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={handleDownload}
             className="flex flex-col items-center justify-center h-12 gap-0.5 text-[11px]"
           >
@@ -1343,6 +1501,12 @@ export default function LetterheadDocumentsPage({
           </Button>
         </div>
       </div>
+
+      <LetterheadShareDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        data={data}
+      />
 
       <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
         <AlertDialogContent>
@@ -1582,7 +1746,8 @@ function CustomerPicker({ selectedSummary, onPick, onClear }: CustomerPickerProp
       )}
 
       <p className="text-[11px] text-slate-500">
-        Selecting a customer fills name, company, site, phone &amp; email — you can still edit the fields below.
+        Selecting a customer fills recipient name, site, phone &amp; email and turns on the To: line.
+        Unlink to keep the document as a company certificate or internal report.
       </p>
     </div>
   );
@@ -1611,9 +1776,11 @@ interface SignatorySectionProps {
   onHiddenChange: (v: boolean) => void;
   signatoryName: string;
   signatoryDesignation: string;
+  signatoryCompany?: string;
   signatoryImage?: string;
   onChangeName: (v: string) => void;
   onChangeDesignation: (v: string) => void;
+  onChangeCompany?: (v: string) => void;
   onUpload: (file: File | null) => void;
   onClearImage: () => void;
   stampLabel: string;
@@ -1632,9 +1799,11 @@ function SignatorySection({
   onHiddenChange,
   signatoryName,
   signatoryDesignation,
+  signatoryCompany,
   signatoryImage,
   onChangeName,
   onChangeDesignation,
+  onChangeCompany,
   onUpload,
   onClearImage,
   stampLabel,
@@ -1684,6 +1853,16 @@ function SignatorySection({
           value={signatoryDesignation}
           onChange={(e) => onChangeDesignation(e.target.value)}
           placeholder="Authorized Signatory / Manager"
+          className="h-8"
+          disabled={hidden}
+        />
+      </div>
+      <div>
+        <Label className="text-xs">Company</Label>
+        <Input
+          value={signatoryCompany || ''}
+          onChange={(e) => onChangeCompany?.(e.target.value)}
+          placeholder="ELEVEN RO"
           className="h-8"
           disabled={hidden}
         />

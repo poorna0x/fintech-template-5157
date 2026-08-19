@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { MapPin, Download, ExternalLink, Loader2, ChevronDown, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
+import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import {
   isLeadSourceAllowCustomText,
   isLeadSourceRequiresOtp,
@@ -658,18 +658,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const handleFetchLocationFromAddress = () => {
     const address = addFormData.address || '';
     const currentAddress = address.trim();
-    const currentLocation = addFormData.visible_address || '';
     
     if (!currentAddress || currentAddress.length === 0) {
       toast.error('Please enter a complete address first');
       return;
     }
-    
-    if (currentLocation && currentLocation.trim().length > 0) {
-      toast.info('Location already set. Clear it first if you want to fetch a new one.');
-      return;
-    }
-    
+
     const extracted = extractLocationFromAddressString(currentAddress);
     if (extracted) {
       handleAddFormChange('visible_address', extracted);
@@ -862,16 +856,21 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       const extractedLocation = resolveVisibleAddressFromGeocode({
         formattedAddress: rawFormatted,
         addressComponents: geocodeResult?.addressComponents,
-        addressHints: [addFormDataRef.current.address],
+        addressHints: address ? [address] : [],
       });
 
       setAddFormData((prev) => ({
         ...prev,
         google_location: stableMapsLink,
         address: address ? capitalizeFirstLetter(address) : prev.address,
-        visible_address: extractedLocation
-          ? capitalizeFirstLetter(extractedLocation)
-          : prev.visible_address,
+        visible_address: (() => {
+          const next = nextVisibleAddressFromMapsFetch(
+            extractedLocation,
+            address,
+            prev.visible_address
+          );
+          return next ? capitalizeFirstLetter(next) : next;
+        })(),
       }));
 
       if (extractedLocation) {
@@ -887,7 +886,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
         toast.warning('Could not fetch address. Coordinates will be saved with the customer.');
         if (extractedLocation) {
-          toast.info(`Location extracted from existing address: ${extractedLocation}`);
+          toast.info(`Location automatically identified: ${extractedLocation}`);
         }
       }
     } catch (error) {
@@ -1762,8 +1761,22 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     }}
                     placeholder="e.g., Bansawadi, Koramangala, Whitefield, etc."
                     maxLength={VISIBLE_ADDRESS_MAX_LEN}
-                    className="text-sm"
+                    className="text-sm pr-9"
                   />
+                  {addFormData.visible_address?.trim() ? (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                      title="Clear location"
+                      onClick={() => {
+                        locationManuallyEditedRef.current = true;
+                        handleAddFormChange('visible_address', '');
+                        setVisibleAddressSuggestions(false);
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
                   {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
                     <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-48 overflow-y-auto [scrollbar-gutter:stable]">
                       {filteredAddressSuggestions.map((suggestion, idx) => (
@@ -1796,10 +1809,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     size="sm"
                     onClick={handleFetchLocationFromAddress}
                     className="w-full sm:w-auto whitespace-nowrap"
-                    title={addFormData.visible_address && addFormData.visible_address.trim().length > 0 
-                      ? "Location already set. Clear it first to fetch a new one."
-                      : "Extract location from complete address"}
-                    disabled={!addFormData.address || addFormData.address.trim().length === 0 || (addFormData.visible_address && addFormData.visible_address.trim().length > 0)}
+                    title="Extract or replace location from complete address"
+                    disabled={!addFormData.address || addFormData.address.trim().length === 0}
                   >
                     <MapPin className="w-3 h-3 mr-1" />
                     Fetch Location
