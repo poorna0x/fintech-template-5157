@@ -61,6 +61,7 @@ const Warranty = lazy(() => import("./pages/Warranty"));
 const PublicPdfAuthenticityPage = lazy(() => import("./pages/PublicPdfAuthenticityPage"));
 const PublicJobReviewPage = lazy(() => import("./pages/PublicJobReviewPage"));
 const PublicTechOfficeStatusPage = lazy(() => import("./pages/PublicTechOfficeStatusPage"));
+const WherePwaLaunchPage = lazy(() => import("./pages/WherePwaLaunchPage"));
 const PayUpi = lazy(() => import("./pages/PayUpi"));
 const CallDialPage = lazy(() => import("./pages/CallDialPage"));
 
@@ -127,7 +128,7 @@ const PWARouteHandler = () => {
 
   useEffect(() => {
     // Family office-status PWA owns its own SW/manifest — leave it alone.
-    if (location.pathname.startsWith('/where')) return;
+    if (location.pathname === '/where' || location.pathname.startsWith('/where/')) return;
 
     // Admin app routes (must match admin-manifest scope / install — do not disablePWA here)
     const isPWAPage =
@@ -222,6 +223,8 @@ const App = () => (
                   <Route path="/authenticity" element={<PublicPdfAuthenticityPage />} />
                   <Route path="/review/:token" element={<PublicJobReviewPage />} />
                   <Route path="/where/:token" element={<PublicTechOfficeStatusPage />} />
+                  <Route path="/where" element={<WherePwaLaunchPage />} />
+                  <Route path="/where/*" element={<WherePwaLaunchPage />} />
                   
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />
