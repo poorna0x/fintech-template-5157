@@ -12,7 +12,7 @@ const {
   rateLimitResponseForKey,
 } = require('./rate-limiter');
 const { drivingRouteAvoidTolls } = require('./google-avoid-tolls-distance');
-const { sendTechnicianLocationPing } = require('./location-ping-helper');
+const { sendTechnicianLocationPing, pingRequestedAgeMs } = require('./location-ping-helper');
 const {
   isValidPublicToken,
   sha256Hex,
@@ -21,7 +21,7 @@ const {
   parseOfficeValue,
   pickCoords,
   isFixFresh,
-  isInOffice,
+  isAtOfficeStatus,
   haversineDistanceMeters,
   etaMinutesFromDurationSec,
   estimateDriveSecFromMeters,
@@ -202,8 +202,10 @@ exports.handler = async (event) => {
         const ping = await sendTechnicianLocationPing(db, tech.id, {
           pingRequestedAt: live.ping_requested_at,
         });
-        // Only "checking" while we actually woke the phone — throttled skip is not waiting.
-        if (ping.sent) pending = !fresh;
+        if (ping.sent) pending = true;
+      }
+      if (pingRequestedAgeMs(live.ping_requested_at, Date.now()) < 40_000) {
+        pending = true;
       }
     }
 
@@ -242,7 +244,18 @@ exports.handler = async (event) => {
     }
 
     const meters = haversineDistanceMeters(picked.coords, office);
-    if (isInOffice(meters)) {
+    const route = await drivingRouteAvoidTolls(picked.coords, office, { traffic: true });
+    const etaMinutes =
+      etaMinutesFromDurationSec(route?.durationSec) ||
+      etaMinutesFromDurationSec(estimateDriveSecFromMeters(meters));
+
+    if (
+      isAtOfficeStatus({
+        meters,
+        etaMinutes,
+        accuracy: picked.accuracy,
+      })
+    ) {
       return json(
         200,
         corsHeaders,
@@ -252,27 +265,40 @@ exports.handler = async (event) => {
           firstName,
           checkedAt,
           live: fresh,
-          pending: pending && !fresh,
+          pending: false,
         },
         extraHeaders
       );
     }
 
-    const route = await drivingRouteAvoidTolls(picked.coords, office, { traffic: true });
-    const etaMinutes =
-      etaMinutesFromDurationSec(route?.durationSec) ||
-      etaMinutesFromDurationSec(estimateDriveSecFromMeters(meters));
+    // Stale GPS farther than the office geofence — don't show an old "5 min" while we wait.
+    if (pending && !fresh) {
+      return json(
+        200,
+        corsHeaders,
+        {
+          ok: true,
+          status: 'checking',
+          firstName,
+          checkedAt,
+          live: false,
+          pending: true,
+        },
+        extraHeaders
+      );
+    }
+
     if (etaMinutes == null) {
       return json(
         200,
         corsHeaders,
         {
           ok: true,
-          status: pending ? 'checking' : 'unknown',
+          status: 'unknown',
           firstName,
           checkedAt,
           live: fresh,
-          pending,
+          pending: false,
         },
         extraHeaders
       );
@@ -288,7 +314,7 @@ exports.handler = async (event) => {
         firstName,
         checkedAt,
         live: fresh,
-        pending: pending && !fresh,
+        pending: false,
       },
       extraHeaders
     );

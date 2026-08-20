@@ -46,6 +46,14 @@ function isInOffice(meters) {
   return Number.isFinite(meters) && meters <= OFFICE_RADIUS_M;
 }
 
+/** In office for the family page: 1 km, plus GPS slop, plus a short hop (≤5 min). */
+function isAtOfficeStatus({ meters, etaMinutes, accuracy }) {
+  const slop = Number.isFinite(Number(accuracy)) ? Math.min(Math.max(Number(accuracy), 0), 500) : 0;
+  if (Number.isFinite(meters) && meters <= OFFICE_RADIUS_M + slop) return true;
+  if (Number.isFinite(etaMinutes) && etaMinutes <= 5) return true;
+  return false;
+}
+
 function etaMinutesFromDurationSec(durationSec) {
   const n = Number(durationSec);
   if (!Number.isFinite(n) || n < 0) return null;
@@ -78,6 +86,13 @@ function parseLatLng(value) {
 }
 
 function parseOfficeValue(value) {
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
   return parseLatLng(value);
 }
 
@@ -101,18 +116,26 @@ function publicNotFound() {
 
 function pickCoords(liveRow, currentLocation) {
   const live = parseLatLng(liveRow);
-  if (live) {
-    const fixAt = liveRow?.fix_time || liveRow?.updated_at || null;
-    return { coords: live, fixAt, source: 'live' };
-  }
+  const liveAt = live ? liveRow?.fix_time || liveRow?.updated_at || null : null;
   const cur = parseLatLng(currentLocation);
-  if (cur) {
-    const fixAt =
-      (currentLocation && typeof currentLocation === 'object' && currentLocation.lastUpdated) ||
-      null;
-    return { coords: cur, fixAt, source: 'current' };
+  const curAt =
+    cur && currentLocation && typeof currentLocation === 'object'
+      ? currentLocation.lastUpdated || null
+      : null;
+  const liveMs = liveAt ? new Date(liveAt).getTime() : 0;
+  const curMs = curAt ? new Date(curAt).getTime() : 0;
+  if (live && (!cur || liveMs >= curMs)) {
+    return { coords: live, fixAt: liveAt, source: 'live', accuracy: liveRow?.accuracy ?? null };
   }
-  return { coords: null, fixAt: null, source: null };
+  if (cur) {
+    return {
+      coords: cur,
+      fixAt: curAt,
+      source: 'current',
+      accuracy: currentLocation?.accuracy ?? null,
+    };
+  }
+  return { coords: null, fixAt: null, source: null, accuracy: null };
 }
 
 function isFixFresh(fixAt, nowMs = Date.now(), maxAgeMs = FRESH_FIX_MAX_AGE_MS) {
@@ -243,6 +266,7 @@ module.exports = {
   isUuid,
   haversineDistanceMeters,
   isInOffice,
+  isAtOfficeStatus,
   etaMinutesFromDurationSec,
   estimateDriveSecFromMeters,
   firstNameFromFullName,

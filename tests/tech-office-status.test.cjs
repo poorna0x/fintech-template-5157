@@ -24,6 +24,10 @@ async function run() {
   assert.equal(helper.isInOffice(999), true);
   assert.equal(helper.isInOffice(1000), true);
   assert.equal(helper.isInOffice(1001), false);
+  assert.equal(helper.isAtOfficeStatus({ meters: 1800, etaMinutes: 5 }), true);
+  assert.equal(helper.isAtOfficeStatus({ meters: 1800, etaMinutes: 6 }), false);
+  assert.equal(helper.isAtOfficeStatus({ meters: 999, etaMinutes: 20 }), true);
+  assert.equal(helper.isAtOfficeStatus({ meters: 1200, accuracy: 400, etaMinutes: 20 }), true);
 
   const office = { lat: 12.9716, lng: 77.5946 };
   const nearby = { lat: 12.973, lng: 77.5946 };
