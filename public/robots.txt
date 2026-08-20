@@ -15,6 +15,7 @@ Disallow: /calling
 Disallow: /dashboard
 Disallow: /search
 Disallow: /product-verify/
+Disallow: /where
 
 Sitemap: https://hydrogenro.com/sitemap.xml
 

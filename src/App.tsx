@@ -60,6 +60,7 @@ const SpareParts = lazy(() => import("./pages/SpareParts"));
 const Warranty = lazy(() => import("./pages/Warranty"));
 const PublicPdfAuthenticityPage = lazy(() => import("./pages/PublicPdfAuthenticityPage"));
 const PublicJobReviewPage = lazy(() => import("./pages/PublicJobReviewPage"));
+const PublicTechOfficeStatusPage = lazy(() => import("./pages/PublicTechOfficeStatusPage"));
 const PayUpi = lazy(() => import("./pages/PayUpi"));
 const CallDialPage = lazy(() => import("./pages/CallDialPage"));
 
@@ -125,6 +126,9 @@ const PWARouteHandler = () => {
   const { user, isAdmin } = useAuth();
 
   useEffect(() => {
+    // Family office-status PWA owns its own SW/manifest — leave it alone.
+    if (location.pathname.startsWith('/where')) return;
+
     // Admin app routes (must match admin-manifest scope / install — do not disablePWA here)
     const isPWAPage =
       isTechnicianPortalPath(location.pathname) ||
@@ -217,6 +221,7 @@ const App = () => (
                   <Route path="/warranty" element={<Warranty />} />
                   <Route path="/authenticity" element={<PublicPdfAuthenticityPage />} />
                   <Route path="/review/:token" element={<PublicJobReviewPage />} />
+                  <Route path="/where/:token" element={<PublicTechOfficeStatusPage />} />
                   
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />
@@ -247,7 +252,6 @@ const App = () => (
                   <Route path="/pay-upi" element={<PayUpi />} />
                   <Route path="/call" element={<CallDialPage />} />
 
-                  
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>

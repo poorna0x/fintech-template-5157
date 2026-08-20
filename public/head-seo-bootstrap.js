@@ -596,7 +596,7 @@
   var p = (window.location.pathname || '/').replace(/\/$/, '') || '';
   var pathForTest = '/' + (p || '');
   var noIndex =
-    /^\/(technician-id|technician\/|technician$|admin|dashboard|search|settings|calling|product-verify)(\/|$)/.test(
+    /^\/(technician-id|technician\/|technician$|admin|dashboard|search|settings|calling|product-verify|where)(\/|$)/.test(
       pathForTest
     );
   var canonical = profile.origin + (p ? p : '');

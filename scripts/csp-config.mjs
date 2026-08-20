@@ -25,6 +25,7 @@ export const PRODUCTION_CSP = [
   "font-src 'self' https://fonts.gstatic.com data:",
   "img-src 'self' data: https: blob:",
   "worker-src 'self' blob:",
+  "manifest-src 'self' blob:",
   [
     "connect-src 'self'",
     'https://*.supabase.co',
@@ -88,6 +89,7 @@ export const DEVELOPMENT_CSP = [
   // Allow loopback HTTP so PDF logos/seals work even if Vite port / host differs (8080 vs 8081, localhost vs 127.0.0.1).
   "img-src 'self' data: https: blob: http://localhost:* http://127.0.0.1:*",
   "worker-src 'self' blob:",
+  "manifest-src 'self' blob:",
   [
     "connect-src 'self'",
     'http://localhost:*',

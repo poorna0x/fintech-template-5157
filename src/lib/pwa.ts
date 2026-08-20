@@ -153,17 +153,86 @@ export const registerAdminPWA = () => {
   });
 };
 
+let whereManifestObjectUrl: string | null = null;
+
+/** Family office-status PWA. Manifest start_url is the current secret path. */
+export const registerWherePWA = () => {
+  isPWAEnabled = true;
+
+  if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+    const existingManifests = document.querySelectorAll('link[rel="manifest"]');
+    existingManifests.forEach((link) => link.remove());
+    if (whereManifestObjectUrl) {
+      URL.revokeObjectURL(whereManifestObjectUrl);
+      whereManifestObjectUrl = null;
+    }
+
+    const startUrl = `${window.location.pathname}${window.location.search}`;
+    const manifest = {
+      name: 'Office status',
+      short_name: 'Office',
+      description: 'See if they are in the office, or how long to arrive',
+      id: '/where',
+      scope: '/where/',
+      start_url: startUrl,
+      display: 'standalone',
+      display_override: ['standalone', 'fullscreen'],
+      background_color: '#16a34a',
+      theme_color: '#16a34a',
+      orientation: 'portrait-primary',
+      icons: [
+        {
+          src: '/android-chrome-192x192.png',
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any maskable',
+        },
+        {
+          src: '/android-chrome-512x512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any maskable',
+        },
+      ],
+      lang: 'en-IN',
+      dir: 'ltr',
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+    whereManifestObjectUrl = URL.createObjectURL(blob);
+    const manifestLink = document.createElement('link');
+    manifestLink.rel = 'manifest';
+    manifestLink.href = whereManifestObjectUrl;
+    manifestLink.id = 'pwa-manifest';
+    document.head.appendChild(manifestLink);
+
+    const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (appleTitle) appleTitle.setAttribute('content', 'Office');
+  }
+
+  return registerPWA({
+    swUrl: '/where-sw.js',
+    scope: '/where/',
+    label: 'Office status PWA',
+  });
+};
+
 // Disable PWA when leaving PWA-enabled pages
 export const disablePWA = () => {
   isPWAEnabled = false;
   console.log('[PWA] PWA disabled - install prompts blocked');
-  
-  // Reset manifest link to default
+
   if (typeof document !== 'undefined') {
-    const manifestLink = document.querySelector('link[rel="manifest"]') as HTMLLinkElement;
-    if (manifestLink) {
-      manifestLink.href = '/site.webmanifest';
+    if (whereManifestObjectUrl) {
+      URL.revokeObjectURL(whereManifestObjectUrl);
+      whereManifestObjectUrl = null;
     }
+    const existing = document.querySelectorAll('link[rel="manifest"]');
+    existing.forEach((link) => link.remove());
+    const manifestLink = document.createElement('link');
+    manifestLink.rel = 'manifest';
+    manifestLink.href = '/site.webmanifest';
+    manifestLink.id = 'pwa-manifest';
+    document.head.appendChild(manifestLink);
   }
 };
 

@@ -132,6 +132,7 @@ export const NO_INDEX_PREFIXES = [
   '/settings',
   '/calling',
   '/product-verify/',
+  '/where/',
 ];
 
 const NO_INDEX_EXACT_PATHS = new Set(['/technician']);
