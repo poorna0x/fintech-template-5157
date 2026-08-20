@@ -89,7 +89,7 @@ function screenFor(
     return {
       card: 'border-emerald-200/80 bg-emerald-50/90 text-emerald-950',
       title: 'In office',
-      sub: data.live ? '' : data.checkedAt ? `Last seen ${checkedLabel(data.checkedAt)}` : '',
+      sub: data.checkedAt ? `Last seen ${checkedLabel(data.checkedAt)}` : '',
     };
   }
   if (data?.status === 'en_route' && data.etaMinutes) {
@@ -141,7 +141,7 @@ export default function PublicTechOfficeStatusPage() {
   }, []);
 
   const load = useCallback(
-    async (opts?: { poll?: boolean }) => {
+    async (opts?: { poll?: boolean; refresh?: boolean }) => {
       if (!token) {
         setPhase('missing');
         return;
@@ -151,7 +151,11 @@ export default function PublicTechOfficeStatusPage() {
       }
       if (refreshingRef.current) return;
       refreshingRef.current = true;
-      const result = await fetchPublicTechOfficeStatus(token, turnstileToken || undefined);
+      const result = await fetchPublicTechOfficeStatus(
+        token,
+        turnstileToken || undefined,
+        opts?.refresh ? { refresh: true } : undefined
+      );
       refreshingRef.current = false;
       if (result.ok === false) {
         if (result.error === 'not_found') {
@@ -205,7 +209,8 @@ export default function PublicTechOfficeStatusPage() {
 
   const screen = screenFor(data, phase, waitTimedOut);
   const checking =
-    !waitTimedOut && (phase === 'loading' || data?.status === 'checking');
+    !waitTimedOut &&
+    (phase === 'loading' || data?.status === 'checking' || Boolean(data?.pending));
 
   return (
     <div
@@ -246,7 +251,7 @@ export default function PublicTechOfficeStatusPage() {
               onClick={() => {
                 pollUntilRef.current = Date.now() + POLL_MAX_MS;
                 setWaitTimedOut(false);
-                void load();
+                void load({ refresh: true });
               }}
             >
               {checking ? (
