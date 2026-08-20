@@ -68,6 +68,7 @@ function screenFor(
       card: 'border-slate-200/80 bg-slate-50/90 text-slate-950',
       title: 'Not available',
       sub: '',
+      checking: false,
     };
   }
   if (phase === 'bot') {
@@ -76,6 +77,7 @@ function screenFor(
       card: 'border-slate-200/80 bg-white/90 text-slate-950',
       title: 'Please wait',
       sub: 'Security check',
+      checking: false,
     };
   }
   const stillChecking =
@@ -87,6 +89,7 @@ function screenFor(
       card: 'border-slate-200/80 bg-white/90 text-slate-950',
       title: 'Checking…',
       sub: data?.firstName ? `Looking for ${data.firstName}` : '',
+      checking: true,
     };
   }
   if (data?.status === 'in_office') {
@@ -99,6 +102,7 @@ function screenFor(
         : data.checkedAt
           ? `Last seen ${checkedLabel(data.checkedAt)}`
           : '',
+      checking: false,
     };
   }
   if (data?.status === 'en_route' && data.etaMinutes) {
@@ -107,6 +111,7 @@ function screenFor(
       card: 'border-amber-200/80 bg-amber-50/90 text-amber-950',
       title: `${data.etaMinutes} min`,
       sub: 'to office',
+      checking: false,
     };
   }
   return {
@@ -114,6 +119,7 @@ function screenFor(
     card: 'border-slate-200/80 bg-slate-50/90 text-slate-950',
     title: 'Can’t get travel time',
     sub: data?.checkedAt ? `Checked ${checkedLabel(data.checkedAt)}` : '',
+    checking: false,
   };
 }
 
@@ -253,7 +259,21 @@ export default function PublicTechOfficeStatusPage() {
     <div className={cn('flex min-h-dvh flex-col text-slate-900 antialiased', screen.page)}>
       <main className="relative z-0 mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6">
         <div className="w-full overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-5 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.28)] backdrop-blur-sm sm:p-7">
-          <div className={cn('rounded-3xl border p-6 text-center sm:p-8', screen.card)}>
+          <div
+            className={cn(
+              'rounded-3xl border p-6 text-center sm:p-8',
+              screen.checking && 'flex min-h-[14rem] flex-col items-center justify-center sm:min-h-[16rem]',
+              screen.card
+            )}
+            aria-busy={screen.checking || undefined}
+            aria-live="polite"
+          >
+            {screen.checking ? (
+              <Loader2
+                className="mb-5 h-14 w-14 animate-spin text-emerald-600 sm:mb-6 sm:h-16 sm:w-16"
+                aria-hidden
+              />
+            ) : null}
             <h1 className="max-w-[16ch] text-center text-5xl font-bold leading-[1.05] tracking-tight sm:text-7xl">
               {screen.title}
             </h1>
@@ -270,7 +290,7 @@ export default function PublicTechOfficeStatusPage() {
             </div>
           ) : null}
 
-          {phase !== 'missing' && phase !== 'bot' ? (
+          {phase !== 'missing' && phase !== 'bot' && !screen.checking ? (
             <Button
               type="button"
               size="lg"
@@ -287,11 +307,7 @@ export default function PublicTechOfficeStatusPage() {
                 void load({ refresh: true });
               }}
             >
-              {tapBusy ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden />
-              ) : (
-                <RefreshCw className="mr-2 h-5 w-5" aria-hidden />
-              )}
+              <RefreshCw className="mr-2 h-5 w-5" aria-hidden />
               Refresh
             </Button>
           ) : null}
