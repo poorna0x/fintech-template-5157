@@ -39,6 +39,22 @@ const {
   getServiceDb,
 } = require('./tech-office-status-helper');
 
+const OFFICE_CACHE_MS = 5 * 60 * 1000;
+let officeCache = { at: 0, parsed: undefined };
+
+async function loadOffice(db) {
+  if (officeCache.parsed !== undefined && Date.now() - officeCache.at < OFFICE_CACHE_MS) {
+    return officeCache.parsed;
+  }
+  const { data: officeRow } = await db
+    .from('crm_settings')
+    .select('value')
+    .eq('key', OFFICE_LOCATION_KEY)
+    .maybeSingle();
+  officeCache = { at: Date.now(), parsed: parseOfficeValue(officeRow?.value) };
+  return officeCache.parsed;
+}
+
 function json(statusCode, corsHeaders, payload, extraHeaders) {
   return {
     statusCode,
@@ -158,12 +174,21 @@ exports.handler = async (event) => {
 
     const refuse = json(404, corsHeaders, publicNotFound());
     if (!link) return refuse;
+    if (link.enabled !== true || link.revoked_at) return refuse;
 
-    const { data: tech, error: techErr } = await db
-      .from('technicians')
-      .select('id, full_name, account_status, current_location')
-      .eq('id', link.technician_id)
-      .maybeSingle();
+    const [{ data: tech, error: techErr }, office, { data: live }] = await Promise.all([
+      db
+        .from('technicians')
+        .select('id, full_name, account_status, current_location')
+        .eq('id', link.technician_id)
+        .maybeSingle(),
+      loadOffice(db),
+      db
+        .from('technician_live_locations')
+        .select('latitude, longitude, accuracy, is_tracking, updated_at, fix_time, ping_requested_at')
+        .eq('technician_id', link.technician_id)
+        .maybeSingle(),
+    ]);
     if (techErr) {
       console.warn('[tech-office-status] tech', techErr.message);
       return json(500, corsHeaders, { ok: false, error: 'failed' });
@@ -179,19 +204,6 @@ exports.handler = async (event) => {
       return refuse;
     }
 
-    const { data: officeRow } = await db
-      .from('crm_settings')
-      .select('value')
-      .eq('key', OFFICE_LOCATION_KEY)
-      .maybeSingle();
-    const office = parseOfficeValue(officeRow?.value);
-
-    const { data: live } = await db
-      .from('technician_live_locations')
-      .select('latitude, longitude, accuracy, is_tracking, updated_at, fix_time, ping_requested_at')
-      .eq('technician_id', tech.id)
-      .maybeSingle();
-
     const picked = pickCoords(live, tech.current_location);
     const fresh = isFixFresh(picked.fixAt);
     const userRefresh = body.refresh === true;
@@ -204,6 +216,7 @@ exports.handler = async (event) => {
         if (!hourBlock) {
           const ping = await sendTechnicianLocationPing(db, tech.id, {
             pingRequestedAt: live?.ping_requested_at,
+            liveRow: live,
             force: userRefresh,
           });
           if (ping.sent) pending = true;
@@ -293,28 +306,6 @@ exports.handler = async (event) => {
     const etaMinutes =
       etaMinutesFromDurationSec(route?.durationSec) ||
       etaMinutesFromDurationSec(estimateDriveSecFromMeters(meters));
-
-    if (
-      isAtOfficeStatus({
-        meters,
-        etaMinutes,
-        accuracy: picked.accuracy,
-      })
-    ) {
-      return json(
-        200,
-        corsHeaders,
-        {
-          ok: true,
-          status: 'in_office',
-          firstName,
-          checkedAt,
-          live: fresh,
-          pending: false,
-        },
-        extraHeaders
-      );
-    }
 
     if (etaMinutes == null) {
       return json(
