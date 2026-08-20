@@ -98,7 +98,7 @@ export default function TechnicianFamilyOfficeStatusCard({ technicianId }: Props
             Family office status
           </Label>
           <p className="text-xs text-muted-foreground leading-snug">
-            No-login home-screen page: in office (within 1 km) or minutes to office. Off is a
+            No-login home-screen page: in office (within 100 m) or minutes to office. Off is a
             server kill switch — the old bookmark cannot bypass it.
           </p>
         </div>

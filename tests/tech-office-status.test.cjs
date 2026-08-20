@@ -20,24 +20,23 @@ function event(method, body, headers = {}) {
 }
 
 async function run() {
-  assert.equal(helper.OFFICE_RADIUS_M, 1000);
-  assert.equal(helper.isInOffice(999), true);
-  assert.equal(helper.isInOffice(1000), true);
-  assert.equal(helper.isInOffice(1001), false);
-  assert.equal(helper.isAtOfficeStatus({ meters: 1800, etaMinutes: 5 }), true);
-  assert.equal(helper.isAtOfficeStatus({ meters: 1800, etaMinutes: 6 }), false);
-  assert.equal(helper.isAtOfficeStatus({ meters: 999, etaMinutes: 20 }), true);
-  assert.equal(helper.isAtOfficeStatus({ meters: 1200, accuracy: 400, etaMinutes: 20 }), true);
-  assert.equal(helper.isAtOfficeStatus({ meters: 999 }), true);
+  assert.equal(helper.OFFICE_RADIUS_M, 100);
+  assert.equal(helper.isInOffice(99), true);
+  assert.equal(helper.isInOffice(100), true);
+  assert.equal(helper.isInOffice(101), false);
+  assert.equal(helper.isAtOfficeStatus({ meters: 1800, etaMinutes: 5 }), false);
+  assert.equal(helper.isAtOfficeStatus({ meters: 90 }), true);
+  assert.equal(helper.isAtOfficeStatus({ meters: 120, accuracy: 40 }), true);
+  assert.equal(helper.isAtOfficeStatus({ meters: 200, accuracy: 400 }), false);
   assert.equal(helper.isAtOfficeStatus({ meters: 1800 }), false);
 
   const office = { lat: 12.9716, lng: 77.5946 };
-  const nearby = { lat: 12.973, lng: 77.5946 };
+  const nearby = { lat: 12.97205, lng: 77.5946 };
   const far = { lat: 13.05, lng: 77.59 };
   const nearM = helper.haversineDistanceMeters(nearby, office);
   const farM = helper.haversineDistanceMeters(far, office);
-  assert.ok(nearM < 1000, `expected nearby < 1km, got ${nearM}`);
-  assert.ok(farM > 1000, `expected far > 1km, got ${farM}`);
+  assert.ok(nearM < 100, `expected nearby < 100m, got ${nearM}`);
+  assert.ok(farM > 100, `expected far > 100m, got ${farM}`);
   assert.equal(helper.isInOffice(nearM), true);
   assert.equal(helper.isInOffice(farM), false);
 
