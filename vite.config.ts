@@ -89,6 +89,14 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/tech-office-status-mint': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/tech-office-status': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/notify-admins': {
         target: 'http://localhost:8888',
         changeOrigin: true,

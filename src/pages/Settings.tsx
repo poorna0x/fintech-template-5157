@@ -56,6 +56,7 @@ import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technici
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { TechnicianIdCardLinks } from '@/components/admin/TechnicianIdCardLinks';
+import TechnicianFamilyOfficeStatusCard from '@/components/admin/TechnicianFamilyOfficeStatusCard';
 import { CommonQrCode, invalidateQrCodesCache, cacheQrCodes, getCachedQrCodes, normalizeTechnicianAssignedCommonQrIds, mapCommonQrRow } from '@/lib/qrCodeManager';
 import { isValidUpiId, normalizeUpiId, normalizePaymentPhone } from '@/lib/upiPaymentAccounts';
 // NOTE: `jszip` and `qr-code-styling` are heavy and only used by specific
@@ -4194,6 +4195,9 @@ const Settings = () => {
                       Inactive keeps all job and payment history; change back to Active to show them in Technician Payments again.
                     </p>
                   </div>
+                  {selectedTechnician?.id ? (
+                    <TechnicianFamilyOfficeStatusCard technicianId={selectedTechnician.id} />
+                  ) : null}
                   <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
                     <div className="min-w-0 space-y-0.5">
                       <Label htmlFor="pushNotificationsEnabled" className="text-sm font-medium">

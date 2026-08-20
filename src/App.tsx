@@ -62,8 +62,8 @@ const Warranty = lazy(() => import("./pages/Warranty"));
 const PublicPdfAuthenticityPage = lazy(() => import("./pages/PublicPdfAuthenticityPage"));
 const PublicJobReviewPage = lazy(() => import("./pages/PublicJobReviewPage"));
 const PublicDocumentAcceptPage = lazy(() => import("./pages/PublicDocumentAcceptPage"));
+const PublicTechOfficeStatusPage = lazy(() => import("./pages/PublicTechOfficeStatusPage"));
 const PayUpi = lazy(() => import("./pages/PayUpi"));
-const WhatsAppTest = lazy(() => import("./pages/WhatsAppTest"));
 const CallDialPage = lazy(() => import("./pages/CallDialPage"));
 const PortalProviders = lazy(() => import("./components/PortalProviders"));
 const PublicSecurityProviders = lazy(() => import("./components/PublicSecurityProviders"));
@@ -167,6 +167,7 @@ const RouteProviders = ({ children }: { children: React.ReactNode }) => {
   const { pathname } = useLocation();
 
   useEffect(() => {
+    if (pathname.startsWith('/where/')) return;
     if (!isPortalPath(pathname)) disablePWA();
   }, [pathname]);
 
@@ -266,6 +267,7 @@ const App = () => (
                   <Route path="/authenticity" element={<PublicPdfAuthenticityPage />} />
                   <Route path="/review/:token" element={<PublicJobReviewPage />} />
                   <Route path="/accept/:token" element={<PublicDocumentAcceptPage />} />
+                  <Route path="/where/:token" element={<PublicTechOfficeStatusPage />} />
                   
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />
@@ -280,9 +282,6 @@ const App = () => (
                   <Route path="/p/:code" element={<PayUpi />} />
                   <Route path="/pay-upi" element={<PayUpi />} />
                   <Route path="/call" element={<CallDialPage />} />
-
-                  {/* WhatsApp Cloud API POC (text + PDF) */}
-                  <Route path="/whatsapp-test" element={<WhatsAppTest />} />
 
                   {/* Generated city/service/location SEO landing pages. */}
                   <Route path="/:slug" element={<SeoLandingRoute />} />

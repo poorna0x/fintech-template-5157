@@ -12,6 +12,8 @@
     if (appName) appName.setAttribute('content', 'HRO Technician');
   } else if (path.startsWith('/admin') || path.startsWith('/settings')) {
     manifestHref = '/admin-manifest.json';
+  } else if (path.startsWith('/where/')) {
+    return;
   }
 
   var existing = document.getElementById('pwa-manifest');

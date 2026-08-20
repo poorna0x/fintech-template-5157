@@ -816,7 +816,7 @@
   var p = (window.location.pathname || '/').replace(/\/$/, '') || '';
   var pathForTest = '/' + (p || '');
   var noIndex =
-    /^\/(technician-id|technician\/|technician$|admin|dashboard|search|settings|calling|product-verify|review|accept|c)(\/|$)/.test(
+    /^\/(technician-id|technician\/|technician$|admin|dashboard|search|settings|calling|product-verify|review|accept|where|c)(\/|$)/.test(
       pathForTest
     );
   var canonical = profile.origin + (p ? p : '');

@@ -145,6 +145,7 @@ export const NO_INDEX_PREFIXES = [
   '/product-verify/',
   '/review/',
   '/accept/',
+  '/where/',
   '/c/',
 ];
 
