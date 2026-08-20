@@ -1,4 +1,9 @@
 import { ensureTechnicianSwUpdated } from './pwaSwMigration';
+import {
+  buildWhereWebManifest,
+  saveWherePwaToken,
+  whereTokenFromPath,
+} from '@/lib/wherePwaLaunch';
 
 interface RegisterOptions {
   swUrl: string;
@@ -167,36 +172,10 @@ export const registerWherePWA = () => {
       whereManifestObjectUrl = null;
     }
 
-    const startUrl = `${window.location.pathname}${window.location.search}`;
-    const manifest = {
-      name: 'Office status',
-      short_name: 'Office',
-      description: 'See if they are in the office, or how long to arrive',
-      id: '/where',
-      scope: '/where/',
-      start_url: startUrl,
-      display: 'standalone',
-      display_override: ['standalone', 'fullscreen'],
-      background_color: '#16a34a',
-      theme_color: '#16a34a',
-      orientation: 'portrait-primary',
-      icons: [
-        {
-          src: '/android-chrome-192x192.png',
-          sizes: '192x192',
-          type: 'image/png',
-          purpose: 'any maskable',
-        },
-        {
-          src: '/android-chrome-512x512.png',
-          sizes: '512x512',
-          type: 'image/png',
-          purpose: 'any maskable',
-        },
-      ],
-      lang: 'en-IN',
-      dir: 'ltr',
-    };
+    const token = whereTokenFromPath(window.location.pathname);
+    if (token) saveWherePwaToken(token);
+    const startUrl = token ? `/where/${token}` : '/where/';
+    const manifest = buildWhereWebManifest(startUrl);
     const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
     whereManifestObjectUrl = URL.createObjectURL(blob);
     const manifestLink = document.createElement('link');
@@ -207,6 +186,8 @@ export const registerWherePWA = () => {
 
     const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
     if (appleTitle) appleTitle.setAttribute('content', 'Office');
+    const winStart = document.querySelector('meta[name="msapplication-starturl"]');
+    if (winStart) winStart.setAttribute('content', startUrl);
   }
 
   return registerPWA({

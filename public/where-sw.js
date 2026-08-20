@@ -57,6 +57,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Keep the requested /where/{token} URL. Do not rewrite to / or /where.
   if (request.mode === 'navigate' && isSameOrigin) {
     event.respondWith(fetch(request));
     return;

@@ -149,7 +149,7 @@ export const NO_INDEX_PREFIXES = [
   '/c/',
 ];
 
-const NO_INDEX_EXACT_PATHS = new Set(['/technician']);
+const NO_INDEX_EXACT_PATHS = new Set(['/technician', '/where']);
 
 export function shouldIndexPath(pathname: string): boolean {
   if (NO_INDEX_EXACT_PATHS.has(pathname)) return false;

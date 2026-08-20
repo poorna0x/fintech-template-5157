@@ -63,6 +63,7 @@ const PublicPdfAuthenticityPage = lazy(() => import("./pages/PublicPdfAuthentici
 const PublicJobReviewPage = lazy(() => import("./pages/PublicJobReviewPage"));
 const PublicDocumentAcceptPage = lazy(() => import("./pages/PublicDocumentAcceptPage"));
 const PublicTechOfficeStatusPage = lazy(() => import("./pages/PublicTechOfficeStatusPage"));
+const WherePwaLaunchPage = lazy(() => import("./pages/WherePwaLaunchPage"));
 const PayUpi = lazy(() => import("./pages/PayUpi"));
 const CallDialPage = lazy(() => import("./pages/CallDialPage"));
 const PortalProviders = lazy(() => import("./components/PortalProviders"));
@@ -167,7 +168,7 @@ const RouteProviders = ({ children }: { children: React.ReactNode }) => {
   const { pathname } = useLocation();
 
   useEffect(() => {
-    if (pathname.startsWith('/where/')) return;
+    if (pathname === '/where' || pathname.startsWith('/where/')) return;
     if (!isPortalPath(pathname)) disablePWA();
   }, [pathname]);
 
@@ -268,6 +269,8 @@ const App = () => (
                   <Route path="/review/:token" element={<PublicJobReviewPage />} />
                   <Route path="/accept/:token" element={<PublicDocumentAcceptPage />} />
                   <Route path="/where/:token" element={<PublicTechOfficeStatusPage />} />
+                  <Route path="/where" element={<WherePwaLaunchPage />} />
+                  <Route path="/where/*" element={<WherePwaLaunchPage />} />
                   
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />

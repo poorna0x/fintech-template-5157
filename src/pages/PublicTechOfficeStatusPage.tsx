@@ -7,6 +7,7 @@ import {
   fetchPublicTechOfficeStatus,
   type PublicTechOfficeStatus,
 } from '@/lib/techOfficeStatus';
+import { saveWherePwaToken } from '@/lib/wherePwaLaunch';
 import {
   getInstallPromptEvent,
   isPWAMode,
@@ -117,10 +118,11 @@ export default function PublicTechOfficeStatusPage() {
   const refreshingRef = useRef(false);
 
   useEffect(() => {
+    if (token) saveWherePwaToken(token);
     void registerWherePWA();
     const theme = document.querySelector('meta[name="theme-color"]');
     if (theme) theme.setAttribute('content', '#16a34a');
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (isPWAMode()) return;
