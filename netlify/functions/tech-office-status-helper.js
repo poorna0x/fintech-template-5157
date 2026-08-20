@@ -4,7 +4,8 @@
  */
 const crypto = require('crypto');
 
-const OFFICE_RADIUS_M = 1000;
+const OFFICE_RADIUS_M = 100;
+const OFFICE_ACCURACY_SLOP_MAX_M = 50;
 const FRESH_FIX_MAX_AGE_MS = 2 * 60 * 1000;
 const TOKEN_RE = /^[A-Za-z0-9_-]{40,48}$/;
 const UUID_RE =
@@ -46,11 +47,12 @@ function isInOffice(meters) {
   return Number.isFinite(meters) && meters <= OFFICE_RADIUS_M;
 }
 
-/** In office for the family page: 1 km, plus GPS slop, plus a short hop (≤5 min). */
-function isAtOfficeStatus({ meters, etaMinutes, accuracy }) {
-  const slop = Number.isFinite(Number(accuracy)) ? Math.min(Math.max(Number(accuracy), 0), 500) : 0;
+/** In office for the family page: 100 m, plus a small GPS accuracy slop. */
+function isAtOfficeStatus({ meters, accuracy }) {
+  const slop = Number.isFinite(Number(accuracy))
+    ? Math.min(Math.max(Number(accuracy), 0), OFFICE_ACCURACY_SLOP_MAX_M)
+    : 0;
   if (Number.isFinite(meters) && meters <= OFFICE_RADIUS_M + slop) return true;
-  if (Number.isFinite(etaMinutes) && etaMinutes <= 5) return true;
   return false;
 }
 
@@ -256,6 +258,7 @@ function familyStatusPath(token) {
 
 module.exports = {
   OFFICE_RADIUS_M,
+  OFFICE_ACCURACY_SLOP_MAX_M,
   FRESH_FIX_MAX_AGE_MS,
   OFFICE_LOCATION_KEY,
   COOKIE_NAME,
