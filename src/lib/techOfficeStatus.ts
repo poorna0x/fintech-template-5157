@@ -1,5 +1,3 @@
-import { supabase } from '@/lib/supabase';
-
 export type TechOfficeStatus =
   | 'in_office'
   | 'en_route'
@@ -33,6 +31,7 @@ function statusUrl(): string {
 }
 
 async function adminToken(): Promise<string | null> {
+  const { supabase } = await import('@/lib/supabase');
   const { data } = await supabase.auth.getSession();
   return data?.session?.access_token || null;
 }
@@ -73,7 +72,7 @@ export async function mintTechnicianOfficeStatus(
 export async function fetchPublicTechOfficeStatus(
   token: string,
   turnstileToken?: string,
-  opts?: { refresh?: boolean }
+  opts?: { refresh?: boolean; poll?: boolean }
 ): Promise<
   | PublicTechOfficeStatus
   | { ok: false; error: 'not_found' | 'bot' | 'failed' | 'rate' }
@@ -87,6 +86,7 @@ export async function fetchPublicTechOfficeStatus(
         token,
         ...(turnstileToken ? { turnstileToken } : {}),
         ...(opts?.refresh ? { refresh: true } : {}),
+        ...(opts?.poll ? { poll: true } : {}),
       }),
     });
     const json = (await res.json().catch(() => null)) as

@@ -195,26 +195,31 @@ exports.handler = async (event) => {
     const picked = pickCoords(live, tech.current_location);
     const fresh = isFixFresh(picked.fixAt);
     const userRefresh = body.refresh === true;
+    const isPoll = body.poll === true;
     let pending = false;
 
     if (!fresh) {
-      const hourBlock = pingLimited(event, corsHeaders, token);
-      if (!hourBlock) {
-        const ping = await sendTechnicianLocationPing(db, tech.id, {
-          pingRequestedAt: live?.ping_requested_at,
-          force: userRefresh,
-        });
-        if (ping.sent) pending = true;
+      if (!isPoll) {
+        const hourBlock = pingLimited(event, corsHeaders, token);
+        if (!hourBlock) {
+          const ping = await sendTechnicianLocationPing(db, tech.id, {
+            pingRequestedAt: live?.ping_requested_at,
+            force: userRefresh,
+          });
+          if (ping.sent) pending = true;
+        }
       }
-      if (pingRequestedAgeMs(live?.ping_requested_at, Date.now()) < 40_000) {
+      if (pending || pingRequestedAgeMs(live?.ping_requested_at, Date.now()) < 40_000) {
         pending = true;
       }
     }
 
-    void db
-      .from('technician_office_status_links')
-      .update({ last_used_at: new Date().toISOString() })
-      .eq('technician_id', tech.id);
+    if (!isPoll) {
+      void db
+        .from('technician_office_status_links')
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('technician_id', tech.id);
+    }
 
     const firstName = firstNameFromFullName(tech.full_name);
     const checkedAt = picked.fixAt || new Date().toISOString();
@@ -246,15 +251,9 @@ exports.handler = async (event) => {
     }
 
     const meters = haversineDistanceMeters(picked.coords, office);
-    const route = await drivingRouteAvoidTolls(picked.coords, office, { traffic: true });
-    const etaMinutes =
-      etaMinutesFromDurationSec(route?.durationSec) ||
-      etaMinutesFromDurationSec(estimateDriveSecFromMeters(meters));
-
     if (
       isAtOfficeStatus({
         meters,
-        etaMinutes,
         accuracy: picked.accuracy,
       })
     ) {
@@ -285,6 +284,33 @@ exports.handler = async (event) => {
           checkedAt,
           live: false,
           pending: true,
+        },
+        extraHeaders
+      );
+    }
+
+    const route = await drivingRouteAvoidTolls(picked.coords, office, { traffic: true });
+    const etaMinutes =
+      etaMinutesFromDurationSec(route?.durationSec) ||
+      etaMinutesFromDurationSec(estimateDriveSecFromMeters(meters));
+
+    if (
+      isAtOfficeStatus({
+        meters,
+        etaMinutes,
+        accuracy: picked.accuracy,
+      })
+    ) {
+      return json(
+        200,
+        corsHeaders,
+        {
+          ok: true,
+          status: 'in_office',
+          firstName,
+          checkedAt,
+          live: fresh,
+          pending: false,
         },
         extraHeaders
       );
