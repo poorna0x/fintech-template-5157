@@ -63,6 +63,7 @@ function screenFor(
 ) {
   if (phase === 'missing') {
     return {
+      page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#e2e8f0_0%,#f8fafc_45%,#f1f5f9_100%)]',
       card: 'border-slate-200/80 bg-slate-50/90 text-slate-950',
       title: 'Not available',
       sub: '',
@@ -70,6 +71,7 @@ function screenFor(
   }
   if (phase === 'bot') {
     return {
+      page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#e0f2fe_0%,#f8fafc_45%,#f1f5f9_100%)]',
       card: 'border-slate-200/80 bg-white/90 text-slate-950',
       title: 'Please wait',
       sub: 'Security check',
@@ -80,6 +82,7 @@ function screenFor(
     (!data || phase === 'loading' || data.status === 'checking');
   if (stillChecking) {
     return {
+      page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#d1fae5_0%,#ecfdf5_40%,#f0fdf4_100%)]',
       card: 'border-slate-200/80 bg-white/90 text-slate-950',
       title: 'Checking…',
       sub: data?.firstName ? `Looking for ${data.firstName}` : '',
@@ -87,6 +90,7 @@ function screenFor(
   }
   if (data?.status === 'in_office') {
     return {
+      page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#a7f3d0_0%,#d1fae5_38%,#ecfdf5_100%)]',
       card: 'border-emerald-200/80 bg-emerald-50/90 text-emerald-950',
       title: 'In office',
       sub: data.checkedAt ? `Last seen ${checkedLabel(data.checkedAt)}` : '',
@@ -94,12 +98,14 @@ function screenFor(
   }
   if (data?.status === 'en_route' && data.etaMinutes) {
     return {
+      page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#fde68a_0%,#fef3c7_40%,#fffbeb_100%)]',
       card: 'border-amber-200/80 bg-amber-50/90 text-amber-950',
       title: `${data.etaMinutes} min`,
       sub: 'to office',
     };
   }
   return {
+    page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#e2e8f0_0%,#f8fafc_45%,#f1f5f9_100%)]',
     card: 'border-slate-200/80 bg-slate-50/90 text-slate-950',
     title: 'Can’t get travel time',
     sub: data?.checkedAt ? `Checked ${checkedLabel(data.checkedAt)}` : '',
@@ -237,14 +243,7 @@ export default function PublicTechOfficeStatusPage() {
     (phase === 'loading' || data?.status === 'checking' || Boolean(data?.pending));
 
   return (
-    <div
-      className={cn(
-        'flex min-h-dvh flex-col text-slate-900 antialiased',
-        isEleven
-          ? 'bg-[radial-gradient(120%_80%_at_50%_-10%,#ecfdf5_0%,#f8fafc_45%,#f1f5f9_100%)]'
-          : 'bg-[radial-gradient(120%_80%_at_50%_-10%,#e0f2fe_0%,#f8fafc_45%,#f1f5f9_100%)]'
-      )}
-    >
+    <div className={cn('flex min-h-dvh flex-col text-slate-900 antialiased', screen.page)}>
       <main className="relative z-0 mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6">
         <div className="w-full overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-5 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.28)] backdrop-blur-sm sm:p-7">
           <div className={cn('rounded-3xl border p-6 text-center sm:p-8', screen.card)}>
