@@ -37,8 +37,8 @@
       start_url: startUrl,
       display: 'standalone',
       display_override: ['standalone', 'fullscreen'],
-      background_color: '#16a34a',
-      theme_color: '#16a34a',
+      background_color: '#f8fafc',
+      theme_color: '#f8fafc',
       orientation: 'portrait-primary',
       icons: [
         {
@@ -71,7 +71,7 @@
     var winStart = document.querySelector('meta[name="msapplication-starturl"]');
     if (winStart) winStart.setAttribute('content', startUrl);
     var themeMeta = document.querySelector('meta[name="theme-color"]');
-    if (themeMeta) themeMeta.setAttribute('content', '#16a34a');
+    if (themeMeta) themeMeta.setAttribute('content', '#f8fafc');
   }
 
   if (path === '/where' || path === '/where/' || path.startsWith('/where/')) {

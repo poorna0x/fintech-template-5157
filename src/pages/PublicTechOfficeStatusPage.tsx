@@ -7,7 +7,9 @@ import {
   fetchPublicTechOfficeStatus,
   type PublicTechOfficeStatus,
 } from '@/lib/techOfficeStatus';
+import { cn } from '@/lib/utils';
 import { saveWherePwaToken } from '@/lib/wherePwaLaunch';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 import {
   getInstallPromptEvent,
   isPWAMode,
@@ -19,6 +21,7 @@ const POLL_MS = 2_000;
 const POLL_MAX_MS = 42_000;
 const AUTO_REFRESH_MS = 3 * 60_000;
 const CACHE_PREFIX = 'hro_where_last_v1:';
+const THEME_COLOR = '#f8fafc';
 
 function cacheKey(token: string) {
   return `${CACHE_PREFIX}${token}`;
@@ -60,14 +63,14 @@ function screenFor(
 ) {
   if (phase === 'missing') {
     return {
-      bg: 'bg-slate-700',
+      card: 'border-slate-200/80 bg-slate-50/90 text-slate-950',
       title: 'Not available',
       sub: '',
     };
   }
   if (phase === 'bot') {
     return {
-      bg: 'bg-slate-700',
+      card: 'border-slate-200/80 bg-white/90 text-slate-950',
       title: 'Please wait',
       sub: 'Security check',
     };
@@ -77,27 +80,27 @@ function screenFor(
     (!data || phase === 'loading' || data.status === 'checking');
   if (stillChecking) {
     return {
-      bg: 'bg-slate-600',
+      card: 'border-slate-200/80 bg-white/90 text-slate-950',
       title: 'Checking…',
       sub: data?.firstName ? `Looking for ${data.firstName}` : '',
     };
   }
   if (data?.status === 'in_office') {
     return {
-      bg: 'bg-emerald-600',
+      card: 'border-emerald-200/80 bg-emerald-50/90 text-emerald-950',
       title: 'In office',
       sub: data.live ? '' : data.checkedAt ? `Last seen ${checkedLabel(data.checkedAt)}` : '',
     };
   }
   if (data?.status === 'en_route' && data.etaMinutes) {
     return {
-      bg: 'bg-amber-600',
+      card: 'border-amber-200/80 bg-amber-50/90 text-amber-950',
       title: `${data.etaMinutes} min`,
       sub: 'to office',
     };
   }
   return {
-    bg: 'bg-slate-600',
+    card: 'border-slate-200/80 bg-slate-50/90 text-slate-950',
     title: 'Can’t get travel time',
     sub: data?.checkedAt ? `Checked ${checkedLabel(data.checkedAt)}` : '',
   };
@@ -105,6 +108,7 @@ function screenFor(
 
 export default function PublicTechOfficeStatusPage() {
   const { token = '' } = useParams<{ token: string }>();
+  const isEleven = getPublicSiteKey() === 'elevenro';
   const [data, setData] = useState<PublicTechOfficeStatus | null>(() =>
     token ? readCache(token) : null
   );
@@ -121,7 +125,7 @@ export default function PublicTechOfficeStatusPage() {
     if (token) saveWherePwaToken(token);
     void registerWherePWA();
     const theme = document.querySelector('meta[name="theme-color"]');
-    if (theme) theme.setAttribute('content', '#16a34a');
+    if (theme) theme.setAttribute('content', THEME_COLOR);
   }, [token]);
 
   useEffect(() => {
@@ -205,61 +209,82 @@ export default function PublicTechOfficeStatusPage() {
 
   return (
     <div
-      className={`flex min-h-dvh flex-col items-center justify-center px-6 py-10 text-white ${screen.bg} transition-colors duration-300 motion-reduce:transition-none`}
+      className={cn(
+        'flex min-h-dvh flex-col text-slate-900 antialiased',
+        isEleven
+          ? 'bg-[radial-gradient(120%_80%_at_50%_-10%,#ecfdf5_0%,#f8fafc_45%,#f1f5f9_100%)]'
+          : 'bg-[radial-gradient(120%_80%_at_50%_-10%,#e0f2fe_0%,#f8fafc_45%,#f1f5f9_100%)]'
+      )}
     >
-      <h1 className="max-w-[16ch] text-center text-6xl font-bold leading-[1.05] tracking-tight sm:text-8xl">
-        {screen.title}
-      </h1>
-      {screen.sub ? (
-        <p className="mt-4 text-center text-2xl font-medium text-white/90 sm:text-3xl">{screen.sub}</p>
-      ) : null}
+      <main className="relative z-0 mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6">
+        <div className="w-full overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-5 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.28)] backdrop-blur-sm sm:p-7">
+          <div className={cn('rounded-3xl border p-6 text-center sm:p-8', screen.card)}>
+            <h1 className="max-w-[16ch] text-center text-5xl font-bold leading-[1.05] tracking-tight sm:text-7xl">
+              {screen.title}
+            </h1>
+            {screen.sub ? (
+              <p className="mt-4 text-center text-xl font-medium opacity-80 sm:text-2xl">
+                {screen.sub}
+              </p>
+            ) : null}
+          </div>
 
-      {phase === 'bot' && isTurnstileEnabled() ? (
-        <div className="mt-8 w-full max-w-sm">
-          <TurnstileWidget action="office_status" theme="light" onToken={setTurnstileToken} />
+          {phase === 'bot' && isTurnstileEnabled() ? (
+            <div className="mt-6 w-full">
+              <TurnstileWidget action="office_status" theme="light" onToken={setTurnstileToken} />
+            </div>
+          ) : null}
+
+          {phase !== 'missing' && phase !== 'bot' ? (
+            <Button
+              type="button"
+              size="lg"
+              className={cn(
+                'mt-6 h-12 min-h-11 w-full cursor-pointer rounded-2xl text-[15px] font-semibold shadow-sm transition active:scale-[0.99]',
+                isEleven ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-sky-800 hover:bg-sky-900'
+              )}
+              onClick={() => {
+                pollUntilRef.current = Date.now() + POLL_MAX_MS;
+                setWaitTimedOut(false);
+                void load();
+              }}
+            >
+              {checking ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden />
+              ) : (
+                <RefreshCw className="mr-2 h-5 w-5" aria-hidden />
+              )}
+              Refresh
+            </Button>
+          ) : null}
+
+          {installEvent ? (
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(
+                'mt-4 h-11 min-h-11 w-full cursor-pointer rounded-full border bg-white px-4 text-sm font-semibold shadow-sm transition active:scale-[0.99]',
+                isEleven
+                  ? 'border-emerald-200 text-emerald-800 hover:bg-emerald-50'
+                  : 'border-sky-200 text-sky-800 hover:bg-sky-50'
+              )}
+              onClick={async () => {
+                await installEvent.prompt();
+                setInstallEvent(null);
+              }}
+            >
+              <Home className="mr-2 h-4 w-4" aria-hidden />
+              Add to Home Screen
+            </Button>
+          ) : null}
+
+          {showIosHint && !isPWAMode() && phase !== 'missing' ? (
+            <p className="mt-4 text-center text-sm leading-relaxed text-slate-600">
+              On iPhone: tap Share, then Add to Home Screen.
+            </p>
+          ) : null}
         </div>
-      ) : null}
-
-      {phase !== 'missing' && phase !== 'bot' ? (
-        <Button
-          type="button"
-          size="lg"
-          className="mt-12 h-14 min-h-11 cursor-pointer rounded-full bg-white px-8 text-lg font-semibold text-slate-900 hover:bg-white/90"
-          onClick={() => {
-            pollUntilRef.current = Date.now() + POLL_MAX_MS;
-            setWaitTimedOut(false);
-            void load();
-          }}
-        >
-          {checking ? (
-            <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden />
-          ) : (
-            <RefreshCw className="mr-2 h-5 w-5" aria-hidden />
-          )}
-          Refresh
-        </Button>
-      ) : null}
-
-      {installEvent ? (
-        <Button
-          type="button"
-          variant="outline"
-          className="mt-6 h-12 min-h-11 cursor-pointer rounded-full border-white/40 bg-transparent px-6 text-base text-white hover:bg-white/10 hover:text-white"
-          onClick={async () => {
-            await installEvent.prompt();
-            setInstallEvent(null);
-          }}
-        >
-          <Home className="mr-2 h-5 w-5" aria-hidden />
-          Add to Home Screen
-        </Button>
-      ) : null}
-
-      {showIosHint && !isPWAMode() && phase !== 'missing' ? (
-        <p className="mt-6 max-w-sm text-center text-base leading-snug text-white/85">
-          On iPhone: tap Share, then Add to Home Screen.
-        </p>
-      ) : null}
+      </main>
     </div>
   );
 }

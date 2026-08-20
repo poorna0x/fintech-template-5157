@@ -42,8 +42,8 @@ export function buildWhereWebManifest(startPath: string) {
     start_url,
     display: 'standalone',
     display_override: ['standalone', 'fullscreen'],
-    background_color: '#16a34a',
-    theme_color: '#16a34a',
+    background_color: '#f8fafc',
+    theme_color: '#f8fafc',
     orientation: 'portrait-primary',
     icons: [
       {
