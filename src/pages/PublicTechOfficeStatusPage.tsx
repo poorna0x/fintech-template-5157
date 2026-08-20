@@ -59,7 +59,8 @@ function checkedLabel(iso: string) {
 function screenFor(
   data: PublicTechOfficeStatus | null,
   phase: 'loading' | 'ready' | 'missing' | 'bot',
-  waitTimedOut: boolean
+  waitTimedOut: boolean,
+  tapBusy: boolean
 ) {
   if (phase === 'missing') {
     return {
@@ -79,7 +80,7 @@ function screenFor(
   }
   const stillChecking =
     !waitTimedOut &&
-    (!data || phase === 'loading' || data.status === 'checking');
+    (tapBusy || !data || phase === 'loading' || data.status === 'checking');
   if (stillChecking) {
     return {
       page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#d1fae5_0%,#ecfdf5_40%,#f0fdf4_100%)]',
@@ -93,7 +94,11 @@ function screenFor(
       page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#a7f3d0_0%,#d1fae5_38%,#ecfdf5_100%)]',
       card: 'border-emerald-200/80 bg-emerald-50/90 text-emerald-950',
       title: 'In office',
-      sub: data.checkedAt ? `Last seen ${checkedLabel(data.checkedAt)}` : '',
+      sub: data.live
+        ? 'Now'
+        : data.checkedAt
+          ? `Last seen ${checkedLabel(data.checkedAt)}`
+          : '',
     };
   }
   if (data?.status === 'en_route' && data.etaMinutes) {
@@ -152,9 +157,10 @@ export default function PublicTechOfficeStatusPage() {
   }, []);
 
   const load = useCallback(
-    async (opts?: { poll?: boolean; refresh?: boolean; once?: boolean }) => {
+    async (opts?: { poll?: boolean; refresh?: boolean }) => {
       if (!token) {
         setPhase('missing');
+        setTapBusy(false);
         return;
       }
       if (phaseRef.current === 'bot' && isTurnstileEnabled() && !turnstileToken) {
@@ -162,11 +168,6 @@ export default function PublicTechOfficeStatusPage() {
       }
       if (refreshingRef.current) return;
       refreshingRef.current = true;
-      if (opts?.once) {
-        if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-        pollTimerRef.current = null;
-        pollUntilRef.current = 0;
-      }
       const result = await fetchPublicTechOfficeStatus(
         token,
         turnstileToken || undefined,
@@ -174,6 +175,7 @@ export default function PublicTechOfficeStatusPage() {
       );
       refreshingRef.current = false;
       if (result.ok === false) {
+        setTapBusy(false);
         if (result.error === 'not_found') {
           setData(null);
           setPhase('missing');
@@ -189,10 +191,6 @@ export default function PublicTechOfficeStatusPage() {
       setData(result);
       writeCache(token, result);
       setPhase('ready');
-      if (opts?.once) {
-        setWaitTimedOut(false);
-        return;
-      }
       if (result.pending || result.status === 'checking') {
         if (!pollUntilRef.current) pollUntilRef.current = Date.now() + POLL_MAX_MS;
         if (Date.now() < pollUntilRef.current) {
@@ -202,10 +200,12 @@ export default function PublicTechOfficeStatusPage() {
           }, POLL_MS);
         } else {
           setWaitTimedOut(true);
+          setTapBusy(false);
         }
       } else {
         pollUntilRef.current = 0;
         setWaitTimedOut(false);
+        setTapBusy(false);
       }
     },
     [token, turnstileToken]
@@ -247,7 +247,7 @@ export default function PublicTechOfficeStatusPage() {
     };
   }, [token, turnstileToken, load]);
 
-  const screen = screenFor(data, phase, waitTimedOut);
+  const screen = screenFor(data, phase, waitTimedOut, tapBusy);
 
   return (
     <div className={cn('flex min-h-dvh flex-col text-slate-900 antialiased', screen.page)}>
@@ -280,8 +280,11 @@ export default function PublicTechOfficeStatusPage() {
               )}
               onClick={() => {
                 if (tapBusy || refreshingRef.current) return;
+                if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+                pollUntilRef.current = Date.now() + POLL_MAX_MS;
+                setWaitTimedOut(false);
                 setTapBusy(true);
-                void load({ refresh: true, once: true }).finally(() => setTapBusy(false));
+                void load({ refresh: true });
               }}
             >
               {tapBusy ? (

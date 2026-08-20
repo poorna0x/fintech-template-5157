@@ -147,6 +147,11 @@ function isFixFresh(fixAt, nowMs = Date.now(), maxAgeMs = FRESH_FIX_MAX_AGE_MS) 
   return nowMs - t >= 0 && nowMs - t < maxAgeMs;
 }
 
+/** Don't show stale In office / minutes while a location ping is still in flight. */
+function shouldHoldForFreshPing(pending, fresh) {
+  return Boolean(pending) && fresh !== true;
+}
+
 function turnstileConfigured() {
   return String(process.env.TURNSTILE_SECRET_KEY || '').trim().length > 0;
 }
@@ -280,6 +285,7 @@ module.exports = {
   publicNotFound,
   pickCoords,
   isFixFresh,
+  shouldHoldForFreshPing,
   turnstileConfigured,
   signWhereCookie,
   verifyWhereCookie,

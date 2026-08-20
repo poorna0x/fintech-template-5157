@@ -21,6 +21,7 @@ const {
   parseOfficeValue,
   pickCoords,
   isFixFresh,
+  shouldHoldForFreshPing,
   isAtOfficeStatus,
   haversineDistanceMeters,
   etaMinutesFromDurationSec,
@@ -257,6 +258,22 @@ exports.handler = async (event) => {
     }
 
     const meters = haversineDistanceMeters(picked.coords, office);
+    if (shouldHoldForFreshPing(pending, fresh)) {
+      return json(
+        200,
+        corsHeaders,
+        {
+          ok: true,
+          status: 'checking',
+          firstName,
+          checkedAt,
+          live: false,
+          pending: true,
+        },
+        extraHeaders
+      );
+    }
+
     if (
       isAtOfficeStatus({
         meters,
@@ -273,23 +290,6 @@ exports.handler = async (event) => {
           checkedAt,
           live: fresh,
           pending,
-        },
-        extraHeaders
-      );
-    }
-
-    // Stale GPS farther than the office geofence — don't show an old "5 min" while we wait.
-    if (pending && !fresh) {
-      return json(
-        200,
-        corsHeaders,
-        {
-          ok: true,
-          status: 'checking',
-          firstName,
-          checkedAt,
-          live: false,
-          pending: true,
         },
         extraHeaders
       );

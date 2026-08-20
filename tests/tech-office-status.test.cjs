@@ -49,6 +49,13 @@ async function run() {
   assert.ok(est && est > 1000);
   assert.equal(helper.etaMinutesFromDurationSec(est) != null, true);
 
+  const now = Date.now();
+  assert.equal(helper.isFixFresh(new Date(now - 30_000).toISOString(), now), true);
+  assert.equal(helper.isFixFresh(new Date(now - 3 * 60_000).toISOString(), now), false);
+  assert.equal(helper.shouldHoldForFreshPing(true, false), true);
+  assert.equal(helper.shouldHoldForFreshPing(true, true), false);
+  assert.equal(helper.shouldHoldForFreshPing(false, false), false);
+
   assert.equal(helper.firstNameFromFullName('Ravi Kumar'), 'Ravi');
   assert.equal(helper.firstNameFromFullName('  '), '');
 
