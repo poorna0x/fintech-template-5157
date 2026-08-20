@@ -52,6 +52,13 @@ function etaMinutesFromDurationSec(durationSec) {
   return Math.max(1, Math.ceil(n / 60));
 }
 
+/** ~22 km/h mixed Bengaluru traffic when Distance Matrix is unavailable (localhost referer keys). */
+function estimateDriveSecFromMeters(meters) {
+  const n = Number(meters);
+  if (!Number.isFinite(n) || n < 50) return null;
+  return Math.round((n / 1000 / 22) * 3600);
+}
+
 function firstNameFromFullName(fullName) {
   const first = String(fullName || '')
     .trim()
@@ -237,6 +244,7 @@ module.exports = {
   haversineDistanceMeters,
   isInOffice,
   etaMinutesFromDurationSec,
+  estimateDriveSecFromMeters,
   firstNameFromFullName,
   parseLatLng,
   parseOfficeValue,
