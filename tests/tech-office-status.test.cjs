@@ -110,6 +110,16 @@ async function run() {
   res = await pub.handler(event('POST', 'x'.repeat(9000)));
   assert.ok(res.statusCode === 413 || res.statusCode === 400);
 
+  const sql = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '../scripts/add-technician-office-status-links.sql'),
+    'utf8'
+  );
+  assert.ok(sql.includes('ENABLE ROW LEVEL SECURITY'));
+  assert.ok(sql.includes('REVOKE ALL ON TABLE public.technician_office_status_links FROM anon'));
+  assert.ok(sql.includes('REVOKE ALL ON TABLE public.technician_office_status_links FROM authenticated'));
+  assert.ok(sql.includes('GRANT ALL ON TABLE public.technician_office_status_links TO service_role'));
+  assert.ok(!/GRANT SELECT ON TABLE public\.technician_office_status_links TO authenticated/.test(sql));
+
   console.log('tech-office-status.test.cjs: all checks passed');
 }
 

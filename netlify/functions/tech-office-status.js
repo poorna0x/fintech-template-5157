@@ -227,13 +227,6 @@ exports.handler = async (event) => {
       }
     }
 
-    if (!isPoll) {
-      void db
-        .from('technician_office_status_links')
-        .update({ last_used_at: new Date().toISOString() })
-        .eq('technician_id', tech.id);
-    }
-
     const firstName = firstNameFromFullName(tech.full_name);
     const checkedAt = picked.fixAt || new Date().toISOString();
 
