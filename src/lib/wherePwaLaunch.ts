@@ -33,6 +33,10 @@ export function readWherePwaToken(): string | null {
 export function buildWhereWebManifest(startPath: string) {
   const token = whereTokenFromPath(String(startPath || '').split('?')[0]);
   const start_url = token ? `/where/${token}` : '/where/';
+  const origin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : '';
   return {
     name: 'Office status',
     short_name: 'Office',
@@ -47,13 +51,13 @@ export function buildWhereWebManifest(startPath: string) {
     orientation: 'portrait-primary',
     icons: [
       {
-        src: '/android-chrome-192x192.png',
+        src: `${origin}/android-chrome-192x192.png`,
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any maskable',
       },
       {
-        src: '/android-chrome-512x512.png',
+        src: `${origin}/android-chrome-512x512.png`,
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any maskable',
