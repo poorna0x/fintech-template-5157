@@ -120,6 +120,10 @@ export default function PublicTechOfficeStatusPage() {
   const pollUntilRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshingRef = useRef(false);
+  const dataRef = useRef(data);
+  const phaseRef = useRef(phase);
+  dataRef.current = data;
+  phaseRef.current = phase;
 
   useEffect(() => {
     if (token) saveWherePwaToken(token);
@@ -146,7 +150,7 @@ export default function PublicTechOfficeStatusPage() {
         setPhase('missing');
         return;
       }
-      if (phase === 'bot' && isTurnstileEnabled() && !turnstileToken) {
+      if (phaseRef.current === 'bot' && isTurnstileEnabled() && !turnstileToken) {
         return;
       }
       if (refreshingRef.current) return;
@@ -154,7 +158,7 @@ export default function PublicTechOfficeStatusPage() {
       const result = await fetchPublicTechOfficeStatus(
         token,
         turnstileToken || undefined,
-        opts?.refresh ? { refresh: true } : undefined
+        opts?.refresh ? { refresh: true } : opts?.poll ? { poll: true } : undefined
       );
       refreshingRef.current = false;
       if (result.ok === false) {
@@ -167,7 +171,7 @@ export default function PublicTechOfficeStatusPage() {
           setPhase('bot');
           return;
         }
-        setPhase(data ? 'ready' : 'loading');
+        setPhase(dataRef.current ? 'ready' : 'loading');
         return;
       }
       setData(result);
@@ -188,24 +192,44 @@ export default function PublicTechOfficeStatusPage() {
         setWaitTimedOut(false);
       }
     },
-    [token, turnstileToken, data, phase]
+    [token, turnstileToken]
   );
 
   useEffect(() => {
-    pollUntilRef.current = Date.now() + POLL_MAX_MS;
-    setWaitTimedOut(false);
-    void load();
+    let lastOpenFetch = 0;
+    const fetchLatest = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (now - lastOpenFetch < 1_500) return;
+      lastOpenFetch = now;
+      pollUntilRef.current = Date.now() + POLL_MAX_MS;
+      setWaitTimedOut(false);
+      void load({ refresh: true });
+    };
+
+    fetchLatest();
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchLatest();
+    };
+    const onPageShow = () => fetchLatest();
+
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onPageShow);
+
     const auto = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       pollUntilRef.current = Date.now() + POLL_MAX_MS;
       void load();
     }, AUTO_REFRESH_MS);
+
     return () => {
       clearInterval(auto);
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onPageShow);
     };
-    // Intentionally once per token / turnstile solve
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, turnstileToken]);
+  }, [token, turnstileToken, load]);
 
   const screen = screenFor(data, phase, waitTimedOut);
   const checking =
