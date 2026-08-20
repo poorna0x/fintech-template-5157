@@ -28,6 +28,7 @@
   function applyWhereManifest(startUrl) {
     var existing = document.getElementById('pwa-manifest');
     if (existing) existing.remove();
+    var origin = window.location.origin || '';
     var manifest = {
       name: 'Office status',
       short_name: 'Office',
@@ -42,13 +43,13 @@
       orientation: 'portrait-primary',
       icons: [
         {
-          src: '/android-chrome-192x192.png',
+          src: origin + '/android-chrome-192x192.png',
           sizes: '192x192',
           type: 'image/png',
           purpose: 'any maskable',
         },
         {
-          src: '/android-chrome-512x512.png',
+          src: origin + '/android-chrome-512x512.png',
           sizes: '512x512',
           type: 'image/png',
           purpose: 'any maskable',

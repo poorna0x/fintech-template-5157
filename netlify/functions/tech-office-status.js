@@ -11,7 +11,11 @@ const {
   checkRateLimitForKey,
   rateLimitResponseForKey,
 } = require('./rate-limiter');
-const { drivingRouteAvoidTolls } = require('./google-avoid-tolls-distance');
+const mapsDistance = require('./google-avoid-tolls-distance');
+const drivingRouteAvoidTolls =
+  typeof mapsDistance.drivingRouteAvoidTolls === 'function'
+    ? mapsDistance.drivingRouteAvoidTolls
+    : async () => null;
 const { sendTechnicianLocationPing, pingRequestedAgeMs } = require('./location-ping-helper');
 const {
   isValidPublicToken,
