@@ -24,6 +24,7 @@ const {
   isInOffice,
   haversineDistanceMeters,
   etaMinutesFromDurationSec,
+  estimateDriveSecFromMeters,
   firstNameFromFullName,
   OFFICE_LOCATION_KEY,
   COOKIE_NAME,
@@ -201,7 +202,8 @@ exports.handler = async (event) => {
         const ping = await sendTechnicianLocationPing(db, tech.id, {
           pingRequestedAt: live.ping_requested_at,
         });
-        if (ping.sent || ping.skipped) pending = !fresh;
+        // Only "checking" while we actually woke the phone — throttled skip is not waiting.
+        if (ping.sent) pending = !fresh;
       }
     }
 
@@ -257,7 +259,9 @@ exports.handler = async (event) => {
     }
 
     const route = await drivingRouteAvoidTolls(picked.coords, office, { traffic: true });
-    const etaMinutes = etaMinutesFromDurationSec(route?.durationSec);
+    const etaMinutes =
+      etaMinutesFromDurationSec(route?.durationSec) ||
+      etaMinutesFromDurationSec(estimateDriveSecFromMeters(meters));
     if (etaMinutes == null) {
       return json(
         200,

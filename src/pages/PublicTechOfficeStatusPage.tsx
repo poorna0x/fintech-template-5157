@@ -54,7 +54,8 @@ function checkedLabel(iso: string) {
 
 function screenFor(
   data: PublicTechOfficeStatus | null,
-  phase: 'loading' | 'ready' | 'missing' | 'bot'
+  phase: 'loading' | 'ready' | 'missing' | 'bot',
+  waitTimedOut: boolean
 ) {
   if (phase === 'missing') {
     return {
@@ -70,21 +71,24 @@ function screenFor(
       sub: 'Security check',
     };
   }
-  if (!data || phase === 'loading' || data.status === 'checking') {
+  const stillChecking =
+    !waitTimedOut &&
+    (!data || phase === 'loading' || data.status === 'checking');
+  if (stillChecking) {
     return {
       bg: 'bg-slate-600',
       title: 'Checking…',
       sub: data?.firstName ? `Looking for ${data.firstName}` : '',
     };
   }
-  if (data.status === 'in_office') {
+  if (data?.status === 'in_office') {
     return {
       bg: 'bg-emerald-600',
       title: 'In office',
       sub: data.live ? '' : data.checkedAt ? `Last seen ${checkedLabel(data.checkedAt)}` : '',
     };
   }
-  if (data.status === 'en_route' && data.etaMinutes) {
+  if (data?.status === 'en_route' && data.etaMinutes) {
     return {
       bg: 'bg-amber-600',
       title: `${data.etaMinutes} min`,
@@ -94,7 +98,7 @@ function screenFor(
   return {
     bg: 'bg-slate-600',
     title: 'Can’t get travel time',
-    sub: data.checkedAt ? `Checked ${checkedLabel(data.checkedAt)}` : '',
+    sub: data?.checkedAt ? `Checked ${checkedLabel(data.checkedAt)}` : '',
   };
 }
 
@@ -107,6 +111,7 @@ export default function PublicTechOfficeStatusPage() {
   const [turnstileToken, setTurnstileToken] = useState('');
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosHint, setShowIosHint] = useState(false);
+  const [waitTimedOut, setWaitTimedOut] = useState(false);
   const pollUntilRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshingRef = useRef(false);
@@ -165,9 +170,12 @@ export default function PublicTechOfficeStatusPage() {
           pollTimerRef.current = setTimeout(() => {
             void load({ poll: true });
           }, POLL_MS);
+        } else {
+          setWaitTimedOut(true);
         }
       } else {
         pollUntilRef.current = 0;
+        setWaitTimedOut(false);
       }
     },
     [token, turnstileToken, data]
@@ -175,6 +183,7 @@ export default function PublicTechOfficeStatusPage() {
 
   useEffect(() => {
     pollUntilRef.current = Date.now() + POLL_MAX_MS;
+    setWaitTimedOut(false);
     void load();
     const auto = setInterval(() => {
       pollUntilRef.current = Date.now() + POLL_MAX_MS;
@@ -188,8 +197,9 @@ export default function PublicTechOfficeStatusPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, turnstileToken]);
 
-  const screen = screenFor(data, phase);
-  const checking = phase === 'loading' || data?.status === 'checking' || data?.pending;
+  const screen = screenFor(data, phase, waitTimedOut);
+  const checking =
+    !waitTimedOut && (phase === 'loading' || data?.status === 'checking');
 
   return (
     <div
@@ -215,6 +225,7 @@ export default function PublicTechOfficeStatusPage() {
           className="mt-12 h-14 min-h-11 cursor-pointer rounded-full bg-white px-8 text-lg font-semibold text-slate-900 hover:bg-white/90"
           onClick={() => {
             pollUntilRef.current = Date.now() + POLL_MAX_MS;
+            setWaitTimedOut(false);
             void load();
           }}
         >

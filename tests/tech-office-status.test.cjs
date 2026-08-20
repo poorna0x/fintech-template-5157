@@ -40,6 +40,9 @@ async function run() {
   assert.equal(helper.etaMinutesFromDurationSec(61), 2);
   assert.equal(helper.etaMinutesFromDurationSec(12 * 60 + 1), 13);
   assert.equal(helper.etaMinutesFromDurationSec(-3), null);
+  const est = helper.estimateDriveSecFromMeters(11000);
+  assert.ok(est && est > 1000);
+  assert.equal(helper.etaMinutesFromDurationSec(est) != null, true);
 
   assert.equal(helper.firstNameFromFullName('Ravi Kumar'), 'Ravi');
   assert.equal(helper.firstNameFromFullName('  '), '');

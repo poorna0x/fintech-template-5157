@@ -233,7 +233,6 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/tech-office-status')) {
     delete require.cache[require.resolve('./tech-office-status-helper')];
     delete require.cache[require.resolve('./location-ping-helper')];
-    delete require.cache[require.resolve('./google-avoid-tolls-distance')];
     handler = loadFn('tech-office-status');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-tray-clear-push')) {
     handler = whatsappTrayClearPush;
