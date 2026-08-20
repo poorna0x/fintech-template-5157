@@ -29,15 +29,18 @@ async function sendTechnicianLocationPing(db, technicianId, opts = {}) {
     return { sent: false, skipped: true, reason: 'throttled' };
   }
 
-  const { data: row, error: rowErr } = await db
-    .from('technician_live_locations')
-    .select('is_tracking, ping_requested_at')
-    .eq('technician_id', id)
-    .maybeSingle();
-
-  if (rowErr) {
-    console.error('[location-ping-helper] lookup failed', rowErr.message);
-    return { sent: false, reason: 'lookup_failed' };
+  let row = opts.liveRow || null;
+  if (!row) {
+    const { data, error: rowErr } = await db
+      .from('technician_live_locations')
+      .select('is_tracking, ping_requested_at')
+      .eq('technician_id', id)
+      .maybeSingle();
+    if (rowErr) {
+      console.error('[location-ping-helper] lookup failed', rowErr.message);
+      return { sent: false, reason: 'lookup_failed' };
+    }
+    row = data;
   }
   if (!row) return { sent: false, reason: 'no_row' };
   if (!row.is_tracking) return { sent: false, reason: 'sharing_off' };
