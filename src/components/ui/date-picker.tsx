@@ -55,7 +55,7 @@ export function DatePicker({
           {displayText}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
+      <PopoverContent className="w-auto p-0 z-[110]" align="start">
         <React.Suspense
           fallback={<div className="p-6 text-sm text-muted-foreground">Loading…</div>}
         >

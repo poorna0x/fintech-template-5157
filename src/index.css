@@ -762,6 +762,9 @@ html body[data-scroll-locked] {
   padding-right: 0 !important;
   padding-left: 0 !important;
   padding-top: 0 !important;
+  /* Keep Settings / admin page from scrolling under open dialogs */
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
 }
 
 html body[data-scroll-locked] .right-scroll-bar-position {
@@ -792,4 +795,14 @@ body.mobile-nav-open {
 [role="alertdialog"] .overflow-y-auto,
 [data-radix-select-viewport] {
   scrollbar-gutter: stable;
+}
+
+/*
+ * Select menus portal to <body>. Dialog scroll-lock sets pointer-events:none on
+ * body children, which breaks menu clicks. Force the menu clickable.
+ */
+[data-radix-popper-content-wrapper]:has([data-radix-select-viewport]),
+[data-radix-select-viewport],
+[role="listbox"] {
+  pointer-events: auto !important;
 }

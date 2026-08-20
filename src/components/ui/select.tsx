@@ -4,7 +4,64 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
-const Select = SelectPrimitive.Root
+type SelectRootProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Root>
+
+/** True when the event target is inside an open Radix Select menu. */
+function isInsideSelectMenu(target: Element): boolean {
+  // This Radix version does NOT set data-radix-select-content — use real attrs.
+  return Boolean(
+    target.closest("[data-radix-select-viewport]") ||
+      target.closest('[role="listbox"]') ||
+      target.closest('[role="option"]')
+  )
+}
+
+/**
+ * Radix Select hardcodes disableOutsidePointerEvents, which deadlocks inside
+ * Dialog: outside clicks never dismiss the menu. We own `open` and force-close
+ * on pointerdown outside the real menu nodes (viewport / listbox / option).
+ */
+const Select = ({
+  open: openProp,
+  defaultOpen,
+  onOpenChange,
+  ...props
+}: SelectRootProps) => {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(Boolean(defaultOpen))
+  const isControlled = openProp !== undefined
+  const open = isControlled ? Boolean(openProp) : uncontrolledOpen
+
+  const setOpen = React.useCallback(
+    (next: boolean) => {
+      if (!isControlled) setUncontrolledOpen(next)
+      onOpenChange?.(next)
+    },
+    [isControlled, onOpenChange]
+  )
+
+  React.useEffect(() => {
+    if (!open) return
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (isInsideSelectMenu(target)) return
+      // Defer so item `click` / trigger toggle can finish first.
+      queueMicrotask(() => setOpen(false))
+    }
+
+    document.addEventListener("pointerdown", onPointerDown, true)
+    return () => document.removeEventListener("pointerdown", onPointerDown, true)
+  }, [open, setOpen])
+
+  return (
+    <SelectPrimitive.Root
+      {...props}
+      open={open}
+      onOpenChange={setOpen}
+    />
+  )
+}
 
 const SelectGroup = SelectPrimitive.Group
 
@@ -68,18 +125,22 @@ SelectScrollDownButton.displayName =
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = "popper", ...props }, ref) => (
+>(({ className, children, position = "popper", onCloseAutoFocus, ...props }, ref) => (
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        "relative z-[110] max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md pointer-events-auto data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
         position === "popper" &&
           "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
         className
       )}
       position={position}
       {...props}
+      onCloseAutoFocus={(event) => {
+        event.preventDefault()
+        onCloseAutoFocus?.(event)
+      }}
     >
       <SelectScrollUpButton />
       <SelectPrimitive.Viewport
