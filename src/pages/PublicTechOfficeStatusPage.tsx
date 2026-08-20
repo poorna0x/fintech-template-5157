@@ -123,6 +123,7 @@ export default function PublicTechOfficeStatusPage() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosHint, setShowIosHint] = useState(false);
   const [waitTimedOut, setWaitTimedOut] = useState(false);
+  const [tapBusy, setTapBusy] = useState(false);
   const pollUntilRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshingRef = useRef(false);
@@ -151,7 +152,7 @@ export default function PublicTechOfficeStatusPage() {
   }, []);
 
   const load = useCallback(
-    async (opts?: { poll?: boolean; refresh?: boolean }) => {
+    async (opts?: { poll?: boolean; refresh?: boolean; once?: boolean }) => {
       if (!token) {
         setPhase('missing');
         return;
@@ -161,6 +162,11 @@ export default function PublicTechOfficeStatusPage() {
       }
       if (refreshingRef.current) return;
       refreshingRef.current = true;
+      if (opts?.once) {
+        if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+        pollUntilRef.current = 0;
+      }
       const result = await fetchPublicTechOfficeStatus(
         token,
         turnstileToken || undefined,
@@ -183,6 +189,10 @@ export default function PublicTechOfficeStatusPage() {
       setData(result);
       writeCache(token, result);
       setPhase('ready');
+      if (opts?.once) {
+        setWaitTimedOut(false);
+        return;
+      }
       if (result.pending || result.status === 'checking') {
         if (!pollUntilRef.current) pollUntilRef.current = Date.now() + POLL_MAX_MS;
         if (Date.now() < pollUntilRef.current) {
@@ -238,9 +248,6 @@ export default function PublicTechOfficeStatusPage() {
   }, [token, turnstileToken, load]);
 
   const screen = screenFor(data, phase, waitTimedOut);
-  const checking =
-    !waitTimedOut &&
-    (phase === 'loading' || data?.status === 'checking' || Boolean(data?.pending));
 
   return (
     <div className={cn('flex min-h-dvh flex-col text-slate-900 antialiased', screen.page)}>
@@ -272,12 +279,12 @@ export default function PublicTechOfficeStatusPage() {
                 isEleven ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-sky-800 hover:bg-sky-900'
               )}
               onClick={() => {
-                pollUntilRef.current = Date.now() + POLL_MAX_MS;
-                setWaitTimedOut(false);
-                void load({ refresh: true });
+                if (tapBusy || refreshingRef.current) return;
+                setTapBusy(true);
+                void load({ refresh: true, once: true }).finally(() => setTapBusy(false));
               }}
             >
-              {checking ? (
+              {tapBusy ? (
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden />
               ) : (
                 <RefreshCw className="mr-2 h-5 w-5" aria-hidden />
