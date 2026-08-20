@@ -64,7 +64,7 @@ function screenFor(
 ) {
   if (phase === 'missing') {
     return {
-      page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#e2e8f0_0%,#f8fafc_45%,#f1f5f9_100%)]',
+      page: 'bg-slate-50',
       card: 'border-slate-200/80 bg-slate-50/90 text-slate-950',
       title: 'Not available',
       sub: '',
@@ -73,7 +73,7 @@ function screenFor(
   }
   if (phase === 'bot') {
     return {
-      page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#e0f2fe_0%,#f8fafc_45%,#f1f5f9_100%)]',
+      page: 'bg-slate-50',
       card: 'border-slate-200/80 bg-white/90 text-slate-950',
       title: 'Please wait',
       sub: 'Security check',
@@ -85,10 +85,10 @@ function screenFor(
     (tapBusy || !data || phase === 'loading' || data.status === 'checking');
   if (stillChecking) {
     return {
-      page: 'bg-[radial-gradient(120%_80%_at_50%_-10%,#d1fae5_0%,#ecfdf5_40%,#f0fdf4_100%)]',
-      card: 'border-slate-200/80 bg-white/90 text-slate-950',
-      title: 'Checking…',
-      sub: data?.firstName ? `Looking for ${data.firstName}` : '',
+      page: 'bg-slate-50',
+      card: '',
+      title: '',
+      sub: '',
       checking: true,
     };
   }
@@ -255,25 +255,30 @@ export default function PublicTechOfficeStatusPage() {
 
   const screen = screenFor(data, phase, waitTimedOut, tapBusy);
 
+  if (screen.checking) {
+    return (
+      <div
+        className={cn(
+          'flex min-h-dvh flex-col items-center justify-center text-slate-900 antialiased',
+          screen.page
+        )}
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <Loader2 className="h-14 w-14 animate-spin text-slate-400 sm:h-16 sm:w-16" aria-hidden />
+        <span className="sr-only">Checking location</span>
+      </div>
+    );
+  }
+
   return (
     <div className={cn('flex min-h-dvh flex-col text-slate-900 antialiased', screen.page)}>
       <main className="relative z-0 mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6">
         <div className="w-full overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-5 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.28)] backdrop-blur-sm sm:p-7">
           <div
-            className={cn(
-              'rounded-3xl border p-6 text-center sm:p-8',
-              screen.checking && 'flex min-h-[14rem] flex-col items-center justify-center sm:min-h-[16rem]',
-              screen.card
-            )}
-            aria-busy={screen.checking || undefined}
+            className={cn('rounded-3xl border p-6 text-center sm:p-8', screen.card)}
             aria-live="polite"
           >
-            {screen.checking ? (
-              <Loader2
-                className="mb-5 h-14 w-14 animate-spin text-emerald-600 sm:mb-6 sm:h-16 sm:w-16"
-                aria-hidden
-              />
-            ) : null}
             <h1 className="max-w-[16ch] text-center text-5xl font-bold leading-[1.05] tracking-tight sm:text-7xl">
               {screen.title}
             </h1>
@@ -290,7 +295,7 @@ export default function PublicTechOfficeStatusPage() {
             </div>
           ) : null}
 
-          {phase !== 'missing' && phase !== 'bot' && !screen.checking ? (
+          {phase !== 'missing' && phase !== 'bot' ? (
             <Button
               type="button"
               size="lg"
