@@ -180,7 +180,7 @@ export default function PublicTechOfficeStatusPage() {
         setWaitTimedOut(false);
       }
     },
-    [token, turnstileToken, data]
+    [token, turnstileToken, data, phase]
   );
 
   useEffect(() => {
