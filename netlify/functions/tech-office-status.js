@@ -194,17 +194,19 @@ exports.handler = async (event) => {
 
     const picked = pickCoords(live, tech.current_location);
     const fresh = isFixFresh(picked.fixAt);
+    const userRefresh = body.refresh === true;
     let pending = false;
 
-    if (!fresh && live?.is_tracking) {
+    if (!fresh) {
       const hourBlock = pingLimited(event, corsHeaders, token);
       if (!hourBlock) {
         const ping = await sendTechnicianLocationPing(db, tech.id, {
-          pingRequestedAt: live.ping_requested_at,
+          pingRequestedAt: live?.ping_requested_at,
+          force: userRefresh,
         });
         if (ping.sent) pending = true;
       }
-      if (pingRequestedAgeMs(live.ping_requested_at, Date.now()) < 40_000) {
+      if (pingRequestedAgeMs(live?.ping_requested_at, Date.now()) < 40_000) {
         pending = true;
       }
     }
@@ -265,7 +267,7 @@ exports.handler = async (event) => {
           firstName,
           checkedAt,
           live: fresh,
-          pending: false,
+          pending,
         },
         extraHeaders
       );

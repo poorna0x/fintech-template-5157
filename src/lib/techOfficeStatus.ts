@@ -72,7 +72,8 @@ export async function mintTechnicianOfficeStatus(
 
 export async function fetchPublicTechOfficeStatus(
   token: string,
-  turnstileToken?: string
+  turnstileToken?: string,
+  opts?: { refresh?: boolean }
 ): Promise<
   | PublicTechOfficeStatus
   | { ok: false; error: 'not_found' | 'bot' | 'failed' | 'rate' }
@@ -85,6 +86,7 @@ export async function fetchPublicTechOfficeStatus(
       body: JSON.stringify({
         token,
         ...(turnstileToken ? { turnstileToken } : {}),
+        ...(opts?.refresh ? { refresh: true } : {}),
       }),
     });
     const json = (await res.json().catch(() => null)) as
