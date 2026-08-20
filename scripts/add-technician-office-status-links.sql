@@ -19,20 +19,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS technician_office_status_links_token_hash_uidx
   ON public.technician_office_status_links (token_hash);
 
 COMMENT ON TABLE public.technician_office_status_links IS
-  'Hashed family PWA tokens. enabled is a server kill switch; disable keeps the hash so re-enable restores the same bookmark.';
+  'Hashed family PWA tokens. enabled is a server kill switch; disable keeps the hash so re-enable restores the same bookmark. Access is service_role / Netlify only.';
 
 ALTER TABLE public.technician_office_status_links ENABLE ROW LEVEL SECURITY;
 
+-- No PostgREST policies: even admins go through tech-office-status-mint (service_role).
 DROP POLICY IF EXISTS technician_office_status_links_admin_select
   ON public.technician_office_status_links;
-CREATE POLICY technician_office_status_links_admin_select
-  ON public.technician_office_status_links
-  FOR SELECT
-  TO authenticated
-  USING (public.is_admin_user());
 
 REVOKE ALL ON TABLE public.technician_office_status_links FROM PUBLIC;
 REVOKE ALL ON TABLE public.technician_office_status_links FROM anon;
-REVOKE INSERT, UPDATE, DELETE ON TABLE public.technician_office_status_links FROM authenticated;
-GRANT SELECT ON TABLE public.technician_office_status_links TO authenticated;
+REVOKE ALL ON TABLE public.technician_office_status_links FROM authenticated;
 GRANT ALL ON TABLE public.technician_office_status_links TO service_role;
