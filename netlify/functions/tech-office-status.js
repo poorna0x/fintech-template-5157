@@ -210,6 +210,7 @@ exports.handler = async (event) => {
     const userRefresh = body.refresh === true;
     const isPoll = body.poll === true;
     let pending = false;
+    let pingDead = false;
 
     if (!fresh) {
       if (!isPoll) {
@@ -220,12 +221,23 @@ exports.handler = async (event) => {
             liveRow: live,
             force: userRefresh,
           });
-          if (ping.sent) pending = true;
+          if (ping.sent || ping.skipped) pending = true;
+          if (
+            !ping.sent &&
+            !ping.skipped &&
+            ['sharing_off', 'no_token', 'no_row', 'stale_token', 'push_failed', 'lookup_failed'].includes(
+              ping.reason
+            )
+          ) {
+            pingDead = true;
+          }
         }
       }
       if (pending || pingRequestedAgeMs(live?.ping_requested_at, Date.now()) < 40_000) {
         pending = true;
       }
+      // Open/Refresh: keep waiting for a live fix unless the phone clearly cannot answer.
+      if (userRefresh && !pingDead) pending = true;
     }
 
     const firstName = firstNameFromFullName(tech.full_name);

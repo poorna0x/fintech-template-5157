@@ -61,7 +61,12 @@ async function sendTechnicianLocationPing(db, technicianId, opts = {}) {
     console.error('[location-ping-helper] nonce save failed', nonceErr.message);
   }
 
-  const siteUrl = (process.env.URL || '').replace(/\/$/, '');
+  const siteUrl = (
+    process.env.URL ||
+    process.env.DEPLOY_PRIME_URL ||
+    process.env.VITE_PUBLIC_SITE_URL ||
+    'https://hydrogenro.com'
+  ).replace(/\/$/, '');
 
   try {
     const messaging = await getMessaging(db);
@@ -74,8 +79,8 @@ async function sendTechnicianLocationPing(db, technicianId, opts = {}) {
         data: {
           type: 'location_request',
           technicianId: id,
+          uploadUrl: `${siteUrl}/.netlify/functions/upload-tech-location`,
           ...(nonceErr ? {} : { nonce }),
-          ...(siteUrl ? { uploadUrl: `${siteUrl}/.netlify/functions/upload-tech-location` } : {}),
         },
         android: { priority: 'high' },
       }),
