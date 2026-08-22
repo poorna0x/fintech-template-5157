@@ -454,8 +454,16 @@ export function AdminWhatsAppComposerPanel({
         return;
       }
 
-      // Manual PDF / image via Cloud API (takes priority over auto template PDF)
+      // Manual PDF / image / office doc via Cloud API (takes priority over auto template PDF)
       if (manualAttach) {
+        const inboundAt = await fetchLastInboundAt(phone.trim(), supabase);
+        const windowClosed = isCustomerServiceWindowClosed(inboundAt);
+        if (windowClosed) {
+          toast.error(
+            '24h window closed — Word/Excel/files need the customer to message first. Use a PDF + cold template, or Select template.'
+          );
+          return;
+        }
         toast.message('Uploading attachment…');
         const encoded = await readFileAsBase64(manualAttach);
         const mediaResult = await sendAdminWhatsAppMedia({
