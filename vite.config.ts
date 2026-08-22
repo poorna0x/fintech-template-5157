@@ -145,6 +145,15 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      // Admin email composer + attachments — must use local email-guard (prod still PDF/images-only until deploy).
+      '/.netlify/functions/send-email-preview': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/send-email': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Local Puppeteer — must not hit production (cannot load localhost/ngrok assets).
       '/.netlify/functions/generate-pdf': {
         target: 'http://localhost:8888',

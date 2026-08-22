@@ -275,11 +275,31 @@ function resolveAttachmentContentType(filename, contentType) {
   return 'application/octet-stream';
 }
 
-function isAllowedAttachment(filename) {
+function isSafeDocumentMime(contentType) {
+  const mime = typeof contentType === 'string' ? contentType.trim().toLowerCase().split(';')[0] : '';
+  if (!mime || mime === 'application/octet-stream') return false;
+  if (mime.startsWith('image/')) return true;
+  if (mime.startsWith('text/')) return true;
+  if (mime === 'application/pdf') return true;
+  if (mime.startsWith('application/msword')) return true;
+  if (mime.startsWith('application/vnd.ms-')) return true;
+  if (mime.startsWith('application/vnd.openxmlformats-officedocument.')) return true;
+  if (mime.startsWith('application/vnd.oasis.opendocument.')) return true;
+  if (mime.startsWith('application/vnd.apple.')) return true;
+  if (mime === 'application/rtf' || mime === 'text/rtf') return true;
+  if (mime === 'application/zip' || mime === 'application/x-zip-compressed') return true;
+  if (mime === 'application/json' || mime === 'application/xml' || mime === 'text/xml') return true;
+  if (mime === 'message/rfc822') return true;
+  if (mime === 'application/epub+zip') return true;
+  return Object.values(MIME_BY_EXT).includes(mime);
+}
+
+function isAllowedAttachment(filename, contentType) {
   const ext = fileExtension(filename);
-  if (!ext) return false;
-  if (BLOCKED_ATTACHMENT_EXT.has(ext)) return false;
-  return true;
+  if (ext && BLOCKED_ATTACHMENT_EXT.has(ext)) return false;
+  if (ext) return true;
+  // Mobile / cloud pickers sometimes omit the extension — allow known document MIME.
+  return isSafeDocumentMime(contentType);
 }
 
 function decodeBase64ByteLength(value) {
@@ -315,7 +335,7 @@ function validatePreviewAttachments(raw) {
     if (!filename || !content) {
       return { ok: false, error: 'Invalid attachment' };
     }
-    if (!isAllowedAttachment(filename)) {
+    if (!isAllowedAttachment(filename, rawContentType)) {
       return { ok: false, error: 'Attachment type not allowed' };
     }
     const contentType = resolveAttachmentContentType(filename, rawContentType);
