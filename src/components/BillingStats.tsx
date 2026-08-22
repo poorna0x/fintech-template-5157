@@ -12,6 +12,7 @@ import {
   resolveJobBillingAmount,
   resolveJobPaymentBreakdown,
 } from '@/lib/jobAnalytics';
+import { getLeadSourceFromJob, normalizeLeadType } from '@/lib/adminUtils';
 
 interface QRCodeBilling {
   qrCodeName: string;
@@ -232,20 +233,9 @@ const BillingStats = () => {
             });
           }
           
-          // Lead Type billing
-          // Lead source can be in different formats:
-          // 1. Direct property: requirements.lead_source
-          // 2. In array: requirements[0].lead_source
-          let leadSource = null;
-          
-          if (Array.isArray(requirements)) {
-            const leadSourceObj = requirements.find((r: any) => r?.lead_source);
-            leadSource = leadSourceObj?.lead_source || 'Direct call';
-          } else if (requirements && typeof requirements === 'object') {
-            leadSource = requirements.lead_source || 'Direct call';
-          } else {
-            leadSource = 'Direct call';
-          }
+          // Lead Type billing — same canonical labels as Analytics (merge casing variants).
+          const leadSource =
+            normalizeLeadType(getLeadSourceFromJob(job)) || 'Direct call';
           
           if (!leadTotals[leadSource]) {
             leadTotals[leadSource] = {
