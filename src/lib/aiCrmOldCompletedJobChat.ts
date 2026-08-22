@@ -22,6 +22,7 @@ export type OldJobCustomerDraft = {
   fullName: string;
   phone: string;
   googleLocation: string;
+  skipMaps: boolean;
 };
 
 export type OldJobTechnicianOption = {
@@ -44,7 +45,7 @@ export function isSkipOldJobMessage(text: string): boolean {
 export function oldJobPrompt(step: OldJobChatStep): string {
   switch (step) {
     case 'customer':
-      return 'Send the customer name, phone number, and Google Maps location. You can paste all three in one message.';
+      return 'Send the customer name and phone number. Paste a Google Maps location if you have it, or type skip.';
     case 'model':
       return 'Now send the model name and attach a photo of the purifier.';
     case 'date':
@@ -61,7 +62,7 @@ export function oldJobPrompt(step: OldJobChatStep): string {
 export function oldJobPlaceholder(step: OldJobChatStep | null): string {
   switch (step) {
     case 'customer':
-      return 'Name, phone, and Maps link…';
+      return 'Name, phone, Maps link optional…';
     case 'model':
       return 'Model name, and attach a photo…';
     case 'date':
@@ -92,22 +93,43 @@ export function extractPhoneFromChat(text: string): string | null {
   return check.ok ? check.phone : null;
 }
 
+const SKIP_MAPS_RE =
+  /\b((i\s+)?(do\s*n'?t|dont)\s+have\s+(a\s+|the\s+)?(google\s+)?(maps?|location|pin)|no\s+(google\s+)?(maps?|location|pin)|skip\s+(the\s+)?(maps?|location|pin)|maps?\s+i\s+(do\s*n'?t|dont)\s+have)\b/i;
+
+export function isSkipMapsMessage(text: string): boolean {
+  const t = String(text || '').toLowerCase().replace(/['’]/g, '');
+  if (!t.trim()) return false;
+  if (isSkipOldJobMessage(t)) return true;
+  return SKIP_MAPS_RE.test(t);
+}
+
+function stripSkipMapsPhrase(text: string): string {
+  return String(text || '')
+    .replace(new RegExp(SKIP_MAPS_RE.source, 'gi'), ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function parseOldJobCustomerMessage(
   text: string,
   previous: OldJobCustomerDraft
 ): OldJobCustomerDraft {
+  const skipMaps = previous.skipMaps || isSkipMapsMessage(text);
   const maps = extractMapsUrlFromText(text) || previous.googleLocation;
   const phone = extractPhoneFromChat(text) || previous.phone;
   let leftover = stripLabels(text);
   const url = extractMapsUrlFromText(text);
   if (url) leftover = leftover.replace(url, ' ');
   leftover = leftover.replace(/(?:\+?91[\s-]*)?[6-9]\d{4}[\s-]?\d{5}/, ' ');
-  leftover = leftover.replace(/https?:\/\/\S+/gi, ' ').replace(/\s+/g, ' ').trim();
+  leftover = leftover.replace(/https?:\/\/\S+/gi, ' ');
+  leftover = stripSkipMapsPhrase(leftover);
+  leftover = leftover.replace(/\s+/g, ' ').trim();
   const fullName = leftover.length >= 2 ? leftover : previous.fullName;
   return {
     fullName,
     phone,
     googleLocation: maps || previous.googleLocation,
+    skipMaps: skipMaps && !maps,
   };
 }
 
@@ -115,12 +137,15 @@ export function missingOldJobCustomerFields(draft: OldJobCustomerDraft): string[
   const missing: string[] = [];
   if (!draft.fullName.trim() || draft.fullName.trim().length < 2) missing.push('name');
   if (!draft.phone) missing.push('phone');
-  if (!draft.googleLocation) missing.push('Google Maps location');
+  if (!draft.googleLocation && !draft.skipMaps) missing.push('Google Maps location');
   return missing;
 }
 
 export function askForMissingCustomerFields(missing: string[]): string {
   if (missing.length === 3) return oldJobPrompt('customer');
+  if (missing.length === 1 && missing[0] === 'Google Maps location') {
+    return 'Still need the Google Maps location, or type skip if you don’t have it.';
+  }
   if (missing.length === 1) return `Still need the ${missing[0]}.`;
   return `Still need the ${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}.`;
 }
@@ -195,7 +220,7 @@ export function matchOldJobTechnician(
 }
 
 export function emptyOldJobCustomerDraft(): OldJobCustomerDraft {
-  return { fullName: '', phone: '', googleLocation: '' };
+  return { fullName: '', phone: '', googleLocation: '', skipMaps: false };
 }
 
 export type OldJobFlowState = {

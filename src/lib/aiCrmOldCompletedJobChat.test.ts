@@ -35,8 +35,18 @@ describe('parseOldJobCustomerMessage', () => {
     expect(second.fullName).toBe('Poorna');
   });
 
+  it('lets you skip maps when you do not have a pin', () => {
+    const first = parseOldJobCustomerMessage('Poorna 6361631253', emptyOldJobCustomerDraft());
+    expect(missingOldJobCustomerFields(first)).toEqual(['Google Maps location']);
+    const skipped = parseOldJobCustomerMessage('map i dont have', first);
+    expect(skipped.fullName).toBe('Poorna');
+    expect(skipped.skipMaps).toBe(true);
+    expect(missingOldJobCustomerFields(skipped)).toEqual([]);
+  });
+
   it('asks only for what is still missing', () => {
     expect(askForMissingCustomerFields(['phone'])).toBe('Still need the phone.');
+    expect(askForMissingCustomerFields(['Google Maps location'])).toMatch(/skip/i);
   });
 });
 

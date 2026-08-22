@@ -122,14 +122,18 @@ export async function saveOldJobCustomer(input: {
   if (fullName.length < 2) return { ok: false, error: 'Enter the customer name' };
   const phoneCheck = validateIndiaMobile(input.phone);
   if (!phoneCheck.ok) return phoneCheck;
-  const maps = await resolveMapsLocation(input.googleLocation);
+
+  const maps = input.googleLocation?.trim()
+    ? await resolveMapsLocation(input.googleLocation)
+    : { ok: true as const, latitude: 0, longitude: 0, googleLocation: '' };
   if (!maps.ok) return maps;
 
+  const hasMaps = Boolean(maps.googleLocation);
   const location = {
     latitude: maps.latitude,
     longitude: maps.longitude,
     formattedAddress: '',
-    googleLocation: maps.googleLocation,
+    googleLocation: maps.googleLocation || null,
   };
   const address = {
     street: '',
@@ -145,11 +149,12 @@ export async function saveOldJobCustomer(input: {
   }
   if (existing.data?.id) {
     const row = existing.data as Record<string, unknown>;
-    const { error } = await db.customers.update(String(row.id), {
-      full_name: fullName,
-      location,
-      address: (row.address as typeof address) || address,
-    } as any);
+    const updates: Record<string, unknown> = { full_name: fullName };
+    if (hasMaps) {
+      updates.location = location;
+      if (!(row.address as typeof address | undefined)) updates.address = address;
+    }
+    const { error } = await db.customers.update(String(row.id), updates as any);
     if (error) return { ok: false, error: error.message || 'Could not update the customer' };
     return {
       ok: true,
