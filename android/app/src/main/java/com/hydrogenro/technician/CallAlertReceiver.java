@@ -191,10 +191,11 @@ public class CallAlertReceiver extends BroadcastReceiver {
             return;
         }
 
-            // One deferred POST — first try ~45s (CallLog / Truecaller lag).
-        Log.i(TAG, "IDLE after inbound — schedule deferred upload for ring " + ringAt);
+        // Closed-app reliable path: AlarmClock wakes + POST (FGS from PHONE_STATE
+        // is often blocked on Android 12+).
+        Log.i(TAG, "IDLE after inbound — hangup pipeline for ring " + ringAt);
         prefs.edit().putLong(KEY_PENDING_RING_AT, ringAt).apply();
-        CallAlertUploadService.scheduleDeferredUpload(app, ringAt);
+        CallAlertUploadService.startHangupPipeline(app, ringAt);
     }
 
     /**

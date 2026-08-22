@@ -18,12 +18,12 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 /**
- * One-shot call-alert upload after hangup.
+ * Call-alert upload after hangup — works with the app closed.
  *
- * Design (latency OK): IDLE schedules a single AlarmManager delay (~20s) so
- * Truecaller / OEM CallLog can flush. The alarm starts this short FGS once —
- * read CallLog (or RINGING cache) → one POST → stop. No watch loop, no kick
- * storms (those burned Netlify invocations).
+ * Android 12+ often blocks startForegroundService from PHONE_STATE, and
+ * inexact alarms are deferred in Doze. We therefore schedule
+ * {@link AlarmManager#setAlarmClock} (exact, Doze-proof). The kick receiver
+ * POSTs with goAsync; FGS is only a backup.
  */
 public class CallAlertUploadService extends Service {
 
@@ -35,69 +35,39 @@ public class CallAlertUploadService extends Service {
     public static final String EXTRA_MODE = "mode";
     public static final String MODE_ONCE = "once";
 
-    /**
-     * First try after hangup. Truecaller / OEM CallLog often needs 15–40s;
-     * 20s was too short → empty → give up → only open-app catch-up worked.
-     */
+    /** First try after hangup (CallLog / Truecaller lag). */
     private static final long DEFER_MS = 45_000L;
-    /** Second try from hangup if the first still had no number (still ≤1 POST). */
+    /** Second try if CallLog still empty. */
     private static final long LATE_RETRY_MS = 90_000L;
-    /** Prefs: ringAt already got its late CallLog retry scheduled. */
     static final String KEY_LATE_RETRY_RING = "late_retry_ring";
 
     /**
-     * Schedule the deferred upload for this ring session (first try @ 45s).
-     * Replaces any prior alarm for the same ring.
+     * Hangup entry: schedule exact alarm-clock wakes (closed-app reliable).
+     * Also tries an immediate FGS (may fail on Android 12+ from PHONE_STATE).
      */
+    public static void startHangupPipeline(Context context, long ringAt) {
+        if (ringAt <= 0) return;
+        Context app = context.getApplicationContext();
+        persistPending(app, ringAt);
+        // Exact AlarmClock wakes — works with app closed / Doze. Do NOT start
+        // FGS from PHONE_STATE (blocked on many Android 12+ devices).
+        scheduleAlarmClock(app, ringAt, DEFER_MS, 0);
+        scheduleAlarmClock(app, ringAt, LATE_RETRY_MS, 1);
+        Log.i(TAG, "Hangup pipeline — alarm clocks @ " + DEFER_MS + "ms + " + LATE_RETRY_MS + "ms");
+    }
+
+    /** @deprecated use {@link #startHangupPipeline} */
     public static void scheduleDeferredUpload(Context context, long ringAt) {
-        scheduleDeferredUpload(context, ringAt, DEFER_MS);
+        startHangupPipeline(context, ringAt);
     }
 
     public static void scheduleDeferredUpload(Context context, long ringAt, long delayMs) {
-        if (ringAt <= 0) return;
-        if (delayMs < 1_000L) delayMs = DEFER_MS;
-        Context app = context.getApplicationContext();
-        persistPending(app, ringAt);
-        cancelKicks(app, ringAt, false);
-
-        AlarmManager am = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
-        if (am == null) {
-            startOneShot(app, ringAt);
-            return;
-        }
-
-        PendingIntent pi = kickPending(app, ringAt);
-        long trigger = SystemClock.elapsedRealtime() + delayMs;
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
-                    am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, trigger, pi);
-                } else {
-                    am.setExactAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        trigger,
-                        pi
-                    );
-                }
-            } else {
-                am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, trigger, pi);
-            }
-            Log.i(TAG, "Deferred upload in " + delayMs + "ms for ring " + ringAt);
-        } catch (Exception e) {
-            Log.w(TAG, "scheduleDeferred failed: " + e.getMessage());
-            try {
-                am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, trigger, pi);
-            } catch (Exception ignored) {
-                startOneShot(app, ringAt);
-            }
-        }
+        scheduleAlarmClock(context, ringAt, delayMs, 0);
     }
 
-    /**
-     * CallLog still empty after first try — one more alarm (~90s after hangup).
-     * Does not POST until a number exists (no extra Netlify burn).
-     */
     public static void scheduleLateRetryIfNeeded(Context context, long ringAt) {
+        // Late alarm already scheduled at hangup (index 1). If CallLog empty on
+        // first kick, second alarm still fires — mark so we don't loop forever.
         if (ringAt <= 0) return;
         Context app = context.getApplicationContext();
         SharedPreferences prefs =
@@ -105,18 +75,53 @@ public class CallAlertUploadService extends Service {
         if (prefs.getLong(CallAlertReceiver.KEY_ALERTED_RING_AT, 0L) == ringAt) return;
         if (prefs.getLong(CallAlertReceiver.KEY_POST_ATTEMPTED_RING, 0L) == ringAt) return;
         if (prefs.getLong(KEY_LATE_RETRY_RING, 0L) == ringAt) {
-            Log.i(TAG, "Late retry already used — giving up ring " + ringAt);
+            Log.i(TAG, "Late retry already consumed — giving up ring " + ringAt);
             CallAlertReceiver.markGaveUp(app, ringAt);
             return;
         }
         prefs.edit().putLong(KEY_LATE_RETRY_RING, ringAt).commit();
-        // Another ~45s from now (hangup+45 + 45 ≈ hangup+90).
-        long delay = Math.max(30_000L, LATE_RETRY_MS - DEFER_MS);
-        Log.i(TAG, "CallLog empty — late retry in " + delay + "ms for ring " + ringAt);
-        scheduleDeferredUpload(app, ringAt, delay);
+        Log.i(TAG, "First try empty — waiting for late alarm clock for ring " + ringAt);
     }
 
-    /** Alarm / fallback entry: run CallLog + POST once via short FGS. */
+    private static void scheduleAlarmClock(Context context, long ringAt, long delayMs, int index) {
+        if (ringAt <= 0) return;
+        Context app = context.getApplicationContext();
+        AlarmManager am = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+
+        PendingIntent op = kickPending(app, ringAt, index);
+        long triggerAt = System.currentTimeMillis() + Math.max(1_000L, delayMs);
+        try {
+            // setAlarmClock is exact + survives Doze (shows a brief alarm icon).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                PendingIntent show = openAppPending(app);
+                AlarmManager.AlarmClockInfo info = new AlarmManager.AlarmClockInfo(triggerAt, show);
+                am.setAlarmClock(info, op);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAt,
+                    op
+                );
+            } else {
+                am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, op);
+            }
+            Log.i(TAG, "AlarmClock index=" + index + " in " + delayMs + "ms ring=" + ringAt);
+        } catch (Exception e) {
+            Log.w(TAG, "AlarmClock failed: " + e.getMessage());
+            try {
+                long elapsed = SystemClock.elapsedRealtime() + delayMs;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, elapsed, op);
+                } else {
+                    am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, elapsed, op);
+                }
+            } catch (Exception ignored) {
+                /* best effort */
+            }
+        }
+    }
+
     public static void startOneShot(Context context, long ringAt) {
         if (ringAt <= 0) return;
         persistPending(context, ringAt);
@@ -143,17 +148,17 @@ public class CallAlertUploadService extends Service {
         Context app = context.getApplicationContext();
         AlarmManager am = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
         if (am != null) {
-            try {
-                am.cancel(kickPending(app, ringAt));
-            } catch (Exception ignored) {
-                /* best effort */
+            for (int index = 0; index < 2; index++) {
+                try {
+                    am.cancel(kickPending(app, ringAt, index));
+                } catch (Exception ignored) {
+                    /* best effort */
+                }
             }
         }
         if (clearPending) {
             SharedPreferences prefs =
                 app.getSharedPreferences(CallAlertReceiver.PREFS, Context.MODE_PRIVATE);
-            // Only clear pending fields if they still belong to this ring (don't
-            // wipe a newer call's cached number).
             if (prefs.getLong(CallAlertReceiver.KEY_PENDING_RING_AT, 0L) == ringAt) {
                 prefs
                     .edit()
@@ -164,16 +169,30 @@ public class CallAlertUploadService extends Service {
         }
     }
 
-    private static PendingIntent kickPending(Context app, long ringAt) {
+    private static PendingIntent kickPending(Context app, long ringAt, int index) {
         Intent i = new Intent(app, CallAlertKickReceiver.class);
         i.setAction(CallAlertKickReceiver.ACTION_KICK);
         i.putExtra(CallAlertKickReceiver.EXTRA_RING_AT, ringAt);
-        int req = (int) (ringAt & 0xfffffffL);
+        i.putExtra(CallAlertKickReceiver.EXTRA_ATTEMPT, index);
+        int req = (int) ((ringAt & 0xfffffffL) ^ (index * 0x9e3779b9L));
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
         return PendingIntent.getBroadcast(app, req, i, flags);
+    }
+
+    private static PendingIntent openAppPending(Context app) {
+        Intent i = app.getPackageManager().getLaunchIntentForPackage(app.getPackageName());
+        if (i == null) {
+            i = new Intent(app, MainActivity.class);
+        }
+        i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        return PendingIntent.getActivity(app, 47099, i, flags);
     }
 
     private static void startFg(Context context, Intent i) {
@@ -187,7 +206,6 @@ public class CallAlertUploadService extends Service {
         } catch (Exception e) {
             Log.w(TAG, "startForegroundService failed: " + e.getMessage());
             long ringAt = i.getLongExtra(EXTRA_RING_AT, 0L);
-            // Last chance without FGS (may fail if process is background-restricted).
             CallAlertReceiver.finalizeAndUpload(app, ringAt, true);
         }
     }
@@ -208,8 +226,7 @@ public class CallAlertUploadService extends Service {
             }
         } catch (Exception e) {
             Log.w(TAG, "startForeground failed: " + e.getMessage());
-            long ringAt =
-                intent != null ? intent.getLongExtra(EXTRA_RING_AT, 0L) : 0L;
+            long ringAt = intent != null ? intent.getLongExtra(EXTRA_RING_AT, 0L) : 0L;
             if (ringAt > 0) {
                 CallAlertReceiver.finalizeAndUpload(getApplicationContext(), ringAt, true);
             }
@@ -230,9 +247,7 @@ public class CallAlertUploadService extends Service {
             () -> {
                 try {
                     Log.i(TAG, "One-shot finalize for ring " + ringAt);
-                    // Prefer CallLog; allow session-cached number if CallLog still empty.
                     if (!CallAlertReceiver.finalizeAndUpload(app, ringAt, true)) {
-                        // Don't give up on first empty — Truecaller often writes later.
                         scheduleLateRetryIfNeeded(app, ringAt);
                     }
                 } finally {
@@ -246,9 +261,6 @@ public class CallAlertUploadService extends Service {
         return START_NOT_STICKY;
     }
 
-    /**
-     * Android 14+ shortService hard budget — stop before the OS kills the app.
-     */
     @Override
     public void onTimeout(int startId) {
         Log.w(TAG, "shortService timed out; stopping");
@@ -294,7 +306,7 @@ public class CallAlertUploadService extends Service {
     private Notification buildNotification() {
         return new NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HydrogenRO")
-            .setContentText("Updating…")
+            .setContentText("Syncing…")
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setOngoing(true)
             .setSilent(true)
