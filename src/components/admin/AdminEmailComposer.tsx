@@ -1103,7 +1103,7 @@ export function AdminEmailComposerPanel({
           <CardDescription className="text-xs sm:text-sm">
             {templateMeta.autoAttachPdf
               ? 'The PDF is generated automatically when you send. You can add extra files below if needed.'
-              : 'Drag & drop PDF, Word (.docx), Excel, photos, and similar files — attached when you send.'}
+              : 'Drag & drop any document or image — attached when you send.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

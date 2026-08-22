@@ -3489,7 +3489,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           />
                         ) : (
                           <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#0b141a] text-[10px] font-semibold uppercase text-[#8696a0]">
-                            PDF
+                            {(attachFile.name.split('.').pop() || 'DOC').slice(0, 4)}
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
@@ -3537,7 +3537,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         type="button"
                         className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/5 disabled:opacity-50"
                         disabled={sending}
-                        title="Attach image or PDF"
+                        title="Attach image or document"
                         onClick={() => fileInputRef.current?.click()}
                       >
                         <Paperclip className="h-5 w-5 rotate-45" />

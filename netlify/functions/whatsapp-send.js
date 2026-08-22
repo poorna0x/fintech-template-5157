@@ -41,10 +41,44 @@ function isImageMime(mime) {
   return /^image\/(jpeg|jpg|png|webp)$/i.test(String(mime || ''));
 }
 
+/** Meta Cloud API document MIME types (official list). */
+const WHATSAPP_DOCUMENT_MIME_BY_EXT = {
+  pdf: 'application/pdf',
+  txt: 'text/plain',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
+
+const WHATSAPP_DOCUMENT_MIMES = new Set(Object.values(WHATSAPP_DOCUMENT_MIME_BY_EXT));
+
+function fileExt(filename) {
+  const base = String(filename || '')
+    .trim()
+    .split(/[/\\]/)
+    .pop();
+  if (!base) return '';
+  const i = base.lastIndexOf('.');
+  if (i <= 0 || i === base.length - 1) return '';
+  return base.slice(i + 1).toLowerCase();
+}
+
 function isPdfMime(mime, filename) {
   const m = String(mime || '').toLowerCase();
-  const name = String(filename || '').toLowerCase();
-  return m === 'application/pdf' || name.endsWith('.pdf');
+  return m === 'application/pdf' || fileExt(filename) === 'pdf';
+}
+
+function resolveWhatsAppDocumentMime(mimeHint, filename) {
+  const hint = String(mimeHint || '')
+    .trim()
+    .toLowerCase();
+  if (hint && WHATSAPP_DOCUMENT_MIMES.has(hint)) return hint;
+  const ext = fileExt(filename);
+  if (ext && WHATSAPP_DOCUMENT_MIME_BY_EXT[ext]) return WHATSAPP_DOCUMENT_MIME_BY_EXT[ext];
+  return hint || 'application/octet-stream';
 }
 
 /** Inbox-storable media ref: https (Cloudinary) or r2:key (private R2). */
@@ -456,9 +490,7 @@ exports.handler = async (event) => {
             : /\.webp$/i.test(filename)
               ? 'image/webp'
               : 'image/jpeg'
-        : isPdfMime(mimeHint, filename)
-          ? 'application/pdf'
-          : mimeHint || 'application/octet-stream';
+        : resolveWhatsAppDocumentMime(mimeHint, filename);
 
       // Meta only accepts JPEG/PNG for image messages (WebP → 131053 Media upload error)
       if (wantImage) {
@@ -542,7 +574,7 @@ exports.handler = async (event) => {
         },
       };
       persist.msg_type = 'document';
-      persist.media_mime = mimeHint || 'application/pdf';
+      persist.media_mime = resolveWhatsAppDocumentMime(mimeHint, filename);
     }
     // Prefer R2 / Cloudinary preview URL for CRM; fall back to opaque Meta media ref
     persist.media_url = persistMediaUrl(link, mediaId);

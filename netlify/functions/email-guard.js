@@ -156,20 +156,97 @@ const MIME_BY_EXT = {
   png: 'image/png',
   webp: 'image/webp',
   gif: 'image/gif',
+  bmp: 'image/bmp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+  heic: 'image/heic',
+  heif: 'image/heif',
   doc: 'application/msword',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  dot: 'application/msword',
+  dotx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
   xls: 'application/vnd.ms-excel',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xlt: 'application/vnd.ms-excel',
+  xltx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+  csv: 'text/csv',
   ppt: 'application/vnd.ms-powerpoint',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  pot: 'application/vnd.ms-powerpoint',
+  potx: 'application/vnd.openxmlformats-officedocument.presentationml.template',
   txt: 'text/plain',
-  csv: 'text/csv',
+  md: 'text/markdown',
   rtf: 'application/rtf',
   odt: 'application/vnd.oasis.opendocument.text',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  odp: 'application/vnd.oasis.opendocument.presentation',
+  odg: 'application/vnd.oasis.opendocument.graphics',
+  xml: 'application/xml',
+  html: 'text/html',
+  htm: 'text/html',
+  json: 'application/json',
+  zip: 'application/zip',
+  '7z': 'application/x-7z-compressed',
+  rar: 'application/vnd.rar',
+  gz: 'application/gzip',
+  tar: 'application/x-tar',
+  epub: 'application/epub+zip',
+  pages: 'application/vnd.apple.pages',
+  numbers: 'application/vnd.apple.numbers',
+  key: 'application/vnd.apple.keynote',
+  eml: 'message/rfc822',
+  msg: 'application/vnd.ms-outlook',
 };
 
-const ALLOWED_ATTACHMENT_TYPES = new Set(Object.values(MIME_BY_EXT));
-const ALLOWED_ATTACHMENT_EXT = /\.(pdf|jpe?g|png|webp|gif|docx?|xlsx?|pptx?|txt|csv|rtf|odt)$/i;
+/** Block programs/scripts; allow other document/image attachments. */
+const BLOCKED_ATTACHMENT_EXT = new Set([
+  'exe',
+  'bat',
+  'cmd',
+  'com',
+  'cpl',
+  'scr',
+  'js',
+  'jse',
+  'mjs',
+  'vbs',
+  'vbe',
+  'ws',
+  'wsf',
+  'wsc',
+  'wsh',
+  'msi',
+  'msp',
+  'dll',
+  'sys',
+  'drv',
+  'apk',
+  'deb',
+  'rpm',
+  'sh',
+  'bash',
+  'zsh',
+  'ps1',
+  'psc1',
+  'jar',
+  'hta',
+  'inf',
+  'reg',
+  'lnk',
+  'url',
+  'iso',
+  'dmg',
+  'pkg',
+  'app',
+  'action',
+  'command',
+  'csh',
+  'ksh',
+  'php',
+  'py',
+  'rb',
+  'pl',
+]);
 
 function sanitizeAttachmentFilename(name) {
   if (typeof name !== 'string') return null;
@@ -179,23 +256,30 @@ function sanitizeAttachmentFilename(name) {
   return trimmed;
 }
 
-function resolveAttachmentContentType(filename, contentType) {
-  const mime = typeof contentType === 'string' ? contentType.trim().toLowerCase() : '';
-  if (mime && mime !== 'application/octet-stream' && ALLOWED_ATTACHMENT_TYPES.has(mime)) {
-    return mime;
-  }
-  const ext = String(filename || '')
-    .split('.')
-    .pop()
-    ?.toLowerCase();
-  if (ext && MIME_BY_EXT[ext]) return MIME_BY_EXT[ext];
-  return mime || '';
+function fileExtension(filename) {
+  const base = String(filename || '')
+    .trim()
+    .split(/[/\\]/)
+    .pop();
+  if (!base) return '';
+  const i = base.lastIndexOf('.');
+  if (i <= 0 || i === base.length - 1) return '';
+  return base.slice(i + 1).toLowerCase();
 }
 
-function isAllowedAttachment(filename, contentType) {
-  const resolved = resolveAttachmentContentType(filename, contentType);
-  if (ALLOWED_ATTACHMENT_TYPES.has(resolved)) return true;
-  return ALLOWED_ATTACHMENT_EXT.test(filename || '');
+function resolveAttachmentContentType(filename, contentType) {
+  const mime = typeof contentType === 'string' ? contentType.trim().toLowerCase() : '';
+  const ext = fileExtension(filename);
+  if (ext && MIME_BY_EXT[ext]) return MIME_BY_EXT[ext];
+  if (mime && mime !== 'application/octet-stream') return mime;
+  return 'application/octet-stream';
+}
+
+function isAllowedAttachment(filename) {
+  const ext = fileExtension(filename);
+  if (!ext) return false;
+  if (BLOCKED_ATTACHMENT_EXT.has(ext)) return false;
+  return true;
 }
 
 function decodeBase64ByteLength(value) {
@@ -231,7 +315,7 @@ function validatePreviewAttachments(raw) {
     if (!filename || !content) {
       return { ok: false, error: 'Invalid attachment' };
     }
-    if (!isAllowedAttachment(filename, rawContentType)) {
+    if (!isAllowedAttachment(filename)) {
       return { ok: false, error: 'Attachment type not allowed' };
     }
     const contentType = resolveAttachmentContentType(filename, rawContentType);

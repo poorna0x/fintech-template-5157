@@ -12,7 +12,7 @@ export interface EmailAttachmentItem extends EmailAttachmentPayload {
 export const EMAIL_ATTACHMENT_MAX_COUNT = 5;
 export const EMAIL_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 
-/** Office + common docs; browsers often omit MIME for these — also match by extension. */
+/** Known MIME map; unknown docs fall back to application/octet-stream. */
 const MIME_BY_EXT: Record<string, string> = {
   pdf: 'application/pdf',
   jpg: 'image/jpeg',
@@ -20,40 +20,125 @@ const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png',
   webp: 'image/webp',
   gif: 'image/gif',
+  bmp: 'image/bmp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+  heic: 'image/heic',
+  heif: 'image/heif',
   doc: 'application/msword',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  dot: 'application/msword',
+  dotx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
   xls: 'application/vnd.ms-excel',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xlt: 'application/vnd.ms-excel',
+  xltx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+  csv: 'text/csv',
   ppt: 'application/vnd.ms-powerpoint',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  pot: 'application/vnd.ms-powerpoint',
+  potx: 'application/vnd.openxmlformats-officedocument.presentationml.template',
   txt: 'text/plain',
-  csv: 'text/csv',
+  md: 'text/markdown',
   rtf: 'application/rtf',
   odt: 'application/vnd.oasis.opendocument.text',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  odp: 'application/vnd.oasis.opendocument.presentation',
+  odg: 'application/vnd.oasis.opendocument.graphics',
+  xml: 'application/xml',
+  html: 'text/html',
+  htm: 'text/html',
+  json: 'application/json',
+  zip: 'application/zip',
+  '7z': 'application/x-7z-compressed',
+  rar: 'application/vnd.rar',
+  gz: 'application/gzip',
+  tar: 'application/x-tar',
+  epub: 'application/epub+zip',
+  pages: 'application/vnd.apple.pages',
+  numbers: 'application/vnd.apple.numbers',
+  key: 'application/vnd.apple.keynote',
+  eml: 'message/rfc822',
+  msg: 'application/vnd.ms-outlook',
 };
 
-const ALLOWED_MIME = new Set(Object.values(MIME_BY_EXT));
-const ALLOWED_EXT = /\.(pdf|jpe?g|png|webp|gif|docx?|xlsx?|pptx?|txt|csv|rtf|odt)$/i;
+/** Executables / scripts — not attachable by email. */
+const BLOCKED_EXT = new Set([
+  'exe',
+  'bat',
+  'cmd',
+  'com',
+  'cpl',
+  'scr',
+  'js',
+  'jse',
+  'mjs',
+  'vbs',
+  'vbe',
+  'ws',
+  'wsf',
+  'wsc',
+  'wsh',
+  'msi',
+  'msp',
+  'dll',
+  'sys',
+  'drv',
+  'apk',
+  'deb',
+  'rpm',
+  'sh',
+  'bash',
+  'zsh',
+  'ps1',
+  'psc1',
+  'jar',
+  'hta',
+  'inf',
+  'reg',
+  'lnk',
+  'url',
+  'iso',
+  'dmg',
+  'pkg',
+  'app',
+  'action',
+  'command',
+  'csh',
+  'ksh',
+  'php',
+  'py',
+  'rb',
+  'pl',
+]);
 
-export const EMAIL_ATTACHMENT_ACCEPT =
-  '.pdf,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.odt,application/pdf,image/jpeg,image/png,image/webp,image/gif,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv,application/rtf,application/vnd.oasis.opendocument.text';
+export const EMAIL_ATTACHMENT_ACCEPT = '*/*';
 
 export const EMAIL_ATTACHMENT_TYPES_LABEL =
-  'PDF, Word, Excel, PowerPoint, images, TXT, CSV, RTF, ODT';
+  'Any document or image (no programs/scripts)';
+
+function fileExtension(filename: string): string {
+  const base = String(filename || '').trim().split(/[/\\]/).pop() || '';
+  const i = base.lastIndexOf('.');
+  if (i <= 0 || i === base.length - 1) return '';
+  return base.slice(i + 1).toLowerCase();
+}
 
 export function guessEmailAttachmentContentType(filename: string, mimeHint = ''): string {
   const hint = (mimeHint || '').trim().toLowerCase();
-  if (hint && hint !== 'application/octet-stream' && ALLOWED_MIME.has(hint)) {
-    return hint;
-  }
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-  return MIME_BY_EXT[ext] || hint || 'application/octet-stream';
+  const ext = fileExtension(filename);
+  if (ext && MIME_BY_EXT[ext]) return MIME_BY_EXT[ext];
+  if (hint && hint !== 'application/octet-stream') return hint;
+  return 'application/octet-stream';
 }
 
 export function isAllowedEmailAttachment(file: File): boolean {
-  const mime = (file.type || '').trim().toLowerCase();
-  if (mime && ALLOWED_MIME.has(mime)) return true;
-  return ALLOWED_EXT.test(file.name);
+  const name = String(file?.name || '').trim();
+  if (!name || name.startsWith('.')) return false;
+  const ext = fileExtension(name);
+  if (!ext) return false;
+  if (BLOCKED_EXT.has(ext)) return false;
+  return true;
 }
 
 export function formatAttachmentSize(bytes: number): string {

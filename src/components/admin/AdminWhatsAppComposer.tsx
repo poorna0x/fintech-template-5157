@@ -398,7 +398,7 @@ export function AdminWhatsAppComposerPanel({
       return;
     }
     if (deliveryMode === 'api' && !whatsappPreview.text.trim() && !attachFile) {
-      toast.error('Write a message or attach a PDF / photo');
+      toast.error('Write a message or attach a file');
       return;
     }
     if (deliveryMode === 'wa_me' && !whatsappPreview.text.trim()) {
@@ -422,12 +422,12 @@ export function AdminWhatsAppComposerPanel({
       const manualAttach = attachFile;
 
       if (useWaMe && manualAttach) {
-        toast.error('Switch to Cloud API to send a PDF or image');
+        toast.error('Switch to Cloud API to send a file');
         return;
       }
 
       if (useWaMe && wantsAutoPdf) {
-        toast.message('PDF can’t go via phone WhatsApp — sending with Cloud API instead');
+        toast.message('File can’t go via phone WhatsApp — sending with Cloud API instead');
       }
 
       if (useWaMe && !wantsAutoPdf) {
@@ -620,7 +620,7 @@ export function AdminWhatsAppComposerPanel({
         <CardHeader className="pb-3">
           <CardTitle className="text-base sm:text-lg">Send WhatsApp</CardTitle>
           <CardDescription className="text-xs sm:text-sm">
-            Cloud API = free-form text + optional PDF/photo on the business line. Phone WhatsApp opens
+            Cloud API = free-form text + optional file on the business line. Phone WhatsApp opens
             wa.me on this device (text only).
           </CardDescription>
         </CardHeader>
@@ -905,7 +905,7 @@ export function AdminWhatsAppComposerPanel({
 
             {deliveryMode === 'api' ? (
               <div className="space-y-1.5">
-                <Label className="text-sm">Attach PDF or image (optional)</Label>
+                <Label className="text-sm">Attach file (optional)</Label>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -988,10 +988,11 @@ export function AdminWhatsAppComposerPanel({
                     <div className="flex flex-col items-center justify-center gap-1 py-3 text-center cursor-pointer">
                       <Paperclip className="h-5 w-5 text-emerald-600" />
                       <p className="text-sm font-medium text-slate-800">
-                        {attachDragOver ? 'Drop to attach' : 'Drop PDF or photo here'}
+                        {attachDragOver ? 'Drop to attach' : 'Drop file here'}
                       </p>
                       <p className="text-[11px] text-slate-500">
-                        or click · JPEG / PNG / WebP / PDF · max 4MB
+                        or click · JPEG / PNG / WebP / PDF / Word / Excel / PowerPoint / TXT · max
+                        4MB
                       </p>
                     </div>
                   )}
@@ -1002,8 +1003,7 @@ export function AdminWhatsAppComposerPanel({
               </div>
             ) : (
               <p className="text-xs text-slate-500 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2">
-                Attachments aren’t available with phone WhatsApp — switch to Cloud API for PDF or
-                image.
+                Attachments aren’t available with phone WhatsApp — switch to Cloud API for files.
               </p>
             )}
 
@@ -1049,7 +1049,7 @@ export function AdminWhatsAppComposerPanel({
           <p className="text-sm font-medium text-slate-600">No preview yet</p>
           <p className="text-xs text-slate-500 mt-1 max-w-xs">
             Search and select a customer or job above — customer details and message preview appear
-            after you pick a record. You can also attach a PDF or photo to preview it here.
+            after you pick a record. You can also attach a supported file to preview it here.
           </p>
         </div>
       ) : (
@@ -1431,7 +1431,7 @@ export function AdminWhatsAppComposerPanel({
               Send WhatsApp
             </h2>
             <p className="hidden sm:block text-sm text-slate-500 mt-0.5">
-              Cloud API free-form text + optional PDF/photo, or open phone WhatsApp (wa.me).
+              Cloud API free-form text + optional file, or open phone WhatsApp (wa.me).
             </p>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
