@@ -11,6 +11,11 @@ describe('parseFlexibleCompletedDate', () => {
   it('parses today and yesterday in IST', () => {
     expect(parseFlexibleCompletedDate('today', now)?.iso).toBe('2026-08-22');
     expect(parseFlexibleCompletedDate('yesterday', now)?.iso).toBe('2026-08-21');
+    expect(parseFlexibleCompletedDate('yestarday', now)?.iso).toBe('2026-08-21');
+    expect(parseFlexibleCompletedDate('last night', now)?.iso).toBe('2026-08-21');
+    expect(parseFlexibleCompletedDate('a day ago', now)?.iso).toBe('2026-08-21');
+    expect(parseFlexibleCompletedDate('2 days ago', now)?.iso).toBe('2026-08-20');
+    expect(parseFlexibleCompletedDate('day before yesterday', now)?.iso).toBe('2026-08-20');
   });
 
   it('parses last September as the previous year when still before September', () => {

@@ -78,6 +78,84 @@ function lastOccurrenceOfMonth(monthIndex: number, now: Date): { year: number; m
   return { year, month: monthIndex };
 }
 
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const row = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    let prev = i - 1;
+    row[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cur = row[j];
+      row[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, row[j], row[j - 1]);
+      prev = cur;
+    }
+  }
+  return row[n];
+}
+
+function compactLetters(text: string): string {
+  return text.toLowerCase().replace(/[^a-z]/g, '');
+}
+
+function wordToCount(token: string): number | null {
+  if (/^\d+$/.test(token)) return Number(token);
+  if (token === 'a' || token === 'one') return 1;
+  if (token === 'two') return 2;
+  if (token === 'three') return 3;
+  return null;
+}
+
+/** Days relative to IST today. Negative = past. */
+function relativeDayOffset(raw: string): number | null {
+  let t = String(raw || '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t) return null;
+  if (/^last\s+night$/.test(t)) return -1;
+
+  t = t
+    .replace(/\b(it was|completed( on)?|done( on)?|on|this|the)\b/g, ' ')
+    .replace(/\b(morning|evening|afternoon|night)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t) return null;
+
+  if (/^day\s+before(\s+yesterday)?$/.test(t)) return -2;
+
+  const ago = t.match(/^((?:\d+)|a|one|two|three)\s+days?\s+ago$/);
+  if (ago) {
+    const n = wordToCount(ago[1]);
+    if (n != null && n >= 1 && n <= 60) return -n;
+  }
+
+  const compact = compactLetters(t);
+  if (!compact) return null;
+  if (!t.includes(' ')) {
+    if (compact === 'today' || compact === 'todays' || editDistance(compact, 'today') <= 1) return 0;
+    if (compact === 'yesterday' || compact.startsWith('yest') || editDistance(compact, 'yesterday') <= 2) {
+      if (compact.length >= 4 && compact.length <= 12) return -1;
+    }
+    return null;
+  }
+  return relativeDayOffset(t.split(' ').pop() || '');
+}
+
+function shiftIstDate(
+  today: { year: number; month: number; day: number },
+  offsetDays: number
+): ParsedFlexibleDate | null {
+  const d = new Date(Date.UTC(today.year, today.month, today.day));
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return result(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), false);
+}
+
 /**
  * Best-effort parse of a human date. Month-only values default to the 1st
  * (`guessedDay: true`) so the admin can pick the exact day on the date picker.
@@ -94,13 +172,8 @@ export function parseFlexibleCompletedDate(
   if (!text) return null;
 
   const today = getIstDateParts(now);
-
-  if (text === 'today') return result(today.year, today.month, today.day, false);
-  if (text === 'yesterday') {
-    const d = new Date(Date.UTC(today.year, today.month, today.day));
-    d.setUTCDate(d.getUTCDate() - 1);
-    return result(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), false);
-  }
+  const relative = relativeDayOffset(text);
+  if (relative != null) return shiftIstDate(today, relative);
 
   const isoMatch = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (isoMatch) {

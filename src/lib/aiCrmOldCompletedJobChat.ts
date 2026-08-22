@@ -69,7 +69,7 @@ export function oldJobPrompt(step: OldJobChatStep): string {
     case 'purifier_photo':
       return 'Attach a photo of the purifier, or type skip.';
     case 'date':
-      return 'What date was this job completed? You can type last Sep or 24 September 2025.';
+      return 'What date was this job completed? You can type yesterday, last Sep, or 24 September 2025.';
     case 'bill':
       return 'Attach the bill photo, or type skip. You can also type the amount if you know it.';
     case 'payment':
@@ -92,7 +92,7 @@ export function oldJobPlaceholder(step: OldJobChatStep | null): string {
     case 'purifier_photo':
       return 'Purifier photo, or skip';
     case 'date':
-      return 'last Sep, or 24 September 2025';
+      return 'yesterday, last Sep, or 24 Sep 2025';
     case 'bill':
       return 'Bill photo, or skip';
     case 'payment':
@@ -193,7 +193,7 @@ export function parseOldJobDateMessage(
   pendingMonthIso: string | null
 ): { ok: true; date: ParsedFlexibleDate } | { ok: false; error: string } {
   const trimmed = String(text || '').trim();
-  if (!trimmed) return { ok: false, error: 'Send the completed date, like last Sep or 24 September 2025.' };
+  if (!trimmed) return { ok: false, error: 'Send the completed date, like yesterday, last Sep, or 24 September 2025.' };
 
   if (pendingMonthIso && /^(ok|okay|yes|continue)$/i.test(trimmed)) {
     const parsed = parseFlexibleCompletedDate(pendingMonthIso);
@@ -210,7 +210,7 @@ export function parseOldJobDateMessage(
   }
 
   const parsed = parseFlexibleCompletedDate(trimmed);
-  if (!parsed) return { ok: false, error: 'Could not read that date. Try last Sep or 24 September 2025.' };
+  if (!parsed) return { ok: false, error: 'Could not read that date. Try yesterday, last Sep, or 24 September 2025.' };
   return { ok: true, date: parsed };
 }
 
