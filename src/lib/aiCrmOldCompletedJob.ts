@@ -247,19 +247,26 @@ export async function saveOldJobCustomer(input: {
 
 export async function saveOldJobModel(input: {
   customerId: string;
-  model: string;
+  brand?: string;
+  model?: string;
   photoUrls: string[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const brand = titleCaseName(input.brand || '');
   const model = String(input.model || '').trim();
-  if (!model) return { ok: false, error: 'Enter the model name' };
+  const extraPhotos = (input.photoUrls || []).filter(Boolean);
+  if (!brand && !model && !extraPhotos.length) return { ok: true };
+
   const { data, error } = await db.customers.getById(input.customerId);
   if (error || !data) return { ok: false, error: 'Customer not found' };
-  const photos = mergePhotoUrls((data as any).photos, input.photoUrls);
-  const { error: updateError } = await db.customers.update(input.customerId, {
-    model,
-    ...(photos.length ? { photos } : {}),
-  } as any);
-  if (updateError) return { ok: false, error: updateError.message || 'Could not save the model' };
+  const photos = mergePhotoUrls((data as any).photos, extraPhotos);
+  const updates: Record<string, unknown> = {};
+  if (brand) updates.brand = brand;
+  if (model) updates.model = model;
+  if (extraPhotos.length) updates.photos = photos;
+  if (!Object.keys(updates).length) return { ok: true };
+
+  const { error: updateError } = await db.customers.update(input.customerId, updates as any);
+  if (updateError) return { ok: false, error: updateError.message || 'Could not save the brand or photo' };
   return { ok: true };
 }
 

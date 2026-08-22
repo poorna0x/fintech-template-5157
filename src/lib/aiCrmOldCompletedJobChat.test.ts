@@ -9,9 +9,11 @@ import {
   matchOldJobTechnician,
   missingOldJobCustomerFields,
   parseBillAmount,
+  parseEquipmentLabel,
   parseOldJobCustomerMessage,
   parseOldJobDateMessage,
   emptyOldJobCustomerDraft,
+  oldJobPrompt,
 } from './aiCrmOldCompletedJobChat';
 
 describe('titleCaseName', () => {
@@ -82,8 +84,26 @@ describe('matchOldJobTechnician', () => {
 describe('skip and cancel', () => {
   it('detects skip and cancel', () => {
     expect(isSkipOldJobMessage('skip')).toBe(true);
+    expect(isSkipOldJobMessage('skip it')).toBe(true);
+    expect(isSkipOldJobMessage('skip photo')).toBe(true);
+    expect(isSkipOldJobMessage('skip brand')).toBe(true);
+    expect(isSkipOldJobMessage('no photo')).toBe(true);
     expect(isSkipMapsMessage('map i dont have')).toBe(true);
     expect(isCancelOldJobMessage('cancel')).toBe(true);
     expect(parseBillAmount('1500 rs')).toBe(1500);
+  });
+});
+
+describe('parseEquipmentLabel', () => {
+  it('splits brand and model', () => {
+    expect(parseEquipmentLabel('kent grand plus')).toEqual({ brand: 'Kent', model: 'Grand Plus' });
+    expect(parseEquipmentLabel('Kent')).toEqual({ brand: 'Kent', model: 'Kent' });
+  });
+});
+
+describe('old job prompts', () => {
+  it('asks brand and photo as separate skippable steps', () => {
+    expect(oldJobPrompt('brand')).toMatch(/skip/i);
+    expect(oldJobPrompt('purifier_photo')).toMatch(/skip/i);
   });
 });

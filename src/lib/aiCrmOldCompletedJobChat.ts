@@ -16,7 +16,8 @@ export type OldJobChatStep =
   | 'phone'
   | 'name'
   | 'maps'
-  | 'model'
+  | 'brand'
+  | 'purifier_photo'
   | 'date'
   | 'bill'
   | 'payment'
@@ -35,7 +36,10 @@ export type OldJobTechnicianOption = {
 };
 
 const CANCEL_RE = /^(cancel|stop|never mind|forget it|abort)$/i;
-const SKIP_RE = /^(skip|no|none|not now|no photo|later)$/i;
+const SKIP_RE =
+  /^(skip|no|none|not now|later)(\s+(it|this|that|photo|photos|picture|name|brand|model|maps?|location|pin|step))?$/i;
+const SKIP_PHRASE_RE =
+  /\b((i\s+)?(do\s*n'?t|dont)\s+have\s+(a\s+|the\s+)?(photo|picture|image|brand|model)|no\s+(photo|picture|image|brand|model))\b/i;
 const OFFICE_RE = /^(office|office staff|no technician)$/i;
 
 export function isCancelOldJobMessage(text: string): boolean {
@@ -43,7 +47,13 @@ export function isCancelOldJobMessage(text: string): boolean {
 }
 
 export function isSkipOldJobMessage(text: string): boolean {
-  return SKIP_RE.test(String(text || '').trim());
+  const t = String(text || '')
+    .trim()
+    .toLowerCase()
+    .replace(/['’]/g, '');
+  if (!t) return false;
+  if (SKIP_RE.test(t) || /^skip\b/.test(t)) return true;
+  return SKIP_PHRASE_RE.test(t);
 }
 
 export function oldJobPrompt(step: OldJobChatStep): string {
@@ -54,8 +64,10 @@ export function oldJobPrompt(step: OldJobChatStep): string {
       return 'No customer with that number. Send the name.';
     case 'maps':
       return 'Paste a Google Maps location, or type skip.';
-    case 'model':
-      return 'Now send the model name and attach a photo of the purifier, or type skip.';
+    case 'brand':
+      return 'Send the brand or model name, or type skip.';
+    case 'purifier_photo':
+      return 'Attach a photo of the purifier, or type skip.';
     case 'date':
       return 'What date was this job completed? You can type last Sep or 24 September 2025.';
     case 'bill':
@@ -75,8 +87,10 @@ export function oldJobPlaceholder(step: OldJobChatStep | null): string {
       return 'Customer name…';
     case 'maps':
       return 'Maps link, or skip';
-    case 'model':
-      return 'Model name + photo, or skip';
+    case 'brand':
+      return 'Brand or model, or skip';
+    case 'purifier_photo':
+      return 'Purifier photo, or skip';
     case 'date':
       return 'last Sep, or 24 September 2025';
     case 'bill':
@@ -92,7 +106,7 @@ export function oldJobPlaceholder(step: OldJobChatStep | null): string {
 
 function stripLabels(text: string): string {
   return String(text || '')
-    .replace(/\b(name|phone|mobile|number|location|maps?|link|model|amount|rs|inr)\s*[:\-]/gi, ' ')
+    .replace(/\b(name|phone|mobile|number|location|maps?|link|brand|model|amount|rs|inr)\s*[:\-]/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -240,6 +254,23 @@ function describeCustomer(customer: OldJobSavedCustomer): string {
   return `${customer.fullName}${code} · ${customer.phone}`;
 }
 
+export function parseEquipmentLabel(text: string): { brand: string; model: string } {
+  const cleaned = String(text || '')
+    .replace(/\b(brand|model|name)\s*[:\-]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return { brand: '', model: '' };
+  const parts = cleaned.split(' ');
+  if (parts.length === 1) {
+    const one = titleCaseName(parts[0]);
+    return { brand: one, model: one };
+  }
+  return {
+    brand: titleCaseName(parts[0]),
+    model: titleCaseName(parts.slice(1).join(' ')),
+  };
+}
+
 export function leftoverNameFromMessage(text: string): string {
   let leftover = stripLabels(text);
   const url = extractMapsUrlFromText(text);
@@ -255,6 +286,7 @@ export type OldJobFlowState = {
   step: OldJobChatStep;
   customerDraft: OldJobCustomerDraft;
   customer: OldJobSavedCustomer | null;
+  brand: string;
   model: string;
   modelPhotos: string[];
   completedDate: string | null;
@@ -276,11 +308,19 @@ export type OldJobChatAdvance = {
   };
 };
 
+function equipmentLabel(flow: OldJobFlowState): string {
+  if (flow.brand && flow.model && flow.model !== flow.brand) {
+    return `${flow.brand} ${flow.model}`;
+  }
+  return flow.brand || flow.model;
+}
+
 export function createOldJobFlow(): OldJobFlowState {
   return {
     step: 'phone',
     customerDraft: emptyOldJobCustomerDraft(),
     customer: null,
+    brand: '',
     model: '',
     modelPhotos: [],
     completedDate: null,
@@ -291,14 +331,32 @@ export function createOldJobFlow(): OldJobFlowState {
   };
 }
 
+async function saveEquipmentThenDate(flow: OldJobFlowState): Promise<OldJobChatAdvance> {
+  if (!flow.customer) {
+    return { flow, assistantText: oldJobPrompt('phone') };
+  }
+  const hasAnything = Boolean(flow.brand.trim() || flow.model.trim() || flow.modelPhotos.length);
+  if (hasAnything) {
+    const saved = await saveOldJobModel({
+      customerId: flow.customer.id,
+      brand: flow.brand,
+      model: flow.model,
+      photoUrls: flow.modelPhotos,
+    });
+    if (!saved.ok) return { flow, assistantText: saved.error };
+  }
+  flow.step = 'date';
+  return { flow, assistantText: oldJobPrompt('date') };
+}
+
 async function saveNewCustomerAndContinue(flow: OldJobFlowState): Promise<OldJobChatAdvance> {
   const saved = await saveOldJobCustomer(flow.customerDraft);
   if (!saved.ok) return { flow, assistantText: saved.error };
   flow.customer = saved.customer;
-  flow.step = 'model';
+  flow.step = 'brand';
   return {
     flow,
-    assistantText: `Saved ${saved.customer.fullName}. ${oldJobPrompt('model')}`,
+    assistantText: `Saved ${saved.customer.fullName}. ${oldJobPrompt('brand')}`,
   };
 }
 
@@ -322,6 +380,10 @@ export async function advanceOldJobChat(opts: {
     return { flow: null, assistantText: 'Stopped. Type create old completed job if you want to start again.' };
   }
 
+  if ((flow.step as string) === 'model') {
+    flow.step = flow.brand || flow.model ? 'purifier_photo' : 'brand';
+  }
+
   if (flow.step === 'phone') {
     if (skipped) return { flow, assistantText: 'Need the phone number to find or add the customer.' };
     const phone = extractPhoneFromChat(message);
@@ -333,10 +395,10 @@ export async function advanceOldJobChat(opts: {
       flow.customer = found.customer;
       flow.customerDraft.fullName = found.customer.fullName;
       flow.customerDraft.skipMaps = true;
-      flow.step = 'model';
+      flow.step = 'brand';
       return {
         flow,
-        assistantText: `Found ${describeCustomer(found.customer)}. ${oldJobPrompt('model')}`,
+        assistantText: `Found ${describeCustomer(found.customer)}. ${oldJobPrompt('brand')}`,
       };
     }
     const maybeName = leftoverNameFromMessage(message);
@@ -373,33 +435,48 @@ export async function advanceOldJobChat(opts: {
     return saveNewCustomerAndContinue(flow);
   }
 
-  if (flow.step === 'model') {
-    if (skipped) {
-      flow.step = 'date';
-      return { flow, assistantText: oldJobPrompt('date') };
-    }
-    if (message) flow.model = message.trim();
+  if (flow.step === 'brand') {
     if (photos.length) flow.modelPhotos = [...flow.modelPhotos, ...photos];
-    if (!flow.model.trim() && !flow.modelPhotos.length) {
-      return { flow, assistantText: 'Send the model name and a photo, or type skip.' };
+    if (skipped) {
+      if (flow.modelPhotos.length) return saveEquipmentThenDate(flow);
+      flow.step = 'purifier_photo';
+      return { flow, assistantText: oldJobPrompt('purifier_photo') };
     }
-    if (!flow.model.trim()) {
-      return { flow, assistantText: 'Send the model name too, or type skip.' };
+    const label = parseEquipmentLabel(message);
+    if (label.brand) {
+      flow.brand = label.brand;
+      flow.model = label.model;
+    }
+    if ((flow.brand || flow.model) && flow.modelPhotos.length) {
+      return saveEquipmentThenDate(flow);
+    }
+    if (flow.brand || flow.model) {
+      flow.step = 'purifier_photo';
+      return {
+        flow,
+        assistantText: `Got ${equipmentLabel(flow)}. ${oldJobPrompt('purifier_photo')}`,
+      };
+    }
+    if (flow.modelPhotos.length) {
+      return { flow, assistantText: `Got the photo. ${oldJobPrompt('brand')}` };
+    }
+    return { flow, assistantText: oldJobPrompt('brand') };
+  }
+
+  if (flow.step === 'purifier_photo') {
+    if (photos.length) flow.modelPhotos = [...flow.modelPhotos, ...photos];
+    if (skipped) return saveEquipmentThenDate(flow);
+    if (message) {
+      const label = parseEquipmentLabel(message);
+      if (label.brand) {
+        flow.brand = label.brand;
+        flow.model = label.model;
+      }
     }
     if (!flow.modelPhotos.length) {
-      return { flow, assistantText: 'Attach a photo of the purifier too, or type skip.' };
+      return { flow, assistantText: oldJobPrompt('purifier_photo') };
     }
-    if (!flow.customer) {
-      return { flow, assistantText: oldJobPrompt('phone') };
-    }
-    const saved = await saveOldJobModel({
-      customerId: flow.customer.id,
-      model: flow.model,
-      photoUrls: flow.modelPhotos,
-    });
-    if (!saved.ok) return { flow, assistantText: saved.error };
-    flow.step = 'date';
-    return { flow, assistantText: oldJobPrompt('date') };
+    return saveEquipmentThenDate(flow);
   }
 
   if (flow.step === 'date') {
