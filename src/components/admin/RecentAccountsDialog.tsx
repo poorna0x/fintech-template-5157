@@ -170,7 +170,7 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
             {callRows.length === 0 ? (
               <p className="text-sm text-muted-foreground py-2">
                 No call alerts stored yet. When a technician gets a customer call, it will show
-                here so you can reopen the contact.
+                here — tap a row to search that customer.
               </p>
             ) : (
               <div className="space-y-2">
@@ -182,48 +182,49 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
                       : row.kind === 'wrong_line_call'
                         ? PhoneForwarded
                         : Phone;
+                  const searchable = Boolean(onOpenTechCall);
                   return (
-                    <div
+                    <button
                       key={`${row.phone}-${row.at}-${row.kind}`}
-                      className="border border-border rounded-lg p-3 sm:p-4 hover:bg-muted/40 transition-colors"
+                      type="button"
+                      disabled={!searchable}
+                      className={
+                        'w-full text-left border border-border rounded-lg p-3 sm:p-4 transition-colors ' +
+                        (searchable
+                          ? 'hover:bg-muted/40 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                          : '')
+                      }
+                      onClick={() => {
+                        if (!onOpenTechCall) return;
+                        onOpenTechCall(row);
+                        onOpenChange(false);
+                      }}
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <div className="flex-1 min-w-0 flex gap-2">
-                          <Icon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                              <Badge variant="outline" className="text-[10px] uppercase">
-                                {badge}
-                              </Badge>
-                              <span className="text-sm font-semibold text-foreground">{title}</span>
-                            </div>
-                            <p className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
-                              <span className="font-medium text-foreground/80">Contact</span>
-                              <span className="font-mono tabular-nums font-semibold text-foreground">
-                                {row.phone}
-                              </span>
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {formatWhen(row.at)}
-                            </p>
+                      <div className="flex gap-2 min-w-0">
+                        <Icon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                            <Badge variant="outline" className="text-[10px] uppercase">
+                              {badge}
+                            </Badge>
+                            <span className="text-sm font-semibold text-foreground">{title}</span>
+                            {searchable ? (
+                              <Search className="h-3.5 w-3.5 text-muted-foreground ml-auto shrink-0" />
+                            ) : null}
                           </div>
+                          <p className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
+                            <span className="font-medium text-foreground/80">Contact</span>
+                            <span className="font-mono tabular-nums font-semibold text-foreground">
+                              {row.phone}
+                            </span>
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {formatWhen(row.at)}
+                            {searchable ? ' · Tap to search' : ''}
+                          </p>
                         </div>
-                        {onOpenTechCall ? (
-                          <Button
-                            variant="default"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={() => {
-                              onOpenTechCall(row);
-                              onOpenChange(false);
-                            }}
-                          >
-                            <Search className="w-4 h-4 mr-1" />
-                            Open contact
-                          </Button>
-                        ) : null}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>

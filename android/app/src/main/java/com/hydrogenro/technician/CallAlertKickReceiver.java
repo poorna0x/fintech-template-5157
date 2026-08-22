@@ -8,8 +8,10 @@ import android.util.Log;
 
 /**
  * AlarmClock / AlarmManager wake after hangup.
- * Prefer direct CallLog+POST via goAsync (alarm wake is reliable when app is
- * closed). FGS is only a backup if the inline upload cannot run.
+ *
+ * Prefer {@link CallAlertUploadService} FGS from this wake (AlarmClock is an
+ * allowed background start). A long HTTP POST inside goAsync often dies before
+ * finish on OEM builds (~10s), which left only open-app JWT catch-up working.
  */
 public class CallAlertKickReceiver extends BroadcastReceiver {
 
@@ -44,6 +46,14 @@ public class CallAlertKickReceiver extends BroadcastReceiver {
 
         final int attempt = intent.getIntExtra(EXTRA_ATTEMPT, 0);
         Log.i(TAG, "AlarmClock kick attempt=" + attempt + " ring=" + ringAt);
+
+        // FGS from AlarmClock wake — survives past goAsync timeout.
+        try {
+            CallAlertUploadService.startOneShot(app, ringAt);
+            return;
+        } catch (Throwable t) {
+            Log.w(TAG, "startOneShot from kick failed", t);
+        }
 
         final long session = ringAt;
         final PendingResult pending = goAsync();

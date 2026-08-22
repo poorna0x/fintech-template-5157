@@ -358,11 +358,6 @@ public class CallAlertReceiver extends BroadcastReceiver {
 
         int code = postOnce(token, cleaned, callId, callAt, missed);
         Log.i(TAG, "Alert POST code=" + code + " callId=" + callId);
-        context
-            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putLong(KEY_POST_ATTEMPTED_RING, ringAt)
-            .apply();
         if (code == 401) {
             try {
                 String fresh =
@@ -383,12 +378,15 @@ public class CallAlertReceiver extends BroadcastReceiver {
             }
         }
 
-        // Network attempted — terminal for this ring (no retry storm).
-        markAlerted(context, ringAt, callId);
+        // Soft success / throttle: done. Hard fail: clear claim + leave late AlarmClock
+        // (previously we marked attempted on any POST, which cancelled the ~90s retry
+        // and left only open-app JWT catch-up working).
         if ((code >= 200 && code < 300) || code == 429) {
+            markAlerted(context, ringAt, callId);
             Log.i(TAG, "Alert upload done code=" + code);
         } else {
-            Log.w(TAG, "Alert upload failed code=" + code + " (no retry)");
+            clearClaim(context, callId);
+            Log.w(TAG, "Alert upload failed code=" + code + " — leave late alarm / catch-up");
         }
     }
 
