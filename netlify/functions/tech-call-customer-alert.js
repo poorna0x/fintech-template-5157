@@ -55,7 +55,7 @@ exports.handler = async (event) => {
   }
 
   const ipLimit = checkRateLimit(event, {
-    maxRequests: 120,
+    maxRequests: 60,
     windowMs: 3_600_000,
     endpoint: 'tech-call-alert-ip',
   });
@@ -106,7 +106,7 @@ exports.handler = async (event) => {
   // so a stuck WebView cannot burn thousands of invocations (real calls are tens/day).
   if (authVia === 'jwt' && technicianId) {
     const jwtLimit = checkRateLimitForKey(`tech-call-jwt:${technicianId}`, {
-      maxRequests: 40,
+      maxRequests: 15,
       windowMs: 3_600_000,
       endpoint: 'tech-call-alert-jwt',
     });
@@ -126,7 +126,7 @@ exports.handler = async (event) => {
     }
 
     const tokenLimit = checkRateLimitForKey(deviceToken, {
-      maxRequests: 60,
+      maxRequests: 20,
       windowMs: 3_600_000,
       endpoint: 'tech-call-alert-token',
     });
@@ -308,21 +308,10 @@ exports.handler = async (event) => {
   ]);
 
   if (tokens.length === 0) {
-    // Do not keep the dedupe claim — otherwise fixing prefs later cannot re-alert
-    // this call, and native would treat 200 as success and stop retries.
-    if (technicianId && callId) {
-      try {
-        await db
-          .from('tech_call_alert_events')
-          .delete()
-          .eq('technician_id', technicianId)
-          .eq('call_id', callId);
-      } catch (e) {
-        console.warn('[tech-call-customer-alert] dedupe rollback failed', e?.message || e);
-      }
-    }
+    // 200 (not 503): native treats non-2xx as "retry", which used to burn hundreds
+    // of Netlify invocations while Device Tracker had no admin call-alert tokens.
     return {
-      statusCode: 503,
+      statusCode: 200,
       headers: HEADERS,
       body: JSON.stringify({
         found: true,
