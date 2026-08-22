@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
+  FileSpreadsheet,
   FileText,
   ImageIcon,
   Loader2,
@@ -13,8 +14,10 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
+  EMAIL_ATTACHMENT_ACCEPT,
   EMAIL_ATTACHMENT_MAX_BYTES,
   EMAIL_ATTACHMENT_MAX_COUNT,
+  EMAIL_ATTACHMENT_TYPES_LABEL,
   fileToEmailAttachment,
   formatAttachmentSize,
   isAllowedEmailAttachment,
@@ -32,11 +35,21 @@ type UploadRow =
   | { kind: 'uploading'; id: string; filename: string; size: number }
   | { kind: 'error'; id: string; filename: string; size: number; errorMessage: string };
 
-function attachmentIcon(contentType: string) {
-  if (contentType === 'application/pdf') {
-    return <FileText className="w-4 h-4 text-red-600 shrink-0" />;
+function attachmentIcon(contentType: string, filename = '') {
+  const mime = (contentType || '').toLowerCase();
+  const name = filename.toLowerCase();
+  if (mime.startsWith('image/') || /\.(jpe?g|png|webp|gif)$/i.test(name)) {
+    return <ImageIcon className="w-4 h-4 text-blue-600 shrink-0" />;
   }
-  return <ImageIcon className="w-4 h-4 text-blue-600 shrink-0" />;
+  if (
+    mime.includes('sheet') ||
+    mime.includes('excel') ||
+    mime === 'text/csv' ||
+    /\.(xlsx?|csv)$/i.test(name)
+  ) {
+    return <FileSpreadsheet className="w-4 h-4 text-emerald-700 shrink-0" />;
+  }
+  return <FileText className="w-4 h-4 text-red-600 shrink-0" />;
 }
 
 export default function EmailAttachmentDropzone({
@@ -69,7 +82,7 @@ export default function EmailAttachmentDropzone({
         }
 
         if (!isAllowedEmailAttachment(file)) {
-          toast.error(`${file.name}: only PDF and images allowed`);
+          toast.error(`${file.name}: only ${EMAIL_ATTACHMENT_TYPES_LABEL}`);
           continue;
         }
         if (file.size > EMAIL_ATTACHMENT_MAX_BYTES) {
@@ -168,10 +181,10 @@ export default function EmailAttachmentDropzone({
         )}
       >
         <Upload className="w-7 h-7 sm:w-8 sm:h-8 mx-auto text-slate-400 mb-2" />
-        <p className="text-sm font-medium text-slate-700">Drag & drop PDF or photos here</p>
+        <p className="text-sm font-medium text-slate-700">Drag & drop files here</p>
         <p className="text-xs text-slate-500 mt-1 px-2">
-          PDF, JPG, PNG, WebP, GIF · up to {formatAttachmentSize(EMAIL_ATTACHMENT_MAX_BYTES)} each ·{' '}
-          {EMAIL_ATTACHMENT_MAX_COUNT} files max
+          {EMAIL_ATTACHMENT_TYPES_LABEL} · up to {formatAttachmentSize(EMAIL_ATTACHMENT_MAX_BYTES)}{' '}
+          each · {EMAIL_ATTACHMENT_MAX_COUNT} files max
         </p>
         <Button type="button" variant="outline" size="sm" className="mt-3" disabled={disabled}>
           <Paperclip className="w-4 h-4 mr-1.5" />
@@ -181,7 +194,7 @@ export default function EmailAttachmentDropzone({
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,application/pdf,image/jpeg,image/png,image/webp,image/gif"
+          accept={EMAIL_ATTACHMENT_ACCEPT}
           className="hidden"
           disabled={disabled}
           onChange={(e) => {
@@ -254,7 +267,7 @@ export default function EmailAttachmentDropzone({
               key={file.id}
               className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-white px-3 py-2"
             >
-              {attachmentIcon(file.contentType)}
+              {attachmentIcon(file.contentType, file.filename)}
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-slate-800 truncate">{file.filename}</p>
                 <p className="text-xs text-emerald-700 flex items-center gap-1 font-medium">
