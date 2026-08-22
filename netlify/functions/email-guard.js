@@ -149,13 +149,27 @@ const MAX_PREVIEW_ATTACHMENTS = 5;
 const MAX_PREVIEW_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_PREVIEW_ATTACHMENT_TOTAL_BYTES = 25 * 1024 * 1024;
 
-const ALLOWED_ATTACHMENT_TYPES = new Set([
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-]);
+const MIME_BY_EXT = {
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  txt: 'text/plain',
+  csv: 'text/csv',
+  rtf: 'application/rtf',
+  odt: 'application/vnd.oasis.opendocument.text',
+};
+
+const ALLOWED_ATTACHMENT_TYPES = new Set(Object.values(MIME_BY_EXT));
+const ALLOWED_ATTACHMENT_EXT = /\.(pdf|jpe?g|png|webp|gif|docx?|xlsx?|pptx?|txt|csv|rtf|odt)$/i;
 
 function sanitizeAttachmentFilename(name) {
   if (typeof name !== 'string') return null;
@@ -163,6 +177,25 @@ function sanitizeAttachmentFilename(name) {
   if (!trimmed || trimmed.length > 180) return null;
   if (trimmed.startsWith('.')) return null;
   return trimmed;
+}
+
+function resolveAttachmentContentType(filename, contentType) {
+  const mime = typeof contentType === 'string' ? contentType.trim().toLowerCase() : '';
+  if (mime && mime !== 'application/octet-stream' && ALLOWED_ATTACHMENT_TYPES.has(mime)) {
+    return mime;
+  }
+  const ext = String(filename || '')
+    .split('.')
+    .pop()
+    ?.toLowerCase();
+  if (ext && MIME_BY_EXT[ext]) return MIME_BY_EXT[ext];
+  return mime || '';
+}
+
+function isAllowedAttachment(filename, contentType) {
+  const resolved = resolveAttachmentContentType(filename, contentType);
+  if (ALLOWED_ATTACHMENT_TYPES.has(resolved)) return true;
+  return ALLOWED_ATTACHMENT_EXT.test(filename || '');
 }
 
 function decodeBase64ByteLength(value) {
@@ -191,15 +224,17 @@ function validatePreviewAttachments(raw) {
       return { ok: false, error: 'Invalid attachment' };
     }
     const filename = sanitizeAttachmentFilename(item.filename);
-    const contentType = typeof item.contentType === 'string' ? item.contentType.trim().toLowerCase() : '';
+    const rawContentType =
+      typeof item.contentType === 'string' ? item.contentType.trim().toLowerCase() : '';
     const content = typeof item.content === 'string' ? item.content : '';
 
     if (!filename || !content) {
       return { ok: false, error: 'Invalid attachment' };
     }
-    if (!ALLOWED_ATTACHMENT_TYPES.has(contentType)) {
+    if (!isAllowedAttachment(filename, rawContentType)) {
       return { ok: false, error: 'Attachment type not allowed' };
     }
+    const contentType = resolveAttachmentContentType(filename, rawContentType);
 
     const byteLength = decodeBase64ByteLength(content);
     if (byteLength <= 0 || byteLength > MAX_PREVIEW_ATTACHMENT_BYTES) {
