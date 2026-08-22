@@ -260,29 +260,34 @@ export default function AdminCrmAiDialog({
   }, [inputRef]);
 
   useEffect(() => {
-    if (!open) {
-      setInput('');
-      setLoading(false);
-      setActionBusy(false);
-      setOldJobFlow(null);
-      oldJobTechniciansRef.current = null;
-      setTurns((current) => {
-        current.forEach((turn) => {
-          turn.imageUrls?.forEach((url) => {
-            if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-          });
+    if (open) return;
+    setInput('');
+    setLoading(false);
+    setActionBusy(false);
+    setOldJobFlow(null);
+    oldJobTechniciansRef.current = null;
+    setTurns((current) => {
+      let changed = false;
+      const next = current.map((turn) => {
+        if (!turn.imageUrls?.length) return turn;
+        changed = true;
+        turn.imageUrls.forEach((url) => {
+          if (url.startsWith('blob:')) URL.revokeObjectURL(url);
         });
-        return current.map((turn) =>
-          turn.imageUrls?.length ? { ...turn, imageUrls: undefined } : turn
-        );
+        return { ...turn, imageUrls: undefined };
       });
-      setExpandedDetails(new Set());
-      setAttachments((current) => {
-        current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-        return [];
-      });
-      return;
-    }
+      return changed ? next : current;
+    });
+    setExpandedDetails(new Set());
+    setAttachments((current) => {
+      if (!current.length) return current;
+      current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      return [];
+    });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     const id = window.setTimeout(focusComposer, 0);
     return () => window.clearTimeout(id);
