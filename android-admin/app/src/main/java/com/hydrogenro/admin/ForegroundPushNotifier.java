@@ -58,6 +58,10 @@ public final class ForegroundPushNotifier {
 
         String event = data != null ? data.get("event") : null;
         String channelId = NotificationChannels.channelForPushData(event);
+        if (data != null) {
+            String fromData = data.get("channelId");
+            if (fromData != null && !fromData.isEmpty()) channelId = fromData;
+        }
 
         boolean isWhatsApp = "whatsapp_inbound".equals(type);
         String inboundPhone = isWhatsApp && data != null

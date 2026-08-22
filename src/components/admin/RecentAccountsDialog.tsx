@@ -150,7 +150,7 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
               <div className="min-w-0">
                 <h3 className="text-sm font-semibold text-foreground">Customer call alerts</h3>
                 <p className="text-xs text-muted-foreground">
-                  Saved on this device when a tech-call push arrives (last 7 days)
+                  Saved on this device when a tech-call push arrives (last 24 hours)
                 </p>
               </div>
               {callRows.length > 0 && onClearTechCalls ? (

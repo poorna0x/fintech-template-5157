@@ -46,6 +46,13 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             DevicePrefsPlugin.applyCallAlertsEnabled(getApplicationContext(), enabled);
             return;
         }
+        if ("tech_call".equals(data.get("type")) || "wrong_line_call".equals(data.get("type"))) {
+            // Save caller number even when admin APK is closed/killed (data-only FCM).
+            TechCallAlertStore.remember(getApplicationContext(), data);
+            ForegroundPushNotifier.showIfPresent(getApplicationContext(), remoteMessage);
+            super.onMessageReceived(remoteMessage);
+            return;
+        }
         if ("whatsapp_tray_clear".equals(data.get("type"))) {
             String phone = data.get("phone");
             if (phone == null || phone.isEmpty()) phone = data.get("phone_e164");

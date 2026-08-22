@@ -162,30 +162,29 @@ async function processOneAlert(db, opts) {
   }
 
   const messaging = await getMessaging(db);
+  // Data-only so admin APK onMessageReceived runs while closed/killed and can
+  // save the caller number + show the tray itself (notification+data would not).
+  const bodyText = `${customer.full_name} (${phone}) — tap to open customer`;
+  const tag = `tech_call_${technicianId || 'admin'}_${phone}${missed ? '_missed' : ''}`;
   const res = await messaging.sendEachForMulticast({
     tokens,
-    notification: {
-      title,
-      body: `${customer.full_name} (${phone}) — tap to open customer`,
-    },
     data: {
       type: 'tech_call',
-      phone,
+      phone: String(phone),
       customerId: String(customer.id),
-      techName,
+      techName: String(techName),
       missed: missed ? 'true' : 'false',
+      title: String(title),
+      body: bodyText,
+      color: String(color),
+      tag,
+      channelId: 'job_alerts_v2',
       ...(technicianId ? { technicianId: String(technicianId) } : {}),
-      ...(callId ? { callId } : {}),
+      ...(callId ? { callId: String(callId) } : {}),
       ...(catchup ? { catchup: 'true' } : {}),
     },
     android: {
       priority: 'high',
-      notification: {
-        channelId: 'job_alerts_v2',
-        defaultSound: true,
-        color,
-        tag: `tech_call_${technicianId || 'admin'}_${phone}${missed ? '_missed' : ''}`,
-      },
     },
   });
 

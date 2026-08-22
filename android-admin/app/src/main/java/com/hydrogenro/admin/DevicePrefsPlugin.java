@@ -192,4 +192,18 @@ public class DevicePrefsPlugin extends Plugin {
         ret.put("label", buildDeviceLabel());
         call.resolve(ret);
     }
+
+    /** Tech-call alerts saved natively when push arrives (app may be killed). */
+    @PluginMethod
+    public void listRecentTechCallAlerts(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("itemsJson", TechCallAlertStore.listJson(getContext()));
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void clearRecentTechCallAlerts(PluginCall call) {
+        TechCallAlertStore.clear(getContext());
+        call.resolve();
+    }
 }

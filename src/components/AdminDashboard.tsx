@@ -2318,8 +2318,8 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (!recentAccountsDialogOpen) return;
     setLoadingRecentAccounts(true);
-    void import('@/lib/adminRecentTechCallAlerts').then(({ listAdminRecentTechCalls }) => {
-      setRecentTechCallAlerts(listAdminRecentTechCalls());
+    void import('@/lib/adminRecentTechCallAlerts').then(async ({ listAdminRecentTechCalls }) => {
+      setRecentTechCallAlerts(await listAdminRecentTechCalls());
     });
     db.customers.getCreatedToday(100)
       .then(({ data, error }) => {
@@ -7608,12 +7608,13 @@ const AdminDashboard = () => {
           );
         }}
         onClearTechCalls={() => {
-          void import('@/lib/adminRecentTechCallAlerts').then(
-            ({ clearAdminRecentTechCalls, listAdminRecentTechCalls }) => {
-              clearAdminRecentTechCalls();
-              setRecentTechCallAlerts(listAdminRecentTechCalls());
-            }
-          );
+          void import('@/lib/adminRecentTechCallAlerts').then(async ({
+            clearAdminRecentTechCalls,
+            listAdminRecentTechCalls,
+          }) => {
+            await clearAdminRecentTechCalls();
+            setRecentTechCallAlerts(await listAdminRecentTechCalls());
+          });
         }}
       />
 
