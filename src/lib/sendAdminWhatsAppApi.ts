@@ -391,7 +391,7 @@ export type SendAdminWhatsAppMediaOptions = {
   jobId?: string | null;
 };
 
-/** Send image (jpeg/png/webp) or document (pdf) from inbox attachments. */
+/** Send image (jpeg/png/webp) or WhatsApp-supported document from inbox attachments. */
 export async function sendAdminWhatsAppMedia(
   options: SendAdminWhatsAppMediaOptions
 ): Promise<AdminWhatsAppSendResult> {
@@ -475,10 +475,11 @@ export function readFileAsBase64(file: File): Promise<{ base64: string; mimeType
         reject(new Error('Empty file'));
         return;
       }
+      const filename = file.name || 'file';
       resolve({
         base64,
-        mimeType: file.type || 'application/octet-stream',
-        filename: file.name || 'file',
+        mimeType: guessWhatsAppAttachMime(filename, file.type),
+        filename,
         size: file.size,
       });
     };
@@ -486,27 +487,57 @@ export function readFileAsBase64(file: File): Promise<{ base64: string; mimeType
   });
 }
 
+/** Meta Cloud API supported outbound attach types (images + documents). */
+const WHATSAPP_MIME_BY_EXT: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  pdf: 'application/pdf',
+  txt: 'text/plain',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
+
+const WHATSAPP_ALLOWED_MIME = new Set(Object.values(WHATSAPP_MIME_BY_EXT));
+
 export const WHATSAPP_ATTACH_ACCEPT =
-  'image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf';
+  'image/jpeg,image/png,image/webp,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,.jpg,.jpeg,.png,.webp,.pdf,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx';
+
+export const WHATSAPP_ATTACH_TYPES_LABEL =
+  'JPEG, PNG, WebP, PDF, Word, Excel, PowerPoint, TXT';
 
 export const WHATSAPP_ATTACH_MAX_BYTES = 4 * 1024 * 1024;
+
+function whatsappFileExt(filename: string): string {
+  const base = String(filename || '').trim().split(/[/\\]/).pop() || '';
+  const i = base.lastIndexOf('.');
+  if (i <= 0 || i === base.length - 1) return '';
+  return base.slice(i + 1).toLowerCase();
+}
+
+export function guessWhatsAppAttachMime(filename: string, mimeHint = ''): string {
+  const hint = (mimeHint || '').trim().toLowerCase();
+  if (hint === 'image/jpg') return 'image/jpeg';
+  if (hint && WHATSAPP_ALLOWED_MIME.has(hint)) return hint;
+  const ext = whatsappFileExt(filename);
+  return WHATSAPP_MIME_BY_EXT[ext] || hint || 'application/octet-stream';
+}
 
 export function validateWhatsAppAttachFile(file: File): string | null {
   if (!file) return 'No file selected';
   if (file.size > WHATSAPP_ATTACH_MAX_BYTES) {
     return 'File too large (max 4MB)';
   }
-  const mime = (file.type || '').toLowerCase();
-  const name = (file.name || '').toLowerCase();
-  const okMime =
-    mime === 'image/jpeg' ||
-    mime === 'image/jpg' ||
-    mime === 'image/png' ||
-    mime === 'image/webp' ||
-    mime === 'application/pdf';
-  const okExt = /\.(jpe?g|png|webp|pdf)$/i.test(name);
+  const mime = guessWhatsAppAttachMime(file.name, file.type);
+  const okMime = WHATSAPP_ALLOWED_MIME.has(mime);
+  const okExt = /\.(jpe?g|png|webp|pdf|txt|docx?|xlsx?|pptx?)$/i.test(file.name || '');
   if (!okMime && !okExt) {
-    return 'Only JPEG, PNG, WebP, or PDF';
+    return `Only ${WHATSAPP_ATTACH_TYPES_LABEL} (WhatsApp limit)`;
   }
   return null;
 }
