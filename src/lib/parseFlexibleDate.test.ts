@@ -46,8 +46,9 @@ describe('parseFlexibleCompletedDate', () => {
 });
 
 describe('isOldCompletedJobRequest', () => {
-  it('starts the wizard from create/log phrasing', () => {
+  it('starts the chat flow from create/log phrasing', () => {
     expect(isOldCompletedJobRequest('create old completed job')).toBe(true);
+    expect(isOldCompletedJobRequest('create a old completed job like this')).toBe(true);
     expect(isOldCompletedJobRequest('log old job')).toBe(true);
     expect(isOldCompletedJobRequest('add a past completed job')).toBe(true);
   });

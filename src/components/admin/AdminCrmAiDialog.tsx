@@ -16,7 +16,6 @@ import {
   CalendarClock,
   ImagePlus,
   FileText,
-  History,
   Loader2,
   Mail,
   MessageSquare,
@@ -57,13 +56,23 @@ import {
 import { sendPayQrWhatsApp } from '@/lib/whatsappPayQrShare';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { toast } from 'sonner';
-import AiCrmOldCompletedJobWizard from '@/components/admin/AiCrmOldCompletedJobWizard';
+import { db } from '@/lib/supabase';
+import { transformTechnicianData } from '@/lib/adminDashboardTransforms';
+import {
+  advanceOldJobChat,
+  createOldJobFlow,
+  oldJobPlaceholder,
+  oldJobPrompt,
+  type OldJobFlowState,
+  type OldJobTechnicianOption,
+} from '@/lib/aiCrmOldCompletedJobChat';
 import { isOldCompletedJobRequest } from '@/lib/parseFlexibleDate';
 
 type ChatTurn = {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  imageUrls?: string[];
   result?: Extract<AiCrmChatResult, { ok: true }>;
   error?: string;
 };
@@ -232,7 +241,7 @@ export default function AdminCrmAiDialog({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
-  const [oldJobWizard, setOldJobWizard] = useState(false);
+  const [oldJobFlow, setOldJobFlow] = useState<OldJobFlowState | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [expandedDetails, setExpandedDetails] = useState<Set<string>>(() => new Set());
   const [attachments, setAttachments] = useState<Array<{ file: File; previewUrl: string }>>([]);
@@ -244,6 +253,7 @@ export default function AdminCrmAiDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [open]
   );
+  const oldJobTechniciansRef = useRef<OldJobTechnicianOption[] | null>(null);
 
   const focusComposer = useCallback(() => {
     inputRef.current?.focus({ preventScroll: true });
@@ -254,7 +264,18 @@ export default function AdminCrmAiDialog({
       setInput('');
       setLoading(false);
       setActionBusy(false);
-      setOldJobWizard(false);
+      setOldJobFlow(null);
+      oldJobTechniciansRef.current = null;
+      setTurns((current) => {
+        current.forEach((turn) => {
+          turn.imageUrls?.forEach((url) => {
+            if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+          });
+        });
+        return current.map((turn) =>
+          turn.imageUrls?.length ? { ...turn, imageUrls: undefined } : turn
+        );
+      });
       setExpandedDetails(new Set());
       setAttachments((current) => {
         current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
@@ -268,7 +289,6 @@ export default function AdminCrmAiDialog({
   }, [open, turns, loading, focusComposer]);
 
   const routeTypingToComposer = (event: React.KeyboardEvent) => {
-    if (oldJobWizard) return;
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
     if (isTypingField(event.target)) return;
     const key = event.key;
@@ -292,34 +312,98 @@ export default function AdminCrmAiDialog({
     focusComposer();
   };
 
-  const startOldJobWizard = () => {
-    setOldJobWizard(true);
-    setInput('');
+  const ensureOldJobTechnicians = async (): Promise<OldJobTechnicianOption[]> => {
+    if (oldJobTechniciansRef.current) return oldJobTechniciansRef.current;
+    const { data } = await db.technicians.getAllForDashboard(100, { activeRosterOnly: true });
+    const list = (data || []).map(transformTechnicianData).map((tech) => ({
+      id: tech.id,
+      fullName: tech.fullName,
+    }));
+    oldJobTechniciansRef.current = list;
+    return list;
   };
 
   const send = async () => {
     const message = input.trim();
-    if (message.length < 2 || loading || oldJobWizard) return;
-
-    if (isOldCompletedJobRequest(message)) {
-      setTurns((prev) => [
-        ...prev,
-        { id: `u-${Date.now()}`, role: 'user', text: message },
-      ]);
-      setInput('');
-      startOldJobWizard();
-      return;
-    }
+    const pendingPhotos = attachments;
+    if (loading) return;
+    if (!oldJobFlow && message.length < 2) return;
+    if (oldJobFlow && !message && !pendingPhotos.length) return;
 
     const userTurn: ChatTurn = {
       id: `u-${Date.now()}`,
       role: 'user',
       text: message,
+      imageUrls: pendingPhotos.map((item) => item.previewUrl),
     };
     setTurns((prev) => [...prev, userTurn]);
     setInput('');
+    setAttachments([]);
     setLoading(true);
     requestAnimationFrame(focusComposer);
+
+    if (isOldCompletedJobRequest(message) && !oldJobFlow) {
+      const flow = createOldJobFlow();
+      setOldJobFlow(flow);
+      setTurns((prev) => [
+        ...prev,
+        {
+          id: `a-${Date.now()}`,
+          role: 'assistant',
+          text: oldJobPrompt('customer'),
+        },
+      ]);
+      setLoading(false);
+      return;
+    }
+
+    if (oldJobFlow) {
+      try {
+        const photoUrls: string[] = [];
+        for (const item of pendingPhotos) {
+          const compressed = await compressImage(item.file, 1280, 0.65, true);
+          const uploaded = await cloudinaryService.uploadImage(compressed, 'ai-crm-old-jobs');
+          if (uploaded?.secure_url) photoUrls.push(uploaded.secure_url);
+        }
+        const technicians =
+          oldJobFlow.step === 'technician' ? await ensureOldJobTechnicians() : [];
+        const next = await advanceOldJobChat({
+          flow: oldJobFlow,
+          message,
+          photoUrls,
+          technicians,
+        });
+        setOldJobFlow(next.flow);
+        if (next.finished) {
+          onOldCompletedJobSaved?.({
+            customerId: next.finished.customerId,
+            jobId: next.finished.jobId,
+          });
+        }
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: 'assistant',
+            text: next.assistantText,
+          },
+        ]);
+      } catch (error) {
+        console.error('[CRM AI] old completed job chat failed', error);
+        setTurns((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: 'assistant',
+            text: '',
+            error: 'Could not save that step. Try again, or type cancel.',
+          },
+        ]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     const result = await requestAiCrmChat({
       message,
@@ -545,25 +629,7 @@ export default function AdminCrmAiDialog({
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-          {oldJobWizard ? (
-            <AiCrmOldCompletedJobWizard
-              onCancel={() => setOldJobWizard(false)}
-              onFinished={(result) => {
-                setOldJobWizard(false);
-                onOldCompletedJobSaved?.({ customerId: result.customerId, jobId: result.jobId });
-                setTurns((prev) => [
-                  ...prev,
-                  {
-                    id: `a-${Date.now()}`,
-                    role: 'assistant',
-                    text: `Logged old completed job ${result.jobNumber} for ${result.customerName} on ${result.dateLabel}.`,
-                  },
-                ]);
-              }}
-            />
-          ) : null}
-
-          {!oldJobWizard && turns.length === 0 && (
+          {turns.length === 0 && (
             <div className="flex min-h-48 flex-col items-center justify-center text-center">
               <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted">
                 <Sparkles className="h-5 w-5 text-muted-foreground" />
@@ -573,19 +639,10 @@ export default function AdminCrmAiDialog({
                 Ask anything in plain English — jobs, payments, customers, stats, actions, or screens.
                 No SQL needed; safe read-only lookups answer like a live report.
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-4 h-9"
-                onClick={startOldJobWizard}
-              >
-                <History className="mr-1.5 h-4 w-4" />
-                Log old completed job
-              </Button>
             </div>
           )}
 
-          {!oldJobWizard && turns.map((turn) => (
+          {turns.map((turn) => (
             <div
               key={turn.id}
               className={
@@ -595,7 +652,21 @@ export default function AdminCrmAiDialog({
               }
             >
               {turn.role === 'user' ? (
-                turn.text
+                <div className="space-y-2">
+                  {turn.text ? <p className="whitespace-pre-wrap">{turn.text}</p> : null}
+                  {turn.imageUrls?.length ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {turn.imageUrls.map((url) => (
+                        <img
+                          key={url}
+                          src={url}
+                          alt=""
+                          className="h-16 w-16 rounded-lg object-cover"
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               ) : turn.error ? (
                 <p className="text-red-700">{turn.error}</p>
               ) : (
@@ -845,16 +916,15 @@ export default function AdminCrmAiDialog({
             </div>
           ))}
 
-          {!oldJobWizard && loading && (
+          {loading && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Thinking…
+              {oldJobFlow ? 'Saving…' : 'Thinking…'}
             </div>
           )}
           <div ref={bottomRef} />
         </div>
 
-        {!oldJobWizard ? (
         <div className="border-t bg-background px-4 py-3">
           {attachments.length ? (
             <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
@@ -878,7 +948,7 @@ export default function AdminCrmAiDialog({
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything about your CRM…"
+              placeholder={oldJobPlaceholder(oldJobFlow?.step ?? null)}
               rows={1}
               maxLength={1500}
               autoFocus
@@ -891,16 +961,6 @@ export default function AdminCrmAiDialog({
               }}
             />
             <div className="mt-1 flex items-center justify-between">
-              <div className="flex items-center">
-              <button
-                type="button"
-                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                onClick={startOldJobWizard}
-                aria-label="Log old completed job"
-                title="Log old completed job"
-              >
-                <History className="h-4 w-4" />
-              </button>
               <label className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                 <ImagePlus className="h-4 w-4" />
                 <span className="sr-only">Attach images</span>
@@ -916,12 +976,14 @@ export default function AdminCrmAiDialog({
                   }}
                 />
               </label>
-              </div>
               <Button
                 type="button"
                 size="icon"
                 onClick={() => void send()}
-                disabled={loading || input.trim().length < 2}
+                disabled={
+                  loading ||
+                  (oldJobFlow ? !input.trim() && !attachments.length : input.trim().length < 2)
+                }
                 aria-label="Ask CRM AI"
                 className="h-8 w-8 shrink-0 rounded-full"
               >
@@ -930,7 +992,6 @@ export default function AdminCrmAiDialog({
             </div>
           </div>
         </div>
-        ) : null}
       </DialogContent>
     </Dialog>
   );
