@@ -7,9 +7,8 @@ import android.content.SharedPreferences;
 import android.util.Log;
 
 /**
- * AlarmManager wake-up ~20s after hangup: start the one-shot FGS upload.
- * Exact alarms are an allowed path to startForegroundService when the app is
- * backgrounded / killed.
+ * AlarmManager wake-up after hangup: start the one-shot FGS upload.
+ * First try ~45s; one late retry ~90s if CallLog was still empty.
  */
 public class CallAlertKickReceiver extends BroadcastReceiver {
 

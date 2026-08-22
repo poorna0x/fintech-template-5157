@@ -19,10 +19,10 @@ const BATCH_COOLDOWN_KEY = 'hro_tech_call_batch_at_v1';
 /** Don't hammer on every visibility flicker. */
 const BATCH_COOLDOWN_MS = 90_000;
 /**
- * Native defers ~20s after hangup. Skip fresher rows on catch-up so we don't
- * race the native one-shot (would burn a 2nd invoke for the same call).
+ * Native defers ~45s (late retry ~90s). Skip fresher rows on catch-up so we
+ * don't race the native one-shot (would burn a 2nd invoke for the same call).
  */
-export const NATIVE_DEFER_GRACE_MS = 25_000;
+export const NATIVE_DEFER_GRACE_MS = 100_000;
 
 export type TechCallCatchupItem = {
   number: string;

@@ -19,12 +19,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Customer called the technician → notify admins ~20s after hangup (IDLE).
+ * Customer called the technician → notify admins ~45s after hangup (IDLE).
  *
  * Optimized path (latency OK):
  * - RINGING / OFFHOOK only cache the number locally (no network).
- * - IDLE schedules one AlarmManager delay so CallLog can flush.
- * - Alarm → one CallLog read → one POST → done (no watch / kick storms).
+ * - IDLE schedules AlarmManager so CallLog can flush (retry once ~90s if empty).
+ * - Alarm → CallLog read → one POST → done (no watch / kick storms).
  *
  * Re-call: new RINGING after IDLE → new session + new CallLog DATE → new push.
  * Same call: client claim lock + server (technician_id, call_id) PK.
@@ -191,7 +191,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
             return;
         }
 
-        // One deferred POST ~20s later — CallLog usually ready; no watch spam.
+            // One deferred POST — first try ~45s (CallLog / Truecaller lag).
         Log.i(TAG, "IDLE after inbound — schedule deferred upload for ring " + ringAt);
         prefs.edit().putLong(KEY_PENDING_RING_AT, ringAt).apply();
         CallAlertUploadService.scheduleDeferredUpload(app, ringAt);

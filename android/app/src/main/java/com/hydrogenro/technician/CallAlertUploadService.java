@@ -35,28 +35,39 @@ public class CallAlertUploadService extends Service {
     public static final String EXTRA_MODE = "mode";
     public static final String MODE_ONCE = "once";
 
-    /** Wait after hangup so CallLog is usually ready; one Netlify hit per call. */
-    private static final long DEFER_MS = 20_000L;
+    /**
+     * First try after hangup. Truecaller / OEM CallLog often needs 15–40s;
+     * 20s was too short → empty → give up → only open-app catch-up worked.
+     */
+    private static final long DEFER_MS = 45_000L;
+    /** Second try from hangup if the first still had no number (still ≤1 POST). */
+    private static final long LATE_RETRY_MS = 90_000L;
+    /** Prefs: ringAt already got its late CallLog retry scheduled. */
+    static final String KEY_LATE_RETRY_RING = "late_retry_ring";
 
     /**
-     * Schedule the single deferred upload for this ring session.
+     * Schedule the deferred upload for this ring session (first try @ 45s).
      * Replaces any prior alarm for the same ring.
      */
     public static void scheduleDeferredUpload(Context context, long ringAt) {
+        scheduleDeferredUpload(context, ringAt, DEFER_MS);
+    }
+
+    public static void scheduleDeferredUpload(Context context, long ringAt, long delayMs) {
         if (ringAt <= 0) return;
+        if (delayMs < 1_000L) delayMs = DEFER_MS;
         Context app = context.getApplicationContext();
         persistPending(app, ringAt);
         cancelKicks(app, ringAt, false);
 
         AlarmManager am = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
         if (am == null) {
-            // No AlarmManager — best-effort immediate one-shot.
             startOneShot(app, ringAt);
             return;
         }
 
         PendingIntent pi = kickPending(app, ringAt);
-        long trigger = SystemClock.elapsedRealtime() + DEFER_MS;
+        long trigger = SystemClock.elapsedRealtime() + delayMs;
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 if (Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms()) {
@@ -71,7 +82,7 @@ public class CallAlertUploadService extends Service {
             } else {
                 am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, trigger, pi);
             }
-            Log.i(TAG, "Deferred upload in " + DEFER_MS + "ms for ring " + ringAt);
+            Log.i(TAG, "Deferred upload in " + delayMs + "ms for ring " + ringAt);
         } catch (Exception e) {
             Log.w(TAG, "scheduleDeferred failed: " + e.getMessage());
             try {
@@ -80,6 +91,29 @@ public class CallAlertUploadService extends Service {
                 startOneShot(app, ringAt);
             }
         }
+    }
+
+    /**
+     * CallLog still empty after first try — one more alarm (~90s after hangup).
+     * Does not POST until a number exists (no extra Netlify burn).
+     */
+    public static void scheduleLateRetryIfNeeded(Context context, long ringAt) {
+        if (ringAt <= 0) return;
+        Context app = context.getApplicationContext();
+        SharedPreferences prefs =
+            app.getSharedPreferences(CallAlertReceiver.PREFS, Context.MODE_PRIVATE);
+        if (prefs.getLong(CallAlertReceiver.KEY_ALERTED_RING_AT, 0L) == ringAt) return;
+        if (prefs.getLong(CallAlertReceiver.KEY_POST_ATTEMPTED_RING, 0L) == ringAt) return;
+        if (prefs.getLong(KEY_LATE_RETRY_RING, 0L) == ringAt) {
+            Log.i(TAG, "Late retry already used — giving up ring " + ringAt);
+            CallAlertReceiver.markGaveUp(app, ringAt);
+            return;
+        }
+        prefs.edit().putLong(KEY_LATE_RETRY_RING, ringAt).commit();
+        // Another ~45s from now (hangup+45 + 45 ≈ hangup+90).
+        long delay = Math.max(30_000L, LATE_RETRY_MS - DEFER_MS);
+        Log.i(TAG, "CallLog empty — late retry in " + delay + "ms for ring " + ringAt);
+        scheduleDeferredUpload(app, ringAt, delay);
     }
 
     /** Alarm / fallback entry: run CallLog + POST once via short FGS. */
@@ -198,7 +232,8 @@ public class CallAlertUploadService extends Service {
                     Log.i(TAG, "One-shot finalize for ring " + ringAt);
                     // Prefer CallLog; allow session-cached number if CallLog still empty.
                     if (!CallAlertReceiver.finalizeAndUpload(app, ringAt, true)) {
-                        CallAlertReceiver.markGaveUp(app, ringAt);
+                        // Don't give up on first empty — Truecaller often writes later.
+                        scheduleLateRetryIfNeeded(app, ringAt);
                     }
                 } finally {
                     stopClean(id);
