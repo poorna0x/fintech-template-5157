@@ -7597,15 +7597,8 @@ const AdminDashboard = () => {
           });
           if (auto) setIncomingAutoSearch(auto);
           closeAdminTool();
-          navigate(
-            adminDashboardLocation(
-              buildAdminDashboardSearch(
-                { clearModal: true, clearView: true, search: row.phone },
-                location.search
-              )
-            ),
-            { replace: true }
-          );
+          // Search the customer by phone (same as tapping the call push).
+          void runCustomerSearch(row.phone);
         }}
         onClearTechCalls={() => {
           void import('@/lib/adminRecentTechCallAlerts').then(async ({

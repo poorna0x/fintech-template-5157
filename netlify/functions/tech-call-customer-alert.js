@@ -96,7 +96,10 @@ async function processOneAlert(db, opts) {
     if (!callId) {
       callId = callAt > 0 ? `${phone}:${callAt}` : `${phone}:t${Math.floor(Date.now() / 20_000)}`;
     }
-    const sinceIso = new Date(Date.now() - 45_000).toISOString();
+    // Live path: 45s phone window. Catch-up (open app): 24h — stops a second
+    // admin push when CallLog dateMs ≠ native callId after the tech opens the app.
+    const lookbackMs = catchup ? 24 * 60 * 60 * 1000 : 45_000;
+    const sinceIso = new Date(Date.now() - lookbackMs).toISOString();
     const { data: recentSamePhone } = await db
       .from('tech_call_alert_events')
       .select('call_id')

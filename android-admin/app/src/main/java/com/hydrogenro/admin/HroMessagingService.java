@@ -49,8 +49,12 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         if ("tech_call".equals(data.get("type")) || "wrong_line_call".equals(data.get("type"))) {
             // Save caller number even when admin APK is closed/killed (data-only FCM).
             TechCallAlertStore.remember(getApplicationContext(), data);
+            // Always show our tray once. Do NOT call super when background/killed —
+            // Capacitor can post a second notification for data messages.
             ForegroundPushNotifier.showIfPresent(getApplicationContext(), remoteMessage);
-            super.onMessageReceived(remoteMessage);
+            if (MainActivity.isInForeground()) {
+                super.onMessageReceived(remoteMessage);
+            }
             return;
         }
         if ("whatsapp_tray_clear".equals(data.get("type"))) {
