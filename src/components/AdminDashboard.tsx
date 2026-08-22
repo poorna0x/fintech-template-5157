@@ -7584,21 +7584,16 @@ const AdminDashboard = () => {
         unknownCaller={unknownCallerChip}
         recentTechCalls={recentTechCallAlerts}
         onOpenTechCall={(row) => {
-          const kind =
-            row.kind === 'missed_call' || row.kind === 'wrong_line_call'
-              ? row.kind
-              : 'tech_call';
-          const auto = markIncomingAutoSearch(row.phone, {
-            kind,
-            techName: row.techName,
-            fromNumber: row.fromNumber,
-            companyPhone: row.companyPhone,
-            customerId: row.customerId,
-          });
-          if (auto) setIncomingAutoSearch(auto);
+          // Manual Recent Accounts tap: search + load customer — no call banner.
+          clearIncomingAutoSearch();
+          setIncomingAutoSearch(null);
+          setHighlightJobId(null);
           closeAdminTool();
-          // Search the customer by phone (same as tapping the call push).
-          void runCustomerSearch(row.phone);
+          void runCustomerSearch(row.phone).then(() => {
+            requestAnimationFrame(() => {
+              scrollVisibleAdminSearchIntoView();
+            });
+          });
         }}
         onClearTechCalls={() => {
           void import('@/lib/adminRecentTechCallAlerts').then(async ({

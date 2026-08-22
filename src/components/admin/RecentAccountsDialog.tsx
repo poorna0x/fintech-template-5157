@@ -95,8 +95,9 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
         <DialogHeader>
           <DialogTitle>Recent Accounts</DialogTitle>
           <DialogDescription>
-            Customer call alerts on this phone, and accounts created today (
-            {new Date().toLocaleDateString()})
+            {callRows.length > 0
+              ? `Customer call alerts and accounts created today (${new Date().toLocaleDateString()})`
+              : `Accounts created today (${new Date().toLocaleDateString()})`}
           </DialogDescription>
         </DialogHeader>
 
@@ -145,34 +146,29 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
             </div>
           ) : null}
 
-          <section className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-foreground">Customer call alerts</h3>
-                <p className="text-xs text-muted-foreground">
-                  Saved on this device when a tech-call push arrives (last 24 hours)
-                </p>
+          {callRows.length > 0 ? (
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-foreground">Customer call alerts</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Saved on this device (last 24 hours) · Tap a row to search
+                  </p>
+                </div>
+                {onClearTechCalls ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 shrink-0 text-muted-foreground"
+                    onClick={onClearTechCalls}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" />
+                    Clear
+                  </Button>
+                ) : null}
               </div>
-              {callRows.length > 0 && onClearTechCalls ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 shrink-0 text-muted-foreground"
-                  onClick={onClearTechCalls}
-                >
-                  <Trash2 className="h-3.5 w-3.5 mr-1" />
-                  Clear
-                </Button>
-              ) : null}
-            </div>
 
-            {callRows.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-2">
-                No call alerts stored yet. When a technician gets a customer call, it will show
-                here — tap a row to search that customer.
-              </p>
-            ) : (
               <div className="space-y-2">
                 {callRows.map((row) => {
                   const { title, badge } = techCallLabel(row);
@@ -220,7 +216,6 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
                           </p>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             {formatWhen(row.at)}
-                            {searchable ? ' · Tap to search' : ''}
                           </p>
                         </div>
                       </div>
@@ -228,8 +223,8 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
                   );
                 })}
               </div>
-            )}
-          </section>
+            </section>
+          ) : null}
 
           <section className="space-y-2">
             <h3 className="text-sm font-semibold text-foreground">Created today</h3>

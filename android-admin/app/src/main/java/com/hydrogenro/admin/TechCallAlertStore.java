@@ -9,8 +9,8 @@ import java.util.Map;
 
 /**
  * Persist tech-call FCM alerts on-device when the push arrives (app can be
- * killed). Recent Accounts reads this via {@link DevicePrefsPlugin}.
- * Retention: 24 hours.
+ * killed; tray does not need to be opened). Recent Accounts reads this via
+ * {@link DevicePrefsPlugin}. Retention: 24 hours. One row per phone (newest).
  */
 final class TechCallAlertStore {
 
@@ -52,23 +52,14 @@ final class TechCallAlertStore {
             JSONArray arr = readArray(context);
             JSONArray out = new JSONArray();
             out.put(next);
-            String callId = str(data.get("callId"));
             long now = System.currentTimeMillis();
             for (int i = 0; i < arr.length() && out.length() < MAX; i++) {
                 JSONObject row = arr.optJSONObject(i);
                 if (row == null) continue;
                 long at = row.optLong("at", 0L);
                 if (at <= 0 || now - at > TTL_MS) continue;
-                String rowCallId = row.optString("callId", "");
-                if (!callId.isEmpty() && callId.equals(rowCallId)) continue;
-                if (
-                    callId.isEmpty()
-                        && phone.equals(row.optString("phone", ""))
-                        && kind.equals(row.optString("kind", ""))
-                        && Math.abs(at - now) < 2 * 60_000L
-                ) {
-                    continue;
-                }
+                // Drop older rows for the same phone (keep newest only).
+                if (phone.equals(row.optString("phone", ""))) continue;
                 out.put(row);
             }
             prefs(context).edit().putString(KEY, out.toString()).apply();
@@ -81,16 +72,33 @@ final class TechCallAlertStore {
     static String listJson(Context context) {
         try {
             JSONArray arr = readArray(context);
+            // Collapse any legacy duplicates (same phone) → newest only.
             JSONArray out = new JSONArray();
+            java.util.LinkedHashMap<String, JSONObject> byPhone =
+                new java.util.LinkedHashMap<>();
             long now = System.currentTimeMillis();
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject row = arr.optJSONObject(i);
                 if (row == null) continue;
                 long at = row.optLong("at", 0L);
                 if (at <= 0 || now - at > TTL_MS) continue;
+                String phone = row.optString("phone", "");
+                if (phone.length() < 10) continue;
+                JSONObject prev = byPhone.get(phone);
+                if (prev == null || at > prev.optLong("at", 0L)) {
+                    byPhone.put(phone, row);
+                }
+            }
+            java.util.List<JSONObject> sorted = new java.util.ArrayList<>(byPhone.values());
+            java.util.Collections.sort(
+                sorted,
+                (a, b) -> Long.compare(b.optLong("at", 0L), a.optLong("at", 0L))
+            );
+            for (JSONObject row : sorted) {
+                if (out.length() >= MAX) break;
                 out.put(row);
             }
-            if (out.length() != arr.length()) {
+            if (!out.toString().equals(arr.toString())) {
                 prefs(context).edit().putString(KEY, out.toString()).apply();
             }
             return out.toString();

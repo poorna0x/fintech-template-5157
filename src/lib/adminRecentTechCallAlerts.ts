@@ -78,11 +78,10 @@ function mergeLists(
   a: AdminRecentTechCall[],
   b: AdminRecentTechCall[]
 ): AdminRecentTechCall[] {
+  // One row per phone — keep the newest alert (10 calls → 1 recent entry).
   const map = new Map<string, AdminRecentTechCall>();
-  const keyOf = (r: AdminRecentTechCall) =>
-    r.callId || `${r.kind}:${r.phone}:${Math.floor(r.at / 60_000)}`;
   for (const row of [...a, ...b]) {
-    const k = keyOf(row);
+    const k = row.phone;
     const prev = map.get(k);
     if (!prev || row.at > prev.at) map.set(k, row);
   }
@@ -118,6 +117,7 @@ export function listAdminRecentTechCallsSync(): AdminRecentTechCall[] {
 
 /**
  * Persist from JS push path (foreground receive / notification tap).
+ * Native APK also saves on FCM receive even if the tray is never opened.
  */
 export function rememberAdminTechCallFromPush(
   raw: Record<string, unknown> | null | undefined
