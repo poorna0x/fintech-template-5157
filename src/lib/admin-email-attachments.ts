@@ -132,13 +132,32 @@ export function guessEmailAttachmentContentType(filename: string, mimeHint = '')
   return 'application/octet-stream';
 }
 
+function isSafeDocumentMime(mimeHint: string): boolean {
+  const mime = (mimeHint || '').trim().toLowerCase().split(';')[0];
+  if (!mime || mime === 'application/octet-stream') return false;
+  if (mime.startsWith('image/')) return true;
+  if (mime.startsWith('text/')) return true;
+  if (mime === 'application/pdf') return true;
+  if (mime.startsWith('application/msword')) return true;
+  if (mime.startsWith('application/vnd.ms-')) return true;
+  if (mime.startsWith('application/vnd.openxmlformats-officedocument.')) return true;
+  if (mime.startsWith('application/vnd.oasis.opendocument.')) return true;
+  if (mime.startsWith('application/vnd.apple.')) return true;
+  if (mime === 'application/rtf' || mime === 'text/rtf') return true;
+  if (mime === 'application/zip' || mime === 'application/x-zip-compressed') return true;
+  if (mime === 'application/json' || mime === 'application/xml' || mime === 'text/xml') return true;
+  if (mime === 'message/rfc822') return true;
+  if (mime === 'application/epub+zip') return true;
+  return Object.values(MIME_BY_EXT).includes(mime);
+}
+
 export function isAllowedEmailAttachment(file: File): boolean {
   const name = String(file?.name || '').trim();
   if (!name || name.startsWith('.')) return false;
   const ext = fileExtension(name);
-  if (!ext) return false;
-  if (BLOCKED_EXT.has(ext)) return false;
-  return true;
+  if (ext && BLOCKED_EXT.has(ext)) return false;
+  if (ext) return true;
+  return isSafeDocumentMime(file.type || '');
 }
 
 export function formatAttachmentSize(bytes: number): string {
