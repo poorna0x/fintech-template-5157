@@ -8060,6 +8060,9 @@ const AdminDashboard = () => {
           void handleAiOpenJob(draft);
         }}
         onOpenCustomerComposer={handleAiOpenCustomerComposer}
+        onOldCompletedJobSaved={({ customerId }) => {
+          setCustomerPriorServiceStatus((prev) => ({ ...prev, [customerId]: true }));
+        }}
       />
 
       <WarrantyManagementDialog

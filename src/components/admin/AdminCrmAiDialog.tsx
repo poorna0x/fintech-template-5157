@@ -16,6 +16,7 @@ import {
   CalendarClock,
   ImagePlus,
   FileText,
+  History,
   Loader2,
   Mail,
   MessageSquare,
@@ -56,6 +57,8 @@ import {
 import { sendPayQrWhatsApp } from '@/lib/whatsappPayQrShare';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { toast } from 'sonner';
+import AiCrmOldCompletedJobWizard from '@/components/admin/AiCrmOldCompletedJobWizard';
+import { isOldCompletedJobRequest } from '@/lib/parseFlexibleDate';
 
 type ChatTurn = {
   id: string;
@@ -79,6 +82,7 @@ type AdminCrmAiDialogProps = {
   onOpenDocumentDraft: (draft: AiCrmOpenDocumentDraft) => void;
   onOpenJob: (draft: AiCrmOpenJobDraft) => void;
   onOpenCustomerComposer: (draft: AiCrmOpenCustomerComposer) => void;
+  onOldCompletedJobSaved?: (payload: { customerId: string; jobId: string }) => void;
 };
 
 function formatInr(amount: number | null | undefined) {
@@ -223,10 +227,12 @@ export default function AdminCrmAiDialog({
   onOpenDocumentDraft,
   onOpenJob,
   onOpenCustomerComposer,
+  onOldCompletedJobSaved,
 }: AdminCrmAiDialogProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const [oldJobWizard, setOldJobWizard] = useState(false);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [expandedDetails, setExpandedDetails] = useState<Set<string>>(() => new Set());
   const [attachments, setAttachments] = useState<Array<{ file: File; previewUrl: string }>>([]);
@@ -248,6 +254,7 @@ export default function AdminCrmAiDialog({
       setInput('');
       setLoading(false);
       setActionBusy(false);
+      setOldJobWizard(false);
       setExpandedDetails(new Set());
       setAttachments((current) => {
         current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
@@ -261,6 +268,7 @@ export default function AdminCrmAiDialog({
   }, [open, turns, loading, focusComposer]);
 
   const routeTypingToComposer = (event: React.KeyboardEvent) => {
+    if (oldJobWizard) return;
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
     if (isTypingField(event.target)) return;
     const key = event.key;
@@ -284,9 +292,24 @@ export default function AdminCrmAiDialog({
     focusComposer();
   };
 
+  const startOldJobWizard = () => {
+    setOldJobWizard(true);
+    setInput('');
+  };
+
   const send = async () => {
     const message = input.trim();
-    if (message.length < 2 || loading) return;
+    if (message.length < 2 || loading || oldJobWizard) return;
+
+    if (isOldCompletedJobRequest(message)) {
+      setTurns((prev) => [
+        ...prev,
+        { id: `u-${Date.now()}`, role: 'user', text: message },
+      ]);
+      setInput('');
+      startOldJobWizard();
+      return;
+    }
 
     const userTurn: ChatTurn = {
       id: `u-${Date.now()}`,
@@ -522,7 +545,25 @@ export default function AdminCrmAiDialog({
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-          {turns.length === 0 && (
+          {oldJobWizard ? (
+            <AiCrmOldCompletedJobWizard
+              onCancel={() => setOldJobWizard(false)}
+              onFinished={(result) => {
+                setOldJobWizard(false);
+                onOldCompletedJobSaved?.({ customerId: result.customerId, jobId: result.jobId });
+                setTurns((prev) => [
+                  ...prev,
+                  {
+                    id: `a-${Date.now()}`,
+                    role: 'assistant',
+                    text: `Logged old completed job ${result.jobNumber} for ${result.customerName} on ${result.dateLabel}.`,
+                  },
+                ]);
+              }}
+            />
+          ) : null}
+
+          {!oldJobWizard && turns.length === 0 && (
             <div className="flex min-h-48 flex-col items-center justify-center text-center">
               <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted">
                 <Sparkles className="h-5 w-5 text-muted-foreground" />
@@ -532,10 +573,19 @@ export default function AdminCrmAiDialog({
                 Ask anything in plain English — jobs, payments, customers, stats, actions, or screens.
                 No SQL needed; safe read-only lookups answer like a live report.
               </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-4 h-9"
+                onClick={startOldJobWizard}
+              >
+                <History className="mr-1.5 h-4 w-4" />
+                Log old completed job
+              </Button>
             </div>
           )}
 
-          {turns.map((turn) => (
+          {!oldJobWizard && turns.map((turn) => (
             <div
               key={turn.id}
               className={
@@ -795,7 +845,7 @@ export default function AdminCrmAiDialog({
             </div>
           ))}
 
-          {loading && (
+          {!oldJobWizard && loading && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               Thinking…
@@ -804,6 +854,7 @@ export default function AdminCrmAiDialog({
           <div ref={bottomRef} />
         </div>
 
+        {!oldJobWizard ? (
         <div className="border-t bg-background px-4 py-3">
           {attachments.length ? (
             <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
@@ -840,6 +891,16 @@ export default function AdminCrmAiDialog({
               }}
             />
             <div className="mt-1 flex items-center justify-between">
+              <div className="flex items-center">
+              <button
+                type="button"
+                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={startOldJobWizard}
+                aria-label="Log old completed job"
+                title="Log old completed job"
+              >
+                <History className="h-4 w-4" />
+              </button>
               <label className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                 <ImagePlus className="h-4 w-4" />
                 <span className="sr-only">Attach images</span>
@@ -855,6 +916,7 @@ export default function AdminCrmAiDialog({
                   }}
                 />
               </label>
+              </div>
               <Button
                 type="button"
                 size="icon"
@@ -868,6 +930,7 @@ export default function AdminCrmAiDialog({
             </div>
           </div>
         </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );
