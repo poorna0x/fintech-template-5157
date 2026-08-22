@@ -19,13 +19,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Customer called the technician → notify admins after the call ends (IDLE).
+ * Customer called the technician → notify admins ~20s after hangup (IDLE).
  *
- * Why hangup-first:
- * - Dialers (Truecaller / Samsung / Google) often hide EXTRA_INCOMING_NUMBER
- *   mid-ring, but always write CallLog when the call finishes.
- * - Waiting until IDLE avoids racing RINGING + OFFHOOK + FGS + JS backup
- *   (the usual source of duplicate admin pushes).
+ * Optimized path (latency OK):
+ * - RINGING / OFFHOOK only cache the number locally (no network).
+ * - IDLE schedules one AlarmManager delay so CallLog can flush.
+ * - Alarm → one CallLog read → one POST → done (no watch / kick storms).
  *
  * Re-call: new RINGING after IDLE → new session + new CallLog DATE → new push.
  * Same call: client claim lock + server (technician_id, call_id) PK.
@@ -43,9 +42,13 @@ public class CallAlertReceiver extends BroadcastReceiver {
     static final String KEY_ALERTED_RING_AT = "alerted_ring_at";
     static final String KEY_PENDING_RING_AT = "pending_ring_at";
     static final String KEY_PENDING_NUMBER = "pending_number";
+    /** Ring session that owns {@link #KEY_PENDING_NUMBER} — avoids cross-call mixups. */
+    static final String KEY_SESSION_NUMBER_RING = "session_number_ring";
+    /** RingAt values (as strings) for inbound calls that reached OFFHOOK. */
+    private static final String KEY_ANSWERED_RINGS = "answered_rings";
     static final String KEY_ALERTED_CALL_ID = "alerted_call_id";
     static final String KEY_CLAIMED_CALL_ID = "claimed_call_id";
-    /** Ring session that already POSTed once — watch loop must not POST every 400ms. */
+    /** Ring session that already POSTed once — never POST again for this ring. */
     static final String KEY_POST_ATTEMPTED_RING = "post_attempted_ring";
     private static final String KEY_IN_CALL = "in_call";
     private static final String KEY_HAD_INCOMING_RING = "had_incoming_ring";
@@ -115,11 +118,13 @@ public class CallAlertReceiver extends BroadcastReceiver {
             if (number != null && !number.trim().isEmpty()) {
                 String cleaned = number.trim();
                 ed.putString(KEY_PENDING_NUMBER, cleaned)
+                    .putLong(KEY_SESSION_NUMBER_RING, ringAt)
                     .putString(KEY_LAST_NUMBER, cleaned)
                     .putLong(KEY_LAST_AT, now)
                     .remove(KEY_CONSUMED_AT);
                 Log.i(TAG, "RINGING — cached number, wait for hangup");
             } else {
+                ed.putLong(KEY_SESSION_NUMBER_RING, ringAt);
                 Log.i(TAG, "RINGING — no EXTRA yet, will use CallLog after hangup");
             }
             ed.apply();
@@ -129,21 +134,24 @@ public class CallAlertReceiver extends BroadcastReceiver {
 
         if (TelephonyManager.EXTRA_STATE_OFFHOOK.equals(state)) {
             SharedPreferences.Editor offhookEditor = prefs.edit().putBoolean(KEY_IN_CALL, true);
+            long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
             if (prefs.getBoolean(KEY_HAD_INCOMING_RING, false)) {
                 offhookEditor.putBoolean(KEY_INCOMING_ANSWERED, true);
+                if (ringAt > 0) rememberAnswered(offhookEditor, prefs, ringAt);
             }
             offhookEditor.apply();
             // While connected, keep trying to learn the number (Truecaller lag).
             if (prefs.getBoolean(KEY_HAD_INCOMING_RING, false)) {
-                long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
                 String existing = prefs.getString(KEY_PENDING_NUMBER, null);
-                if ((existing == null || existing.isEmpty()) && ringAt > 0) {
+                boolean sameSession = prefs.getLong(KEY_SESSION_NUMBER_RING, 0L) == ringAt;
+                if ((!sameSession || existing == null || existing.isEmpty()) && ringAt > 0) {
                     CallLogHelper.Entry early =
                         CallLogHelper.bestIncomingForSession(app, ringAt, ringAt - 30_000L);
                     if (early != null && early.number != null && !early.number.isEmpty()) {
                         prefs
                             .edit()
                             .putString(KEY_PENDING_NUMBER, early.number)
+                            .putLong(KEY_SESSION_NUMBER_RING, ringAt)
                             .putString(KEY_LAST_NUMBER, early.number)
                             .putLong(KEY_LAST_AT, System.currentTimeMillis())
                             .putLong(RecentCallPlugin.KEY_LAST_CALLLOG_DATE, early.dateMs)
@@ -178,28 +186,15 @@ public class CallAlertReceiver extends BroadcastReceiver {
             prefs.edit().remove(KEY_RING_SEEN_AT).apply();
             return;
         }
+        if (prefs.getLong(KEY_POST_ATTEMPTED_RING, 0L) == ringAt) {
+            CallAlertUploadService.cancelKicks(app, ringAt);
+            return;
+        }
 
-        Log.i(TAG, "IDLE after inbound — finalize alert for ring " + ringAt);
-        final long session = ringAt;
-        final PendingResult pending = goAsync();
-        new Thread(() -> {
-            try {
-                // Brief pause so OEMs / Truecaller flush CallLog after hangup.
-                try {
-                    Thread.sleep(1_200);
-                } catch (InterruptedException ignored) {
-                    /* continue */
-                }
-                if (!finalizeAndUpload(app, session)) {
-                    // CallLog not ready yet — FGS + kicks will finish once.
-                    CallAlertUploadService.startWatch(app, session);
-                }
-            } catch (Throwable t) {
-                Log.w(TAG, "IDLE finalize failed", t);
-            } finally {
-                pending.finish();
-            }
-        }).start();
+        // One deferred POST ~20s later — CallLog usually ready; no watch spam.
+        Log.i(TAG, "IDLE after inbound — schedule deferred upload for ring " + ringAt);
+        prefs.edit().putLong(KEY_PENDING_RING_AT, ringAt).apply();
+        CallAlertUploadService.scheduleDeferredUpload(app, ringAt);
     }
 
     /**
@@ -223,13 +218,13 @@ public class CallAlertReceiver extends BroadcastReceiver {
         }
 
         // Prefer CallLog DATE so callId = phone:dateMs (matches JS backup).
-        // Truecaller often blanks EXTRA and writes CallLog late — keep waiting
-        // unless allowPendingFallback (RINGING cache / last resort).
+        // Truecaller often blanks EXTRA and writes CallLog late — use session-scoped
+        // RINGING cache only when it still belongs to this ringAt.
         CallLogHelper.Entry log =
             CallLogHelper.bestIncomingForSession(context, ringAt, ringAt - 3 * 60_000L);
         String number = null;
         long callAt = ringAt;
-        boolean missed = !prefs.getBoolean(KEY_INCOMING_ANSWERED, false);
+        boolean missed = !wasAnswered(prefs, ringAt);
         if (log != null && log.number != null && !log.number.trim().isEmpty()) {
             number = log.number.trim();
             callAt = log.dateMs > 0 ? log.dateMs : ringAt;
@@ -237,18 +232,13 @@ public class CallAlertReceiver extends BroadcastReceiver {
                 log.type != CallLog.Calls.INCOMING_TYPE &&
                 log.type != 7; // ANSWERED_EXTERNALLY_TYPE on newer Android
         } else if (allowPendingFallback) {
-            number = prefs.getString(KEY_PENDING_NUMBER, null);
-            if (number == null || number.trim().isEmpty()) {
-                // Only reuse LAST_NUMBER if it was cached during this ring session.
-                long lastAt = prefs.getLong(KEY_LAST_AT, 0L);
-                if (lastAt >= ringAt - 5_000L && lastAt <= System.currentTimeMillis() + 5_000L) {
-                    number = prefs.getString(KEY_LAST_NUMBER, null);
-                }
+            if (prefs.getLong(KEY_SESSION_NUMBER_RING, 0L) == ringAt) {
+                number = prefs.getString(KEY_PENDING_NUMBER, null);
             }
             if (number != null) number = number.trim();
             callAt = ringAt;
             if (number != null && !number.isEmpty()) {
-                Log.w(TAG, "Finalize — using RINGING/pending number (no CallLog yet)");
+                Log.w(TAG, "Finalize — using session-cached number (no CallLog yet)");
             }
         } else {
             Log.i(TAG, "Finalize — waiting CallLog for stable callId");
@@ -262,6 +252,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
         prefs
             .edit()
             .putString(KEY_PENDING_NUMBER, number)
+            .putLong(KEY_SESSION_NUMBER_RING, ringAt)
             .putString(KEY_LAST_NUMBER, number)
             .putLong(KEY_LAST_AT, System.currentTimeMillis())
             .putLong(RecentCallPlugin.KEY_LAST_CALLLOG_DATE, callAt)
@@ -357,8 +348,15 @@ public class CallAlertReceiver extends BroadcastReceiver {
         }
 
         if (token == null || token.length() < 20) {
-            Log.w(TAG, "No FCM token — upload aborted");
+            Log.w(TAG, "No FCM token — upload aborted (JS backup may still notify)");
             clearClaim(context, callId);
+            // Don't mark alerted — leave room for JWT/JS backup when app opens.
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putLong(KEY_POST_ATTEMPTED_RING, ringAt)
+                .apply();
+            CallAlertUploadService.cancelKicks(context, ringAt);
             return;
         }
 
@@ -389,13 +387,13 @@ public class CallAlertReceiver extends BroadcastReceiver {
             }
         }
 
-        // 503 no_tokens / 5xx — keep claim cleared so kicks can retry.
-        if (code >= 200 && code < 300) {
-            markAlerted(context, ringAt, callId);
-            Log.i(TAG, "Alert upload OK");
+        // Single-shot path: any outcome is terminal for this ring (no retry storm).
+        // 2xx / 429 → mark alerted. Network / 5xx → still mark so we never re-POST.
+        markAlerted(context, ringAt, callId);
+        if ((code >= 200 && code < 300) || code == 429) {
+            Log.i(TAG, "Alert upload done code=" + code);
         } else {
-            clearClaim(context, callId);
-            Log.w(TAG, "Alert upload failed code=" + code);
+            Log.w(TAG, "Alert upload failed code=" + code + " (no retry)");
         }
     }
 
@@ -408,19 +406,78 @@ public class CallAlertReceiver extends BroadcastReceiver {
         }
     }
 
+    private static void rememberAnswered(
+        SharedPreferences.Editor editor,
+        SharedPreferences prefs,
+        long ringAt
+    ) {
+        java.util.Set<String> next = new java.util.HashSet<>(
+            prefs.getStringSet(KEY_ANSWERED_RINGS, java.util.Collections.emptySet())
+        );
+        next.add(String.valueOf(ringAt));
+        if (next.size() > 40) {
+            // Drop oldest-looking ids (lexicographic ≈ chronological for epoch ms).
+            java.util.List<String> sorted = new java.util.ArrayList<>(next);
+            java.util.Collections.sort(sorted);
+            next = new java.util.HashSet<>(sorted.subList(sorted.size() - 30, sorted.size()));
+        }
+        editor.putStringSet(KEY_ANSWERED_RINGS, next);
+    }
+
+    private static boolean wasAnswered(SharedPreferences prefs, long ringAt) {
+        if (ringAt <= 0) return false;
+        return prefs
+            .getStringSet(KEY_ANSWERED_RINGS, java.util.Collections.emptySet())
+            .contains(String.valueOf(ringAt));
+    }
+
+    private static void forgetAnswered(SharedPreferences.Editor editor, SharedPreferences prefs, long ringAt) {
+        java.util.Set<String> next = new java.util.HashSet<>(
+            prefs.getStringSet(KEY_ANSWERED_RINGS, java.util.Collections.emptySet())
+        );
+        if (next.remove(String.valueOf(ringAt))) {
+            editor.putStringSet(KEY_ANSWERED_RINGS, next);
+        }
+    }
+
     private static void markAlerted(Context context, long ringAt, String callId) {
         synchronized (UPLOAD_LOCK) {
-            context
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putLong(KEY_ALERTED_RING_AT, ringAt)
-                .putString(KEY_ALERTED_CALL_ID, callId != null ? callId : "")
-                .remove(KEY_CLAIMED_CALL_ID)
-                .remove(KEY_RING_SEEN_AT)
-                .remove(KEY_INCOMING_ANSWERED)
-                .commit();
+            SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            SharedPreferences.Editor ed =
+                prefs
+                    .edit()
+                    .putLong(KEY_ALERTED_RING_AT, ringAt)
+                    .putString(KEY_ALERTED_CALL_ID, callId != null ? callId : "")
+                    .remove(KEY_CLAIMED_CALL_ID)
+                    .remove(KEY_RING_SEEN_AT)
+                    .remove(KEY_INCOMING_ANSWERED)
+                    .putLong(KEY_POST_ATTEMPTED_RING, ringAt);
+            forgetAnswered(ed, prefs, ringAt);
+            ed.commit();
         }
         CallAlertUploadService.cancelKicks(context, ringAt);
+    }
+
+    /** Mark ring finished with no usable number (no further native attempts). */
+    static void markGaveUp(Context context, long ringAt) {
+        if (ringAt <= 0) return;
+        synchronized (UPLOAD_LOCK) {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            if (prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt) {
+                CallAlertUploadService.cancelKicks(context, ringAt);
+                return;
+            }
+            SharedPreferences.Editor ed =
+                prefs
+                    .edit()
+                    .putLong(KEY_ALERTED_RING_AT, ringAt)
+                    .putLong(KEY_POST_ATTEMPTED_RING, ringAt)
+                    .remove(KEY_CLAIMED_CALL_ID);
+            forgetAnswered(ed, prefs, ringAt);
+            ed.commit();
+        }
+        CallAlertUploadService.cancelKicks(context, ringAt);
+        Log.w(TAG, "Gave up — no number for ring " + ringAt);
     }
 
     private static String normalize10(String raw) {

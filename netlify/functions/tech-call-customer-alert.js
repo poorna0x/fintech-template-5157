@@ -17,7 +17,7 @@ const {
   getAdminFcmTokens,
   pruneAdminFcmTokens,
 } = require('./fcm-helper');
-const { checkRateLimit, checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
+const { checkRateLimit, checkRateLimitForKey } = require('./rate-limiter');
 const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
 
@@ -59,7 +59,15 @@ exports.handler = async (event) => {
     windowMs: 3_600_000,
     endpoint: 'tech-call-alert-ip',
   });
-  if (!ipLimit.allowed) return rateLimitResponseForKey(ipLimit);
+  // Soft 200 (not 429): native APK treats 2xx as done and cancels kick retries.
+  // A 429 clears the claim and the old kick loop re-POSTs → more invocations.
+  if (!ipLimit.allowed) {
+    return {
+      statusCode: 200,
+      headers: HEADERS,
+      body: JSON.stringify({ found: false, reason: 'throttled' }),
+    };
+  }
 
   let body = {};
   try {
@@ -130,7 +138,13 @@ exports.handler = async (event) => {
       windowMs: 3_600_000,
       endpoint: 'tech-call-alert-token',
     });
-    if (!tokenLimit.allowed) return rateLimitResponseForKey(tokenLimit);
+    if (!tokenLimit.allowed) {
+      return {
+        statusCode: 200,
+        headers: HEADERS,
+        body: JSON.stringify({ found: false, reason: 'throttled' }),
+      };
+    }
 
     const { data: tokenRow } = await db
       .from('technician_push_tokens')

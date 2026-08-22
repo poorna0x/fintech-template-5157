@@ -7,9 +7,9 @@ import android.content.SharedPreferences;
 import android.util.Log;
 
 /**
- * AlarmManager wake-up: Android 12+ often blocks {@code startForegroundService}
- * from a background process, but an alarm PendingIntent is an allowed path to
- * start a short foreground service and finish the call-alert upload.
+ * AlarmManager wake-up ~20s after hangup: start the one-shot FGS upload.
+ * Exact alarms are an allowed path to startForegroundService when the app is
+ * backgrounded / killed.
  */
 public class CallAlertKickReceiver extends BroadcastReceiver {
 
@@ -36,12 +36,16 @@ public class CallAlertKickReceiver extends BroadcastReceiver {
                 CallAlertUploadService.cancelKicks(app, ringAt);
                 return;
             }
+            if (prefs.getLong(CallAlertReceiver.KEY_POST_ATTEMPTED_RING, 0L) == ringAt) {
+                Log.i(TAG, "Skip — already POSTed ring " + ringAt);
+                CallAlertUploadService.cancelKicks(app, ringAt);
+                return;
+            }
 
-            Log.i(TAG, "Alarm kick for ring " + ringAt);
-            // One POST per kick — do not restart the 400ms watch (that re-spammed Netlify).
-            CallAlertReceiver.finalizeAndUpload(app, ringAt, true);
+            Log.i(TAG, "Deferred one-shot for ring " + ringAt);
+            CallAlertUploadService.startOneShot(app, ringAt);
         } catch (Throwable t) {
-            Log.w(TAG, "Alarm kick failed", t);
+            Log.w(TAG, "Deferred upload kick failed", t);
         }
     }
 }
