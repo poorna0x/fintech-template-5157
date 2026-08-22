@@ -6,8 +6,13 @@
 import { supabase } from './supabaseClient';
 
 const STORAGE_KEY = 'hro_portal_cookie_sync_v1';
-/** Cookie lives 12h; refresh at most twice a day unless login/force. */
+/** Cookie lives 12h; normal refresh at most a few times per day. */
 const SYNC_TTL_MS = 6 * 60 * 60 * 1000;
+/**
+ * Even SIGNED_IN / force cannot spam: Capacitor + Supabase fire SIGNED_IN on
+ * many app resumes. ~7 devices × frequent opens was ~380 invokes/day.
+ */
+const FORCE_MIN_MS = 2 * 60 * 60 * 1000;
 
 let inFlight: Promise<void> | null = null;
 
@@ -38,24 +43,25 @@ export async function syncPortalSessionCookie(opts?: { force?: boolean }): Promi
     const userId = session?.user?.id;
     if (!token || !userId) return;
 
-    if (!opts?.force) {
-      const last = readLastSync(userId);
-      if (last && Date.now() - last < SYNC_TTL_MS) return;
-    }
+    const last = readLastSync(userId);
+    const minGap = opts?.force ? FORCE_MIN_MS : SYNC_TTL_MS;
+    if (last && Date.now() - last < minGap) return;
+
     if (inFlight) {
       await inFlight;
-      if (!opts?.force && Date.now() - readLastSync(userId) < SYNC_TTL_MS) return;
+      if (Date.now() - readLastSync(userId) < minGap) return;
     }
 
-    writeLastSync(userId);
     inFlight = (async () => {
-      await fetch('/.netlify/functions/sync-portal-session', {
+      const res = await fetch('/.netlify/functions/sync-portal-session', {
         method: 'POST',
         credentials: 'include',
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
+      // Only stamp TTL after success so a failed sync can retry.
+      if (res.ok) writeLastSync(userId);
     })();
     try {
       await inFlight;
