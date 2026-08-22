@@ -355,7 +355,7 @@ export default function AdminCrmAiDialog({
         {
           id: `a-${Date.now()}`,
           role: 'assistant',
-          text: oldJobPrompt('customer'),
+          text: oldJobPrompt('phone'),
         },
       ]);
       setLoading(false);

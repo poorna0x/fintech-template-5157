@@ -31,6 +31,15 @@ export function formatIndiaMobile(phone: string): string {
   return cleaned;
 }
 
+export function titleCaseName(name: string): string {
+  return String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export function validateIndiaMobile(phone: string): { ok: true; phone: string } | { ok: false; error: string } {
   const formatted = formatIndiaMobile(phone);
   if (formatted.length !== 10) {
@@ -40,6 +49,29 @@ export function validateIndiaMobile(phone: string): { ok: true; phone: string } 
     return { ok: false, error: 'Phone number must start with 6, 7, 8, or 9' };
   }
   return { ok: true, phone: formatted };
+}
+
+function customerFromRow(row: Record<string, unknown>, existing: boolean): OldJobSavedCustomer {
+  return {
+    id: String(row.id),
+    customerCode: (row.customer_id as string) || null,
+    fullName: String(row.full_name || ''),
+    phone: String(row.phone || ''),
+    existing,
+  };
+}
+
+export async function lookupOldJobCustomerByPhone(
+  phone: string
+): Promise<{ ok: true; customer: OldJobSavedCustomer | null } | { ok: false; error: string }> {
+  const phoneCheck = validateIndiaMobile(phone);
+  if (!phoneCheck.ok) return phoneCheck;
+  const existing = await db.customers.getByPhone(phoneCheck.phone);
+  if (existing.error && existing.error.code !== 'PGRST116') {
+    return { ok: false, error: existing.error.message || 'Could not look up that phone' };
+  }
+  if (!existing.data?.id) return { ok: true, customer: null };
+  return { ok: true, customer: customerFromRow(existing.data as Record<string, unknown>, true) };
 }
 
 function mergePhotoUrls(existing: unknown, extra: string[]): string[] {
@@ -118,7 +150,7 @@ export async function saveOldJobCustomer(input: {
   phone: string;
   googleLocation: string;
 }): Promise<{ ok: true; customer: OldJobSavedCustomer } | { ok: false; error: string }> {
-  const fullName = String(input.fullName || '').trim();
+  const fullName = titleCaseName(input.fullName);
   if (fullName.length < 2) return { ok: false, error: 'Enter the customer name' };
   const phoneCheck = validateIndiaMobile(input.phone);
   if (!phoneCheck.ok) return phoneCheck;
@@ -149,22 +181,18 @@ export async function saveOldJobCustomer(input: {
   }
   if (existing.data?.id) {
     const row = existing.data as Record<string, unknown>;
-    const updates: Record<string, unknown> = { full_name: fullName };
+    const updates: Record<string, unknown> = {};
     if (hasMaps) {
       updates.location = location;
       if (!(row.address as typeof address | undefined)) updates.address = address;
     }
-    const { error } = await db.customers.update(String(row.id), updates as any);
-    if (error) return { ok: false, error: error.message || 'Could not update the customer' };
+    if (Object.keys(updates).length) {
+      const { error } = await db.customers.update(String(row.id), updates as any);
+      if (error) return { ok: false, error: error.message || 'Could not update the customer' };
+    }
     return {
       ok: true,
-      customer: {
-        id: String(row.id),
-        customerCode: (row.customer_id as string) || null,
-        fullName,
-        phone: phoneCheck.phone,
-        existing: true,
-      },
+      customer: customerFromRow({ ...row, full_name: row.full_name || fullName }, true),
     };
   }
 
@@ -246,9 +274,6 @@ export async function createOldCompletedJob(input: {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.completedDateIso)) {
     return { ok: false, error: 'Pick a completed date' };
   }
-  if (!input.billPhotoUrls.length) {
-    return { ok: false, error: 'Add the bill photo' };
-  }
   const isOffice = input.technicianId === OLD_JOB_TECHNICIAN_OFFICE;
   if (!isOffice) {
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -268,8 +293,8 @@ export async function createOldCompletedJob(input: {
     { lead_source: 'Direct call' },
     { skip_review: true },
     { backfilled_via: 'crm_ai_old_job' },
-    billPhotosRequirement(input.billPhotoUrls, {}),
   ];
+  if (input.billPhotoUrls.length) requirements.push(billPhotosRequirement(input.billPhotoUrls, {}));
   if (isOffice) requirements.push({ completed_by_office: true });
   if (paymentPhoto) requirements.push({ payment_photos: [paymentPhoto] });
 

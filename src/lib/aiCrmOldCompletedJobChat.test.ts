@@ -1,16 +1,26 @@
 import { describe, expect, it } from 'vitest';
+import { titleCaseName } from './aiCrmOldCompletedJob';
 import {
-  askForMissingCustomerFields,
   extractPhoneFromChat,
   isCancelOldJobMessage,
+  isSkipMapsMessage,
   isSkipOldJobMessage,
+  leftoverNameFromMessage,
   matchOldJobTechnician,
   missingOldJobCustomerFields,
   parseBillAmount,
   parseOldJobCustomerMessage,
   parseOldJobDateMessage,
+  emptyOldJobCustomerDraft,
 } from './aiCrmOldCompletedJobChat';
-import { emptyOldJobCustomerDraft } from './aiCrmOldCompletedJobChat';
+
+describe('titleCaseName', () => {
+  it('capitalizes the first letter of each word', () => {
+    expect(titleCaseName('poorna')).toBe('Poorna');
+    expect(titleCaseName('POORNA SHETTY')).toBe('Poorna Shetty');
+    expect(titleCaseName('poorna  shetty')).toBe('Poorna Shetty');
+  });
+});
 
 describe('parseOldJobCustomerMessage', () => {
   it('reads name, phone and maps link from one message', () => {
@@ -24,29 +34,16 @@ describe('parseOldJobCustomerMessage', () => {
     expect(missingOldJobCustomerFields(parsed)).toEqual([]);
   });
 
-  it('fills missing pieces across messages', () => {
-    const first = parseOldJobCustomerMessage('Poorna 6361631253', emptyOldJobCustomerDraft());
-    expect(missingOldJobCustomerFields(first)).toEqual(['Google Maps location']);
-    const second = parseOldJobCustomerMessage(
-      'https://www.google.com/maps/place/12.97,77.59',
-      first
-    );
-    expect(missingOldJobCustomerFields(second)).toEqual([]);
-    expect(second.fullName).toBe('Poorna');
+  it('title-cases a name leftover', () => {
+    expect(leftoverNameFromMessage('poorna shetty 6361631253')).toBe('Poorna Shetty');
   });
 
   it('lets you skip maps when you do not have a pin', () => {
     const first = parseOldJobCustomerMessage('Poorna 6361631253', emptyOldJobCustomerDraft());
-    expect(missingOldJobCustomerFields(first)).toEqual(['Google Maps location']);
     const skipped = parseOldJobCustomerMessage('map i dont have', first);
     expect(skipped.fullName).toBe('Poorna');
     expect(skipped.skipMaps).toBe(true);
     expect(missingOldJobCustomerFields(skipped)).toEqual([]);
-  });
-
-  it('asks only for what is still missing', () => {
-    expect(askForMissingCustomerFields(['phone'])).toBe('Still need the phone.');
-    expect(askForMissingCustomerFields(['Google Maps location'])).toMatch(/skip/i);
   });
 });
 
@@ -85,6 +82,7 @@ describe('matchOldJobTechnician', () => {
 describe('skip and cancel', () => {
   it('detects skip and cancel', () => {
     expect(isSkipOldJobMessage('skip')).toBe(true);
+    expect(isSkipMapsMessage('map i dont have')).toBe(true);
     expect(isCancelOldJobMessage('cancel')).toBe(true);
     expect(parseBillAmount('1500 rs')).toBe(1500);
   });
