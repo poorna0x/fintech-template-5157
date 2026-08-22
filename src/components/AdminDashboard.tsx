@@ -1012,6 +1012,9 @@ const AdminDashboard = () => {
   const [shouldCreateJob, setShouldCreateJob] = useState(false);
   const [recentAccountsToday, setRecentAccountsToday] = useState<Customer[]>([]);
   const [loadingRecentAccounts, setLoadingRecentAccounts] = useState(false);
+  const [recentTechCallAlerts, setRecentTechCallAlerts] = useState<
+    import('@/lib/adminRecentTechCallAlerts').AdminRecentTechCall[]
+  >([]);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const recentAccountsDialogOpen = activeAdminTool === 'recent-accounts';
   const quickCustomerDialogOpen = activeAdminTool === 'quick-customer';
@@ -2315,6 +2318,9 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (!recentAccountsDialogOpen) return;
     setLoadingRecentAccounts(true);
+    void import('@/lib/adminRecentTechCallAlerts').then(({ listAdminRecentTechCalls }) => {
+      setRecentTechCallAlerts(listAdminRecentTechCalls());
+    });
     db.customers.getCreatedToday(100)
       .then(({ data, error }) => {
         if (error) {
@@ -7576,6 +7582,39 @@ const AdminDashboard = () => {
           closeAdminTool();
         }}
         unknownCaller={unknownCallerChip}
+        recentTechCalls={recentTechCallAlerts}
+        onOpenTechCall={(row) => {
+          const kind =
+            row.kind === 'missed_call' || row.kind === 'wrong_line_call'
+              ? row.kind
+              : 'tech_call';
+          const auto = markIncomingAutoSearch(row.phone, {
+            kind,
+            techName: row.techName,
+            fromNumber: row.fromNumber,
+            companyPhone: row.companyPhone,
+            customerId: row.customerId,
+          });
+          if (auto) setIncomingAutoSearch(auto);
+          closeAdminTool();
+          navigate(
+            adminDashboardLocation(
+              buildAdminDashboardSearch(
+                { clearModal: true, clearView: true, search: row.phone },
+                location.search
+              )
+            ),
+            { replace: true }
+          );
+        }}
+        onClearTechCalls={() => {
+          void import('@/lib/adminRecentTechCallAlerts').then(
+            ({ clearAdminRecentTechCalls, listAdminRecentTechCalls }) => {
+              clearAdminRecentTechCalls();
+              setRecentTechCallAlerts(listAdminRecentTechCalls());
+            }
+          );
+        }}
       />
 
       <QuickCustomerCreateDialog
