@@ -2,7 +2,10 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useLeadCatalog } from '@/hooks/useLeadCatalog';
-import { LEGACY_LEAD_SOURCE_LABELS } from '@/lib/leadCatalog';
+import {
+  expandWebsiteLeadSourceOptions,
+  LEGACY_LEAD_SOURCE_LABELS,
+} from '@/lib/leadCatalog';
 
 type Props = {
   id?: string;
@@ -26,13 +29,14 @@ export function LeadSourceSelect({
   disabled,
 }: Props) {
   const { sources, loading } = useLeadCatalog();
-  const options = sources.length
+  const catalogOptions = sources.length
     ? sources
     : LEGACY_LEAD_SOURCE_LABELS.map((label, i) => ({
         id: String(i),
         label,
         allow_custom_text: label === 'Other',
       }));
+  const options = expandWebsiteLeadSourceOptions(catalogOptions);
 
   const optionLabels = new Set(options.map((o) => o.label));
   const allOptions =
@@ -41,7 +45,10 @@ export function LeadSourceSelect({
       : options;
 
   const selected = allOptions.find((o) => o.label === value);
-  const showCustom = selected?.allow_custom_text || value === 'Other';
+  const showCustom = Boolean(
+    (selected && 'allow_custom_text' in selected && selected.allow_custom_text) ||
+      value === 'Other'
+  );
 
   return (
     <div className={cn('space-y-2', className)}>

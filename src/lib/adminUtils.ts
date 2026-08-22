@@ -6,7 +6,7 @@ import {
   parseDbServiceType,
   readCustomerEquipmentSlot,
 } from '@/lib/equipment-suggestions';
-import { isLeadSourceRequiresOtp } from '@/lib/leadCatalog';
+import { isLeadSourceRequiresOtp, normalizeWebsiteLeadBrandLabel } from '@/lib/leadCatalog';
 
 /** Technician employee id used for zero-commission (office) completions. */
 export const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
@@ -678,12 +678,19 @@ function resolveWebsiteLeadLabel(
   job: Record<string, unknown>,
   leadSource: string
 ): string {
+  const branded = normalizeWebsiteLeadBrandLabel(leadSource);
+  if (branded) return branded;
   if (leadSource !== 'Website') return leadSource;
   const bookingSource = String(job.booking_source ?? '').trim().toLowerCase();
   const bookingDomain = String(job.booking_domain ?? '').trim();
   if (bookingSource === 'elevenro') return 'Website (ElevenRO)';
   if (bookingSource === 'hydrogenro') return 'Website (HydrogenRO)';
-  if (bookingDomain) return `Website (${bookingDomain})`;
+  if (bookingDomain) {
+    return (
+      normalizeWebsiteLeadBrandLabel(`Website (${bookingDomain})`) ||
+      `Website (${bookingDomain})`
+    );
+  }
   return leadSource;
 }
 
@@ -721,12 +728,12 @@ export function getLeadSourceFromJob(job: Record<string, unknown> | null | undef
 
   if (fromRequirements) {
     if (!fromColumn || fromColumn === 'Direct call') {
-      return fromRequirements;
+      return normalizeLeadType(fromRequirements) || fromRequirements;
     }
   }
 
-  if (fromColumn) return fromColumn;
-  if (fromRequirements) return fromRequirements;
+  if (fromColumn) return normalizeLeadType(fromColumn) || fromColumn;
+  if (fromRequirements) return normalizeLeadType(fromRequirements) || fromRequirements;
 
   if (job.assigned_by || job.assignedBy) return 'Admin Created';
   return 'Direct call';
@@ -847,19 +854,6 @@ const SERVICE_SUB_TYPE_NORMALIZE_MAP: Record<string, string> = {
   other: 'Other',
 };
 
-const LEAD_TYPE_NORMALIZE_MAP: Record<string, string> = {
-  website: 'Website',
-  directcall: 'Direct call',
-  googleleads: 'Google-Leads',
-  rocareindia: 'RO care india',
-  hometriangle: 'Home Triangle',
-  hometrianglesrujan: 'Home Triangle-Srujan',
-  hometriangle3: 'Home Triangle-3',
-  localramu: 'Local Ramu',
-  admincreated: 'Admin Created',
-  other: 'Other',
-};
-
 /** Same canonical labels as the admin completed-jobs list (picker + client filter). */
 export function normalizeServiceSubType(value: string): string {
   const raw = (value || '').trim();
@@ -901,10 +895,30 @@ export function isOpenAmcServiceJob(job: {
   return sub === 'AMC Service';
 }
 
+const LEAD_TYPE_NORMALIZE_MAP: Record<string, string> = {
+  website: 'Website',
+  directcall: 'Direct call',
+  googleleads: 'Google-Leads',
+  rocareindia: 'RO care india',
+  hometriangle: 'Home Triangle',
+  hometrianglesrujan: 'Home Triangle-Srujan',
+  hometriangle3: 'Home Triangle-3',
+  localramu: 'Local Ramu',
+  admincreated: 'Admin Created',
+  other: 'Other',
+};
+
+/** Canonical Website (HydrogenRO) / Website (ElevenRO) labels for save + analytics. */
+export function normalizeWebsiteLeadBrand(value: string): string | null {
+  return normalizeWebsiteLeadBrandLabel(value);
+}
+
 export function normalizeLeadType(value: string): string {
   const raw = (value || '').trim();
   if (!raw) return '';
-  const key = raw.toLowerCase().replace(/[\s_-]+/g, '');
+  const branded = normalizeWebsiteLeadBrandLabel(raw);
+  if (branded) return branded;
+  const key = raw.toLowerCase().replace(/[\s_-]+/g, '').replace(/\./g, '');
   return LEAD_TYPE_NORMALIZE_MAP[key] || raw;
 }
 

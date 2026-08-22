@@ -42,7 +42,8 @@ export type LeadCatalog = {
 
 /** Fallback when DB/cache unavailable (matches pre-catalog defaults). */
 export const LEGACY_LEAD_SOURCE_LABELS = [
-  'Website',
+  'Website (HydrogenRO)',
+  'Website (ElevenRO)',
   'Direct call',
   'Google-Leads',
   'RO care india',
@@ -52,6 +53,44 @@ export const LEGACY_LEAD_SOURCE_LABELS = [
   'Local Ramu',
   'Other',
 ] as const;
+
+/** Manual pickers: expand bare "Website" into HydrogenRO / ElevenRO. */
+export const WEBSITE_LEAD_BRAND_LABELS = [
+  'Website (HydrogenRO)',
+  'Website (ElevenRO)',
+] as const;
+
+export function expandWebsiteLeadSourceOptions<T extends { label: string; id?: string }>(
+  options: T[]
+): Array<T | { id: string; label: string; allow_custom_text?: boolean }> {
+  const out: Array<T | { id: string; label: string; allow_custom_text?: boolean }> = [];
+  let insertedWebsiteBrands = false;
+  for (const opt of options) {
+    const isBareWebsite =
+      compactKey(opt.label) === 'website' ||
+      String((opt as { slug?: string }).slug || '') === 'website';
+    if (isBareWebsite) {
+      if (!insertedWebsiteBrands) {
+        out.push(
+          {
+            id: 'website_hydrogenro',
+            label: 'Website (HydrogenRO)',
+            allow_custom_text: false,
+          } as T,
+          {
+            id: 'website_elevenro',
+            label: 'Website (ElevenRO)',
+            allow_custom_text: false,
+          } as T
+        );
+        insertedWebsiteBrands = true;
+      }
+      continue;
+    }
+    out.push(opt);
+  }
+  return out;
+}
 
 export const LEGACY_SERVICE_SUB_TYPE_LABELS = [
   'Service',
@@ -424,9 +463,13 @@ export function getActiveSubTypeOptions(catalog: LeadCatalog): ServiceSubTypeRow
 
 export function getLeadSourceOptionsForFilters(catalog: LeadCatalog | null): string[] {
   const base = catalog
-    ? getActiveLeadSourceOptions(catalog).map((s) => s.label)
-    : [...LEGACY_LEAD_SOURCE_LABELS];
-  return base;
+    ? getActiveLeadSourceOptions(catalog).map((s) => ({
+        id: s.id,
+        label: s.label,
+        slug: s.slug,
+      }))
+    : LEGACY_LEAD_SOURCE_LABELS.map((label, i) => ({ id: String(i), label }));
+  return expandWebsiteLeadSourceOptions(base).map((o) => o.label);
 }
 
 export function getSubTypeOptionsForFilters(catalog: LeadCatalog | null): string[] {
@@ -538,7 +581,36 @@ export function leadSourceValueForSave(label: string, custom?: string): string {
   if (isLeadSourceAllowCustomText(label)) {
     return (custom || '').trim() || label;
   }
-  return label;
+  const trimmed = (label || '').trim();
+  if (!trimmed) return trimmed;
+  // Never persist bare "Website" from the picker — require HydrogenRO / ElevenRO.
+  if (compactKey(trimmed) === 'website') return trimmed;
+  const branded = normalizeWebsiteLeadBrandLabel(trimmed);
+  return branded || trimmed;
+}
+
+/** Canonical Website (HydrogenRO) / Website (ElevenRO) for save + analytics merge. */
+export function normalizeWebsiteLeadBrandLabel(value: string): string | null {
+  const raw = (value || '').trim();
+  if (!raw) return null;
+  const key = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (
+    key === 'websitehydrogenro' ||
+    key === 'websitehro' ||
+    key === 'websitehydrogenrocom' ||
+    key.startsWith('websitehydrogen')
+  ) {
+    return 'Website (HydrogenRO)';
+  }
+  if (
+    key === 'websiteelevenro' ||
+    key === 'websiteero' ||
+    key === 'websiteelevenrocom' ||
+    key.startsWith('websiteeleven')
+  ) {
+    return 'Website (ElevenRO)';
+  }
+  return null;
 }
 
 /** Map stored job lead_source text → form select label + optional custom. */
@@ -550,6 +622,12 @@ export function resolveLeadSourceForForm(
   const custom = (storedCustom || '').trim();
   if (!raw) return { label: '', custom };
 
+  const branded = normalizeWebsiteLeadBrandLabel(raw);
+  if (branded) return { label: branded, custom: '' };
+  if (raw.toLowerCase().startsWith('website (')) {
+    return { label: raw, custom: '' };
+  }
+
   const catalog = peekLeadCatalog();
   if (catalog) {
     const source = findSource(catalog, raw);
@@ -560,12 +638,9 @@ export function resolveLeadSourceForForm(
           custom: custom || (raw.toLowerCase() !== source.label.toLowerCase() ? raw : ''),
         };
       }
+      // Bare catalog "Website" stays selectable only for old jobs; pickers offer brands.
       return { label: source.label, custom: '' };
     }
-  }
-
-  if (raw.toLowerCase().startsWith('website (')) {
-    return { label: 'Website', custom: '' };
   }
 
   return { label: raw, custom };

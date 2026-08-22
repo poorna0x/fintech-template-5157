@@ -1,6 +1,7 @@
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   getActiveLeadSourceOptions,
+  expandWebsiteLeadSourceOptions,
   peekLeadCatalog,
 } from '@/lib/leadCatalog';
 
@@ -27,7 +28,8 @@ export type WhatsAppBookingStartResult = {
 
 /** Same options as Edit Job lead source. */
 export const WHATSAPP_BOOKING_LEAD_SOURCES = [
-  'Website',
+  'Website (HydrogenRO)',
+  'Website (ElevenRO)',
   'Direct call',
   'Google-Leads',
   'RO care india',
@@ -41,7 +43,15 @@ export const WHATSAPP_BOOKING_LEAD_SOURCES = [
 /** Prefer cached catalog labels when available. */
 export function getWhatsAppBookingLeadSources(): readonly string[] {
   const cat = peekLeadCatalog();
-  if (cat) return getActiveLeadSourceOptions(cat).map((s) => s.label);
+  if (cat) {
+    return expandWebsiteLeadSourceOptions(
+      getActiveLeadSourceOptions(cat).map((s) => ({
+        id: s.id,
+        label: s.label,
+        slug: s.slug,
+      }))
+    ).map((o) => o.label);
+  }
   return WHATSAPP_BOOKING_LEAD_SOURCES;
 }
 

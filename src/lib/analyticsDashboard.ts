@@ -55,6 +55,12 @@ export type AnalyticsDashboardRpc = {
 
 const CANONICAL_LEAD_NAMES: Record<string, string> = {
   website: 'Website',
+  websitehydrogenro: 'Website (HydrogenRO)',
+  websitehro: 'Website (HydrogenRO)',
+  websitehydrogenrocom: 'Website (HydrogenRO)',
+  websiteelevenro: 'Website (ElevenRO)',
+  websiteero: 'Website (ElevenRO)',
+  websiteelevenrocom: 'Website (ElevenRO)',
   directcall: 'Direct call',
   googleleads: 'Google-Leads',
   rocareindia: 'RO care india',

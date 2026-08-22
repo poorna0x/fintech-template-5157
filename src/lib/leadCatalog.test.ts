@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { resolveDefaultLeadCostFromCatalog, type LeadCatalog } from './leadCatalog';
+import {
+  expandWebsiteLeadSourceOptions,
+  normalizeWebsiteLeadBrandLabel,
+  resolveDefaultLeadCostFromCatalog,
+  resolveLeadSourceForForm,
+  type LeadCatalog,
+} from './leadCatalog';
+import { normalizeLeadType } from './adminUtils';
 
 function htCatalog(): LeadCatalog {
   return {
@@ -90,5 +97,34 @@ describe('resolveDefaultLeadCostFromCatalog Home Triangle', () => {
     expect(resolveDefaultLeadCostFromCatalog(catalog, 'Home Triangle', 'Reinstallation')).toBe(
       '116'
     );
+  });
+});
+
+describe('Website HydrogenRO / ElevenRO lead brands', () => {
+  it('normalizes online and manual website variants to one label each', () => {
+    expect(normalizeLeadType('Website (HydrogenRO)')).toBe('Website (HydrogenRO)');
+    expect(normalizeLeadType('Website (hydrogenro.com)')).toBe('Website (HydrogenRO)');
+    expect(normalizeWebsiteLeadBrandLabel('Website (ElevenRO)')).toBe('Website (ElevenRO)');
+    expect(normalizeLeadType('Website (elevenro.com)')).toBe('Website (ElevenRO)');
+    expect(normalizeLeadType('Website')).toBe('Website');
+  });
+
+  it('expands bare Website in pickers into two brands', () => {
+    const expanded = expandWebsiteLeadSourceOptions([
+      { id: '1', label: 'Website', slug: 'website' },
+      { id: '2', label: 'Direct call' },
+    ]);
+    expect(expanded.map((o) => o.label)).toEqual([
+      'Website (HydrogenRO)',
+      'Website (ElevenRO)',
+      'Direct call',
+    ]);
+  });
+
+  it('keeps branded website when mapping stored lead into the form', () => {
+    expect(resolveLeadSourceForForm('Website (HydrogenRO)')).toEqual({
+      label: 'Website (HydrogenRO)',
+      custom: '',
+    });
   });
 });
