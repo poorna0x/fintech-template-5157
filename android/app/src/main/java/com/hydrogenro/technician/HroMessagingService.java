@@ -295,7 +295,7 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             }
         }
         int notifId = Math.abs(tag.hashCode());
-        NotificationChannels.ensureJobAlerts(context);
+        NotificationChannels.ensureAll(context);
         PendingIntent openPending =
             TechPushAckReceiver.openPending(
                 context,
@@ -309,7 +309,7 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                 notifId,
                 null);
         NotificationCompat.Builder builder =
-            new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
+            new NotificationCompat.Builder(context, NotificationChannels.GENERAL_ALERTS)
                 .setSmallIcon(R.drawable.ic_stat_notify)
                 .setColor(color)
                 .setContentTitle(title)
@@ -365,7 +365,7 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                 /* keep amber */
             }
         }
-        NotificationChannels.ensureJobAlerts(context);
+        NotificationChannels.ensureAll(context);
         Intent openIntent =
             new Intent(context, MainActivity.class)
                 .setFlags(
@@ -379,7 +379,7 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                 openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification notification =
-            new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
+            new NotificationCompat.Builder(context, NotificationChannels.GENERAL_ALERTS)
                 .setSmallIcon(R.drawable.ic_stat_notify)
                 .setColor(color)
                 .setContentTitle(title)
@@ -400,8 +400,8 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
 
     /**
      * Assign / reassign / unassign / edit: draw-over-apps card (if permitted) +
-     * tray alert with job_alerts_v2 sound. Data-only FCM so this runs even when
-     * the app is killed.
+     * tray alert (assign sound for assign/reassign; general sound otherwise).
+     * Data-only FCM so this runs even when the app is killed.
      */
     private void showJobAlertOverlay(Map<String, String> data) {
         Context context = getApplicationContext();
@@ -457,7 +457,7 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         String ackUrl,
         String source
     ) {
-        NotificationChannels.ensureJobAlerts(context);
+        NotificationChannels.ensureAll(context);
         int color = Color.parseColor("#16A34A");
         if ("reassigned".equalsIgnoreCase(event)) {
             color = Color.parseColor("#2563EB");
@@ -488,8 +488,9 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                 notifId,
                 jobId);
 
+        String channelId = NotificationChannels.channelForJobEvent(event);
         NotificationCompat.Builder builder =
-            new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
+            new NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(R.drawable.ic_stat_notify)
                 .setColor(color)
                 .setContentTitle(title)

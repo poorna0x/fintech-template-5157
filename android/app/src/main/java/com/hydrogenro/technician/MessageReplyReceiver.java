@@ -36,7 +36,7 @@ import org.json.JSONObject;
 public class MessageReplyReceiver extends BroadcastReceiver {
 
     private static final String TAG = "HroMsgReply";
-    private static final String CHANNEL_ID = NotificationChannels.JOB_ALERTS;
+    private static final String CHANNEL_ID = NotificationChannels.GENERAL_ALERTS;
     private static final int COLOR_PENDING = Color.parseColor("#2563EB");
     private static final int COLOR_SUCCESS = Color.parseColor("#16A34A");
     private static final String OFFICE_SENDER_NAME = "HydrogenRO Office";
@@ -88,7 +88,7 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String ackUrl,
         String source
     ) {
-        NotificationChannels.ensureJobAlerts(context);
+        NotificationChannels.ensureAll(context);
 
         String safeTitle = (title != null && !title.isEmpty()) ? title : "Message from office";
         String safeBody = body != null ? body : "";
@@ -205,7 +205,7 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String ackUrl,
         String source
     ) {
-        NotificationChannels.ensureJobAlerts(context);
+        NotificationChannels.ensureAll(context);
 
         String digits = phone != null ? phone.replaceAll("[^0-9+]", "") : "";
         if (digits.isEmpty()) {
@@ -311,7 +311,7 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String ackUrl,
         String source
     ) {
-        NotificationChannels.ensureJobAlerts(context);
+        NotificationChannels.ensureAll(context);
 
         String safeTitle = (title != null && !title.isEmpty())
             ? title
@@ -749,7 +749,7 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             }
             if (ok) {
                 try {
-                    NotificationChannels.ensureJobAlerts(context);
+                    NotificationChannels.ensureAll(context);
                     Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
                         .setSmallIcon(R.drawable.ic_stat_notify)
                         .setColor(COLOR_SUCCESS)

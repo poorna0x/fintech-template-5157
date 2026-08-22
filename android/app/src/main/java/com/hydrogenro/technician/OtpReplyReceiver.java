@@ -26,7 +26,7 @@ import java.nio.charset.StandardCharsets;
 public class OtpReplyReceiver extends BroadcastReceiver {
 
     private static final String TAG = "HroOtpReply";
-    private static final String CHANNEL_ID = NotificationChannels.JOB_ALERTS;
+    private static final String CHANNEL_ID = NotificationChannels.GENERAL_ALERTS;
     private static final int COLOR_PENDING = Color.parseColor("#F59E0B");
     private static final int COLOR_SUCCESS = Color.parseColor("#16A34A");
 
@@ -56,7 +56,7 @@ public class OtpReplyReceiver extends BroadcastReceiver {
         String body
     ) {
         // Data-only pushes can arrive before MainActivity ever ran.
-        NotificationChannels.ensureJobAlerts(context);
+        NotificationChannels.ensureAll(context);
 
         int notificationId = notificationIdFor(requestId);
 
@@ -239,7 +239,7 @@ public class OtpReplyReceiver extends BroadcastReceiver {
             }
             if (ok) {
                 try {
-                    NotificationChannels.ensureJobAlerts(context);
+                    NotificationChannels.ensureAll(context);
                     Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
                         .setSmallIcon(R.drawable.ic_stat_notify)
                         .setColor(COLOR_SUCCESS)
