@@ -171,7 +171,7 @@ export default function DocumentEmailSendDialog({
   onSent,
 }: DocumentEmailSendDialogProps) {
   const { cloudApiOn } = useWhatsAppCloudApiGate('documents');
-  const waEnabled = allowWhatsApp && cloudApiOn;
+  const waEnabled = allowWhatsApp;
   const meta = KIND_META[kind];
   const [channel, setChannel] = useState<SendChannel>('email');
   const [recipientRows, setRecipientRows] = useState<string[]>([emptyRow()]);
@@ -469,6 +469,35 @@ export default function DocumentEmailSendDialog({
     const customerName = resolveBillCustomerDisplayName(bill.customer);
     const customerIdFor = (to: string) =>
       customerIdForWhatsAppDest(to, bill.customer?.phone, bill.customer?.id || null);
+
+    if (!cloudApiOn) {
+      if (requireAccept) {
+        toast.error('Require Accept needs WhatsApp Cloud API (Settings → WhatsApp)');
+        return { ok: false as const };
+      }
+      const caption = (
+        message.trim() ||
+        defaultMessageForChannel({
+          channel: 'whatsapp',
+          kind,
+          templateType: meta.templateType,
+          bill,
+          brand,
+          dueDateIso,
+        })
+      ).slice(0, 1024);
+      for (const to of destinations) {
+        openWhatsAppMeDeepLink(to, caption);
+      }
+      toast.success(
+        destinations.length > 1
+          ? 'Opened phone WhatsApp for each number — attach the PDF manually if needed'
+          : 'Opened phone WhatsApp — attach the PDF manually if needed'
+      );
+      onSent?.();
+      onOpenChange(false);
+      return { ok: true as const, toastId: undefined, via: 'wa_me' as const, sent: 0 };
+    }
 
     const toastId = opts?.toastId ?? toast.loading('Preparing PDF for WhatsApp…');
     if (opts?.toastId == null) setSending(true);

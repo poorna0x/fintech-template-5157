@@ -577,6 +577,13 @@ export function SettingsPendingPaymentsDialogV2({
         return;
       }
 
+      // Cloud API kill switch: still open phone WhatsApp like pre-API CRM.
+      if (!cloudApiOn) {
+        openWhatsAppMeDeepLink(phone, trimmed);
+        toast.success('Opened phone WhatsApp');
+        return;
+      }
+
       const payHttpsLink =
         opts?.payHttpsLink ||
         (() => {
@@ -955,10 +962,6 @@ export function SettingsPendingPaymentsDialogV2({
   };
 
   const openPendingWhatsAppDialog = async (payment: PendingPaymentReminder) => {
-    if (!cloudApiOn) {
-      toast.error('WhatsApp Cloud API is disabled in Settings');
-      return;
-    }
     const accounts = await syncUpiAccountsFromStorage();
     const preferred = resolvePreferredUpiAccount(accounts);
     setWhatsappUpiAccountId(preferred?.id ?? accounts[0]?.id ?? '');
@@ -1414,7 +1417,7 @@ export function SettingsPendingPaymentsDialogV2({
       setCompleteConfirmOpen(false);
       setCompleteTarget(null);
 
-      if (cloudApiOn && offerWhatsAppAfterComplete) {
+      if (offerWhatsAppAfterComplete) {
         if (!customerForReceipt && entityId) {
           const { data, error: custErr } = await db.customers.getById(entityId);
           if (!custErr && data) customerForReceipt = getCustomerLabelFromRow(data);
@@ -1709,7 +1712,6 @@ export function SettingsPendingPaymentsDialogV2({
                         >
                           <Check className="w-4 h-4" />
                         </Button>
-                        {cloudApiOn ? (
                         <Button
                           size="icon"
                           onClick={() => handleWhatsAppClick(p)}
@@ -1718,7 +1720,6 @@ export function SettingsPendingPaymentsDialogV2({
                         >
                           <WhatsAppIcon className="h-4 w-4" />
                         </Button>
-                        ) : null}
                         <Button
                           size="icon"
                           onClick={() => handleCallClick(p)}
@@ -1945,7 +1946,6 @@ export function SettingsPendingPaymentsDialogV2({
                 This will mark this pending payment as completed and remove it from the pending list.
               </AlertDialogDescription>
             </AlertDialogHeader>
-            {cloudApiOn ? (
             <div className="flex items-start gap-3 py-2 px-1">
               <Checkbox
                 id="offer-wa-after-complete"
@@ -1957,7 +1957,6 @@ export function SettingsPendingPaymentsDialogV2({
                 After marking, offer to send a WhatsApp message confirming the amount received (thanks)
               </label>
             </div>
-            ) : null}
             <AlertDialogFooter className="flex-col sm:flex-row gap-2">
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction

@@ -185,7 +185,7 @@ export default function CallingBulkWhatsAppDialog({
         message,
         template,
         brand,
-        deliveryMode: 'api',
+        deliveryMode: cloudApiOn ? 'api' : 'wa_me',
         approvedTemplateNames: approvedNames,
       });
       if (!result.ok) {
@@ -272,26 +272,6 @@ export default function CallingBulkWhatsAppDialog({
 
   const busy = phase === 'running' || phase === 'paused';
 
-  if (!cloudApiOn) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Bulk WhatsApp</DialogTitle>
-            <DialogDescription>
-              WhatsApp Cloud API is disabled in Settings. Turn it on under Settings → WhatsApp to send.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   return (
     <Dialog
       open={open}
@@ -322,11 +302,19 @@ export default function CallingBulkWhatsAppDialog({
         {phase === 'setup' ? (
           <div className="space-y-4 py-1">
             <p className="text-xs text-muted-foreground rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900">
-              <strong className="font-medium">How delivery works:</strong> if the customer
-              messaged you in the last 24 hours, we send this text as a normal chat. If not
-              (cold), we send the matching approved Meta template (Service due, Book online,
-              Missed call, Follow up, etc.). Heavily edited custom text may fail cold until
-              they message first. Pause or stop anytime.
+              <strong className="font-medium">How delivery works:</strong>{' '}
+              {cloudApiOn ? (
+                <>
+                  if the customer messaged you in the last 24 hours, we send this text as a normal
+                  chat. If not (cold), we send the matching approved Meta template. Pause or stop
+                  anytime.
+                </>
+              ) : (
+                <>
+                  Cloud API is off — each send opens phone WhatsApp (wa.me) one by one. Pause or
+                  stop anytime.
+                </>
+              )}
             </p>
 
             {customers.length > 0 ? (

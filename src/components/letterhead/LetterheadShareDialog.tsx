@@ -95,7 +95,7 @@ export default function LetterheadShareDialog({
     setMessage(defaultLetterheadShareMessage(data));
     setChannel(
       pickDefaultChannel({
-        allowWhatsApp: cloudApiOn,
+        allowWhatsApp: true,
         hasEmail: Boolean(seeded),
         hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
       })
@@ -104,7 +104,7 @@ export default function LetterheadShareDialog({
     setWindowHoursLeft(null);
     // Seed once when the dialog opens; don't reset while the parent draft autosaves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, cloudApiOn]);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !cloudApiOn) return;
@@ -153,8 +153,8 @@ export default function LetterheadShareDialog({
   );
   const canSend =
     channel === 'whatsapp' ? canSendWhatsApp : channel === 'both' ? canSendEmail && canSendWhatsApp : canSendEmail;
-  const showEmailFields = channel === 'email' || channel === 'both' || !cloudApiOn;
-  const showWhatsAppFields = (channel === 'whatsapp' || channel === 'both') && cloudApiOn;
+  const showEmailFields = channel === 'email' || channel === 'both';
+  const showWhatsAppFields = channel === 'whatsapp' || channel === 'both';
 
   const customerName = data.customerName?.trim() || 'there';
   const customerIdFor = (to: string) =>
@@ -238,6 +238,17 @@ export default function LetterheadShareDialog({
       toast.error(resolved.error || 'Enter a valid customer phone number');
       return;
     }
+    if (!cloudApiOn) {
+      const caption = captionForWhatsApp();
+      for (const to of resolved.destinations) openWhatsAppMeDeepLink(to, caption);
+      toast.success(
+        resolved.destinations.length > 1
+          ? 'Opened phone WhatsApp for each number — attach the PDF manually if needed'
+          : 'Opened phone WhatsApp — attach the PDF manually if needed'
+      );
+      onOpenChange(false);
+      return;
+    }
     setSending(true);
     const toastId = toast.loading('Preparing PDF for WhatsApp…');
     try {
@@ -309,6 +320,15 @@ export default function LetterheadShareDialog({
         onOpenChange(false);
         return;
       }
+      if (!cloudApiOn) {
+        const caption = captionForWhatsApp();
+        for (const to of resolved.destinations) openWhatsAppMeDeepLink(to, caption);
+        toast.success('Email sent — opened phone WhatsApp (attach PDF manually if needed)', {
+          id: toastId,
+        });
+        onOpenChange(false);
+        return;
+      }
       const fanout = await sendWhatsAppPdfs(toastId, resolved.destinations);
       let waNote =
         fanout.sent > 1
@@ -365,8 +385,7 @@ export default function LetterheadShareDialog({
             </div>
           ) : null}
 
-          {cloudApiOn ? (
-            <div className="space-y-2">
+          <div className="space-y-2">
               <Label className="text-sm font-medium">Send via</Label>
               <ToggleGroup
                 type="single"
@@ -396,8 +415,12 @@ export default function LetterheadShareDialog({
                   <span className="truncate">Both</span>
                 </ToggleGroupItem>
               </ToggleGroup>
+              {!cloudApiOn && (channel === 'whatsapp' || channel === 'both') ? (
+                <p className="text-xs text-muted-foreground">
+                  Cloud API is off — WhatsApp opens on your phone (wa.me); attach the PDF manually if needed.
+                </p>
+              ) : null}
             </div>
-          ) : null}
 
           {showWhatsAppFields ? (
             <div className="space-y-2">
@@ -463,9 +486,9 @@ export default function LetterheadShareDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="letterhead-share-message">
-              {channel === 'whatsapp' && cloudApiOn
+              {channel === 'whatsapp'
                 ? 'WhatsApp caption'
-                : channel === 'both' && cloudApiOn
+                : channel === 'both'
                   ? 'Message (email body + WhatsApp caption)'
                   : 'Email message'}
             </Label>
@@ -493,16 +516,16 @@ export default function LetterheadShareDialog({
             type="button"
             className={cn(
               'w-full sm:w-auto cursor-pointer',
-              channel === 'whatsapp' && cloudApiOn
+              channel === 'whatsapp'
                 ? 'bg-emerald-700 hover:bg-emerald-800'
-                : channel === 'both' && cloudApiOn
+                : channel === 'both'
                   ? 'bg-sky-700 hover:bg-sky-800'
                   : ''
             )}
             disabled={!canSend || sending}
             onClick={() => {
-              if (cloudApiOn && channel === 'whatsapp') void handleSendWhatsApp();
-              else if (cloudApiOn && channel === 'both') void handleSendBoth();
+              if (channel === 'whatsapp') void handleSendWhatsApp();
+              else if (channel === 'both') void handleSendBoth();
               else void handleSendEmail();
             }}
           >
@@ -511,14 +534,14 @@ export default function LetterheadShareDialog({
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Sending…
               </>
-            ) : cloudApiOn && channel === 'whatsapp' ? (
+            ) : channel === 'whatsapp' ? (
               <>
                 <WhatsAppIcon className="h-4 w-4 mr-2" />
                 {waDestinations.length > 1
                   ? `Send WhatsApp (${waDestinations.length})`
                   : 'Send WhatsApp'}
               </>
-            ) : cloudApiOn && channel === 'both' ? (
+            ) : channel === 'both' ? (
               <>
                 <Mail className="h-4 w-4 mr-2" />
                 Send both

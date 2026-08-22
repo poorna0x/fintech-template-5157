@@ -9,6 +9,7 @@ import {
 
 /**
  * Gate Cloud API send UI when Settings → WhatsApp master (or surface allow_*) is off.
+ * Does not hide phone wa.me — those stay available like pre-Cloud CRM.
  * Uses cache first so buttons can hide without waiting on network.
  * Re-reads when settings are saved (wa-crm-settings-changed).
  */

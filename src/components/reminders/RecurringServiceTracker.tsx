@@ -30,7 +30,6 @@ import {
   Trash2,
 } from 'lucide-react';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
-import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { addDays, addMonths, format } from 'date-fns';
 import { db, supabase } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
@@ -216,7 +215,6 @@ export function RecurringServiceTracker({
   onOpenChange,
   variant = 'dialog',
 }: RecurringServiceTrackerProps) {
-  const { cloudApiOn } = useWhatsAppCloudApiGate('service_reminder');
   const isPage = variant === 'page';
   const isActive = isPage || open;
   const [loading, setLoading] = useState(false);
@@ -898,11 +896,9 @@ export function RecurringServiceTracker({
                         <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openCall(c?.phone || null)}>
                           <Phone className="w-3.5 h-3.5 mr-1" /> Call
                         </Button>
-                        {cloudApiOn ? (
                         <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => void openWhatsApp(r)}>
                           <WhatsAppIcon className="w-3.5 h-3.5 mr-1 text-green-600" /> WhatsApp
                         </Button>
-                        ) : null}
                       </>
                     )}
                     {!isDone && (

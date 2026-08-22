@@ -186,6 +186,26 @@ export default function QuickUpiQrGenerator() {
     }
     setSharing(true);
     try {
+      if (!cloudApiOn) {
+        const { openWhatsAppMeDeepLink } = await import('@/lib/sendAdminWhatsAppApi');
+        const { buildPendingPaymentWhatsAppMessage } = await import('@/lib/pendingPaymentReminder');
+        const text = buildPendingPaymentWhatsAppMessage(
+          selectedCustomer?.name || 'there',
+          qrAmount,
+          null,
+          brand,
+          {
+            label: selectedAccount.label,
+            upiId: selectedAccount.upiId,
+            phone: selectedAccount.phone || undefined,
+          },
+          'payment request',
+          { withQrImage: false }
+        );
+        openWhatsAppMeDeepLink(phone, text);
+        toast.success('Opened phone WhatsApp (Cloud API is off)');
+        return;
+      }
       const result = await sendPayQrWhatsApp({
         to: phone,
         amount: qrAmount,
@@ -433,7 +453,7 @@ export default function QuickUpiQrGenerator() {
               )}
               Download QR
             </Button>
-            {whatsAppReady && cloudApiOn ? (
+            {whatsAppReady ? (
               <Button
                 type="button"
                 className="h-11 w-full bg-emerald-600 text-white hover:bg-emerald-700"
@@ -450,15 +470,9 @@ export default function QuickUpiQrGenerator() {
                 ) : (
                   <WhatsAppIcon className="h-4 w-4" />
                 )}
-                Send on WhatsApp
+                {cloudApiOn ? 'Send on WhatsApp' : 'Open WhatsApp'}
               </Button>
             ) : null}
-          </div>
-          {whatsAppReady && !cloudApiOn ? (
-            <p className="text-xs text-muted-foreground">
-              WhatsApp payment sends are disabled in WhatsApp Settings.
-            </p>
-          ) : null}
         </div>
 
         <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-3">

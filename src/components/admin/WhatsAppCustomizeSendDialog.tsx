@@ -121,9 +121,16 @@ export function WhatsAppCustomizeSendDialog({
     setWhenLabel(initialWhenLabel || 'your upcoming service visit');
     setPhoneTarget(primaryDigits.length >= 10 ? 'primary' : alternateDigits.length >= 10 ? 'alternate' : 'custom');
     setCustomPhone('');
-    setDeliveryMode('api');
+    // Cloud API master off → phone WhatsApp only (same as pre-Cloud CRM).
+    setDeliveryMode(cloudApiOn ? 'api' : 'wa_me');
     setBrand(defaultBrand);
-  }, [open, defaultTemplate, initialMessage, initialWhenLabel, defaultBrand, primaryDigits, alternateDigits]);
+  }, [open, defaultTemplate, initialMessage, initialWhenLabel, defaultBrand, primaryDigits, alternateDigits, cloudApiOn]);
+
+  useEffect(() => {
+    if (!cloudApiOn && deliveryMode !== 'wa_me') {
+      setDeliveryMode('wa_me');
+    }
+  }, [cloudApiOn, deliveryMode]);
 
   useEffect(() => {
     if (!open || !customerId) {
@@ -233,26 +240,6 @@ export function WhatsAppCustomizeSendDialog({
     }
   };
 
-  if (!cloudApiOn) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>
-              WhatsApp Cloud API is disabled in Settings. Turn it on under Settings → WhatsApp to send.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
@@ -263,6 +250,11 @@ export function WhatsAppCustomizeSendDialog({
               {description || (
                 <>
                   To <span className="font-medium text-foreground">{customerName}</span>
+                  {!cloudApiOn ? (
+                    <span className="block mt-1 text-xs text-muted-foreground">
+                      Cloud API is off — opens phone WhatsApp (wa.me).
+                    </span>
+                  ) : null}
                 </>
               )}
             </span>
@@ -338,30 +330,36 @@ export function WhatsAppCustomizeSendDialog({
 
           <div className="space-y-1.5">
             <Label>How to send</Label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                className={
-                  deliveryMode === 'api'
-                    ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium'
-                    : 'rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40'
-                }
-                onClick={() => setDeliveryMode('api')}
-              >
-                Cloud API
-              </button>
-              <button
-                type="button"
-                className={
-                  deliveryMode === 'wa_me'
-                    ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium'
-                    : 'rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40'
-                }
-                onClick={() => setDeliveryMode('wa_me')}
-              >
-                Phone wa.me
-              </button>
-            </div>
+            {cloudApiOn ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className={
+                    deliveryMode === 'api'
+                      ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium'
+                      : 'rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40'
+                  }
+                  onClick={() => setDeliveryMode('api')}
+                >
+                  Cloud API
+                </button>
+                <button
+                  type="button"
+                  className={
+                    deliveryMode === 'wa_me'
+                      ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium'
+                      : 'rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40'
+                  }
+                  onClick={() => setDeliveryMode('wa_me')}
+                >
+                  Phone wa.me
+                </button>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                Phone WhatsApp (wa.me) — Cloud API is off in Settings
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

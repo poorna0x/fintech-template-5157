@@ -267,7 +267,8 @@ export function isWhatsAppCloudApiMasterEnabled(
 
 /**
  * Whether CRM UI should show Cloud API send controls for a surface.
- * Master off → hide everywhere. Optional `source` also checks that surface's allow_* flag.
+ * Master off → hide Cloud API controls (phone wa.me stays available).
+ * Optional `source` also checks that surface's allow_* flag.
  */
 export function canShowWhatsAppCloudSendUi(
   settings: WhatsAppCrmSettings | null | undefined,

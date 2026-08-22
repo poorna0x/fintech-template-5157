@@ -101,7 +101,7 @@ export default function WarrantyCardEmailSendDialog({
   onSent,
 }: WarrantyCardEmailSendDialogProps) {
   const { cloudApiOn } = useWhatsAppCloudApiGate('documents');
-  const waEnabled = allowWhatsApp && cloudApiOn;
+  const waEnabled = allowWhatsApp;
   const [channel, setChannel] = useState<SendChannel>('email');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [whatsappPhone, setWhatsappPhone] = useState('');
@@ -303,6 +303,30 @@ export default function WarrantyCardEmailSendDialog({
     const customerName = resolveBillCustomerDisplayName(pdfData.customer);
     const customerIdFor = (to: string) =>
       customerIdForWhatsAppDest(to, defaultPhone || pdfData.customer?.phone, customerId || null);
+
+    if (!cloudApiOn) {
+      if (requireAccept) {
+        toast.error('Require Accept needs WhatsApp Cloud API (Settings → WhatsApp)');
+        return;
+      }
+      const caption = (
+        message.trim() ||
+        buildDocumentPdfWhatsAppCaption({
+          kind: 'warranty',
+          brand,
+          customerName,
+        })
+      ).slice(0, 1024);
+      for (const to of destinations) openWhatsAppMeDeepLink(to, caption);
+      toast.success(
+        destinations.length > 1
+          ? 'Opened phone WhatsApp for each number — attach the PDF manually if needed'
+          : 'Opened phone WhatsApp — attach the PDF manually if needed'
+      );
+      onSent?.();
+      onOpenChange(false);
+      return;
+    }
 
     setSending(true);
     const toastId = toast.loading('Preparing PDF for WhatsApp…');

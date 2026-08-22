@@ -656,8 +656,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const onlineAmountForQr =
     paymentMode === 'PARTIAL' ? parseFloat(partialOnlineAmount) || 0 : amountNum || 0;
   const canShareUpiLink = Boolean(
-    cloudApiOn &&
-      needsQr &&
+    needsQr &&
       selectedQr?.upiId &&
       selectedQr.dynamicUpiEnabled &&
       onlineAmountForQr > 0 &&
@@ -1027,8 +1026,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   };
 
   const showPostSaleUpiShare = Boolean(
-    cloudApiOn &&
-      pendingBill?.upiId &&
+    pendingBill?.upiId &&
       pendingBill.onlineAmount &&
       pendingBill.onlineAmount > 0 &&
       digitsPhone(pendingBill.customerPhone).length === 10 &&

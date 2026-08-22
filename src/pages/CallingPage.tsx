@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
-import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { 
   Phone, 
   MessageCircle, 
@@ -142,7 +141,6 @@ function normalizeCallHistoryStatus(status: string): string {
 }
 
 const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
-  const { cloudApiOn } = useWhatsAppCloudApiGate('calling');
   const navigate = useNavigate();
   const { user, isAdmin, authInitializing } = useAuth();
   const [pageRows, setPageRows] = useState<CustomerWithHistory[]>([]);
@@ -1333,7 +1331,6 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                       <Phone className="w-4 h-4 shrink-0" />
                       <span className="sr-only">Call</span>
                     </Button>
-                    {cloudApiOn ? (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -1344,7 +1341,6 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                       <WhatsAppIcon className="w-4 h-4 shrink-0" />
                       <span className="sr-only">WhatsApp</span>
                     </Button>
-                    ) : null}
                     <Button
                       size="sm"
                       variant="ghost"
