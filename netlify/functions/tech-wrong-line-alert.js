@@ -232,7 +232,7 @@ exports.handler = async (event) => {
         android: {
           priority: 'high',
           notification: {
-            channelId: 'job_alerts_v2',
+            channelId: 'tech_general_v1',
             defaultSound: true,
             color: '#B45309',
             tag: `wrong_line_${technicianId}_${customerPhone}`,
@@ -277,7 +277,7 @@ exports.handler = async (event) => {
         android: {
           priority: 'high',
           notification: {
-            channelId: 'job_alerts_v2',
+            channelId: 'tech_general_v1',
             defaultSound: true,
             color: '#B45309',
             tag: techTag,

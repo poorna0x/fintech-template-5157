@@ -28,7 +28,7 @@ async function sendCashHandoverReminder(db, messaging, technicianId, amountInr, 
       android: {
         priority: 'high',
         notification: {
-          channelId: 'job_alerts_v2',
+          channelId: 'tech_general_v1',
           defaultSound: true,
           color: '#DC2626',
           tag: opts.forYesterday ? 'cash-reminder-morning' : 'cash-reminder',

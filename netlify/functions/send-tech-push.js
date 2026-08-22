@@ -273,6 +273,7 @@ exports.handler = async (event) => {
       // Companion OS notification: same tag so it replaces, not duplicates.
       // Screen-off Doze delivers this immediately; the data-only banner follows.
       const osBody = String(message || notifTitle || ' ');
+      const osChannelId = require('./tech-fcm-channels').techChannelForJobEvent(overlayEvent);
       buildOsCompanion = (token) => ({
         token,
         notification: {
@@ -282,12 +283,13 @@ exports.handler = async (event) => {
         data: {
           type: 'job_alert_os',
           tag: String(overlayTag),
+          ...(overlayEvent ? { event: String(overlayEvent) } : {}),
         },
         android: {
           priority: 'high',
           collapseKey: `os_${overlayTag}`.slice(0, 64),
           notification: {
-            channelId: 'job_alerts_v2',
+            channelId: osChannelId,
             defaultSound: true,
             ...(color ? { color: String(color) } : {}),
             tag: String(overlayTag),

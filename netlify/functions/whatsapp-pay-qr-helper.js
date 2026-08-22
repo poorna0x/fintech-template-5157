@@ -350,8 +350,8 @@ async function notifyTechnicianPayQrPhoto({
           android: {
             priority: 'high',
             notification: {
-              channelId: 'job_alerts_v2',
-              sound: 'tech_alert',
+              channelId: 'tech_general_v1',
+              defaultSound: true,
               ...(pushImageUrl ? { imageUrl: pushImageUrl } : {}),
             },
           },

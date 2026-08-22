@@ -14,7 +14,7 @@ import java.util.Map;
  * When the technician app is in the foreground, FCM does not auto-post tray
  * notifications for messages that include a notification payload. Capacitor
  * only forwards them to JS. This helper posts the same tray alert (sound +
- * light via job_alerts_v2) so alerts still appear while the app is open.
+ * light via the general alerts channel) so alerts still appear while the app is open.
  *
  * Background/killed: the system still shows FCM's own notification and
  * typically does not call onMessageReceived — so this does not double-fire.
@@ -58,7 +58,7 @@ public final class ForegroundPushNotifier {
         if (title == null || title.isEmpty()) return;
         if (body == null) body = "";
 
-        NotificationChannels.ensureJobAlerts(context);
+        NotificationChannels.ensureAll(context);
 
         String tag = data != null ? data.get("tag") : null;
         if (tag == null || tag.isEmpty()) {
@@ -91,7 +91,8 @@ public final class ForegroundPushNotifier {
             null
         );
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(
+                context, NotificationChannels.GENERAL_ALERTS)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setColor(color)
             .setContentTitle(title)
