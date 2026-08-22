@@ -7,6 +7,7 @@ import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
+import { openWhatsAppMeDeepLink } from '@/lib/sendAdminWhatsAppApi';
 import {
   buildMissedCallWhatsAppMessage,
   resolveColdMissedCall,
@@ -32,8 +33,13 @@ export async function sendMissedCallCallbackWhatsApp(opts: {
   const { settings } = await fetchWhatsAppCrmSettings();
   if (!opts.force) {
     if (settings.enabled === false) {
-      if (notify) toast.error('WhatsApp Cloud API is disabled in Settings');
-      return { ok: false, error: 'disabled' };
+      // Master toggle is Cloud API only — still open phone WhatsApp.
+      openWhatsAppMeDeepLink(phone, buildMissedCallWhatsAppMessage(
+        String(opts.customerName || '').trim() || 'there',
+        opts.brand || 'hydrogenro'
+      ));
+      if (notify) toast.success('Opened phone WhatsApp (Cloud API is off)');
+      return { ok: true };
     }
     if (settings.allow_calling === false) {
       if (notify) toast.error('Calling WhatsApp is off in Settings');

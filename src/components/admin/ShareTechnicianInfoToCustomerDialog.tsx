@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { Job } from '@/types';
-import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
+import { openWhatsAppMeDeepLink, sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { isWhatsAppJobNotifyAllowed } from '@/lib/whatsappCrmSettings';
 import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
@@ -103,27 +103,6 @@ We'll reach you soon. For any queries, contact the technician directly.`;
 
   if (!job || !customer) return null;
 
-  if (!cloudApiOn) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Share technician</DialogTitle>
-            <DialogDescription>
-              WhatsApp Cloud API is disabled in Settings. Turn it on under Settings → WhatsApp to
-              send.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   const customerPhone = customer.phone || '';
   const alternatePhone = customer.alternate_phone || customer.alternatePhone || '';
   const hasAlternate = alternatePhone.trim() !== '' && alternatePhone.trim() !== customerPhone.trim();
@@ -140,8 +119,14 @@ We'll reach you soon. For any queries, contact the technician directly.`;
       return;
     }
     setSending(true);
-    const toastId = toast.loading('Sending WhatsApp…');
+    const toastId = toast.loading(cloudApiOn ? 'Sending WhatsApp…' : 'Opening WhatsApp…');
     try {
+      if (!cloudApiOn) {
+        openWhatsAppMeDeepLink(phone, whatsappMessage);
+        toast.success('Opened phone WhatsApp', { id: toastId });
+        onOpenChange(false);
+        return;
+      }
       const allowed = await isWhatsAppJobNotifyAllowed(
         'tech_assigned_customer',
         assignedTechnicianId || null
@@ -188,8 +173,9 @@ We'll reach you soon. For any queries, contact the technician directly.`;
         <DialogHeader>
           <DialogTitle>Share technician info to customer</DialogTitle>
           <DialogDescription>
-            Sends via Cloud API when the 24h window is open; uses the tech-assigned template when
-            approved and cold; wa.me as backup.
+            {cloudApiOn
+              ? 'Sends via Cloud API when the 24h window is open; uses the tech-assigned template when approved and cold; wa.me as backup.'
+              : 'Cloud API is off — opens phone WhatsApp (wa.me) with the technician message.'}
           </DialogDescription>
         </DialogHeader>
 

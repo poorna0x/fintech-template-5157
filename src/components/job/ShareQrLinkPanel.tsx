@@ -104,8 +104,6 @@ export default function ShareQrLinkPanel({
     setWaPhone(String(customerPhone || '').trim());
   }, [customerPhone]);
 
-  if (!cloudApiOn) return null;
-
   const dynamicOptions = useMemo((): ShareUpiOption[] => {
     const fromCommon: ShareUpiOption[] = commonQrCodes
       .filter((qr) => isDynamicUpiQr(qr))
@@ -166,6 +164,26 @@ export default function ShareQrLinkPanel({
 
     setSharing(true);
     try {
+      if (!cloudApiOn) {
+        const { openWhatsAppMeDeepLink } = await import('@/lib/sendAdminWhatsAppApi');
+        const { buildPendingPaymentWhatsAppMessage } = await import('@/lib/pendingPaymentReminder');
+        const text = buildPendingPaymentWhatsAppMessage(
+          customerName || 'there',
+          am,
+          null,
+          brand,
+          {
+            label: selectedQr.name,
+            upiId: selectedQr.upiId || '',
+            phone: selectedQr.phone || undefined,
+          },
+          jobRef || note || customerName || 'your service visit',
+          { withQrImage: false }
+        );
+        openWhatsAppMeDeepLink(phone, text);
+        toast.success('Opened phone WhatsApp (Cloud API is off)');
+        return;
+      }
       const result = await sendPayQrWhatsApp({
         to: phone,
         amount: am,

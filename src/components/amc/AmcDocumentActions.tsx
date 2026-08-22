@@ -19,6 +19,7 @@ import {
   showAcceptPreviewSentToast,
 } from '@/lib/documentAcceptPreview';
 import {
+  openWhatsAppMeDeepLink,
   resolveBillCustomerDisplayName,
   sendAdminWhatsAppDocumentWithColdFallback,
 } from '@/lib/sendAdminWhatsAppApi';
@@ -95,7 +96,7 @@ export default function AmcDocumentActions({
     () => uniqueWhatsAppPhones([compact ? waPhone : customerPhone, extraWaPhone]),
     [compact, waPhone, customerPhone, extraWaPhone]
   );
-  const canWhatsApp = canAct && compactPhones.length > 0 && cloudApiOn;
+  const canWhatsApp = canAct && compactPhones.length > 0;
 
   const handleDownload = async () => {
     if (!bill) return;
@@ -141,6 +142,26 @@ export default function AmcDocumentActions({
       return;
     }
     const destinations = resolved.destinations;
+    if (!cloudApiOn) {
+      if (requireAccept && !compact) {
+        toast.error('Require Accept needs WhatsApp Cloud API (Settings → WhatsApp)');
+        return;
+      }
+      const customerName = resolveBillCustomerDisplayName(bill.customer);
+      const caption = buildDocumentPdfWhatsAppCaption({
+        kind: 'amc',
+        brand,
+        customerName,
+      }).slice(0, 1024);
+      for (const to of destinations) openWhatsAppMeDeepLink(to, caption);
+      toast.success(
+        destinations.length > 1
+          ? 'Opened phone WhatsApp for each number — attach the PDF manually if needed'
+          : 'Opened phone WhatsApp — attach the PDF manually if needed'
+      );
+      onSent?.();
+      return;
+    }
     setSendingWhatsApp(true);
     const toastId = toast.loading('Preparing AMC for WhatsApp…');
     try {
@@ -280,6 +301,7 @@ export default function AmcDocumentActions({
     <>
       {canWhatsApp && !compact ? (
         <div className="mb-2 space-y-2">
+          {cloudApiOn ? (
           <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
             <input
               type="checkbox"
@@ -293,6 +315,7 @@ export default function AmcDocumentActions({
               for original AMC (cold template when 24h window is closed)
             </span>
           </label>
+          ) : null}
           <div>
             <Label htmlFor="amc-wa-phone-extra-admin" className="text-sm">
               Also send WhatsApp to (optional)
@@ -310,7 +333,7 @@ export default function AmcDocumentActions({
           </div>
         </div>
       ) : null}
-      {compact && cloudApiOn ? (
+      {compact ? (
         <div className="space-y-2.5">
           <div>
             <Label htmlFor="amc-wa-phone" className="text-sm">
@@ -371,7 +394,6 @@ export default function AmcDocumentActions({
             Download AMC PDF
           </Button>
         )}
-        {cloudApiOn ? (
         <Button
           type="button"
           variant="outline"
@@ -401,7 +423,6 @@ export default function AmcDocumentActions({
             ? `WhatsApp AMC PDF (${compactPhones.length})`
             : 'WhatsApp AMC PDF'}
         </Button>
-        ) : null}
         {compact ? null : (
           <Button
             type="button"
@@ -440,7 +461,7 @@ export default function AmcDocumentActions({
             ? async () => onPersistBeforeAction()
             : undefined
         }
-        allowWhatsApp={cloudApiOn}
+        allowWhatsApp
         onSent={onSent}
       />
       )}

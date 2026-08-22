@@ -1648,8 +1648,25 @@ const TechnicianPayments = () => {
       return;
     }
     setSalarySlipSending(true);
-    const toastId = toast.loading('Generating salary slip PDF…');
+    const toastId = toast.loading(
+      cloudApiOn ? 'Generating salary slip PDF…' : 'Opening WhatsApp…'
+    );
     try {
+      if (!cloudApiOn) {
+        const { openWhatsAppMeDeepLink } = await import('@/lib/sendAdminWhatsAppApi');
+        const { buildSalarySlipWhatsAppCaption } = await import('@/lib/sendSalarySlipWhatsApp');
+        openWhatsAppMeDeepLink(
+          phone,
+          buildSalarySlipWhatsAppCaption(selectedBreakdownForSlip, commissionPeriod)
+        );
+        toast.success('Opened phone WhatsApp — attach the PDF manually if needed', { id: toastId });
+        if (opts?.closeDialog) {
+          setSalarySlipDialogOpen(false);
+          setSalarySlipPreviewOpen(false);
+          setSelectedBreakdownForSlip(null);
+        }
+        return;
+      }
       const result = await sendSalarySlipWhatsApp({
         to: phone,
         breakdown: selectedBreakdownForSlip,
@@ -3926,7 +3943,6 @@ const TechnicianPayments = () => {
               <Download className="w-4 h-4 mr-2" />
               Download
             </Button>
-            {cloudApiOn ? (
             <Button
               variant="outline"
               disabled={salarySlipSending}
@@ -3940,7 +3956,6 @@ const TechnicianPayments = () => {
               )}
               WhatsApp
             </Button>
-            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3987,7 +4002,6 @@ const TechnicianPayments = () => {
           });
         }}
         extraFooter={
-          cloudApiOn ? (
           <Button
             type="button"
             variant="outline"
@@ -4002,7 +4016,6 @@ const TechnicianPayments = () => {
             )}
             Send WhatsApp
           </Button>
-          ) : null
         }
       />
 

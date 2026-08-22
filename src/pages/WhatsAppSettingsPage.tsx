@@ -221,9 +221,9 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
                 WhatsApp Cloud API
               </CardTitle>
               <CardDescription className="mt-1">
-                Master switch for CRM Cloud API. When off, the office cannot send, and the webhook
-                does not store inbound or call WhatsApp (Meta still pings the URL; we ACK and stop).
-                Phone wa.me shortcuts stay available where they are personal WhatsApp.
+                Master switch for CRM Cloud API only. When off, Cloud API send/inbox stops and the
+                webhook does not store inbound. Phone wa.me buttons in Calling, documents, and
+                payments still open WhatsApp on your phone.
               </CardDescription>
             </div>
             <Switch
@@ -235,7 +235,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
         </CardHeader>
         <CardContent>
           <Badge variant={settings.enabled ? 'default' : 'secondary'}>
-            {settings.enabled ? 'Enabled' : 'Disabled — no send, no inbound processing'}
+            {settings.enabled ? 'Enabled' : 'Disabled — Cloud API off; wa.me still works'}
           </Badge>
         </CardContent>
       </Card>

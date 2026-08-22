@@ -34,6 +34,7 @@ import {
 import {
   generateWarrantyAcceptPdfPair,
   sendDocumentAcceptInvite,
+  sendDocumentEmailAcceptInvite,
   showAcceptPreviewSentToast,
 } from '@/lib/documentAcceptPreview';
 import type { WarrantyCardPDFData } from '@/lib/warranty-card-pdf-generator';
@@ -100,7 +101,7 @@ export default function WarrantyCardEmailSendDialog({
   onSent,
 }: WarrantyCardEmailSendDialogProps) {
   const { cloudApiOn } = useWhatsAppCloudApiGate('documents');
-  const waEnabled = allowWhatsApp && cloudApiOn;
+  const waEnabled = allowWhatsApp;
   const [channel, setChannel] = useState<SendChannel>('email');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [whatsappPhone, setWhatsappPhone] = useState('');
@@ -230,6 +231,40 @@ export default function WarrantyCardEmailSendDialog({
 
       toast.loading('Generating PDF and sending email…', { id: toastId });
 
+      if (requireAccept) {
+        toast.loading('Generating preview + original…', { id: toastId });
+        const pair = await generateWarrantyAcceptPdfPair(pdfData, { customerId });
+        toast.loading('Sending Accept preview by email…', { id: toastId });
+        const result = await sendDocumentEmailAcceptInvite({
+          to: trimmed,
+          brand,
+          docType: 'warranty',
+          documentLabel: 'warranty card',
+          documentRef: pdfData.customer.customer_id,
+          sourceKey:
+            pdfData.warranty.id && pdfData.warranty.id !== 'draft'
+              ? pdfData.warranty.id
+              : `draft:${pdfData.customer.customer_id}`,
+          customerId: customerId || null,
+          customerName: resolveBillCustomerDisplayName(pdfData.customer),
+          filename: pair.filename,
+          verifyCode: pair.verifyCode,
+          previewVerifyCode: pair.previewVerifyCode,
+          originalPdfBase64: pair.originalPdfBase64,
+          previewPdfBase64: pair.previewPdfBase64,
+        });
+
+        if (!result.ok) {
+          toast.error(result.error || 'Could not send Accept preview by email', { id: toastId });
+          return;
+        }
+
+        toast.success('Accept preview + secure link sent by email', { id: toastId });
+        onSent?.();
+        onOpenChange(false);
+        return;
+      }
+
       const result = await sendWarrantyCardEmail({
         data: pdfData,
         brand,
@@ -268,6 +303,30 @@ export default function WarrantyCardEmailSendDialog({
     const customerName = resolveBillCustomerDisplayName(pdfData.customer);
     const customerIdFor = (to: string) =>
       customerIdForWhatsAppDest(to, defaultPhone || pdfData.customer?.phone, customerId || null);
+
+    if (!cloudApiOn) {
+      if (requireAccept) {
+        toast.error('Require Accept needs WhatsApp Cloud API (Settings → WhatsApp)');
+        return;
+      }
+      const caption = (
+        message.trim() ||
+        buildDocumentPdfWhatsAppCaption({
+          kind: 'warranty',
+          brand,
+          customerName,
+        })
+      ).slice(0, 1024);
+      for (const to of destinations) openWhatsAppMeDeepLink(to, caption);
+      toast.success(
+        destinations.length > 1
+          ? 'Opened phone WhatsApp for each number — attach the PDF manually if needed'
+          : 'Opened phone WhatsApp — attach the PDF manually if needed'
+      );
+      onSent?.();
+      onOpenChange(false);
+      return;
+    }
 
     setSending(true);
     const toastId = toast.loading('Preparing PDF for WhatsApp…');
@@ -454,6 +513,122 @@ export default function WarrantyCardEmailSendDialog({
         }
       }
 
+      const customerName = resolveBillCustomerDisplayName(pdfData.customer);
+      const customerIdFor = (to: string) =>
+        customerIdForWhatsAppDest(to, defaultPhone || pdfData.customer?.phone, customerId || null);
+
+      if (requireAccept) {
+        toast.loading('Generating preview + original…', { id: toastId });
+        const pair = await generateWarrantyAcceptPdfPair(pdfData, { customerId });
+        const resolved = resolveWhatsAppDestinations(whatsappPhone, extraWhatsappPhone);
+        toast.loading('Sending Accept previews by email and WhatsApp…', { id: toastId });
+        const [emailOutcome, whatsappOutcome] = await Promise.allSettled([
+          sendDocumentEmailAcceptInvite({
+            to: trimmed,
+            brand,
+            docType: 'warranty',
+            documentLabel: 'warranty card',
+            documentRef: pdfData.customer.customer_id,
+            sourceKey:
+              pdfData.warranty.id && pdfData.warranty.id !== 'draft'
+                ? pdfData.warranty.id
+                : `draft:${pdfData.customer.customer_id}`,
+            customerId: customerId || null,
+            customerName,
+            filename: pair.filename,
+            verifyCode: pair.verifyCode,
+            previewVerifyCode: pair.previewVerifyCode,
+            originalPdfBase64: pair.originalPdfBase64,
+            previewPdfBase64: pair.previewPdfBase64,
+          }),
+          resolved.error || resolved.destinations.length === 0
+            ? Promise.resolve({
+                sent: 0,
+                usedTemplate: false,
+                lastError: resolved.error || 'Enter a valid customer phone number',
+              })
+            : sendWhatsAppToMany(resolved.destinations, (to, windowClosed) =>
+                sendDocumentAcceptInvite({
+                  to,
+                  brand,
+                  docType: 'warranty',
+                  documentLabel: 'warranty card',
+                  documentRef: pdfData.customer.customer_id,
+                  sourceKey:
+                    pdfData.warranty.id && pdfData.warranty.id !== 'draft'
+                      ? pdfData.warranty.id
+                      : `draft:${pdfData.customer.customer_id}`,
+                  customerId: customerIdFor(to),
+                  customerName,
+                  filename: pair.filename,
+                  verifyCode: pair.verifyCode,
+                  previewVerifyCode: pair.previewVerifyCode,
+                  originalPdfBase64: pair.originalPdfBase64,
+                  previewPdfBase64: pair.previewPdfBase64,
+                  preferColdTemplate: windowClosed,
+                })
+              ),
+        ]);
+        const emailResult =
+          emailOutcome.status === 'fulfilled'
+            ? emailOutcome.value
+            : {
+                ok: false,
+                error:
+                  emailOutcome.reason instanceof Error
+                    ? emailOutcome.reason.message
+                    : 'Could not send Accept preview by email',
+              };
+        const fanout =
+          whatsappOutcome.status === 'fulfilled'
+            ? whatsappOutcome.value
+            : {
+                sent: 0,
+                usedTemplate: false,
+                lastError:
+                  whatsappOutcome.reason instanceof Error
+                    ? whatsappOutcome.reason.message
+                    : 'Could not send Accept preview on WhatsApp',
+              };
+
+        const emailSent = emailResult.ok;
+        const whatsappSent = fanout.sent > 0;
+        if (!emailSent && !whatsappSent) {
+          toast.error('Could not send either Accept invitation', {
+            id: toastId,
+            description: emailResult.error || fanout.lastError,
+          });
+          return;
+        }
+
+        if (!emailSent) {
+          toast.warning('WhatsApp Accept preview sent, but email failed', {
+            id: toastId,
+            description: emailResult.error,
+          });
+        } else if (!whatsappSent) {
+          toast.warning('Email Accept preview sent, but WhatsApp failed', {
+            id: toastId,
+            description: fanout.lastError,
+          });
+        } else {
+          const whatsappNote =
+            resolved.destinations.length > 1
+              ? `WhatsApp preview sent to ${fanout.sent} of ${resolved.destinations.length} numbers`
+              : fanout.usedTemplate
+                ? 'WhatsApp preview sent via cold template'
+                : 'WhatsApp preview sent';
+          toast.success(`Email Accept preview + ${whatsappNote}`, {
+            id: toastId,
+            description:
+              fanout.sent < resolved.destinations.length ? fanout.lastError || undefined : undefined,
+          });
+        }
+        onSent?.();
+        onOpenChange(false);
+        return;
+      }
+
       toast.loading('Sending email…', { id: toastId });
       const emailResult = await sendWarrantyCardEmail({
         data: pdfData,
@@ -473,49 +648,8 @@ export default function WarrantyCardEmailSendDialog({
         return;
       }
       const destinations = resolved.destinations;
-      const customerName = resolveBillCustomerDisplayName(pdfData.customer);
-      const customerIdFor = (to: string) =>
-        customerIdForWhatsAppDest(to, defaultPhone || pdfData.customer?.phone, customerId || null);
 
       toast.loading('Sending WhatsApp…', { id: toastId });
-      if (requireAccept) {
-        const pair = await generateWarrantyAcceptPdfPair(pdfData, { customerId });
-        const fanout = await sendWhatsAppToMany(destinations, (to, windowClosed) =>
-          sendDocumentAcceptInvite({
-            to,
-            brand,
-            docType: 'warranty',
-            documentLabel: 'warranty card',
-            documentRef: pdfData.customer.customer_id,
-            sourceKey:
-              pdfData.warranty.id && pdfData.warranty.id !== 'draft'
-                ? pdfData.warranty.id
-                : `draft:${pdfData.customer.customer_id}`,
-            customerId: customerIdFor(to),
-            customerName,
-            filename: pair.filename,
-            verifyCode: pair.verifyCode,
-            previewVerifyCode: pair.previewVerifyCode,
-            originalPdfBase64: pair.originalPdfBase64,
-            previewPdfBase64: pair.previewPdfBase64,
-            preferColdTemplate: windowClosed,
-          })
-        );
-        if (fanout.sent === 0) {
-          toast.error(fanout.lastError || 'Email sent, but Accept WhatsApp failed', { id: toastId });
-          return;
-        }
-        if (fanout.sent > 1) {
-          toast.success(`Email + Accept preview sent on WhatsApp to ${fanout.sent} numbers`, {
-            id: toastId,
-          });
-        } else {
-          showAcceptPreviewSentToast(toastId, fanout.lastVia);
-        }
-        onSent?.();
-        onOpenChange(false);
-        return;
-      }
       const pdf = await generateWarrantyCardPdfBase64(pdfData);
       const caption = (
         message.trim() ||
@@ -698,20 +832,6 @@ export default function WarrantyCardEmailSendDialog({
                   Open window: free-form send. Closed window: cold document / Accept templates.
                 </p>
               )}
-              <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-4 w-4 accent-emerald-700"
-                  checked={requireAccept}
-                  onChange={(e) => setRequireAccept(e.target.checked)}
-                  disabled={sending}
-                />
-                <span className="text-xs leading-snug text-foreground">
-                  <span className="font-semibold">Require Accept</span> — preview on WhatsApp, then{' '}
-                  <span className="font-semibold">I Accept</span> for the original warranty (works
-                  inside 24h and via cold template when closed).
-                </span>
-              </label>
             </div>
           ) : null}
 
@@ -737,6 +857,21 @@ export default function WarrantyCardEmailSendDialog({
                 )}
             </div>
           ) : null}
+
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-emerald-700"
+              checked={requireAccept}
+              onChange={(e) => setRequireAccept(e.target.checked)}
+              disabled={sending}
+            />
+            <span className="text-xs leading-snug text-foreground">
+              <span className="font-semibold">Require Accept</span> — send a watermarked preview
+              with an <span className="font-semibold">I Accept</span> button on WhatsApp and/or a
+              secure link by email. The original warranty is sent only after acceptance.
+            </span>
+          </label>
 
           <div className="space-y-1.5">
             <Label htmlFor="warranty-email-message">

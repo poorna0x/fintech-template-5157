@@ -67,7 +67,7 @@ export async function buildOfficeSaleUpiShareMessage(
   });
 }
 
-/** Send Cloud API UPI QR (image template). Direct Sales never starts a photo watch. */
+/** Send Cloud API UPI QR (image template), or open wa.me when Cloud API is off. */
 export async function shareOfficeSaleUpiOnWhatsApp(
   input: OfficeSaleUpiShareInput
 ): Promise<{ ok: boolean; error?: string }> {
@@ -75,6 +75,19 @@ export async function shareOfficeSaleUpiOnWhatsApp(
   if (!phone || phone.length < 10) {
     return { ok: false, error: 'Enter a valid 10-digit customer phone' };
   }
+
+  const { fetchWhatsAppCrmSettings, isWhatsAppCloudApiMasterEnabled } = await import(
+    '@/lib/whatsappCrmSettings'
+  );
+  const { settings } = await fetchWhatsAppCrmSettings();
+  if (!isWhatsAppCloudApiMasterEnabled(settings) || settings.allow_pending_payment === false) {
+    const { openWhatsAppMeDeepLink } = await import('@/lib/sendAdminWhatsAppApi');
+    const text = await buildOfficeSaleUpiShareMessage(input);
+    if (!text) return { ok: false, error: 'Could not build pay link message' };
+    openWhatsAppMeDeepLink(phone, text);
+    return { ok: true };
+  }
+
   const result = await sendPayQrWhatsApp({
     to: input.customerPhone,
     amount: input.amount,

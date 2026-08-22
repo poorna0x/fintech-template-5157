@@ -1,4 +1,3 @@
-import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { Phone, PhoneOff, PhoneForwarded, Search, X, MessageCircle } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -59,7 +58,6 @@ type Props = {
 };
 
 export function AdminCallAlertContextBanner({ record, onDismiss }: Props) {
-  const { cloudApiOn } = useWhatsAppCloudApiGate('calling');
   const { title, detail, tone } = describeCallAlertContext(record);
   const [sendingWa, setSendingWa] = useState(false);
   const Icon =
@@ -103,7 +101,7 @@ export function AdminCallAlertContextBanner({ record, onDismiss }: Props) {
         <p className="text-sm font-semibold leading-snug">{title}</p>
         {detail ? <p className="mt-0.5 text-xs opacity-80">{detail}</p> : null}
       </div>
-      {showMissedWa && cloudApiOn ? (
+      {showMissedWa ? (
         <Button
           type="button"
           variant="outline"
