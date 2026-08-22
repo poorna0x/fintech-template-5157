@@ -349,15 +349,10 @@ public class CallAlertReceiver extends BroadcastReceiver {
         }
 
         if (token == null || token.length() < 20) {
-            Log.w(TAG, "No FCM token — upload aborted (JS backup may still notify)");
+            Log.w(TAG, "No FCM token yet — leave late alarm to retry (do not mark attempted)");
             clearClaim(context, callId);
-            // Don't mark alerted — leave room for JWT/JS backup when app opens.
-            context
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putLong(KEY_POST_ATTEMPTED_RING, ringAt)
-                .apply();
-            CallAlertUploadService.cancelKicks(context, ringAt);
+            // Do NOT set KEY_POST_ATTEMPTED_RING or cancelKicks — that killed the
+            // ~90s AlarmClock and left only open-app JWT catch-up working.
             return;
         }
 
@@ -388,8 +383,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
             }
         }
 
-        // Single-shot path: any outcome is terminal for this ring (no retry storm).
-        // 2xx / 429 → mark alerted. Network / 5xx → still mark so we never re-POST.
+        // Network attempted — terminal for this ring (no retry storm).
         markAlerted(context, ringAt, callId);
         if ((code >= 200 && code < 300) || code == 429) {
             Log.i(TAG, "Alert upload done code=" + code);
