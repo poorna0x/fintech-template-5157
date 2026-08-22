@@ -351,7 +351,7 @@ exports.handler = async (event) => {
       android: {
         priority: 'high',
         notification: {
-          channelId: 'tech_general_v1',
+          channelId: 'job_alerts_v2',
           defaultSound: true,
           color,
           // Collapse by tech+phone (omit callId) so duplicate POSTs with

@@ -100,7 +100,7 @@ exports.handler = async (event) => {
       android: {
         priority: 'high',
         notification: {
-          channelId: 'tech_general_v1',
+          channelId: 'job_alerts_v2',
           defaultSound: true,
           color: '#0369A1',
           tag: `tech_search_${technicianId}_${query.slice(0, 24)}`,
