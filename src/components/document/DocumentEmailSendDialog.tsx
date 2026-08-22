@@ -33,9 +33,7 @@ import { forceLightThemeClass } from '@/lib/force-light-theme';
 import {
   generateDocumentAcceptPdfPair,
   sendDocumentAcceptInvite,
-  sendDocumentEmailAcceptInvite,
   showAcceptPreviewSentToast,
-  type DocumentAcceptPdfPair,
 } from '@/lib/documentAcceptPreview';
 import {
   openWhatsAppMeDeepLink,
@@ -182,7 +180,7 @@ export default function DocumentEmailSendDialog({
   const [windowChecking, setWindowChecking] = useState(false);
   const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
-  /** Preview PDF first; original released per channel after the customer accepts. */
+  /** Preview PDF + WhatsApp I Accept button → original PDF. */
   const [requireAccept, setRequireAccept] = useState(false);
 
   useEffect(() => {
@@ -283,12 +281,7 @@ export default function DocumentEmailSendDialog({
     setRecipientRows((prev) => [...prev, emptyRow()]);
   };
 
-  const handleSendEmail = async (opts?: {
-    keepOpen?: boolean;
-    toastId?: string | number;
-    /** Reuse an already generated preview/original pair (Both + Require Accept). */
-    acceptPair?: DocumentAcceptPdfPair;
-  }) => {
+  const handleSendEmail = async (opts?: { keepOpen?: boolean; toastId?: string | number }) => {
     if (!bill || !brand) {
       toast.error('Document details are missing');
       return { ok: false as const };
@@ -308,13 +301,7 @@ export default function DocumentEmailSendDialog({
       return { ok: false as const };
     }
 
-    const toastId =
-      opts?.toastId ??
-      toast.loading(
-        requireAccept
-          ? 'Generating preview + original…'
-          : 'Generating PDF and sending email…'
-      );
+    const toastId = opts?.toastId ?? toast.loading('Generating PDF and sending email…');
     if (opts?.toastId == null) setSending(true);
 
     try {
@@ -324,78 +311,6 @@ export default function DocumentEmailSendDialog({
           id: toastId,
         });
         return { ok: false as const };
-      }
-
-      if (requireAccept) {
-        if (!opts?.acceptPair) {
-          toast.loading('Generating preview + original…', { id: toastId });
-        }
-        const pair = opts?.acceptPair ?? (await generateDocumentAcceptPdfPair(kind, bill));
-        const customerName = resolveBillCustomerDisplayName(bill.customer);
-
-        let sent = 0;
-        let lastError = '';
-        for (let i = 0; i < recipients.length; i += 1) {
-          const to = recipients[i];
-          toast.loading(
-            recipients.length > 1
-              ? `Sending Accept email to ${to}…`
-              : 'Sending Accept email…',
-            { id: toastId }
-          );
-          const invite = await sendDocumentEmailAcceptInvite({
-            to,
-            brand,
-            docType: kind,
-            documentLabel: meta.docLabel,
-            documentRef: bill.billNumber,
-            sourceKey: bill.billNumber,
-            customerId: bill.customer?.id || null,
-            customerName,
-            amountDisplay: bill.totalAmount,
-            filename: pair.filename,
-            verifyCode: pair.verifyCode,
-            previewVerifyCode: pair.previewVerifyCode,
-            originalPdfBase64: pair.originalPdfBase64,
-            previewPdfBase64: pair.previewPdfBase64,
-          });
-          if (!invite.ok) {
-            lastError = invite.error || 'Could not send the Accept email';
-            continue;
-          }
-          sent += 1;
-        }
-
-        const failed = recipients.length - sent;
-        if (sent === 0) {
-          toast.error(lastError || 'Could not send the Accept email', { id: toastId });
-          return { ok: false as const };
-        }
-        if (!opts?.keepOpen) {
-          const okMessage =
-            sent > 1
-              ? `Accept email sent to ${sent} recipients`
-              : 'Accept email sent — customer gets the original PDF after accepting';
-          if (failed > 0) {
-            toast.warning(`${okMessage} · ${failed} failed`, {
-              id: toastId,
-              description: lastError,
-            });
-          } else {
-            toast.success(okMessage, { id: toastId });
-          }
-          onSent?.();
-          onOpenChange(false);
-        }
-        return {
-          ok: true as const,
-          toastId,
-          recipients,
-          via: 'accept_email' as const,
-          sent,
-          failed,
-          lastError,
-        };
       }
 
       const emailBody =
@@ -424,21 +339,10 @@ export default function DocumentEmailSendDialog({
         onSent?.();
         onOpenChange(false);
       }
-      return {
-        ok: true as const,
-        toastId,
-        recipients,
-        via: 'email' as const,
-        sent: recipients.length,
-        failed: 0,
-        lastError: '',
-      };
+      return { ok: true as const, toastId, recipients };
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Failed to send email';
-      toast.error(requireAccept ? 'Could not send the Accept email' : 'Could not send email', {
-        id: toastId,
-        description: msg,
-      });
+      toast.error('Could not send email', { id: toastId, description: msg });
       return { ok: false as const };
     } finally {
       if (opts?.toastId == null && !opts?.keepOpen) setSending(false);
@@ -450,12 +354,7 @@ export default function DocumentEmailSendDialog({
     [whatsappPhone, extraWhatsappPhone]
   );
 
-  const handleSendWhatsApp = async (opts?: {
-    keepOpen?: boolean;
-    toastId?: string | number;
-    /** Reuse an already generated preview/original pair (Both + Require Accept). */
-    acceptPair?: DocumentAcceptPdfPair;
-  }) => {
+  const handleSendWhatsApp = async (opts?: { keepOpen?: boolean; toastId?: string | number }) => {
     if (!bill || !brand) {
       toast.error('Document details are missing');
       return { ok: false as const };
@@ -486,9 +385,7 @@ export default function DocumentEmailSendDialog({
           dueDateIso,
         })
       ).slice(0, 1024);
-      for (const to of destinations) {
-        openWhatsAppMeDeepLink(to, caption);
-      }
+      for (const to of destinations) openWhatsAppMeDeepLink(to, caption);
       toast.success(
         destinations.length > 1
           ? 'Opened phone WhatsApp for each number — attach the PDF manually if needed'
@@ -512,10 +409,8 @@ export default function DocumentEmailSendDialog({
       toast.loading('Generating PDF…', { id: toastId });
 
       if (requireAccept) {
-        if (!opts?.acceptPair) {
-          toast.loading('Generating preview + original…', { id: toastId });
-        }
-        const pair = opts?.acceptPair ?? (await generateDocumentAcceptPdfPair(kind, bill));
+        toast.loading('Generating preview + original…', { id: toastId });
+        const pair = await generateDocumentAcceptPdfPair(kind, bill);
         const fanout = await sendWhatsAppToMany(
           destinations,
           (to, windowClosed) =>
@@ -681,84 +576,24 @@ export default function DocumentEmailSendDialog({
     }
 
     setSending(true);
-    const toastId = toast.loading(
-      requireAccept ? 'Sending Accept invites…' : 'Sending email and WhatsApp…'
-    );
+    const toastId = toast.loading('Sending email and WhatsApp…');
     try {
-      // One preview/original pair serves both Accept invites (one PDF render, one fingerprint).
-      let acceptPair: DocumentAcceptPdfPair | undefined;
-      if (requireAccept) {
-        if (!bill || !brand) {
-          toast.error('Document details are missing', { id: toastId });
-          return;
-        }
-        toast.loading('Generating preview + original…', { id: toastId });
-        try {
-          acceptPair = await generateDocumentAcceptPdfPair(kind, bill);
-        } catch (error) {
-          toast.error(
-            error instanceof Error ? error.message : 'Could not prepare the Accept PDFs',
-            { id: toastId }
-          );
-          return;
-        }
-      }
-
-      toast.loading(requireAccept ? 'Sending Accept email…' : 'Sending email…', { id: toastId });
-      const emailResult = await handleSendEmail({ keepOpen: true, toastId, acceptPair });
-
-      toast.loading(
-        requireAccept ? 'Sending Accept preview on WhatsApp…' : 'Sending WhatsApp…',
-        { id: toastId }
-      );
-      const waResult = await handleSendWhatsApp({ keepOpen: true, toastId, acceptPair });
-      if (!emailResult.ok && !waResult.ok) {
-        toast.error(
-          requireAccept
-            ? 'Could not send either Accept invite'
-            : 'Could not send email or WhatsApp',
-          { id: toastId }
-        );
-        return;
-      }
-      if (!emailResult.ok && waResult.ok) {
-        toast.warning(
-          requireAccept
-            ? 'WhatsApp Accept preview sent, but the Accept email failed'
-            : 'WhatsApp sent, but email failed',
-          { id: toastId }
-        );
-        onSent?.();
-        onOpenChange(false);
-        return;
-      }
-      if (!waResult.ok) {
-        toast.warning(
-          requireAccept
-            ? 'Accept email sent, but the WhatsApp Accept preview failed'
-            : 'Email sent, but WhatsApp failed',
-          { id: toastId }
-        );
-        onSent?.();
-        onOpenChange(false);
-        return;
-      }
-
+      toast.loading('Sending email…', { id: toastId });
+      const emailResult = await handleSendEmail({ keepOpen: true, toastId });
       if (!emailResult.ok) return;
-      const emailTarget =
-        emailResult.recipients?.[0] || normalizedRecipients[0] || 'inbox';
-      const emailNote = requireAccept
-        ? emailResult.sent > 1
-          ? `Accept email sent to ${emailResult.sent} recipients`
-          : `Accept email sent to ${emailTarget}`
-        : `Email sent to ${emailTarget}`;
-      const emailFailNote =
-        emailResult.failed > 0 ? ` (${emailResult.failed} email failed)` : '';
+
+      toast.loading('Sending WhatsApp…', { id: toastId });
+      const waResult = await handleSendWhatsApp({ keepOpen: true, toastId });
+      if (!waResult.ok) {
+        toast.warning('Email sent, but WhatsApp failed', { id: toastId });
+        onSent?.();
+        onOpenChange(false);
+        return;
+      }
+
       const waNote =
         (waResult.sent ?? 0) > 1
-          ? requireAccept
-            ? `WhatsApp Accept preview sent to ${waResult.sent} numbers`
-            : `WhatsApp PDF sent to ${waResult.sent} numbers`
+          ? `WhatsApp PDF sent to ${waResult.sent} numbers`
           : waResult.via === 'invite'
             ? 'WhatsApp PDF sent via template'
             : waResult.via === 'wa_me'
@@ -766,12 +601,7 @@ export default function DocumentEmailSendDialog({
               : waResult.via === 'accept_preview'
                 ? 'WhatsApp Accept preview sent'
                 : 'WhatsApp PDF sent';
-      const summary = `${emailNote} + ${waNote}${emailFailNote}`;
-      if (emailResult.failed > 0) {
-        toast.warning(summary, { id: toastId, description: emailResult.lastError || undefined });
-      } else {
-        toast.success(summary, { id: toastId });
-      }
+      toast.success(`Email + ${waNote}`, { id: toastId });
       onSent?.();
       onOpenChange(false);
     } finally {
@@ -793,12 +623,6 @@ export default function DocumentEmailSendDialog({
   const hasEmailOnFile = normalizedRecipients.length > 0;
   const showEmailFields = channel === 'email' || channel === 'both';
   const showWhatsAppFields = channel === 'whatsapp' || channel === 'both';
-  const acceptHelpText =
-    channel === 'email'
-      ? 'email a watermarked preview + secure Accept link. The original PDF is emailed only after the customer accepts.'
-      : channel === 'both'
-        ? 'send the watermarked preview on both channels. Each channel releases the original separately — email after the secure Accept link, WhatsApp after I Accept.'
-        : 'preview PDF on WhatsApp, then I Accept for the original (works inside 24h and via cold template when closed).';
 
   return (
     <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
@@ -813,13 +637,9 @@ export default function DocumentEmailSendDialog({
             {meta.title}
           </DialogTitle>
           <DialogDescription className={`text-xs sm:text-sm ${meta.descClass}`}>
-            {requireAccept
-              ? brandLabel
-                ? `Preview PDF · ${brandLabel} · original released after the customer accepts`
-                : 'Send the preview PDF — the original is released after the customer accepts'
-              : brandLabel
-                ? `PDF · ${brandLabel} · Email, WhatsApp, or both`
-                : 'Send the PDF by email, WhatsApp, or both'}
+            {brandLabel
+              ? `PDF · ${brandLabel} · Email, WhatsApp, or both`
+              : 'Send the PDF by email, WhatsApp, or both'}
           </DialogDescription>
         </DialogHeader>
 
@@ -944,6 +764,20 @@ export default function DocumentEmailSendDialog({
                   Open window: free-form send. Closed window: cold document / Accept templates.
                 </p>
               )}
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-emerald-700"
+                  checked={requireAccept}
+                  onChange={(e) => setRequireAccept(e.target.checked)}
+                  disabled={sending}
+                />
+                <span className="text-xs leading-snug text-foreground">
+                  <span className="font-semibold">Require Accept</span> — preview PDF on WhatsApp,
+                  then <span className="font-semibold">I Accept</span> for the original (works
+                  inside 24h and via cold template when closed).
+                </span>
+              </label>
             </div>
           ) : null}
 
@@ -998,51 +832,29 @@ export default function DocumentEmailSendDialog({
             </div>
           ) : null}
 
-          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-muted/40 px-3 py-2.5">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-emerald-700"
-              checked={requireAccept}
-              onChange={(e) => setRequireAccept(e.target.checked)}
+          <div className="space-y-2">
+            <Label htmlFor="doc-email-message" className="text-sm font-medium">
+              {channel === 'whatsapp'
+                ? 'WhatsApp caption'
+                : channel === 'both'
+                  ? 'WhatsApp caption (email uses a plain professional message)'
+                  : 'Email message'}
+            </Label>
+            <Textarea
+              id="doc-email-message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={channel === 'whatsapp' || channel === 'both' ? 12 : 4}
+              className="min-h-[96px] resize-y text-sm font-sans whitespace-pre-wrap"
               disabled={sending}
             />
-            <span className="text-xs leading-snug text-foreground">
-              <span className="font-semibold">Require Accept</span> — {acceptHelpText}
-            </span>
-          </label>
-
-          {requireAccept ? (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-snug text-amber-900">
-              Accept invites use our secure Accept wording, so the message below is not used. The
-              customer first receives the watermarked{' '}
-              <span className="font-semibold">PREVIEW – NOT VALID</span> PDF and gets the original
-              only after accepting on that channel.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="doc-email-message" className="text-sm font-medium">
-                {channel === 'whatsapp'
-                  ? 'WhatsApp caption'
-                  : channel === 'both'
-                    ? 'WhatsApp caption (email uses a plain professional message)'
-                    : 'Email message'}
-              </Label>
-              <Textarea
-                id="doc-email-message"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={channel === 'whatsapp' || channel === 'both' ? 12 : 4}
-                className="min-h-[96px] resize-y text-sm font-sans whitespace-pre-wrap"
-                disabled={sending}
-              />
-              {(channel === 'whatsapp' || channel === 'both') && (
-                <p className="text-xs text-muted-foreground">
-                  Sent with the PDF on WhatsApp — includes quote/bill details and our phone
-                  numbers (max ~1024 characters).
-                </p>
-              )}
-            </div>
-          )}
+            {(channel === 'whatsapp' || channel === 'both') && (
+              <p className="text-xs text-muted-foreground">
+                Sent with the PDF on WhatsApp — includes quote/bill details and our phone numbers
+                (max ~1024 characters).
+              </p>
+            )}
+          </div>
         </div>
 
         <DialogFooter className="px-4 sm:px-6 py-3 border-t bg-slate-50/80 flex-col-reverse sm:flex-row gap-2">
@@ -1093,7 +905,7 @@ export default function DocumentEmailSendDialog({
             ) : (
               <>
                 <Mail className="h-4 w-4 mr-2" />
-                {requireAccept ? 'Send Accept email' : 'Send email'}
+                Send email
               </>
             )}
           </Button>
