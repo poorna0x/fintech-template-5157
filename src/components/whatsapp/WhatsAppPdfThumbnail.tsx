@@ -3,12 +3,14 @@ import { Download, FileText, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getWhatsAppMediaBytesCached } from '@/lib/sendAdminWhatsAppApi';
 import { isR2MediaRef } from '@/lib/whatsappInbox';
+import { whatsappDocumentTypeLabel } from '@/lib/whatsappDocumentLabel';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 type Props = {
   messageId: string;
   mediaUrl: string;
   filename?: string | null;
+  mediaMime?: string | null;
   className?: string;
   onOpen: () => void;
   onDownload?: () => void;
@@ -49,25 +51,33 @@ async function loadPdfBytes(
   throw new Error('unsupported media');
 }
 
-/** Compact WhatsApp-style PDF row (icon + name) — used while loading / when preview fails. */
-function PdfFileCard({
+/** Compact WhatsApp-style file row (icon + name) — used for non-PDF docs and PDF fallback. */
+export function WhatsAppDocumentFileCard({
   filename,
+  mediaMime,
   loading,
   className,
+  tone = 'light',
   onOpen,
   onDownload,
 }: {
   filename?: string | null;
+  mediaMime?: string | null;
   loading?: boolean;
   className?: string;
+  /** Outbound/failed bubbles are dark; inbound PDF preview area is light. */
+  tone?: 'light' | 'dark';
   onOpen: () => void;
   onDownload?: () => void;
 }) {
-  const label = filename || 'Document.pdf';
+  const typeLabel = whatsappDocumentTypeLabel(filename, mediaMime);
+  const label = filename || `Document.${typeLabel.toLowerCase()}`;
+  const dark = tone === 'dark';
   return (
     <div
       className={cn(
-        'mb-1 flex w-full min-w-[200px] max-w-[280px] items-center gap-2 rounded-md bg-black/[0.04] px-2 py-2',
+        'mb-1 flex w-full min-w-[200px] max-w-[280px] items-center gap-2 rounded-md px-2 py-2',
+        dark ? 'bg-black/20' : 'bg-black/[0.04]',
         className
       )}
     >
@@ -76,17 +86,29 @@ function PdfFileCard({
         onClick={onOpen}
         className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
       >
-        <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[#e53935]/10 text-[#e53935]">
+        <span
+          className={cn(
+            'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-md',
+            dark ? 'bg-red-500/20 text-red-300' : 'bg-[#e53935]/10 text-[#e53935]'
+          )}
+        >
           {loading ? (
-            <Loader2 className="h-5 w-5 animate-spin text-[#8696a0]" />
+            <Loader2 className={cn('h-5 w-5 animate-spin', dark ? 'text-[#8696a0]' : 'text-[#8696a0]')} />
           ) : (
             <FileText className="h-6 w-6" aria-hidden />
           )}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-[#111b21]">{label}</span>
-          <span className="text-[11px] text-[#667781]">
-            {loading ? 'Loading preview…' : 'PDF · Tap to open'}
+          <span
+            className={cn(
+              'block truncate text-sm font-medium',
+              dark ? 'text-[#e9edef]' : 'text-[#111b21]'
+            )}
+          >
+            {label}
+          </span>
+          <span className={cn('text-[11px]', dark ? 'text-[#8696a0]' : 'text-[#667781]')}>
+            {loading ? 'Loading preview…' : `${typeLabel} · Tap to open`}
           </span>
         </span>
       </button>
@@ -97,9 +119,12 @@ function PdfFileCard({
             e.stopPropagation();
             onDownload();
           }}
-          className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5"
+          className={cn(
+            'flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition',
+            dark ? 'text-[#8696a0] hover:bg-white/5' : 'text-[#54656f] hover:bg-black/5'
+          )}
           title="Download"
-          aria-label="Download PDF"
+          aria-label={`Download ${typeLabel}`}
         >
           <Download className="h-4 w-4" />
         </button>
@@ -115,6 +140,7 @@ export function WhatsAppPdfThumbnail({
   messageId,
   mediaUrl,
   filename,
+  mediaMime,
   className,
   onOpen,
   onDownload,
@@ -202,8 +228,9 @@ export function WhatsAppPdfThumbnail({
   if (!visible || loading || !thumbUrl) {
     return (
       <div ref={rootRef}>
-        <PdfFileCard
+        <WhatsAppDocumentFileCard
           filename={filename}
+          mediaMime={mediaMime || 'application/pdf'}
           loading={visible && loading}
           className={className}
           onOpen={onOpen}

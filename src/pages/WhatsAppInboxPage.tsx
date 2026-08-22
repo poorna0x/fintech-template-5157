@@ -131,7 +131,11 @@ import {
   dispatchWhatsAppUnreadChanged,
   setWhatsAppInboxActivity,
 } from '@/lib/whatsappInboxActivity';
-import { WhatsAppPdfThumbnail } from '@/components/whatsapp/WhatsAppPdfThumbnail';
+import {
+  WhatsAppDocumentFileCard,
+  WhatsAppPdfThumbnail,
+} from '@/components/whatsapp/WhatsAppPdfThumbnail';
+import { isWhatsAppPdfAttachment } from '@/lib/whatsappDocumentLabel';
 import {
   WhatsAppInboxPhotoViewer,
   type InboxPhotoSlide,
@@ -2948,46 +2952,23 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                     onDownload={() => void downloadMedia(m)}
                                   />
                                 </div>
-                              ) : m.media_mime?.includes('pdf') ||
-                                /\.pdf$/i.test(m.filename || '') ||
-                                m.msg_type === 'document' ||
-                                m.msg_type === 'pdf' ? (
+                              ) : isWhatsAppPdfAttachment(m.filename, m.media_mime, m.msg_type) ? (
                                 <WhatsAppPdfThumbnail
                                   messageId={m.id}
                                   mediaUrl={m.media_url}
                                   filename={m.filename}
+                                  mediaMime={m.media_mime}
                                   onOpen={() => void openMedia(m)}
                                   onDownload={() => void downloadMedia(m)}
                                 />
                               ) : (
-                                <div className="mb-1 flex min-w-[200px] max-w-[260px] items-center gap-2 rounded-md bg-black/20 px-2 py-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => void openMedia(m)}
-                                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
-                                  >
-                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-red-500/20 text-red-300">
-                                      <FileText className="h-5 w-5" aria-hidden />
-                                    </span>
-                                    <span className="min-w-0 flex-1">
-                                      <span className="block truncate text-sm font-medium">
-                                        {m.filename || 'Document'}
-                                      </span>
-                                      <span className="text-[11px] text-[#667781]">
-                                        Tap to open
-                                      </span>
-                                    </span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void downloadMedia(m)}
-                                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0]"
-                                    title="Download"
-                                    aria-label="Download file"
-                                  >
-                                    <Download className="h-4 w-4" />
-                                  </button>
-                                </div>
+                                <WhatsAppDocumentFileCard
+                                  filename={m.filename}
+                                  mediaMime={m.media_mime}
+                                  tone={outbound || failed ? 'dark' : 'light'}
+                                  onOpen={() => void openMedia(m)}
+                                  onDownload={() => void downloadMedia(m)}
+                                />
                               )
                             ) : null}
                             {showLocationCard ? (
