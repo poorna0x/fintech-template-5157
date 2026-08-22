@@ -106,4 +106,12 @@ describe('old job prompts', () => {
     expect(oldJobPrompt('brand')).toMatch(/skip/i);
     expect(oldJobPrompt('purifier_photo')).toMatch(/skip/i);
   });
+
+  it('requires a bill amount and lets the bill photo be skipped', () => {
+    expect(oldJobPrompt('bill_amount')).toMatch(/1500/);
+    expect(oldJobPrompt('bill_amount')).not.toMatch(/skip/i);
+    expect(oldJobPrompt('bill')).toMatch(/skip/i);
+    expect(parseBillAmount('2000', { allowYearLike: true })).toBe(2000);
+    expect(parseBillAmount('0', { allowYearLike: true })).toBe(0);
+  });
 });

@@ -19,6 +19,7 @@ export type OldJobChatStep =
   | 'brand'
   | 'purifier_photo'
   | 'date'
+  | 'bill_amount'
   | 'bill'
   | 'payment'
   | 'technician';
@@ -70,8 +71,10 @@ export function oldJobPrompt(step: OldJobChatStep): string {
       return 'Attach a photo of the purifier, or type skip.';
     case 'date':
       return 'What date was this job completed? You can type yesterday, last Sep, or 24 September 2025.';
+    case 'bill_amount':
+      return 'What was the bill amount? Type the rupees, like 1500.';
     case 'bill':
-      return 'Attach the bill photo, or type skip. You can also type the amount if you know it.';
+      return 'Attach the bill photo, or type skip.';
     case 'payment':
       return 'Attach the payment photo, or type skip.';
     case 'technician':
@@ -93,6 +96,8 @@ export function oldJobPlaceholder(step: OldJobChatStep | null): string {
       return 'Purifier photo, or skip';
     case 'date':
       return 'yesterday, last Sep, or 24 Sep 2025';
+    case 'bill_amount':
+      return 'Bill amount, like 1500';
     case 'bill':
       return 'Bill photo, or skip';
     case 'payment':
@@ -176,16 +181,26 @@ export function askForMissingCustomerFields(missing: string[]): string {
   return `Still need the ${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}.`;
 }
 
-export function parseBillAmount(text: string): number | null {
+export function parseBillAmount(text: string, opts?: { allowYearLike?: boolean }): number | null {
   const cleaned = String(text || '').replace(/,/g, '').trim();
   if (!cleaned) return null;
   const match = cleaned.match(/(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d{1,2})?)/i);
   if (!match) return null;
   const amount = Number(match[1]);
   if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000) return null;
-  // Ignore values that look like years.
-  if (amount >= 2000 && amount <= 2100 && !/(₹|rs|inr)/i.test(cleaned)) return null;
+  if (
+    !opts?.allowYearLike &&
+    amount >= 2000 &&
+    amount <= 2100 &&
+    !/(₹|rs|inr)/i.test(cleaned)
+  ) {
+    return null;
+  }
   return amount;
+}
+
+function formatRupees(amount: number): string {
+  return `₹${amount.toLocaleString('en-IN')}`;
 }
 
 export function parseOldJobDateMessage(
@@ -383,6 +398,9 @@ export async function advanceOldJobChat(opts: {
   if ((flow.step as string) === 'model') {
     flow.step = flow.brand || flow.model ? 'purifier_photo' : 'brand';
   }
+  if (flow.step === 'bill' && flow.billAmount == null) {
+    flow.step = 'bill_amount';
+  }
 
   if (flow.step === 'phone') {
     if (skipped) return { flow, assistantText: 'Need the phone number to find or add the customer.' };
@@ -482,8 +500,8 @@ export async function advanceOldJobChat(opts: {
   if (flow.step === 'date') {
     if (skipped && flow.completedDate) {
       flow.pendingMonthIso = null;
-      flow.step = 'bill';
-      return { flow, assistantText: oldJobPrompt('bill') };
+      flow.step = 'bill_amount';
+      return { flow, assistantText: oldJobPrompt('bill_amount') };
     }
     if (skipped) return { flow, assistantText: 'Need the completed date to save this job.' };
     const parsed = parseOldJobDateMessage(message, flow.pendingMonthIso);
@@ -498,8 +516,32 @@ export async function advanceOldJobChat(opts: {
     }
     flow.completedDate = parsed.date.iso;
     flow.pendingMonthIso = null;
+    flow.step = 'bill_amount';
+    return { flow, assistantText: `Completed date is ${parsed.date.label}. ${oldJobPrompt('bill_amount')}` };
+  }
+
+  if (flow.step === 'bill_amount') {
+    if (photos.length) flow.billPhotos = [...flow.billPhotos, ...photos];
+    if (skipped) {
+      return { flow, assistantText: 'Need the bill amount to save this job.' };
+    }
+    const amount = parseBillAmount(message, { allowYearLike: true });
+    if (amount == null) {
+      return { flow, assistantText: 'Send the bill amount in rupees, like 1500.' };
+    }
+    flow.billAmount = amount;
+    if (flow.billPhotos.length) {
+      flow.step = 'payment';
+      return {
+        flow,
+        assistantText: `Bill amount is ${formatRupees(amount)}. ${oldJobPrompt('payment')}`,
+      };
+    }
     flow.step = 'bill';
-    return { flow, assistantText: `Completed date is ${parsed.date.label}. ${oldJobPrompt('bill')}` };
+    return {
+      flow,
+      assistantText: `Bill amount is ${formatRupees(amount)}. ${oldJobPrompt('bill')}`,
+    };
   }
 
   if (flow.step === 'bill') {
@@ -508,10 +550,14 @@ export async function advanceOldJobChat(opts: {
       return { flow, assistantText: oldJobPrompt('payment') };
     }
     if (photos.length) flow.billPhotos = [...flow.billPhotos, ...photos];
-    const amount = parseBillAmount(message);
+    const amount = parseBillAmount(message, { allowYearLike: true });
     if (amount != null) flow.billAmount = amount;
+    if (flow.billAmount == null) {
+      flow.step = 'bill_amount';
+      return { flow, assistantText: oldJobPrompt('bill_amount') };
+    }
     if (!flow.billPhotos.length) {
-      return { flow, assistantText: 'Attach the bill photo, or type skip.' };
+      return { flow, assistantText: oldJobPrompt('bill') };
     }
     flow.step = 'payment';
     return { flow, assistantText: oldJobPrompt('payment') };
@@ -549,7 +595,7 @@ export async function advanceOldJobChat(opts: {
       assistantText: `Which one? ${match.technicians.map((tech) => tech.fullName).join(', ')}`,
     };
   }
-  if (!flow.customer || !flow.completedDate) {
+  if (!flow.customer || !flow.completedDate || flow.billAmount == null) {
     return { flow, assistantText: 'Something is missing. Type cancel and start again.' };
   }
 

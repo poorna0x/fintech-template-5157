@@ -276,10 +276,13 @@ export async function createOldCompletedJob(input: {
   technicianId: string;
   billPhotoUrls: string[];
   paymentPhotoUrl?: string | null;
-  billAmount?: number | null;
+  billAmount: number;
 }): Promise<{ ok: true; jobId: string; jobNumber: string; dateLabel: string } | { ok: false; error: string }> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.completedDateIso)) {
     return { ok: false, error: 'Pick a completed date' };
+  }
+  if (!Number.isFinite(input.billAmount) || input.billAmount < 0) {
+    return { ok: false, error: 'Enter the bill amount' };
   }
   const isOffice = input.technicianId === OLD_JOB_TECHNICIAN_OFFICE;
   if (!isOffice) {
@@ -292,7 +295,7 @@ export async function createOldCompletedJob(input: {
   const { data: customer, error: customerError } = await db.customers.getById(input.customerId);
   if (customerError || !customer) return { ok: false, error: 'Customer not found' };
 
-  const amount = Number.isFinite(input.billAmount) ? Math.max(0, Number(input.billAmount)) : 0;
+  const amount = Math.max(0, Number(input.billAmount));
   const paymentPhoto = String(input.paymentPhotoUrl || '').trim() || null;
   const completedAt = completionTimestamp(input.completedDateIso);
   const afterPhotos = mergePhotoUrls(input.billPhotoUrls, paymentPhoto ? [paymentPhoto] : []);
