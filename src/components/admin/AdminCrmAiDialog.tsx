@@ -254,31 +254,35 @@ export default function AdminCrmAiDialog({
     [open]
   );
   const oldJobTechniciansRef = useRef<OldJobTechnicianOption[] | null>(null);
+  const wasOpenRef = useRef(false);
 
   const focusComposer = useCallback(() => {
     inputRef.current?.focus({ preventScroll: true });
   }, [inputRef]);
 
   useEffect(() => {
-    if (open) return;
+    if (open) {
+      wasOpenRef.current = true;
+      return;
+    }
+    // Only reset after a real close. A closed dialog on dashboard mount must not setState.
+    if (!wasOpenRef.current) return;
+    wasOpenRef.current = false;
     setInput('');
     setLoading(false);
     setActionBusy(false);
     setOldJobFlow(null);
     oldJobTechniciansRef.current = null;
     setTurns((current) => {
-      let changed = false;
-      const next = current.map((turn) => {
-        if (!turn.imageUrls?.length) return turn;
-        changed = true;
-        turn.imageUrls.forEach((url) => {
+      if (!current.length) return current;
+      current.forEach((turn) => {
+        turn.imageUrls?.forEach((url) => {
           if (url.startsWith('blob:')) URL.revokeObjectURL(url);
         });
-        return { ...turn, imageUrls: undefined };
       });
-      return changed ? next : current;
+      return [];
     });
-    setExpandedDetails(new Set());
+    setExpandedDetails((current) => (current.size ? new Set() : current));
     setAttachments((current) => {
       if (!current.length) return current;
       current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
