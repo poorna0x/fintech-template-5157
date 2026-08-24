@@ -473,6 +473,7 @@ export default function QuickUpiQrGenerator() {
                 {cloudApiOn ? 'Send on WhatsApp' : 'Open WhatsApp'}
               </Button>
             ) : null}
+          </div>
         </div>
 
         <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-3">
