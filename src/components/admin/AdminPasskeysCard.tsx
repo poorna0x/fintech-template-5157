@@ -22,10 +22,14 @@ function formatPasskeyWhen(iso?: string): string {
 }
 
 /**
- * Settings → Passkeys (admin web). Face ID / fingerprint sign-in on hydrogenro.com.
- * Separate from Admin APK app lock.
+ * Settings → Passkeys (admin) or technician Options → Passkeys.
+ * Face ID / fingerprint on hydrogenro.com. Separate from APK app lock.
  */
-export function AdminPasskeysCard() {
+export function AdminPasskeysCard({
+  audience = 'admin',
+}: {
+  audience?: 'admin' | 'technician';
+}) {
   const native = isNativeApp();
   const [loading, setLoading] = useState(!native);
   const [saving, setSaving] = useState(false);
@@ -87,13 +91,16 @@ export function AdminPasskeysCard() {
         </CardTitle>
         <CardDescription>
           One-touch sign-in on hydrogenro.com with Face ID or fingerprint. Email and
-          password stay as backup. This is not the Admin app lock.
+          password stay as backup
+          {audience === 'admin' ? '. This is not the Admin app lock.' : '.'}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {native ? (
           <p className="text-sm text-muted-foreground leading-snug">
-            Passkeys work in a browser on hydrogenro.com. This app uses App lock instead.
+            Passkeys work in a browser on hydrogenro.com
+            {audience === 'technician' ? '/technician/login' : ''}. This app uses
+            {audience === 'admin' ? ' App lock' : ' the website'} instead.
           </p>
         ) : (
           <>
