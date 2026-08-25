@@ -177,6 +177,10 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/secure-auth-passkey-login': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/sync-portal-session': {
         target: 'http://localhost:8888',
         changeOrigin: true,

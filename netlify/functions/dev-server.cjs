@@ -33,6 +33,7 @@ loadEnvFile(path.join(__dirname, '../../.env.local'), true);
 const altchaVerify = require('./altcha-verify');
 const distanceMatrix = require('./distance-matrix');
 const secureAuthLogin = require('./secure-auth-login');
+const secureAuthPasskeyLogin = require('./secure-auth-passkey-login');
 const syncPortalSession = require('./sync-portal-session');
 const clearPortalSession = require('./clear-portal-session');
 const syncTechnicianAuthUser = require('./sync-technician-auth-user');
@@ -116,6 +117,8 @@ const server = http.createServer((req, res) => {
     handler = distanceMatrix;
   } else if (req.url.startsWith('/.netlify/functions/secure-auth-login')) {
     handler = secureAuthLogin;
+  } else if (req.url.startsWith('/.netlify/functions/secure-auth-passkey-login')) {
+    handler = secureAuthPasskeyLogin;
   } else if (req.url.startsWith('/.netlify/functions/sync-portal-session')) {
     handler = syncPortalSession;
   } else if (req.url.startsWith('/.netlify/functions/clear-portal-session')) {
@@ -466,6 +469,9 @@ server.listen(PORT, '0.0.0.0', () => {
   );
   console.log(
     `🔐 Secure auth login: http://localhost:${PORT}/.netlify/functions/secure-auth-login`
+  );
+  console.log(
+    `🔐 Passkey login: http://localhost:${PORT}/.netlify/functions/secure-auth-passkey-login`
   );
   console.log(
     `🔑 Sync technician Auth: http://localhost:${PORT}/.netlify/functions/sync-technician-auth-user`

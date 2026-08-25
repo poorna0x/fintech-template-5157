@@ -2,6 +2,7 @@
 export function warmNetlifyFunctions(): void {
   const urls = [
     '/.netlify/functions/secure-auth-login',
+    '/.netlify/functions/secure-auth-passkey-login',
     '/.netlify/functions/altcha-verify',
   ];
   for (const url of urls) {

@@ -88,6 +88,7 @@ import {
   type TechWhatsAppPrefs,
 } from '@/lib/techWhatsAppPrefs';
 import { AdminAppLockSettings } from '@/components/admin/AdminAppLockSettings';
+import { AdminPasskeysCard } from '@/components/admin/AdminPasskeysCard';
 import { AppCrashReports } from '@/components/admin/AppCrashReports';
 import {
   isFollowUpGlowEnabled,
@@ -2888,6 +2889,8 @@ const Settings = () => {
             </CardContent>
           </Card>
           ) : null}
+
+          {!isManager ? <AdminPasskeysCard /> : null}
 
           {!isManager ? <AdminAppLockSettings /> : null}
 
