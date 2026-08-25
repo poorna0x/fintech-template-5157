@@ -43,7 +43,14 @@ export const loginTechnicianWithSupabase = async (
     };
   }
 
-  const { data: { session } } = await supabase.auth.getSession();
+  return technicianUserFromCurrentSession();
+};
+
+/** After a technician Auth session exists (password or passkey). */
+export async function technicianUserFromCurrentSession(): Promise<TechnicianLoginResult> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   const authUser = session?.user;
   if (!authUser) {
     return { ok: false, error: 'Login failed. Please try again.' };

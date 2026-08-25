@@ -1,4 +1,4 @@
-// Rate-limited, ALTCHA-gated proxy for Supabase passkey (WebAuthn) admin login.
+// Rate-limited, ALTCHA-gated proxy for Supabase passkey (WebAuthn) admin/technician login.
 // Clients must not call GoTrue /passkeys/authentication/* directly for sign-in.
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
@@ -126,6 +126,7 @@ exports.handler = async (event) => {
   const body = parsed.body || {};
   const step = body.step === 'verify' ? 'verify' : body.step === 'start' ? 'start' : '';
   const { altchaLoginToken, altchaPayload, captchaToken } = body;
+  const expectedPortal = body.portal === 'technician' ? 'technician' : 'admin';
 
   if (!step || !altchaLoginToken || typeof altchaLoginToken !== 'string') {
     return jsonResponse(400, corsHeaders, {
@@ -265,11 +266,33 @@ exports.handler = async (event) => {
     }
 
     const role = user.app_metadata?.role || user.user_metadata?.role || 'admin';
-    if (role === 'technician') {
+    const isTechnician = role === 'technician';
+
+    if (expectedPortal === 'technician' && !isTechnician) {
+      recordPasskeyRateLimitUse(event);
+      return jsonResponse(403, corsHeaders, {
+        error: 'Use the admin login page for this account.',
+      });
+    }
+
+    if (expectedPortal === 'admin' && isTechnician) {
       recordPasskeyRateLimitUse(event);
       return jsonResponse(403, corsHeaders, {
         error: 'Use the technician login page for this account.',
       });
+    }
+
+    if (expectedPortal === 'technician') {
+      const { data: tech, error: techError } = await admin
+        .from('technicians')
+        .select('id, account_status')
+        .eq('id', user.id)
+        .single();
+
+      if (techError || !tech || tech.account_status !== 'ACTIVE') {
+        recordPasskeyRateLimitUse(event);
+        return jsonResponse(403, corsHeaders, { error: 'Account is not active' });
+      }
     }
 
     const normalizedEmail = typeof user.email === 'string' ? user.email.toLowerCase().trim() : '';
@@ -312,7 +335,7 @@ exports.handler = async (event) => {
       Math.max(Number(session.expires_in) || 43200, 300),
       60 * 60 * 24 * 7
     );
-    const portalCookie = signPortalCookie('admin', cookieMaxAge);
+    const portalCookie = signPortalCookie(isTechnician ? 'technician' : 'admin', cookieMaxAge);
 
     return {
       statusCode: 200,

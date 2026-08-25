@@ -1,3 +1,4 @@
+import type { AuthPortal } from './secureAuthLogin';
 import { supabase } from './supabaseClient';
 import { isPWAMode } from './pwa';
 import { createPasskeyAssertion, mapPasskeyError } from './passkeys';
@@ -58,6 +59,7 @@ function failFromResponse(
  */
 export async function secureAuthPasskeyLogin(
   altchaLoginToken: string,
+  portal: AuthPortal,
   altchaPayload?: string,
   captchaToken?: string
 ): Promise<SecureAuthLoginResult> {
@@ -67,6 +69,7 @@ export async function secureAuthPasskeyLogin(
     const start = await postPasskeyGate(
       {
         step: 'start',
+        portal,
         altchaLoginToken,
         altchaPayload,
         captchaToken: captchaToken || undefined,
@@ -91,6 +94,7 @@ export async function secureAuthPasskeyLogin(
     const verify = await postPasskeyGate(
       {
         step: 'verify',
+        portal,
         altchaLoginToken,
         altchaPayload,
         challenge_id: challengeId,
