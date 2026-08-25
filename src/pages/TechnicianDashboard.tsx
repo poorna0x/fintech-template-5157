@@ -21,7 +21,6 @@ import Logo from '@/components/Logo';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import TechnicianOtpRequestCard from '@/components/technician/TechnicianOtpRequestCard';
 import TechnicianReviewsDialog from '@/components/technician/TechnicianReviewsDialog';
-import { AdminPasskeysCard } from '@/components/admin/AdminPasskeysCard';
 import {
   buildAdminPhotoViewerSelection,
   resolveAdminPhotoViewerSources,
@@ -61,7 +60,6 @@ import {
   IndianRupee,
   Pencil,
   Search,
-  Fingerprint,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
@@ -651,7 +649,6 @@ const TechnicianDashboard = () => {
 
   // Header 3-dot menu → centered options dialog
   const [headerOptionsDialogOpen, setHeaderOptionsDialogOpen] = useState(false);
-  const [passkeysDialogOpen, setPasskeysDialogOpen] = useState(false);
   const [reviewsDialogOpen, setReviewsDialogOpen] = useState(false);
   // Technician ID Card QR Code Dialog
   const [technicianIdCardDialogOpen, setTechnicianIdCardDialogOpen] = useState(false);
@@ -6646,17 +6643,6 @@ const TechnicianDashboard = () => {
             <Button
               variant="ghost"
               className="justify-start h-12 px-4 text-base"
-              onClick={() => {
-                setHeaderOptionsDialogOpen(false);
-                setPasskeysDialogOpen(true);
-              }}
-            >
-              <Fingerprint className="w-5 h-5 mr-3" />
-              Passkeys
-            </Button>
-            <Button
-              variant="ghost"
-              className="justify-start h-12 px-4 text-base"
               onClick={() => window.location.reload()}
             >
               <RefreshCw className="w-5 h-5 mr-3" />
@@ -6682,15 +6668,6 @@ const TechnicianDashboard = () => {
         onOpenChange={setReviewsDialogOpen}
         technicianId={String(user?.technicianId || '')}
       />
-
-      <Dialog open={passkeysDialogOpen} onOpenChange={setPasskeysDialogOpen}>
-        <DialogContent className="max-h-[90vh] w-[95vw] max-w-lg overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Passkeys</DialogTitle>
-          </DialogHeader>
-          <AdminPasskeysCard audience="technician" />
-        </DialogContent>
-      </Dialog>
 
       {/* Location Error Banner */}
       {locationError && (

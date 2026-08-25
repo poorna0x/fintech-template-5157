@@ -15,7 +15,6 @@ import {
   clearAuthSession,
   purgeSupabaseAuthStorage,
   loginTechnician,
-  technicianUserFromCurrentSession,
 } from '@/lib/auth';
 import { secureAuthLogin } from '@/lib/secureAuthLogin';
 import { secureAuthPasskeyLogin } from '@/lib/secureAuthPasskeyLogin';
@@ -475,14 +474,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { ok: false, error: msg };
       }
 
-      const isTechnicianPortal =
-        typeof window !== 'undefined' &&
-        window.location.pathname.includes('/technician/login');
-
-      await clearWrongPortalSession(isTechnicianPortal ? 'technician' : 'admin');
+      await clearWrongPortalSession('admin');
       const authResult = await secureAuthPasskeyLogin(
         altchaLoginToken,
-        isTechnicianPortal ? 'technician' : 'admin',
         altchaPayload,
         captchaToken
       );
@@ -497,34 +491,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           retryAfter: authResult.retryAfter,
           remainingAttempts: authResult.remainingAttempts,
         };
-      }
-
-      if (isTechnicianPortal) {
-        const techResult = await technicianUserFromCurrentSession();
-        if (!techResult.ok || !techResult.user) {
-          await supabase.auth.signOut();
-          const err = techResult.error || 'Use the technician login page for this account.';
-          toast.error(err);
-          return { ok: false, error: err };
-        }
-        const techUser = techResult.user;
-        setUser(techUser);
-        setAuthSession(techUser);
-        technicianSessionRef.current = true;
-        portalRef.current = 'technician';
-        if (techUser.technicianId) {
-          void import('@/lib/technicianPush').then(({ registerTechnicianPushToken }) =>
-            registerTechnicianPushToken(techUser.technicianId as string)
-          );
-        }
-        void syncPortalSessionCookie();
-        toast.success(
-          `Welcome back, ${formatWelcomeDisplayName({
-            fullName: techUser.fullName,
-            email: techUser.email,
-          })}!`
-        );
-        return { ok: true };
       }
 
       const {

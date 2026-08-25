@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Wrench, Eye, EyeOff, Droplets, Fingerprint } from 'lucide-react';
+import { Wrench, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
 import TurnstileWidget, {
@@ -19,7 +19,6 @@ import { clearWrongPortalSession } from '@/lib/authPortal';
 import { formatLoginError } from '@/lib/loginResult';
 import { warmNetlifyFunctions } from '@/lib/loginWarmup';
 import { markNativeBootReady } from '@/lib/nativeBootReady';
-import { isPasskeyLoginAvailable, passkeyHostnameHint } from '@/lib/passkeys';
 
 const TechnicianLogin = () => {
   const [email, setEmail] = useState('');
@@ -50,9 +49,8 @@ const TechnicianLogin = () => {
    *  so a Turnstile auto-pass doesn't spam Supabase with the same wrong password. */
   const failedCredsRef = useRef<Set<string>>(new Set());
 
-  const { login, loginWithPasskey, loading: authLoading, user, authInitializing } = useAuth();
+  const { login, loading: authLoading, user, authInitializing } = useAuth();
   const navigate = useNavigate();
-  const passkeyAvailable = isPasskeyLoginAvailable();
   
   useEffect(() => {
     document.title = 'Eleven RO Technician';
@@ -202,44 +200,6 @@ const TechnicianLogin = () => {
         setError('Login failed. Please try again.');
         toast.error('Login failed. Please try again.');
       }
-    } finally {
-      loginInFlightRef.current = false;
-      setIsLoading(false);
-    }
-  };
-
-  const performPasskeyLogin = async () => {
-    if (loginInFlightRef.current) return;
-    if (!isCaptchaVerified || !altchaLoginToken) {
-      setShowSecurityStep(true);
-      setError('Please complete the security verification before logging in.');
-      toast.error('Security verification required');
-      return;
-    }
-    if (turnstileRequired && !turnstileToken) {
-      setError('Please complete the Cloudflare security check before logging in.');
-      toast.error('Security check required');
-      return;
-    }
-
-    loginInFlightRef.current = true;
-    setIsLoading(true);
-    setError('');
-
-    try {
-      const result = await loginWithPasskey(altchaLoginToken, altchaPayload, turnstileToken);
-      if (result.ok) {
-        navigate('/technician', { replace: true });
-      } else {
-        resetTurnstileAfterFailure();
-        setError(
-          formatLoginError(result, 'Passkey sign-in failed. You can still use email and password.')
-        );
-      }
-    } catch (err: unknown) {
-      if (import.meta.env.DEV) console.error('[TechnicianLogin] passkey', err);
-      resetTurnstileAfterFailure();
-      setError('Passkey sign-in failed. You can still use email and password.');
     } finally {
       loginInFlightRef.current = false;
       setIsLoading(false);
@@ -472,39 +432,6 @@ const TechnicianLogin = () => {
                   'Sign In'
                 )}
               </Button>
-
-              {passkeyAvailable ? (
-                <>
-                  <div className="relative py-1">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t border-border" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-card px-2 text-muted-foreground">or</span>
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full h-11 font-semibold"
-                    disabled={
-                      isLoading ||
-                      !isCaptchaVerified ||
-                      !altchaLoginToken ||
-                      (turnstileRequired && !turnstileToken)
-                    }
-                    onClick={() => void performPasskeyLogin()}
-                  >
-                    <Fingerprint className="w-4 h-4 mr-2" />
-                    Sign in with passkey
-                  </Button>
-                  {passkeyHostnameHint() ? (
-                    <p className="text-xs text-muted-foreground text-center leading-snug">
-                      {passkeyHostnameHint()}
-                    </p>
-                  ) : null}
-                </>
-              ) : null}
             </form>
 
             <div className="mt-6 text-center">
