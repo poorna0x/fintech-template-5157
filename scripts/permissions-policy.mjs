@@ -15,8 +15,8 @@ export const PERMISSIONS_POLICY = [
   'midi=()',
   'payment=()',
   'picture-in-picture=()',
-  'publickey-credentials-create=()',
-  'publickey-credentials-get=()',
+  'publickey-credentials-create=(self)',
+  'publickey-credentials-get=(self)',
   'usb=()',
   'web-share=()',
 ].join(', ');
