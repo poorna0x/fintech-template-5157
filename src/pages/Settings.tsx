@@ -2890,8 +2890,6 @@ const Settings = () => {
           </Card>
           ) : null}
 
-          {!isManager ? <AdminPasskeysCard /> : null}
-
           {!isManager ? <AdminAppLockSettings /> : null}
 
           {!isManager ? <DeviceTrackerSettings /> : null}
@@ -3994,6 +3992,8 @@ const Settings = () => {
             }
           />
           ) : null}
+
+          {!isManager ? <AdminPasskeysCard /> : null}
                 </div>
       </div>
 
