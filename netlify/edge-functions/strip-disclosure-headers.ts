@@ -14,16 +14,24 @@ const HEADERS_TO_STRIP = [
 ];
 
 export default async (_request: Request, context: Context) => {
-  const response = await context.next();
-  const headers = new Headers(response.headers);
-  for (const name of HEADERS_TO_STRIP) {
-    headers.delete(name);
+  try {
+    const response = await context.next();
+    const headers = new Headers(response.headers);
+    for (const name of HEADERS_TO_STRIP) {
+      headers.delete(name);
+    }
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  } catch (err) {
+    console.error('strip-disclosure-headers', err);
+    return new Response('Service temporarily unavailable', {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+    });
   }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
 };
 
 export const config: Config = {

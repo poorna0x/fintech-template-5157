@@ -57,32 +57,43 @@ function forbiddenResponse(): Response {
 }
 
 export default async function handler(request: Request, context: Context) {
-  const url = new URL(request.url);
-  const needed = requiredPortalRole(url.pathname);
+  try {
+    const url = new URL(request.url);
+    const needed = requiredPortalRole(url.pathname);
 
-  if (!needed) {
-    return context.next();
-  }
-
-  if (request.method !== 'GET' && request.method !== 'HEAD') {
-    return context.next();
-  }
-
-  const cookies = parseCookies(request.headers.get('cookie'));
-  const session = await verifyPortalCookie(cookies[COOKIE_NAME]);
-
-  if (!session.ok) {
-    if (isPortalDashboardEntry(url.pathname)) {
+    if (!needed) {
       return context.next();
     }
-    return forbiddenResponse();
-  }
 
-  if (session.role !== needed) {
-    return forbiddenResponse();
-  }
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return context.next();
+    }
 
-  return context.next();
+    const cookies = parseCookies(request.headers.get('cookie'));
+    const session = await verifyPortalCookie(cookies[COOKIE_NAME]);
+
+    if (!session.ok) {
+      if (isPortalDashboardEntry(url.pathname)) {
+        return context.next();
+      }
+      return forbiddenResponse();
+    }
+
+    if (session.role !== needed) {
+      return forbiddenResponse();
+    }
+
+    return context.next();
+  } catch (err) {
+    console.error('protect-portal-routes', err);
+    return new Response('Service temporarily unavailable', {
+      status: 503,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
 }
 
 export const config: Config = {

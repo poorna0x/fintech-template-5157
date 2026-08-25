@@ -6,7 +6,7 @@ const PERMISSIONS_POLICY =
   'accelerometer=(), autoplay=(), bluetooth=(), camera=(self), clipboard-read=(self), ' +
   'clipboard-write=(self), display-capture=(), encrypted-media=(), fullscreen=(self), ' +
   'geolocation=(self), gyroscope=(), microphone=(), midi=(), payment=(), picture-in-picture=(), ' +
-  'publickey-credentials-create=(), publickey-credentials-get=(), usb=(), web-share=()';
+  'publickey-credentials-create=(self), publickey-credentials-get=(self), usb=(), web-share=()';
 
 /**
  * Get security headers for responses

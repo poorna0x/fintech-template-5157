@@ -46,18 +46,29 @@ const NOT_FOUND_HTML = `<!DOCTYPE html>
 </html>`;
 
 export default async function handler(request: Request, context: Context) {
-  const { pathname } = new URL(request.url);
-  if (!isSensitiveProbePath(pathname)) {
-    return context.next();
-  }
+  try {
+    const { pathname } = new URL(request.url);
+    if (!isSensitiveProbePath(pathname)) {
+      return context.next();
+    }
 
-  return new Response(NOT_FOUND_HTML, {
-    status: 404,
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store',
-    },
-  });
+    return new Response(NOT_FOUND_HTML, {
+      status: 404,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch (err) {
+    console.error('block-sensitive-probes', err);
+    return new Response(NOT_FOUND_HTML, {
+      status: 404,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
 }
 
 export const config: Config = {
