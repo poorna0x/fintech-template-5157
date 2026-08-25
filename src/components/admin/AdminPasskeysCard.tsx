@@ -98,9 +98,9 @@ export function AdminPasskeysCard({
       <CardContent className="space-y-3">
         {native ? (
           <p className="text-sm text-muted-foreground leading-snug">
-            Passkeys work in a browser on hydrogenro.com
-            {audience === 'technician' ? '/technician/login' : ''}. This app uses
-            {audience === 'admin' ? ' App lock' : ' the website'} instead.
+            Passkeys work in Safari or Chrome on hydrogenro.com
+            {audience === 'technician' ? '/technician/login' : ''}. This app
+            {audience === 'admin' ? ' uses App lock instead' : ' cannot add or use them'}.
           </p>
         ) : (
           <>
