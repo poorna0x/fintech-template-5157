@@ -15,6 +15,8 @@ const LIMITS = {
   ip: { maxRequests: 10, windowMs: 60 * 60 * 1000, endpoint: 'auth-ip-fail' },
   /** Per email — failed login attempts only */
   email: { maxRequests: 5, windowMs: 15 * 60 * 1000, endpoint: 'auth-email-fail' },
+  /** Per IP — passkey ceremony starts + failed verifies */
+  passkeyIp: { maxRequests: 20, windowMs: 60 * 60 * 1000, endpoint: 'auth-passkey-ip' },
 };
 
 function rateLimitHttpResponse(result, corsHeaders, userMessage) {
@@ -89,6 +91,31 @@ function recordLoginRateLimitFailure(event, normalizedEmail) {
   }
 }
 
+function checkPasskeyRateLimits(event, corsHeaders) {
+  const ip = getClientIdentifier(event);
+  const ipResult = peekRateLimit(event, LIMITS.passkeyIp);
+  if (!ipResult.allowed) {
+    if (ip === 'unknown' && process.env.NODE_ENV !== 'production') {
+      console.warn('[auth-rate-limits] IP is unknown — ensure dev-server sets x-forwarded-for');
+    }
+    return {
+      blocked: true,
+      response: rateLimitHttpResponse(
+        ipResult,
+        corsHeaders,
+        `Too many passkey attempts. Try again in ${Math.ceil(
+          (ipResult.resetTime - Date.now()) / 60000
+        )} minute(s).`
+      ),
+    };
+  }
+  return { blocked: false };
+}
+
+function recordPasskeyRateLimitUse(event) {
+  incrementRateLimit(event, LIMITS.passkeyIp);
+}
+
 /** @deprecated Use checkLoginRateLimits + recordLoginRateLimitFailure */
 function enforceLoginRateLimits(event, normalizedEmail, corsHeaders) {
   return checkLoginRateLimits(event, normalizedEmail, corsHeaders);
@@ -98,6 +125,8 @@ module.exports = {
   LIMITS,
   checkLoginRateLimits,
   recordLoginRateLimitFailure,
+  checkPasskeyRateLimits,
+  recordPasskeyRateLimitUse,
   enforceLoginRateLimits,
   rateLimitHttpResponse,
 };

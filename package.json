@@ -17,7 +17,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "generate:sitemaps": "node scripts/generate-sitemaps.mjs",
-    "test": "vitest run && npm run test:whatsapp-templates && npm run test:office-status",
+    "test": "vitest run && npm run test:whatsapp-templates && npm run test:office-status && node tests/secure-auth-passkey-login.test.cjs",
     "test:whatsapp-templates": "node tests/whatsapp-template-wiring.test.cjs && node tests/whatsapp-master-off.test.cjs && node tests/whatsapp-webhook-gate.test.cjs",
     "test:office-status": "node tests/tech-office-status.test.cjs && node tests/where-pwa-launch.test.cjs",
     "wa:templates:status": "node scripts/submit-whatsapp-full-utility.mjs --status",

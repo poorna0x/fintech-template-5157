@@ -34,7 +34,7 @@ const inFlightLoginTokens = new Map();
 
 const IN_FLIGHT_TTL_MS = 2 * 60 * 1000;
 
-setInterval(() => {
+const altchaCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, exp] of usedLoginTokens.entries()) {
     if (exp < now) usedLoginTokens.delete(key);
@@ -43,6 +43,7 @@ setInterval(() => {
     if (now - startedAt > IN_FLIGHT_TTL_MS) inFlightLoginTokens.delete(key);
   }
 }, 60_000);
+if (typeof altchaCleanupTimer.unref === 'function') altchaCleanupTimer.unref();
 
 function isPlaceholderKey() {
   return HMAC_KEY === 'PLACEHOLDER-DO-NOT-USE-IN-PRODUCTION-GENERATE-REAL-KEY';

@@ -17,6 +17,7 @@ import {
   loginTechnician,
 } from '@/lib/auth';
 import { secureAuthLogin } from '@/lib/secureAuthLogin';
+import { secureAuthPasskeyLogin } from '@/lib/secureAuthPasskeyLogin';
 import type { AuthLoginResult } from '@/lib/loginResult';
 import {
   getAuthPortal,
@@ -47,6 +48,11 @@ interface AuthContextType {
   login: (
     email: string,
     password: string,
+    altchaLoginToken: string,
+    altchaPayload?: string,
+    captchaToken?: string
+  ) => Promise<AuthLoginResult>;
+  loginWithPasskey: (
     altchaLoginToken: string,
     altchaPayload?: string,
     captchaToken?: string
@@ -455,6 +461,90 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const loginWithPasskey = async (
+    altchaLoginToken: string,
+    altchaPayload?: string,
+    captchaToken?: string
+  ): Promise<AuthLoginResult> => {
+    try {
+      setLoading(true);
+
+      if (!altchaLoginToken) {
+        const msg = 'Complete security verification before signing in.';
+        toast.error(msg);
+        return { ok: false, error: msg };
+      }
+
+      if (typeof window !== 'undefined' && window.location.pathname.includes('/technician/login')) {
+        const msg = 'Passkeys are for admin web login only.';
+        toast.error(msg);
+        return { ok: false, error: msg };
+      }
+
+      await clearWrongPortalSession('admin');
+      const authResult = await secureAuthPasskeyLogin(
+        altchaLoginToken,
+        altchaPayload,
+        captchaToken
+      );
+
+      if (!authResult.ok) {
+        const err = authResult.error || 'Passkey sign-in failed';
+        toast.error(err);
+        return {
+          ok: false,
+          error: err,
+          locked: authResult.locked,
+          retryAfter: authResult.retryAfter,
+          remainingAttempts: authResult.remainingAttempts,
+        };
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) {
+        const msg = 'Login failed. Please try again.';
+        toast.error(msg);
+        return { ok: false, error: msg };
+      }
+
+      const userRole = await resolveSessionRoleFromSupabaseUser(session.user);
+      if (userRole === 'technician') {
+        await supabase.auth.signOut();
+        const msg = 'Use the technician login page for this account.';
+        toast.error(msg);
+        return { ok: false, error: msg };
+      }
+
+      const adminUser: User = {
+        id: session.user.id,
+        email: session.user.email || '',
+        role: 'admin',
+        fullName:
+          session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+      };
+      setUser(adminUser);
+      technicianSessionRef.current = false;
+      clearAuthSession();
+      portalRef.current = 'admin';
+      void syncPortalSessionCookie();
+      toast.success(
+        `Welcome back, ${formatWelcomeDisplayName({
+          fullName: adminUser.fullName,
+          email: adminUser.email,
+        })}!`
+      );
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Passkey sign-in failed. Please try again.';
+      toast.error(message);
+      return { ok: false, error: message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = async (): Promise<void> => {
     loggingOutRef.current = true;
     try {
@@ -530,6 +620,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     authInitializing,
     loading,
     login,
+    loginWithPasskey,
     logout,
     reconcileAuthPortal,
     isAdmin: user?.role === 'admin',
