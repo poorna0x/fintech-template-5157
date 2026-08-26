@@ -65,6 +65,7 @@ import {
   ANALYTICS_LIST_SCROLL_ANCHOR_CLASS,
 } from '@/components/admin/AnalyticsListPagination';
 import { AdminInlineLoader } from '@/components/admin/AdminLoaders';
+import { AnalyticsLoadSection } from '@/components/admin/AnalyticsLoadSection';
 import {
   AnalyticsTrendGraph,
   buildTrendFilterOptions,
