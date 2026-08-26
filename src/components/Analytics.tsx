@@ -64,7 +64,7 @@ import {
   AnalyticsListLoadingOverlay,
   ANALYTICS_LIST_SCROLL_ANCHOR_CLASS,
 } from '@/components/admin/AnalyticsListPagination';
-import { AnalyticsLoadSection } from '@/components/admin/AnalyticsLoadSection';
+import { AdminInlineLoader } from '@/components/admin/AdminLoaders';
 import {
   AnalyticsTrendGraph,
   buildTrendFilterOptions,
@@ -2012,26 +2012,6 @@ const Analytics = () => {
   const locationTotalPages = Math.max(1, Math.ceil(locationTotal / locationPerPage));
   const brandTotalPages = Math.max(1, Math.ceil(brandTotal / brandPerPage));
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-3"></div>
-          <p className="text-gray-600">Loading analytics...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!analytics) {
-    return (
-      <div className="text-center py-12 text-gray-500">
-        <AlertCircle className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-        <p>No analytics data available</p>
-      </div>
-    );
-  }
-
   const getPeriodLabel = (): string => {
     switch (period) {
       case '7d': return 'Last 7 Days';
@@ -2132,6 +2112,15 @@ const Analytics = () => {
         </div>
       )}
 
+      {loading ? (
+        <AdminInlineLoader message="Loading analytics..." />
+      ) : !analytics ? (
+        <div className="text-center py-12 text-gray-500">
+          <AlertCircle className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+          <p>No analytics data available</p>
+        </div>
+      ) : (
+      <>
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
@@ -3618,6 +3607,8 @@ const Analytics = () => {
         </Card>
       )}
 
+      </>
+      )}
     </div>
   );
 };

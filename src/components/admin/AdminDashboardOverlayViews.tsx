@@ -115,7 +115,7 @@ export default function AdminDashboardOverlayViews(props: AdminDashboardOverlayV
   if (props.currentView === 'analytics') {
     return (
       <AdminTabViewShell
-        loadingMessage="Loading analytics..."
+        loadingMessage=""
         onBack={() => props.onViewChange('dashboard')}
       >
         <Analytics />
