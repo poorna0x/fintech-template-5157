@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import AdminHeader from '@/components/AdminHeader';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
-import { AdminScreenLoader } from './AdminLoaders';
+import { AdminInlineLoader } from './AdminLoaders';
 
 type AdminTabViewShellProps = {
   loadingMessage: string;
@@ -26,7 +26,7 @@ export function AdminTabViewShell({ loadingMessage, onBack, children }: AdminTab
             Back
           </Button>
         </div>
-        <Suspense fallback={<AdminScreenLoader message={loadingMessage} />}>{children}</Suspense>
+        <Suspense fallback={<AdminInlineLoader message={loadingMessage} />}>{children}</Suspense>
       </div>
     </div>
   );
