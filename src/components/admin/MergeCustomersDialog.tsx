@@ -176,7 +176,8 @@ function PreviewSummary({ preview }: { preview: CustomerMergePreview }) {
       </ul>
       <p className="text-xs text-muted-foreground">
         {secondary.phone} will be saved as alternate phone on {primary.customer_id} (if slot is
-        free).
+        free). The keeper&apos;s address and map pin stay; the duplicate&apos;s location is only
+        used if the keeper has none.
       </p>
     </div>
   );

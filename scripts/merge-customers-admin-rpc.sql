@@ -219,20 +219,20 @@ BEGIN
     nullif(trim(v_secondary.service_type), '')
   );
 
-  -- Address + location: prefer the SECONDARY (newer booking) record, since it
-  -- holds the customer's latest address/map pin. Fall back to keeper if empty.
+  -- Address + map pin: keep the PRIMARY (keeper). Only fill from the duplicate
+  -- when the keeper has no address / pin. Jobs keep their own location snapshots.
   v_address := CASE
     WHEN coalesce(
-           nullif(trim(v_secondary.address ->> 'street'), ''),
-           nullif(trim(v_secondary.address ->> 'area'), ''),
-           nullif(trim(v_secondary.address ->> 'city'), '')
-         ) IS NOT NULL THEN v_secondary.address
-    ELSE v_primary.address
+           nullif(trim(v_primary.address ->> 'street'), ''),
+           nullif(trim(v_primary.address ->> 'area'), ''),
+           nullif(trim(v_primary.address ->> 'city'), '')
+         ) IS NOT NULL THEN v_primary.address
+    ELSE v_secondary.address
   END;
 
   v_location := CASE
-    WHEN v_secondary.location IS NOT NULL AND v_secondary.location <> '{}'::jsonb THEN v_secondary.location
-    ELSE v_primary.location
+    WHEN v_primary.location IS NOT NULL AND v_primary.location <> '{}'::jsonb THEN v_primary.location
+    ELSE v_secondary.location
   END;
 
   -- Notes: append secondary notes
@@ -280,7 +280,19 @@ BEGIN
     email = coalesce(nullif(trim(v_primary.email), ''), nullif(trim(v_secondary.email), ''), v_primary.email),
     address = coalesce(v_address, v_primary.address),
     location = coalesce(v_location, v_primary.location),
-    visible_address = coalesce(nullif(trim(v_secondary.visible_address), ''), nullif(trim(v_primary.visible_address), '')),
+    visible_address = coalesce(nullif(trim(v_primary.visible_address), ''), nullif(trim(v_secondary.visible_address), '')),
+    alternate_address = CASE
+      WHEN v_primary.alternate_address IS NOT NULL AND v_primary.alternate_address <> '{}'::jsonb THEN v_primary.alternate_address
+      ELSE v_secondary.alternate_address
+    END,
+    alternate_location = CASE
+      WHEN v_primary.alternate_location IS NOT NULL AND v_primary.alternate_location <> '{}'::jsonb THEN v_primary.alternate_location
+      ELSE v_secondary.alternate_location
+    END,
+    alternate_visible_address = coalesce(
+      nullif(trim(v_primary.alternate_visible_address), ''),
+      nullif(trim(v_secondary.alternate_visible_address), '')
+    ),
     service_type = coalesce(v_service_type, v_primary.service_type),
     brand = coalesce(v_brand, v_primary.brand),
     model = coalesce(v_model, v_primary.model),
