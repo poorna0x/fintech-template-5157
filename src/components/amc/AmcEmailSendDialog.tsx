@@ -23,6 +23,7 @@ import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import {
   customerEmailNeedsSave,
   getValidCustomerEmail,
+  seedEmailsForDocumentSend,
 } from '@/lib/customer-email';
 import {
   isValidEmailFormat,
@@ -139,30 +140,77 @@ export default function AmcEmailSendDialog({
   const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
   const [requireAccept, setRequireAccept] = useState(false);
+  const defaultRecipientsKey = (defaultRecipients || []).join('|');
 
   useEffect(() => {
     if (!open) return;
-    const seeded = normalizeRecipientList(defaultRecipients);
-    if (singleRecipient) {
-      setRecipientEmail(seeded[0] || '');
-    } else {
-      setRecipientRows(seeded.length ? seeded : [emptyRow()]);
-    }
+    let cancelled = false;
+    const applySeed = (seeded: string[]) => {
+      if (cancelled) return;
+      if (singleRecipient) {
+        setRecipientEmail(seeded[0] || '');
+      } else {
+        setRecipientRows(seeded.length ? seeded : [emptyRow()]);
+      }
+      const phone = String(bill?.customer?.phone || '').trim();
+      setChannel(
+        pickDefaultAmcChannel({
+          allowWhatsApp: waEnabled,
+          hasEmail: seeded.length > 0,
+          hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
+        })
+      );
+    };
+
+    const localSeed = seedEmailsForDocumentSend(
+      defaultRecipients,
+      customerEmailOnFile,
+      bill?.customer?.email
+    );
+    applySeed(localSeed);
     setWhatsappPhone(String(bill?.customer?.phone || '').trim());
     setExtraWhatsappPhone('');
     setRequireAccept(false);
     setMessage(getDefaultDocumentMessage('amc_document'));
-    const phone = String(bill?.customer?.phone || '').trim();
-    setChannel(
-      pickDefaultAmcChannel({
-        allowWhatsApp: waEnabled,
-        hasEmail: seeded.length > 0,
-        hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
-      })
-    );
     setWindowOpen(null);
     setWindowHoursLeft(null);
-  }, [open, defaultRecipients, singleRecipient, bill?.customer?.phone, waEnabled]);
+
+    const customerId = String(bill?.customer?.id || '').trim();
+    if (localSeed.length > 0 || !customerId) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      const { data } = await supabase
+        .from('customers')
+        .select('email')
+        .eq('id', customerId)
+        .maybeSingle();
+      if (cancelled) return;
+      const fetched = seedEmailsForDocumentSend(
+        defaultRecipients,
+        customerEmailOnFile,
+        bill?.customer?.email,
+        (data as { email?: string | null } | null)?.email
+      );
+      if (fetched.length) applySeed(fetched);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    open,
+    singleRecipient,
+    customerEmailOnFile,
+    bill?.customer?.id,
+    bill?.customer?.email,
+    bill?.customer?.phone,
+    waEnabled,
+    defaultRecipientsKey,
+  ]);
 
   useEffect(() => {
     if (!open || !waEnabled) return;

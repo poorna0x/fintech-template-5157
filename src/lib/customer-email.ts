@@ -12,6 +12,26 @@ export function getValidCustomerEmail(email: unknown): string | null {
   return isValidCustomerEmail(email) ? email.trim() : null;
 }
 
+/** First real customer email from send-dialog sources (list, on-file, bill snapshot). */
+export function seedEmailsForDocumentSend(
+  defaults?: string[] | null,
+  ...fallbacks: unknown[]
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (raw: unknown) => {
+    const email = getValidCustomerEmail(raw);
+    if (!email) return;
+    const key = email.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(email);
+  };
+  for (const value of defaults || []) push(value);
+  for (const value of fallbacks) push(value);
+  return out;
+}
+
 /** True when the entered email should be written to the customer record (missing email only). */
 export function customerEmailNeedsSave(existing: unknown, next: string): boolean {
   const trimmedNext = next.trim();

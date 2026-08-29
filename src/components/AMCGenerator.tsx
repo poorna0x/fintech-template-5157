@@ -749,7 +749,8 @@ export default function AMCGenerator({
     runAfterDialogClose(() => openEmailSendDialog(brand));
   };
 
-  const customerEmail = getValidCustomerEmail(editableCustomer.email);
+  const customerEmail =
+    getValidCustomerEmail(editableCustomer.email) || getValidCustomerEmail(customer.email);
 
   const handleEmailCustomer = () => {
     if (!billNumber.trim()) {
@@ -1860,6 +1861,7 @@ export default function AMCGenerator({
         brand={emailSendContext?.brand ?? null}
         endDateIso={emailSendContext?.endDateIso ?? ''}
         defaultRecipients={emailSendContext?.defaultRecipients ?? []}
+        customerEmailOnFile={customerEmail}
         pdfOptions={{
           includeDetails: true,
           showComputerGeneratedText,
