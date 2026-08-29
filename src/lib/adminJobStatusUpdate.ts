@@ -5,6 +5,10 @@ import {
   createJobCompletedNotification,
   sendNotification,
 } from '@/lib/notifications';
+import {
+  applyOtherEnRouteResetLocal,
+  revertOtherEnRouteJobsToAssigned,
+} from '@/lib/revertOtherEnRouteJobs';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -19,7 +23,7 @@ export async function updateAdminJobStatus(
   }
 ) {
   try {
-    const { error } = await db.jobs.update(jobId, {
+    const { data: updatedRow, error } = await db.jobs.update(jobId, {
       status: newStatus as
         | 'PENDING'
         | 'ASSIGNED'
@@ -34,21 +38,43 @@ export async function updateAdminJobStatus(
       throw new Error(error.message);
     }
 
+    const started = ctx.jobs.find((j) => j.id === jobId);
+    const technicianId = String(
+      (updatedRow as { assigned_technician_id?: string } | null)?.assigned_technician_id ||
+        started?.assigned_technician_id ||
+        started?.assignedTechnicianId ||
+        ''
+    ).trim();
+    const startingNow =
+      newStatus === 'IN_PROGRESS' || newStatus === 'EN_ROUTE';
+    let reverted = 0;
+    if (startingNow && technicianId) {
+      reverted = await revertOtherEnRouteJobsToAssigned({
+        technicianId,
+        exceptJobId: jobId,
+      });
+    }
+
+    const patchJobList = (list: Job[]) =>
+      startingNow && technicianId
+        ? applyOtherEnRouteResetLocal(list, technicianId, jobId, newStatus)
+        : list.map((job) => (job.id === jobId ? { ...job, status: newStatus } : job));
+
     ctx.setCustomerJobs((prev) => {
       const updated = { ...prev };
       Object.keys(updated).forEach((customerId) => {
-        updated[customerId] = updated[customerId].map((job) =>
-          job.id === jobId ? { ...job, status: newStatus } : job
-        );
+        updated[customerId] = patchJobList(updated[customerId]);
       });
       return updated;
     });
 
-    ctx.setJobs((prev) =>
-      prev.map((job) => (job.id === jobId ? { ...job, status: newStatus } : job))
-    );
+    ctx.setJobs((prev) => patchJobList(prev));
 
-    toast.success(`Job status updated to ${newStatus}`);
+    toast.success(
+      reverted > 0
+        ? `Job status updated to ${newStatus}. Other en-route job${reverted === 1 ? '' : 's'} put back to Assigned.`
+        : `Job status updated to ${newStatus}`
+    );
 
     const job = ctx.jobs.find((j) => j.id === jobId);
     if (job) {

@@ -83,6 +83,17 @@ exports.handler = async (event) => {
     updated = true;
   }
 
+  // Only one EN_ROUTE job per technician — others go back to Assigned (Start Job).
+  const { error: revertErr } = await db
+    .from('jobs')
+    .update({ status: 'ASSIGNED', updated_at: new Date().toISOString() })
+    .eq('assigned_technician_id', technicianId)
+    .eq('status', 'EN_ROUTE')
+    .neq('id', jobId);
+  if (revertErr) {
+    console.warn('[submit-tech-going-yes] revert other en_route', revertErr.message);
+  }
+
   // Match notify-admins en_route exactly (skip re-push if already EN_ROUTE).
   if (updated) {
     const { data: tech } = await db

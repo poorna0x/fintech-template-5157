@@ -74,6 +74,7 @@ import {
 } from '@/lib/technicianOtpRequests';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
+import { applyOtherEnRouteResetLocal, revertOtherEnRouteJobsToAssigned } from '@/lib/revertOtherEnRouteJobs';
 import { mapCustomerGstFields } from '@/lib/customerGst';
 import {
   ensureSupabaseSessionForWrite,
@@ -3190,9 +3191,19 @@ const TechnicianDashboard = () => {
       <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
         <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
         <span>
-          You're already <strong>{statusLabel}</strong> with{' '}
-          <span className="font-semibold">{name}</span>. Finish that job first, or start
-          this one only if you've switched. Two jobs at once can cause mix-ups.
+          {status === 'EN_ROUTE' ? (
+            <>
+              You're already <strong>on the way</strong> to{' '}
+              <span className="font-semibold">{name}</span>. Starting this job puts that
+              one back to Assigned so you can Start it again later.
+            </>
+          ) : (
+            <>
+              You're already <strong>{statusLabel}</strong> with{' '}
+              <span className="font-semibold">{name}</span>. Finish that job first, or
+              start this one only if you've switched. Two jobs at once can cause mix-ups.
+            </>
+          )}
         </span>
       </div>
     );
@@ -3247,7 +3258,8 @@ const TechnicianDashboard = () => {
 
   // Actually perform the start job action. Returns true when EN_ROUTE was set.
   const performStartJob = async (job: Job): Promise<boolean> => {
-    if (!user?.technicianId) return false;
+    const technicianId = user?.technicianId;
+    if (!technicianId) return false;
 
     try {
       setIsUpdating(true);
@@ -3266,6 +3278,11 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
+      await revertOtherEnRouteJobsToAssigned({
+        technicianId,
+        exceptJobId: job.id,
+      });
+
       // Tell the office phones the technician is heading out (HRO Admin app push).
       void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
         notifyAdminsJobEvent(job.id, 'en_route')
@@ -3278,10 +3295,8 @@ const TechnicianDashboard = () => {
       shouldPreserveOrderRef.current = true;
       setJobs(prev => {
         const exists = prev.some(j => j.id === job.id);
-        if (exists) {
-          return prev.map(j => j.id === job.id ? { ...j, status: 'EN_ROUTE' as any } : j);
-        }
-        return [{ ...job, status: 'EN_ROUTE' as any }, ...prev];
+        const next = exists ? prev : [{ ...job, status: 'EN_ROUTE' as any }, ...prev];
+        return applyOtherEnRouteResetLocal(next, technicianId, job.id, 'EN_ROUTE');
       });
 
       // Job started silently
