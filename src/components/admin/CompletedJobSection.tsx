@@ -291,6 +291,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   // Find assigned technician
   const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
   const assignedTechnician = technicians.find(t => t.id === assignedTechnicianId) || null;
+  const useOfficeParts = isOfficeCompletedJob(job) || !assignedTechnician;
   const messageSent = requirements.some((r: any) => {
     if (r && typeof r === 'object') {
       return r.message_sent === true || r.message_sent === 'true';
@@ -880,7 +881,20 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               <Mail className="w-4 h-4 shrink-0" />
             </Button>
           ) : null}
-          {assignedTechnician ? (
+          {useOfficeParts ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (onOpenOfficeParts) onOpenOfficeParts();
+                else setOfficePartsDialogLocal(true);
+              }}
+              title="Add parts used"
+              className="text-xs flex-1 min-w-0 justify-center py-2 px-2 cursor-pointer"
+            >
+              <ShoppingCart className="w-4 h-4 shrink-0" />
+            </Button>
+          ) : (
             <Button
               size="sm"
               variant="outline"
@@ -890,20 +904,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 else setPartsUsedDialogLocal(true);
               }}
               title="Add Parts"
-              className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
-            >
-              <ShoppingCart className="w-4 h-4 shrink-0" />
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                if (onOpenOfficeParts) onOpenOfficeParts();
-                else setOfficePartsDialogLocal(true);
-              }}
-              title="Spare Parts"
-              className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
+              className="text-xs flex-1 min-w-0 justify-center py-2 px-2 cursor-pointer"
             >
               <ShoppingCart className="w-4 h-4 shrink-0" />
             </Button>
@@ -1042,7 +1043,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
       </Dialog>
       
       {/* Parts Used Dialog */}
-      {assignedTechnician && (
+      {!useOfficeParts && assignedTechnician && (
         <JobPartsUsedDialog
           open={partsUsedDialogOpen}
           onOpenChange={(open) => {
@@ -1057,8 +1058,8 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
         />
       )}
 
-      {/* Office / walk-in parts dialog (no technician) */}
-      {!assignedTechnician && (
+      {/* Office / walk-in parts (no field technician) */}
+      {useOfficeParts && (
         <OfficeJobPartsDialog
           open={officePartsDialogOpen}
           onOpenChange={(open) => {

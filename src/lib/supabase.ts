@@ -2580,17 +2580,16 @@ export const db = {
         0
       );
 
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('jobs')
         .update({
-          requirements: reqs,
+          requirements: coerceJobRequirementsForDb(reqs),
           parts_cost_total: partsCostTotal,
         } as Database['public']['Tables']['jobs']['Update'])
-        .eq('id', jobId)
-        .select()
-        .maybeSingle();
+        .eq('id', jobId);
 
-      return { data, error };
+      if (error) return { data: null, error };
+      return { data: { id: jobId, parts_cost_total: partsCostTotal }, error: null };
     },
     
     async update(id: string, updates: Database['public']['Tables']['jobs']['Update']) {

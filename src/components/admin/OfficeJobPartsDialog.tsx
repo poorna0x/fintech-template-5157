@@ -60,7 +60,6 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -82,10 +81,15 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
     let cancelled = false;
     setLoading(true);
     db.inventory
-      .getAll()
-      .then(({ data, error }) => {
+      .getAvailableSlim()
+      .then(async ({ data, error }) => {
         if (cancelled) return;
-        const inv = error ? [] : ((data as InventoryItem[]) || []);
+        let inv = error ? [] : ((data as InventoryItem[]) || []);
+        if (inv.length === 0) {
+          const all = await db.inventory.getAll();
+          if (cancelled) return;
+          inv = ((all.data as InventoryItem[]) || []).filter((i) => Number(i.quantity) > 0);
+        }
         setInventory(inv);
         // Enrich existing parts (esp. legacy ones) with current name/code from inventory.
         const existing = getOfficeJobParts(job).map((p) => {
@@ -257,24 +261,17 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
           <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Package className="w-5 h-5" />
-              Spare Parts (Office Sale)
+              Parts Used
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm">
-              Add or remove parts for this office/walk-in job. Each change updates main
-              inventory and the job&apos;s parts cost, so profit and analytics stay accurate.
+              Add parts for this office-completed job from main inventory. Cost updates profit and analytics.
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-sm">
-                <span className="text-muted-foreground">Parts cost: </span>
-                <span className="font-semibold text-orange-600">₹ {formatCurrency(partsCostTotal)}</span>
-              </div>
-              <Button size="sm" onClick={() => setAddOpen(true)} disabled={saving}>
-                <Plus className="w-4 h-4 mr-1.5" />
-                Add Part
-              </Button>
+            <div className="text-sm">
+              <span className="text-muted-foreground">Parts cost: </span>
+              <span className="font-semibold text-orange-600">₹ {formatCurrency(partsCostTotal)}</span>
             </div>
 
             {loading ? (
@@ -283,7 +280,7 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
               <div className="text-center py-8 text-muted-foreground">
                 <Package className="w-12 h-12 mx-auto mb-2 text-muted-foreground/70" />
                 <p>No parts added yet.</p>
-                <p className="text-sm mt-1">Click &quot;Add Part&quot; to track spare parts for this sale.</p>
+                <p className="text-sm mt-1">Search below to add a part from main inventory.</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -344,86 +341,64 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
                 })}
               </div>
             )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
-      {/* Add Part - search main inventory, click + to add 1 qty */}
-      <Dialog
-        open={addOpen}
-        onOpenChange={(o) => {
-          if (!o) {
-            setAddOpen(false);
-            setSearch('');
-            resetCustomForm();
-          }
-        }}
-      >
-        <DialogContent className="w-[calc(100%-2rem)] max-w-md sm:max-w-lg p-4 sm:p-6 max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader className="shrink-0">
-            <DialogTitle className="text-base sm:text-lg">Add Part</DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
-              Search and click + to add 1 qty from main inventory, or add a custom item not in
-              inventory.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col min-h-0 flex-1">
-            <div className="relative shrink-0 mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-              <Input
-                placeholder="Search parts by name or code..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 h-10 text-sm"
-              />
-            </div>
-            <div className="rounded-lg border flex-1 min-h-0 overflow-hidden">
-              {loading ? (
-                <div className="py-8 px-4 text-center text-sm text-muted-foreground">Loading...</div>
-              ) : filteredInventory.length === 0 ? (
-                <div className="py-8 px-4 text-center text-sm text-muted-foreground">
-                  {inventory.length === 0
-                    ? 'No inventory items.'
-                    : debouncedSearch.trim()
-                    ? 'No parts match your search.'
-                    : 'No items.'}
-                </div>
-              ) : (
-                <div className="max-h-[min(50vh,300px)] overflow-y-auto">
-                  {filteredInventory.map((inv) => {
-                    const outOfStock = inv.quantity <= 0;
-                    return (
-                      <div
-                        key={inv.id}
-                        className="flex items-center gap-2 border-b px-3 py-2.5 last:border-b-0"
-                      >
-                        <div className="min-w-0 flex-1 overflow-hidden">
-                          <span className="block truncate text-sm font-medium">
-                            {inv.product_name}
-                            {inv.code ? ` (${inv.code})` : ''}
-                          </span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {outOfStock ? 'Out of stock' : `${inv.quantity} in stock`} · ₹
-                            {formatCurrency(Number(inv.price) || 0)}
-                          </span>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 w-8 min-w-[2rem] shrink-0"
-                          onClick={() => handleAddPart(inv)}
-                          disabled={outOfStock || saving}
-                          title="Add 1 qty"
+            <div className="space-y-3 border-t pt-4">
+              <p className="text-sm font-medium">Add part</p>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="Search parts by name or code..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9 h-10 text-sm"
+                />
+              </div>
+              <div className="rounded-lg border overflow-hidden">
+                {loading ? (
+                  <div className="py-8 px-4 text-center text-sm text-muted-foreground">Loading...</div>
+                ) : filteredInventory.length === 0 ? (
+                  <div className="py-8 px-4 text-center text-sm text-muted-foreground">
+                    {inventory.length === 0
+                      ? 'No inventory items in stock.'
+                      : debouncedSearch.trim()
+                      ? 'No parts match your search.'
+                      : 'No items.'}
+                  </div>
+                ) : (
+                  <div className="max-h-[min(40vh,280px)] overflow-y-auto">
+                    {filteredInventory.map((inv) => {
+                      const outOfStock = inv.quantity <= 0;
+                      return (
+                        <div
+                          key={inv.id}
+                          className="flex items-center gap-2 border-b px-3 py-2.5 last:border-b-0"
                         >
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            <div className="shrink-0 pt-3 border-t mt-3 space-y-3">
+                          <div className="min-w-0 flex-1 overflow-hidden">
+                            <span className="block truncate text-sm font-medium">
+                              {inv.product_name}
+                              {inv.code ? ` (${inv.code})` : ''}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {outOfStock ? 'Out of stock' : `${inv.quantity} in stock`} · ₹
+                              {formatCurrency(Number(inv.price) || 0)}
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 w-8 min-w-[2rem] shrink-0 cursor-pointer"
+                            onClick={() => handleAddPart(inv)}
+                            disabled={outOfStock || saving}
+                            title="Add 1 qty"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               {showCustom ? (
                 <div className="space-y-2 rounded-lg border p-3">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -463,11 +438,11 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
                     </div>
                   </div>
                   <div className="flex gap-2 pt-1">
-                    <Button variant="outline" className="flex-1" onClick={resetCustomForm} disabled={saving}>
+                    <Button variant="outline" className="flex-1 cursor-pointer" onClick={resetCustomForm} disabled={saving}>
                       Cancel
                     </Button>
                     <Button
-                      className="flex-1"
+                      className="flex-1 cursor-pointer"
                       onClick={handleAddCustomPart}
                       disabled={saving || !customName.trim()}
                     >
@@ -479,7 +454,7 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
               ) : (
                 <Button
                   variant="ghost"
-                  className="w-full justify-center text-sm border border-dashed"
+                  className="w-full justify-center text-sm border border-dashed cursor-pointer"
                   onClick={() => {
                     setShowCustom(true);
                     setCustomName(search.trim().toUpperCase());
@@ -492,11 +467,6 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
                   Add custom item{search.trim() ? ` "${search.trim()}"` : ''}
                 </Button>
               )}
-              <div className="flex justify-end">
-                <Button variant="outline" className="w-full sm:w-auto" onClick={() => setAddOpen(false)}>
-                  Done
-                </Button>
-              </div>
             </div>
           </div>
         </DialogContent>
