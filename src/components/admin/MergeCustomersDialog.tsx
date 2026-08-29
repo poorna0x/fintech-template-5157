@@ -12,9 +12,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { GitMerge, Loader2, Search, AlertTriangle } from 'lucide-react';
+import { GitMerge, Loader2, Search, AlertTriangle, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
-import { db, type CustomerMergePreview, type CustomerMergeResult } from '@/lib/supabase';
+import { db, supabase, type CustomerMergePreview, type CustomerMergeResult } from '@/lib/supabase';
+import {
+  formatMergePinDistance,
+  mergeLocationSummary,
+  mergePinsDistanceMeters,
+  mergePinsNeedChoice,
+  type MergeLocationFrom,
+} from '@/lib/mergeCustomerLocation';
 
 interface MergeCustomerPick {
   id: string;
@@ -176,11 +183,85 @@ function PreviewSummary({ preview }: { preview: CustomerMergePreview }) {
       </ul>
       <p className="text-xs text-muted-foreground">
         {secondary.phone} will be saved as alternate phone on {primary.customer_id} (if slot is
-        free). The keeper&apos;s address and map pin stay; the duplicate&apos;s location is only
-        used if the keeper has none.
+        free). Jobs keep their own map pins.
       </p>
     </div>
   );
+}
+
+function LocationChoice({
+  preview,
+  value,
+  onChange,
+}: {
+  preview: CustomerMergePreview;
+  value: MergeLocationFrom | '';
+  onChange: (v: MergeLocationFrom) => void;
+}) {
+  const distanceM = mergePinsDistanceMeters(preview.primary.location, preview.secondary.location);
+  if (distanceM == null) return null;
+
+  return (
+    <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/20">
+      <Label className="flex items-center gap-1.5">
+        <MapPin className="h-4 w-4" />
+        Locations are {formatMergePinDistance(distanceM)} apart — pick which pin to keep
+      </Label>
+      <RadioGroup
+        value={value}
+        onValueChange={(v) => onChange(v as MergeLocationFrom)}
+        className="space-y-2"
+      >
+        {(['primary', 'secondary'] as const).map((side) => {
+          const row = preview[side];
+          return (
+            <div key={side} className="flex items-start space-x-2 rounded-md border bg-background p-3">
+              <RadioGroupItem value={side} id={`loc-${side}`} className="mt-0.5" />
+              <Label htmlFor={`loc-${side}`} className="font-normal cursor-pointer flex-1 min-w-0">
+                <span className="font-medium">{row.customer_id}</span>
+                <span className="text-muted-foreground text-sm block truncate">
+                  {mergeLocationSummary(row)}
+                </span>
+              </Label>
+            </div>
+          );
+        })}
+      </RadioGroup>
+    </div>
+  );
+}
+
+async function withPreviewLocations(
+  preview: CustomerMergePreview,
+  primaryId: string,
+  secondaryId: string
+): Promise<CustomerMergePreview> {
+  if (preview.primary.location !== undefined || preview.secondary.location !== undefined) {
+    return preview;
+  }
+  const { data, error } = await supabase
+    .from('customers')
+    .select('id, location, address, visible_address')
+    .in('id', [primaryId, secondaryId]);
+  if (error || !data?.length) return preview;
+  const byId = new Map(data.map((r) => [String(r.id), r]));
+  const p = byId.get(primaryId);
+  const s = byId.get(secondaryId);
+  return {
+    ...preview,
+    primary: {
+      ...preview.primary,
+      location: p?.location ?? preview.primary.location,
+      address: (p?.address as CustomerMergePreview['primary']['address']) ?? preview.primary.address,
+      visible_address: p?.visible_address ?? preview.primary.visible_address,
+    },
+    secondary: {
+      ...preview.secondary,
+      location: s?.location ?? preview.secondary.location,
+      address: (s?.address as CustomerMergePreview['secondary']['address']) ?? preview.secondary.address,
+      visible_address: s?.visible_address ?? preview.secondary.visible_address,
+    },
+  };
 }
 
 export default function MergeCustomersDialog({
@@ -205,6 +286,7 @@ export default function MergeCustomersDialog({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [isMerging, setIsMerging] = useState(false);
+  const [locationChoice, setLocationChoice] = useState<MergeLocationFrom | ''>('');
 
   const reset = useCallback(() => {
     setStep(1);
@@ -221,6 +303,7 @@ export default function MergeCustomersDialog({
     setPreviewError('');
     setPreviewLoading(false);
     setIsMerging(false);
+    setLocationChoice('');
   }, []);
 
   useEffect(() => {
@@ -274,10 +357,10 @@ export default function MergeCustomersDialog({
     let cancelled = false;
     setPreviewLoading(true);
     setPreviewError('');
-    void db.customers.previewMerge(primaryId, secondaryId).then(({ data, error }) => {
+    void db.customers.previewMerge(primaryId, secondaryId).then(async ({ data, error }) => {
       if (cancelled) return;
-      setPreviewLoading(false);
       if (error) {
+        setPreviewLoading(false);
         if (isMissingMergeRpc(error)) {
           setPreviewError(
             'Merge RPC not installed. Run scripts/merge-customers-admin-rpc.sql in Supabase SQL Editor first.'
@@ -288,12 +371,24 @@ export default function MergeCustomersDialog({
         setPreview(null);
         return;
       }
-      setPreview(data);
+      const withLoc = data ? await withPreviewLocations(data, primaryId, secondaryId) : data;
+      if (cancelled) return;
+      setPreviewLoading(false);
+      setPreview(withLoc);
+      if (withLoc && mergePinsNeedChoice(withLoc.primary.location, withLoc.secondary.location)) {
+        setLocationChoice('');
+      } else {
+        setLocationChoice('primary');
+      }
     });
     return () => {
       cancelled = true;
     };
   }, [customerA, customerB, primaryId, secondaryId]);
+
+  const needsLocationChoice = Boolean(
+    preview && mergePinsNeedChoice(preview.primary.location, preview.secondary.location)
+  );
 
   const canContinue =
     customerA &&
@@ -302,13 +397,22 @@ export default function MergeCustomersDialog({
     primaryId &&
     preview &&
     !previewLoading &&
-    !previewError;
+    !previewError &&
+    (!needsLocationChoice || locationChoice);
 
   const handleMerge = async () => {
     if (!primaryId || !secondaryId) return;
+    if (needsLocationChoice && !locationChoice) {
+      toast.error('Pick which location to keep — the pins are more than 200 m apart.');
+      return;
+    }
     setIsMerging(true);
     try {
-      const { data, error } = await db.customers.merge(primaryId, secondaryId);
+      const { data, error } = await db.customers.merge(
+        primaryId,
+        secondaryId,
+        locationChoice || 'primary'
+      );
       if (error) {
         if (isMissingMergeRpc(error)) {
           toast.error('Merge RPC not installed. Run scripts/merge-customers-admin-rpc.sql in Supabase.');
@@ -437,11 +541,29 @@ export default function MergeCustomersDialog({
                 <AlertDescription>{previewError}</AlertDescription>
               </Alert>
             )}
-            {preview && !previewLoading && <PreviewSummary preview={preview} />}
+            {preview && !previewLoading && (
+              <>
+                <PreviewSummary preview={preview} />
+                {needsLocationChoice ? (
+                  <LocationChoice
+                    preview={preview}
+                    value={locationChoice}
+                    onChange={setLocationChoice}
+                  />
+                ) : null}
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-3 py-1">
             {preview && <PreviewSummary preview={preview} />}
+            {preview && needsLocationChoice ? (
+              <LocationChoice
+                preview={preview}
+                value={locationChoice}
+                onChange={setLocationChoice}
+              />
+            ) : null}
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
@@ -476,7 +598,7 @@ export default function MergeCustomersDialog({
             <Button
               type="button"
               className="bg-red-600 hover:bg-red-700"
-              disabled={isMerging || !preview}
+              disabled={isMerging || !preview || (needsLocationChoice && !locationChoice)}
               onClick={() => void handleMerge()}
             >
               {isMerging ? (

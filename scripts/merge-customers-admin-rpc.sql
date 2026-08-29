@@ -91,7 +91,10 @@ BEGIN
       'phone', v_primary.phone,
       'alternate_phone', v_primary.alternate_phone,
       'customer_since', v_primary.customer_since,
-      'jobs_count', (SELECT count(*)::integer FROM public.jobs WHERE customer_id = p_primary)
+      'jobs_count', (SELECT count(*)::integer FROM public.jobs WHERE customer_id = p_primary),
+      'visible_address', v_primary.visible_address,
+      'address', v_primary.address,
+      'location', v_primary.location
     ),
     'secondary', jsonb_build_object(
       'id', v_secondary.id,
@@ -100,7 +103,10 @@ BEGIN
       'phone', v_secondary.phone,
       'alternate_phone', v_secondary.alternate_phone,
       'customer_since', v_secondary.customer_since,
-      'jobs_count', v_jobs
+      'jobs_count', v_jobs,
+      'visible_address', v_secondary.visible_address,
+      'address', v_secondary.address,
+      'location', v_secondary.location
     ),
     'counts', jsonb_build_object(
       'jobs', v_jobs,
@@ -119,10 +125,17 @@ GRANT EXECUTE ON FUNCTION public.preview_merge_customers_admin(uuid, uuid) TO au
 
 -- ---------------------------------------------------------------------------
 -- Merge (atomic)
+-- p_location_from: 'primary' keeps the keeper pin (fills only if empty).
+--                  'secondary' uses the duplicate's pin when the admin chose it
+--                  because the two pins were more than 200 m apart.
 -- ---------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.merge_customers_admin(uuid, uuid);
+DROP FUNCTION IF EXISTS public.merge_customers_admin(uuid, uuid, text);
+
 CREATE OR REPLACE FUNCTION public.merge_customers_admin(
   p_primary uuid,
-  p_secondary uuid
+  p_secondary uuid,
+  p_location_from text DEFAULT 'primary'
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -152,6 +165,9 @@ DECLARE
   v_service_type character varying(20);
   v_address jsonb;
   v_location jsonb;
+  v_visible_address text;
+  v_location_from text;
+  v_prefer_secondary boolean;
 BEGIN
   PERFORM public._assert_merge_customers_admin();
 
@@ -162,6 +178,12 @@ BEGIN
   IF p_primary = p_secondary THEN
     RAISE EXCEPTION 'cannot merge a customer into itself' USING ERRCODE = '22023';
   END IF;
+
+  v_location_from := lower(coalesce(nullif(btrim(p_location_from), ''), 'primary'));
+  IF v_location_from NOT IN ('primary', 'secondary') THEN
+    RAISE EXCEPTION 'p_location_from must be primary or secondary' USING ERRCODE = '22023';
+  END IF;
+  v_prefer_secondary := v_location_from = 'secondary';
 
   SELECT * INTO v_primary FROM public.customers WHERE id = p_primary FOR UPDATE;
   IF NOT FOUND THEN
@@ -219,21 +241,43 @@ BEGIN
     nullif(trim(v_secondary.service_type), '')
   );
 
-  -- Address + map pin: keep the PRIMARY (keeper). Only fill from the duplicate
-  -- when the keeper has no address / pin. Jobs keep their own location snapshots.
-  v_address := CASE
-    WHEN coalesce(
-           nullif(trim(v_primary.address ->> 'street'), ''),
-           nullif(trim(v_primary.address ->> 'area'), ''),
-           nullif(trim(v_primary.address ->> 'city'), '')
-         ) IS NOT NULL THEN v_primary.address
-    ELSE v_secondary.address
-  END;
-
-  v_location := CASE
-    WHEN v_primary.location IS NOT NULL AND v_primary.location <> '{}'::jsonb THEN v_primary.location
-    ELSE v_secondary.location
-  END;
+  -- Address + map pin. Default: keep the keeper, fill only if empty.
+  -- If the admin chose the duplicate (pins more than 200 m apart), use that site.
+  IF v_prefer_secondary THEN
+    v_address := CASE
+      WHEN coalesce(
+             nullif(trim(v_secondary.address ->> 'street'), ''),
+             nullif(trim(v_secondary.address ->> 'area'), ''),
+             nullif(trim(v_secondary.address ->> 'city'), '')
+           ) IS NOT NULL THEN v_secondary.address
+      ELSE v_primary.address
+    END;
+    v_location := CASE
+      WHEN v_secondary.location IS NOT NULL AND v_secondary.location <> '{}'::jsonb THEN v_secondary.location
+      ELSE v_primary.location
+    END;
+    v_visible_address := coalesce(
+      nullif(trim(v_secondary.visible_address), ''),
+      nullif(trim(v_primary.visible_address), '')
+    );
+  ELSE
+    v_address := CASE
+      WHEN coalesce(
+             nullif(trim(v_primary.address ->> 'street'), ''),
+             nullif(trim(v_primary.address ->> 'area'), ''),
+             nullif(trim(v_primary.address ->> 'city'), '')
+           ) IS NOT NULL THEN v_primary.address
+      ELSE v_secondary.address
+    END;
+    v_location := CASE
+      WHEN v_primary.location IS NOT NULL AND v_primary.location <> '{}'::jsonb THEN v_primary.location
+      ELSE v_secondary.location
+    END;
+    v_visible_address := coalesce(
+      nullif(trim(v_primary.visible_address), ''),
+      nullif(trim(v_secondary.visible_address), '')
+    );
+  END IF;
 
   -- Notes: append secondary notes
   v_notes := nullif(trim(coalesce(v_primary.notes, '')), '');
@@ -280,7 +324,7 @@ BEGIN
     email = coalesce(nullif(trim(v_primary.email), ''), nullif(trim(v_secondary.email), ''), v_primary.email),
     address = coalesce(v_address, v_primary.address),
     location = coalesce(v_location, v_primary.location),
-    visible_address = coalesce(nullif(trim(v_primary.visible_address), ''), nullif(trim(v_secondary.visible_address), '')),
+    visible_address = coalesce(v_visible_address, v_primary.visible_address),
     alternate_address = CASE
       WHEN v_primary.alternate_address IS NOT NULL AND v_primary.alternate_address <> '{}'::jsonb THEN v_primary.alternate_address
       ELSE v_secondary.alternate_address
@@ -330,6 +374,6 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.merge_customers_admin(uuid, uuid) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.merge_customers_admin(uuid, uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.merge_customers_admin(uuid, uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.merge_customers_admin(uuid, uuid, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.merge_customers_admin(uuid, uuid, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.merge_customers_admin(uuid, uuid, text) TO authenticated;

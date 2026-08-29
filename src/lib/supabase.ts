@@ -1756,10 +1756,15 @@ export const db = {
     },
 
     /** Admin: merge duplicate customer into keeper (atomic RPC). */
-    async merge(primaryId: string, secondaryId: string) {
+    async merge(
+      primaryId: string,
+      secondaryId: string,
+      locationFrom: 'primary' | 'secondary' = 'primary'
+    ) {
       const { data, error } = await supabase.rpc('merge_customers_admin', {
         p_primary: primaryId,
         p_secondary: secondaryId,
+        p_location_from: locationFrom,
       } as never);
       return { data: data as CustomerMergeResult | null, error };
     },
@@ -8681,6 +8686,9 @@ export interface CustomerMergePreview {
     alternate_phone?: string | null;
     customer_since?: string | null;
     jobs_count: number;
+    visible_address?: string | null;
+    address?: { street?: string; area?: string; city?: string } | null;
+    location?: unknown;
   };
   secondary: {
     id: string;
@@ -8690,6 +8698,9 @@ export interface CustomerMergePreview {
     alternate_phone?: string | null;
     customer_since?: string | null;
     jobs_count: number;
+    visible_address?: string | null;
+    address?: { street?: string; area?: string; city?: string } | null;
+    location?: unknown;
   };
   counts: {
     jobs: number;
