@@ -33,6 +33,39 @@ $$;
 
 REVOKE ALL ON FUNCTION public._assert_merge_customers_admin() FROM PUBLIC;
 
+-- True when location jsonb has a real lat/lng (0,0 and {} count as empty — same as the CRM).
+CREATE OR REPLACE FUNCTION public._customer_has_map_pin(loc jsonb)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+SET search_path = public
+AS $$
+  SELECT COALESCE((
+    SELECT
+      lat IS NOT NULL
+      AND lng IS NOT NULL
+      AND NOT (lat = 0 AND lng = 0)
+    FROM (
+      SELECT
+        COALESCE(
+          CASE WHEN (loc->>'latitude') ~ '^-?[0-9]+(\.[0-9]+)?$'
+            THEN (loc->>'latitude')::double precision END,
+          CASE WHEN (loc->>'lat') ~ '^-?[0-9]+(\.[0-9]+)?$'
+            THEN (loc->>'lat')::double precision END
+        ) AS lat,
+        COALESCE(
+          CASE WHEN (loc->>'longitude') ~ '^-?[0-9]+(\.[0-9]+)?$'
+            THEN (loc->>'longitude')::double precision END,
+          CASE WHEN (loc->>'lng') ~ '^-?[0-9]+(\.[0-9]+)?$'
+            THEN (loc->>'lng')::double precision END
+        ) AS lng
+    ) coords
+  ), false);
+$$;
+
+REVOKE ALL ON FUNCTION public._customer_has_map_pin(jsonb) FROM PUBLIC;
+
 -- ---------------------------------------------------------------------------
 -- Preview counts (no writes)
 -- ---------------------------------------------------------------------------
@@ -168,6 +201,7 @@ DECLARE
   v_visible_address text;
   v_location_from text;
   v_prefer_secondary boolean;
+  r record;
 BEGIN
   PERFORM public._assert_merge_customers_admin();
 
@@ -211,6 +245,50 @@ BEGIN
   SET entity_id = p_primary
   WHERE entity_type = 'customer' AND entity_id = p_secondary;
 
+  -- Any other table that FKs to customers(id) — warranties, WhatsApp, reviews, etc.
+  -- otherwise ON DELETE CASCADE would drop those rows with the duplicate.
+  FOR r IN
+    SELECT
+      tc.table_schema AS sch,
+      tc.table_name AS tbl,
+      kcu.column_name AS col
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu
+      ON tc.constraint_name = kcu.constraint_name
+     AND tc.table_schema = kcu.table_schema
+    JOIN information_schema.constraint_column_usage ccu
+      ON ccu.constraint_name = tc.constraint_name
+     AND ccu.table_schema = tc.table_schema
+    WHERE tc.constraint_type = 'FOREIGN KEY'
+      AND ccu.table_schema = 'public'
+      AND ccu.table_name = 'customers'
+      AND ccu.column_name = 'id'
+      AND tc.table_schema = 'public'
+      AND tc.table_name NOT IN ('jobs', 'amc_contracts', 'call_history', 'tax_invoices')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.key_column_usage k2
+        WHERE k2.constraint_name = kcu.constraint_name
+          AND k2.table_schema = kcu.table_schema
+          AND k2.ordinal_position > 1
+      )
+  LOOP
+    BEGIN
+      EXECUTE format(
+        'UPDATE %I.%I SET %I = $1 WHERE %I = $2',
+        r.sch, r.tbl, r.col, r.col
+      ) USING p_primary, p_secondary;
+    EXCEPTION
+      WHEN undefined_column THEN
+        NULL;
+      WHEN unique_violation THEN
+        EXECUTE format(
+          'DELETE FROM %I.%I WHERE %I = $1',
+          r.sch, r.tbl, r.col
+        ) USING p_secondary;
+    END;
+  END LOOP;
+
   -- Equipment from the most recent job (after jobs were moved to the keeper),
   -- so the customer profile reflects the latest serviced equipment.
   SELECT j.brand, j.model, j.service_type
@@ -253,7 +331,7 @@ BEGIN
       ELSE v_primary.address
     END;
     v_location := CASE
-      WHEN v_secondary.location IS NOT NULL AND v_secondary.location <> '{}'::jsonb THEN v_secondary.location
+      WHEN public._customer_has_map_pin(v_secondary.location) THEN v_secondary.location
       ELSE v_primary.location
     END;
     v_visible_address := coalesce(
@@ -270,7 +348,7 @@ BEGIN
       ELSE v_secondary.address
     END;
     v_location := CASE
-      WHEN v_primary.location IS NOT NULL AND v_primary.location <> '{}'::jsonb THEN v_primary.location
+      WHEN public._customer_has_map_pin(v_primary.location) THEN v_primary.location
       ELSE v_secondary.location
     END;
     v_visible_address := coalesce(
@@ -294,7 +372,7 @@ BEGIN
   IF nullif(trim(coalesce(v_secondary.phone, '')), '') IS NOT NULL
      AND trim(v_secondary.phone) IS DISTINCT FROM trim(v_primary.phone) THEN
     IF v_alt_phone IS NULL THEN
-      v_alt_phone := trim(v_secondary.phone);
+      v_alt_phone := left(trim(v_secondary.phone), 15);
     ELSE
       v_notes := coalesce(v_notes, '') || E'\nMerged phone: ' || trim(v_secondary.phone);
     END IF;
@@ -306,7 +384,9 @@ BEGIN
     v_notes := coalesce(v_notes, '') || E'\nMerged alternate phone: ' || trim(v_secondary.alternate_phone);
   END IF;
 
-  v_photos := coalesce(v_primary.photos, '[]'::jsonb) || coalesce(v_secondary.photos, '[]'::jsonb);
+  v_photos :=
+    CASE WHEN jsonb_typeof(v_primary.photos) = 'array' THEN v_primary.photos ELSE '[]'::jsonb END
+    || CASE WHEN jsonb_typeof(v_secondary.photos) = 'array' THEN v_secondary.photos ELSE '[]'::jsonb END;
 
   v_customer_since := LEAST(
     coalesce(v_primary.customer_since, v_secondary.customer_since),
@@ -377,3 +457,5 @@ $$;
 REVOKE ALL ON FUNCTION public.merge_customers_admin(uuid, uuid, text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.merge_customers_admin(uuid, uuid, text) FROM anon;
 GRANT EXECUTE ON FUNCTION public.merge_customers_admin(uuid, uuid, text) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
