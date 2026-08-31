@@ -139,13 +139,6 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
     };
   }, [completedJobIdsKey]);
 
-  const distantFollowUpCutoff = new Date();
-  distantFollowUpCutoff.setHours(0, 0, 0, 0);
-  distantFollowUpCutoff.setDate(distantFollowUpCutoff.getDate() + 3);
-  const distantFollowUpCutoffYmd = `${distantFollowUpCutoff.getFullYear()}-${String(
-    distantFollowUpCutoff.getMonth() + 1
-  ).padStart(2, '0')}-${String(distantFollowUpCutoff.getDate()).padStart(2, '0')}`;
-
   return (
     <>
       {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => {
@@ -168,21 +161,6 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
     return lead.includes('website');
   });
   const hasOpenAmcServiceJob = allJobs.some((job) => isOpenAmcServiceJob(job));
-  const normalFollowUps =
-    statusFilter === 'RESCHEDULED'
-      ? allJobs.filter(
-          (job) =>
-            ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status) &&
-            !isOpenAmcServiceJob(job)
-        )
-      : [];
-  const normalFollowUpDates = normalFollowUps
-    .map((job) => followUpDateToStr(job.followUpDate || (job as any).follow_up_date))
-    .filter((date): date is string => Boolean(date));
-  const isDistantNormalFollowUp =
-    normalFollowUps.length > 0 &&
-    normalFollowUpDates.length === normalFollowUps.length &&
-    normalFollowUpDates.every((date) => date > distantFollowUpCutoffYmd);
   // AMC due / open AMC Service jobs → blue border.
   const borderClass = hasOpenAmcServiceJob
     ? 'border-blue-500 border-2'
@@ -202,13 +180,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
     );
 
   return (
-    <Card
-      key={customer.id}
-      title={isDistantNormalFollowUp ? 'Future follow-up — not included in the count yet' : undefined}
-      className={`bg-white border ${borderClass} ${hoverBorderClass} hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group ${
-        isDistantNormalFollowUp ? 'opacity-60 saturate-[0.65]' : ''
-      }`}
-    >
+    <Card key={customer.id} className={`bg-white border ${borderClass} ${hoverBorderClass} hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group`}>
     <CustomerCardHeader
       customer={customer}
       customerAMCStatus={customerAMCStatus}

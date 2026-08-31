@@ -15,7 +15,6 @@ import {
   Search,
   Send,
   Settings,
-  Sparkles,
   Trash2,
   UserRound,
   X,
@@ -157,20 +156,6 @@ import {
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
 import {
-  requestAiInboxSuggestion,
-  saveAiQuotationDraft,
-  type AiInboxSuggestion,
-} from '@/lib/aiInboxAssistant';
-import {
-  fetchWhatsAppAiChatSettings,
-  markWhatsAppChatAiReviewed,
-  setWhatsAppAiReviewAll,
-  setWhatsAppChatAutoReply,
-  type WhatsAppAiChatSettings,
-} from '@/lib/whatsappAiChatSettings';
-import { saveBytesToNativeDownloads } from '@/lib/nativeDownloadsSave';
-import { isNativeRuntime, openBytesNatively } from '@/lib/nativeFileOpen';
-import {
   buildQuickHelloTemplate,
   quickReplyBookingUrl,
   waterFilterServiceFromLabel,
@@ -242,21 +227,6 @@ function formatDaySeparator(iso: string): string {
     month: 'short',
     year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
   });
-}
-
-function mediaFilenameFor(row: WhatsAppMessageRow): string {
-  const name = (row.filename || '').trim();
-  if (name) return name;
-  return row.msg_type === 'image' || row.media_mime?.startsWith('image/')
-    ? 'photo.jpg'
-    : 'document.pdf';
-}
-
-function mediaMimeFor(row: WhatsAppMessageRow, filename: string): string {
-  return (
-    row.media_mime ||
-    (/\.pdf$/i.test(filename) ? 'application/pdf' : 'application/octet-stream')
-  );
 }
 
 function triggerBlobDownload(blob: Blob, filename: string) {
@@ -459,17 +429,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [draft, setDraft] = useState('');
   const [threadBrand, setThreadBrand] = useState<DocumentBrand>('hydrogenro');
   const [sending, setSending] = useState(false);
-  const [aiSuggesting, setAiSuggesting] = useState(false);
-  const [aiSuggestion, setAiSuggestion] = useState<AiInboxSuggestion | null>(null);
-  const [aiSavingQuote, setAiSavingQuote] = useState(false);
-  const [aiChatSettings, setAiChatSettings] = useState<WhatsAppAiChatSettings>({
-    reviewAllChats: false,
-    autoReplyEnabled: false,
-    lastReviewedWaMessageId: null,
-    updatedAt: null,
-  });
-  const [aiChatSettingsBusy, setAiChatSettingsBusy] = useState(false);
-  const aiReviewedInSessionRef = useRef(new Set<string>());
   const [purging, setPurging] = useState(false);
   const [chatDeleteTarget, setChatDeleteTarget] = useState<{
     phone: string;
@@ -1089,32 +1048,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     [resolveMediaHref]
   );
 
-  const loadMediaBytes = useCallback(
-    async (row: WhatsAppMessageRow): Promise<ArrayBuffer> => {
-      const ref = row.media_url as string;
-      if (isR2MediaRef(ref) || ref.startsWith('whatsapp-media:')) {
-        const fetched = await getWhatsAppMediaBytesCached({
-          mediaUrl: ref,
-          messageId: row.id,
-          mimeHint: row.media_mime,
-        });
-        if (fetched.ok && fetched.bytes) return fetched.bytes;
-        if (fetched.ok && fetched.url) {
-          const res = await fetch(fetched.url);
-          if (!res.ok) throw new Error('Download failed');
-          return res.arrayBuffer();
-        }
-        throw new Error(fetched.error || 'Download failed');
-      }
-      const href = await resolveMediaHref(row);
-      if (!href) throw new Error('Could not download');
-      const res = await fetch(href);
-      if (!res.ok) throw new Error('Download failed');
-      return res.arrayBuffer();
-    },
-    [resolveMediaHref]
-  );
-
   const openMedia = useCallback(
     async (row: WhatsAppMessageRow) => {
       if (!row.media_url) return;
@@ -1122,26 +1055,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         await openImageViewer(row);
         return;
       }
-
-      // Android/iOS WebView has no PDF viewer and ignores blob: popups.
-      if (isNativeRuntime()) {
-        const toastId = toast.loading('Opening…');
-        try {
-          const name = mediaFilenameFor(row);
-          const bytes = await loadMediaBytes(row);
-          const result = await openBytesNatively(bytes, name, mediaMimeFor(row, name));
-          if (result === 'unavailable') {
-            throw new Error('No app on this phone can open this file');
-          }
-          toast.dismiss(toastId);
-        } catch (err) {
-          toast.error(err instanceof Error ? err.message : 'Could not open attachment', {
-            id: toastId,
-          });
-        }
-        return;
-      }
-
       // Prefer already-resolved / public URL — no loading toast
       const ready =
         mediaUrlCacheRef.current[row.id] ||
@@ -1151,9 +1064,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           ? row.media_url
           : null);
       if (ready) {
-        if (!window.open(ready, '_blank', 'noopener,noreferrer')) {
-          toast.error('Allow pop-ups to open this attachment');
-        }
+        window.open(ready, '_blank', 'noopener,noreferrer');
         return;
       }
 
@@ -1169,10 +1080,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           toast.error('Could not open attachment', { id: toastId });
           return;
         }
-        if (!window.open(href, '_blank', 'noopener,noreferrer')) {
-          toast.error('Allow pop-ups to open this attachment', { id: toastId });
-          return;
-        }
+        window.open(href, '_blank', 'noopener,noreferrer');
         toast.dismiss(toastId);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Could not open attachment', {
@@ -1180,28 +1088,54 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         });
       }
     },
-    [resolveMediaHref, openImageViewer, loadMediaBytes]
+    [resolveMediaHref, openImageViewer]
   );
 
   const downloadMedia = useCallback(
     async (row: WhatsAppMessageRow) => {
       if (!row.media_url) return;
-      const name = mediaFilenameFor(row);
-      const mime = mediaMimeFor(row, name);
+      const name =
+        (row.filename || '').trim() ||
+        (row.msg_type === 'image' || row.media_mime?.startsWith('image/')
+          ? 'photo.jpg'
+          : 'document.pdf');
       const toastId = toast.loading('Downloading…');
       try {
-        const bytes = await loadMediaBytes(row);
-        if (isNativeRuntime() && (await saveBytesToNativeDownloads(bytes, name, mime))) {
-          toast.success('Saved to Downloads', { id: toastId });
-          return;
+        const ref = row.media_url;
+        if (isR2MediaRef(ref) || ref.startsWith('whatsapp-media:')) {
+          const fetched = await getWhatsAppMediaBytesCached({
+            mediaUrl: ref,
+            messageId: row.id,
+            mimeHint: row.media_mime,
+          });
+          if (fetched.ok && fetched.bytes) {
+            const mime =
+              row.media_mime ||
+              (/\.pdf$/i.test(name) ? 'application/pdf' : 'application/octet-stream');
+            triggerBlobDownload(new Blob([fetched.bytes], { type: mime }), name);
+            toast.success('Downloaded', { id: toastId });
+            return;
+          }
+          if (fetched.ok && fetched.url) {
+            const res = await fetch(fetched.url);
+            if (!res.ok) throw new Error('Download failed');
+            triggerBlobDownload(await res.blob(), name);
+            toast.success('Downloaded', { id: toastId });
+            return;
+          }
+          throw new Error(fetched.error || 'Download failed');
         }
-        triggerBlobDownload(new Blob([bytes], { type: mime }), name);
+        const href = await resolveMediaHref(row);
+        if (!href) throw new Error('Could not download');
+        const res = await fetch(href);
+        if (!res.ok) throw new Error('Download failed');
+        triggerBlobDownload(await res.blob(), name);
         toast.success('Downloaded', { id: toastId });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Download failed', { id: toastId });
       }
     },
-    [loadMediaBytes]
+    [resolveMediaHref]
   );
 
   // Prefetch recent image signed URLs in parallel (ref cache → fewer re-renders)
@@ -1453,10 +1387,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     if (!selectedPhone) {
       setThreadMessages([]);
       setThreadHasMoreOlder(false);
-      setAiSuggestion(null);
       return;
     }
-    setAiSuggestion(null);
     const phoneDigits = toWhatsAppPhoneDigits(selectedPhone);
     stickToBottomRef.current = true;
     setShowJumpToLatest(false);
@@ -1473,26 +1405,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     setThreadMessages([]);
     void loadThread(phoneDigits, { force: true });
   }, [selectedPhone, loadThread]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const phone = toWhatsAppPhoneDigits(selectedPhone);
-    void fetchWhatsAppAiChatSettings(phone).then((result) => {
-      if (cancelled) return;
-      if (result.ok) {
-        setAiChatSettings(result.settings);
-      } else {
-        setAiChatSettings((current) => ({
-          ...current,
-          autoReplyEnabled: false,
-          lastReviewedWaMessageId: null,
-        }));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedPhone]);
 
   const lastThreadMessageId = threadMessages[threadMessages.length - 1]?.id ?? null;
 
@@ -1862,7 +1774,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         }
         setDraft('');
         clearAttach();
-        setAiSuggestion(null);
         toast.success(parsed.mimeType.startsWith('image/') ? 'Image sent' : 'File sent');
         bumpThreadAfterOutbound({
           phone,
@@ -1887,7 +1798,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         return;
       }
       setDraft('');
-      setAiSuggestion(null);
       toast.success('Sent');
       bumpThreadAfterOutbound({
         phone,
@@ -1900,179 +1810,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       setSending(false);
     }
   }, [activeThread?.customer_id, bumpThreadAfterOutbound]);
-
-  const runAiSuggest = useCallback(
-    async (operation: 'suggest_reply' | 'suggest_quotation') => {
-      const phone = selectedPhoneRef.current;
-      if (!phone || aiSuggesting) return;
-      setAiSuggesting(true);
-      const toastId = toast.loading(
-        operation === 'suggest_quotation' ? 'Drafting quotation…' : 'Drafting reply…'
-      );
-      try {
-        const result = await requestAiInboxSuggestion({
-          operation,
-          phoneE164: phone,
-          customerId: activeThread?.customer_id || null,
-        });
-        if (!result.ok) {
-          toast.error(result.error, { id: toastId });
-          return;
-        }
-        setAiSuggestion(result.suggestion);
-        if (operation === 'suggest_reply') {
-          const latest = threadMessagesRef.current[threadMessagesRef.current.length - 1];
-          const reviewedId = String(latest?.wa_message_id || latest?.id || '');
-          if (latest?.direction === 'inbound' && reviewedId) {
-            aiReviewedInSessionRef.current.add(reviewedId);
-            void markWhatsAppChatAiReviewed(phone, reviewedId).then((saved) => {
-              if (saved.ok) setAiChatSettings(saved.settings);
-            });
-          }
-        }
-        toast.success(
-          operation === 'suggest_quotation' ? 'Quotation draft ready to review' : 'Reply draft ready',
-          { id: toastId }
-        );
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'AI draft failed', { id: toastId });
-      } finally {
-        setAiSuggesting(false);
-      }
-    },
-    [activeThread?.customer_id, aiSuggesting]
-  );
-
-  const updateAiReviewAll = useCallback(async () => {
-    if (aiChatSettingsBusy) return;
-    setAiChatSettingsBusy(true);
-    const enabled = !aiChatSettings.reviewAllChats;
-    const result = await setWhatsAppAiReviewAll(enabled, selectedPhoneRef.current);
-    setAiChatSettingsBusy(false);
-    if (!result.ok) {
-      toast.error(result.error);
-      return;
-    }
-    setAiChatSettings(result.settings);
-    toast.success(enabled ? 'AI review enabled for every opened chat' : 'AI review disabled');
-  }, [aiChatSettings.reviewAllChats, aiChatSettingsBusy]);
-
-  const updateChatAutoReply = useCallback(async () => {
-    const phone = selectedPhoneRef.current;
-    if (!phone || aiChatSettingsBusy) return;
-    const enabled = !aiChatSettings.autoReplyEnabled;
-    if (
-      enabled &&
-      !window.confirm(
-        'Enable safe AI auto replies for this chat only?\n\nAI may acknowledge service issues and collect details. Prices, payments, complaints, promises and uncertain answers will wait for an admin.'
-      )
-    ) {
-      return;
-    }
-    setAiChatSettingsBusy(true);
-    const result = await setWhatsAppChatAutoReply(phone, enabled);
-    setAiChatSettingsBusy(false);
-    if (!result.ok) {
-      toast.error(result.error);
-      return;
-    }
-    setAiChatSettings(result.settings);
-    toast.success(enabled ? 'Auto reply enabled for this chat only' : 'Auto reply disabled');
-  }, [aiChatSettings.autoReplyEnabled, aiChatSettingsBusy]);
-
-  useEffect(() => {
-    if (!aiChatSettings.reviewAllChats || aiSuggesting || !selectedPhone) return;
-    const latest = threadMessages[threadMessages.length - 1];
-    if (!latest || latest.direction !== 'inbound') return;
-    const reviewId = String(latest.wa_message_id || latest.id || '');
-    if (
-      !reviewId ||
-      reviewId === aiChatSettings.lastReviewedWaMessageId ||
-      aiReviewedInSessionRef.current.has(reviewId)
-    ) {
-      return;
-    }
-    const phoneAtSchedule = selectedPhone;
-    const timer = window.setTimeout(
-      () => {
-        const current = threadMessagesRef.current[threadMessagesRef.current.length - 1];
-        if (
-          selectedPhoneRef.current !== phoneAtSchedule ||
-          current?.direction !== 'inbound' ||
-          String(current.wa_message_id || current.id || '') !== reviewId
-        ) {
-          return;
-        }
-        aiReviewedInSessionRef.current.add(reviewId);
-        void runAiSuggest('suggest_reply');
-      },
-      aiChatSettings.autoReplyEnabled ? 2500 : 350
-    );
-    return () => window.clearTimeout(timer);
-  }, [
-    aiChatSettings.autoReplyEnabled,
-    aiChatSettings.lastReviewedWaMessageId,
-    aiChatSettings.reviewAllChats,
-    aiSuggesting,
-    runAiSuggest,
-    selectedPhone,
-    threadMessages,
-  ]);
-
-  const applyAiReplyToComposer = useCallback(() => {
-    const text = String(aiSuggestion?.replyText || '').trim();
-    if (!text) {
-      toast.message('No reply text in this suggestion');
-      return;
-    }
-    setDraft(text);
-    toast.success('Applied to composer — review before Send');
-  }, [aiSuggestion?.replyText]);
-
-  const saveAiQuotationFromSuggestion = useCallback(async () => {
-    if (!aiSuggestion?.quotation || aiSavingQuote) return;
-    const customerId = aiSuggestion.customerId || activeThread?.customer_id;
-    if (!customerId) {
-      toast.error('Link this chat to a CRM customer before saving a quotation draft');
-      return;
-    }
-    setAiSavingQuote(true);
-    const toastId = toast.loading('Saving quotation draft…');
-    try {
-      const { data: customer, error } = await db.customers.getById(customerId);
-      if (error || !customer) {
-        toast.error(error?.message || 'Could not load customer', { id: toastId });
-        return;
-      }
-      const row = customer as Record<string, unknown>;
-      const mapped = {
-        id: String(row.id),
-        fullName: String(row.full_name || row.fullName || ''),
-        full_name: String(row.full_name || row.fullName || ''),
-        phone: String(row.phone || ''),
-        email: String(row.email || ''),
-        address: (row.address as any) || null,
-        city: String((row as any).city || ''),
-        state: String((row as any).state || ''),
-        pincode: String((row as any).pincode || ''),
-      };
-      const saved = await saveAiQuotationDraft({
-        suggestion: aiSuggestion,
-        customer: mapped,
-      });
-      if (!saved.ok) {
-        toast.error(saved.error, { id: toastId });
-        return;
-      }
-      toast.success(`Saved draft: ${saved.label}. Open Quotation → Drafts to enter prices.`, {
-        id: toastId,
-      });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save draft', { id: toastId });
-    } finally {
-      setAiSavingQuote(false);
-    }
-  }, [activeThread?.customer_id, aiSavingQuote, aiSuggestion]);
 
   const copyBookLink = useCallback(async () => {
     const url = quickReplyBookingUrl(quickReplyContext);
@@ -3312,154 +3049,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               ) : windowOpen ? (
               <div className="shrink-0 border-t border-[#2a3942] bg-[#111b21] px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-3">
                   <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-1.5 px-1">
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 rounded-full border border-[#2a3942] bg-[#202c33] px-2.5 py-1 text-[11px] font-medium text-[#e9edef] transition hover:bg-[#2a3942] disabled:opacity-50"
-                        disabled={sending || aiSuggesting}
-                        onClick={() => void runAiSuggest('suggest_reply')}
-                        title="Generate a reply draft — you still review and press Send"
-                      >
-                        {aiSuggesting ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-                        )}
-                        AI draft
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 rounded-full border border-[#2a3942] bg-[#202c33] px-2.5 py-1 text-[11px] font-medium text-[#e9edef] transition hover:bg-[#2a3942] disabled:opacity-50"
-                        disabled={sending || aiSuggesting || !activeThread?.customer_id}
-                        onClick={() => void runAiSuggest('suggest_quotation')}
-                        title="Propose a quotation draft with blank prices"
-                      >
-                        <FileText className="h-3.5 w-3.5 text-emerald-300" />
-                        AI quotation
-                      </button>
-                      <button
-                        type="button"
-                        className={cn(
-                          'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50',
-                          aiChatSettings.reviewAllChats
-                            ? 'border-sky-400/40 bg-sky-400/15 text-sky-100'
-                            : 'border-[#2a3942] bg-[#202c33] text-[#aebac1] hover:bg-[#2a3942]'
-                        )}
-                        disabled={aiChatSettingsBusy}
-                        onClick={() => void updateAiReviewAll()}
-                        title="Automatically prepare a review-only draft when an opened chat receives a new customer message"
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Review all: {aiChatSettings.reviewAllChats ? 'On' : 'Off'}
-                      </button>
-                      <button
-                        type="button"
-                        className={cn(
-                          'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-50',
-                          aiChatSettings.autoReplyEnabled
-                            ? 'border-emerald-400/50 bg-emerald-400/15 text-emerald-100'
-                            : 'border-[#2a3942] bg-[#202c33] text-[#aebac1] hover:bg-[#2a3942]'
-                        )}
-                        disabled={aiChatSettingsBusy}
-                        onClick={() => void updateChatAutoReply()}
-                        title="Safe service-detail replies only; enabled for this chat phone"
-                      >
-                        <Zap className="h-3.5 w-3.5" />
-                        Auto this chat: {aiChatSettings.autoReplyEnabled ? 'On' : 'Off'}
-                      </button>
-                      <span className="text-[10px] text-[#667781]">
-                        {aiChatSettings.autoReplyEnabled
-                          ? 'Sensitive messages still wait for review'
-                          : 'Manual drafts never auto-send'}
-                      </span>
-                    </div>
-                    {aiSuggestion ? (
-                      <div className="rounded-xl border border-[#2a3942] bg-[#202c33] px-3 py-2 text-[#e9edef]">
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8696a0]">
-                            AI verified suggestion
-                            {aiSuggestion.requiresHuman ? ' · needs human review' : ''}
-                          </p>
-                          <button
-                            type="button"
-                            className="text-[#8696a0] hover:text-[#e9edef]"
-                            onClick={() => setAiSuggestion(null)}
-                            aria-label="Dismiss AI suggestion"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                        {aiSuggestion.replyText ? (
-                          <p className="whitespace-pre-wrap text-[13px] leading-snug text-[#e9edef]">
-                            {aiSuggestion.replyText}
-                          </p>
-                        ) : null}
-                        {aiSuggestion.warnings?.length ? (
-                          <p className="mt-1 text-[11px] text-amber-200/90">
-                            {aiSuggestion.warnings.join(' · ')}
-                          </p>
-                        ) : null}
-                        {aiSuggestion.detailVerification ? (
-                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/20 bg-amber-400/10 px-2.5 py-2">
-                            <div>
-                              <p className="text-[11px] font-semibold text-amber-100">
-                                {aiSuggestion.detailVerification.label} still missing
-                              </p>
-                              <p className="text-[10px] text-amber-100/75">
-                                Received {aiSuggestion.detailVerification.receivedType} instead
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 border-amber-300/30 bg-transparent px-2.5 text-[11px] text-amber-50 hover:bg-amber-300/10"
-                              disabled={quickActionBusy}
-                              onClick={() =>
-                                setQuickActionConfirm(aiSuggestion.detailVerification!.reaskAction)
-                              }
-                            >
-                              Ask {aiSuggestion.detailVerification.kind} again
-                            </Button>
-                          </div>
-                        ) : null}
-                        {aiSuggestion.quotation?.items?.length ? (
-                          <div className="mt-2 rounded-lg bg-[#111b21] px-2 py-1.5 text-[11px] text-[#cbd5e1]">
-                            <p className="font-medium text-[#94a3b8]">Quotation items (prices blank)</p>
-                            <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                              {aiSuggestion.quotation.items.map((item, idx) => (
-                                <li key={`${item.description}-${idx}`}>
-                                  {item.description} × {item.quantity} · ₹0
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-8 bg-[#00a884] px-3 text-xs text-white hover:bg-[#008f72]"
-                            disabled={!aiSuggestion.replyText}
-                            onClick={applyAiReplyToComposer}
-                          >
-                            Apply to composer
-                          </Button>
-                          {aiSuggestion.quotation?.items?.length ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-8 border-[#3b4a54] bg-transparent px-3 text-xs text-[#e9edef] hover:bg-[#2a3942]"
-                              disabled={aiSavingQuote || !(aiSuggestion.customerId || activeThread?.customer_id)}
-                              onClick={() => void saveAiQuotationFromSuggestion()}
-                            >
-                              {aiSavingQuote ? 'Saving…' : 'Save quotation draft'}
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
                     {attachFile ? (
                       <div className="flex items-center gap-2 rounded-xl bg-[#202c33] px-2 py-1.5 shadow-sm">
                         {attachPreviewUrl ? (

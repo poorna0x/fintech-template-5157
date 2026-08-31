@@ -7,7 +7,6 @@ Allow: /favicon.svg
 Allow: /*.png
 Allow: /*.ico
 
-# CRM / portal — not public marketing (also noindex via X-Robots-Tag)
 Disallow: /admin
 Disallow: /technician
 Disallow: /settings
@@ -15,8 +14,6 @@ Disallow: /calling
 Disallow: /dashboard
 Disallow: /search
 Disallow: /product-verify/
-Disallow: /review
-Disallow: /c/
 
 Sitemap: https://elevenro.com/sitemap.xml
 
@@ -31,19 +28,6 @@ Crawl-delay: 0
 User-agent: Bingbot
 Allow: /
 Crawl-delay: 1
-
-# Allow search indexing; block pure AI-training crawlers (citations still possible via user fetchers)
-User-agent: GPTBot
-Disallow: /
-
-User-agent: Google-Extended
-Disallow: /
-
-User-agent: Bytespider
-Disallow: /
-
-User-agent: CCBot
-Disallow: /
 
 # Block aggressive SEO scrapers (site-wide)
 User-agent: AhrefsBot

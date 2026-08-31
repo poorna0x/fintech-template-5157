@@ -25,11 +25,11 @@ ALTER TABLE public.website_booking_intent ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "website_booking_intent select admin" ON public.website_booking_intent;
 CREATE POLICY "website_booking_intent select admin"
-  ON public.website_booking_intent FOR SELECT TO authenticated USING (public.is_admin_user());
+  ON public.website_booking_intent FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "website_booking_intent update admin" ON public.website_booking_intent;
 CREATE POLICY "website_booking_intent update admin"
-  ON public.website_booking_intent FOR UPDATE TO authenticated USING (public.is_admin_user()) WITH CHECK (public.is_admin_user());
+  ON public.website_booking_intent FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 CREATE OR REPLACE FUNCTION public.upsert_website_booking_intent(
   p_full_name text,
@@ -72,8 +72,8 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) FROM anon;
-REVOKE EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) TO anon;
+GRANT EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_website_booking_intent(text, text, text, smallint, text) TO service_role;
 
 -- Safe to re-run: skip if table is already in the publication (avoids ERROR 42710).

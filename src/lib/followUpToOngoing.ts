@@ -34,9 +34,9 @@ export function deriveScheduleFromFollowUpTime(followUpTime: unknown): {
   const hm = parseFollowUpTimeHm(followUpTime);
   if (!hm) return { scheduled_time_slot: 'MORNING' };
   const hours = Number(hm.split(':')[0]);
-  if (hours >= 5 && hours < 12) return { scheduled_time_slot: 'MORNING', custom_time: hm };
-  if (hours >= 12 && hours < 17) return { scheduled_time_slot: 'AFTERNOON', custom_time: hm };
-  if (hours >= 17 && hours < 20) return { scheduled_time_slot: 'EVENING', custom_time: hm };
+  if (hours >= 5 && hours < 12) return { scheduled_time_slot: 'MORNING' };
+  if (hours >= 12 && hours < 17) return { scheduled_time_slot: 'AFTERNOON' };
+  if (hours >= 17 && hours < 20) return { scheduled_time_slot: 'EVENING' };
   return { scheduled_time_slot: 'CUSTOM', custom_time: hm };
 }
 
@@ -128,7 +128,7 @@ export function buildPromoteFollowUpJobPatch(jobRow: {
 
   const { scheduled_time_slot, custom_time } = deriveScheduleFromFollowUpTime(jobRow.follow_up_time);
   let requirements = stripAutoMoveFlagFromRequirements(parseRequirements(jobRow.requirements));
-  if (custom_time) {
+  if (scheduled_time_slot === 'CUSTOM' && custom_time) {
     requirements = upsertCustomTimeInRequirements(requirements, custom_time);
   }
 

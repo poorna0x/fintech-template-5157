@@ -7,9 +7,11 @@ import android.content.SharedPreferences;
 import android.util.Log;
 
 /**
- * AlarmManager wake-up: Android 12+ often blocks {@code startForegroundService}
- * from a background process, but an alarm PendingIntent is an allowed path to
- * start a short foreground service and finish the call-alert upload.
+ * AlarmClock / AlarmManager wake after hangup.
+ *
+ * Prefer {@link CallAlertUploadService} FGS from this wake (AlarmClock is an
+ * allowed background start). A long HTTP POST inside goAsync often dies before
+ * finish on OEM builds (~10s), which left only open-app JWT catch-up working.
  */
 public class CallAlertKickReceiver extends BroadcastReceiver {
 
@@ -17,31 +19,65 @@ public class CallAlertKickReceiver extends BroadcastReceiver {
 
     static final String ACTION_KICK = "com.hydrogenro.technician.CALL_ALERT_KICK";
     static final String EXTRA_RING_AT = "ring_at";
+    static final String EXTRA_ATTEMPT = "attempt";
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        try {
-            if (intent == null || !ACTION_KICK.equals(intent.getAction())) return;
-            if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
+        if (intent == null || !ACTION_KICK.equals(intent.getAction())) return;
+        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
 
-            Context app = context.getApplicationContext();
-            SharedPreferences prefs =
-                app.getSharedPreferences(CallAlertReceiver.PREFS, Context.MODE_PRIVATE);
-            long ringAt = intent.getLongExtra(EXTRA_RING_AT, 0L);
-            if (ringAt <= 0) {
-                ringAt = prefs.getLong(CallAlertReceiver.KEY_PENDING_RING_AT, 0L);
-            }
-            if (ringAt <= 0) return;
-            if (prefs.getLong(CallAlertReceiver.KEY_ALERTED_RING_AT, 0L) == ringAt) {
-                CallAlertUploadService.cancelKicks(app, ringAt);
-                return;
-            }
-
-            Log.i(TAG, "Alarm kick for ring " + ringAt);
-            // Hangup-first path: resolve CallLog then upload once (no second parallel upload).
-            CallAlertUploadService.startWatch(app, ringAt, false);
-        } catch (Throwable t) {
-            Log.w(TAG, "Alarm kick failed", t);
+        final Context app = context.getApplicationContext();
+        SharedPreferences prefs =
+            app.getSharedPreferences(CallAlertReceiver.PREFS, Context.MODE_PRIVATE);
+        long ringAt = intent.getLongExtra(EXTRA_RING_AT, 0L);
+        if (ringAt <= 0) {
+            ringAt = prefs.getLong(CallAlertReceiver.KEY_PENDING_RING_AT, 0L);
         }
+        if (ringAt <= 0) return;
+        if (prefs.getLong(CallAlertReceiver.KEY_ALERTED_RING_AT, 0L) == ringAt) {
+            CallAlertUploadService.cancelKicks(app, ringAt);
+            return;
+        }
+        if (prefs.getLong(CallAlertReceiver.KEY_POST_ATTEMPTED_RING, 0L) == ringAt) {
+            Log.i(TAG, "Skip — already POSTed ring " + ringAt);
+            CallAlertUploadService.cancelKicks(app, ringAt);
+            return;
+        }
+
+        final int attempt = intent.getIntExtra(EXTRA_ATTEMPT, 0);
+        Log.i(TAG, "AlarmClock kick attempt=" + attempt + " ring=" + ringAt);
+
+        // FGS from AlarmClock wake — survives past goAsync timeout.
+        try {
+            CallAlertUploadService.startOneShot(app, ringAt);
+            return;
+        } catch (Throwable t) {
+            Log.w(TAG, "startOneShot from kick failed", t);
+        }
+
+        final long session = ringAt;
+        final PendingResult pending = goAsync();
+        new Thread(
+            () -> {
+                try {
+                    boolean ok = CallAlertReceiver.finalizeAndUpload(app, session, true);
+                    if (ok) {
+                        CallAlertUploadService.cancelKicks(app, session);
+                        return;
+                    }
+                    if (attempt >= 1) {
+                        CallAlertReceiver.markGaveUp(app, session);
+                    } else {
+                        Log.i(TAG, "No number yet — late alarm still pending");
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "Kick upload failed", t);
+                } finally {
+                    pending.finish();
+                }
+            },
+            "hro-call-kick"
+        )
+            .start();
     }
 }

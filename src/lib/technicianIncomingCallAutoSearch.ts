@@ -11,7 +11,8 @@ import { notifyAdminsTechnicianCall } from '@/lib/technicianCallAlert';
 import { isTechnicianCallDetectEnabled } from '@/lib/technicianPush';
 
 const LAST_AUTO_KEY = 'hro_tech_incoming_bg_lookup';
-const POLL_MS = 1_000;
+/** Peek CallLog locally; Netlify POST is once per callId in notifyAdminsTechnicianCall. */
+const POLL_MS = 15_000;
 
 function readLastAuto(): { phone: string; at: number } | null {
   try {

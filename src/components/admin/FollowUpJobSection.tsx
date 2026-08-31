@@ -40,11 +40,9 @@ export const FollowUpJobSection: React.FC<FollowUpJobSectionProps> = ({
               </span>
             )}
           </div>
-          {followUpNotes?.trim() ? (
-            <div className="text-gray-700 break-words">
-              <span className="text-gray-500">Reason:</span> {followUpNotes}
-            </div>
-          ) : null}
+          <div className="text-gray-700 break-words">
+            <span className="text-gray-500">Reason:</span> {followUpNotes || 'Not confirmed'}
+          </div>
           <div className="text-xs text-gray-500 break-words">
             Scheduled by {followUpScheduledByName}
             {formattedFollowUpScheduledAt && (

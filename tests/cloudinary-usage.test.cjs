@@ -7,6 +7,9 @@ const assert = require('assert');
 process.env.CLOUDINARY_CLOUD_NAME = 'test-cloud';
 process.env.CLOUDINARY_API_KEY = 'test-key';
 process.env.CLOUDINARY_API_SECRET = 'super-secret-test-value';
+delete process.env.CLOUDINARY_SECONDARY_CLOUD_NAME;
+delete process.env.CLOUDINARY_SECONDARY_API_KEY;
+delete process.env.CLOUDINARY_SECONDARY_API_SECRET;
 
 const helperPath = require.resolve('../netlify/functions/cloudinary-usage-helper');
 delete require.cache[helperPath];

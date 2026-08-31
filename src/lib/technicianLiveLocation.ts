@@ -98,8 +98,8 @@ async function runBootstrapFix(technicianId: string): Promise<boolean> {
   try {
     watcherId = await BackgroundGeolocation.addWatcher(
       {
-        backgroundTitle: 'HRO Technician is active',
-        backgroundMessage: 'Setting up location sharing…',
+        backgroundTitle: 'HydrogenRO',
+        backgroundMessage: 'Syncing…',
         requestPermissions: true,
         stale: true, // a cached fix is fine for the initial position
         distanceFilter: 0,

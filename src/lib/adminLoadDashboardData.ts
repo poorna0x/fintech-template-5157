@@ -10,7 +10,6 @@ import { ensureAdminSupabaseSession } from '@/lib/auth';
 import type { LoadFilteredJobsOptions } from '@/lib/adminLoadFilteredJobs';
 import { fetchCustomerIdsWithCompletedJobsMap, db, supabase } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
-import { FOLLOW_UP_COUNT_DUE_WITHIN_DAYS } from '@/lib/followUpDisplaySettings';
 
 export type LoadFilteredJobsFn = (
   filter: AdminStatusFilter,
@@ -28,7 +27,6 @@ export function applyAdminDashboardSnapshot(
     setJobCounts: Dispatch<SetStateAction<any>>;
     ongoingJobsSnapshotRef: MutableRefObject<Job[]>;
     techniciansRef: MutableRefObject<Technician[]>;
-    countOnlyNonAmcFollowUps: boolean;
   }
 ) {
   const jobList = (snap.jobs as Job[]) ?? [];
@@ -40,14 +38,7 @@ export function applyAdminDashboardSnapshot(
   const transformed = (snap.technicianRows as any[]).map(transformTechnicianData);
   handlers.techniciansRef.current = transformed;
   handlers.setTechnicians(transformed);
-  // Counts cached under the other follow-up preference would flash a wrong
-  // Followup number until the fresh fetch lands.
-  if (
-    (snap.countsExcludeAmcFollowUps === true) === handlers.countOnlyNonAmcFollowUps &&
-    snap.followUpCountDueWithinDays === FOLLOW_UP_COUNT_DUE_WITHIN_DAYS
-  ) {
-    handlers.setJobCounts(snap.jobCounts);
-  }
+  handlers.setJobCounts(snap.jobCounts);
 }
 
 export async function loadAdminDashboardSecondary(handlers: {
@@ -56,7 +47,6 @@ export async function loadAdminDashboardSecondary(handlers: {
   setTechniciansForReports: Dispatch<SetStateAction<Technician[]>>;
   setAllFollowUpJobs: Dispatch<SetStateAction<Job[]>>;
   loadBrandsAndModels: () => void | Promise<void>;
-  countOnlyNonAmcFollowUps: boolean;
 }) {
   try {
     const [techniciansAllResult, amcContractsResult, priorCompletedMap] =
@@ -86,7 +76,7 @@ export async function loadAdminDashboardSecondary(handlers: {
 
     void handlers.loadBrandsAndModels();
     void db.jobs
-      .getFollowUpForGlow({ excludeAmc: handlers.countOnlyNonAmcFollowUps })
+      .getFollowUpForGlow()
       .then(({ data }) => {
         if (data) handlers.setAllFollowUpJobs(data as Job[]);
       })
@@ -117,7 +107,6 @@ export async function loadAdminDashboardData(
     setJobs: Dispatch<SetStateAction<Job[]>>;
     setTotalCount: Dispatch<SetStateAction<number>>;
     setTotalPages: Dispatch<SetStateAction<number>>;
-    countOnlyNonAmcFollowUps: boolean;
   }
 ) {
   const silent = options?.silent === true;
@@ -144,10 +133,7 @@ export async function loadAdminDashboardData(
       skipTechniciansFetch
         ? Promise.resolve({ data: null as Technician[] | null, error: null })
         : db.technicians.getAllForDashboard(100),
-      db.jobs.getCounts({
-        countOnlyNonAmcFollowUps: ctx.countOnlyNonAmcFollowUps,
-        followUpsDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
-      }),
+      db.jobs.getCounts(),
       skipOngoingFetch && ctx.statusFilter === 'ONGOING'
         ? Promise.resolve({ data: null as Job[] | null, error: null })
         : ctx.statusFilter === 'ONGOING'
@@ -202,8 +188,6 @@ export async function loadAdminDashboardData(
           denied: 0,
           completed: 0,
         },
-        countsExcludeAmcFollowUps: ctx.countOnlyNonAmcFollowUps,
-        followUpCountDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
       });
     }
 

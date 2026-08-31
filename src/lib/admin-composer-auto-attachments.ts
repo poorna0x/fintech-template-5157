@@ -21,15 +21,16 @@ function toDateOnly(value: unknown): string {
   return String(value).split('T')[0].split(' ')[0];
 }
 
-function parseAddress(address: unknown) {
-  if (!address) {
+function parseCustomerAddress(customer: Record<string, unknown> | undefined) {
+  if (!customer) {
     return { street: '', area: '', city: '', state: '', pincode: '' };
   }
-  if (typeof address === 'string' && address.trim()) {
-    return { street: address.trim(), area: '', city: '', state: '', pincode: '' };
+  const addr = customer.address;
+  if (typeof addr === 'string' && addr.trim()) {
+    return { street: addr.trim(), area: '', city: '', state: '', pincode: '' };
   }
-  if (typeof address === 'object') {
-    const a = address as Record<string, unknown>;
+  if (addr && typeof addr === 'object') {
+    const a = addr as Record<string, unknown>;
     return {
       street: String(a.street || ''),
       area: String(a.area || ''),
@@ -54,9 +55,7 @@ export function completedJobToBillPdfData(
   const serviceType = String(job.service_type || 'Service');
   const serviceSubType = String(job.service_sub_type || '').trim();
   const description = serviceSubType ? `${serviceType} — ${serviceSubType}` : serviceType;
-  // A completed job snapshots the chosen service site. Never replace it with
-  // the customer's current primary address on a job-linked bill.
-  const addr = parseAddress(job.service_address || customer?.address);
+  const addr = parseCustomerAddress(customer);
   const addressLine = [addr.street, addr.area].filter(Boolean).join(', ');
   const billNumber = String(job.job_number || `BILL-${String(job.id || '').slice(0, 8)}`);
 

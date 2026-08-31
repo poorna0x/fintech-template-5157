@@ -318,7 +318,7 @@ function testProviderAllowlist() {
     'env'
   );
   assert.equal(cfg.provider, 'gemini');
-  assert.equal(cfg.model, 'gemini-2.5-flash');
+  assert.equal(cfg.model, 'gemini-3.1-flash-lite');
 
   const fallbackConfig = normalizeConfig(
     {

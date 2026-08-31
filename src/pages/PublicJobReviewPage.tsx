@@ -58,13 +58,33 @@ function StarPicker({
   );
 }
 
-/** WhatsApp / most browsers block window.close() unless they opened this tab. Never fall back to about:blank. */
 function tryCloseReviewTab() {
+  try {
+    window.open('', '_self');
+  } catch {
+    /* ignore */
+  }
   try {
     window.close();
   } catch {
     /* ignore */
   }
+  try {
+    if (window.history.length > 1) {
+      window.history.back();
+    }
+  } catch {
+    /* ignore */
+  }
+  window.setTimeout(() => {
+    try {
+      if (!document.hidden) {
+        window.location.replace('about:blank');
+      }
+    } catch {
+      /* ignore */
+    }
+  }, 200);
 }
 
 const PublicJobReviewPage = () => {
@@ -76,6 +96,7 @@ const PublicJobReviewPage = () => {
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [justSubmitted, setJustSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -103,6 +124,12 @@ const PublicJobReviewPage = () => {
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!justSubmitted) return;
+    const id = window.setTimeout(() => tryCloseReviewTab(), 1800);
+    return () => window.clearTimeout(id);
+  }, [justSubmitted]);
+
   const brand: DocumentBrand = invite?.brand || 'hydrogenro';
   const brandLabel = getDocumentBrandLabel(brand);
   const tech = invite?.technicianFirstName;
@@ -122,9 +149,11 @@ const PublicJobReviewPage = () => {
       return;
     }
     setSubmitted(true);
+    setJustSubmitted(true);
     if (!result.alreadySubmitted) {
       notifyAdminsJobReviewSubmitted(token);
     }
+    tryCloseReviewTab();
   };
 
   return (

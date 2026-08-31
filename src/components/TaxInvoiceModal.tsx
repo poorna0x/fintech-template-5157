@@ -11,15 +11,9 @@ interface TaxInvoiceModalProps {
   isOpen: boolean;
   onClose: () => void;
   customer: Customer | null;
-  initialAiInstruction?: string | null;
 }
 
-export default function TaxInvoiceModal({
-  isOpen,
-  onClose,
-  customer,
-  initialAiInstruction,
-}: TaxInvoiceModalProps) {
+export default function TaxInvoiceModal({ isOpen, onClose, customer }: TaxInvoiceModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handlePrintTaxInvoice = async (bill: Bill, action: 'print' | 'pdf' = 'pdf') => {
@@ -102,7 +96,6 @@ export default function TaxInvoiceModal({
                 customer={customer}
                 onPrint={handlePrintTaxInvoice}
                 embedded
-                initialAiInstruction={initialAiInstruction}
               />
             </Suspense>
           ) : (

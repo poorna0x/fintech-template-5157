@@ -289,6 +289,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (session?.user) {
         if (event === 'SIGNED_IN') {
+          void syncPortalSessionCookie({ force: true });
           void applySessionUser(session).finally(() => {
             if (cancelled) return;
             initialAuthEventDone = true;

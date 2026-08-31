@@ -23,7 +23,6 @@ const MIRROR_CATEGORIES = new Set([
   'cash_handover',
   'wrong_line',
   'pay_qr_screenshot',
-  'job_reviews',
   'worked_hours',
 ]);
 

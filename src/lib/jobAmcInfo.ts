@@ -23,7 +23,6 @@ export type JobAmcPrefill = {
   jobId: string;
   amcInfo: JobAmcInfo;
   serviceBrand?: DocumentBrand;
-  serviceSite?: 'primary' | 'secondary';
 };
 
 function toDateOnly(value: string | null | undefined): string | null {
@@ -72,7 +71,7 @@ export async function fetchLatestJobAmcPrefill(
 
   const { data, error } = await supabase
     .from('jobs')
-    .select('id, requirements, service_brand, service_site, completed_at')
+    .select('id, requirements, service_brand, completed_at')
     .eq('customer_id', customerId)
     .eq('status', 'COMPLETED')
     .gte('completed_at', dayStart.toISOString())
@@ -105,7 +104,6 @@ export async function fetchLatestJobAmcPrefill(
             : null,
       },
       serviceBrand: normalizeDocumentBrand((row as any).service_brand) || undefined,
-      serviceSite: (row as any).service_site === 'secondary' ? 'secondary' : 'primary',
     };
   }
   return null;

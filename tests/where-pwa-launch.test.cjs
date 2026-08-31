@@ -74,6 +74,7 @@ function run() {
   assert.ok(app.includes('path="/where/:token"'));
   assert.ok(app.includes('WherePwaLaunchPage'));
   assert.ok(app.indexOf('path="/where/:token"') < app.indexOf('path="/:slug"'));
+  assert.ok(app.indexOf('path="/where/:token"') < app.indexOf('path="*"'));
 
   const sw = fs.readFileSync(path.join(root, 'public/where-sw.js'), 'utf8');
   assert.ok(sw.includes("request.mode === 'navigate'"));

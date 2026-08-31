@@ -15,9 +15,6 @@ export type AdminDashboardSnapshot = {
   jobs: unknown[];
   technicianRows: unknown[];
   jobCounts: AdminJobCounts;
-  /** Follow-up preference the cached counts were computed with. */
-  countsExcludeAmcFollowUps?: boolean;
-  followUpCountDueWithinDays?: number;
 };
 
 let inflightPrefetch: Promise<AdminDashboardSnapshot | null> | null = null;
@@ -85,7 +82,7 @@ export function buildJobsListCacheKey(
   ui: Pick<
     AdminDashboardUiState,
     'completedDatePreset' | 'completedDateFilter' | 'completedRangeStartDate' | 'completedRangeEndDate'
-  > & { hideAmcFollowUps?: boolean }
+  >
 ): string {
   if (filter === 'COMPLETED') {
     if (ui.completedDatePreset === 'day') {
@@ -93,7 +90,7 @@ export function buildJobsListCacheKey(
     }
     return `COMPLETED:${ui.completedDatePreset}:${ui.completedRangeStartDate}:${ui.completedRangeEndDate}:p${page}`;
   }
-  return `RESCHEDULED:hide_amc_${ui.hideAmcFollowUps === true}:p${page}`;
+  return `RESCHEDULED:p${page}`;
 }
 
 export function getModuleDashboardSessionReady(): boolean {
@@ -188,7 +185,6 @@ export async function invalidateAdminDashboardCaches(): Promise<void> {
   try {
     const { cacheInvalidate } = await import('./supabaseQueryCache');
     cacheInvalidate('job_counts_v1');
-    cacheInvalidate('job_counts_v2');
     cacheInvalidate('completed_customers_map_v1');
   } catch {
     /* ignore */
@@ -200,21 +196,11 @@ async function fetchCriticalSnapshot(): Promise<AdminDashboardSnapshot | null> {
     const { ensureAdminSupabaseSession } = await import('@/lib/auth');
     if (!(await ensureAdminSupabaseSession(2_000))) return null;
 
-    const [
-      { db },
-      { FOLLOW_UP_COUNT_DUE_WITHIN_DAYS, readFollowUpDisplaySettings },
-    ] = await Promise.all([
-      import('@/lib/supabase'),
-      import('@/lib/followUpDisplaySettings'),
-    ]);
-    const { countOnlyNonAmcFollowUps } = readFollowUpDisplaySettings();
+    const { db } = await import('@/lib/supabase');
     const [jobsResult, techniciansResult, countsResult] = await Promise.all([
       db.jobs.getOngoing(100),
       db.technicians.getAllForDashboard(100),
-      db.jobs.getCounts({
-        countOnlyNonAmcFollowUps,
-        followUpsDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
-      }),
+      db.jobs.getCounts(),
     ]);
 
     if (jobsResult.error && techniciansResult.error) return null;
@@ -234,8 +220,6 @@ async function fetchCriticalSnapshot(): Promise<AdminDashboardSnapshot | null> {
       jobs,
       technicianRows: techniciansResult.data ?? [],
       jobCounts,
-      countsExcludeAmcFollowUps: countOnlyNonAmcFollowUps,
-      followUpCountDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
     };
   } catch {
     return null;

@@ -193,10 +193,7 @@ export async function sendGeneratorDocumentEmail(
   let size: number;
 
   try {
-    const pdf = await generateDocumentPdfBase64({
-      html,
-      filename: pdfFilename,
-    });
+    const pdf = await generateDocumentPdfBase64({ html, filename: pdfFilename });
     pdfBase64 = pdf.pdfBase64;
     filename = pdf.filename;
     size = pdf.size;

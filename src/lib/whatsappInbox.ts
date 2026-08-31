@@ -9,9 +9,9 @@ import { whatsappPhoneLookupKeys } from '@/lib/whatsappPhoneTarget';
 export const WHATSAPP_INBOX_COLUMNS =
   'id, wa_message_id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
 
-/** Slim open-chat columns; wa_message_id supports one-time AI review tracking. */
+/** Slimmer columns for open-chat fetch (drops unused wa_message_id). */
 export const WHATSAPP_THREAD_COLUMNS =
-  'id, wa_message_id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
+  'id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
 
 export type WhatsAppMessageRow = {
   id: string;

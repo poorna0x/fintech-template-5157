@@ -58,7 +58,6 @@ public class RecentCallPlugin extends Plugin {
             boolean differentNumber =
                 prefsDigits.isEmpty() || !logDigits.equals(prefsDigits);
             boolean newerCallLog = fromLog.dateMs > lastLogDate;
-            boolean prefsStale = prefsAt <= 0 || now - prefsAt > 60_000L;
             boolean consumed = prefsAt > 0 && prefsAt == consumedAt;
             String callId = logDigits.isEmpty() ? "" : (logDigits + ":" + fromLog.dateMs);
 
@@ -73,7 +72,7 @@ public class RecentCallPlugin extends Plugin {
                 return ret;
             }
 
-            if (differentNumber || newerCallLog || prefsStale || consumed) {
+            if (differentNumber || newerCallLog || consumed) {
                 prefs
                     .edit()
                     .putString(CallAlertReceiver.KEY_LAST_NUMBER, fromLog.number)
@@ -85,7 +84,7 @@ public class RecentCallPlugin extends Plugin {
                     prefs.edit().putLong(CallAlertReceiver.KEY_CONSUMED_AT, now).apply();
                 }
                 ret.put("number", fromLog.number);
-                ret.put("at", now);
+                ret.put("at", fromLog.dateMs);
                 ret.put("callLogDate", fromLog.dateMs);
                 if (!callId.isEmpty()) ret.put("callId", callId);
                 ret.put("missed", isMissed(fromLog));
@@ -134,5 +133,40 @@ public class RecentCallPlugin extends Plugin {
     @PluginMethod
     public void peekRecentCall(PluginCall call) {
         call.resolve(readRecent(false));
+    }
+
+    /**
+     * Open-app catch-up: recent inbound CallLog rows (newest first).
+     * Options: sinceMs (default 24h), max (default 20, hard cap 30).
+     */
+    @PluginMethod
+    public void listRecentIncomingCalls(PluginCall call) {
+        long now = System.currentTimeMillis();
+        long sinceMs = call.getLong("sinceMs", now - 24L * 60L * 60L * 1000L);
+        int max = call.getInt("max", 20);
+        if (max < 1) max = 1;
+        if (max > 30) max = 30;
+        if (sinceMs <= 0 || sinceMs > now) sinceMs = now - 24L * 60L * 60L * 1000L;
+
+        java.util.List<CallLogHelper.Entry> rows =
+            CallLogHelper.listIncomingSince(getContext(), sinceMs, max);
+        String alertedCallId = prefs().getString(CallAlertReceiver.KEY_ALERTED_CALL_ID, "");
+
+        com.getcapacitor.JSArray arr = new com.getcapacitor.JSArray();
+        for (CallLogHelper.Entry e : rows) {
+            String dig = digitsOnly(e.number);
+            if (dig.length() < 10) continue;
+            String callId = dig + ":" + e.dateMs;
+            JSObject row = new JSObject();
+            row.put("number", dig);
+            row.put("callLogDate", e.dateMs);
+            row.put("callId", callId);
+            row.put("missed", isMissed(e));
+            row.put("alerted", callId.equals(alertedCallId));
+            arr.put(row);
+        }
+        JSObject ret = new JSObject();
+        ret.put("calls", arr);
+        call.resolve(ret);
     }
 }

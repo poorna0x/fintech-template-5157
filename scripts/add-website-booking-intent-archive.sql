@@ -32,21 +32,21 @@ CREATE POLICY "website_booking_intent_archive select admin"
   ON public.website_booking_intent_archive
   FOR SELECT
   TO authenticated
-  USING (public.is_admin_user());
+  USING (true);
 
 DROP POLICY IF EXISTS "website_booking_intent_archive insert admin" ON public.website_booking_intent_archive;
 CREATE POLICY "website_booking_intent_archive insert admin"
   ON public.website_booking_intent_archive
   FOR INSERT
   TO authenticated
-  WITH CHECK (public.is_admin_user());
+  WITH CHECK (true);
 
 DROP POLICY IF EXISTS "website_booking_intent_archive delete admin" ON public.website_booking_intent_archive;
 CREATE POLICY "website_booking_intent_archive delete admin"
   ON public.website_booking_intent_archive
   FOR DELETE
   TO authenticated
-  USING (public.is_admin_user());
+  USING (true);
 
 -- Ensure live table still allows admin DELETE (Done removes the live row).
 DO $$
@@ -57,7 +57,7 @@ BEGIN
       ON public.website_booking_intent
       FOR DELETE
       TO authenticated
-      USING (public.is_admin_user());
+      USING (true);
   END IF;
 END $$;
 
@@ -72,8 +72,8 @@ DECLARE
   src public.website_booking_intent%ROWTYPE;
   new_id uuid;
 BEGIN
-  IF NOT public.is_admin_user() THEN
-    RAISE EXCEPTION 'not authorized';
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'not authenticated';
   END IF;
 
   SELECT * INTO src

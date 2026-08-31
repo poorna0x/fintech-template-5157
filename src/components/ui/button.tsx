@@ -59,15 +59,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled}
         {...props}
       >
-        {/* Slot (asChild) requires exactly one element child — never append null/siblings */}
-        {needsIosHaptic ? (
-          <>
-            {children}
-            <IOSSwitchHapticOverlay disabled={disabled} />
-          </>
-        ) : (
-          children
-        )}
+        {children}
+        {needsIosHaptic ? <IOSSwitchHapticOverlay disabled={disabled} /> : null}
       </Comp>
     )
   }

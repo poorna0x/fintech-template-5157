@@ -29,7 +29,7 @@ export const SOUTH_CORRIDOR_KEYWORDS =
 
 /** North & northeast Bengaluru corridor — Yelahanka, Devanahalli, airport belt */
 export const NORTH_CORRIDOR_KEYWORDS =
-  'RO service Yelahanka, RO service Thanisandra, RO service Jakkur, RO service Bagalur, RO service Budigere Cross, RO service Devanahalli, RO service Kempegowda Airport, RO service Kogilu, RO service Kattigenahalli, RO service Chikkajala, RO service RK Hegde Nagar, RO service Gummanahalli, RO service Aerospace Park, RO service Manyata Tech Park, RO service RT Nagar, RO service Nagawara, RO service Hebbal, RO service Hoskote, RO repair North Bangalore, RO installation Yelahanka, RO service Doddaballapur Road';
+  'RO service Yelahanka, RO service Thanisandra, RO service Jakkur, RO service Bagalur, RO service Budigere Cross, RO service Devanahalli, RO service Kempegowda Airport, RO service Manyata Tech Park, RO service RT Nagar, RO service Nagawara, RO service Hebbal, RO service Hoskote, RO service ITPL, RO repair North Bangalore, RO installation Yelahanka, RO service Doddaballapur Road';
 
 const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
   { slug: 'ro-service-whitefield', name: 'Whitefield', pincode: '560066', region: 'Bengaluru', nearby: ['ITPL', 'Kadugodi', 'Brookefield', 'Hoodi', 'Varthur', 'Kundalahalli', 'Mahadevapura'], extraKeywords: ['RO service ITPL Whitefield', 'RO service Varthur Whitefield', 'RO service Kadugodi', '560066 RO service'] },
@@ -68,13 +68,13 @@ const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
   { slug: 'ro-service-jayanagar', name: 'Jayanagar', pincode: '560011', region: 'Bengaluru', nearby: ['JP Nagar', 'Banashankari', 'Basavanagudi', 'BTM Layout', 'Wilson Garden', 'Tilak Nagar'] },
   { slug: 'ro-service-malleshwaram', name: 'Malleshwaram', pincode: '560003', region: 'Bengaluru', nearby: ['Rajajinagar', 'Seshadripuram', 'Yeshwanthpur', 'Sadashivanagar', 'Sandal Soap Factory', 'Mahalakshmi Layout'] },
   { slug: 'ro-service-rajajinagar', name: 'Rajajinagar', pincode: '560010', region: 'Bengaluru', nearby: ['Malleshwaram', 'Vijayanagar', 'Basaveshwaranagar', 'Mahalakshmi Layout', 'Yeshwanthpur', 'Magadi Road'] },
-  { slug: 'ro-service-hebbal', name: 'Hebbal', pincode: '560024', region: 'Bengaluru', nearby: ['Yelahanka', 'Sahakar Nagar', 'RT Nagar', 'Nagawara', 'Manyata Tech Park', 'Hennur', 'Thanisandra', 'Kodigehalli'], extraKeywords: ['RO service Manyata Tech Park', 'RO service Nagawara Hebbal', 'RO service RT Nagar Hebbal', 'RO service Embassy Lake Terraces Hebbal', 'RO service L&T Raintree Boulevard Hebbal'] },
+  { slug: 'ro-service-hebbal', name: 'Hebbal', pincode: '560024', region: 'Bengaluru', nearby: ['Yelahanka', 'Sahakar Nagar', 'RT Nagar', 'Nagawara', 'Manyata Tech Park', 'Hennur', 'Thanisandra'], extraKeywords: ['RO service Manyata Tech Park', 'RO service Nagawara Hebbal', 'RO service RT Nagar Hebbal'] },
   {
     slug: 'ro-service-yelahanka',
     name: 'Yelahanka',
     pincode: '560064',
     region: 'Bengaluru',
-    nearby: ['Hebbal', 'Sahakar Nagar', 'Jakkur', 'Kogilu', 'Doddaballapur Road', 'Bagalur', 'Thanisandra', 'Rajanukunte', 'Allalasandra', 'MS Palya'],
+    nearby: ['Hebbal', 'Sahakar Nagar', 'Jakkur', 'Kogilu', 'Doddaballapur Road', 'Bagalur', 'Thanisandra', 'RT Nagar'],
     extraKeywords: [
       'RO service Yelahanka New Town',
       'RO service Yelahanka Old Town',
@@ -83,16 +83,6 @@ const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
       'RO service Jakkur Yelahanka',
       'RO service Bagalur Yelahanka',
       'RO service Doddaballapur Road Yelahanka',
-      'RO service Yelahanka 4th Phase',
-      'RO service Yelahanka 5th Phase',
-      'RO service Kogilu Cross Yelahanka',
-      'RO service Allalasandra Yelahanka',
-      'RO service Rajanukunte Yelahanka',
-      'RO service MS Palya Yelahanka',
-      'RO service Prestige Royale Gardens Yelahanka',
-      'RO service Brigade Northridge Yelahanka',
-      'RO service RMZ Galleria Residences Yelahanka',
-      'RO service Vajram Essenza Yelahanka',
       '560064 RO service',
     ],
   },
@@ -255,8 +245,8 @@ const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
     name: 'Budigere Cross',
     pincode: '562110',
     region: 'Bengaluru',
-    nearby: ['Devanahalli', 'Bagalur', 'Hoskote', 'Whitefield', 'Mahadevapura', 'Old Madras Road', 'Budigere', 'Nimbekaipura'],
-    extraKeywords: ['RO service Budigere', 'RO service Budigere Cross Bangalore', 'RO repair Budigere Cross', '562110 RO service', 'RO service near Devanahalli Budigere', 'RO service Prestige Tranquility Budigere', 'RO service Brigade Buena Vista Budigere', 'RO service Shriram Greenfield Budigere'],
+    nearby: ['Devanahalli', 'Bagalur', 'Hoskote', 'Whitefield', 'Mahadevapura', 'Old Madras Road', 'Budigere'],
+    extraKeywords: ['RO service Budigere', 'RO service Budigere Cross Bangalore', 'RO repair Budigere Cross', '562110 RO service', 'RO service near Devanahalli Budigere'],
   },
   {
     slug: 'ro-service-varthur',
@@ -295,24 +285,24 @@ const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
     name: 'Thanisandra',
     pincode: '560077',
     region: 'Bengaluru',
-    nearby: ['Hebbal', 'Yelahanka', 'Nagawara', 'Hennur', 'Kalyan Nagar', 'Manyata Tech Park', 'RK Hegde Nagar', 'Bhartiya City'],
-    extraKeywords: ['RO service Thanisandra Main Road', 'RO repair Thanisandra Bangalore', '560077 RO service', 'RO service near Manyata Thanisandra', 'RO service RK Hegde Nagar', 'RO service Bhartiya City', 'RO service Sobha City Thanisandra', 'RO service NR Windgates Thanisandra'],
+    nearby: ['Hebbal', 'Yelahanka', 'Nagawara', 'Hennur', 'Kalyan Nagar', 'Manyata Tech Park', 'Banaswadi'],
+    extraKeywords: ['RO service Thanisandra Main Road', 'RO repair Thanisandra Bangalore', '560077 RO service', 'RO service near Manyata Thanisandra'],
   },
   {
     slug: 'ro-service-jakkur',
     name: 'Jakkur',
     pincode: '560064',
     region: 'Bengaluru',
-    nearby: ['Yelahanka', 'Hebbal', 'Sahakar Nagar', 'Thanisandra', 'Bagalur', 'Kogilu', 'Jakkur Plantation', 'Airport Road'],
-    extraKeywords: ['RO service Jakkur Bangalore', 'RO repair Jakkur', 'RO service Jakkur Lake area', 'RO service Jakkur Plantation', 'RO service Brigade Bricklane', 'RO service Century Breeze Jakkur'],
+    nearby: ['Yelahanka', 'Hebbal', 'Sahakar Nagar', 'Thanisandra', 'Bagalur', 'Kogilu'],
+    extraKeywords: ['RO service Jakkur Bangalore', 'RO repair Jakkur', 'RO service Jakkur Lake area'],
   },
   {
     slug: 'ro-service-bagalur',
     name: 'Bagalur',
     pincode: '560064',
     region: 'Bengaluru',
-    nearby: ['Yelahanka', 'Devanahalli', 'Budigere Cross', 'Jakkur', 'Kattigenahalli', 'Aerospace Park', 'Gummanahalli', 'Kempegowda Airport'],
-    extraKeywords: ['RO service Bagalur Bangalore', 'RO repair Bagalur', 'RO service near Airport Bagalur', 'RO service Bagalur Main Road', 'RO service Bagalur KIADB', 'RO service Aerospace Park Bagalur', 'RO service Prestige Finsbury Park', 'RO service Brigade El Dorado', 'RO service Godrej Ananda Bagalur'],
+    nearby: ['Yelahanka', 'Devanahalli', 'Budigere Cross', 'Jakkur', 'Hosur border', 'Kempegowda Airport'],
+    extraKeywords: ['RO service Bagalur Bangalore', 'RO repair Bagalur', 'RO service near Airport Bagalur', 'RO service Bagalur Main Road'],
   },
   {
     slug: 'ro-service-manyata-tech-park',
@@ -418,7 +408,7 @@ const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
   { slug: 'ro-service-ramanagara', name: 'Ramanagara', region: 'Karnataka', nearby: ['Channapatna', 'Bidadi', 'Kanakapura', 'Magadi', 'Harohalli', 'Mysore Road'] },
   { slug: 'ro-service-nelamangala', name: 'Nelamangala', region: 'Karnataka', nearby: ['Dabaspete', 'Tumkur Road', 'Doddaballapur', 'Sompura', 'Bashettihalli', 'Solur'] },
   { slug: 'ro-service-doddaballapur', name: 'Doddaballapur', region: 'Karnataka', nearby: ['Yelahanka', 'Devanahalli', 'Nelamangala', 'Bashettihalli', 'Rajanukunte', 'Chikkaballapur'] },
-  { slug: 'ro-service-devanahalli', name: 'Devanahalli', region: 'Karnataka', nearby: ['Kempegowda Airport', 'Yelahanka', 'Doddaballapur', 'Vijayapura', 'Bagalur', 'Budigere Cross', 'Budigere', 'Chikkajala', 'Aerospace Park'], extraKeywords: ['RO service Kempegowda International Airport', 'RO service near Airport Devanahalli', 'RO repair Devanahalli Bangalore', 'RO service Budigere Cross Devanahalli', 'RO service Vijayapura Devanahalli', 'RO service Devanahalli new apartments', 'RO service Devanahalli township', 'RO service Brigade Orchards Devanahalli', 'RO service Ozone Urbana Devanahalli', 'RO service Embassy Springs Devanahalli', 'RO service Embassy Boulevard Devanahalli'] },
+  { slug: 'ro-service-devanahalli', name: 'Devanahalli', region: 'Karnataka', nearby: ['Kempegowda Airport', 'Yelahanka', 'Doddaballapur', 'Vijayapura', 'Bagalur', 'Budigere Cross', 'Budigere'], extraKeywords: ['RO service Kempegowda International Airport', 'RO service near Airport Devanahalli', 'RO repair Devanahalli Bangalore', 'RO service Budigere Cross Devanahalli', 'RO service Vijayapura Devanahalli'] },
   {
     slug: 'ro-service-anekal',
     name: 'Anekal',
@@ -449,7 +439,7 @@ export const BENGALURU_LOCALITY_SLUGS: string[] = locationSeoList
   .filter((loc) => loc.region === 'Bengaluru')
   .map((loc) => loc.slug.replace(/^ro-service-/, ''));
 
-const SERVICES_LABEL = 'home RO, commercial 25/50/500/1000 LPH plants and new water softener installation';
+const SERVICES_LABEL = 'RO installation, repair, filter replacement & water softener';
 
 /** Maps nearby-area labels to a location page when names differ slightly */
 const NEARBY_ALIASES: Record<string, string> = {
@@ -507,7 +497,7 @@ export function buildLocationFaqItems(
   return [
     {
       question: `How do I book RO service in ${loc.name}?`,
-      answer: `Book online on our website or call ${phone}. ${brandName} offers same-day home RO, commercial 25/50/500/1000 LPH plants and new water softener installation in ${place}${pincodeText}. Based in Bengaluru, covering up to 250 km.`,
+      answer: `Book online on our website or call ${phone}. ${brandName} offers same-day RO installation, repair, filter replacement and AMC in ${place}${pincodeText}.`,
     },
     {
       question: `Which RO brands do you service in ${loc.name}?`,
@@ -524,14 +514,6 @@ export function buildLocationFaqItems(
     {
       question: `Do you provide RO AMC in ${loc.name}?`,
       answer: `Yes. Annual Maintenance Contract (AMC) plans are available in ${place} with scheduled filter replacement, sanitization and priority support from ${brandName}.`,
-    },
-    {
-      question: `Do you install commercial RO plants in ${loc.name}?`,
-      answer: `Yes. ${brandName} supplies and installs commercial RO plants from 25 LPH and 50 LPH up to 500 LPH and 1000 LPH in ${place}. Site visit, installation, service and AMC from Bengaluru, covering up to 250 km. Call ${phone}.`,
-    },
-    {
-      question: `Do you install water softeners in ${loc.name}?`,
-      answer: `Yes. ${brandName} does new water softener installation in ${place} for hard borewell and tanker water, plus salt refill and resin service. We work from Bengaluru and cover up to 250 km.`,
     },
   ];
 }
@@ -597,13 +579,6 @@ export function buildLocationKeywords(loc: LocationSEO, brandName: string): stri
     `RO service ${loc.name}`,
     `RO repair ${loc.name}`,
     `RO installation ${loc.name}`,
-    `commercial RO ${loc.name}`,
-    `25 LPH RO plant ${loc.name}`,
-    `50 LPH RO plant ${loc.name}`,
-    `500 LPH RO plant ${loc.name}`,
-    `1000 LPH RO plant ${loc.name}`,
-    `water softener ${loc.name}`,
-    `new water softener installation ${loc.name}`,
     ...(loc.region === 'Bengaluru'
       ? [`RO service ${loc.name} Bangalore`, `RO service ${loc.name} Bengaluru`]
       : [`RO service ${loc.name} Karnataka`, `water purifier service ${loc.name}`]),
@@ -618,7 +593,7 @@ export function buildLocationKeywords(loc: LocationSEO, brandName: string): stri
 
 export function buildLocationTitle(loc: LocationSEO, brandName = 'Hydrogen RO'): string {
   const suffix = loc.region === 'Bengaluru' ? 'Bengaluru' : 'Karnataka';
-  return `RO, Commercial Plant & Softener in ${loc.name} ${suffix} | ${brandName}`;
+  return `RO Service in ${loc.name} ${suffix} | Installation, Repair & AMC - ${brandName}`;
 }
 
 export function buildLocationDescription(loc: LocationSEO, brandName = 'Hydrogen RO', phone = '+91-8884944288'): string {
@@ -629,10 +604,10 @@ export function buildLocationDescription(loc: LocationSEO, brandName = 'Hydrogen
         ? `${loc.name}, Karnataka`
         : loc.name;
   const nearbyText = loc.nearby.length ? ` Also serving ${loc.nearby.slice(0, 5).join(', ')}.` : '';
-  return `Looking for RO service in ${place}? ${brandName} offers same-day ${SERVICES_LABEL} by certified technicians${loc.pincode ? ` (pincode ${loc.pincode})` : ''}.${nearbyText} Based in Bengaluru, covering up to 250 km. Call ${phone}.`;
+  return `Looking for RO service in ${place}? ${brandName} offers same-day ${SERVICES_LABEL} by certified technicians${loc.pincode ? ` (pincode ${loc.pincode})` : ''}.${nearbyText} Genuine spare parts, transparent pricing, 24/7 support. Call ${phone}.`;
 }
 
 export function buildLocationIntro(loc: LocationSEO, brandName = 'Hydrogen RO'): string {
   const place = loc.region === 'Bengaluru' ? `${loc.name}, Bengaluru` : `${loc.name}, ${loc.region}`;
-  return `${brandName} serves ${place} with home RO installation and repair, commercial RO plants (25, 50, 500 and 1000 LPH) and new water softener installation. Certified technicians handle same-day RO service, filter replacement and AMC${loc.pincode ? ` across pincode ${loc.pincode}` : ''}. We work from Bengaluru and cover up to 250 km, including ${loc.nearby.join(', ')}. Book a site visit or same-day service.`;
+  return `${brandName} is the trusted choice for RO water purifier service in ${place}. Our certified technicians provide same-day RO installation, repair, filter & membrane replacement, water softener service and annual maintenance (AMC) for all major brands${loc.pincode ? ` across pincode ${loc.pincode}` : ''}. We also cover nearby areas including ${loc.nearby.join(', ')}. Book online or call us for fast, doorstep service.`;
 }

@@ -7,6 +7,7 @@
 
 import type { SettingsPanelSlug } from '@/lib/settingsUrl';
 import { isAdminAppLocked } from '@/lib/adminBiometricLock';
+import { rememberAdminTechCallFromPush } from '@/lib/adminRecentTechCallAlerts';
 
 export type AdminPushDeepLinkPayload = {
   /** 'job' (default) → focus a job; 'tech_call' → search the caller's number; 'settings' → Settings panel; 'payments' → Payments tab + optional add-expense dialog. */
@@ -172,6 +173,8 @@ export function deliverAdminPushDeepLink(
 ): boolean {
   const parsed = parseAdminPushDeepLinkData(raw);
   if (!parsed) return false;
+  // Keep tech-call alerts on this device for Recent Accounts → Customer call alerts.
+  rememberAdminTechCallFromPush(raw as Record<string, unknown>);
   // Hold until fingerprint unlock so navigation happens after the lock screen.
   if (!handler || isAdminAppLocked()) {
     pending = parsed;

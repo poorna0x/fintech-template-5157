@@ -180,9 +180,6 @@ export interface Job {
   followUpNotes?: string;
   followUpScheduledBy?: string;
   followUpScheduledAt?: string;
-  /** Include an AMC Service job in the normal follow-up list. */
-  includeAmcFollowUp?: boolean;
-  include_amc_follow_up?: boolean;
   
   // Denial Tracking
   denialReason?: string;

@@ -25,8 +25,6 @@ export interface TechnicianReferenceAmcInput {
   servicePeriodKind: '4' | '6' | 'custom' | 'no_auto';
   servicePeriodCustomMonths: number;
   roModel?: string;
-  /** Immutable address snapshot from the completed job's chosen site. */
-  serviceAddress?: Customer['address'] | null;
 }
 
 function formatValidityRange(startDate: string, endDate: string): string {
@@ -41,7 +39,7 @@ function formatValidityRange(startDate: string, endDate: string): string {
 
 export function buildTechnicianReferenceAmcBill(input: TechnicianReferenceAmcInput): Bill {
   const brand = normalizeDocumentBrand(input.documentBrand) || 'hydrogenro';
-  const addr = normalizeCustomerAddress(input.serviceAddress || input.customer.address, {
+  const addr = normalizeCustomerAddress(input.customer.address, {
     visible_address: input.customer.address?.visible_address,
     formattedAddress: input.customer.location?.formattedAddress,
   });

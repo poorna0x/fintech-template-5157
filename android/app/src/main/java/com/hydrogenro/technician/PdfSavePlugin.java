@@ -1,16 +1,13 @@
 package com.hydrogenro.technician;
 
-import android.content.ActivityNotFoundException;
 import android.content.ContentResolver;
 import android.content.ContentValues;
-import android.content.Intent;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
-import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -72,81 +69,6 @@ public class PdfSavePlugin extends Plugin {
             call.resolve(result);
         } catch (Exception e) {
             call.reject(e.getMessage() != null ? e.getMessage() : "save_failed");
-        }
-    }
-
-    /**
-     * Hand the file to a real viewer app. The WebView cannot render PDFs, so
-     * `window.open` there leaves the user staring at a stuck "Opening…".
-     */
-    @PluginMethod
-    public void openFile(PluginCall call) {
-        String filename = call.getString("filename");
-        String data = call.getString("data");
-        String mimeType = call.getString("mimeType");
-        if (filename == null || filename.trim().isEmpty()) {
-            call.reject("filename_required");
-            return;
-        }
-        if (data == null || data.isEmpty()) {
-            call.reject("data_required");
-            return;
-        }
-
-        String resolvedMime = (mimeType != null && !mimeType.trim().isEmpty())
-            ? mimeType.trim()
-            : "application/octet-stream";
-        String safeName = sanitizeFilename(filename.trim(), resolvedMime);
-        byte[] bytes;
-        try {
-            bytes = Base64.decode(data, Base64.DEFAULT);
-        } catch (IllegalArgumentException e) {
-            call.reject("invalid_base64");
-            return;
-        }
-        if (bytes.length == 0) {
-            call.reject("empty_file");
-            return;
-        }
-
-        try {
-            File dir = new File(getContext().getCacheDir(), "shared");
-            if (!dir.exists() && !dir.mkdirs()) {
-                call.reject("cache_dir_failed");
-                return;
-            }
-            File file = new File(dir, safeName);
-            try (FileOutputStream out = new FileOutputStream(file)) {
-                out.write(bytes);
-                out.flush();
-            }
-
-            Uri uri = FileProvider.getUriForFile(
-                getContext(),
-                getContext().getPackageName() + ".fileprovider",
-                file
-            );
-
-            Intent view = new Intent(Intent.ACTION_VIEW);
-            view.setDataAndType(uri, resolvedMime);
-            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-            Intent chooser = Intent.createChooser(view, "Open with");
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-            try {
-                getContext().startActivity(chooser);
-            } catch (ActivityNotFoundException e) {
-                call.reject("no_viewer_app");
-                return;
-            }
-
-            JSObject result = new JSObject();
-            result.put("opened", true);
-            result.put("filename", safeName);
-            call.resolve(result);
-        } catch (Exception e) {
-            call.reject(e.getMessage() != null ? e.getMessage() : "open_failed");
         }
     }
 

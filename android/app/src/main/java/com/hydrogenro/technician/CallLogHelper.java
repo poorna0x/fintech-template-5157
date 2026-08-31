@@ -245,4 +245,61 @@ final class CallLogHelper {
             if (cursor != null) cursor.close();
         }
     }
+
+    /**
+     * Recent inbound rows for open-app catch-up (newest first).
+     * Dedupes by number+dateMs. Caps at {@code max}.
+     */
+    static java.util.List<Entry> listIncomingSince(Context context, long sinceEpochMs, int max) {
+        java.util.ArrayList<Entry> out = new java.util.ArrayList<>();
+        if (!hasCallLogPermission(context) || max <= 0) return out;
+        Cursor cursor = null;
+        try {
+            String selection =
+                CallLog.Calls.DATE + ">=? AND " + CallLog.Calls.TYPE + " IN (?,?,?,?,?)";
+            String[] args =
+                new String[] {
+                    String.valueOf(sinceEpochMs),
+                    String.valueOf(CallLog.Calls.INCOMING_TYPE),
+                    String.valueOf(CallLog.Calls.MISSED_TYPE),
+                    String.valueOf(CallLog.Calls.REJECTED_TYPE),
+                    "6",
+                    "7",
+                };
+            cursor =
+                context
+                    .getContentResolver()
+                    .query(
+                        CallLog.Calls.CONTENT_URI,
+                        new String[] {
+                            CallLog.Calls.NUMBER,
+                            CallLog.Calls.TYPE,
+                            CallLog.Calls.DATE,
+                        },
+                        selection,
+                        args,
+                        CallLog.Calls.DATE + " DESC"
+                    );
+            if (cursor == null) return out;
+            java.util.HashSet<String> seen = new java.util.HashSet<>();
+            while (cursor.moveToNext() && out.size() < max) {
+                String number = cursor.getString(0);
+                int type = cursor.getInt(1);
+                long dateMs = cursor.getLong(2);
+                if (number == null || number.trim().isEmpty() || dateMs <= 0) continue;
+                String trimmed = number.trim();
+                if (isUselessNumber(trimmed)) continue;
+                String key = trimmed + ":" + dateMs;
+                if (!seen.add(key)) continue;
+                out.add(new Entry(trimmed, dateMs, type));
+            }
+        } catch (SecurityException e) {
+            Log.w(TAG, "Call log permission denied: " + e.getMessage());
+        } catch (Exception e) {
+            Log.w(TAG, "Call log list failed: " + e.getMessage());
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+        return out;
+    }
 }

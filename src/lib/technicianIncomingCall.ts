@@ -1,32 +1,40 @@
 /**
- * Technician app: read the last incoming call captured natively / CallLog
- * so we can JWT-notify admins when native FCM POST missed.
+ * Technician app: read CallLog / native cache so we can JWT-notify admins
+ * when the native deferred POST missed (OEM / killed process).
+ *
+ * Open-app: one batch of recent inbound rows → one Netlify invocation.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { normalizePhoneForSearch } from '@/lib/utils';
-import { notifyAdminsTechnicianCall } from '@/lib/technicianCallAlert';
+import {
+  notifyAdminsTechnicianCall,
+  notifyAdminsTechnicianCallsBatch,
+} from '@/lib/technicianCallAlert';
 import { isTechnicianCallDetectEnabled } from '@/lib/technicianPush';
 
+type RecentCallRow = {
+  number?: string;
+  at?: number;
+  callLogDate?: number;
+  callId?: string;
+  missed?: boolean;
+  alerted?: boolean;
+};
+
 type RecentCallPlugin = {
-  consumeRecentCall(): Promise<{
-    number?: string;
-    at?: number;
-    callLogDate?: number;
-    alerted?: boolean;
-  }>;
-  peekRecentCall(): Promise<{
-    number?: string;
-    at?: number;
-    callLogDate?: number;
-    callId?: string;
-    missed?: boolean;
-    alerted?: boolean;
-  }>;
+  consumeRecentCall(): Promise<RecentCallRow>;
+  peekRecentCall(): Promise<RecentCallRow>;
+  listRecentIncomingCalls?(opts?: {
+    sinceMs?: number;
+    max?: number;
+  }): Promise<{ calls?: RecentCallRow[] }>;
 };
 
 const RecentCall = registerPlugin<RecentCallPlugin>('RecentCall');
 
 const FRESH_CALL_MAX_AGE_MS = 15 * 60_000;
+const CATCHUP_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CATCHUP_MAX = 20;
 
 function isAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('RecentCall');
@@ -62,12 +70,12 @@ export async function peekRecentTechnicianCaller(): Promise<{
   at: number;
   callAt?: number;
   callId?: string;
-  missed?: boolean;
   alreadyAlerted?: boolean;
+  missed?: boolean;
 } | null> {
   if (!isAvailable()) return null;
   try {
-    if (typeof (RecentCall as RecentCallPlugin).peekRecentCall !== 'function') {
+    if (typeof RecentCall.peekRecentCall !== 'function') {
       const digits = await consumeRecentTechnicianCallerNumber();
       return digits ? { digits, at: Date.now() } : null;
     }
@@ -86,9 +94,8 @@ export async function peekRecentTechnicianCaller(): Promise<{
         ? result.callLogDate
         : undefined;
     const callId =
-      typeof (result as { callId?: string }).callId === 'string' &&
-      (result as { callId?: string }).callId!.trim()
-        ? (result as { callId?: string }).callId!.trim()
+      typeof result.callId === 'string' && result.callId.trim()
+        ? result.callId.trim()
         : callAt
           ? `${digits}:${callAt}`
           : undefined;
@@ -97,22 +104,65 @@ export async function peekRecentTechnicianCaller(): Promise<{
       at: result.at,
       callAt,
       callId,
-      missed: result.missed === true,
       alreadyAlerted: false,
+      missed: result.missed === true,
     };
   } catch {
     return null;
   }
 }
 
+/**
+ * On open/resume: batch catch-up of last 24h CallLog (one function invoke).
+ * Falls back to single peek on older APKs without listRecentIncomingCalls.
+ */
 export function reportRecentTechnicianCallToAdmins(): void {
   if (!isTechnicianCallDetectEnabled()) return;
-  void peekRecentTechnicianCaller().then((hit) => {
+  void (async () => {
+    if (!isAvailable()) return;
+
+    if (typeof RecentCall.listRecentIncomingCalls === 'function') {
+      try {
+        const sinceMs = Date.now() - CATCHUP_WINDOW_MS;
+        const result = await RecentCall.listRecentIncomingCalls({
+          sinceMs,
+          max: CATCHUP_MAX,
+        });
+        const rows = Array.isArray(result?.calls) ? result.calls : [];
+        const items = rows
+          .filter((r) => r && !r.alerted)
+          .map((r) => {
+            const digits = normalizePhoneForSearch(String(r.number || ''));
+            const callAt =
+              typeof r.callLogDate === 'number' && r.callLogDate > 0
+                ? r.callLogDate
+                : 0;
+            const callId =
+              (typeof r.callId === 'string' && r.callId.trim()) ||
+              (digits.length >= 10 && callAt > 0 ? `${digits}:${callAt}` : '');
+            return {
+              number: digits,
+              callId,
+              callAt,
+              missed: r.missed === true,
+            };
+          })
+          .filter((r) => r.number.length >= 10 && r.callId && r.callAt > 0);
+        if (items.length > 0) {
+          notifyAdminsTechnicianCallsBatch(items);
+          return;
+        }
+      } catch {
+        /* fall through to peek */
+      }
+    }
+
+    const hit = await peekRecentTechnicianCaller();
     if (!hit || hit.alreadyAlerted || !hit.callId || !hit.callAt) return;
     notifyAdminsTechnicianCall(hit.digits, {
       callId: hit.callId,
       callAt: hit.callAt,
       missed: hit.missed,
     });
-  });
+  })();
 }

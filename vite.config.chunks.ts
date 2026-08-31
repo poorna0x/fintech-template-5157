@@ -6,8 +6,7 @@ export function manualChunks(id: string): string | undefined {
   //
   // Why this exists: src/lib/supabase.ts is the admin/technician data
   // layer (contains every RPC name + table name). The eager app shell
-  // also needs some lightweight utilities below. Supabase auth itself is
-  // portal-only and deliberately stays out of this chunk. When Rollup sees a
+  // also needs the lightweight utilities below. When Rollup sees a
   // module used by both the entry AND admin-data, it merges that
   // module into admin-data — which forces the entry chunk to statically
   // import from admin-data, which forces Vite to put `admin-data` in
@@ -25,6 +24,8 @@ export function manualChunks(id: string): string | undefined {
     id.includes('/src/lib/storage.ts') ||
     id.includes('/src/lib/storage/') ||
     id.includes('/src/lib/pwa.ts') ||
+    id.includes('/src/lib/supabaseClient.ts') ||
+    id.includes('/src/lib/supabaseConfig.ts') ||
     id.includes('/src/lib/sanitizePostgrestError.ts') ||
     // Vite's `__vitePreload` runtime helper is a virtual module shared
     // between the entry (for lazy page imports) and supabase.ts (for
@@ -34,16 +35,6 @@ export function manualChunks(id: string): string | undefined {
     id.includes('vite/preload-helper')
   ) {
     return 'shell-utils';
-  }
-
-  // The Supabase auth client is shared by portal and a few lazy public tools,
-  // but never by the marketing shell. Pin it to its own on-demand chunk so
-  // Rollup cannot merge it into either shell-utils or admin-data.
-  if (
-    id.includes('/src/lib/supabaseClient.ts') ||
-    id.includes('/src/lib/supabaseConfig.ts')
-  ) {
-    return 'portal-auth';
   }
 
   if (id.includes('/src/lib/supabase.ts')) {

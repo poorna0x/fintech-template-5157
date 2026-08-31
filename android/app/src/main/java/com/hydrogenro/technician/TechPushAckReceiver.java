@@ -493,7 +493,8 @@ public class TechPushAckReceiver extends BroadcastReceiver {
                         || code == 410 || code == 422) {
                     return true;
                 }
-                // 408/429/5xx stay false so the durable queue can retry.            } catch (Exception e) {
+                // 408/429/5xx stay false so the durable queue can retry.
+            } catch (Exception e) {
                 Log.w(TAG, "Ack failed action=" + action + " attempt=" + attempt, e);
             } finally {
                 if (conn != null) conn.disconnect();
