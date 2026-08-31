@@ -68,7 +68,7 @@ async function verifyAdminBearerToken(token) {
 
   if (!serviceKey) {
     if (metaRole === 'admin') {
-      return { ok: true, userId: user.id };
+      return { ok: true, userId: user.id, role: 'ADMIN' };
     }
     return { ok: false, error: 'Server misconfigured' };
   }
@@ -93,7 +93,7 @@ async function verifyAdminBearerToken(token) {
 
   const { data: adminRow, error: adminErr } = await adminClient
     .from('admin_users')
-    .select('id')
+    .select('id, role')
     .ilike('email', email)
     .eq('is_active', true)
     .maybeSingle();
@@ -106,7 +106,22 @@ async function verifyAdminBearerToken(token) {
     return { ok: false, error: 'Forbidden' };
   }
 
-  return { ok: true, userId: user.id };
+  const role = String(adminRow.role || 'ADMIN').trim().toUpperCase();
+  return { ok: true, userId: user.id, role };
+}
+
+/** Full admin only (ADMIN / SUPER_ADMIN). Managers cannot use CRM / document AI. */
+async function verifyFullAdminBearerToken(token) {
+  const session = await verifyAdminBearerToken(token);
+  if (!session.ok) return session;
+  const role = String(session.role || 'ADMIN').trim().toUpperCase();
+  if (role === 'MANAGER') {
+    return { ok: false, error: 'Forbidden' };
+  }
+  if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
+    return session;
+  }
+  return { ok: false, error: 'Forbidden' };
 }
 
 /** Admin or technician JWT — never default unknown users to admin. */
@@ -247,6 +262,7 @@ module.exports = {
   authorizeStaffAmcEmailRequest,
   authorizeStaffRequest,
   verifyAdminBearerToken,
+  verifyFullAdminBearerToken,
   verifyStaffBearerToken,
   isPreviewSecretAuthorized,
   readBearerToken,

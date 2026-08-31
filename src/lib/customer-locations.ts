@@ -266,6 +266,15 @@ export const getSiteEquipment = (
   };
 };
 
+/** Brand + model line for AMC / documents (e.g. "AO Smith P6"). */
+export const formatSiteRoModel = (
+  customer: unknown,
+  variant: CustomerLocationVariant
+): string => {
+  const eq = getSiteEquipment(customer, variant);
+  return [eq.brand, eq.model].filter(Boolean).join(' ').trim();
+};
+
 /** True when secondary address is set and secondary device (brand) is configured. */
 export const hasDualSiteCustomer = (customer: unknown): boolean => {
   if (!hasAlternateLocation(customer)) return false;

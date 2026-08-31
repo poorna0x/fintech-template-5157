@@ -31,6 +31,10 @@ async function run() {
   const staff = await guard.verifyStaffBearerToken('');
   assert.strictEqual(staff.ok, false);
 
+  const fullAdmin = await guard.verifyFullAdminBearerToken('');
+  assert.strictEqual(fullAdmin.ok, false);
+  assert.strictEqual(typeof guard.verifyFullAdminBearerToken, 'function');
+
   process.env.CONTEXT = origContext;
   if (origPreview === undefined) delete process.env.EMAIL_PREVIEW_SECRET;
   else process.env.EMAIL_PREVIEW_SECRET = origPreview;

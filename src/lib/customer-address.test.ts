@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatPdfCustomerAddress,
+  formatPdfLocalityLine,
+  pdfCustomerDisplayName,
   stringifyCustomerAddressForTemplate,
 } from './customer-address';
 import { sanitizeForTemplate } from './sanitize';
@@ -85,5 +87,25 @@ describe('formatPdfCustomerAddress', () => {
     expect(fields.city).toBe('');
     expect(fields.state).toBe('');
     expect(fields.pincode).toBe('');
+  });
+});
+
+describe('pdfCustomerDisplayName', () => {
+  it('skips empty and dummy Customer Name placeholders', () => {
+    expect(pdfCustomerDisplayName(null)).toBe('');
+    expect(pdfCustomerDisplayName({ name: '' })).toBe('');
+    expect(pdfCustomerDisplayName({ name: 'Customer Name' })).toBe('');
+    expect(pdfCustomerDisplayName({ fullName: 'Anita' })).toBe('Anita');
+  });
+});
+
+describe('formatPdfLocalityLine', () => {
+  it('skips missing city, state, or pincode', () => {
+    expect(formatPdfLocalityLine({ city: 'Bengaluru', state: 'Karnataka', pincode: '560068' })).toBe(
+      'Bengaluru, Karnataka - 560068'
+    );
+    expect(formatPdfLocalityLine({ city: 'Bengaluru', state: '', pincode: '' })).toBe('Bengaluru');
+    expect(formatPdfLocalityLine({ city: '', state: '', pincode: '560068' })).toBe('560068');
+    expect(formatPdfLocalityLine({ city: '', state: '', pincode: '' })).toBe('');
   });
 });

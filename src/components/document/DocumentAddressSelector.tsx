@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import type { Customer } from '@/types';
 import {
   formatCustomerFullAddressLine,
@@ -47,6 +48,39 @@ export function documentAddressForChoice(
     city: normalized.city,
     state: normalized.state,
     pincode: normalized.pincode,
+  };
+}
+
+export type DocumentAddressFields = AddressShape;
+
+/** Pick a saved site, then optionally edit those fields for this document only. */
+export function useDocumentSiteAddress(customerId: string | undefined) {
+  const [addressChoice, setAddressChoice] = useState<DocumentAddressChoice>('primary');
+  const addressEditedRef = useRef(false);
+
+  useEffect(() => {
+    addressEditedRef.current = false;
+    setAddressChoice('primary');
+  }, [customerId]);
+
+  const selectSite = (choice: DocumentAddressChoice, address: AddressShape) => {
+    addressEditedRef.current = false;
+    setAddressChoice(choice);
+    return address;
+  };
+
+  const markAddressEdited = () => {
+    addressEditedRef.current = true;
+  };
+
+  const isAddressEdited = () => addressEditedRef.current;
+
+  return {
+    addressChoice,
+    setAddressChoice,
+    selectSite,
+    markAddressEdited,
+    isAddressEdited,
   };
 }
 

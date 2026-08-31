@@ -67,6 +67,13 @@ import {
 } from '@/components/ui/dialog';
 import { normalizeRecipientList } from '@/lib/email-recipients';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
+import {
+  DocumentAddressSelector,
+  documentAddressForChoice,
+  useDocumentSiteAddress,
+  type DocumentAddressChoice,
+} from '@/components/document/DocumentAddressSelector';
+import { formatSiteRoModel } from '@/lib/customer-locations';
 
 interface AMCGeneratorProps {
   customer: Customer;
@@ -104,7 +111,7 @@ export default function AMCGenerator({
   const [validity, setValidity] = useState('1 Year');
   const [customFromDate, setCustomFromDate] = useState('');
   const [customToDate, setCustomToDate] = useState('');
-  const [roModel, setRoModel] = useState('');
+  const [roModel, setRoModel] = useState(() => formatSiteRoModel(customer, 'primary'));
   const [includesPreSedimentFiltration, setIncludesPreSedimentFiltration] = useState(false);
   const [showComputerGeneratedText, setShowComputerGeneratedText] = useState(true);
   const [sealVariant, setSealVariant] = useState<'sign' | 'stamp'>('sign');
@@ -244,23 +251,21 @@ export default function AMCGenerator({
     setTerms(generateAmcTerms(includesPreSedimentFiltration, servicePeriodKind, num(servicePeriodCustomMonths)));
   }, [includesPreSedimentFiltration, servicePeriodKind, servicePeriodCustomMonths]);
 
-  // Auto-populate RO model from customer data (brand and/or model)
-  React.useEffect(() => {
-    if (!customer || roModel) return;
-    const brand = (customer.brand || '').trim();
-    const model = (customer.model || '').trim();
-    if (!brand && !model) return;
-    const modelValue = [brand, model].filter(Boolean).join(' ').trim();
-    setRoModel(modelValue);
-  }, [customer, roModel]);
-
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const { addressChoice, setAddressChoice, selectSite, markAddressEdited, isAddressEdited } =
+    useDocumentSiteAddress(customer.id);
   const resolveCustomerAddress = () =>
-    normalizeCustomerAddress(customer.address, {
-      visible_address: customer.address?.visible_address,
-      formattedAddress: customer.location?.formattedAddress,
-    });
+    normalizeCustomerAddress(documentAddressForChoice(customer, addressChoice));
+  const roModelEditedRef = useRef(false);
+  const roModelFromSite = (choice: DocumentAddressChoice) =>
+    formatSiteRoModel(customer, choice === 'secondary' ? 'secondary' : 'primary');
+
+  // Auto-fill RO model from the selected site's saved brand/model.
+  React.useEffect(() => {
+    if (roModelEditedRef.current) return;
+    setRoModel(roModelFromSite(addressChoice));
+  }, [customer, addressChoice]);
 
   const [editableCustomer, setEditableCustomer] = useState(() => {
     const addr = resolveCustomerAddress();
@@ -280,7 +285,7 @@ export default function AMCGenerator({
   });
 
   React.useEffect(() => {
-    if (isEditingCustomer) return;
+    if (isAddressEdited()) return;
     const addr = resolveCustomerAddress();
     setEditableCustomer({
       name: customer.fullName || '',
@@ -295,9 +300,17 @@ export default function AMCGenerator({
         pincode: addr.pincode,
       },
     });
-  }, [customer, isEditingCustomer]);
+  }, [customer, customer.id, addressChoice]);
 
   const editAddress = normalizeCustomerAddress(editableCustomer.address);
+
+  const patchAmcAddress = (field: 'street' | 'area' | 'city' | 'state' | 'pincode', value: string) => {
+    markAddressEdited();
+    setEditableCustomer((prev) => ({
+      ...prev,
+      address: { ...normalizeCustomerAddress(prev.address), [field]: value },
+    }));
+  };
 
   // Calculate totals - use direct AMC cost instead of items
   const subtotal = num(amcCost);
@@ -796,6 +809,7 @@ export default function AMCGenerator({
     agreementIntro,
     description,
     documentBrand,
+    addressChoice,
     editableCustomer,
   });
 
@@ -807,7 +821,10 @@ export default function AMCGenerator({
     if (typeof snap.validity === 'string') setValidity(snap.validity);
     if (typeof snap.customFromDate === 'string') setCustomFromDate(snap.customFromDate);
     if (typeof snap.customToDate === 'string') setCustomToDate(snap.customToDate);
-    if (typeof snap.roModel === 'string') setRoModel(snap.roModel);
+    if (typeof snap.roModel === 'string') {
+      roModelEditedRef.current = true;
+      setRoModel(snap.roModel);
+    }
     if (typeof snap.includesPreSedimentFiltration === 'boolean')
       setIncludesPreSedimentFiltration(snap.includesPreSedimentFiltration);
     if (typeof snap.showComputerGeneratedText === 'boolean')
@@ -832,6 +849,11 @@ export default function AMCGenerator({
     if (typeof snap.paymentDueDate === 'string') setPaymentDueDate(snap.paymentDueDate);
     if (typeof snap.agreementIntro === 'string') setAgreementIntro(snap.agreementIntro);
     if (typeof snap.description === 'string') setDescription(snap.description);
+    if (snap.addressChoice === 'secondary') {
+      setAddressChoice('secondary');
+    } else if (snap.addressChoice === 'primary' || snap.addressChoice === 'omit') {
+      setAddressChoice('primary');
+    }
     if (snap.documentBrand === 'hydrogenro' || snap.documentBrand === 'elevenro') {
       setDocumentBrand(snap.documentBrand);
       // Keep company info in sync so the preview/PDF picks up the right brand.
@@ -842,7 +864,10 @@ export default function AMCGenerator({
       }
     }
     if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
+    if (snap.editableCustomer && typeof snap.editableCustomer === 'object') {
+      markAddressEdited();
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
+    }
     skipTermsAutoGenRef.current = 1;
   };
 
@@ -1097,13 +1122,26 @@ export default function AMCGenerator({
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              <DocumentAddressSelector
+                customer={customer}
+                value={addressChoice}
+                onChange={(choice, address) => {
+                  roModelEditedRef.current = false;
+                  const next = selectSite(choice, address);
+                  setEditableCustomer((prev) => ({ ...prev, address: next }));
+                  setRoModel(roModelFromSite(choice));
+                }}
+              />
               {/* RO Model Field - Always visible and editable */}
               <div>
                 <Label htmlFor="roModel">RO Model *</Label>
                 <Input
                   id="roModel"
                   value={roModel}
-                  onChange={(e) => setRoModel(e.target.value)}
+                  onChange={(e) => {
+                    roModelEditedRef.current = true;
+                    setRoModel(e.target.value);
+                  }}
                   placeholder="e.g., AO Smith P6, AquaGuard Marvel, etc."
                   className={!roModel.trim() ? 'border-red-300 focus:border-red-500' : ''}
                 />
@@ -1156,16 +1194,17 @@ export default function AMCGenerator({
                   </div>
                   <div className="space-y-3">
                     <Label className="text-sm font-medium">Address</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Change or clear any field for this agreement only. It does not update the
+                      customer record.
+                    </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
                         <Label htmlFor="amc-address-street">Street</Label>
                         <Input
                           id="amc-address-street"
                           value={editAddress.street}
-                          onChange={(e) => setEditableCustomer(prev => ({ 
-                            ...prev, 
-                            address: { ...normalizeCustomerAddress(prev.address), street: e.target.value }
-                          }))}
+                          onChange={(e) => patchAmcAddress('street', e.target.value)}
                           placeholder="Enter street address"
                         />
                       </div>
@@ -1174,10 +1213,7 @@ export default function AMCGenerator({
                         <Input
                           id="amc-address-area"
                           value={editAddress.area}
-                          onChange={(e) => setEditableCustomer(prev => ({ 
-                            ...prev, 
-                            address: { ...normalizeCustomerAddress(prev.address), area: e.target.value }
-                          }))}
+                          onChange={(e) => patchAmcAddress('area', e.target.value)}
                           placeholder="Enter area"
                         />
                       </div>
@@ -1186,10 +1222,7 @@ export default function AMCGenerator({
                         <Input
                           id="amc-address-city"
                           value={editAddress.city}
-                          onChange={(e) => setEditableCustomer(prev => ({ 
-                            ...prev, 
-                            address: { ...normalizeCustomerAddress(prev.address), city: e.target.value }
-                          }))}
+                          onChange={(e) => patchAmcAddress('city', e.target.value)}
                           placeholder="Enter city"
                         />
                       </div>
@@ -1198,10 +1231,7 @@ export default function AMCGenerator({
                         <Input
                           id="amc-address-state"
                           value={editAddress.state}
-                          onChange={(e) => setEditableCustomer(prev => ({ 
-                            ...prev, 
-                            address: { ...normalizeCustomerAddress(prev.address), state: e.target.value }
-                          }))}
+                          onChange={(e) => patchAmcAddress('state', e.target.value)}
                           placeholder="Enter state"
                         />
                       </div>
@@ -1210,10 +1240,7 @@ export default function AMCGenerator({
                         <Input
                           id="amc-address-pincode"
                           value={editAddress.pincode}
-                          onChange={(e) => setEditableCustomer(prev => ({ 
-                            ...prev, 
-                            address: { ...normalizeCustomerAddress(prev.address), pincode: e.target.value }
-                          }))}
+                          onChange={(e) => patchAmcAddress('pincode', e.target.value)}
                           placeholder="Enter pincode"
                         />
                       </div>
@@ -1224,8 +1251,12 @@ export default function AMCGenerator({
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <User className="w-4 h-4 text-gray-500" />
-                    <span className="font-medium">{editableCustomer.name}</span>
-                    <Badge variant="outline">{customer.customerId}</Badge>
+                    {editableCustomer.name ? (
+                      <span className="font-medium">{editableCustomer.name}</span>
+                    ) : null}
+                    {customer.customerId ? (
+                      <Badge variant="outline">{customer.customerId}</Badge>
+                    ) : null}
                   </div>
                   {editableCustomer.phone && (
                     <div className="flex items-center gap-2">

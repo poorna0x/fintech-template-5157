@@ -21,6 +21,11 @@ import {
   recordDocumentPdfAuthenticity,
 } from './documentPdfAuthenticity';
 import { toast } from 'sonner';
+import {
+  formatPdfCustomerAddress,
+  formatPdfLocalityLine,
+  pdfCustomerDisplayName,
+} from './customer-address';
 
 function resolveTaxInvoiceSealSrc(data: PDFTaxInvoiceData): string {
   const brand = resolveDocumentBrandFromData({
@@ -440,6 +445,13 @@ function handleMobilePrint(billData: PDFTaxInvoiceData, action: 'print' | 'pdf')
 }
 
 function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
+  const customerAddr = formatPdfCustomerAddress(data.customer);
+  const customerNameHtml = sanitizeForTemplate(pdfCustomerDisplayName(data.customer));
+  const customerStreetHtml = sanitizeForTemplate(customerAddr.address);
+  const customerLocalityHtml = sanitizeForTemplate(formatPdfLocalityLine(customerAddr));
+  const customerPhoneHtml = sanitizeForTemplate(data.customer.phone);
+  const customerEmailHtml = sanitizeForTemplate(data.customer.email);
+  const customerGstHtml = sanitizeForTemplate(data.customer.gstNumber);
   const rawNotesHeading = (data.notesHeading ?? 'Additional Info').toString().trim();
   const notesHeading =
     rawNotesHeading.length === 0
@@ -471,13 +483,13 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
         <div class="bill-to">
           <div class="section-title">Bill To:</div>
           <div class="customer-info">
-            <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
+            ${customerNameHtml ? `<div><strong>${customerNameHtml}</strong></div>` : ''}
             ${(data as any).invoiceDetails?.invoiceType === 'B2B' ? '<div style="font-size: 11px; color: #059669; font-weight: bold;">(Registered Business - B2B)</div>' : ''}
-            ${sanitizeForTemplate(data.customer.address) ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
-            ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${sanitizeForTemplate(data.customer.city)}, ${sanitizeForTemplate(data.customer.state)} - ${sanitizeForTemplate(data.customer.pincode)}</div>` : ''}
-            ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
-            ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}
-            ${data.customer.gstNumber ? `<div><strong>GSTIN:</strong> ${sanitizeForTemplate(data.customer.gstNumber)}</div>` : ''}
+            ${customerStreetHtml ? `<div>${customerStreetHtml}</div>` : ''}
+            ${customerLocalityHtml ? `<div>${customerLocalityHtml}</div>` : ''}
+            ${customerPhoneHtml ? `<div>Phone: ${customerPhoneHtml}</div>` : ''}
+            ${customerEmailHtml ? `<div>Email: ${customerEmailHtml}</div>` : ''}
+            ${customerGstHtml ? `<div><strong>GSTIN:</strong> ${customerGstHtml}</div>` : ''}
             ${(data as any).invoiceDetails?.invoiceType === 'B2B' && !data.customer.gstNumber ? '<div style="color: #dc2626; font-weight: bold;">⚠ GSTIN Required for B2B Invoice</div>' : ''}
           </div>
         </div>
@@ -506,8 +518,8 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
             <div class="customer-info">
               ${(data as any).invoiceDetails.deliveryAddress.street ? `<div>${sanitizeForTemplate((data as any).invoiceDetails.deliveryAddress.street)}</div>` : ''}
               ${(data as any).invoiceDetails.deliveryAddress.area ? `<div>${sanitizeForTemplate((data as any).invoiceDetails.deliveryAddress.area)}</div>` : ''}
-              ${((data as any).invoiceDetails.deliveryAddress.city || (data as any).invoiceDetails.deliveryAddress.state || (data as any).invoiceDetails.deliveryAddress.pincode) ? `
-                <div>${(data as any).invoiceDetails.deliveryAddress.city || ''}, ${(data as any).invoiceDetails.deliveryAddress.state || ''} - ${(data as any).invoiceDetails.deliveryAddress.pincode || ''}</div>
+              ${sanitizeForTemplate(formatPdfLocalityLine((data as any).invoiceDetails.deliveryAddress)) ? `
+                <div>${sanitizeForTemplate(formatPdfLocalityLine((data as any).invoiceDetails.deliveryAddress))}</div>
               ` : ''}
             </div>
           </div>

@@ -175,6 +175,27 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      // CRM / document AI — not on production main yet; must use local functions + .env.local keys.
+      '/.netlify/functions/ai-document-draft': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/ai-crm-chat': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/ai-inbox-suggest': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/ai-usage': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/ai-config-save': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Proxy remaining Netlify functions to production (legacy default for undeclared routes).
       '/.netlify/functions': {
         // Use production functions so nudges like goingNow work without netlify:dev.

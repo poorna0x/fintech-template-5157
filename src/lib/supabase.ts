@@ -319,7 +319,7 @@ export const TAX_INVOICE_ROW_COLUMNS = [
   'updated_at',
 ].join(',');
 
-/** Document modals (AMC, tax invoice, quotation) — omit photos, notes, location. */
+/** Document modals — omit photos/notes; keep dual-site address so AMC/bill can pick a location. */
 export const CUSTOMER_DOCUMENT_COLUMNS = [
   'id',
   'customer_id',
@@ -329,9 +329,15 @@ export const CUSTOMER_DOCUMENT_COLUMNS = [
   'email',
   'address',
   'visible_address',
+  'alternate_address',
+  'alternate_visible_address',
+  'alternate_location',
   'service_type',
   'brand',
   'model',
+  'alternate_brand',
+  'alternate_model',
+  'alternate_service_type',
   'installation_date',
   'warranty_expiry',
   'status',

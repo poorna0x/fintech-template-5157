@@ -227,3 +227,26 @@ export function formatPdfCustomerAddress(customer: {
     pincode: fromAddr.pincode || String(customer.pincode || '').trim(),
   });
 }
+
+/** Name to print on PDFs. Empty when missing — never the dummy "Customer Name" label. */
+export function pdfCustomerDisplayName(
+  customer: { fullName?: string | null; name?: string | null } | null | undefined
+): string {
+  const name = String(customer?.fullName || customer?.name || '').trim();
+  if (!name || /^customer\s*name$/i.test(name)) return '';
+  return name;
+}
+
+/** City / state / pincode as one line; skip any part that is not present. */
+export function formatPdfLocalityLine(addr: {
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+}): string {
+  const city = String(addr.city || '').trim();
+  const state = String(addr.state || '').trim();
+  const pin = String(addr.pincode || '').trim();
+  const locality = [city, state].filter(Boolean).join(', ');
+  if (locality && pin) return `${locality} - ${pin}`;
+  return locality || pin;
+}

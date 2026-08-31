@@ -22,7 +22,11 @@ import {
   generateDocumentPdfVerifyCode,
   recordDocumentPdfAuthenticity,
 } from './documentPdfAuthenticity';
-import { formatPdfCustomerAddress } from './customer-address';
+import {
+  formatPdfCustomerAddress,
+  formatPdfLocalityLine,
+  pdfCustomerDisplayName,
+} from './customer-address';
 import { toast } from 'sonner';
 
 export interface PDFBillData {
@@ -803,6 +807,12 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
 
 function createBillContent(data: PDFBillData): string {
   const customerAddr = formatPdfCustomerAddress(data.customer);
+  const customerNameHtml = sanitizeForTemplate(pdfCustomerDisplayName(data.customer));
+  const customerStreetHtml = sanitizeForTemplate(customerAddr.address);
+  const customerLocalityHtml = sanitizeForTemplate(formatPdfLocalityLine(customerAddr));
+  const customerPhoneHtml = sanitizeForTemplate(data.customer.phone);
+  const customerEmailHtml = sanitizeForTemplate(data.customer.email);
+  const customerGstHtml = sanitizeForTemplate(data.customer.gstNumber);
   const brand = resolvePdfDocumentBrand(data);
   const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand, {
     hideGstInHeader: data.hideGstInHeader,
@@ -837,12 +847,12 @@ function createBillContent(data: PDFBillData): string {
         <div class="bill-to">
           <div class="section-title">Bill To:</div>
           <div class="customer-info">
-            <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
-            ${sanitizeForTemplate(customerAddr.address) ? `<div>${sanitizeForTemplate(customerAddr.address)}</div>` : ''}
-            ${(customerAddr.city || customerAddr.state || customerAddr.pincode) ? `<div>${sanitizeForTemplate(customerAddr.city)}, ${sanitizeForTemplate(customerAddr.state)} - ${sanitizeForTemplate(customerAddr.pincode)}</div>` : ''}
-            ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
-            ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}
-            ${data.customer.gstNumber ? `<div>GST: ${sanitizeForTemplate(data.customer.gstNumber)}</div>` : ''}
+            ${customerNameHtml ? `<div><strong>${customerNameHtml}</strong></div>` : ''}
+            ${customerStreetHtml ? `<div>${customerStreetHtml}</div>` : ''}
+            ${customerLocalityHtml ? `<div>${customerLocalityHtml}</div>` : ''}
+            ${customerPhoneHtml ? `<div>Phone: ${customerPhoneHtml}</div>` : ''}
+            ${customerEmailHtml ? `<div>Email: ${customerEmailHtml}</div>` : ''}
+            ${customerGstHtml ? `<div>GST: ${customerGstHtml}</div>` : ''}
           </div>
         </div>
         

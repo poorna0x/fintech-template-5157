@@ -68,6 +68,7 @@ import { getInventoryBillName } from '@/lib/inventoryBillName';
 import {
   DocumentAddressSelector,
   documentAddressForChoice,
+  useDocumentSiteAddress,
   type DocumentAddressChoice,
 } from '@/components/document/DocumentAddressSelector';
 import {
@@ -158,7 +159,7 @@ export default function BillGenerator({
   initialAiInstruction,
 }: BillGeneratorProps) {
   // Safe customer data extraction (search/slim rows may have string address or missing fields)
-  const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
+  const customerName = customer?.fullName || (customer as any)?.full_name || '';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
   const customerEmail = customer?.email || '';
   const customerAddress = normalizeCustomerAddress(customer?.address);
@@ -204,7 +205,8 @@ export default function BillGenerator({
     brand: DocumentBrand;
     defaultRecipients: string[];
   } | null>(null);
-  const [addressChoice, setAddressChoice] = useState<DocumentAddressChoice>('omit');
+  const { addressChoice, setAddressChoice, selectSite, markAddressEdited, isAddressEdited } =
+    useDocumentSiteAddress(customer?.id);
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -222,16 +224,17 @@ export default function BillGenerator({
     }
   });
 
-  // Keep editable customer in sync with the selected site (or omit). Do not
-  // always copy the primary record — that overwrote secondary / No address.
+  // Load the chosen site into the form. After the user edits those fields,
+  // keep the typed address until they pick the other site.
   useEffect(() => {
-    if (isEditingCustomer) return;
+    if (isAddressEdited()) return;
     const selectedAddress = documentAddressForChoice(customer, addressChoice);
-    setEditableCustomer({
-      name: customerName || '',
-      phone: customerPhone || '',
-      email: customerEmail || '',
-      gst: customerGst || '',
+    setEditableCustomer((prev) => ({
+      ...prev,
+      name: customerName || prev.name,
+      phone: customerPhone || prev.phone,
+      email: customerEmail || prev.email,
+      gst: customerGst || prev.gst,
       address: {
         street: selectedAddress.street || '',
         area: selectedAddress.area || '',
@@ -239,23 +242,18 @@ export default function BillGenerator({
         state: selectedAddress.state || '',
         pincode: selectedAddress.pincode || '',
       },
-    });
-  }, [
-    isEditingCustomer,
-    customer,
-    customer?.id,
-    addressChoice,
-    customerName,
-    customerPhone,
-    customerEmail,
-    customerGst,
-  ]);
+    }));
+  }, [customer?.id, addressChoice, customerName, customerPhone, customerEmail, customerGst, customer]);
 
   const editAddress = normalizeCustomerAddress(editableCustomer.address);
 
-  useEffect(() => {
-    setAddressChoice('omit');
-  }, [customer?.id]);
+  const patchBillAddress = (field: keyof typeof editAddress, value: string) => {
+    markAddressEdited();
+    setEditableCustomer((prev) => ({
+      ...prev,
+      address: { ...normalizeCustomerAddress(prev.address), [field]: value },
+    }));
+  };
 
   // Calculate totals — set mode uses package amount only (ignore any leaked part prices)
   const rawSubtotal = items.reduce((sum, item) => sum + item.total, 0);
@@ -399,12 +397,10 @@ export default function BillGenerator({
       if (partsError) throw partsError;
       if (jobError) throw jobError;
       if ((job as any)?.service_site === 'secondary') {
-        const address = documentAddressForChoice(customer, 'secondary');
-        setAddressChoice('secondary');
+        const address = selectSite('secondary', documentAddressForChoice(customer, 'secondary'));
         setEditableCustomer((prev) => ({ ...prev, address }));
       } else if ((job as any)?.service_site === 'primary') {
-        const address = documentAddressForChoice(customer, 'primary');
-        setAddressChoice('primary');
+        const address = selectSite('primary', documentAddressForChoice(customer, 'primary'));
         setEditableCustomer((prev) => ({ ...prev, address }));
       }
 
@@ -660,9 +656,7 @@ export default function BillGenerator({
     const billSubtotal = billMode === 'set' ? setTotalAmount : subtotal;
     const billTotal = billSubtotal + serviceCharge;
 
-    const billAddress = formatCustomerAddressForBill(
-      documentAddressForChoice(customer, addressChoice)
-    );
+    const billAddress = formatCustomerAddressForBill(editAddress);
     return {
       id: Date.now().toString(),
       billNumber,
@@ -788,12 +782,10 @@ export default function BillGenerator({
     if (typeof snap.billDate === 'string') setBillDate(snap.billDate);
     if (snap.billMode === 'set' || snap.billMode === 'normal') setBillMode(snap.billMode);
     if (typeof snap.selectedJobId === 'string') setSelectedJobId(snap.selectedJobId);
-    if (
-      snap.addressChoice === 'omit' ||
-      snap.addressChoice === 'primary' ||
-      snap.addressChoice === 'secondary'
-    ) {
-      setAddressChoice(snap.addressChoice);
+    if (snap.addressChoice === 'secondary') {
+      setAddressChoice('secondary');
+    } else if (snap.addressChoice === 'primary' || snap.addressChoice === 'omit') {
+      setAddressChoice('primary');
     }
     if (Array.isArray(snap.items)) {
       let next = snap.items as BillItem[];
@@ -821,7 +813,10 @@ export default function BillGenerator({
     if (typeof snap.paymentDueDate === 'string') setPaymentDueDate(snap.paymentDueDate);
     if (typeof snap.hideGstInHeader === 'boolean') setHideGstInHeader(snap.hideGstInHeader);
     if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
+    if (snap.editableCustomer && typeof snap.editableCustomer === 'object') {
+      markAddressEdited();
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
+    }
   };
 
   const buildDraftLabel = (snap: ReturnType<typeof getDraftSnapshot>) => {
@@ -969,10 +964,9 @@ export default function BillGenerator({
             <DocumentAddressSelector
               customer={customer}
               value={addressChoice}
-              allowOmit
               onChange={(choice, address) => {
-                setAddressChoice(choice);
-                setEditableCustomer((prev) => ({ ...prev, address }));
+                const next = selectSite(choice, address);
+                setEditableCustomer((prev) => ({ ...prev, address: next }));
               }}
             />
             {isEditingCustomer ? (
@@ -1016,10 +1010,60 @@ export default function BillGenerator({
                     />
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Name and phone are enough. Pick a site above to print its address, or choose No
-                  address.
-                </p>
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Address</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Change or clear any field for this bill only. It does not update the customer
+                    record.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="bill-address-street">Street</Label>
+                      <Input
+                        id="bill-address-street"
+                        value={editAddress.street}
+                        onChange={(e) => patchBillAddress('street', e.target.value)}
+                        placeholder="Enter street address"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="bill-address-area">Area</Label>
+                      <Input
+                        id="bill-address-area"
+                        value={editAddress.area}
+                        onChange={(e) => patchBillAddress('area', e.target.value)}
+                        placeholder="Enter area"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="bill-address-city">City</Label>
+                      <Input
+                        id="bill-address-city"
+                        value={editAddress.city}
+                        onChange={(e) => patchBillAddress('city', e.target.value)}
+                        placeholder="Enter city"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="bill-address-state">State</Label>
+                      <Input
+                        id="bill-address-state"
+                        value={editAddress.state}
+                        onChange={(e) => patchBillAddress('state', e.target.value)}
+                        placeholder="Enter state"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="bill-address-pincode">Pincode</Label>
+                      <Input
+                        id="bill-address-pincode"
+                        value={editAddress.pincode}
+                        onChange={(e) => patchBillAddress('pincode', e.target.value)}
+                        placeholder="Enter pincode"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
             <div className="space-y-2">
@@ -1028,7 +1072,11 @@ export default function BillGenerator({
                   {editableCustomer.phone && <div>Phone: {editableCustomer.phone}</div>}
                   {editableCustomer.email && <div>Email: {editableCustomer.email}</div>}
                   {editableCustomer.gst && <div>GST: {editableCustomer.gst}</div>}
-                  {addressChoice !== 'omit' ? (
+                  {(editAddress.street ||
+                    editAddress.area ||
+                    editAddress.city ||
+                    editAddress.state ||
+                    editAddress.pincode) ? (
                     <div>
                       Address
                       {customer

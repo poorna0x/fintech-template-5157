@@ -71,7 +71,7 @@ import type { TaxInvoiceEditSnapshot } from '@/lib/tax-invoice-edit-utils';
 import {
   DocumentAddressSelector,
   documentAddressForChoice,
-  type DocumentAddressChoice,
+  useDocumentSiteAddress,
 } from '@/components/document/DocumentAddressSelector';
 import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
 import {
@@ -193,7 +193,7 @@ export default function TaxInvoiceGenerator({
   readOnly = false,
 }: TaxInvoiceGeneratorProps) {
   // Safe customer data extraction (search/slim rows may have string address or missing fields)
-  const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
+  const customerName = customer?.fullName || (customer as any)?.full_name || '';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
   const customerEmail = customer?.email || '';
   const customerAddress = normalizeCustomerAddress(customer?.address);
@@ -383,7 +383,8 @@ export default function TaxInvoiceGenerator({
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
-  const [addressChoice, setAddressChoice] = useState<DocumentAddressChoice>('primary');
+  const { addressChoice, setAddressChoice, selectSite, markAddressEdited, isAddressEdited } =
+    useDocumentSiteAddress(customer?.id);
   const [editableCustomer, setEditableCustomer] = useState({
     name: customerName || '',
     phone: customerPhone || '',
@@ -399,7 +400,7 @@ export default function TaxInvoiceGenerator({
   });
 
   useEffect(() => {
-    if (!customer || editInvoiceId || isEditingCustomer) return;
+    if (!customer || editInvoiceId || isAddressEdited()) return;
     const name = customer.fullName || (customer as any)?.full_name || '';
     const phone = typeof customer.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
     const email = customer.email || '';
@@ -418,9 +419,17 @@ export default function TaxInvoiceGenerator({
         pincode: addr.pincode,
       },
     }));
-  }, [customer, editInvoiceId, addressChoice, isEditingCustomer]);
+  }, [customer, editInvoiceId, addressChoice]);
 
   const editAddress = normalizeCustomerAddress(editableCustomer.address);
+
+  const patchInvoiceAddress = (field: 'street' | 'area' | 'city' | 'state' | 'pincode', value: string) => {
+    markAddressEdited();
+    setEditableCustomer((prev) => ({
+      ...prev,
+      address: { ...normalizeCustomerAddress(prev.address), [field]: value },
+    }));
+  };
 
   // Auto-select place of supply / state code from customer GSTIN (first 2 digits)
   useEffect(() => {
@@ -1086,11 +1095,15 @@ export default function TaxInvoiceGenerator({
       setDeliveryAddress((prev) => ({ ...prev, ...snap.deliveryAddress }));
     if (typeof snap.showDeliveryAddress === 'boolean')
       setShowDeliveryAddress(snap.showDeliveryAddress);
-    if (snap.addressChoice === 'primary' || snap.addressChoice === 'secondary') {
-      setAddressChoice(snap.addressChoice);
+    if (snap.addressChoice === 'secondary') {
+      setAddressChoice('secondary');
+    } else if (snap.addressChoice === 'primary' || snap.addressChoice === 'omit') {
+      setAddressChoice('primary');
     }
-    if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
+    if (snap.editableCustomer && typeof snap.editableCustomer === 'object') {
+      markAddressEdited();
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
+    }
   };
 
   useEffect(() => {
@@ -1479,8 +1492,8 @@ export default function TaxInvoiceGenerator({
                 customer={customer}
                 value={addressChoice}
                 onChange={(choice, address) => {
-                  setAddressChoice(choice);
-                  setEditableCustomer((prev) => ({ ...prev, address }));
+                  const next = selectSite(choice, address);
+                  setEditableCustomer((prev) => ({ ...prev, address: next }));
                 }}
                 label="Billing address"
               />
@@ -1548,18 +1561,19 @@ export default function TaxInvoiceGenerator({
                     )}
                   </div>
                 </div>
-                  <div className="space-y-3">
+                <div className="space-y-3">
                     <Label className="text-sm font-medium">Address</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Change or clear any field for this invoice only. It does not update the
+                      customer record.
+                    </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <Label htmlFor="address-street">Street</Label>
                       <Input
                         id="address-street"
                         value={editAddress.street}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...normalizeCustomerAddress(prev.address), street: e.target.value }
-                        }))}
+                        onChange={(e) => patchInvoiceAddress('street', e.target.value)}
                         placeholder="Enter street address"
                       />
                     </div>
@@ -1568,10 +1582,7 @@ export default function TaxInvoiceGenerator({
                       <Input
                         id="address-area"
                         value={editAddress.area}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...normalizeCustomerAddress(prev.address), area: e.target.value }
-                        }))}
+                        onChange={(e) => patchInvoiceAddress('area', e.target.value)}
                         placeholder="Enter area"
                       />
                     </div>
@@ -1580,10 +1591,7 @@ export default function TaxInvoiceGenerator({
                       <Input
                         id="address-city"
                         value={editAddress.city}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...normalizeCustomerAddress(prev.address), city: e.target.value }
-                        }))}
+                        onChange={(e) => patchInvoiceAddress('city', e.target.value)}
                         placeholder="Enter city"
                       />
                     </div>
@@ -1592,10 +1600,7 @@ export default function TaxInvoiceGenerator({
                       <Input
                         id="address-state"
                         value={editAddress.state}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...normalizeCustomerAddress(prev.address), state: e.target.value }
-                        }))}
+                        onChange={(e) => patchInvoiceAddress('state', e.target.value)}
                         placeholder="Enter state"
                       />
                     </div>
@@ -1604,10 +1609,7 @@ export default function TaxInvoiceGenerator({
                       <Input
                         id="address-pincode"
                         value={editAddress.pincode}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...normalizeCustomerAddress(prev.address), pincode: e.target.value }
-                        }))}
+                        onChange={(e) => patchInvoiceAddress('pincode', e.target.value)}
                         placeholder="Enter pincode"
                       />
                     </div>

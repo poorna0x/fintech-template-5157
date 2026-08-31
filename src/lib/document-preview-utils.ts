@@ -1,6 +1,9 @@
 import { Bill } from '@/types';
 import { getCustomerGstNumber } from '@/lib/customerGst';
-import { formatPdfCustomerAddress } from '@/lib/customer-address';
+import {
+  formatPdfCustomerAddress,
+  pdfCustomerDisplayName,
+} from '@/lib/customer-address';
 import { generateBillHTML } from '@/lib/pdf-generator';
 import { generateQuotationHTML } from '@/lib/quotation-pdf-generator';
 import { generateTaxInvoiceHTML } from '@/lib/tax-invoice-pdf-generator';
@@ -18,7 +21,7 @@ export function billToBillPdfData(bill: Bill) {
     billDate: bill.billDate,
     company: bill.company,
     customer: {
-      name: customer.fullName || customer.name || 'Customer Name',
+      name: pdfCustomerDisplayName(customer),
       ...addr,
       phone: customer.phone || '',
       email: customer.email || '',
@@ -53,7 +56,7 @@ export function billToQuotationPdfData(bill: Bill) {
     validUntil: (bill as { validUntil?: string }).validUntil,
     company: bill.company,
     customer: {
-      name: customer.fullName || customer.name || 'Customer Name',
+      name: pdfCustomerDisplayName(customer),
       ...addr,
       phone: customer.phone || '',
       email: customer.email || '',
@@ -104,7 +107,7 @@ export function billToTaxInvoicePdfData(bill: Bill) {
     company: bill.company,
     customer: {
       ...customer,
-      name: customer.fullName || customer.name || 'Customer Name',
+      name: pdfCustomerDisplayName(customer),
       ...addr,
       gstNumber: getCustomerGstNumber(customer),
     },

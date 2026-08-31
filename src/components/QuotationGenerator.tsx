@@ -70,7 +70,7 @@ import {
 import {
   DocumentAddressSelector,
   documentAddressForChoice,
-  type DocumentAddressChoice,
+  useDocumentSiteAddress,
 } from '@/components/document/DocumentAddressSelector';
 import AiDocumentDraftAssistant from '@/components/document-ai/AiDocumentDraftAssistant';
 
@@ -125,7 +125,7 @@ export default function QuotationGenerator({
   initialAiInstruction,
 }: QuotationGeneratorProps) {
   // Safe customer data extraction (search/slim rows may have string address or missing fields)
-  const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
+  const customerName = customer?.fullName || (customer as any)?.full_name || '';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
   const customerEmail = customer?.email || '';
   const customerAddress = normalizeCustomerAddress(customer?.address);
@@ -205,7 +205,8 @@ export default function QuotationGenerator({
 
   // Customer editing state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
-  const [addressChoice, setAddressChoice] = useState<DocumentAddressChoice>('primary');
+  const { addressChoice, setAddressChoice, selectSite, markAddressEdited, isAddressEdited } =
+    useDocumentSiteAddress(customer?.id);
   const [editableCustomer, setEditableCustomer] = useState({
     name: customerName,
     phone: customerPhone,
@@ -224,7 +225,7 @@ export default function QuotationGenerator({
   // customerAddress is a new object every render — do not put it in deps (that
   // reset the fields on every keystroke and made the page feel laggy).
   useEffect(() => {
-    if (isEditingCustomer) return;
+    if (isAddressEdited()) return;
     const selectedAddress = documentAddressForChoice(customer, addressChoice);
     setEditableCustomer({
       name: customerName,
@@ -240,7 +241,6 @@ export default function QuotationGenerator({
       }
     });
   }, [
-    isEditingCustomer,
     customer?.id,
     addressChoice,
     customerName,
@@ -251,6 +251,14 @@ export default function QuotationGenerator({
   ]);
 
   const editAddress = normalizeCustomerAddress(editableCustomer.address);
+
+  const patchQuoteAddress = (field: 'street' | 'area' | 'city' | 'state' | 'pincode', value: string) => {
+    markAddressEdited();
+    setEditableCustomer((prev) => ({
+      ...prev,
+      address: { ...normalizeCustomerAddress(prev.address), [field]: value },
+    }));
+  };
 
   // Auto-select place of supply / state code from customer GSTIN when Include GST is on
   useEffect(() => {
@@ -681,11 +689,15 @@ export default function QuotationGenerator({
       setBankDetails({ ...defaultBankDetails, ...snap.bankDetails });
     if (typeof snap.placeOfSupply === 'string') setPlaceOfSupply(snap.placeOfSupply);
     if (typeof snap.placeOfSupplyCode === 'string') setPlaceOfSupplyCode(snap.placeOfSupplyCode);
-    if (snap.addressChoice === 'primary' || snap.addressChoice === 'secondary') {
-      setAddressChoice(snap.addressChoice);
+    if (snap.addressChoice === 'secondary') {
+      setAddressChoice('secondary');
+    } else if (snap.addressChoice === 'primary' || snap.addressChoice === 'omit') {
+      setAddressChoice('primary');
     }
-    if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
+    if (snap.editableCustomer && typeof snap.editableCustomer === 'object') {
+      markAddressEdited();
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
+    }
   };
 
   const buildDraftLabel = (snap: ReturnType<typeof getDraftSnapshot>) => {
@@ -968,8 +980,8 @@ export default function QuotationGenerator({
               customer={customer}
               value={addressChoice}
               onChange={(choice, address) => {
-                setAddressChoice(choice);
-                setEditableCustomer((prev) => ({ ...prev, address }));
+                const next = selectSite(choice, address);
+                setEditableCustomer((prev) => ({ ...prev, address: next }));
               }}
             />
             {isEditingCustomer ? (
@@ -1028,18 +1040,19 @@ export default function QuotationGenerator({
                     ) : null}
                   </div>
                 </div>
-                  <div className="space-y-3">
+                <div className="space-y-3">
                     <Label className="text-sm font-medium">Address</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Change or clear any field for this quotation only. It does not update the
+                      customer record.
+                    </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <Label htmlFor="address-street">Street</Label>
                       <Input
                         id="address-street"
                         value={editAddress.street}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...normalizeCustomerAddress(prev.address), street: e.target.value }
-                        }))}
+                        onChange={(e) => patchQuoteAddress('street', e.target.value)}
                         placeholder="Enter street address"
                       />
                     </div>
@@ -1048,10 +1061,7 @@ export default function QuotationGenerator({
                       <Input
                         id="address-area"
                         value={editAddress.area}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...normalizeCustomerAddress(prev.address), area: e.target.value }
-                        }))}
+                        onChange={(e) => patchQuoteAddress('area', e.target.value)}
                         placeholder="Enter area"
                       />
                     </div>
@@ -1060,10 +1070,7 @@ export default function QuotationGenerator({
                       <Input
                         id="address-city"
                         value={editAddress.city}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...normalizeCustomerAddress(prev.address), city: e.target.value }
-                        }))}
+                        onChange={(e) => patchQuoteAddress('city', e.target.value)}
                         placeholder="Enter city"
                       />
                     </div>
@@ -1072,10 +1079,7 @@ export default function QuotationGenerator({
                       <Input
                         id="address-state"
                         value={editAddress.state}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...normalizeCustomerAddress(prev.address), state: e.target.value }
-                        }))}
+                        onChange={(e) => patchQuoteAddress('state', e.target.value)}
                         placeholder="Enter state"
                       />
                     </div>
@@ -1084,10 +1088,7 @@ export default function QuotationGenerator({
                       <Input
                         id="address-pincode"
                         value={editAddress.pincode}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...normalizeCustomerAddress(prev.address), pincode: e.target.value }
-                        }))}
+                        onChange={(e) => patchQuoteAddress('pincode', e.target.value)}
                         placeholder="Enter pincode"
                       />
                     </div>

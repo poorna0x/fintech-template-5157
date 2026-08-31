@@ -1,6 +1,6 @@
 import { Bill } from '@/types';
 import { sanitizeForTemplate } from './sanitize';
-import { formatPdfCustomerAddress } from './customer-address';
+import { formatPdfCustomerAddress, formatPdfLocalityLine, pdfCustomerDisplayName } from './customer-address';
 import {
   renderPdfCompanyDetailsHtml,
   renderPdfLogoHtml,
@@ -86,7 +86,7 @@ export function billToAmcPdfData(bill: Bill): AMCPDFData {
     billDate: bill.billDate,
     company: bill.company,
     customer: {
-      name: bill.customer.fullName || bill.customer.name || '',
+      name: pdfCustomerDisplayName(bill.customer),
       ...addr,
       phone: bill.customer.phone || '',
       email: bill.customer.email || '',
@@ -157,6 +157,14 @@ export function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): stri
   const includeDetails = options?.includeDetails !== false;
   const isTermsOnly = !includeDetails;
   const documentTitleText = isTermsOnly ? 'AMC AGREEMENT DETAILS' : 'AMC AGREEMENT';
+  const customerNameHtml = sanitizeForTemplate(pdfCustomerDisplayName(data.customer));
+  const customerPhoneHtml = sanitizeForTemplate(data.customer.phone);
+  const customerEmailHtml = sanitizeForTemplate(data.customer.email);
+  const customerGstHtml = sanitizeForTemplate(data.customer.gstNumber);
+  const customerStreetHtml = sanitizeForTemplate(data.customer.address);
+  const customerLocalityHtml = sanitizeForTemplate(formatPdfLocalityLine(data.customer));
+  const customerAddressHtml = [customerStreetHtml, customerLocalityHtml].filter(Boolean).join(', ');
+  const customerRoModelHtml = sanitizeForTemplate(data.customer.roModel || '');
 
   return `
     <!DOCTYPE html>
@@ -647,40 +655,42 @@ export function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): stri
         <div class="detail-card">
           <h4 class="detail-card-title">Customer Information</h4>
           <div class="detail-items-list">
+            ${customerNameHtml ? `
             <div class="detail-item-new">
               <div class="detail-label-new">Customer Name</div>
-              <div class="detail-value-new">${sanitizeForTemplate(data.customer.name)}</div>
+              <div class="detail-value-new">${customerNameHtml}</div>
             </div>
+            ` : ''}
+            ${customerPhoneHtml ? `
             <div class="detail-item-new">
               <div class="detail-label-new">Phone Number</div>
-              <div class="detail-value-new">${sanitizeForTemplate(data.customer.phone)}</div>
+              <div class="detail-value-new">${customerPhoneHtml}</div>
             </div>
-            ${data.customer.email && data.customer.email.trim() ? `
+            ` : ''}
+            ${customerEmailHtml ? `
             <div class="detail-item-new">
               <div class="detail-label-new">Email</div>
-              <div class="detail-value-new">${sanitizeForTemplate(data.customer.email.trim())}</div>
+              <div class="detail-value-new">${customerEmailHtml}</div>
             </div>
             ` : ''}
-            ${sanitizeForTemplate(data.customer.address) || sanitizeForTemplate(data.customer.city) || sanitizeForTemplate(data.customer.pincode) ? `
+            ${customerAddressHtml ? `
             <div class="detail-item-new">
               <div class="detail-label-new">Address</div>
-              <div class="detail-value-new address-value">${[
-                sanitizeForTemplate(data.customer.address),
-                sanitizeForTemplate(data.customer.city),
-                sanitizeForTemplate(data.customer.pincode) ? `- ${sanitizeForTemplate(data.customer.pincode)}` : '',
-              ].filter(Boolean).join(', ').replace(', - ', ' - ')}</div>
+              <div class="detail-value-new address-value">${customerAddressHtml}</div>
             </div>
             ` : ''}
-            ${data.customer.gstNumber && data.customer.gstNumber.trim() ? `
+            ${customerGstHtml ? `
             <div class="detail-item-new">
               <div class="detail-label-new">GST Number</div>
-              <div class="detail-value-new">${sanitizeForTemplate(data.customer.gstNumber.trim())}</div>
+              <div class="detail-value-new">${customerGstHtml}</div>
             </div>
             ` : ''}
+            ${customerRoModelHtml ? `
             <div class="detail-item-new">
               <div class="detail-label-new">RO Model</div>
-              <div class="detail-value-new">${sanitizeForTemplate(data.customer.roModel || data.items[0]?.description || 'RO Water Purifier')}</div>
+              <div class="detail-value-new">${customerRoModelHtml}</div>
             </div>
+            ` : ''}
           </div>
         </div>
 
