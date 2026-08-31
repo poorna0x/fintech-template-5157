@@ -3,17 +3,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DatePicker } from '@/components/ui/date-picker';
 import { X, Calendar as CalendarIcon, Plus, CheckCircle2 } from 'lucide-react';
-import { format } from 'date-fns';
 import { Job } from '@/types';
 import { supabase, FOLLOW_UP_ROW_COLUMNS } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 import { hasAutoMoveToOngoingOnDate } from '@/lib/followUpToOngoing';
 import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
@@ -431,29 +428,19 @@ export default function FollowUpModal({
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Follow-up Date *</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !selectedDate && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={selectedDate}
-                      onSelect={setSelectedDate}
-                      disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
+                <DatePicker
+                  value={
+                    selectedDate && !Number.isNaN(selectedDate.getTime())
+                      ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`
+                      : undefined
+                  }
+                  onChange={(v) => {
+                    if (!v) return;
+                    const next = new Date(`${v}T12:00:00`);
+                    if (!Number.isNaN(next.getTime())) setSelectedDate(next);
+                  }}
+                  placeholder="Pick date"
+                />
               </div>
 
               <div className="space-y-2">
