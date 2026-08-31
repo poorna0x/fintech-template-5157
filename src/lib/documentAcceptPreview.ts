@@ -10,7 +10,7 @@ import {
   recordDocumentPdfAuthenticity,
   type DocumentPdfDocType,
 } from '@/lib/documentPdfAuthenticity';
-import type { DocumentBrand } from '@/lib/service-brands';
+import { normalizeDocumentBrand, type DocumentBrand } from '@/lib/service-brands';
 import type { Bill } from '@/types';
 import {
   generateGeneratorDocumentPdfBase64,
@@ -459,6 +459,146 @@ export async function sendDocumentAcceptInvite(
     expiresAt: data.expiresAt,
     via: data.via,
   };
+}
+
+/** Email preview PDF + secure Review & Accept link (original after Accept). */
+export async function sendDocumentEmailAcceptInvite(
+  params: SendDocumentAcceptInviteParams
+): Promise<{
+  ok: boolean;
+  error?: string;
+  inviteId?: string;
+  expiresAt?: string;
+}> {
+  const sessionReady = await ensureSupabaseSessionForWrite();
+  if (!sessionReady.ok) {
+    return { ok: false, error: 'Could not verify your session' };
+  }
+  const token = await resolveSupabaseAccessTokenForApi();
+  if (!token) return { ok: false, error: 'Not signed in' };
+
+  const res = await fetch('/.netlify/functions/document-accept-email-send', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      to: params.to,
+      brand: params.brand,
+      docType: params.docType,
+      documentLabel: params.documentLabel,
+      documentRef: params.documentRef,
+      sourceKey: params.sourceKey,
+      customerId: params.customerId,
+      customerName: params.customerName,
+      amountDisplay: params.amountDisplay,
+      filename: params.filename,
+      verifyCode: params.verifyCode,
+      previewVerifyCode: params.previewVerifyCode,
+      originalPdfBase64: params.originalPdfBase64,
+      previewPdfBase64: params.previewPdfBase64,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    return { ok: false, error: data?.error || data?.details || `Accept email failed (${res.status})` };
+  }
+  return {
+    ok: true,
+    inviteId: data.inviteId,
+    expiresAt: data.expiresAt,
+  };
+}
+
+export type PublicDocumentAcceptInvite = {
+  brand: DocumentBrand;
+  documentLabel: string;
+  documentRef: string | null;
+  customerName: string;
+  status: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+  confirmationId: string | null;
+  deliveryStatus: string | null;
+};
+
+function documentAcceptPublicFunctionUrl(): string {
+  const host = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+  if (host.includes('elevenro')) {
+    return 'https://hydrogenro.com/.netlify/functions/document-accept-public';
+  }
+  return '/.netlify/functions/document-accept-public';
+}
+
+function parsePublicAcceptInvite(raw: unknown): PublicDocumentAcceptInvite | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const row = raw as Record<string, unknown>;
+  const brand = normalizeDocumentBrand(row.brand) || 'hydrogenro';
+  return {
+    brand,
+    documentLabel: String(row.documentLabel || 'document'),
+    documentRef: row.documentRef ? String(row.documentRef) : null,
+    customerName: String(row.customerName || 'there'),
+    status: String(row.status || 'pending'),
+    expiresAt: String(row.expiresAt || ''),
+    acceptedAt: row.acceptedAt ? String(row.acceptedAt) : null,
+    confirmationId: row.confirmationId ? String(row.confirmationId) : null,
+    deliveryStatus: row.deliveryStatus ? String(row.deliveryStatus) : null,
+  };
+}
+
+export async function fetchPublicDocumentAcceptInvite(token: string): Promise<{
+  invite: PublicDocumentAcceptInvite | null;
+  error?: string;
+}> {
+  const t = String(token || '').trim();
+  if (!t) return { invite: null, error: 'invalid' };
+  try {
+    const res = await fetch(documentAcceptPublicFunctionUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get', token: t }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data?.ok !== true || !data?.invite) {
+      return { invite: null, error: String(data?.error || 'invalid') };
+    }
+    const invite = parsePublicAcceptInvite(data.invite);
+    if (!invite) return { invite: null, error: 'invalid' };
+    return { invite };
+  } catch {
+    return { invite: null, error: 'failed' };
+  }
+}
+
+export async function acceptPublicDocument(token: string): Promise<{
+  ok: boolean;
+  error?: string;
+  accepted?: boolean;
+  confirmationId?: string | null;
+  deliveryStatus?: string | null;
+}> {
+  const t = String(token || '').trim();
+  if (!t) return { ok: false, error: 'invalid' };
+  try {
+    const res = await fetch(documentAcceptPublicFunctionUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'accept', token: t }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return {
+      ok: Boolean(data?.ok),
+      error: data?.error ? String(data.error) : undefined,
+      accepted: data?.accepted === true || data?.ok === true,
+      confirmationId: data?.confirmationId ? String(data.confirmationId) : null,
+      deliveryStatus: data?.deliveryStatus ? String(data.deliveryStatus) : null,
+    };
+  } catch {
+    return { ok: false, error: 'failed' };
+  }
 }
 
 export function showAcceptPreviewSentToast(

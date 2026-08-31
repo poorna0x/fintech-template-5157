@@ -59,4 +59,31 @@ describe('formatPdfCustomerAddress', () => {
     expect(fields.address).toBe('');
     expect(typeof fields.address).toBe('string');
   });
+
+  it('does not print a second city/state line when street is already a full Google address', () => {
+    const fields = formatPdfCustomerAddress({
+      address:
+        'Flat No : 711, Abhee Pride, Karnataka Housing Board, 408, NPS road, Phase 1, Iggalur, Andapura, Karnataka 560081, India, Bangalore, Karnataka',
+      city: 'Bangalore',
+      state: 'Karnataka',
+      pincode: '560081',
+    });
+    expect(fields.address).toContain('Iggalur');
+    expect(fields.city).toBe('');
+    expect(fields.state).toBe('');
+    expect(fields.pincode).toBe('');
+  });
+
+  it('stays empty when the bill omits the address', () => {
+    const fields = formatPdfCustomerAddress({
+      address: '',
+      city: '',
+      state: '',
+      pincode: '',
+    });
+    expect(fields.address).toBe('');
+    expect(fields.city).toBe('');
+    expect(fields.state).toBe('');
+    expect(fields.pincode).toBe('');
+  });
 });

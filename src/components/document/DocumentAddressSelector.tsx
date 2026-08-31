@@ -1,5 +1,9 @@
 import type { Customer } from '@/types';
 import {
+  formatCustomerFullAddressLine,
+  normalizeCustomerAddress,
+} from '@/lib/customer-address';
+import {
   getCustomerLocationSlice,
   getPrimaryLocationLabel,
   getSecondaryLocationLabel,
@@ -32,21 +36,22 @@ export function documentAddressForChoice(
   choice: DocumentAddressChoice
 ): AddressShape {
   if (!customer || choice === 'omit') return { ...EMPTY_ADDRESS };
-  const address = getCustomerLocationSlice(customer, choice).address;
+  const slice = getCustomerLocationSlice(customer, choice);
+  const normalized = normalizeCustomerAddress(slice.address, {
+    visible_address: slice.visibleAddress,
+    formattedAddress: slice.location?.formattedAddress,
+  });
   return {
-    street: String(address?.street || ''),
-    area: String(address?.area || ''),
-    city: String(address?.city || ''),
-    state: String(address?.state || ''),
-    pincode: String(address?.pincode || ''),
+    street: normalized.street || normalized.visible_address || '',
+    area: normalized.area,
+    city: normalized.city,
+    state: normalized.state,
+    pincode: normalized.pincode,
   };
 }
 
 export function formatDocumentAddress(address: AddressShape): string {
-  return [address.street, address.area, address.city, address.state, address.pincode]
-    .map((part) => String(part || '').trim())
-    .filter(Boolean)
-    .join(', ');
+  return formatCustomerFullAddressLine(normalizeCustomerAddress(address));
 }
 
 export type AddressChoiceOption<T extends string> = {

@@ -16,7 +16,7 @@ import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Share2, Loader
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import { getCustomerGstNumber } from '@/lib/customerGst';
-import { normalizeCustomerAddress } from '@/lib/customer-address';
+import { formatCustomerAddressForBill, normalizeCustomerAddress } from '@/lib/customer-address';
 import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
 import {
   DocumentBrand,
@@ -222,24 +222,27 @@ export default function BillGenerator({
     }
   });
 
-  // Keep editable customer in sync when async full customer load brings GSTIN / address
+  // Keep editable customer in sync with the selected site (or omit). Do not
+  // always copy the primary record — that overwrote secondary / No address.
   useEffect(() => {
     if (isEditingCustomer) return;
+    const selectedAddress = documentAddressForChoice(customer, addressChoice);
     setEditableCustomer({
       name: customerName || '',
       phone: customerPhone || '',
       email: customerEmail || '',
       gst: customerGst || '',
       address: {
-        street: customerAddress.street || '',
-        area: customerAddress.area || '',
-        city: customerAddress.city || '',
-        state: customerAddress.state || '',
-        pincode: customerAddress.pincode || '',
+        street: selectedAddress.street || '',
+        area: selectedAddress.area || '',
+        city: selectedAddress.city || '',
+        state: selectedAddress.state || '',
+        pincode: selectedAddress.pincode || '',
       },
     });
   }, [
     isEditingCustomer,
+    customer,
     customer?.id,
     addressChoice,
     customerName,
@@ -657,7 +660,9 @@ export default function BillGenerator({
     const billSubtotal = billMode === 'set' ? setTotalAmount : subtotal;
     const billTotal = billSubtotal + serviceCharge;
 
-    const selectedAddress = documentAddressForChoice(customer, addressChoice);
+    const billAddress = formatCustomerAddressForBill(
+      documentAddressForChoice(customer, addressChoice)
+    );
     return {
       id: Date.now().toString(),
       billNumber,
@@ -666,10 +671,10 @@ export default function BillGenerator({
       customer: {
         id: customer.id || '',
         name: editableCustomer.name,
-        address: [selectedAddress.street, selectedAddress.area].filter(Boolean).join(', '),
-        city: selectedAddress.city,
-        state: selectedAddress.state,
-        pincode: selectedAddress.pincode,
+        address: billAddress.address,
+        city: billAddress.city,
+        state: billAddress.state,
+        pincode: billAddress.pincode,
         phone: editableCustomer.phone,
         email: editableCustomer.email,
         gstNumber: editableCustomer.gst
