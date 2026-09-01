@@ -32,9 +32,10 @@ const {
   todayYmdIst,
 } = require('./document-pdf-authenticity-record');
 const { isPdfCompressionEnabled } = require('./pdf-compression-setting');
+const { maybeCompressPdfBuffer } = require('./ilovepdf-compress-helper');
 // Interactive salary-slip download/send uses generate-pdf (compress on).
-// Month-end also compresses when the setting is on, with a short deadline so
-// the 26s Lambda still has time to send WhatsApp.
+// Month-end compresses after Chromium so the iLovePDF deadline is not eaten
+// by browser launch.
 function renderHtmlToPdf(html, requestOrigin, options) {
   return require('./generate-pdf').renderHtmlToPdf(html, requestOrigin, options);
 }
@@ -360,11 +361,15 @@ exports.handler = async (event) => {
       );
       const filename = getSalarySlipFilename(breakdown, loaded.period);
       const shouldCompress = await isPdfCompressionEnabled();
-      const pdfBuffer = await renderHtmlToPdf(html, process.env.URL || null, {
-        compress: shouldCompress,
-        filename,
-        deadlineAt: Date.now() + 10_000,
-      });
+      const pdfRaw = await renderHtmlToPdf(html, process.env.URL || null, { filename });
+      let pdfBuffer = pdfRaw;
+      if (shouldCompress && pdfRaw?.length) {
+        const compressed = await maybeCompressPdfBuffer(pdfRaw, {
+          filename,
+          deadlineAt: Date.now() + 12_000,
+        });
+        pdfBuffer = compressed.buffer;
+      }
       if (!pdfBuffer?.length) {
         throw new Error('PDF generation returned empty buffer');
       }

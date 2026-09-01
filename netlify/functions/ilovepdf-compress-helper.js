@@ -3,7 +3,8 @@
  * Soft-fails to the original buffer if keys are missing or the API errors.
  *
  * Levels (API): extreme | recommended | low
- * We default to `low` = least compression = highest visual quality.
+ * We default to `recommended` so Chromium PDFs actually shrink.
+ * Set compressionLevel to `low` in app_secrets.ilovepdf for max visual quality.
  *
  * Production (preferred — avoids Netlify / Lambda 4KB env limit):
  *   app_secrets.ilovepdf = JSON {
@@ -57,6 +58,26 @@ function normalizeRegion(raw) {
   return value || 'in';
 }
 
+function parseSecretJson(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  const text = String(value).trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === 'string') {
+      try {
+        return JSON.parse(parsed);
+      } catch {
+        return null;
+      }
+    }
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeConfig(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const publicKey = String(raw.publicKey || raw.public_key || '').trim();
@@ -90,12 +111,7 @@ async function readConfigFromAppSecrets() {
     .eq('key', APP_SECRET_KEY)
     .maybeSingle();
   if (error || !data?.value) return null;
-  try {
-    const parsed = JSON.parse(String(data.value).trim());
-    return normalizeConfig(parsed);
-  } catch {
-    return null;
-  }
+  return normalizeConfig(parseSecretJson(data.value));
 }
 
 /**
@@ -120,7 +136,12 @@ async function getILovePdfConfig() {
 }
 
 function compressionLevel(config) {
-  return normalizeLevel(config?.compressionLevel || process.env.ILOVEPDF_COMPRESSION_LEVEL || 'low');
+  // `recommended` actually shrinks Chromium PDFs. Stored `low` often saves 0%
+  // so production kept shipping the original file.
+  const requested = normalizeLevel(
+    config?.compressionLevel || process.env.ILOVEPDF_COMPRESSION_LEVEL || 'recommended'
+  );
+  return requested === 'low' ? 'recommended' : requested;
 }
 
 function region(config) {
@@ -236,10 +257,22 @@ async function maybeCompressPdfBuffer(pdfBuffer, opts = {}) {
   const level = compressionLevel(config);
   const filename = String(opts.filename || 'document.pdf').replace(/[^\w.\-]+/g, '_') || 'document.pdf';
 
-  if (!Buffer.isBuffer(pdfBuffer) || originalBytes < 1024 || !config?.publicKey) {
+  if (!Buffer.isBuffer(pdfBuffer) || originalBytes < 1024) {
     return {
       buffer: pdfBuffer,
       compressed: false,
+      skipReason: 'too_small',
+      originalBytes,
+      compressedBytes: originalBytes,
+      level,
+    };
+  }
+  if (!config?.publicKey) {
+    console.warn('[ilovepdf-compress] keys missing (app_secrets.ilovepdf); using original PDF');
+    return {
+      buffer: pdfBuffer,
+      compressed: false,
+      skipReason: 'no_keys',
       originalBytes,
       compressedBytes: originalBytes,
       level,
@@ -248,8 +281,10 @@ async function maybeCompressPdfBuffer(pdfBuffer, opts = {}) {
 
   try {
     const deadlineAt = Number(opts.deadlineAt) || Date.now() + 20_000;
-    if (deadlineAt <= Date.now() + 2_000) {
-      throw new Error('not enough function time remaining');
+    if (deadlineAt <= Date.now() + 4_000) {
+      const err = new Error('not enough function time remaining');
+      err.skipReason = 'no_time';
+      throw err;
     }
     const token = await getAuthToken(config.publicKey, deadlineAt);
     const startRes = await fetchWithDeadline(
@@ -276,6 +311,7 @@ async function maybeCompressPdfBuffer(pdfBuffer, opts = {}) {
       return {
         buffer: pdfBuffer,
         compressed: false,
+        skipReason: 'low_credits',
         originalBytes,
         compressedBytes: originalBytes,
         level,
@@ -285,7 +321,11 @@ async function maybeCompressPdfBuffer(pdfBuffer, opts = {}) {
     const serverBase = `https://${start.server}/v1`;
     const form = new FormData();
     form.append('task', start.task);
-    form.append('file', new Blob([pdfBuffer], { type: 'application/pdf' }), filename);
+    form.append(
+      'file',
+      new Blob([Uint8Array.from(pdfBuffer)], { type: 'application/pdf' }),
+      filename
+    );
 
     const uploadRes = await fetchWithDeadline(
       `${serverBase}/upload`,
@@ -340,10 +380,26 @@ async function maybeCompressPdfBuffer(pdfBuffer, opts = {}) {
       throw new Error(`download HTTP ${downloadRes.status}`);
     }
     const out = Buffer.from(await downloadRes.arrayBuffer());
-    if (out.length < 512 || out.length >= originalBytes) {
+    if (out.length < 512 || out.slice(0, 4).toString() !== '%PDF') {
       return {
         buffer: pdfBuffer,
         compressed: false,
+        skipReason: 'invalid_output',
+        originalBytes,
+        compressedBytes: originalBytes,
+        level,
+      };
+    }
+    if (out.length >= originalBytes) {
+      console.warn('[ilovepdf-compress] no size savings; keeping original', {
+        level,
+        originalBytes,
+        compressedBytes: out.length,
+      });
+      return {
+        buffer: pdfBuffer,
+        compressed: false,
+        skipReason: 'no_savings',
         originalBytes,
         compressedBytes: originalBytes,
         level,
@@ -361,15 +417,18 @@ async function maybeCompressPdfBuffer(pdfBuffer, opts = {}) {
     return {
       buffer: out,
       compressed: true,
+      skipReason: null,
       originalBytes,
       compressedBytes: out.length,
       level,
     };
   } catch (error) {
+    const skipReason = error?.skipReason || 'failed';
     console.warn('[ilovepdf-compress] soft-fail, using original PDF:', error?.message || error);
     return {
       buffer: pdfBuffer,
       compressed: false,
+      skipReason,
       originalBytes,
       compressedBytes: originalBytes,
       level,

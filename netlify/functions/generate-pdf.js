@@ -319,13 +319,7 @@ async function renderHtmlToPdf(html, requestOrigin, options = {}) {
     });
 
     const raw = Buffer.from(pdfBuffer);
-    if (options.compress !== true) return raw;
-
-    const compressed = await maybeCompressPdfBuffer(raw, {
-      filename: options.filename || 'document.pdf',
-      deadlineAt: options.deadlineAt,
-    });
-    return compressed.buffer;
+    return raw;
   } finally {
     if (browser) {
       await browser.close();
@@ -410,13 +404,32 @@ exports.handler = async (event) => {
 
   try {
     const shouldCompress = await isPdfCompressionEnabled();
-    const pdfBytes = await renderHtmlToPdf(html, requestOrigin, {
-      compress: shouldCompress,
-      filename,
-      // Netlify kills this function at 26s. Stop third-party work early enough
-      // to return the original Chromium bytes and close the browser cleanly.
-      deadlineAt: requestStartedAt + 22_000,
-    });
+    const rawPdf = await renderHtmlToPdf(html, requestOrigin, { filename });
+    const functionBudgetMs = 25_000;
+    const remainingMs = requestStartedAt + functionBudgetMs - Date.now();
+    const minInlineCompressMs = 6_000;
+
+    let pdfBytes = rawPdf;
+    let compressed = false;
+    let skipReason = shouldCompress ? null : 'toggle_off';
+    let compressPending = false;
+
+    if (shouldCompress && remainingMs >= minInlineCompressMs) {
+      const result = await maybeCompressPdfBuffer(rawPdf, {
+        filename,
+        deadlineAt: Date.now() + remainingMs - 400,
+      });
+      pdfBytes = result.buffer;
+      compressed = result.compressed === true;
+      skipReason = result.skipReason || null;
+      if (!compressed && result.skipReason === 'no_time') compressPending = true;
+    } else if (shouldCompress) {
+      skipReason = 'no_time';
+      compressPending = true;
+      console.warn('[generate-pdf] defer iLovePDF compress; Chromium used the function budget', {
+        remainingMs,
+      });
+    }
 
     return {
       statusCode: 200,
@@ -428,6 +441,9 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         pdfBase64: pdfBytes.toString('base64'),
         filename,
+        compressed,
+        compressPending,
+        skipReason,
       }),
     };
   } catch (error) {

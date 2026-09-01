@@ -153,6 +153,10 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./ilovepdf-compress-helper')];
     delete require.cache[require.resolve('./pdf-compression-setting')];
     handler = loadFn('generate-pdf');
+  } else if (req.url.startsWith('/.netlify/functions/ilovepdf-compress')) {
+    delete require.cache[require.resolve('./ilovepdf-compress-helper')];
+    delete require.cache[require.resolve('./pdf-compression-setting')];
+    handler = loadFn('ilovepdf-compress');
   } else if (req.url.startsWith('/.netlify/functions/save-amc-contract')) {
     handler = saveAmcContract;
   } else if (req.url.startsWith('/.netlify/functions/send-email-preview')) {

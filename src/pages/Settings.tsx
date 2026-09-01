@@ -3821,10 +3821,10 @@ const Settings = () => {
                     Compress PDFs
                   </h3>
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
-                    Uses highest-quality iLovePDF compression for document downloads, email,
-                    WhatsApp, and Require Accept (quotations, bills, invoices, AMC, warranty,
-                    salary slips, letterhead documents, and more). If credits run out or
-                    compression fails, the original PDF is used automatically.
+                    Uses iLovePDF on document downloads, email, WhatsApp, and Require Accept
+                    (quotations, bills, invoices, AMC, warranty, salary slips, letterhead, and
+                    more). Recommended quality is used so files actually get smaller. If credits
+                    run out or compression fails, the original PDF is used automatically.
                   </p>
                 </div>
                 <Switch

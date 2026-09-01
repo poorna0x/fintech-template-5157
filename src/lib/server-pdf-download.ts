@@ -2,6 +2,7 @@ import { toast } from 'sonner';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
 const PDF_ENDPOINT = '/.netlify/functions/generate-pdf';
+const PDF_COMPRESS_ENDPOINT = '/.netlify/functions/ilovepdf-compress';
 const PDF_REQUEST_TIMEOUT_MS = 55_000;
 
 function sanitizeFilename(raw: string): string {
@@ -228,6 +229,9 @@ async function postPdfRequest(html: string, filename: string, accessToken: strin
     const payload = (await response.json()) as {
       pdfBase64?: string;
       filename?: string;
+      compressed?: boolean;
+      compressPending?: boolean;
+      skipReason?: string | null;
       error?: string;
       details?: string;
     };
@@ -243,6 +247,34 @@ async function postPdfRequest(html: string, filename: string, accessToken: strin
 
   const buffer = await response.arrayBuffer();
   return { response, error: null, payload: { rawBuffer: buffer } as { rawBuffer: ArrayBuffer } };
+}
+
+async function postCompressRequest(
+  pdfBase64: string,
+  filename: string,
+  accessToken: string
+): Promise<{ pdfBase64: string; compressed?: boolean } | null> {
+  try {
+    const response = await fetch(PDF_COMPRESS_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ pdfBase64, filename }),
+      signal: AbortSignal.timeout(PDF_REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json().catch(() => ({}))) as {
+      pdfBase64?: string;
+      compressed?: boolean;
+    };
+    if (!payload.pdfBase64) return null;
+    return payload;
+  } catch (err) {
+    console.warn('[pdf] follow-up compress skipped', err);
+    return null;
+  }
 }
 
 async function fetchPdfFromServer(html: string, filename: string): Promise<{
@@ -285,12 +317,22 @@ async function fetchPdfFromServer(html: string, filename: string): Promise<{
   const payload = attempt.payload as {
     pdfBase64?: string;
     filename?: string;
+    compressed?: boolean;
+    compressPending?: boolean;
   };
   if (!payload?.pdfBase64) {
     throw new Error('Server response missing PDF data');
   }
 
-  const buffer = base64ToArrayBuffer(payload.pdfBase64);
+  let pdfBase64 = payload.pdfBase64;
+  if (payload.compressPending && !payload.compressed) {
+    const compressed = await postCompressRequest(pdfBase64, payload.filename || filename, accessToken);
+    if (compressed?.pdfBase64) {
+      pdfBase64 = compressed.pdfBase64;
+    }
+  }
+
+  const buffer = base64ToArrayBuffer(pdfBase64);
   const bytes = new Uint8Array(buffer);
   if (!isPdfBytes(bytes)) {
     throw new Error('Server did not return a valid PDF file');
@@ -298,7 +340,7 @@ async function fetchPdfFromServer(html: string, filename: string): Promise<{
 
   return {
     buffer,
-    pdfBase64: payload.pdfBase64,
+    pdfBase64,
     filename: sanitizeFilename(payload.filename || filename),
   };
 }
