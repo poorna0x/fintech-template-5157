@@ -140,12 +140,12 @@ export default function AMCGenerator({
   const [paymentStatus, setPaymentStatus] = useState<'PAID' | 'PARTIAL' | 'PENDING'>('PAID');
   const [amountReceived, setAmountReceived] = useState<EditableNumber>(7000);
   const [paymentDueDate, setPaymentDueDate] = useState('');
-  const [isEditingTerms, setIsEditingTerms] = useState(false);
+  const [isEditingTerms, setIsEditingTerms] = useState(true);
   const [newTerm, setNewTerm] = useState('');
   const [termSection, setTermSection] = useState<'services' | 'terms'>('services');
-  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [isEditingNotes, setIsEditingNotes] = useState(true);
   const [newNote, setNewNote] = useState('');
-  const [isEditingIntro, setIsEditingIntro] = useState(false);
+  const [isEditingIntro, setIsEditingIntro] = useState(true);
   const [agreementIntro, setAgreementIntro] = useState(
     'We <strong>Hydrogen RO</strong> will maintain your <strong>RO Water Purifier</strong> on the terms set out below:'
   );
@@ -252,7 +252,7 @@ export default function AMCGenerator({
   }, [includesPreSedimentFiltration, servicePeriodKind, servicePeriodCustomMonths]);
 
   // Editable customer information state
-  const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [isEditingCustomer, setIsEditingCustomer] = useState(true);
   const { addressChoice, setAddressChoice, selectSite, markAddressEdited, isAddressEdited } =
     useDocumentSiteAddress(customer.id);
   const resolveCustomerAddress = () =>

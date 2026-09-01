@@ -269,7 +269,7 @@ export default function TaxInvoiceGenerator({
   );
   const termsForPdf = useMemo(() => formatServiceDocumentTermsForPdf(termItems), [termItems]);
   const [serviceCharge, setServiceCharge] = useState<EditableNumber>(0);
-  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [isEditingNotes, setIsEditingNotes] = useState(true);
   
   // GST-specific state (all Indian states / UTs)
   const initialPos = resolvePlaceOfSupply({
@@ -382,7 +382,7 @@ export default function TaxInvoiceGenerator({
   // Load existing invoice in edit mode — placed after applyDraftSnapshot below.
 
   // Editable customer information state
-  const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [isEditingCustomer, setIsEditingCustomer] = useState(true);
   const { addressChoice, setAddressChoice, selectSite, markAddressEdited, isAddressEdited } =
     useDocumentSiteAddress(customer?.id);
   const [editableCustomer, setEditableCustomer] = useState({

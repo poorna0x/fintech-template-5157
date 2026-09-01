@@ -192,7 +192,7 @@ export default function BillGenerator({
   const [paymentStatus, setPaymentStatus] = useState<DocumentPaymentStatus>('PAID');
   const [amountReceived, setAmountReceived] = useState<EditableNumber>(0);
   const [paymentDueDate, setPaymentDueDate] = useState('');
-  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [isEditingNotes, setIsEditingNotes] = useState(true);
   const [hideGstInHeader, setHideGstInHeader] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [pendingBrandAction, setPendingBrandAction] = useState<'print' | 'pdf' | 'preview' | 'email'>('pdf');
@@ -209,7 +209,7 @@ export default function BillGenerator({
     useDocumentSiteAddress(customer?.id);
 
   // Editable customer information state
-  const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [isEditingCustomer, setIsEditingCustomer] = useState(true);
   const [editableCustomer, setEditableCustomer] = useState({
     name: customerName || '',
     phone: customerPhone || '',

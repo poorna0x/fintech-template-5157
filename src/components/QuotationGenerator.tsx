@@ -204,7 +204,7 @@ export default function QuotationGenerator({
   };
 
   // Customer editing state
-  const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [isEditingCustomer, setIsEditingCustomer] = useState(true);
   const { addressChoice, setAddressChoice, selectSite, markAddressEdited, isAddressEdited } =
     useDocumentSiteAddress(customer?.id);
   const [editableCustomer, setEditableCustomer] = useState({
