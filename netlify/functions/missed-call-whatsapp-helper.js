@@ -1,6 +1,7 @@
 /**
  * Soft-fail helper: send missed-call callback WhatsApp template to a customer.
- * Used from tech-call-customer-alert when auto_send_missed_call_whatsapp is ON.
+ * Used from tech-call-customer-alert when auto_send_missed_call_whatsapp is ON
+ * (admin phone or technician phone missed a known customer).
  */
 const {
   getWhatsAppCredentials,
@@ -11,15 +12,95 @@ const {
 const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
 
 const DEDUPE_HOURS = 6;
+const MISSED_CALL_TEMPLATE_NAMES = [
+  'svc_missed_call',
+  'svc_missed_call_v2',
+  'svc_missed_call_v3',
+  'missed_call_callback_ero_cta',
+  'missed_call_callback_hro_cta',
+  'missed_call_callback_ero_cta_v2',
+  'missed_call_callback_hro_cta_v2',
+  'missed_call_callback_ero_cta_v3',
+  'missed_call_callback_hro_cta_v3',
+  'missed_call_callback_ero_cta_v4',
+  'missed_call_callback_hro_cta_v4',
+  'missed_call_callback_ero_cta_v5',
+  'missed_call_callback_hro_cta_v5',
+];
 
 function brandSuffix(brand) {
-  return String(brand || '').toLowerCase() === 'elevenro' ? 'ero' : 'hro';
+  return String(brand || '').toLowerCase() === 'hydrogenro' ? 'hro' : 'ero';
 }
 
-function resolveBrandFromCustomer(customer) {
-  const raw = String(customer?.brand || customer?.service_brand || '').toLowerCase();
-  if (raw.includes('eleven')) return 'elevenro';
-  return 'hydrogenro';
+function normalizeServiceBrand(raw) {
+  const value = String(raw || '').toLowerCase();
+  if (value.includes('eleven')) return 'elevenro';
+  if (value.includes('hydrogen')) return 'hydrogenro';
+  return null;
+}
+
+function formatLastServiceDate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'not on file yet';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return 'not on file yet';
+  return date.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  });
+}
+
+async function loadMissedCallFacts(db, phone, opts) {
+  let customerId = opts.customerId ? String(opts.customerId) : null;
+  let customerName = String(opts.customerName || '').trim();
+  let lastServiceRaw = null;
+  let brand = 'elevenro';
+
+  if (!customerId) {
+    customerId = (await findCustomerIdByPhone(db, phone)) || null;
+  }
+  if (!customerId) {
+    return {
+      customerId: null,
+      customerName,
+      brand,
+      lastServiceDate: formatLastServiceDate(null),
+    };
+  }
+
+  const [{ data: customer }, { data: job }] = await Promise.all([
+    db
+      .from('customers')
+      .select('full_name, last_service_date')
+      .eq('id', customerId)
+      .maybeSingle(),
+    db
+      .from('jobs')
+      .select('service_brand, completed_at')
+      .eq('customer_id', customerId)
+      .eq('status', 'COMPLETED')
+      .not('service_brand', 'is', null)
+      .order('completed_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (customer) {
+    customerName = customerName || String(customer.full_name || '').trim();
+    lastServiceRaw = customer.last_service_date || lastServiceRaw;
+  }
+  const fromJob = normalizeServiceBrand(job?.service_brand);
+  if (fromJob) brand = fromJob;
+  if (!lastServiceRaw && job?.completed_at) lastServiceRaw = job.completed_at;
+
+  return {
+    customerId,
+    customerName,
+    brand,
+    lastServiceDate: formatLastServiceDate(lastServiceRaw),
+  };
 }
 
 /**
@@ -53,24 +134,11 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
       .select('id')
       .eq('phone_e164', phone)
       .eq('direction', 'outbound')
-      .in('template_name', [
-        'svc_missed_call',
-        'svc_missed_call_v2',
-        'missed_call_callback_ero_cta',
-        'missed_call_callback_hro_cta',
-        'missed_call_callback_ero_cta_v2',
-        'missed_call_callback_hro_cta_v2',
-        'missed_call_callback_ero_cta_v3',
-        'missed_call_callback_hro_cta_v3',
-        'missed_call_callback_ero_cta_v4',
-        'missed_call_callback_hro_cta_v4',
-        'svc_missed_call_v3',
-      ])
+      .in('template_name', MISSED_CALL_TEMPLATE_NAMES)
       .gte('created_at', sinceIso)
       .limit(1)
       .maybeSingle();
     if (recentTpl?.id) return { sent: false, reason: 'deduped' };
-    // Fallback may land on svc_smoke_update while svc_missed_call is PENDING — still dedupe.
     const { data: recentBody } = await db
       .from('whatsapp_messages')
       .select('id')
@@ -82,39 +150,10 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
       .maybeSingle();
     if (recentBody?.id) return { sent: false, reason: 'deduped' };
 
-    let customerId = opts.customerId ? String(opts.customerId) : null;
-    let customerName = String(opts.customerName || '').trim();
-    let brand = 'hydrogenro';
-
-    if (customerId) {
-      const { data: c } = await db
-        .from('customers')
-        .select('id, full_name, brand')
-        .eq('id', customerId)
-        .maybeSingle();
-      if (c) {
-        customerName = customerName || String(c.full_name || '').trim();
-        brand = resolveBrandFromCustomer(c);
-      }
-    } else {
-      const foundId = await findCustomerIdByPhone(db, phone);
-      if (foundId) {
-        customerId = foundId;
-        const { data: c } = await db
-          .from('customers')
-          .select('full_name, brand')
-          .eq('id', foundId)
-          .maybeSingle();
-        if (c) {
-          customerName = customerName || String(c.full_name || '').trim();
-          brand = resolveBrandFromCustomer(c);
-        }
-      }
-    }
-
-    const name = customerName || 'there';
-    const templateName = `missed_call_callback_${brandSuffix(brand)}_cta_v4`;
-    const primaryParams = [name];
+    const facts = await loadMissedCallFacts(db, phone, opts);
+    const name = facts.customerName || 'there';
+    const templateName = `missed_call_callback_${brandSuffix(facts.brand)}_cta_v5`;
+    const bodyParams = [name, facts.lastServiceDate];
 
     const { accessToken, phoneNumberId } = await getWhatsAppCredentials(db);
     if (!accessToken || !phoneNumberId) {
@@ -127,7 +166,7 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
       to: phone,
       templateName,
       languageCode: 'en',
-      bodyParams: primaryParams,
+      bodyParams,
       headerComponents: [],
       enableFallback: true,
     });
@@ -140,7 +179,7 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
       wa_message_id: waId,
       direction: 'outbound',
       phone_e164: phone,
-      customer_id: customerId,
+      customer_id: facts.customerId,
       msg_type: 'template',
       body: `Missed-call callback (${usedName})`,
       template_name: usedName,
@@ -157,11 +196,15 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
       );
       return { sent: false, reason: 'api_failed' };
     }
-    return { sent: true, waId, templateName: usedName };
+    return { sent: true, waId, templateName: usedName, brand: facts.brand };
   } catch (err) {
     console.warn('[missed-call-whatsapp] error', err?.message || err);
     return { sent: false, reason: 'error' };
   }
 }
 
-module.exports = { maybeSendMissedCallCallbackWhatsApp };
+module.exports = {
+  maybeSendMissedCallCallbackWhatsApp,
+  formatLastServiceDate,
+  normalizeServiceBrand,
+};

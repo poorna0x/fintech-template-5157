@@ -122,6 +122,18 @@ function testKnownClosedWindowSkipsFreeForm() {
   }
 }
 
+function testMissedCallV5FallsBackToV4WithNameOnly() {
+  const attempts = buildFallbackAttempts(
+    'missed_call_callback_ero_cta_v5',
+    ['Rahul', '12 Aug 2026'],
+    false
+  );
+  const v4 = attempts.find((attempt) => attempt.name === 'missed_call_callback_ero_cta_v4');
+  assert.ok(v4, 'v5 must fall back to approved v4');
+  assert.deepEqual(v4.params, ['Rahul']);
+  assert.ok(attempts.some((attempt) => attempt.name === 'svc_missed_call_v3'));
+}
+
 testDocumentFallbacksKeepPdfHeader();
 testQuickCustomerColdPrimary();
 testLocationFallbackParameterCounts();

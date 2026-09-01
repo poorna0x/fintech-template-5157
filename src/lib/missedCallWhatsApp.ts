@@ -6,13 +6,47 @@ import { toast } from 'sonner';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
 import type { DocumentBrand } from '@/lib/service-brands';
+import { supabase } from '@/lib/supabaseClient';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
 import { openWhatsAppMeDeepLink } from '@/lib/sendAdminWhatsAppApi';
 import {
   buildMissedCallWhatsAppMessage,
+  formatLastServiceDateLabel,
   resolveColdMissedCall,
   sendUtilityWhatsAppWithColdFallback,
 } from '@/lib/whatsappUtilityTemplates';
+
+async function loadMissedCallFacts(
+  customerId?: string | null,
+  brandHint?: DocumentBrand
+): Promise<{ brand: DocumentBrand; lastServiceDate: string }> {
+  const fallback: DocumentBrand = 'elevenro';
+  if (!customerId) {
+    return { brand: brandHint || fallback, lastServiceDate: formatLastServiceDateLabel(null) };
+  }
+  let brand = brandHint || fallback;
+  try {
+    const resolved = await resolveCustomerSendBrand(customerId, fallback);
+    brand = resolved.sendBrand || fallback;
+  } catch {
+    /* keep fallback */
+  }
+  try {
+    const { data } = await supabase
+      .from('customers')
+      .select('last_service_date')
+      .eq('id', customerId)
+      .maybeSingle();
+    return {
+      brand,
+      lastServiceDate: formatLastServiceDateLabel(
+        (data as { last_service_date?: string | null } | null)?.last_service_date
+      ),
+    };
+  } catch {
+    return { brand, lastServiceDate: formatLastServiceDateLabel(null) };
+  }
+}
 
 export async function sendMissedCallCallbackWhatsApp(opts: {
   phone: string;
@@ -30,14 +64,15 @@ export async function sendMissedCallCallbackWhatsApp(opts: {
     return { ok: false, error: 'Invalid phone' };
   }
 
+  const facts = await loadMissedCallFacts(opts.customerId, opts.brand);
+  const name = String(opts.customerName || '').trim() || 'there';
+  const text = buildMissedCallWhatsAppMessage(name, facts.brand, facts.lastServiceDate);
+  const cold = resolveColdMissedCall(name, facts.brand, facts.lastServiceDate);
+
   const { settings } = await fetchWhatsAppCrmSettings();
   if (!opts.force) {
     if (settings.enabled === false) {
-      // Master toggle is Cloud API only — still open phone WhatsApp.
-      openWhatsAppMeDeepLink(phone, buildMissedCallWhatsAppMessage(
-        String(opts.customerName || '').trim() || 'there',
-        opts.brand || 'hydrogenro'
-      ));
+      openWhatsAppMeDeepLink(phone, text);
       if (notify) toast.success('Opened phone WhatsApp (Cloud API is off)');
       return { ok: true };
     }
@@ -46,20 +81,6 @@ export async function sendMissedCallCallbackWhatsApp(opts: {
       return { ok: false, error: 'calling_off' };
     }
   }
-
-  let brand: DocumentBrand = opts.brand || 'hydrogenro';
-  if (opts.customerId) {
-    try {
-      const resolved = await resolveCustomerSendBrand(opts.customerId, brand);
-      brand = resolved.sendBrand || brand;
-    } catch {
-      /* keep brand */
-    }
-  }
-
-  const name = String(opts.customerName || '').trim() || 'there';
-  const text = buildMissedCallWhatsAppMessage(name, brand);
-  const cold = resolveColdMissedCall(name, brand);
 
   const result = await sendUtilityWhatsAppWithColdFallback({
     to: phone,

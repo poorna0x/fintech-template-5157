@@ -12,7 +12,7 @@
  *   node scripts/submit-whatsapp-full-utility.mjs --submit       # submit missing only
    *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-tech-customer-photo
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-overdue
- *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-ask-loc-flat-photo
+   *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-missed-call-v5
  */
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -949,7 +949,29 @@ function buildMissedCallCallbackV4Templates() {
   return out;
 }
 
+/** v5: last service date + Call us. Same UTILITY lock as v4. */
+function buildMissedCallCallbackV5Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    out.push({
+      callPhone,
+      lockCategory: true,
+      name: `missed_call_callback_${suffix}_cta_v5`,
+      body: [
+        `Hi {{1}}, this is ${b.label}.`,
+        `Sorry we missed your call. We will get back to you shortly.`,
+        `Last service date: {{2}}.`,
+        `Tap Call us if you need us now, or reply on this chat.`,
+      ].join('\n'),
+      examples: ['Rahul', '12 Aug 2026'],
+    });
+  }
+  return out;
+}
+
 const MISSED_CALL_CALLBACK_V4_TEMPLATES = buildMissedCallCallbackV4Templates();
+const MISSED_CALL_CALLBACK_V5_TEMPLATES = buildMissedCallCallbackV5Templates();
 
 function letterFooterBlock(brand, callPhone) {
   const chatUrl = `https://wa.me/${String(callPhone || brand.phone).replace(/\D/g, '')}`;
@@ -2428,6 +2450,9 @@ function collectAllTemplatePreviewEntries() {
   for (const t of MISSED_CALL_CALLBACK_V4_TEMPLATES) {
     push('Missed call v4', t, missedCallCallbackV4Payload);
   }
+  for (const t of MISSED_CALL_CALLBACK_V5_TEMPLATES) {
+    push('Missed call v5', t, missedCallCallbackV4Payload);
+  }
   for (const t of SERVICE_DUE_CTA_TEMPLATES) push('Service due CTA', t, bookingPayload);
   for (const t of BOOKING_STATUS_V2_TEMPLATES) push('Booking confirm / cancel v2', t, bookingPayload);
   for (const t of JOB_DONE_V2_TEMPLATES) push('Job done v2', t, jobDonePayload);
@@ -2711,6 +2736,14 @@ async function main() {
     queue.push({ label: t.name, payload: bookingPayload(t) });
   }
   for (const t of MISSED_CALL_CALLBACK_V4_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: missedCallCallbackV4Payload(t) });
+  }
+  for (const t of MISSED_CALL_CALLBACK_V5_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
       console.log(`SKIP ${t.name} — ${skip}`);
@@ -3105,6 +3138,14 @@ async function main() {
       ...MISSED_CALL_CALLBACK_V4_TEMPLATES.map((t) => t.name),
       'svc_missed_call_v3',
     ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyMissedCallV5 = process.argv.includes('--only-missed-call-v5');
+  if (onlyMissedCallV5) {
+    const keep = new Set(MISSED_CALL_CALLBACK_V5_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

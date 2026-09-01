@@ -60,8 +60,8 @@ export type WhatsAppCrmSettings = {
   /** Auto-send salary-slip PDFs on last calendar day (~9 PM IST). Per-tech opt-in still applies. */
   auto_send_salary_slip_whatsapp: boolean;
   /**
-   * After missed customer call alert (admin/tech APK): auto-send
-   * svc_missed_call (requires allow_calling).
+   * After missed customer call alert (admin or technician APK): auto-send
+   * missed_call_callback_*_cta_v5 (last served brand, last service date, Call us).
    */
   auto_send_missed_call_whatsapp: boolean;
   /** Cloud API: online website booking confirmation to customer. */

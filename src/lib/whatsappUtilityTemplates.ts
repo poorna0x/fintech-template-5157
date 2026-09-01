@@ -67,9 +67,15 @@ export function resolveColdRescheduleVisit(
 
 export function resolveColdMissedCall(
   customerName: string,
-  brand: DocumentBrand = 'hydrogenro'
+  brand: DocumentBrand = 'elevenro',
+  lastServiceDate?: string
 ): ColdTemplatePayload {
-  const cta = resolveBookingCta('missed_call_book', brand, customerName);
+  const cta = resolveBookingCta(
+    'missed_call_book',
+    brand,
+    customerName,
+    lastServiceDate || 'not on file yet'
+  );
   return {
     name: resolveWaTemplateName(cta.name),
     languageCode: cta.language,
@@ -142,13 +148,31 @@ export function resolveColdServiceRequest(customerName: string): ColdTemplatePay
   };
 }
 
-export function buildMissedCallWhatsAppMessage(customerName: string, brand: DocumentBrand): string {
+export function formatLastServiceDateLabel(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return 'not on file yet';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return 'not on file yet';
+  return d.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  });
+}
+
+export function buildMissedCallWhatsAppMessage(
+  customerName: string,
+  brand: DocumentBrand,
+  lastServiceDate?: string
+): string {
   const label = getDocumentBrandLabel(brand);
+  const lastService = formatLastServiceDateLabel(lastServiceDate);
   return [
     `Hi ${cleanName(customerName)},`,
-    `This is ${label}. We received your incoming call and could not answer.`,
-    'We will return your call to continue your water purifier service.',
-    'Reply on this chat if you need to add any details before we call.',
+    `This is ${label}. Sorry we missed your call — we will get back to you shortly.`,
+    `Last service date: ${lastService}.`,
+    'Tap Call us if you need us now, or reply on this chat.',
   ].join('\n');
 }
 
