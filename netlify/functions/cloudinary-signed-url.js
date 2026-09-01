@@ -4,21 +4,14 @@ const crypto = require('crypto');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-auth-guard');
+const { resolveCloudinaryConfig } = require('./cloudinary-secrets');
 
-const trim = (s) => (s && typeof s === 'string' ? s.trim() : s);
-
-function getCloudinaryConfig(useSecondary) {
-  // Server-only. Do NOT fall back to VITE_* — those would leak into the browser bundle.
-  if (useSecondary) {
-    const cloudName = trim(process.env.CLOUDINARY_SECONDARY_CLOUD_NAME);
-    const apiKey = trim(process.env.CLOUDINARY_SECONDARY_API_KEY);
-    const apiSecret = trim(process.env.CLOUDINARY_SECONDARY_API_SECRET);
-    return cloudName && apiKey && apiSecret ? { cloudName, apiKey, apiSecret } : null;
-  }
-  const cloudName = trim(process.env.CLOUDINARY_CLOUD_NAME);
-  const apiKey = trim(process.env.CLOUDINARY_API_KEY);
-  const apiSecret = trim(process.env.CLOUDINARY_API_SECRET);
-  return cloudName && apiKey && apiSecret ? { cloudName, apiKey, apiSecret } : null;
+async function configForCloudName(cloudName) {
+  const primary = await resolveCloudinaryConfig(false);
+  const secondary = await resolveCloudinaryConfig(true);
+  if (primary?.cloudName === cloudName) return primary;
+  if (secondary?.cloudName === cloudName) return secondary;
+  return null;
 }
 
 function extractPublicIdFromUrl(imageUrl) {
@@ -50,14 +43,6 @@ function buildSignedUrl(config, publicId, ttlSeconds = 3600) {
     .replace(/\//g, '_')
     .replace(/=+$/, '');
   return `https://res.cloudinary.com/${config.cloudName}/image/upload/s--${signature}--/${publicId}?expires_at=${expiresAt}`;
-}
-
-function configForCloudName(cloudName) {
-  const primary = getCloudinaryConfig(false);
-  const secondary = getCloudinaryConfig(true);
-  if (primary?.cloudName === cloudName) return primary;
-  if (secondary?.cloudName === cloudName) return secondary;
-  return null;
 }
 
 exports.handler = async (event) => {
@@ -129,7 +114,7 @@ exports.handler = async (event) => {
       errors[raw] = 'Could not parse Cloudinary URL';
       continue;
     }
-    const config = configForCloudName(parsed.cloudName);
+    const config = await configForCloudName(parsed.cloudName);
     if (!config) {
       errors[raw] = 'Unknown Cloudinary account';
       continue;

@@ -14,6 +14,7 @@ const {
   checkRateLimitForKey,
   rateLimitResponseForKey,
 } = require('./rate-limiter');
+const { resolveCloudinaryConfig } = require('./cloudinary-secrets');
 
 // Cloudinary public_id rules + our app conventions:
 //   - allow letters, digits, underscore, hyphen, slash, dot
@@ -31,18 +32,8 @@ function isValidPublicId(id) {
 // Server-only Cloudinary config. We intentionally do NOT fall back to VITE_* —
 // those would also be inlined into the public browser bundle by Vite.
 // Trim all values: Netlify env can have trailing newlines which break Basic Auth.
-function getCloudinaryConfig(useSecondary) {
-  const trim = (s) => (s && typeof s === 'string' ? s.trim() : s);
-  if (useSecondary) {
-    const cloudName = trim(process.env.CLOUDINARY_SECONDARY_CLOUD_NAME);
-    const apiKey = trim(process.env.CLOUDINARY_SECONDARY_API_KEY);
-    const apiSecret = trim(process.env.CLOUDINARY_SECONDARY_API_SECRET);
-    return cloudName && apiKey && apiSecret ? { cloudName, apiKey, apiSecret } : null;
-  }
-  const cloudName = trim(process.env.CLOUDINARY_CLOUD_NAME);
-  const apiKey = trim(process.env.CLOUDINARY_API_KEY);
-  const apiSecret = trim(process.env.CLOUDINARY_API_SECRET);
-  return cloudName && apiKey && apiSecret ? { cloudName, apiKey, apiSecret } : null;
+async function getCloudinaryConfig(useSecondary) {
+  return resolveCloudinaryConfig(!!useSecondary);
 }
 
 // Use Basic Auth (no signature) - recommended for server-side; avoids signature encoding issues
@@ -182,19 +173,19 @@ exports.handler = async (event, context) => {
   };
 
   const tryDestroy = async (idToTry, useSecondaryAccount) => {
-    const config = getCloudinaryConfig(!!useSecondaryAccount);
+    const config = await getCloudinaryConfig(!!useSecondaryAccount);
     if (!config) return null;
     return tryDestroyWithConfig(idToTry, config);
   };
 
   try {
-    let config = getCloudinaryConfig(!!useSecondary);
+    let config = await getCloudinaryConfig(!!useSecondary);
     if (!config) {
-      console.warn('[cloudinary-delete] No config: set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET in Netlify env (scope: All or Functions)');
+      console.warn('[cloudinary-delete] No config: set app_secrets.cloudinary or CLOUDINARY_*');
       return {
         statusCode: 503,
         headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ deleted: false, error: 'Cloudinary delete not configured (set CLOUDINARY_* in Netlify env, then redeploy)' }),
+        body: JSON.stringify({ deleted: false, error: 'Cloudinary delete not configured (set app_secrets.cloudinary or CLOUDINARY_* )' }),
       };
     }
     // Safe debug: confirm which cloud we're using (no secrets logged)
@@ -234,7 +225,7 @@ exports.handler = async (event, context) => {
 
     // 2) Retry with the other account in case photo was uploaded to the other cloud
     if (isNotFound) {
-      const otherConfig = getCloudinaryConfig(!useSecondary);
+      const otherConfig = await getCloudinaryConfig(!useSecondary);
       if (otherConfig) {
         result = await tryDestroyWithConfig(id, otherConfig);
         if (result?.result === 'ok') {

@@ -1,7 +1,9 @@
 /**
  * Cloudinary Admin API helpers for account usage (server-only).
- * Credentials: CLOUDINARY_* / CLOUDINARY_SECONDARY_* — never VITE_*.
+ * Credentials: app_secrets.cloudinary (production) or CLOUDINARY_* env (local). Never VITE_*.
  */
+
+const { resolveCloudinaryAdminAccounts, getCloudinaryAdminAccountsFromEnv } = require('./cloudinary-secrets');
 
 const CACHE_MS = 30 * 60 * 1000;
 const HISTORY_CACHE_MS = 60 * 60 * 1000;
@@ -12,29 +14,8 @@ const HISTORY_DAYS = 7;
 
 const cache = new Map();
 
-const trim = (s) => (s && typeof s === 'string' ? s.trim() : '');
-
 function getCloudinaryAdminAccounts() {
-  const accounts = [];
-  const primary = {
-    id: 'primary',
-    label: 'Primary',
-    cloudName: trim(process.env.CLOUDINARY_CLOUD_NAME),
-    apiKey: trim(process.env.CLOUDINARY_API_KEY),
-    apiSecret: trim(process.env.CLOUDINARY_API_SECRET),
-  };
-  if (primary.cloudName && primary.apiKey && primary.apiSecret) accounts.push(primary);
-
-  const secondary = {
-    id: 'secondary',
-    label: 'Secondary',
-    cloudName: trim(process.env.CLOUDINARY_SECONDARY_CLOUD_NAME),
-    apiKey: trim(process.env.CLOUDINARY_SECONDARY_API_KEY),
-    apiSecret: trim(process.env.CLOUDINARY_SECONDARY_API_SECRET),
-  };
-  if (secondary.cloudName && secondary.apiKey && secondary.apiSecret) accounts.push(secondary);
-
-  return accounts;
+  return getCloudinaryAdminAccountsFromEnv();
 }
 
 function publicAccountMeta(account) {
@@ -494,11 +475,11 @@ async function loadAccountHistory(account, { refresh, fetchImpl } = {}) {
 }
 
 async function buildCloudinaryUsagePayload({ refresh = false, details = false, history = false, fetchImpl } = {}) {
-  const accounts = getCloudinaryAdminAccounts();
+  const accounts = await resolveCloudinaryAdminAccounts();
   if (!accounts.length) {
     return {
       ok: false,
-      error: 'Cloudinary Admin API is not configured (set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)',
+      error: 'Cloudinary Admin API is not configured (set app_secrets.cloudinary or CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET)',
       lastUpdated: new Date().toISOString(),
     };
   }
