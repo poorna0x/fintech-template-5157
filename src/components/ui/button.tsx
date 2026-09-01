@@ -47,21 +47,29 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, disabled, children, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button"
-    const needsIosHaptic = !asChild && isIOS()
+    const classNameResolved = cn(buttonVariants({ variant, size, className }))
+
+    // Slot requires exactly one element child. A sibling `null` overlay still
+    // makes React.Children.only throw on every `asChild` Button.
+    if (asChild) {
+      return (
+        <Slot className={classNameResolved} ref={ref} disabled={disabled} {...props}>
+          {children}
+        </Slot>
+      )
+    }
+
+    const needsIosHaptic = isIOS()
     return (
-      <Comp
-        className={cn(
-          buttonVariants({ variant, size, className }),
-          needsIosHaptic && "relative overflow-hidden"
-        )}
+      <button
+        className={cn(classNameResolved, needsIosHaptic && "relative overflow-hidden")}
         ref={ref}
         disabled={disabled}
         {...props}
       >
         {children}
         {needsIosHaptic ? <IOSSwitchHapticOverlay disabled={disabled} /> : null}
-      </Comp>
+      </button>
     )
   }
 )

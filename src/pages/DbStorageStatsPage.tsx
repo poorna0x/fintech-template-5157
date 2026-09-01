@@ -3,6 +3,8 @@ import { ArrowLeft, Cloud, Database, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import CloudinaryUsageSection from '@/components/admin/CloudinaryUsageSection';
+import ILovePdfUsageSection from '@/components/admin/ILovePdfUsageSection';
 import {
   fetchDbStorageOverview,
   fetchDbTableColumnStats,
@@ -197,6 +199,9 @@ export default function DbStorageStatsPage({ hideHeader, onBack }: Props) {
           </div>
         )}
       </section>
+
+      <CloudinaryUsageSection />
+      <ILovePdfUsageSection />
 
       <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="border-b p-4">

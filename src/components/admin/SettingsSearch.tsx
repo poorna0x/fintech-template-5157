@@ -68,6 +68,7 @@ type SettingsSearchItem = {
 };
 
 const SEARCH_ITEMS: SettingsSearchItem[] = [
+  { id: 'crm-ai', label: 'CRM AI assistant', description: 'Search customers and draft jobs, follow-ups, and reminders', keywords: 'gemini groq chat assistant wizard old completed job', group: 'Customers & work', icon: Sparkles, destination: { type: 'route', path: '/admin?tool=ai-assistant' }, adminOnly: true },
   { id: 'calling', label: 'Calling', description: 'Customer calls and communication', keywords: 'phone calls dialer missed call', group: 'Communication', icon: PhoneCall, destination: { type: 'panel', panel: 'calling' } },
   { id: 'whatsapp-inbox', label: 'WhatsApp inbox', description: 'Read and send customer messages', keywords: 'chat messages meta cloud api', group: 'Communication', icon: 'whatsapp', destination: { type: 'panel', panel: 'whatsapp-inbox' }, adminOnly: true },
   { id: 'whatsapp-settings', label: 'WhatsApp settings', description: 'Send controls, templates, rates and expected bill', keywords: 'meta cloud api budget technician push mirror job assign', group: 'Communication', icon: 'whatsapp', destination: { type: 'panel', panel: 'whatsapp-settings' }, adminOnly: true },

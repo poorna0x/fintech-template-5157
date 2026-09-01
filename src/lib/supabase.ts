@@ -4070,7 +4070,7 @@ export const db = {
       const activeOnly = options?.activeRosterOnly !== false;
       const { data, error } = await supabase.rpc('get_technicians_for_analytics');
       if (error) {
-        if (isRpcNotFoundError(error)) {
+        if (isRpcNotFoundError(error) || /not authorized/i.test(error.message || '')) {
           return db.technicians.getAllForDashboard(limit, options);
         }
         return { data: null, error };

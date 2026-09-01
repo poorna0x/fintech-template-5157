@@ -331,29 +331,38 @@ function buildAnalyticsPayloadFromDashboard(
     }>;
   }
 ) {
-  const sc = dash.status_counts;
+  const sc = dash.status_counts || {
+    completed: 0,
+    denied: 0,
+    pending: 0,
+    assigned: 0,
+    in_progress: 0,
+  };
   const soft = dash.softener;
-  const softSc = soft.status_counts;
+  const emptyStatus = { completed: 0, denied: 0, pending: 0, assigned: 0, in_progress: 0 };
+  const softSc = soft?.status_counts || emptyStatus;
   const periodBilling = Number(dash.billing_total) || 0;
-  const completedCount = dash.completed_in_period_count;
-  const periodJobCount = dash.period_job_count;
+  const completedCount = Number(dash.completed_in_period_count) || 0;
+  const periodJobCount = Number(dash.period_job_count) || 0;
 
   const leadSourceBreakdown =
-    options?.leadSourceBreakdown ?? mapLeadSourceBreakdownFromDashboard(dash.lead_source_breakdown);
+    options?.leadSourceBreakdown ??
+    mapLeadSourceBreakdownFromDashboard(dash.lead_source_breakdown || []);
   const totalLeadCostsSum = leadSourceBreakdown.reduce((sum, row) => sum + row.leadCost, 0);
   const otherBusinessChargesTotal =
     expenses.totalOtherBusinessExpenses + expenses.totalOtherBusinessLedgerExpenses;
+  const sparePartsCost = Number(dash.total_spare_parts_cost) || 0;
   const expenseTotalJobsOnly =
     expenses.totalTechnicianExpenses +
     expenses.totalSalaryDeductions +
     otherBusinessChargesTotal +
-    dash.total_spare_parts_cost +
+    sparePartsCost +
     expenses.totalBusinessExpensesForProfitJobsOnly;
   const expenseTotal =
     expenses.totalTechnicianExpenses +
     expenses.totalSalaryDeductions +
     otherBusinessChargesTotal +
-    dash.total_spare_parts_cost +
+    sparePartsCost +
     expenses.totalBusinessExpensesForProfit;
   const netProfitJobsOnly = periodBilling - totalLeadCostsSum - expenseTotalJobsOnly;
   const netProfit = periodBilling - totalLeadCostsSum - expenseTotal;
@@ -369,7 +378,7 @@ function buildAnalyticsPayloadFromDashboard(
     expenses.totalTechnicianExpenses;
   const ishaDonationAmount = Math.max(0, revenueMinusCoreForIshanga) * ISHANGA_RATE;
 
-  const softenerTechStats = soft.technician_stats.map((row) => {
+  const softenerTechStats = (soft?.technician_stats || []).map((row) => {
     const tech = technicians.find((t) => t.id === row.technician_id);
     const inactive = tech?.account_status === 'INACTIVE' ? ' (Inactive)' : '';
     return {
@@ -393,7 +402,7 @@ function buildAnalyticsPayloadFromDashboard(
     completionRate: periodJobCount > 0 ? (completedCount / periodJobCount) * 100 : 0,
     denialRate: periodJobCount > 0 ? (sc.denied / periodJobCount) * 100 : 0,
     returnComplaints: undefined as undefined,
-    technicianStats: mapTechnicianStatsFromDashboard(dash.technician_stats, technicians),
+    technicianStats: mapTechnicianStatsFromDashboard(dash.technician_stats || [], technicians),
     leadSourceBreakdown,
     totalLeadCosts: totalLeadCostsSum,
     totalTechnicianExpenses: expenses.totalTechnicianExpenses,
@@ -402,7 +411,7 @@ function buildAnalyticsPayloadFromDashboard(
     totalOtherBusinessExpenses: expenses.totalOtherBusinessExpenses,
     totalOtherBusinessLedgerExpenses: expenses.totalOtherBusinessLedgerExpenses,
     totalJobCostBusinessExpenses: expenses.totalBusinessExpensesForProfitJobsOnly,
-    totalSparePartsCost: dash.total_spare_parts_cost,
+    totalSparePartsCost: Number(dash.total_spare_parts_cost) || 0,
     totalSalaryDeductions: expenses.totalSalaryDeductions,
     totalSalaryIncludingAll: expenses.totalSalaryIncludingAll,
     totalExpenses: expenseTotal,
@@ -410,42 +419,42 @@ function buildAnalyticsPayloadFromDashboard(
     totalProfitJobsOnly: netProfitJobsOnly,
     netCashInHand,
     ishaDonationAmount,
-    serviceTypeBreakdown: dash.service_type_breakdown.map((row) => ({
+    serviceTypeBreakdown: (dash.service_type_breakdown || []).map((row) => ({
       serviceType: row.service_type,
       count: Number(row.count) || 0,
       amount: Number(row.amount) || 0,
     })),
-    paymentMethodBreakdown: dash.payment_method_breakdown
+    paymentMethodBreakdown: (dash.payment_method_breakdown || [])
       .filter((row) => !(row.method === 'Unknown' && Number(row.amount) === 0))
       .map((row) => ({
         method: row.method,
         count: Number(row.count) || 0,
         amount: Number(row.amount) || 0,
       })),
-    dailyStats: dash.daily_stats.map((row) => ({
+    dailyStats: (dash.daily_stats || []).map((row) => ({
       date: row.date,
       jobs: Number(row.jobs) || 0,
       revenue: Number(row.revenue) || 0,
     })),
     softenerData: {
-      totalJobs: soft.period_job_count,
-      completedJobs: soft.completed_in_period_count,
+      totalJobs: Number(soft?.period_job_count) || 0,
+      completedJobs: Number(soft?.completed_in_period_count) || 0,
       deniedJobs: softSc.denied,
       pendingJobs: softSc.pending,
       assignedJobs: softSc.assigned,
       inProgressJobs: softSc.in_progress,
-      totalBilling: Number(soft.billing_total) || 0,
-      averageBill: Number(soft.billing_average) || 0,
+      totalBilling: Number(soft?.billing_total) || 0,
+      averageBill: Number(soft?.billing_average) || 0,
       completionRate:
-        soft.period_job_count > 0
-          ? (soft.completed_in_period_count / soft.period_job_count) * 100
+        Number(soft?.period_job_count) > 0
+          ? (Number(soft?.completed_in_period_count) || 0) / Number(soft.period_job_count) * 100
           : 0,
-      serviceTypeBreakdown: soft.service_type_breakdown.map((row) => ({
+      serviceTypeBreakdown: (soft?.service_type_breakdown || []).map((row) => ({
         serviceType: row.service_type,
         count: Number(row.count) || 0,
         amount: Number(row.amount) || 0,
       })),
-      paymentMethodBreakdown: soft.payment_method_breakdown
+      paymentMethodBreakdown: (soft?.payment_method_breakdown || [])
         .filter((row) => !(row.method === 'Unknown' && Number(row.amount) === 0))
         .map((row) => ({
           method: row.method,
@@ -453,7 +462,7 @@ function buildAnalyticsPayloadFromDashboard(
           amount: Number(row.amount) || 0,
         })),
       technicianStats: softenerTechStats.sort((a, b) => b.completedJobs - a.completedJobs),
-      dailyStats: soft.daily_stats.map((row) => ({
+      dailyStats: (soft?.daily_stats || []).map((row) => ({
         date: row.date,
         jobs: Number(row.jobs) || 0,
         revenue: Number(row.revenue) || 0,

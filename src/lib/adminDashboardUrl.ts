@@ -297,6 +297,7 @@ export const ADMIN_TOOL_DIALOGS = [
   'nearby-jobs',
   'technician-live-location',
   'message-technician',
+  'ai-assistant',
 ] as const;
 export type AdminToolDialog = (typeof ADMIN_TOOL_DIALOGS)[number];
 

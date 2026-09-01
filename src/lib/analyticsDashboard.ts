@@ -109,7 +109,7 @@ export function mapLeadSourceBreakdownFromDashboard(
   spareCost: number;
   serviceTypes: Array<{ serviceType: string; count: number; amount: number }>;
 }> {
-  return rows.map((row) => {
+  return (rows || []).map((row) => {
     const rawLabel = (row.display_name || 'Direct call').trim() || 'Direct call';
     const key = row.normalized_key || normalizeLeadSourceKey(rawLabel);
     const leadType = resolveLeadSourceDisplayName(rawLabel, key);
@@ -215,7 +215,7 @@ export function mapTechnicianStatsFromDashboard(
   returnComplaints: number;
   serviceTypeBreakdown: Array<{ serviceType: string; count: number; amount: number }>;
 }> {
-  return rows.map((row) => {
+  return (rows || []).map((row) => {
     const tech = technicians.find((t) => t.id === row.technician_id);
     const inactive = tech?.account_status === 'INACTIVE' ? ' (Inactive)' : '';
     return {
