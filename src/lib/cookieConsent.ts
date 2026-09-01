@@ -39,6 +39,11 @@ export function writeCookieConsent(choice: CookieConsentChoice): CookieConsentSt
     /* ignore */
   }
   try {
+    document.documentElement.classList.add('hro-cookie-choice-known');
+  } catch {
+    /* ignore */
+  }
+  try {
     window.dispatchEvent(new CustomEvent('hro-cookie-consent', { detail: state }));
   } catch {
     /* ignore */

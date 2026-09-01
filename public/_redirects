@@ -30,5 +30,6 @@
 /booking /book 301
 /booking/ /book 301
 
-# SPA fallback — must be last
-/* /index.html 200
+# SPA fallback — empty Vite shell (dist/app.html). Do not use prerendered
+# index.html here: that file is the marketing homepage and would flash on /admin.
+/* /app.html 200

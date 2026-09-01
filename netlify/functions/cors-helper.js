@@ -114,19 +114,30 @@ function isOriginAllowed(requestOrigin) {
   return getAllowedOrigin(requestOrigin) !== null;
 }
 
+function headerMap(eventOrHeaders) {
+  if (!eventOrHeaders || typeof eventOrHeaders !== 'object') return {};
+  if (eventOrHeaders.headers && typeof eventOrHeaders.headers === 'object') {
+    return eventOrHeaders.headers;
+  }
+  return eventOrHeaders;
+}
+
 function hasBearerAuthorization(event) {
-  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const headers = headerMap(event);
+  const authHeader = headers.authorization || headers.Authorization || '';
   return authHeader.startsWith('Bearer ') && authHeader.slice(7).trim().length > 0;
 }
 
 /**
  * Production blocks missing Origin to stop sandboxed iframe abuse — but same-origin
  * browser fetches (common on mobile Safari) often omit Origin. Allow when JWT present.
+ * Accepts either the Lambda `event` or a headers object (legacy callers).
  */
 function shouldRejectMissingOrigin(event) {
   if (!isProduction()) return false;
-  if (event.headers.origin || event.headers.Origin) return false;
-  return !hasBearerAuthorization(event);
+  const headers = headerMap(event);
+  if (headers.origin || headers.Origin) return false;
+  return !hasBearerAuthorization({ headers });
 }
 
 /** @deprecated Use isLocalDev(); kept for booking-guard imports */

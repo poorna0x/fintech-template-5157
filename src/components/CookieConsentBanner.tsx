@@ -5,24 +5,27 @@ import { readCookieConsent, writeCookieConsent } from '@/lib/cookieConsent';
 import { isNativeApp } from '@/lib/isNativeApp';
 import { shouldIndexPath } from '@/lib/publicSiteSeo';
 
+function shouldShowCookieBanner(pathname: string): boolean {
+  if (typeof window === 'undefined') return false;
+  if (isNativeApp() || !shouldIndexPath(pathname)) return false;
+  return !readCookieConsent();
+}
+
 /** Bottom banner: analytics cookies only after explicit accept. Public website only. */
 export default function CookieConsentBanner() {
   const { pathname } = useLocation();
   const skip = isNativeApp() || !shouldIndexPath(pathname);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(() => shouldShowCookieBanner(pathname));
 
   useEffect(() => {
-    if (skip) {
-      setVisible(false);
-      return;
-    }
-    setVisible(!readCookieConsent());
-  }, [skip]);
+    setVisible(shouldShowCookieBanner(pathname));
+  }, [pathname, skip]);
 
   if (skip || !visible) return null;
 
   return (
     <div
+      data-cookie-consent-banner=""
       className="fixed bottom-0 inset-x-0 z-[90] border-t bg-background px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 sm:pt-4"
       role="dialog"
       aria-label="Cookie and analytics consent"

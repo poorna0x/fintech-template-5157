@@ -10,6 +10,16 @@
     <script src="/head-brand-meta.js"></script>
     <!-- Per-path title, canonical, robots — sync (not defer) so crawlers see route SEO in first pass -->
     <script src="/head-seo-bootstrap.js"></script>
+    <!-- Hide prerendered cookie banner immediately if the visitor already chose (avoids flash-off). -->
+    <script>
+      (function () {
+        try {
+          if (localStorage.getItem('hro_cookie_consent_v1')) {
+            document.documentElement.classList.add('hro-cookie-choice-known');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM site information" />
     
     <!-- Additional SEO Meta Tags -->
@@ -206,6 +216,11 @@
         clip: rect(0, 0, 0, 0) !important;
         white-space: nowrap !important;
         border: 0 !important;
+      }
+
+      html.hro-cookie-choice-known [data-cookie-consent-banner],
+      html.hro-cookie-choice-known [aria-label="Cookie and analytics consent"] {
+        display: none !important;
       }
 
       img { max-width: 100%; height: auto; display: block; }

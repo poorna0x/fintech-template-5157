@@ -33,7 +33,7 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: addSecurityHeaders(headers), body: '' };
   }
-  if (shouldRejectMissingOrigin(event.headers || {}, { allowMissingWithBearer: true })) {
+  if (shouldRejectMissingOrigin(event)) {
     return json(403, headers, { ok: false, error: 'Forbidden' });
   }
 

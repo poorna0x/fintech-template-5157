@@ -103,7 +103,7 @@ exports.handler = async (event) => {
   const requestOrigin = event.headers?.origin || event.headers?.Origin || '';
   const headers = getCorsHeaders(requestOrigin);
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
-  if (shouldRejectMissingOrigin(event.headers || {}, { allowMissingWithBearer: true })) {
+  if (shouldRejectMissingOrigin(event)) {
     return json(403, headers, { success: false, error: 'Forbidden' });
   }
   if (event.httpMethod !== 'POST') {

@@ -450,7 +450,7 @@ exports.handler = async (event) => {
     return { statusCode: 204, headers, body: '' };
   }
 
-  if (shouldRejectMissingOrigin(event.headers || {}, { allowMissingWithBearer: true })) {
+  if (shouldRejectMissingOrigin(event)) {
     return json(403, headers, { success: false, error: 'Forbidden' });
   }
 

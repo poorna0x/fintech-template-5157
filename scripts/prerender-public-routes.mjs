@@ -136,6 +136,10 @@ async function main() {
       await page.waitForSelector('#root > *', { timeout: 20_000 });
       await page.evaluate((allowedModulePreloads) => {
         document.documentElement.dataset.prerendered = 'true';
+        // Cookie banner is client-consent UI. Leaving it in the snapshot makes it
+        // flash on then off after React hydrates (especially if the visitor already
+        // accepted/rejected in localStorage).
+        document.querySelectorAll('[data-cookie-consent-banner]').forEach((el) => el.remove());
         // React.lazy/Vite appends preloads while producing the snapshot. Those
         // are not first-paint dependencies and must not become eager downloads
         // when the generated HTML is served to a real visitor.

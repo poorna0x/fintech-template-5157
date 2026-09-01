@@ -58,7 +58,12 @@ export function publicRedirectsFileContent() {
   lines.push('# Netlify functions (must be before SPA catch-all)');
   lines.push('/api/* /.netlify/functions/:splat 200!');
   lines.push('');
-  lines.push('# SPA fallback — must be last');
-  lines.push('/* /index.html 200');
+  lines.push('# Canonical booking URL');
+  lines.push('/booking /book 301');
+  lines.push('/booking/ /book 301');
+  lines.push('');
+  lines.push('# SPA fallback — empty Vite shell (dist/app.html). Do not use prerendered');
+  lines.push('# index.html here: that file is the marketing homepage and would flash on /admin.');
+  lines.push('/* /app.html 200');
   return `${lines.join('\n')}\n`;
 }
