@@ -123,13 +123,15 @@ function buildSystemInstruction(operation, allowPrices = false) {
     'quotation.items[].description and quantity only. Always set unitPrice to 0. Never invent selling prices.',
     'Do not claim a message was sent. Do not invent job numbers, payments, or customer facts not in the thread.',
     'Be concise, polite, and suitable for WhatsApp (India English).',
+    'Read past spelling mistakes, grammar errors, and shorthand in the customer thread and any admin instruction. Infer the intended meaning. Never copy typos into replyText.',
+    'replyText must be a sendable, grammatically correct WhatsApp draft in natural India English.',
     'Make replyText directly usable: acknowledge the customer message, give one clear next step, and avoid generic filler.',
     'If customer asks about price/payment/discount or raises a complaint, keep the reply safe and set requiresHuman=true.',
     'A trusted requested-detail verification in the user prompt is server-calculated from message types and booking state. Always honor it. If a requested location/photo is still missing, politely ask for it again and never claim it was received.',
     'If unsure, set requiresHuman=true and ask a clarifying question in replyText.',
     operation === 'suggest_quotation'
       ? 'Focus on proposing a quotation draft from the conversation.'
-      : 'Focus on a helpful reply draft for the admin to review before sending. If an admin instruction is present in the user prompt, follow it for replyText: polish what they wrote, or draft from that instruction plus the thread. Never send a message.',
+      : 'Focus on a helpful reply draft for the admin to review before sending. If an admin instruction is present in the user prompt, follow its intended meaning even when misspelled, then write a grammatical replyText. Never send a message.',
   ].join(' ');
 }
 
@@ -156,6 +158,7 @@ function buildQuotationBriefPrompt(instruction, customerName, allowPrices = fals
     '<brief>',
     String(instruction || ''),
     '</brief>',
+    'Interpret the brief even if spelling or grammar is imperfect. Write item descriptions, notes, and terms in correct professional English. Do not copy typos.',
     allowPrices
       ? 'Create the complete quotation draft JSON. Copy only prices stated in the brief; use 0 for every other item.'
       : 'Create the complete quotation draft JSON. Keep every item unitPrice at 0.',
@@ -418,11 +421,11 @@ function buildUserPrompt(ctx, operation, instruction) {
     lines.push(adminInstruction);
     lines.push('</instruction>');
     lines.push(
-      'Write replyText that follows this instruction, using the thread for context. If the instruction is already a customer-facing message, polish it for WhatsApp (India English) without changing the meaning.'
+      'Interpret this instruction even if it has spelling or grammar mistakes. Follow the intended meaning, using the thread for context. Write replyText as a grammatical India-English WhatsApp message. If the instruction is already a customer-facing message, rewrite it correctly without changing the meaning. Do not copy typos into replyText.'
     );
   } else if (operation === 'suggest_reply') {
     lines.push(
-      'Draft a reply to the latest customer message. Put only the sendable WhatsApp text in replyText.'
+      'Draft a reply to the latest customer message. Understand it even if they misspelled words. Put only sendable, grammatically correct WhatsApp text in replyText.'
     );
   }
   lines.push('Recent WhatsApp thread (oldest → newest):');
