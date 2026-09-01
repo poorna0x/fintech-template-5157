@@ -3867,14 +3867,14 @@ const TechnicianPayments = () => {
 
       {/* Salary Slip options — Generate opens preview like AMC/quotation */}
       <Dialog open={salarySlipDialogOpen} onOpenChange={setSalarySlipDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-lg overflow-hidden">
+          <DialogHeader className="pr-10 text-left">
             <DialogTitle>Salary Slip</DialogTitle>
             <DialogDescription>
               Choose slip type, then Generate to preview — or Download PDF directly
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label>Salary Slip Type</Label>
               <Select
@@ -3889,16 +3889,17 @@ const TechnicianPayments = () => {
                   <SelectItem value="without">Without Day-wise Breakdown</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500">
-                {includeDayWiseBreakdown 
+              <p className="text-pretty text-xs leading-relaxed text-muted-foreground">
+                {includeDayWiseBreakdown
                   ? 'Includes detailed day-wise job breakdown with commissions, advances, and extra commissions'
                   : 'Summary only without day-wise details'}
               </p>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="grid grid-cols-2 gap-2 sm:space-x-0">
             <Button
               variant="outline"
+              className="h-10 w-full"
               onClick={() => {
                 setSalarySlipDialogOpen(false);
                 setSelectedBreakdownForSlip(null);
@@ -3922,9 +3923,9 @@ const TechnicianPayments = () => {
                   toast.error('Period information not available');
                 }
               }}
-              className={documentGenerateBtnClass}
+              className={`${documentGenerateBtnClass} h-10 w-full`}
             >
-              <Eye className="w-4 h-4 mr-2" />
+              <Eye className="mr-2 h-4 w-4 shrink-0" />
               Generate
             </Button>
             <Button
@@ -3938,21 +3939,21 @@ const TechnicianPayments = () => {
                   toast.error('Period information not available');
                 }
               }}
-              className={documentOutlineBtnClass}
+              className={`${documentOutlineBtnClass} h-10 w-full`}
             >
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="mr-2 h-4 w-4 shrink-0" />
               Download
             </Button>
             <Button
               variant="outline"
               disabled={salarySlipSending}
               onClick={() => void handleSendSalarySlipWhatsApp({ closeDialog: true })}
-              className="border-green-600 text-green-700 hover:bg-green-50"
+              className="h-10 w-full border-green-600 text-green-700 hover:bg-green-50"
             >
               {salarySlipSending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
               ) : (
-                <WhatsAppIcon className="w-4 h-4 mr-2" />
+                <WhatsAppIcon className="mr-2 h-4 w-4 shrink-0" />
               )}
               WhatsApp
             </Button>
