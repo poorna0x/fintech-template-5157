@@ -7,8 +7,23 @@ function lastCustomerText(messages) {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i];
     if (m.role === 'user' && m.text) return m.text;
+    if (m.role === 'user' && m.content) return m.content;
   }
   return '';
+}
+
+function extractDraftToPolish(text) {
+  const m = String(text || '').match(/<draft>\s*([\s\S]*?)\s*<\/draft>/i);
+  return m ? String(m[1] || '').trim() : '';
+}
+
+/** Local mock: tidy spacing/caps. Real Gemini does full grammar. */
+function beautifyMockDraft(text) {
+  let t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return t;
+  t = t.charAt(0).toUpperCase() + t.slice(1);
+  if (!/[.!?]$/.test(t)) t += '.';
+  return t;
 }
 
 function detectIntent(text) {
@@ -22,6 +37,28 @@ function detectIntent(text) {
 async function generateWithMock(input) {
   const messages = Array.isArray(input.messages) ? input.messages : [];
   const last = lastCustomerText(messages);
+  const draftToPolish = extractDraftToPolish(last);
+
+  if (input.operation === 'suggest_reply' && draftToPolish) {
+    const payload = {
+      replyText: beautifyMockDraft(draftToPolish),
+      intent: 'polish_draft',
+      confidence: 0.9,
+      requiresHuman: false,
+      warnings: [],
+      quotation: null,
+    };
+    return {
+      text: JSON.stringify(payload),
+      parsed: payload,
+      toolCalls: [],
+      usage: { inputTokens: 80, outputTokens: 40, totalTokens: 120 },
+      finishReason: 'stop',
+      providerRequestId: `mock-polish-${Date.now()}`,
+      rawMetadata: { provider: 'mock' },
+    };
+  }
+
   const intent = detectIntent(last);
 
   if (input.operation === 'document_draft') {

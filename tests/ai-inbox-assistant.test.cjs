@@ -476,6 +476,47 @@ function testProviderAllowlist() {
   assert.deepEqual(ignoresStoredFallback.fallbackChain, []);
 }
 
+function testInboxPageRemovedAutoReplyToggle() {
+  const inboxSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'pages', 'WhatsAppInboxPage.tsx'),
+    'utf8'
+  );
+  assert.doesNotMatch(inboxSrc, /setWhatsAppChatAutoReply/);
+  assert.doesNotMatch(inboxSrc, /chatAutoReply/);
+  assert.doesNotMatch(inboxSrc, /Turn on AI auto-reply/);
+  assert.match(inboxSrc, /Clean up the grammar of what you typed/);
+  assert.match(inboxSrc, /Draft a reply to the last message/);
+}
+
+async function testPolishVsEmptyMockPipeline() {
+  const { buildUserPrompt } = require('../netlify/functions/ai-inbox-suggest')._test;
+  const thread = {
+    customerName: 'Ravi',
+    messages: [{ role: 'user', text: 'When can you come?' }],
+    latestInbound: { body: 'Book technician tomorrow', msgType: 'text' },
+  };
+
+  const polishPrompt = buildUserPrompt(thread, 'suggest_reply', 'we wil come tommorow morning');
+  const polished = await generateWithMock({
+    operation: 'suggest_reply',
+    messages: [{ role: 'user', text: polishPrompt }],
+  });
+  const polishParsed = JSON.parse(polished.text);
+  assert.equal(polishParsed.intent, 'polish_draft');
+  assert.match(polishParsed.replyText, /We wil come tommorow morning/i);
+  assert.doesNotMatch(polishParsed.replyText, /schedule a service visit/i);
+  assert.doesNotMatch(polishParsed.replyText, /When can you come/i);
+
+  const emptyPrompt = buildUserPrompt(thread, 'suggest_reply', '');
+  const empty = await generateWithMock({
+    operation: 'suggest_reply',
+    messages: [{ role: 'user', text: emptyPrompt }],
+  });
+  const emptyParsed = JSON.parse(empty.text);
+  assert.equal(emptyParsed.intent, 'booking');
+  assert.match(emptyParsed.replyText, /schedule a service visit/i);
+}
+
 async function testMockProviderStructuredOutput() {
   const result = await generateWithMock({
     operation: 'suggest_quotation',
@@ -638,6 +679,8 @@ async function main() {
   testAutoReplySkipsStaffPhones();
   testSafePerChatAutoReplyGuards();
   testProviderAllowlist();
+  testInboxPageRemovedAutoReplyToggle();
+  await testPolishVsEmptyMockPipeline();
   await testMockProviderStructuredOutput();
   testGeminiHelpersDoNotLeakTools();
   await testQuotaFallbackUsesGroq();
