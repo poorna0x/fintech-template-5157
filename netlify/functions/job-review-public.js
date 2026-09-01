@@ -2,6 +2,7 @@
  * Public /review/{token} get + submit. IP + per-token rate limits (production).
  * Service-role RPCs only — anon/authenticated must not EXECUTE these RPCs on PostgREST.
  */
+require('./supabase-ws-polyfill');
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const {

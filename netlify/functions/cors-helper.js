@@ -1,4 +1,5 @@
 // CORS helper — allowlisted origins only on Netlify/production; permissive localhost for local dev only.
+require('./supabase-ws-polyfill');
 
 const DEFAULT_ORIGINS = [
   'http://localhost:8080',

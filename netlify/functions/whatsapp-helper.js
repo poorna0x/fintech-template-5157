@@ -2,6 +2,7 @@
  * WhatsApp Cloud API shared helpers (credentials, phone normalize, message persist).
  * Credentials: app_secrets first (production source of truth), env as local fallback.
  */
+require('./supabase-ws-polyfill');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 

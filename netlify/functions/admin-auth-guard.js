@@ -1,4 +1,5 @@
 // Verify admin access for internal Netlify functions (Bearer JWT or optional preview secret).
+require('./supabase-ws-polyfill');
 
 const { createClient } = require('@supabase/supabase-js');
 

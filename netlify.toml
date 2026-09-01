@@ -368,7 +368,8 @@
   force = true
 
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "22"
+  AWS_LAMBDA_JS_RUNTIME = "nodejs22.x"
 
 # Environment variables are set in Netlify dashboard to avoid exposing API keys in git
 # Add VITE_GOOGLE_MAPS_API_KEY in Netlify → Site settings → Environment variables
