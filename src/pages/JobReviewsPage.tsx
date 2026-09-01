@@ -1,12 +1,24 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Star } from 'lucide-react';
+import { ArrowLeft, Star, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   AnalyticsListPagination,
   ANALYTICS_LIST_SCROLL_ANCHOR_CLASS,
   AnalyticsListLoadingOverlay,
 } from '@/components/admin/AnalyticsListPagination';
 import {
+  deleteJobReview,
   fetchJobReviewTechnicianStats,
   fetchSubmittedJobReviewsPage,
   type JobReviewListRow,
@@ -49,17 +61,35 @@ function formatReviewWhen(iso: string): string {
   }
 }
 
-const ReviewRow = memo(function ReviewRow({ row }: { row: JobReviewListRow }) {
+const ReviewRow = memo(function ReviewRow({
+  row,
+  onDelete,
+}: {
+  row: JobReviewListRow;
+  onDelete: (row: JobReviewListRow) => void;
+}) {
   return (
     <li className="rounded-xl border border-border bg-card p-3">
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-start gap-2 justify-between">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium truncate">{row.technicianName}</p>
           <p className="text-xs text-muted-foreground truncate">
             {row.customerName} · {getDocumentBrandLabel(row.brand)}
           </p>
         </div>
-        <Stars rating={row.rating} />
+        <div className="flex items-center gap-1 shrink-0">
+          <Stars rating={row.rating} />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 text-muted-foreground hover:text-destructive"
+            aria-label="Delete review"
+            onClick={() => onDelete(row)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
       {row.comment ? (
         <p className="mt-2 text-sm text-foreground/90 whitespace-pre-wrap break-words">{row.comment}</p>
@@ -82,6 +112,8 @@ export default function JobReviewsPage({ hideHeader, onBack }: Props) {
   const [listLoading, setListLoading] = useState(true);
   const [technicianId, setTechnicianId] = useState<string | null>(null);
   const [brand, setBrand] = useState<DocumentBrand | 'all'>('all');
+  const [pendingDelete, setPendingDelete] = useState<JobReviewListRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +161,25 @@ export default function JobReviewsPage({ hideHeader, onBack }: Props) {
     setTechnicianId((prev) => (prev === id ? null : id));
     setPage(1);
   }, []);
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    const result = await deleteJobReview(pendingDelete.id);
+    setDeleting(false);
+    if (!result.ok) {
+      toast.error(result.error || 'Could not delete review');
+      return;
+    }
+    toast.success('Review deleted');
+    setPendingDelete(null);
+    setRows((prev) => prev.filter((r) => r.id !== pendingDelete.id));
+    setTotal((n) => Math.max(0, n - 1));
+    void fetchJobReviewTechnicianStats({ force: true }).then((result) => {
+      setStats(result.technicians);
+      setStatsTotal(result.total);
+    });
+  }, [pendingDelete]);
 
   return (
     <div className={hideHeader ? '' : 'space-y-4'}>
@@ -242,7 +293,7 @@ export default function JobReviewsPage({ hideHeader, onBack }: Props) {
         ) : (
           <ul className="space-y-3">
             {rows.map((row) => (
-              <ReviewRow key={row.id} row={row} />
+              <ReviewRow key={row.id} row={row} onDelete={setPendingDelete} />
             ))}
           </ul>
         )}
@@ -264,6 +315,39 @@ export default function JobReviewsPage({ hideHeader, onBack }: Props) {
           }}
         />
       )}
+
+      <AlertDialog
+        open={pendingDelete != null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent className="mx-4 sm:mx-0">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this review?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete
+                ? `${pendingDelete.technicianName} · ${pendingDelete.rating}/5. This cannot be undone.`
+                : 'This cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
+            <AlertDialogCancel className="mt-0" disabled={deleting}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmDelete();
+              }}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

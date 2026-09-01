@@ -38,6 +38,7 @@ export const TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES = [
   'wrong_line',
   'pay_qr_screenshot',
   'worked_hours',
+  'job_reviews',
 ] as const satisfies readonly TechPushCategory[];
 
 export type TechWhatsAppAutoMirrorCategory =
@@ -97,6 +98,10 @@ export const TECH_WHATSAPP_LABELS: Record<
   worked_hours: {
     label: TECH_PUSH_LABELS.worked_hours.label + ' (WhatsApp)',
     description: '9:00 PM hours + travel km summary — also WhatsApp when enabled.',
+  },
+  job_reviews: {
+    label: TECH_PUSH_LABELS.job_reviews.label + ' (WhatsApp)',
+    description: 'When a customer rates your visit — also WhatsApp when enabled.',
   },
   tech_assigned_customer: {
     label: 'Technician assigned (to customer)',

@@ -24,6 +24,7 @@ const MIRROR_CATEGORIES = new Set([
   'wrong_line',
   'pay_qr_screenshot',
   'worked_hours',
+  'job_reviews',
 ]);
 
 function isCategoryOn(prefs, category) {

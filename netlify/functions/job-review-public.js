@@ -124,5 +124,14 @@ exports.handler = async (event) => {
     console.warn('[job-review-public] submit', error.message);
     return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'failed' }) };
   }
-  return { statusCode: 200, headers, body: JSON.stringify(data || { ok: false, error: 'failed' }) };
+  const payload = data && typeof data === 'object' ? data : { ok: false, error: 'failed' };
+  if (payload.ok === true && payload.already_submitted !== true) {
+    try {
+      const { sendJobReviewNotifications } = require('./job-review-notify');
+      await sendJobReviewNotifications(db, token, { maxAgeMs: 5 * 60 * 1000 });
+    } catch (notifyErr) {
+      console.warn('[job-review-public] notify', notifyErr?.message || notifyErr);
+    }
+  }
+  return { statusCode: 200, headers, body: JSON.stringify(payload) };
 };

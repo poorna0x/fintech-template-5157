@@ -1,6 +1,7 @@
 /**
- * Public: after a customer submits /review/{token}, push admins (HRO Admin app).
- * Auth is the review token itself (must be submitted in the last 2 minutes).
+ * After a customer submits /review/{token}, push admins + the technician.
+ * HTTP auth is the review token (must be submitted recently).
+ * job-review-public also calls sendJobReviewNotifications after a successful submit.
  */
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
@@ -18,66 +19,16 @@ const {
   isStaleTokenError,
 } = require('./fcm-helper');
 const { maybeSendTechnicianPushWhatsApp } = require('./tech-push-whatsapp-helper');
+const { TECH_FCM_CHANNEL_GENERAL } = require('./tech-fcm-channels');
 
 const COLOR = '#D97706';
+const DEFAULT_MAX_AGE_MS = 2 * 60 * 1000;
 
-exports.handler = async (event) => {
-  const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
-  const headers = { ...corsHeaders, 'Content-Type': 'application/json' };
-
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: corsHeaders, body: '' };
-  }
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
-  }
-  const origin = event.headers.origin || event.headers.Origin;
-  if (origin && !isOriginAllowed(origin)) {
-    return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
-  }
-
-  let body = {};
-  try {
-    body = JSON.parse(event.body || '{}');
-  } catch {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) };
-  }
-
-  const token = String(body.token || '').trim();
-  if (!token || token.length < 12 || token.length > 48) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'token required' }) };
-  }
-
-  if (typeof isRateLimitEnabled === 'function' ? isRateLimitEnabled() : Boolean(process.env.CONTEXT && process.env.CONTEXT !== 'dev')) {
-    const ipLimit = checkRateLimit(event, {
-      maxRequests: 20,
-      windowMs: 60_000,
-      endpoint: 'job-review-notify-ip',
-    });
-    if (!ipLimit.allowed) {
-      const base = rateLimitResponseForKey(ipLimit);
-      return { ...base, headers: { ...headers, ...base.headers } };
-    }
-    const tokenLimit = checkRateLimitForKey(`notify:${token}`, {
-      maxRequests: 3,
-      windowMs: 15 * 60_000,
-      endpoint: 'job-review-notify-token',
-    });
-    if (!tokenLimit.allowed) {
-      const base = rateLimitResponseForKey(tokenLimit);
-      return { ...base, headers: { ...headers, ...base.headers } };
-    }
-  }
-
-  const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
-  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-  if (!supabaseUrl || !serviceKey) {
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server misconfigured' }) };
-  }
-
-  const db = createClient(supabaseUrl, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+async function sendJobReviewNotifications(db, token, opts = {}) {
+  const maxAgeMs =
+    typeof opts.maxAgeMs === 'number' && Number.isFinite(opts.maxAgeMs)
+      ? opts.maxAgeMs
+      : DEFAULT_MAX_AGE_MS;
 
   const { data: review, error: reviewErr } = await db
     .from('job_reviews')
@@ -86,17 +37,17 @@ exports.handler = async (event) => {
     .maybeSingle();
 
   if (reviewErr || !review) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: 0 }) };
+    return { sent: 0 };
   }
   if (review.status !== 'submitted' || !review.submitted_at) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'not_submitted' }) };
+    return { sent: 0, reason: 'not_submitted' };
   }
   if (review.notified_at) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'already_notified' }) };
+    return { sent: 0, reason: 'already_notified' };
   }
   const ageMs = Date.now() - new Date(review.submitted_at).getTime();
-  if (!Number.isFinite(ageMs) || ageMs > 2 * 60 * 1000) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'stale' }) };
+  if (!Number.isFinite(ageMs) || ageMs > maxAgeMs) {
+    return { sent: 0, reason: 'stale' };
   }
 
   const { data: claimed } = await db
@@ -107,7 +58,7 @@ exports.handler = async (event) => {
     .select('id')
     .maybeSingle();
   if (!claimed) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'already_notified' }) };
+    return { sent: 0, reason: 'already_notified' };
   }
 
   let techName = 'Technician';
@@ -172,7 +123,8 @@ exports.handler = async (event) => {
         db,
         messaging,
         review.technician_id,
-        () => ({
+        (fcmToken) => ({
+          token: fcmToken,
           notification: { title: techTitle, body: message },
           data: {
             type: 'job_review',
@@ -186,7 +138,7 @@ exports.handler = async (event) => {
           android: {
             priority: 'high',
             notification: {
-              channelId: 'tech_general_v1',
+              channelId: TECH_FCM_CHANNEL_GENERAL,
               defaultSound: true,
               color: COLOR,
               tag: `job_review_${review.id}`,
@@ -211,13 +163,73 @@ exports.handler = async (event) => {
   }
 
   return {
-    statusCode: 200,
-    headers,
-    body: JSON.stringify({
-      sent: adminSent + technicianSent,
-      adminSent,
-      technicianSent,
-      failed,
-    }),
+    sent: adminSent + technicianSent,
+    adminSent,
+    technicianSent,
+    failed,
   };
+}
+
+exports.handler = async (event) => {
+  const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
+  const headers = { ...corsHeaders, 'Content-Type': 'application/json' };
+
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: corsHeaders, body: '' };
+  }
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
+  const origin = event.headers.origin || event.headers.Origin;
+  if (origin && !isOriginAllowed(origin)) {
+    return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
+  }
+
+  let body = {};
+  try {
+    body = JSON.parse(event.body || '{}');
+  } catch {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) };
+  }
+
+  const token = String(body.token || '').trim();
+  if (!token || token.length < 12 || token.length > 48) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'token required' }) };
+  }
+
+  if (typeof isRateLimitEnabled === 'function' ? isRateLimitEnabled() : Boolean(process.env.CONTEXT && process.env.CONTEXT !== 'dev')) {
+    const ipLimit = checkRateLimit(event, {
+      maxRequests: 20,
+      windowMs: 60_000,
+      endpoint: 'job-review-notify-ip',
+    });
+    if (!ipLimit.allowed) {
+      const base = rateLimitResponseForKey(ipLimit);
+      return { ...base, headers: { ...headers, ...base.headers } };
+    }
+    const tokenLimit = checkRateLimitForKey(`notify:${token}`, {
+      maxRequests: 3,
+      windowMs: 15 * 60_000,
+      endpoint: 'job-review-notify-token',
+    });
+    if (!tokenLimit.allowed) {
+      const base = rateLimitResponseForKey(tokenLimit);
+      return { ...base, headers: { ...headers, ...base.headers } };
+    }
+  }
+
+  const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  if (!supabaseUrl || !serviceKey) {
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Server misconfigured' }) };
+  }
+
+  const db = createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const result = await sendJobReviewNotifications(db, token);
+  return { statusCode: 200, headers, body: JSON.stringify(result) };
 };
+
+exports.sendJobReviewNotifications = sendJobReviewNotifications;

@@ -27,6 +27,7 @@ export const TECH_PUSH_CATEGORIES = [
   'wrong_line',
   'pay_qr_screenshot',
   'worked_hours',
+  'job_reviews',
 ] as const;
 
 export type AdminPushCategory = (typeof ADMIN_PUSH_CATEGORIES)[number];
@@ -148,6 +149,10 @@ export const TECH_PUSH_LABELS: Record<TechPushCategory, { label: string; descrip
     label: 'Daily worked hours',
     description:
       '9:00 PM summary: hours from first Start Work to last job completed, driving km, and drive time from last completed job back to office.',
+  },
+  job_reviews: {
+    label: 'Customer reviews',
+    description: 'When a customer submits a star rating after your visit.',
   },
 };
 
