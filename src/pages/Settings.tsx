@@ -83,7 +83,7 @@ import {
 import {
   defaultTechWhatsAppPrefs,
   normalizeTechWhatsAppPrefs,
-  TECH_WHATSAPP_CATEGORIES,
+  TECH_WHATSAPP_EDITABLE_CATEGORIES,
   TECH_WHATSAPP_LABELS,
   type TechWhatsAppPrefs,
 } from '@/lib/techWhatsAppPrefs';
@@ -3823,8 +3823,9 @@ const Settings = () => {
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
                     Uses iLovePDF on document downloads, email, WhatsApp, and Require Accept
                     (quotations, bills, invoices, AMC, warranty, salary slips, letterhead, and
-                    more). Recommended quality is used so files actually get smaller. If credits
-                    run out or compression fails, the original PDF is used automatically.
+                    more). Chromium builds the PDF first, then iLovePDF compresses it in a
+                    separate step so production has time to shrink the file. If credits run out
+                    or compression fails, the original PDF is used automatically.
                   </p>
                 </div>
                 <Switch
@@ -4157,7 +4158,8 @@ const Settings = () => {
                     </Label>
                     <p className="text-xs text-muted-foreground leading-snug">
                       Include this technician when WhatsApp Settings → Auto-send salary slip is ON.
-                      Last calendar day ~9:00 PM IST, salary-slip PDF for that full month.
+                      Last calendar day ~9:00 PM IST, salary-slip PDF cold template. ACTIVE
+                      technicians only — inactive / suspended are skipped.
                     </p>
                   </div>
                   <Switch
@@ -4262,10 +4264,11 @@ const Settings = () => {
                   <div className="space-y-2 rounded-md border border-emerald-200/80 bg-emerald-50/30 px-3 py-2.5 dark:bg-emerald-950/20">
                     <p className="text-sm font-medium">WhatsApp for this technician</p>
                     <p className="text-xs text-muted-foreground leading-snug mb-2">
-                      Same categories as push alerts, plus customer tech-share. Global: Settings →
+                      Same categories as job WhatsApp, plus customer tech-share. Nudges, OTP,
+                      hours, cash, and similar alerts stay on the app only. Global: Settings →
                       WhatsApp. Assign master: Dashboard Settings.
                     </p>
-                    {TECH_WHATSAPP_CATEGORIES.map((key) => {
+                    {TECH_WHATSAPP_EDITABLE_CATEGORIES.map((key) => {
                       const meta = TECH_WHATSAPP_LABELS[key];
                       return (
                         <div

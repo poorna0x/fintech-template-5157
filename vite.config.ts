@@ -171,6 +171,10 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/ilovepdf-compress': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/tech-field-day': {
         target: 'http://localhost:8888',
         changeOrigin: true,

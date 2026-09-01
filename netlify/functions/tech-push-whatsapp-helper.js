@@ -10,22 +10,14 @@ const {
   normalizePhoneE164,
 } = require('./whatsapp-helper');
 
-/** Categories handled by assign/unassign CRM dialog/auto-send — do not double-send here. */
+/** Assign/unassign stay on Dashboard WhatsApp. Location ping is silent GPS. */
 const SKIP_CATEGORIES = new Set(['job_assigned', 'job_unassigned', 'location_ping']);
 
-/** Categories we auto-mirror from Netlify push senders. */
-const MIRROR_CATEGORIES = new Set([
-  'job_nudges',
-  'office_messages',
-  'otp_request',
-  'parts_reminder',
-  'bill_reminders',
-  'cash_handover',
-  'wrong_line',
-  'pay_qr_screenshot',
-  'worked_hours',
-  'job_reviews',
-]);
+/**
+ * Push-mirror WhatsApp is off — those alerts stay on the technician app only
+ * (going?, start, call, office, OTP, parts, bill, cash, wrong line, pay QR, hours, reviews).
+ */
+const MIRROR_CATEGORIES = new Set();
 
 function isCategoryOn(prefs, category) {
   if (!category) return false;

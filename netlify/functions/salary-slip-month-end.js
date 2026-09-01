@@ -119,8 +119,8 @@ function getTechnicianAdminWhatsAppPhone(tech) {
 }
 
 function isActiveTechnician(tech) {
-  const status = String(tech.account_status || 'ACTIVE').toUpperCase();
-  return status === 'ACTIVE' || !tech.account_status;
+  const status = String(tech.account_status || 'ACTIVE').trim().toUpperCase();
+  return status === 'ACTIVE';
 }
 
 async function sendSalarySlipWhatsAppDocument({
@@ -149,39 +149,41 @@ async function sendSalarySlipWhatsAppDocument({
     filename
   );
 
-  let sent = await callWhatsAppApi(creds.phoneNumberId, creds.accessToken, {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to: phone,
-    type: 'document',
-    document: { id: media.id, filename, caption },
-  });
-  let via = 'document';
+  let sent = { ok: false, data: null };
+  let via = 'cold_template';
   let templateName = null;
 
-  if (!sent.ok) {
-    const customerName = whatsappGreetingName(technicianName, 'there');
-    const cold = await sendTemplateWithColdFallbacks({
-      phoneNumberId: creds.phoneNumberId,
-      accessToken: creds.accessToken,
+  const customerName = whatsappGreetingName(technicianName, 'there');
+  const cold = await sendTemplateWithColdFallbacks({
+    phoneNumberId: creds.phoneNumberId,
+    accessToken: creds.accessToken,
+    to: phone,
+    templateName: 'svc_doc_salary_hro_v3',
+    languageCode: 'en',
+    bodyParams: [customerName],
+    headerComponents: [
+      {
+        type: 'header',
+        parameters: [{ type: 'document', document: { id: media.id, filename } }],
+      },
+    ],
+    buttonUrlParams: [],
+    enableFallback: true,
+  });
+  if (cold.ok) {
+    sent = { ok: true, data: cold.result?.data };
+    via = 'cold_template';
+    templateName = cold.templateName || 'svc_doc_salary_hro_v3';
+  } else {
+    sent = await callWhatsAppApi(creds.phoneNumberId, creds.accessToken, {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
       to: phone,
-      templateName: 'svc_doc_salary_hro_v3',
-      languageCode: 'en',
-      bodyParams: [customerName],
-      headerComponents: [
-        {
-          type: 'header',
-          parameters: [{ type: 'document', document: { id: media.id, filename } }],
-        },
-      ],
-      buttonUrlParams: [],
-      enableFallback: true,
+      type: 'document',
+      document: { id: media.id, filename, caption },
     });
-    if (cold.ok) {
-      sent = { ok: true, data: cold.result?.data };
-      via = 'cold_template';
-      templateName = cold.templateName || 'svc_doc_salary_hro_v3';
-    }
+    via = 'document';
+    templateName = null;
   }
 
   if (!sent.ok) {
@@ -297,16 +299,24 @@ exports.handler = async (event) => {
     return json(500, { ok: false, error: techErr.message });
   }
 
-  const activeTechs = (techs || []).filter(isActiveTechnician).filter((tech) => {
+  const activeTechs = (techs || []).filter((tech) => {
+    if (!isActiveTechnician(tech)) return false;
     if (query.techId && force) return true;
     return tech.salary_slip_auto_send === true;
   });
 
   if (activeTechs.length === 0) {
+    let skipReason = 'no_opted_in_technicians';
+    if (query.techId) {
+      const row = (techs || [])[0];
+      if (!row) skipReason = 'tech_not_found';
+      else if (!isActiveTechnician(row)) skipReason = 'tech_inactive';
+      else skipReason = 'tech_auto_send_off';
+    }
     return json(200, {
       ok: true,
       skipped: true,
-      reason: query.techId ? 'tech_auto_send_off' : 'no_opted_in_technicians',
+      reason: skipReason,
       monthKey,
       techId: query.techId || undefined,
     });

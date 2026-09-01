@@ -41,11 +41,7 @@ import {
   type WhatsAppUsageMonthlySnapshot,
   type WhatsAppUsageStats,
 } from '@/lib/whatsappCrmSettings';
-import { TECH_PUSH_CATEGORIES, TECH_PUSH_LABELS } from '@/lib/pushNotificationPrefs';
-import {
-  TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES,
-  normalizeTechPushWhatsAppGlobal,
-} from '@/lib/techWhatsAppPrefs';
+import { TECH_PUSH_LABELS } from '@/lib/pushNotificationPrefs';
 import WhatsAppTemplatesManageCard from '@/components/admin/WhatsAppTemplatesManageCard';
 
 type Props = {
@@ -390,7 +386,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           />
           <ToggleRow
             label="Auto-send salary slip"
-            description="Last calendar day ~9:00 PM IST. Sends to active technicians who are opted in on Edit technician. Turn this off to stop all salary-slip WhatsApp."
+            description="Last calendar day ~9:00 PM IST. Sends the salary-slip PDF cold template to ACTIVE technicians who are opted in on Edit technician. Inactive / suspended techs are skipped. Turn this off to stop all salary-slip WhatsApp."
             checked={settings.auto_send_salary_slip_whatsapp}
             disabled={!settings.enabled || !settings.allow_salary_slip_whatsapp}
             onCheckedChange={(v) => patch('auto_send_salary_slip_whatsapp', v)}
@@ -435,57 +431,31 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Technician push → WhatsApp</CardTitle>
           <CardDescription>
-            Same categories as FCM to technicians. When ON, those alerts also send via Cloud API to
-            the tech WhatsApp/phone (needs open 24h window). Assign/unassign stay on Dashboard +
-            auto-send above. Location ping has no WhatsApp (silent GPS only).
+            Job assign and unassign can still WhatsApp the technician (Dashboard master + Auto-send
+            above). All other technician alerts stay on the app only — no WhatsApp for going?,
+            start, call, office, OTP, parts, bill, cash, wrong line, pay QR, hours, or reviews.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {TECH_PUSH_CATEGORIES.map((key) => {
+          {(['job_assigned', 'job_unassigned'] as const).map((key) => {
             const meta = TECH_PUSH_LABELS[key];
-            const isMirror = (TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES as readonly string[]).includes(
-              key
-            );
-            const isAssign = key === 'job_assigned' || key === 'job_unassigned';
-            const isLocation = key === 'location_ping';
             return (
               <ToggleRow
                 key={key}
                 label={meta.label}
-                description={
-                  isLocation
-                    ? 'No WhatsApp — silent location request only.'
-                    : isAssign
-                      ? 'Also controlled by Dashboard master. Prefer Dashboard for quick on/off; Auto-send is above.'
-                      : isMirror
-                        ? `Also WhatsApp when this push fires. ${meta.description}`
-                        : meta.description
-                }
+                description="Also controlled by Dashboard master. Prefer Dashboard for quick on/off; Auto-send is above."
                 checked={
-                  isAssign
-                    ? key === 'job_assigned'
-                      ? settings.allow_job_assign_whatsapp
-                      : settings.allow_job_unassign_whatsapp
-                    : settings.tech_push_whatsapp?.[key] !== false
+                  key === 'job_assigned'
+                    ? settings.allow_job_assign_whatsapp
+                    : settings.allow_job_unassign_whatsapp
                 }
-                disabled={!settings.enabled || isLocation}
+                disabled={!settings.enabled}
                 onCheckedChange={(v) => {
-                  if (isLocation) return;
                   if (key === 'job_assigned') {
                     patch('allow_job_assign_whatsapp', v);
                     return;
                   }
-                  if (key === 'job_unassigned') {
-                    patch('allow_job_unassign_whatsapp', v);
-                    return;
-                  }
-                  patch(
-                    'tech_push_whatsapp',
-                    normalizeTechPushWhatsAppGlobal({
-                      ...settings.tech_push_whatsapp,
-                      [key]: v,
-                    })
-                  );
+                  patch('allow_job_unassign_whatsapp', v);
                 }}
               />
             );

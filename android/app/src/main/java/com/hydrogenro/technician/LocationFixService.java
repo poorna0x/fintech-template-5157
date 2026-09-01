@@ -195,10 +195,10 @@ public class LocationFixService extends Service {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 NotificationManager nm = getSystemService(NotificationManager.class);
-                if (nm != null && nm.getNotificationChannel(CHANNEL_ID) == null) {
+                if (nm != null) {
                     NotificationChannel channel = new NotificationChannel(
-                        CHANNEL_ID, "Location sharing", NotificationManager.IMPORTANCE_LOW);
-                    channel.setDescription("Shown briefly while sending your location to the office");
+                        CHANNEL_ID, "Syncing", NotificationManager.IMPORTANCE_LOW);
+                    channel.setDescription("Shown briefly while updating");
                     channel.setShowBadge(false);
                     nm.createNotificationChannel(channel);
                 }
@@ -206,6 +206,7 @@ public class LocationFixService extends Service {
             notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_notify)
                 .setContentTitle("Syncing…")
+                .setContentText("Updating…")
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
                 .build();

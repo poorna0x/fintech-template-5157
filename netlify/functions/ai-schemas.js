@@ -10,6 +10,7 @@ const ALLOWED_OPERATIONS = Object.freeze([
 ]);
 const MAX_PHONE_LEN = 20;
 const MAX_INSTRUCTION_CHARS = 4_000;
+const MAX_SUGGEST_REPLY_INSTRUCTION_CHARS = 800;
 const MAX_REPLY_CHARS = 1200;
 const MAX_QUOTE_ITEMS = 12;
 const MAX_ITEM_DESC = 200;
@@ -67,6 +68,10 @@ function parseSuggestRequest(body) {
   }
 
   const saveQuotationDraft = body?.saveQuotationDraft === true;
+  const instruction =
+    operation === 'suggest_reply'
+      ? asTrimmedString(body?.instruction, MAX_SUGGEST_REPLY_INSTRUCTION_CHARS) || null
+      : null;
 
   return {
     ok: true,
@@ -74,6 +79,7 @@ function parseSuggestRequest(body) {
       operation,
       phoneDigits,
       customerId,
+      instruction,
       saveQuotationDraft: operation === 'suggest_quotation' ? saveQuotationDraft : false,
     },
   };

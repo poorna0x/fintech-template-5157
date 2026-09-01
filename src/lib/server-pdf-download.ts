@@ -253,7 +253,7 @@ async function postCompressRequest(
   pdfBase64: string,
   filename: string,
   accessToken: string
-): Promise<{ pdfBase64: string; compressed?: boolean } | null> {
+): Promise<{ pdfBase64: string; compressed?: boolean; skipReason?: string | null } | null> {
   try {
     const response = await fetch(PDF_COMPRESS_ENDPOINT, {
       method: 'POST',
@@ -268,6 +268,7 @@ async function postCompressRequest(
     const payload = (await response.json().catch(() => ({}))) as {
       pdfBase64?: string;
       compressed?: boolean;
+      skipReason?: string | null;
     };
     if (!payload.pdfBase64) return null;
     return payload;
@@ -326,9 +327,16 @@ async function fetchPdfFromServer(html: string, filename: string): Promise<{
 
   let pdfBase64 = payload.pdfBase64;
   if (payload.compressPending && !payload.compressed) {
-    const compressed = await postCompressRequest(pdfBase64, payload.filename || filename, accessToken);
+    const compressed = await postCompressRequest(
+      pdfBase64,
+      payload.filename || filename,
+      accessToken
+    );
     if (compressed?.pdfBase64) {
       pdfBase64 = compressed.pdfBase64;
+    }
+    if (compressed && compressed.compressed !== true) {
+      console.warn('[pdf] follow-up compress did not shrink', compressed.skipReason || 'unknown');
     }
   }
 

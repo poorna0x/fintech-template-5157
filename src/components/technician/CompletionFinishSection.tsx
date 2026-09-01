@@ -54,7 +54,7 @@ const CompletionFinishSection: React.FC<CompletionFinishSectionProps> = ({
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-gray-900">Update customer info</span>
-                <span className="block text-xs text-gray-500 truncate">Name, email, location</span>
+                <span className="block text-xs text-gray-500 truncate">Name, email, address</span>
               </span>
             </button>
             <button

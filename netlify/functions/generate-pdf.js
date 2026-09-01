@@ -6,7 +6,6 @@ const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyStaffBearerToken } = require('./admin-auth-guard');
 const { checkRateLimit, checkRateLimitForKey, getClientIdentifier } = require('./rate-limiter');
-const { maybeCompressPdfBuffer } = require('./ilovepdf-compress-helper');
 const {
   isPdfCompressionEnabled,
 } = require('./pdf-compression-setting');
@@ -331,7 +330,6 @@ async function renderHtmlToPdf(html, requestOrigin, options = {}) {
 exports.renderHtmlToPdf = renderHtmlToPdf;
 
 exports.handler = async (event) => {
-  const requestStartedAt = Date.now();
   const requestOrigin = event.headers.origin || event.headers.Origin;
   const corsHeaders = getCorsHeaders(requestOrigin);
 
@@ -405,32 +403,9 @@ exports.handler = async (event) => {
   try {
     const shouldCompress = await isPdfCompressionEnabled();
     const rawPdf = await renderHtmlToPdf(html, requestOrigin, { filename });
-    const functionBudgetMs = 25_000;
-    const remainingMs = requestStartedAt + functionBudgetMs - Date.now();
-    const minInlineCompressMs = 6_000;
-
-    let pdfBytes = rawPdf;
-    let compressed = false;
-    let skipReason = shouldCompress ? null : 'toggle_off';
-    let compressPending = false;
-
-    if (shouldCompress && remainingMs >= minInlineCompressMs) {
-      const result = await maybeCompressPdfBuffer(rawPdf, {
-        filename,
-        deadlineAt: Date.now() + remainingMs - 400,
-      });
-      pdfBytes = result.buffer;
-      compressed = result.compressed === true;
-      skipReason = result.skipReason || null;
-      if (!compressed && result.skipReason === 'no_time') compressPending = true;
-    } else if (shouldCompress) {
-      skipReason = 'no_time';
-      compressPending = true;
-      console.warn('[generate-pdf] defer iLovePDF compress; Chromium used the function budget', {
-        remainingMs,
-      });
-    }
-
+    // Never run iLovePDF here. Production Chromium usually uses the whole 26s
+    // budget; leftover-time compress fails and used to skip the follow-up.
+    // Local Chromium is fast, so the same function appeared to "work".
     return {
       statusCode: 200,
       headers: addSecurityHeaders({
@@ -439,11 +414,11 @@ exports.handler = async (event) => {
         'Cache-Control': 'no-store',
       }),
       body: JSON.stringify({
-        pdfBase64: pdfBytes.toString('base64'),
+        pdfBase64: rawPdf.toString('base64'),
         filename,
-        compressed,
-        compressPending,
-        skipReason,
+        compressed: false,
+        compressPending: shouldCompress === true,
+        skipReason: shouldCompress ? 'deferred' : 'toggle_off',
       }),
     };
   } catch (error) {

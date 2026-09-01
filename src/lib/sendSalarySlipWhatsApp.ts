@@ -59,6 +59,7 @@ export async function sendSalarySlipWhatsApp(opts: {
     filename,
     caption,
     source: 'composer',
+    preferColdTemplate: true,
     cold: {
       kind: 'salary',
       brand: 'hydrogenro',

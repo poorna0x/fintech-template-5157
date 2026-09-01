@@ -663,7 +663,7 @@ const TechnicianDashboard = () => {
     'Customer cancelled',
     'Customer not responding',
     'Wrong address provided',
-    'Location not accessible',
+    'Address not accessible',
     'Equipment not available',
     'Technical issue',
     'Customer not interested',
@@ -952,18 +952,18 @@ const TechnicianDashboard = () => {
     async (job: any) => {
       const jobId = String(job?.id || '');
       if (!jobId) {
-        toast.error('Location data not available');
+        toast.error('Couldn’t open Maps');
         return;
       }
 
       setMapOpeningByJobId((prev) => ({ ...prev, [jobId]: true }));
-      const t = toast.loading('Loading location…');
+      const t = toast.loading('Opening Maps…');
       try {
         const customerRow = await loadJobCustomerForLocation(job as Job);
         if (await openJobServiceLocationInMapsAsync(job, customerRow)) {
           return;
         }
-        toast.error('Location data not available');
+        toast.error('Couldn’t open Maps');
       } finally {
         toast.dismiss(t);
         setMapOpeningByJobId((prev) => ({ ...prev, [jobId]: false }));
@@ -981,7 +981,7 @@ const TechnicianDashboard = () => {
     async (job: any) => {
       const jobId = String(job?.id || '');
       if (!jobId) {
-        toast.error('Location data not available');
+        toast.error('Couldn’t open Maps');
         return;
       }
       const status = normalizeJobStatus((job as any)?.status ?? job?.status);
@@ -2434,9 +2434,6 @@ const TechnicianDashboard = () => {
       console.log('🚫 [TechnicianDashboard] - Geolocation API call: BLOCKED');
       console.log('🚫 [TechnicianDashboard] - Database update: BLOCKED');
       console.log('🚫 [TechnicianDashboard] - Status update to AVAILABLE: BLOCKED');
-      setLocationError('Location tracking is disabled in settings. Please enable it in Settings to update your location.');
-      setLocationErrorType('other');
-      toast.error('🚫 Location tracking is disabled. Enable it in Settings to update your location.');
       return;
     }
     
@@ -2448,10 +2445,12 @@ const TechnicianDashboard = () => {
 
     if (!navigator.geolocation) {
       console.error('Geolocation not supported');
-      const errorMsg = 'Location services not supported. Distance calculations will not be available.';
-      setLocationError(errorMsg);
-      setLocationErrorType('other');
-      toast.error(errorMsg);
+      if (!autoUpdate) {
+        const errorMsg = 'This device cannot update right now.';
+        setLocationError(errorMsg);
+        setLocationErrorType('other');
+        toast.error(errorMsg);
+      }
       return;
     }
 
@@ -2462,10 +2461,12 @@ const TechnicianDashboard = () => {
     
     if (!isSecure) {
       console.error('Location access requires HTTPS');
-      const errorMsg = 'Location access requires HTTPS. Please use a secure connection.';
-      setLocationError(errorMsg);
-      setLocationErrorType('other');
-      toast.error(errorMsg);
+      if (!autoUpdate) {
+        const errorMsg = 'Please use a secure connection.';
+        setLocationError(errorMsg);
+        setLocationErrorType('other');
+        toast.error(errorMsg);
+      }
       return;
     }
 
@@ -2602,25 +2603,26 @@ const TechnicianDashboard = () => {
       },
       (error) => {
         console.error('Error getting location:', error);
-        let errorMsg = 'Unable to get your location. Distance calculations will not be available.';
+        if (autoUpdate) return;
+        let errorMsg = 'Couldn’t update. Please try again.';
         let errorTypeValue: 'permission' | 'upload' | 'location' | 'other' = 'location';
         
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            errorMsg = 'Location permission denied. Click "Request Permission Again" to try again.';
+            errorMsg = 'Permission needed. Tap Try again, or allow access in phone Settings.';
             errorTypeValue = 'permission';
             setLocationPermissionDenied(true);
             break;
           case error.POSITION_UNAVAILABLE:
-            errorMsg = 'Location information unavailable. Make sure GPS is enabled and try again.';
+            errorMsg = 'Couldn’t update. Check your connection and try again.';
             errorTypeValue = 'location';
             break;
           case error.TIMEOUT:
-            errorMsg = 'Location request timed out. Please try again.';
+            errorMsg = 'Update timed out. Please try again.';
             errorTypeValue = 'location';
             break;
           default:
-            errorMsg = `An unknown error occurred (code: ${error.code}). Please try again.`;
+            errorMsg = `Couldn’t update (code: ${error.code}). Please try again.`;
             errorTypeValue = 'other';
             break;
         }
@@ -6761,7 +6763,7 @@ const TechnicianDashboard = () => {
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-red-800 dark:text-red-200 font-medium mb-1">Location Error:</p>
+                  <p className="text-red-800 dark:text-red-200 font-medium mb-1">Couldn’t update:</p>
                   <p className="text-red-600 dark:text-red-300 text-sm mb-3">{locationError}</p>
                   <div className="flex flex-wrap gap-2">
                     {locationErrorType === 'permission' && (
@@ -6777,7 +6779,7 @@ const TechnicianDashboard = () => {
                         className="border-red-300 text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
                       >
                         <RotateCcw className="w-4 h-4 mr-2" />
-                        Request Permission Again
+                        Try again
                       </Button>
                     )}
                     {(locationErrorType === 'upload' || locationErrorType === 'location') && (
@@ -6970,10 +6972,10 @@ const TechnicianDashboard = () => {
                                                 ? locDisplay.visibleLabel
                                                 : locDisplay.address?.street?.trim()
                                                   ? 'View Address'
-                                                  : 'No location';
+                                                  : 'No address';
                                             return (
                                               <>
-                                                <div className="text-sm font-semibold text-gray-900">Location</div>
+                                                <div className="text-sm font-semibold text-gray-900">Address</div>
                                                 <div className="text-xs text-gray-500">
                                                   <button
                                                     type="button"
@@ -7776,10 +7778,10 @@ const TechnicianDashboard = () => {
                                       ? locDisplay.visibleLabel
                                       : locDisplay.address?.street?.trim()
                                         ? 'View Address'
-                                        : 'No location';
+                                        : 'No address';
                                   return (
                                     <>
-                                      <div className="text-sm font-semibold text-gray-900">Location</div>
+                                      <div className="text-sm font-semibold text-gray-900">Address</div>
                                       <div className="text-xs text-gray-500">
                                         <button
                                           type="button"
@@ -10449,7 +10451,7 @@ const TechnicianDashboard = () => {
                       const display = getJobLocationDisplay(selectedJobForAddress, customer);
                       return (
                         <>
-                          Service location for{' '}
+                          Service address for{' '}
                           <span className={customerNameClassName(customer as any)}>
                             {(customer as any)?.full_name ||
                               (customer as any)?.fullName ||

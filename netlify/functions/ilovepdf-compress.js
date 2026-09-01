@@ -108,7 +108,7 @@ exports.handler = async (event) => {
   try {
     const result = await maybeCompressPdfBuffer(pdfBuffer, {
       filename,
-      deadlineAt: Date.now() + 20_000,
+      deadlineAt: Date.now() + 22_000,
     });
     return jsonResponse(200, corsHeaders, {
       pdfBase64: result.buffer.toString('base64'),

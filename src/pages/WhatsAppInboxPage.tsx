@@ -15,6 +15,7 @@ import {
   Search,
   Send,
   Settings,
+  Sparkles,
   Trash2,
   UserRound,
   X,
@@ -170,6 +171,7 @@ import {
 import { registerNativeBackHandler, tryNativeBackHandlers } from '@/lib/nativeBackButton';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 import { sendAskReviewForLastCompletedJob } from '@/lib/jobReviews';
+import { requestAiInboxSuggestion } from '@/lib/aiInboxAssistant';
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -429,6 +431,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [draft, setDraft] = useState('');
   const [threadBrand, setThreadBrand] = useState<DocumentBrand>('hydrogenro');
   const [sending, setSending] = useState(false);
+  const [aiDrafting, setAiDrafting] = useState(false);
   const [purging, setPurging] = useState(false);
   const [chatDeleteTarget, setChatDeleteTarget] = useState<{
     phone: string;
@@ -599,7 +602,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   attachFileRef.current = attachFile;
   const sendingRef = useRef(sending);
   sendingRef.current = sending;
+  const aiDraftingRef = useRef(aiDrafting);
+  aiDraftingRef.current = aiDrafting;
   const windowOpenRef = useRef(false);
+
+  useLayoutEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const maxPx = Math.round(window.innerHeight * 0.28);
+    el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`;
+  }, [draft]);
 
   useEffect(() => {
     if (!attachFile || !attachFile.type.startsWith('image/')) {
@@ -614,6 +627,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   useEffect(() => {
     setAttachFile(null);
     setDraft('');
+    setAiDrafting(false);
   }, [selectedPhone]);
 
   const pickAttachFile = (file: File | null | undefined) => {
@@ -1744,11 +1758,54 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     void loadTemplates(false);
   }, [loadTemplates]);
 
+  const handleAiDraft = useCallback(async () => {
+    const phone = selectedPhoneRef.current;
+    if (!phone || sendingRef.current || aiDraftingRef.current) return;
+    const instruction = draftRef.current.trim();
+    setAiDrafting(true);
+    try {
+      const result = await requestAiInboxSuggestion({
+        operation: 'suggest_reply',
+        phoneE164: phone,
+        customerId: activeThread?.customer_id,
+        ...(instruction ? { instruction } : {}),
+      });
+      if (!result.ok) {
+        toast.error(result.error || 'AI draft failed');
+        return;
+      }
+      const text = String(result.suggestion.replyText || '').trim();
+      if (!text) {
+        toast.error('AI did not return a draft');
+        return;
+      }
+      setDraft(text);
+      requestAnimationFrame(() => {
+        composerRef.current?.focus();
+        const el = composerRef.current;
+        if (el) {
+          const len = el.value.length;
+          el.setSelectionRange(len, len);
+        }
+      });
+      const warning = result.suggestion.warnings?.find((w) => String(w || '').trim());
+      if (result.suggestion.requiresHuman || warning) {
+        toast.message('Draft ready — review, then tap send', {
+          description: warning || 'Check the reply before sending.',
+        });
+      } else {
+        toast.success('Draft ready — tap send when you like it');
+      }
+    } finally {
+      setAiDrafting(false);
+    }
+  }, [activeThread?.customer_id]);
+
   const handleSend = useCallback(async () => {
     const phone = selectedPhoneRef.current;
     const text = draftRef.current.trim();
     const file = attachFileRef.current;
-    if (!phone || sendingRef.current) return;
+    if (!phone || sendingRef.current || aiDraftingRef.current) return;
     if (!windowOpenRef.current) {
       toast.error('24-hour window closed — use Quick actions → Select template');
       return;
@@ -3106,19 +3163,47 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       <button
                         type="button"
                         className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/5 disabled:opacity-50"
-                        disabled={sending}
+                        disabled={sending || aiDrafting}
                         title="Attach image or document"
                         onClick={() => fileInputRef.current?.click()}
                       >
                         <Paperclip className="h-5 w-5 rotate-45" />
+                      </button>
+                      <button
+                        type="button"
+                        className="flex h-11 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#00a884] transition hover:bg-white/5 disabled:opacity-50"
+                        disabled={sending || aiDrafting || !selectedPhone}
+                        title={
+                          draft.trim()
+                            ? 'AI: draft from what you typed'
+                            : 'AI: draft a reply to the last message'
+                        }
+                        aria-label={
+                          draft.trim()
+                            ? 'Draft with AI from what you typed'
+                            : 'Draft a reply with AI'
+                        }
+                        onClick={() => void handleAiDraft()}
+                      >
+                        {aiDrafting ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-4 w-4" />
+                        )}
                       </button>
                       <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] border border-white/[0.04] bg-[#202c33] px-3 py-1.5 shadow-sm transition-[border-color,background-color,box-shadow] duration-150 focus-within:border-white/18 focus-within:bg-[#2a3942] focus-within:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]">
                         <Textarea
                           ref={composerRef}
                           value={draft}
                           onChange={(e) => setDraft(e.target.value)}
-                          placeholder={attachFile ? 'Add a caption' : 'Message'}
-                          disabled={sending}
+                          placeholder={
+                            attachFile
+                              ? 'Add a caption'
+                              : aiDrafting
+                                ? 'Drafting…'
+                                : 'Message'
+                          }
+                          disabled={sending || aiDrafting}
                           rows={1}
                           className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#e9edef] shadow-none outline-none ring-0 ring-offset-0 placeholder:text-[#667781] focus:border-0 focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                           style={{ WebkitTapHighlightColor: 'transparent' }}
@@ -3148,7 +3233,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       <button
                         type="button"
                         className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#00a884] text-white shadow transition hover:bg-[#008f72] disabled:opacity-40"
-                        disabled={sending || (!draft.trim() && !attachFile)}
+                        disabled={sending || aiDrafting || (!draft.trim() && !attachFile)}
                         onClick={() => void handleSend()}
                         aria-label="Send"
                       >

@@ -383,8 +383,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
               ) : null}
             </div>
           ) : (
-            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-              <div className="max-h-[min(38vh,16rem)] shrink-0 space-y-4 overflow-y-auto overscroll-contain">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain">
               <div className="rounded-lg bg-muted/40 p-3 sm:p-4">
                 <div className="mb-2 text-sm text-muted-foreground">
                   Sending as: <span className="font-medium text-foreground">{brandContact.label}</span>
@@ -411,13 +410,13 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
               {canChooseReviewOnly ? (
                 <div className="space-y-1.5">
                   <Label>What to send</Label>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       className={
                         payloadMode === 'full'
-                          ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
-                          : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
+                          ? 'min-w-0 rounded-lg border-2 border-emerald-600 bg-emerald-50 px-2.5 py-2.5 text-left text-sm font-medium text-emerald-950'
+                          : 'min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
                       }
                       onClick={() => setPayloadMode('full')}
                     >
@@ -431,8 +430,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                       disabled={reviewAlreadySubmitted}
                       className={
                         payloadMode === 'review'
-                          ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950 disabled:opacity-60'
-                          : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50'
+                          ? 'min-w-0 rounded-lg border-2 border-emerald-600 bg-emerald-50 px-2.5 py-2.5 text-left text-sm font-medium text-emerald-950 disabled:opacity-60'
+                          : 'min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50'
                       }
                       onClick={() => {
                         if (!reviewAlreadySubmitted) setPayloadMode('review');
@@ -484,17 +483,16 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                   </div>
                 </div>
               ) : null}
-              </div>
 
-              <div className="flex min-h-0 flex-1 flex-col">
-                <Label className="shrink-0">
+              <div>
+                <Label>
                   {reviewOnly
                     ? 'Review message preview'
                     : cloudApiAllowed
                       ? 'Message preview (24h chat)'
                       : 'Message Preview'}
                 </Label>
-                <MessagePreviewScroll className="min-h-[9rem] flex-1">
+                <MessagePreviewScroll className="max-h-56">
                   {reviewLinkReady ? (
                     previewMessage
                   ) : (
@@ -505,7 +503,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                   )}
                 </MessagePreviewScroll>
                 {cloudApiAllowed && completion.amountPendingValue <= 0 && !reviewOnly ? (
-                  <div className="mt-3 shrink-0">
+                  <div className="mt-3">
                     <Label>If the 24h window is closed (cold template)</Label>
                     <MessagePreviewScroll className="max-h-36 min-h-0">
                       {formatJobCompletionColdTemplatePreview({

@@ -112,8 +112,8 @@ export function locationUploadErrorMessage(
 ): string {
   if (options?.sessionExpired) {
     return options.autoUpdate
-      ? 'Session needs refresh — location will retry automatically.'
-      : 'Could not upload location right now. Switch back to the app and try again.';
+      ? 'Session needs refresh — will retry automatically.'
+      : 'Could not update right now. Switch back to the app and try again.';
   }
 
   const errObj =
@@ -123,8 +123,8 @@ export function locationUploadErrorMessage(
 
   if (isPostgrestPermissionDenied(errObj)) {
     return options.autoUpdate
-      ? 'Could not upload location — please open the app and sign in again.'
-      : 'Could not upload location — your session may have expired. Please sign in again.';
+      ? 'Could not update — please open the app and sign in again.'
+      : 'Could not update — your session may have expired. Please sign in again.';
   }
 
   const msg =
@@ -132,5 +132,5 @@ export function locationUploadErrorMessage(
       ? error.message
       : errObj?.message ?? 'Unknown error';
 
-  return `Location captured but failed to upload to server. Please check your internet connection and try again. Error: ${msg}`;
+  return `Couldn’t finish updating. Check your internet and try again. Error: ${msg}`;
 }

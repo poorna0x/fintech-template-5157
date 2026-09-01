@@ -148,6 +148,33 @@ function region(config) {
   return normalizeRegion(config?.region || process.env.ILOVEPDF_REGION || 'in');
 }
 
+function pdfBufferToFormFile(pdfBuffer, filename) {
+  const bytes = new Uint8Array(pdfBuffer.length);
+  bytes.set(pdfBuffer);
+  if (typeof File === 'function') {
+    try {
+      return new File([bytes], filename, { type: 'application/pdf' });
+    } catch {
+      // File() can throw in some Lambda runtimes; Blob is enough for FormData.
+    }
+  }
+  return new Blob([bytes], { type: 'application/pdf' });
+}
+
+function compressSkipReason(error) {
+  if (error?.skipReason) return error.skipReason;
+  const name = String(error?.name || '');
+  const message = String(error?.message || error || '');
+  if (
+    name === 'TimeoutError' ||
+    name === 'AbortError' ||
+    /deadline|aborted|timeout|not enough function time/i.test(message)
+  ) {
+    return 'no_time';
+  }
+  return 'failed';
+}
+
 async function isEnabled() {
   return Boolean((await getILovePdfConfig())?.publicKey);
 }
@@ -321,11 +348,7 @@ async function maybeCompressPdfBuffer(pdfBuffer, opts = {}) {
     const serverBase = `https://${start.server}/v1`;
     const form = new FormData();
     form.append('task', start.task);
-    form.append(
-      'file',
-      new Blob([Uint8Array.from(pdfBuffer)], { type: 'application/pdf' }),
-      filename
-    );
+    form.append('file', pdfBufferToFormFile(pdfBuffer, filename));
 
     const uploadRes = await fetchWithDeadline(
       `${serverBase}/upload`,
@@ -423,7 +446,7 @@ async function maybeCompressPdfBuffer(pdfBuffer, opts = {}) {
       level,
     };
   } catch (error) {
-    const skipReason = error?.skipReason || 'failed';
+    const skipReason = compressSkipReason(error);
     console.warn('[ilovepdf-compress] soft-fail, using original PDF:', error?.message || error);
     return {
       buffer: pdfBuffer,

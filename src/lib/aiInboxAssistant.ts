@@ -78,12 +78,15 @@ export async function requestAiInboxSuggestion(opts: {
   operation: AiSuggestOperation;
   phoneE164: string;
   customerId?: string | null;
+  instruction?: string | null;
 }): Promise<AiInboxSuggestResult> {
   const phone = String(opts.phoneE164 || '').trim();
   if (!phone) return { ok: false, error: 'Phone required' };
 
   const accessToken = await resolveSupabaseAccessTokenForApi();
   if (!accessToken) return { ok: false, error: 'Not signed in' };
+
+  const instruction = String(opts.instruction || '').trim().slice(0, 800);
 
   try {
     const res = await fetch('/.netlify/functions/ai-inbox-suggest', {
@@ -96,6 +99,7 @@ export async function requestAiInboxSuggestion(opts: {
         operation: opts.operation,
         phoneE164: phone,
         ...(opts.customerId ? { customerId: opts.customerId } : {}),
+        ...(instruction ? { instruction } : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));

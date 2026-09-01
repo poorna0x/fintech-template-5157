@@ -27,19 +27,16 @@ export type TechWhatsAppCategory = (typeof TECH_WHATSAPP_CATEGORIES)[number];
 
 export type TechWhatsAppPrefs = Record<TechWhatsAppCategory, boolean>;
 
-/** Categories that mirror FCM with a Cloud API text (not assign dialog / silent ping). */
-export const TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES = [
-  'job_nudges',
-  'office_messages',
-  'otp_request',
-  'parts_reminder',
-  'bill_reminders',
-  'cash_handover',
-  'wrong_line',
-  'pay_qr_screenshot',
-  'worked_hours',
-  'job_reviews',
-] as const satisfies readonly TechPushCategory[];
+/** Push-mirror WhatsApp is off — those alerts stay on the technician app only. */
+export const TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES = [] as const satisfies readonly TechPushCategory[];
+
+/** Toggles shown on Edit technician / WhatsApp settings (not app-only alerts). */
+export const TECH_WHATSAPP_EDITABLE_CATEGORIES = [
+  'job_assigned',
+  'job_unassigned',
+  'tech_assigned_customer',
+  'tech_unassigned_customer',
+] as const satisfies readonly TechWhatsAppCategory[];
 
 export type TechWhatsAppAutoMirrorCategory =
   (typeof TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES)[number];

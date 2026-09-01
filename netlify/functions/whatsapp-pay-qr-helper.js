@@ -3,7 +3,6 @@
  * that number are forwarded to the sending technician for 30 minutes.
  */
 const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
-const { maybeSendTechnicianPushWhatsApp } = require('./tech-push-whatsapp-helper');
 const {
   callWhatsAppApi,
   insertWhatsAppMessage,
@@ -362,30 +361,7 @@ async function notifyTechnicianPayQrPhoto({
   } catch (err) {
     console.warn('[pay-qr-watch] FCM failed', err?.message || err);
   }
-
-  let imageSent = false;
-  if (accessToken && phoneNumberId && mediaUrl) {
-    const img = await sendImageToTechnicianWhatsApp({
-      db,
-      accessToken,
-      phoneNumberId,
-      technicianId,
-      mediaUrl,
-      customerName,
-    });
-    imageSent = Boolean(img?.sent);
-  }
-
-  // Image is the WhatsApp path. Text mirror only if the photo could not be delivered
-  // (template not approved yet / 24h closed).
-  if (!imageSent) {
-    void maybeSendTechnicianPushWhatsApp(db, {
-      technicianId,
-      category: CATEGORY,
-      title,
-      body,
-    });
-  }
+  // Payment screenshot stays on the technician app (FCM). Do not WhatsApp it.
 }
 
 /**

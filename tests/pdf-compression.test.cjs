@@ -169,7 +169,8 @@ function testGeneratePdfGuardsAndGlobalGate() {
   assert.match(source, /const shouldCompress = await isPdfCompressionEnabled\(\)/);
   assert.doesNotMatch(source, /body\.compression/);
   assert.match(source, /iframe\|frame\|object\|embed/);
-  assert.match(source, /requestStartedAt \+ 22_000/);
+  assert.match(source, /compressPending: shouldCompress === true/);
+  assert.doesNotMatch(source, /maybeCompressPdfBuffer/);
   assert.match(
     source,
     /isPrivateOrLoopbackHost\(host\)\) return !process\.env\.AWS_LAMBDA_FUNCTION_NAME/
