@@ -5320,4 +5320,6 @@ module.exports = {
   DEFAULT_LEAD_SOURCES,
   OTHER_PHONE_LOOKUP_MAX,
   RECENT_SERVICE_DAYS,
+  sendText,
+  isOwnBusinessPhone,
 };

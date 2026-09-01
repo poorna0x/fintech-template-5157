@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -62,6 +63,7 @@ import { getDocumentBrandLabel } from '@/lib/service-brands';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import WaterFilterServiceStartDialog from '@/components/whatsapp/WaterFilterServiceStartDialog';
 import { WhatsAppMessageBubbleMenu } from '@/components/whatsapp/WhatsAppMessageBubbleMenu';
+import { WhatsAppMessageActionsSheet } from '@/components/whatsapp/WhatsAppMessageActionsSheet';
 import { WhatsAppInboxLocationCard } from '@/components/whatsapp/WhatsAppInboxLocationCard';
 import { isWhatsAppLocationMessage } from '@/lib/whatsappInboxApplyToCustomer';
 import type { Customer, Technician } from '@/types';
@@ -172,6 +174,16 @@ import { registerNativeBackHandler, tryNativeBackHandlers } from '@/lib/nativeBa
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 import { sendAskReviewForLastCompletedJob } from '@/lib/jobReviews';
 import { requestAiInboxSuggestion } from '@/lib/aiInboxAssistant';
+import {
+  fetchWhatsAppAiChatSettings,
+  setWhatsAppChatAutoReply,
+} from '@/lib/whatsappAiChatSettings';
+import {
+  canActOnWhatsAppMessage,
+  deleteWhatsAppInboxMessage,
+  forwardWhatsAppInboxMessage,
+  messageHasDeletableFile,
+} from '@/lib/whatsappMessageActions';
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -432,6 +444,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [threadBrand, setThreadBrand] = useState<DocumentBrand>('hydrogenro');
   const [sending, setSending] = useState(false);
   const [aiDrafting, setAiDrafting] = useState(false);
+  const [chatAutoReply, setChatAutoReply] = useState(false);
+  const [chatAutoReplyBusy, setChatAutoReplyBusy] = useState(false);
   const [purging, setPurging] = useState(false);
   const [chatDeleteTarget, setChatDeleteTarget] = useState<{
     phone: string;
@@ -439,6 +453,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   } | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const skipThreadClickRef = useRef(false);
+  const messageLongPressTimerRef = useRef<number | null>(null);
+  const skipMessageClickRef = useRef(false);
+  const [messageAction, setMessageAction] = useState<WhatsAppMessageRow | null>(null);
+  const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [query, setQuery] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const [searchThreads, setSearchThreads] = useState<WhatsAppThread[]>([]);
@@ -589,6 +607,83 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
     setChatDeleteTarget({ phone, name });
   }, [clearThreadLongPress]);
+
+  const clearMessageLongPress = useCallback(() => {
+    if (messageLongPressTimerRef.current != null) {
+      window.clearTimeout(messageLongPressTimerRef.current);
+      messageLongPressTimerRef.current = null;
+    }
+  }, []);
+
+  const openMessageActions = useCallback((row: WhatsAppMessageRow) => {
+    if (!canActOnWhatsAppMessage(row)) return;
+    clearMessageLongPress();
+    skipMessageClickRef.current = true;
+    try {
+      navigator.vibrate?.(12);
+    } catch {
+      /* ignore */
+    }
+    setMessageAction(row);
+  }, [clearMessageLongPress]);
+
+  const handleDeleteMessageAction = useCallback(async () => {
+    const row = messageAction;
+    if (!row || messageActionBusy) return;
+    const hasFile = messageHasDeletableFile(row);
+    if (
+      !window.confirm(
+        hasFile
+          ? 'Delete this file from the inbox?\n\nIt will also be removed from storage.'
+          : 'Delete this message from the inbox?'
+      )
+    ) {
+      return;
+    }
+    setMessageActionBusy(true);
+    const toastId = toast.loading(hasFile ? 'Deleting file…' : 'Deleting…');
+    try {
+      const result = await deleteWhatsAppInboxMessage(row);
+      if (!result.ok) {
+        toast.error(result.error || 'Could not delete', { id: toastId });
+        return;
+      }
+      setMessageAction(null);
+      toast.success(hasFile ? 'File deleted' : 'Message deleted', { id: toastId });
+    } finally {
+      setMessageActionBusy(false);
+    }
+  }, [messageAction, messageActionBusy]);
+
+  const handleForwardMessageAction = useCallback(
+    async (phone: string, customerId?: string | null) => {
+      const row = messageAction;
+      if (!row || messageActionBusy) return;
+      setMessageActionBusy(true);
+      const toastId = toast.loading('Forwarding…');
+      try {
+        const result = await forwardWhatsAppInboxMessage({
+          message: row,
+          to: phone,
+          customerId,
+        });
+        if (!result.ok) {
+          toast.error(
+            result.needsWindow
+              ? 'That chat’s 24h window is closed'
+              : result.error || 'Could not forward',
+            { id: toastId }
+          );
+          return;
+        }
+        setMessageAction(null);
+        toast.success('Forwarded', { id: toastId });
+      } finally {
+        setMessageActionBusy(false);
+      }
+    },
+    [messageAction, messageActionBusy]
+  );
   const threadMessagesRef = useRef(threadMessages);
   threadMessagesRef.current = threadMessages;
   const lastMarkedReadRef = useRef<Record<string, string>>({});
@@ -628,6 +723,24 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     setAttachFile(null);
     setDraft('');
     setAiDrafting(false);
+    setChatAutoReply(false);
+  }, [selectedPhone]);
+
+  useEffect(() => {
+    if (!selectedPhone) return;
+    let cancelled = false;
+    void (async () => {
+      const result = await fetchWhatsAppAiChatSettings(selectedPhone);
+      if (cancelled) return;
+      if (!result.ok) {
+        if (result.setupRequired) return;
+        return;
+      }
+      setChatAutoReply(result.settings.autoReplyEnabled);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedPhone]);
 
   const pickAttachFile = (file: File | null | undefined) => {
@@ -1758,6 +1871,35 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     void loadTemplates(false);
   }, [loadTemplates]);
 
+  const handleChatAutoReplyToggle = useCallback(
+    async (enabled: boolean) => {
+      const phone = selectedPhoneRef.current;
+      if (!phone || chatAutoReplyBusy) return;
+      setChatAutoReplyBusy(true);
+      setChatAutoReply(enabled);
+      try {
+        const result = await setWhatsAppChatAutoReply(phone, enabled);
+        if (!result.ok) {
+          setChatAutoReply(!enabled);
+          toast.error(
+            result.setupRequired
+              ? 'Run the WhatsApp AI settings SQL in Supabase first.'
+              : result.error || 'Could not update auto-reply'
+          );
+          return;
+        }
+        toast.success(
+          enabled
+            ? 'Auto-reply on — AI answers this chat using customer/job info. Booking still takes over if they book.'
+            : 'Auto-reply off'
+        );
+      } finally {
+        setChatAutoReplyBusy(false);
+      }
+    },
+    [chatAutoReplyBusy]
+  );
+
   const handleAiDraft = useCallback(async () => {
     const phone = selectedPhoneRef.current;
     if (!phone || sendingRef.current || aiDraftingRef.current) return;
@@ -2685,6 +2827,27 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <Copy className="h-4 w-4" />
                 </button>
                 {cloudApiOn ? (
+                  <label
+                    className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-1.5 text-[#8696a0] transition hover:bg-white/5"
+                    title={
+                      chatAutoReply
+                        ? 'Auto-reply is on for this chat'
+                        : 'Turn on AI auto-reply for this chat'
+                    }
+                  >
+                    <Sparkles
+                      className={cn('h-3.5 w-3.5', chatAutoReply ? 'text-[#00a884]' : 'text-[#8696a0]')}
+                    />
+                    <Switch
+                      checked={chatAutoReply}
+                      disabled={chatAutoReplyBusy || !selectedPhone}
+                      onCheckedChange={(v) => void handleChatAutoReplyToggle(v)}
+                      className="h-4 w-7 data-[state=checked]:bg-[#00a884] data-[state=checked]:border-[#00a884]"
+                      aria-label="Auto-reply"
+                    />
+                  </label>
+                ) : null}
+                {cloudApiOn ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -2979,16 +3142,31 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         <div
                           className={cn('mb-0.5 flex', outbound ? 'justify-end' : 'justify-start')}
                         >
-                          <div
-                            className={cn(
-                              'relative max-w-[88%] rounded-lg px-2.5 pb-1 pt-1.5 shadow-[0_1px_0.5px_rgba(11,20,26,0.35)]',
-                              failed
-                                ? 'rounded-br-sm border border-red-500/40 bg-[#3b1818] text-[#fecaca]'
-                                : outbound
-                                  ? 'rounded-br-sm bg-[#005c4b] text-[#e9edef]'
-                                  : 'rounded-bl-sm bg-[#202c33] text-[#e9edef]'
-                            )}
-                          >
+                        <div
+                          className={cn(
+                            'relative max-w-[88%] select-none rounded-lg px-2.5 pb-1 pt-1.5 shadow-[0_1px_0.5px_rgba(11,20,26,0.35)]',
+                            failed
+                              ? 'rounded-br-sm border border-red-500/40 bg-[#3b1818] text-[#fecaca]'
+                              : outbound
+                                ? 'rounded-br-sm bg-[#005c4b] text-[#e9edef]'
+                                : 'rounded-bl-sm bg-[#202c33] text-[#e9edef]'
+                          )}
+                          style={{ WebkitTouchCallout: 'none' }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            openMessageActions(m);
+                          }}
+                          onPointerDown={(e) => {
+                            if (e.pointerType === 'mouse' && e.button !== 0) return;
+                            clearMessageLongPress();
+                            messageLongPressTimerRef.current = window.setTimeout(() => {
+                              openMessageActions(m);
+                            }, 480);
+                          }}
+                          onPointerUp={clearMessageLongPress}
+                          onPointerCancel={clearMessageLongPress}
+                          onPointerLeave={clearMessageLongPress}
+                        >
                             {failed ? (
                               <p className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-red-400">
                                 Not delivered
@@ -3000,13 +3178,20 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                   <InboxChatPhoto
                                     row={m}
                                     cachedSrc={imageSrc}
-                                    onOpen={() => void openImageViewer(m)}
+                                    onOpen={() => {
+                                      if (skipMessageClickRef.current) {
+                                        skipMessageClickRef.current = false;
+                                        return;
+                                      }
+                                      void openImageViewer(m);
+                                    }}
                                     onResolve={resolveMediaHref}
                                   />
                                   <WhatsAppMessageBubbleMenu
                                     message={m}
                                     customerId={m.customer_id || activeThread?.customer_id}
                                     onDownload={() => void downloadMedia(m)}
+                                    onForward={() => openMessageActions(m)}
                                   />
                                 </div>
                               ) : isWhatsAppPdfAttachment(m.filename, m.media_mime, m.msg_type) ? (
@@ -3015,7 +3200,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                   mediaUrl={m.media_url}
                                   filename={m.filename}
                                   mediaMime={m.media_mime}
-                                  onOpen={() => void openMedia(m)}
+                                  onOpen={() => {
+                                    if (skipMessageClickRef.current) {
+                                      skipMessageClickRef.current = false;
+                                      return;
+                                    }
+                                    void openMedia(m);
+                                  }}
                                   onDownload={() => void downloadMedia(m)}
                                 />
                               ) : (
@@ -3023,7 +3214,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                   filename={m.filename}
                                   mediaMime={m.media_mime}
                                   tone={outbound || failed ? 'dark' : 'light'}
-                                  onOpen={() => void openMedia(m)}
+                                  onOpen={() => {
+                                    if (skipMessageClickRef.current) {
+                                      skipMessageClickRef.current = false;
+                                      return;
+                                    }
+                                    void openMedia(m);
+                                  }}
                                   onDownload={() => void downloadMedia(m)}
                                 />
                               )
@@ -3615,6 +3812,18 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <WhatsAppMessageActionsSheet
+        message={messageAction}
+        threads={[...searchThreads, ...threads]}
+        currentPhone={selectedPhone}
+        busy={messageActionBusy}
+        onClose={() => {
+          if (!messageActionBusy) setMessageAction(null);
+        }}
+        onDelete={() => void handleDeleteMessageAction()}
+        onForwardTo={(phone, customerId) => void handleForwardMessageAction(phone, customerId)}
+      />
 
       {reportCustomer ? (
         <CustomerReportDialog

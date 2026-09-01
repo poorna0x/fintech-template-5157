@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Download, Images, Trash2 } from 'lucide-react';
+import { ChevronDown, CornerUpRight, Download, Images, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   DropdownMenu,
@@ -22,12 +22,14 @@ type Props = {
   message: WhatsAppMessageRow;
   customerId?: string | null;
   onDownload?: () => void;
+  onForward?: () => void;
 };
 
 export function WhatsAppMessageBubbleMenu({
   message,
   customerId,
   onDownload,
+  onForward,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const isImage = isWhatsAppImageMessage(message);
@@ -106,6 +108,16 @@ export function WhatsAppMessageBubbleMenu({
           <Images className="mr-2 h-4 w-4" />
           Add to customer gallery
         </DropdownMenuItem>
+        {onForward ? (
+          <DropdownMenuItem
+            className="cursor-pointer"
+            disabled={busy}
+            onSelect={() => onForward()}
+          >
+            <CornerUpRight className="mr-2 h-4 w-4" />
+            Forward
+          </DropdownMenuItem>
+        ) : null}
         {onDownload ? (
           <DropdownMenuItem
             className="cursor-pointer"

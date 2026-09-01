@@ -36,6 +36,8 @@ const {
   classifyAutoReplyInbound,
   normalizeAiDecision,
   buildSystemInstruction: buildAutoReplySystemInstruction,
+  phoneLast10,
+  matchesLast10Set,
 } = require('../netlify/functions/whatsapp-ai-auto-reply');
 
 function testSuggestReplyAcceptsOptionalInstruction() {
@@ -282,6 +284,38 @@ function testRequestedDetailVerification() {
   );
 }
 
+function testAutoReplySkipsStaffPhones() {
+  assert.equal(phoneLast10('+91 98806 93311'), '9880693311');
+  assert.equal(phoneLast10('919880693311'), '9880693311');
+  assert.equal(phoneLast10('not-a-phone'), '');
+  const techSet = new Set(['9876543210']);
+  assert.equal(matchesLast10Set('+919876543210', techSet), true);
+  assert.equal(matchesLast10Set('919876543210', techSet), true);
+  assert.equal(matchesLast10Set('+919999999999', techSet), false);
+
+  const autoReplySrc = fs.readFileSync(
+    path.join(__dirname, '..', 'netlify', 'functions', 'whatsapp-ai-auto-reply.js'),
+    'utf8'
+  );
+  assert.match(autoReplySrc, /isOwnBusinessPhone/);
+  assert.match(autoReplySrc, /shouldSkipStaffPhone/);
+  assert.match(autoReplySrc, /technicians'\)\.select\('phone, whatsapp_phone'\)/);
+
+  const webhookSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'netlify', 'functions', 'whatsapp-webhook.js'),
+    'utf8'
+  );
+  assert.match(webhookSrc, /handleWhatsAppAiAutoReplyInbound/);
+  assert.match(webhookSrc, /aiResult\?\.sent/);
+
+  const bookingBotSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'netlify', 'functions', 'whatsapp-booking-bot.js'),
+    'utf8'
+  );
+  assert.match(bookingBotSrc, /^\s*sendText,$/m);
+  assert.match(bookingBotSrc, /^\s*isOwnBusinessPhone,$/m);
+}
+
 function testSafePerChatAutoReplyGuards() {
   assert.deepEqual(
     classifyAutoReplyInbound({
@@ -289,7 +323,7 @@ function testSafePerChatAutoReplyGuards() {
       text: 'My purifier is making a noise',
       priorBotState: null,
     }),
-    { action: 'ai', reason: 'safe_service_conversation' }
+    { action: 'ai', reason: 'customer_message' }
   );
   assert.equal(
     classifyAutoReplyInbound({
@@ -297,7 +331,7 @@ function testSafePerChatAutoReplyGuards() {
       text: 'How much will repair cost?',
       priorBotState: null,
     }).action,
-    'escalate'
+    'ai'
   );
   assert.equal(
     classifyAutoReplyInbound({
@@ -315,14 +349,26 @@ function testSafePerChatAutoReplyGuards() {
     }).action,
     'yield'
   );
-  // Greetings and menu words stay with the deterministic booking bot.
-  for (const greeting of ['Hi', 'hello', 'Menu', 'thanks', 'good morning']) {
+  // Greetings and photos are answered by auto-reply when the chat toggle is on.
+  for (const greeting of ['Hi', 'hello', 'thanks', 'good morning']) {
     assert.equal(
       classifyAutoReplyInbound({ msgType: 'text', text: greeting, priorBotState: null }).action,
-      'yield',
-      `${greeting} must yield to the booking bot`
+      'ai',
+      `${greeting} should be answered by auto-reply`
     );
   }
+  assert.equal(
+    classifyAutoReplyInbound({ msgType: 'image', text: '', priorBotState: null }).action,
+    'ai'
+  );
+  assert.equal(
+    classifyAutoReplyInbound({
+      msgType: 'text',
+      text: 'How much for a membrane?',
+      priorBotState: null,
+    }).action,
+    'ai'
+  );
 
   const safe = normalizeAiDecision({
     replyText: 'Sorry about that. Please share a clear photo of the purifier.',
@@ -347,6 +393,13 @@ function testSafePerChatAutoReplyGuards() {
     'utf8'
   );
   assert.doesNotMatch(src, /handled: true, escalated: true/);
+
+  const webhookSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'netlify', 'functions', 'whatsapp-webhook.js'),
+    'utf8'
+  );
+  assert.match(webhookSrc, /handleWhatsAppAiAutoReplyInbound/);
+  assert.match(webhookSrc, /aiOwnsChat/);
 }
 
 function testProviderAllowlist() {
@@ -570,6 +623,7 @@ async function main() {
   testQuotationPricesForcedZero();
   testMutationToolsBanned();
   testRequestedDetailVerification();
+  testAutoReplySkipsStaffPhones();
   testSafePerChatAutoReplyGuards();
   testProviderAllowlist();
   await testMockProviderStructuredOutput();
