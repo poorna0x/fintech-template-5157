@@ -28,10 +28,134 @@ function beautifyMockDraft(text) {
 
 function detectIntent(text) {
   const t = String(text || '').toLowerCase();
+  if (/last service/.test(t)) return 'last_service';
+  if (/\bamc\b/.test(t)) return 'amc';
   if (/quot|price|cost|rate|how much/.test(t)) return 'quotation';
-  if (/book|visit|service|repair|install|amc|filter/.test(t)) return 'booking';
+  if (/book|visit|repair|install|filter/.test(t)) return 'booking';
   if (/thanks|thank you|ok|okay|noted/.test(t)) return 'ack';
   return 'general_reply';
+}
+
+function factLine(text, label) {
+  const m = String(text || '').match(new RegExp(`^${label}:\\s*(.+)$`, 'im'));
+  return m ? String(m[1] || '').trim() : '';
+}
+
+function isMissingFact(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return !v || v === 'not on file' || v === 'not on file yet' || v === 'none on file';
+}
+
+function mockCrmFactReply(prompt) {
+  const latest = String(prompt.match(/Latest customer message[^:]*:\s*(.+)/i)?.[1] || '').trim();
+  const q = latest || String(prompt || '');
+  const lastService = factLine(prompt, 'Last service date');
+  const lastJob = factLine(prompt, 'Last job');
+  const nextVisit = factLine(prompt, 'Next visit');
+  const warranty = factLine(prompt, 'Warranty expiry');
+  const amc = factLine(prompt, 'AMC');
+  const purifier = factLine(prompt, 'Purifier');
+  const address = factLine(prompt, 'Saved address label');
+  if (/last service/i.test(q)) {
+    if (isMissingFact(lastService)) {
+      return {
+        replyText:
+          'We do not have a last service date on file yet. Our team can confirm after checking the records.',
+        intent: 'last_service',
+        requiresHuman: true,
+      };
+    }
+    return {
+      replyText: `Your last service was on ${lastService}.`,
+      intent: 'last_service',
+      requiresHuman: false,
+    };
+  }
+  if (/next (?:visit|service)|upcoming (?:visit|job|service)|when is my (?:next )?visit/i.test(q)) {
+    if (isMissingFact(nextVisit)) {
+      return {
+        replyText: 'We do not have a next visit scheduled on file yet.',
+        intent: 'next_visit',
+        requiresHuman: true,
+      };
+    }
+    return {
+      replyText: `Your next visit on file is ${nextVisit}.`,
+      intent: 'next_visit',
+      requiresHuman: false,
+    };
+  }
+  if (/\bamc\b/i.test(q)) {
+    if (isMissingFact(amc)) {
+      return {
+        replyText: 'We do not have an AMC on file for this number yet.',
+        intent: 'amc',
+        requiresHuman: true,
+      };
+    }
+    return {
+      replyText: `Your AMC on file is ${amc}.`,
+      intent: 'amc',
+      requiresHuman: false,
+    };
+  }
+  if (/\bwarranty\b/i.test(q)) {
+    if (isMissingFact(warranty)) {
+      return {
+        replyText: 'We do not have a warranty expiry on file yet.',
+        intent: 'warranty',
+        requiresHuman: true,
+      };
+    }
+    return {
+      replyText: `The warranty on file expires on ${warranty}.`,
+      intent: 'warranty',
+      requiresHuman: false,
+    };
+  }
+  if (/\b(model|brand|purifier)\b/i.test(q)) {
+    if (isMissingFact(purifier)) {
+      return {
+        replyText: 'We do not have the purifier model on file yet. Please share the brand and model if you have it.',
+        intent: 'purifier',
+        requiresHuman: true,
+      };
+    }
+    return {
+      replyText: `The purifier on file is ${purifier}.`,
+      intent: 'purifier',
+      requiresHuman: false,
+    };
+  }
+  if (/\baddress\b/i.test(q)) {
+    if (isMissingFact(address)) {
+      return {
+        replyText: 'We do not have a saved address label on file yet.',
+        intent: 'address',
+        requiresHuman: true,
+      };
+    }
+    return {
+      replyText: `The address on file is ${address}.`,
+      intent: 'address',
+      requiresHuman: false,
+    };
+  }
+  if (/\b(last job|job number|job status)\b/i.test(q)) {
+    if (isMissingFact(lastJob)) {
+      return {
+        replyText: 'We do not have a recent job on file for this number yet.',
+        intent: 'last_job',
+        requiresHuman: true,
+      };
+    }
+    return {
+      replyText: `The latest job on file is ${lastJob}.`,
+      intent: 'last_job',
+      requiresHuman: false,
+    };
+  }
+  return null;
 }
 
 async function generateWithMock(input) {
@@ -55,6 +179,27 @@ async function generateWithMock(input) {
       usage: { inputTokens: 80, outputTokens: 40, totalTokens: 120 },
       finishReason: 'stop',
       providerRequestId: `mock-polish-${Date.now()}`,
+      rawMetadata: { provider: 'mock' },
+    };
+  }
+
+  const crmReply = mockCrmFactReply(last);
+  if ((input.operation === 'suggest_reply' || !input.operation) && crmReply) {
+    const payload = {
+      replyText: crmReply.replyText,
+      intent: crmReply.intent,
+      confidence: 0.88,
+      requiresHuman: crmReply.requiresHuman === true,
+      warnings: [],
+      quotation: null,
+    };
+    return {
+      text: JSON.stringify(payload),
+      parsed: payload,
+      toolCalls: [],
+      usage: { inputTokens: 90, outputTokens: 50, totalTokens: 140 },
+      finishReason: 'stop',
+      providerRequestId: `mock-crm-fact-${Date.now()}`,
       rawMetadata: { provider: 'mock' },
     };
   }

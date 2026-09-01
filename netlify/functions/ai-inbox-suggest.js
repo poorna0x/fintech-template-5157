@@ -143,12 +143,14 @@ function buildSystemInstruction(operation, allowPricesOrOpts = false) {
     'You are an assistant for HydrogenRO / ElevenRO RO service admins.',
     'Return ONLY valid JSON with keys: replyText, intent, confidence (0-1), requiresHuman (boolean), warnings (string[]), quotation (nullable).',
     'quotation.items[].description and quantity only. Always set unitPrice to 0. Never invent selling prices.',
-    'Do not claim a message was sent. Do not invent job numbers, payments, or customer facts not in the thread.',
+    'Do not claim a message was sent. Do not invent job numbers, payments, prices, or customer facts.',
+    'Trusted CRM facts in the user prompt are server-loaded. Answer any customer question from those facts when they apply (last service, AMC, jobs, next visit, model, address, warranty).',
+    'If a fact says not on file / none on file, say that honestly. Never invent a date, AMC, job, model, address, or warranty.',
     'Be concise, polite, and suitable for WhatsApp (India English).',
     'Read past spelling mistakes, grammar errors, and shorthand in the customer thread. Infer the intended meaning. Never copy typos into replyText.',
     'replyText must be a sendable, grammatically correct WhatsApp draft in natural India English.',
     'Make replyText directly usable: acknowledge the customer message, give one clear next step, and avoid generic filler.',
-    'If customer asks when last service was, use Last service date on file. Never ask for a location pin to look up last service.',
+    'Never ask for a location pin to look up last service, AMC, jobs, or saved customer details.',
     'If customer asks about price/payment/discount or raises a complaint, keep the reply safe and set requiresHuman=true.',
     'A trusted requested-detail verification in the user prompt is server-calculated from message types and booking state. Always honor it. If a requested location/photo is still missing, politely ask for it again and never claim it was received.',
     'If unsure, set requiresHuman=true and ask a clarifying question in replyText.',
@@ -284,7 +286,7 @@ function isNewStandaloneQuestion(text) {
   const t = String(text || '').trim();
   if (!t) return false;
   if (/\?/.test(t)) return true;
-  return /\b(when was|when is|what(?:'s| is| was)|how much|last service|amc expiry|warranty|quotation|quote|price)\b/i.test(
+  return /\b(when was|when is|when can|what(?:'s| is| was)|where is|how much|how many|last service|last job|next (?:visit|service)|amc|warranty|quotation|quote|price|model|brand|address|technician|job number|filter)\b/i.test(
     t
   );
 }
@@ -300,6 +302,117 @@ function formatIstDay(iso) {
       year: 'numeric',
     });
   } catch {
+    return null;
+  }
+}
+
+function formatDraftCustomerFacts(facts) {
+  if (!facts) return 'Trusted CRM facts: no linked CRM customer for this chat.';
+  const lines = ['Trusted CRM facts (server-loaded; do not invent missing values; never quote prices):'];
+  lines.push(`Customer name: ${facts.name || 'not on file'}`);
+  lines.push(
+    `Purifier: ${[facts.brand, facts.model].filter(Boolean).join(' ') || 'not on file'}`
+  );
+  lines.push(`Saved address label: ${facts.address || 'not on file'}`);
+  lines.push(`Last service date: ${facts.lastServiceLabel || 'not on file yet'}`);
+  lines.push(`Last job: ${facts.lastJobLabel || 'none on file'}`);
+  lines.push(`Next visit: ${facts.nextVisitLabel || 'none on file'}`);
+  lines.push(`Warranty expiry: ${facts.warrantyLabel || 'not on file'}`);
+  if (facts.jobs?.length) {
+    lines.push('Recent jobs (newest first):');
+    for (const job of facts.jobs) lines.push(`- ${job}`);
+  } else {
+    lines.push('Recent jobs: none on file');
+  }
+  lines.push(`AMC: ${facts.amc || 'none on file'}`);
+  return lines.join('\n');
+}
+
+function formatJobFactLine(row) {
+  if (!row) return null;
+  const when = formatIstDay(row.completed_at) || formatIstDay(row.scheduled_date) || '';
+  const line = [row.job_number, row.status, row.service_type, when]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' · ');
+  return line || null;
+}
+
+async function resolveDraftCustomerId(db, threadCustomerId, phoneDigits) {
+  if (threadCustomerId) return threadCustomerId;
+  const phone = String(phoneDigits || '').replace(/\D/g, '').slice(-10);
+  if (!db || phone.length < 10) return null;
+  try {
+    const { data } = await db
+      .from('customers')
+      .select('id')
+      .or(`phone.like.%${phone},alternate_phone.like.%${phone}`)
+      .limit(1)
+      .maybeSingle();
+    return data?.id || null;
+  } catch (error) {
+    console.warn('[ai-inbox-suggest] customer phone lookup failed', error?.message || error);
+    return null;
+  }
+}
+
+async function loadDraftCustomerFacts(db, customerId) {
+  if (!db || !customerId) return null;
+  try {
+    const [custRes, jobRes, amcRes, nextRes] = await Promise.all([
+      db
+        .from('customers')
+        .select('full_name, last_service_date, brand, model, visible_address, warranty_expiry')
+        .eq('id', customerId)
+        .maybeSingle(),
+      db
+        .from('jobs')
+        .select('job_number, status, service_type, scheduled_date, completed_at')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(3),
+      db
+        .from('amc_contracts')
+        .select('status, start_date, end_date')
+        .eq('customer_id', customerId)
+        .order('end_date', { ascending: false })
+        .limit(1),
+      db
+        .from('jobs')
+        .select('job_number, status, service_type, scheduled_date')
+        .eq('customer_id', customerId)
+        .not('status', 'in', '(completed,cancelled,canceled)')
+        .not('scheduled_date', 'is', null)
+        .order('scheduled_date', { ascending: true })
+        .limit(1),
+    ]);
+    const customer = custRes.data;
+    const jobRows = jobRes.data || [];
+    if (!customer && !jobRows.length) return null;
+    const jobs = jobRows.map((row) => formatJobFactLine(row)).filter(Boolean);
+    const amcRow = amcRes.data?.[0];
+    const amc = amcRow
+      ? [amcRow.status, amcRow.end_date ? `until ${formatIstDay(amcRow.end_date) || amcRow.end_date}` : '']
+          .filter(Boolean)
+          .join(' ')
+      : null;
+    const nextRow = nextRes.data?.[0] || (Array.isArray(nextRes.data) ? nextRes.data[0] : nextRes.data);
+    return {
+      name: customer?.full_name ? String(customer.full_name).trim() : null,
+      brand: customer?.brand ? String(customer.brand).trim() : null,
+      model: customer?.model ? String(customer.model).trim() : null,
+      address: customer?.visible_address ? String(customer.visible_address).trim() : null,
+      lastServiceLabel:
+        formatIstDay(customer?.last_service_date) ||
+        formatIstDay(jobRows.find((row) => row.completed_at)?.completed_at),
+      lastJobLabel: jobs[0] || null,
+      nextVisitLabel: formatJobFactLine(nextRow),
+      warrantyLabel: formatIstDay(customer?.warranty_expiry),
+      jobs,
+      amc,
+    };
+  } catch (error) {
+    console.warn('[ai-inbox-suggest] CRM facts failed', error?.message || error);
     return null;
   }
 }
@@ -368,6 +481,7 @@ async function loadThreadContext(phoneDigits) {
       messages: [],
       customerId: null,
       customerName: null,
+      crmFacts: null,
       detailVerification: null,
       latestInbound: null,
     };
@@ -392,41 +506,27 @@ async function loadThreadContext(phoneDigits) {
       messages: [],
       customerId: null,
       customerName: null,
+      crmFacts: null,
       detailVerification: null,
       latestInbound: null,
     };
   }
 
   const chronological = (msgs || []).slice().reverse();
-  let customerId = null;
+  let threadCustomerId = null;
   for (const m of chronological) {
     if (m.customer_id) {
-      customerId = m.customer_id;
+      threadCustomerId = m.customer_id;
       break;
     }
   }
 
+  const customerId = await resolveDraftCustomerId(db, threadCustomerId, phoneDigits);
   let customerName = null;
-  let lastServiceLabel = null;
+  let crmFacts = null;
   if (customerId) {
-    const { data: cust } = await db
-      .from('customers')
-      .select('id, full_name, last_service_date')
-      .eq('id', customerId)
-      .maybeSingle();
-    customerName = cust?.full_name ? String(cust.full_name).trim() : null;
-    lastServiceLabel = formatIstDay(cust?.last_service_date);
-    if (!lastServiceLabel) {
-      const { data: lastJob } = await db
-        .from('jobs')
-        .select('completed_at')
-        .eq('customer_id', customerId)
-        .not('completed_at', 'is', null)
-        .order('completed_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      lastServiceLabel = formatIstDay(lastJob?.completed_at);
-    }
+    crmFacts = await loadDraftCustomerFacts(db, customerId);
+    customerName = crmFacts?.name || null;
   }
 
   const phoneCandidates = [...new Set(e164Candidates)];
@@ -448,7 +548,8 @@ async function loadThreadContext(phoneDigits) {
     messages: mapThreadToMessages(chronological),
     customerId,
     customerName,
-    lastServiceLabel,
+    crmFacts,
+    lastServiceLabel: crmFacts?.lastServiceLabel || null,
     detailVerification,
     latestInbound,
   };
@@ -471,8 +572,9 @@ function buildUserPrompt(ctx, operation, instruction) {
   }
   if (ctx.customerName) lines.push(`Customer name: ${ctx.customerName}`);
   if (operation === 'suggest_reply') {
+    lines.push(formatDraftCustomerFacts(ctx.crmFacts || null));
     lines.push(
-      `Last service date on file: ${ctx.lastServiceLabel || 'not on file yet'}`
+      'Answer the latest customer question using those CRM facts when they apply. If a fact is not on file, say so. Do not ask for a location pin to look up CRM data.'
     );
   }
   if (ctx.latestInbound?.body || ctx.latestInbound?.msgType) {
@@ -789,6 +891,10 @@ module.exports._test = {
   detectPendingDetailRequest,
   isNewStandaloneQuestion,
   formatIstDay,
+  formatDraftCustomerFacts,
+  formatJobFactLine,
+  resolveDraftCustomerId,
+  loadDraftCustomerFacts,
   enforceDetailVerification,
   looksLikeMapsLocationText,
   buildQuotationBriefPrompt,

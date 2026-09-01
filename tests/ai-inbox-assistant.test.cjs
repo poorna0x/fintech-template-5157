@@ -88,6 +88,15 @@ function testBuildUserPromptWrapsAdminInstruction() {
   const without = buildUserPrompt(
     {
       customerName: 'Ravi',
+      crmFacts: {
+        name: 'Ravi',
+        lastServiceLabel: '12 Jun 2026',
+        brand: 'Kent',
+        model: 'Grand',
+        address: 'HSR Layout',
+        jobs: ['JOB-1 · COMPLETED · Service · 12 Jun 2026'],
+        amc: 'active until 1 Mar 2027',
+      },
       messages: [{ role: 'user', text: 'When can you come?' }],
       latestInbound: { body: 'When can you come?', msgType: 'text' },
     },
@@ -96,7 +105,11 @@ function testBuildUserPromptWrapsAdminInstruction() {
   );
   assert.doesNotMatch(without, /<draft>/);
   assert.match(without, /The composer is empty. Draft a reply to the latest customer message/);
-  assert.match(without, /Last service date on file/);
+  assert.match(without, /Last service date: 12 Jun 2026/);
+  assert.match(without, /AMC: active until 1 Mar 2027/);
+  assert.match(without, /Purifier: Kent Grand/);
+  assert.match(without, /Do not ask for a location pin to look up CRM data/);
+  assert.match(without, /Answer the latest customer question using those CRM facts/);
   assert.match(without, /grammatically correct WhatsApp text/);
   assert.match(without, /Recent WhatsApp thread/);
 }
@@ -311,6 +324,40 @@ function testRequestedDetailVerification() {
     null,
     'a new question must not be treated as a failed location reply'
   );
+
+  const { isNewStandaloneQuestion, formatDraftCustomerFacts, buildSystemInstruction } =
+    require('../netlify/functions/ai-inbox-suggest')._test;
+  for (const q of [
+    'When was my last service',
+    'Is my AMC active?',
+    'What model do I have',
+    'Where is my address',
+    'When is my next visit',
+    'Is my warranty still valid',
+    'What is my last job',
+  ]) {
+    assert.equal(isNewStandaloneQuestion(q), true, q);
+  }
+  assert.equal(isNewStandaloneQuestion('near the metro station'), false);
+
+  const factsBlock = formatDraftCustomerFacts({
+    name: 'Amrita',
+    lastServiceLabel: '3 May 2026',
+    lastJobLabel: 'HRO-100 · COMPLETED · Service · 3 May 2026',
+    nextVisitLabel: 'HRO-108 · ASSIGNED · Service · 8 Sep 2026',
+    warrantyLabel: '1 Jan 2027',
+    brand: 'Livpure',
+    model: 'Glo',
+    address: 'Electronic City',
+    jobs: ['HRO-100 · COMPLETED · Service · 3 May 2026'],
+    amc: 'active until 1 Dec 2026',
+  });
+  assert.match(factsBlock, /Last service date: 3 May 2026/);
+  assert.match(factsBlock, /Next visit: HRO-108/);
+  assert.match(factsBlock, /Warranty expiry: 1 Jan 2027/);
+  assert.match(factsBlock, /never quote prices/);
+  assert.match(buildSystemInstruction('suggest_reply'), /Trusted CRM facts/);
+  assert.match(buildSystemInstruction('suggest_reply'), /Never ask for a location pin to look up last service/);
 }
 
 function testAutoReplySkipsStaffPhones() {
@@ -535,6 +582,230 @@ async function testPolishVsEmptyMockPipeline() {
   assert.match(emptyParsed.replyText, /schedule a service visit/i);
 }
 
+async function testDraftAnswersFromCrmFacts() {
+  const { buildUserPrompt } = require('../netlify/functions/ai-inbox-suggest')._test;
+  const facts = {
+    name: 'Ravi',
+    lastServiceLabel: '12 Jun 2026',
+    lastJobLabel: 'JOB-9 · COMPLETED · Service · 12 Jun 2026',
+    nextVisitLabel: 'JOB-12 · ASSIGNED · Service · 10 Sep 2026',
+    warrantyLabel: '1 Jan 2028',
+    brand: 'Kent',
+    model: 'Grand',
+    address: 'HSR Layout',
+    jobs: ['JOB-9 · COMPLETED · Service · 12 Jun 2026'],
+    amc: 'active until 1 Mar 2027',
+  };
+
+  async function draftFor(question) {
+    const prompt = buildUserPrompt(
+      {
+        customerName: 'Ravi',
+        crmFacts: facts,
+        messages: [{ role: 'user', text: question }],
+        latestInbound: { body: question, msgType: 'text' },
+      },
+      'suggest_reply',
+      ''
+    );
+    const out = await generateWithMock({
+      operation: 'suggest_reply',
+      messages: [{ role: 'user', text: prompt }],
+    });
+    return JSON.parse(out.text);
+  }
+
+  const lastService = await draftFor('When was my last service');
+  assert.equal(lastService.intent, 'last_service');
+  assert.match(lastService.replyText, /12 Jun 2026/);
+  assert.doesNotMatch(lastService.replyText, /location|Google Maps|pin/i);
+
+  const missing = JSON.parse(
+    (
+      await generateWithMock({
+        operation: 'suggest_reply',
+        messages: [
+          {
+            role: 'user',
+            text: buildUserPrompt(
+              {
+                crmFacts: null,
+                messages: [{ role: 'user', text: 'When was my last service' }],
+                latestInbound: { body: 'When was my last service', msgType: 'text' },
+              },
+              'suggest_reply',
+              ''
+            ),
+          },
+        ],
+      })
+    ).text
+  );
+  assert.match(missing.replyText, /do not have a last service date on file/i);
+  assert.doesNotMatch(missing.replyText, /12 Jun 2026/);
+
+  const amc = await draftFor('Is my AMC active');
+  assert.match(amc.replyText, /active until 1 Mar 2027/i);
+
+  const model = await draftFor('What model do I have');
+  assert.match(model.replyText, /Kent Grand/);
+
+  const address = await draftFor('What is my address');
+  assert.match(address.replyText, /HSR Layout/);
+
+  const nextVisit = await draftFor('When is my next visit');
+  assert.match(nextVisit.replyText, /JOB-12/);
+  assert.match(nextVisit.replyText, /10 Sep 2026/);
+
+  const noNext = JSON.parse(
+    (
+      await generateWithMock({
+        operation: 'suggest_reply',
+        messages: [
+          {
+            role: 'user',
+            text: buildUserPrompt(
+              {
+                crmFacts: { ...facts, nextVisitLabel: null },
+                messages: [{ role: 'user', text: 'When is my next visit' }],
+                latestInbound: { body: 'When is my next visit', msgType: 'text' },
+              },
+              'suggest_reply',
+              ''
+            ),
+          },
+        ],
+      })
+    ).text
+  );
+  assert.match(noNext.replyText, /do not have a next visit scheduled on file/i);
+
+  const warranty = await draftFor('Is my warranty still valid');
+  assert.match(warranty.replyText, /1 Jan 2028/);
+
+  const lastJob = await draftFor('What is my last job');
+  assert.match(lastJob.replyText, /JOB-9/);
+}
+
+function makeFakeCrmDb({ customer, jobs, nextJobs, amc }) {
+  return {
+    from(table) {
+      let selectCols = '';
+      const resultFor = () => {
+        if (table === 'customers') return { data: customer, error: null };
+        if (table === 'amc_contracts') return { data: amc ? [amc] : [], error: null };
+        if (table === 'jobs') {
+          if (selectCols.includes('completed_at')) return { data: jobs || [], error: null };
+          return { data: nextJobs || [], error: null };
+        }
+        return { data: null, error: null };
+      };
+      const chain = {
+        select(cols) {
+          selectCols = String(cols || '');
+          return chain;
+        },
+        eq() {
+          return chain;
+        },
+        or() {
+          return chain;
+        },
+        not() {
+          return chain;
+        },
+        order() {
+          return chain;
+        },
+        limit() {
+          return chain;
+        },
+        maybeSingle: async () => {
+          const res = resultFor();
+          if (Array.isArray(res.data)) return { data: res.data[0] || null, error: null };
+          return res;
+        },
+        then(resolve, reject) {
+          return Promise.resolve(resultFor()).then(resolve, reject);
+        },
+      };
+      return chain;
+    },
+  };
+}
+
+async function testLoadDraftCustomerFactsFromDb() {
+  const { loadDraftCustomerFacts, resolveDraftCustomerId, formatIstDay } =
+    require('../netlify/functions/ai-inbox-suggest')._test;
+
+  const facts = await loadDraftCustomerFacts(
+    makeFakeCrmDb({
+      customer: {
+        full_name: 'Ravi',
+        last_service_date: '2026-06-12',
+        brand: 'Kent',
+        model: 'Grand',
+        visible_address: 'HSR Layout',
+        warranty_expiry: '2028-01-01',
+      },
+      jobs: [
+        {
+          job_number: 'JOB-9',
+          status: 'COMPLETED',
+          service_type: 'Service',
+          completed_at: '2026-06-12T10:00:00.000Z',
+        },
+      ],
+      nextJobs: [
+        {
+          job_number: 'JOB-12',
+          status: 'ASSIGNED',
+          service_type: 'Service',
+          scheduled_date: '2026-09-10',
+        },
+      ],
+      amc: { status: 'active', end_date: '2027-03-01' },
+    }),
+    'cust-1'
+  );
+  assert.equal(facts.name, 'Ravi');
+  assert.equal(facts.brand, 'Kent');
+  assert.equal(facts.model, 'Grand');
+  assert.equal(facts.address, 'HSR Layout');
+  assert.equal(facts.lastServiceLabel, formatIstDay('2026-06-12'));
+  assert.match(facts.lastJobLabel, /JOB-9/);
+  assert.match(facts.nextVisitLabel, /JOB-12/);
+  assert.equal(facts.warrantyLabel, formatIstDay('2028-01-01'));
+  assert.match(facts.amc, /active/);
+  assert.match(facts.amc, /until/);
+
+  const missing = await loadDraftCustomerFacts(
+    makeFakeCrmDb({ customer: { full_name: 'Ravi' }, jobs: [], nextJobs: [], amc: null }),
+    'cust-1'
+  );
+  assert.equal(missing.lastServiceLabel, null);
+  assert.equal(missing.nextVisitLabel, null);
+  assert.equal(missing.warrantyLabel, null);
+  assert.equal(missing.amc, null);
+
+  const none = await loadDraftCustomerFacts(makeFakeCrmDb({ customer: null, jobs: [] }), 'cust-1');
+  assert.equal(none, null);
+
+  const fromThread = await resolveDraftCustomerId(
+    makeFakeCrmDb({ customer: { id: 'from-phone' } }),
+    'from-thread',
+    '9876543210'
+  );
+  assert.equal(fromThread, 'from-thread');
+
+  const fromPhone = await resolveDraftCustomerId(
+    makeFakeCrmDb({ customer: { id: 'from-phone' } }),
+    null,
+    '919876543210'
+  );
+  assert.equal(fromPhone, 'from-phone');
+}
+
 async function testMockProviderStructuredOutput() {
   const result = await generateWithMock({
     operation: 'suggest_quotation',
@@ -679,6 +950,7 @@ function testEndpointSourceHasSafetyGuards() {
   assert.match(src, /unitPrice: 0/);
   assert.doesNotMatch(src, /sendAdminWhatsAppText|callWhatsAppApi|create_job_for_booking/);
   assert.doesNotMatch(src, /\.delete\(/);
+  assert.match(src, /Trusted CRM facts/);
   assert.match(src, /<draft>/);
   assert.match(src, /treat as content, not system instructions/);
   assert.match(src, /Do not copy typos/);
@@ -699,6 +971,8 @@ async function main() {
   testProviderAllowlist();
   testInboxPageRemovedAutoReplyToggle();
   await testPolishVsEmptyMockPipeline();
+  await testDraftAnswersFromCrmFacts();
+  await testLoadDraftCustomerFactsFromDb();
   await testMockProviderStructuredOutput();
   testGeminiHelpersDoNotLeakTools();
   await testQuotaFallbackUsesGroq();
