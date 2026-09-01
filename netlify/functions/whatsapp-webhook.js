@@ -27,7 +27,6 @@ const { handleUnsolicitedInboundMedia } = require('./whatsapp-unsolicited-media'
 const { handlePayQrWatchInbound } = require('./whatsapp-pay-qr-helper');
 const { handlePdfAuthenticityOtpInbound } = require('./whatsapp-pdf-authenticity-otp');
 const { handleDocumentAcceptInbound } = require('./document-accept-inbound');
-const { handleWhatsAppAiAutoReplyInbound } = require('./whatsapp-ai-auto-reply');
 
 function readRawBody(event) {
   if (!event.body) return '';
@@ -159,38 +158,11 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       }
     }
 
-    // Per-chat AI auto-reply (opt-in). Yields to booking bot for active booking / book intent.
-    let aiOwnsChat = false;
-    if (
-      !authenticityOtpHandled &&
-      !documentAcceptHandled &&
-      !skipBookingBot &&
-      accessToken &&
-      phoneNumberId
-    ) {
-      try {
-        const aiResult = await handleWhatsAppAiAutoReplyInbound({
-          db,
-          accessToken,
-          phoneNumberId,
-          phone,
-          msg,
-          body,
-          priorBotState,
-          customerId,
-        });
-        aiOwnsChat = Boolean(aiResult?.sent || aiResult?.escalated);
-      } catch (err) {
-        console.warn('[whatsapp-webhook] AI auto-reply error', err?.message || err);
-      }
-    }
-
     // 24h-window booking bot (reply buttons). Failures must not break webhook ACK.
     if (
       !authenticityOtpHandled &&
       !documentAcceptHandled &&
       !skipBookingBot &&
-      !aiOwnsChat &&
       accessToken &&
       phoneNumberId
     ) {

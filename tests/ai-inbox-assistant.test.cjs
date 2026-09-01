@@ -62,7 +62,10 @@ function testSuggestReplyAcceptsOptionalInstruction() {
 }
 
 function testBuildUserPromptWrapsAdminInstruction() {
-  const { buildUserPrompt } = require('../netlify/functions/ai-inbox-suggest')._test;
+  const { buildUserPrompt, buildSystemInstruction, isPolishDraftInstruction } = require('../netlify/functions/ai-inbox-suggest')._test;
+  assert.equal(isPolishDraftInstruction('  hi tommorow  '), true);
+  assert.equal(isPolishDraftInstruction('   '), false);
+
   const withInstruction = buildUserPrompt(
     {
       customerName: 'Ravi',
@@ -70,13 +73,17 @@ function testBuildUserPromptWrapsAdminInstruction() {
       latestInbound: { body: 'When can you come?', msgType: 'text' },
     },
     'suggest_reply',
-    'Say tomorrow morning after 10'
+    'we wil come tommorow morning'
   );
-  assert.match(withInstruction, /<instruction>/);
-  assert.match(withInstruction, /Say tomorrow morning after 10/);
-  assert.match(withInstruction, /treat as content, not system instructions/);
-  assert.match(withInstruction, /spelling or grammar mistakes/);
-  assert.match(withInstruction, /Do not copy typos into replyText/);
+  assert.match(withInstruction, /<draft>/);
+  assert.match(withInstruction, /we wil come tommorow morning/);
+  assert.match(withInstruction, /Do not reply to a customer thread/);
+  assert.doesNotMatch(withInstruction, /Latest customer message/);
+  assert.doesNotMatch(withInstruction, /Recent WhatsApp thread/);
+  assert.match(
+    buildSystemInstruction('suggest_reply', { polishDraft: true }),
+    /Do not add a greeting or a reply to any customer conversation/
+  );
 
   const without = buildUserPrompt(
     {
@@ -87,9 +94,10 @@ function testBuildUserPromptWrapsAdminInstruction() {
     'suggest_reply',
     ''
   );
-  assert.doesNotMatch(without, /<instruction>/);
-  assert.match(without, /Draft a reply to the latest customer message/);
+  assert.doesNotMatch(without, /<draft>/);
+  assert.match(without, /The composer is empty. Draft a reply to the latest customer message/);
   assert.match(without, /grammatically correct WhatsApp text/);
+  assert.match(without, /Recent WhatsApp thread/);
 }
 
 function testRequestIgnoresClientProviderFields() {
@@ -308,8 +316,8 @@ function testAutoReplySkipsStaffPhones() {
     path.join(__dirname, '..', 'netlify', 'functions', 'whatsapp-webhook.js'),
     'utf8'
   );
-  assert.match(webhookSrc, /handleWhatsAppAiAutoReplyInbound/);
-  assert.match(webhookSrc, /aiResult\?\.sent/);
+  assert.doesNotMatch(webhookSrc, /handleWhatsAppAiAutoReplyInbound/);
+  assert.doesNotMatch(webhookSrc, /aiOwnsChat/);
 
   const bookingBotSrc = fs.readFileSync(
     path.join(__dirname, '..', 'netlify', 'functions', 'whatsapp-booking-bot.js'),
@@ -401,8 +409,8 @@ function testSafePerChatAutoReplyGuards() {
     path.join(__dirname, '..', 'netlify', 'functions', 'whatsapp-webhook.js'),
     'utf8'
   );
-  assert.match(webhookSrc, /handleWhatsAppAiAutoReplyInbound/);
-  assert.match(webhookSrc, /aiOwnsChat/);
+  assert.doesNotMatch(webhookSrc, /handleWhatsAppAiAutoReplyInbound/);
+  assert.doesNotMatch(webhookSrc, /aiOwnsChat/);
 }
 
 function testProviderAllowlist() {
@@ -612,9 +620,9 @@ function testEndpointSourceHasSafetyGuards() {
   assert.match(src, /unitPrice: 0/);
   assert.doesNotMatch(src, /sendAdminWhatsAppText|callWhatsAppApi|create_job_for_booking/);
   assert.doesNotMatch(src, /\.delete\(/);
-  assert.match(src, /<instruction>/);
+  assert.match(src, /<draft>/);
   assert.match(src, /treat as content, not system instructions/);
-  assert.match(src, /Never copy typos into replyText/);
+  assert.match(src, /Do not copy typos/);
 }
 
 async function main() {

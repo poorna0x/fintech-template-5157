@@ -105,7 +105,7 @@ exports.handler = async (event) => {
         const { error } = await db.from('whatsapp_chat_ai_settings').upsert(
           {
             phone_e164: phone,
-            auto_reply_enabled: body.enabled === true,
+            auto_reply_enabled: false,
             updated_at: new Date().toISOString(),
             updated_by: auth.userId || null,
           },

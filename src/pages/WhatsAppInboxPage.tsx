@@ -27,7 +27,6 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -174,10 +173,6 @@ import { registerNativeBackHandler, tryNativeBackHandlers } from '@/lib/nativeBa
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 import { sendAskReviewForLastCompletedJob } from '@/lib/jobReviews';
 import { requestAiInboxSuggestion } from '@/lib/aiInboxAssistant';
-import {
-  fetchWhatsAppAiChatSettings,
-  setWhatsAppChatAutoReply,
-} from '@/lib/whatsappAiChatSettings';
 import {
   canActOnWhatsAppMessage,
   deleteWhatsAppInboxMessage,
@@ -444,8 +439,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [threadBrand, setThreadBrand] = useState<DocumentBrand>('hydrogenro');
   const [sending, setSending] = useState(false);
   const [aiDrafting, setAiDrafting] = useState(false);
-  const [chatAutoReply, setChatAutoReply] = useState(false);
-  const [chatAutoReplyBusy, setChatAutoReplyBusy] = useState(false);
   const [purging, setPurging] = useState(false);
   const [chatDeleteTarget, setChatDeleteTarget] = useState<{
     phone: string;
@@ -723,24 +716,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     setAttachFile(null);
     setDraft('');
     setAiDrafting(false);
-    setChatAutoReply(false);
-  }, [selectedPhone]);
-
-  useEffect(() => {
-    if (!selectedPhone) return;
-    let cancelled = false;
-    void (async () => {
-      const result = await fetchWhatsAppAiChatSettings(selectedPhone);
-      if (cancelled) return;
-      if (!result.ok) {
-        if (result.setupRequired) return;
-        return;
-      }
-      setChatAutoReply(result.settings.autoReplyEnabled);
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, [selectedPhone]);
 
   const pickAttachFile = (file: File | null | undefined) => {
@@ -1871,35 +1846,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     void loadTemplates(false);
   }, [loadTemplates]);
 
-  const handleChatAutoReplyToggle = useCallback(
-    async (enabled: boolean) => {
-      const phone = selectedPhoneRef.current;
-      if (!phone || chatAutoReplyBusy) return;
-      setChatAutoReplyBusy(true);
-      setChatAutoReply(enabled);
-      try {
-        const result = await setWhatsAppChatAutoReply(phone, enabled);
-        if (!result.ok) {
-          setChatAutoReply(!enabled);
-          toast.error(
-            result.setupRequired
-              ? 'Run the WhatsApp AI settings SQL in Supabase first.'
-              : result.error || 'Could not update auto-reply'
-          );
-          return;
-        }
-        toast.success(
-          enabled
-            ? 'Auto-reply on — AI answers this chat using customer/job info. Booking still takes over if they book.'
-            : 'Auto-reply off'
-        );
-      } finally {
-        setChatAutoReplyBusy(false);
-      }
-    },
-    [chatAutoReplyBusy]
-  );
-
   const handleAiDraft = useCallback(async () => {
     const phone = selectedPhoneRef.current;
     if (!phone || sendingRef.current || aiDraftingRef.current) return;
@@ -1931,7 +1877,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         }
       });
       const warning = result.suggestion.warnings?.find((w) => String(w || '').trim());
-      if (result.suggestion.requiresHuman || warning) {
+      if (instruction) {
+        toast.success('Wording cleaned — tap send when you like it');
+      } else if (result.suggestion.requiresHuman || warning) {
         toast.message('Draft ready — review, then tap send', {
           description: warning || 'Check the reply before sending.',
         });
@@ -2827,27 +2775,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <Copy className="h-4 w-4" />
                 </button>
                 {cloudApiOn ? (
-                  <label
-                    className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-1.5 text-[#8696a0] transition hover:bg-white/5"
-                    title={
-                      chatAutoReply
-                        ? 'Auto-reply is on for this chat'
-                        : 'Turn on AI auto-reply for this chat'
-                    }
-                  >
-                    <Sparkles
-                      className={cn('h-3.5 w-3.5', chatAutoReply ? 'text-[#00a884]' : 'text-[#8696a0]')}
-                    />
-                    <Switch
-                      checked={chatAutoReply}
-                      disabled={chatAutoReplyBusy || !selectedPhone}
-                      onCheckedChange={(v) => void handleChatAutoReplyToggle(v)}
-                      className="h-4 w-7 data-[state=checked]:bg-[#00a884] data-[state=checked]:border-[#00a884]"
-                      aria-label="Auto-reply"
-                    />
-                  </label>
-                ) : null}
-                {cloudApiOn ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -3372,12 +3299,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         disabled={sending || aiDrafting || !selectedPhone}
                         title={
                           draft.trim()
-                            ? 'AI: draft from what you typed'
-                            : 'AI: draft a reply to the last message'
+                            ? 'Clean up the grammar of what you typed'
+                            : 'Draft a reply to the last message'
                         }
                         aria-label={
                           draft.trim()
-                            ? 'Draft with AI from what you typed'
+                            ? 'Clean up the grammar of what you typed'
                             : 'Draft a reply with AI'
                         }
                         onClick={() => void handleAiDraft()}
