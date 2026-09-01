@@ -100,6 +100,10 @@ export function notifyTechnicianJobPush(opts: {
           toast.warning(
             'Push token expired — ask them to reopen HRO Technician (Allow Notifications).'
           );
+        } else if (out.reason === 'fcm_error') {
+          toast.warning(
+            'App notification could not reach the phone. Assign again in a few seconds; if it still fails, ask them to open HRO Technician.'
+          );
         } else {
           toast.warning(
             `App notification not delivered (${out.reason || 'unknown'}).`

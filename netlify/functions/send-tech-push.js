@@ -8,7 +8,13 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminBearer } = require('./admin-auth-guard');
-const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
+const { getMessaging, sendToTechnicianDevicesMany } = require('./fcm-helper');
+const {
+  androidUrgentPush,
+  androidOsJobNotification,
+  jobAlertTag,
+  techChannelForJobEvent,
+} = require('./tech-fcm-channels');
 const { makeOfficeMessageReplyToken } = require('./office-message-reply-token');
 const { makeJobStartNudgeToken } = require('./job-start-nudge-token');
 const {
@@ -162,7 +168,7 @@ exports.handler = async (event) => {
       buildMessage = (token) => ({
         token,
         data: { type: 'clear_notifications', ...(tag ? { tag } : {}) },
-        android: { priority: 'high' },
+        android: androidUrgentPush(),
       });
     } else if (callPhone) {
       // Call-customer nudge: Call action only (no Reply). New tech APK required.
@@ -180,7 +186,7 @@ exports.handler = async (event) => {
           ...overlayFlag,
           ...ack,
         },
-        android: { priority: 'high' },
+        android: androidUrgentPush(),
       });
     } else if (goingNow) {
       // Start job from tray. startOnly → Start button; else Yes + No. Tech APK 3.10+.
@@ -211,7 +217,7 @@ exports.handler = async (event) => {
           ...overlayFlag,
           ...ack,
         },
-        android: { priority: 'high' },
+        android: androidUrgentPush(),
       });
     } else if (allowReply) {
       const replyToken = makeOfficeMessageReplyToken(technicianId, replyAbout);
@@ -240,11 +246,11 @@ exports.handler = async (event) => {
           ...overlayFlag,
           ...ack,
         },
-        android: { priority: 'high' },
+        android: androidUrgentPush(),
       });
     } else if (overlayEvent) {
-      // Data-only: Java must receive this or the Truecaller-style banner never
-      // runs (notification+data is swallowed by Android when the app is killed).
+      // Data-only overlay: Java must receive this or the Truecaller-style banner
+      // never runs (notification+data is swallowed when the app is killed).
       const overlayDefaults = {
         assigned: 'New job assigned',
         reassigned: 'Job reassigned to you',
@@ -253,7 +259,7 @@ exports.handler = async (event) => {
         updated: 'Job updated',
       };
       const notifTitle = title || overlayDefaults[overlayEvent] || 'Job alert';
-      const overlayTag = tag || `job_alert_${overlayEvent}`;
+      const overlayTag = jobAlertTag(overlayEvent, jobId, tag);
       const ack = ackDataFields(siteUrl, technicianId, 'job_alert', ackAbout || notifTitle);
       const overlayData = {
         type: 'job_alert_overlay',
@@ -268,12 +274,11 @@ exports.handler = async (event) => {
       buildMessage = (token) => ({
         token,
         data: { ...overlayData },
-        android: { priority: 'high' },
+        android: androidUrgentPush(),
       });
-      // Companion OS notification: same tag so it replaces, not duplicates.
-      // Screen-off Doze delivers this immediately; the data-only banner follows.
+      // OS tray first (wakes Samsung/Doze). Overlay follows ~200ms later.
       const osBody = String(message || notifTitle || ' ');
-      const osChannelId = require('./tech-fcm-channels').techChannelForJobEvent(overlayEvent);
+      const osChannelId = techChannelForJobEvent(overlayEvent);
       buildOsCompanion = (token) => ({
         token,
         notification: {
@@ -285,19 +290,13 @@ exports.handler = async (event) => {
           tag: String(overlayTag),
           ...(overlayEvent ? { event: String(overlayEvent) } : {}),
         },
-        android: {
-          priority: 'high',
+        android: androidOsJobNotification({
+          channelId: osChannelId,
+          tag: overlayTag,
+          color,
           collapseKey: `os_${overlayTag}`.slice(0, 64),
-          notification: {
-            channelId: osChannelId,
-            defaultSound: true,
-            ...(color ? { color: String(color) } : {}),
-            tag: String(overlayTag),
-            visibility: 'public',
-          },
-        },
+        }),
       });
-    } else if (showOverlay) {
     } else if (showOverlay) {
       // Tray-only nudges (e.g. photo) that also want the on-screen card.
       // Data-only so Java runs when the app is killed.
@@ -314,7 +313,7 @@ exports.handler = async (event) => {
           showOverlay: '1',
           ...ack,
         },
-        android: { priority: 'high' },
+        android: androidUrgentPush(),
       });
     } else {
       // Data-only so tech APK can attach dismiss/open ack (system notification+data cannot).
@@ -330,7 +329,7 @@ exports.handler = async (event) => {
           ...(color ? { color } : {}),
           ...ack,
         },
-        android: { priority: 'high' },
+        android: androidUrgentPush(),
       });
     }
 
@@ -350,27 +349,19 @@ exports.handler = async (event) => {
       category = 'job_nudges';
     }
 
-    const overlaySend = sendToTechnicianDevices(
+    // OS companion first when present — visible tray wakes Samsung sleeping apps
+    // before the data-only overlay. One token lookup; retry transient FCM errors.
+    const builders = buildOsCompanion ? [buildOsCompanion, buildMessage] : [buildMessage];
+    const pushResult = await sendToTechnicianDevicesMany(
       db,
       messaging,
       technicianId,
-      buildMessage,
-      category
+      builders,
+      category,
+      { betweenMs: buildOsCompanion ? 200 : 0 }
     );
-    const osSend = buildOsCompanion
-      ? sendToTechnicianDevices(db, messaging, technicianId, buildOsCompanion, category)
-      : Promise.resolve(null);
-    const settled = await Promise.allSettled([overlaySend, osSend]);
-    const primary = settled[0].status === 'fulfilled' ? settled[0].value : null;
-    const companion = settled[1].status === 'fulfilled' ? settled[1].value : null;
-    if (settled[0].status === 'rejected') {
-      console.error('[send-tech-push] overlay send failed', settled[0].reason?.message || settled[0].reason);
-    }
-    if (settled[1].status === 'rejected') {
-      console.error('[send-tech-push] os companion send failed', settled[1].reason?.message || settled[1].reason);
-    }
-    const sent = Math.max(primary?.sent || 0, companion?.sent || 0);
-    const tokens = Math.max(primary?.tokens || 0, companion?.tokens || 0);
+    const sent = pushResult?.sent || 0;
+    const tokens = pushResult?.tokens || 0;
 
     // Mirror nudge/office messages to WhatsApp (not assign/unassign — CRM handles those).
     if (!clear && category) {
@@ -403,11 +394,19 @@ exports.handler = async (event) => {
       }
     }
 
+    if (pushResult?.skipped) {
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ sent: false, reason: pushResult.reason || 'skipped' }),
+      };
+    }
     if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
     }
     if (sent === 0) {
-      return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'stale_token' }) };
+      const reason = pushResult?.reason === 'fcm_error' ? 'fcm_error' : 'stale_token';
+      return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason }) };
     }
     return { statusCode: 200, headers, body: JSON.stringify({ sent: true, devices: sent }) };
   } catch (err) {

@@ -85,6 +85,9 @@ public class MainActivity extends BridgeActivity {
         getWindow()
             .getDecorView()
             .postDelayed(this::maybePromptOverlayPermission, 3_500L);
+        getWindow()
+            .getDecorView()
+            .postDelayed(this::maybePromptBatteryUnrestricted, 8_000L);
     }
 
     /**
@@ -160,6 +163,67 @@ public class MainActivity extends BridgeActivity {
                 .show();
         } catch (Exception e) {
             android.util.Log.w("HRO-Main", "Overlay permission prompt failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Samsung (and some other OEMs) delay or drop FCM while the app is in
+     * "sleeping apps" / battery optimization. Ask once to ignore optimizations
+     * so job-assign alerts arrive immediately.
+     */
+    private void maybePromptBatteryUnrestricted() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return;
+            android.os.PowerManager pm =
+                (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null && pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+
+            android.content.SharedPreferences prefs =
+                getSharedPreferences("hro_tech_prefs", MODE_PRIVATE);
+            if (prefs.getBoolean("battery_unrestricted_prompted", false)) return;
+            prefs.edit().putBoolean("battery_unrestricted_prompted", true).apply();
+
+            String mfr = android.os.Build.MANUFACTURER == null
+                ? ""
+                : android.os.Build.MANUFACTURER.toLowerCase();
+            boolean samsung = mfr.contains("samsung");
+            String message = samsung
+                ? "Samsung can delay job alerts when this app is sleeping. "
+                    + "Tap Allow, then also check Settings → Battery → Background usage limits "
+                    + "and add HydrogenRO to Never sleeping apps."
+                : "Allow unrestricted battery so new job assigns arrive immediately even when the phone is idle.";
+
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Job alerts may be delayed")
+                .setMessage(message)
+                .setPositiveButton(
+                    "Allow",
+                    (d, w) -> {
+                        try {
+                            android.content.Intent intent =
+                                new android.content.Intent(
+                                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    android.net.Uri.parse("package:" + getPackageName())
+                                );
+                            startActivity(intent);
+                        } catch (Exception e) {
+                            try {
+                                startActivity(
+                                    new android.content.Intent(
+                                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                            } catch (Exception e2) {
+                                android.util.Log.w(
+                                    "HRO-Main",
+                                    "Open battery settings failed: " + e2.getMessage());
+                            }
+                        }
+                    }
+                )
+                .setNegativeButton("Not now", null)
+                .setCancelable(true)
+                .show();
+        } catch (Exception e) {
+            android.util.Log.w("HRO-Main", "Battery prompt failed: " + e.getMessage());
         }
     }
 

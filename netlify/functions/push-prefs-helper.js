@@ -176,12 +176,70 @@ async function pruneTechnicianFcmTokens(db, technicianId, staleTokens) {
     .in('fcm_token', staleTokens);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isStaleTokenError(err) {
+  const code = err?.errorInfo?.code || err?.code || '';
+  return String(code).includes('registration-token-not-registered');
+}
+
+/** FCM blips (quota, 503, timeout) — retry once; do not treat as a dead token. */
+function isTransientFcmError(err) {
+  const code = String(err?.errorInfo?.code || err?.code || '').toLowerCase();
+  const msg = String(err?.message || '');
+  return (
+    code.includes('unavailable') ||
+    code.includes('internal-error') ||
+    code.includes('internal') ||
+    code.includes('deadline-exceeded') ||
+    code.includes('resource-exhausted') ||
+    code.includes('too-many-messages') ||
+    /ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|503|429/i.test(msg)
+  );
+}
+
+async function sendFcmWithRetry(messaging, message, delayMs = 250) {
+  try {
+    await messaging.send(message);
+    return { ok: true };
+  } catch (err) {
+    if (isStaleTokenError(err)) return { ok: false, stale: true, err };
+    if (!isTransientFcmError(err)) {
+      console.error('[fcm-helper] send failed', err?.message || err);
+      return { ok: false, stale: false, err };
+    }
+    await sleep(Math.max(0, Number(delayMs) || 0));
+    try {
+      await messaging.send(message);
+      return { ok: true, retried: true };
+    } catch (err2) {
+      if (isStaleTokenError(err2)) return { ok: false, stale: true, err: err2 };
+      console.error('[fcm-helper] send retry failed', err2?.message || err2);
+      return { ok: false, stale: false, err: err2 };
+    }
+  }
+}
+
 /**
- * Send one FCM message to every device of a technician. Optional `category`
- * filters by per-technician push_prefs + per-device push_prefs.
- * Skips when technician push_notifications_enabled = false.
+ * Send one or more FCM payloads to every device of a technician.
+ * Builders run sequentially per token (OS tray first, then data-only overlay)
+ * so Samsung/Doze wakes on the visible notification before the overlay.
  */
-async function sendToTechnicianDevices(db, messaging, technicianId, buildMessage, category = null) {
+async function sendToTechnicianDevicesMany(
+  db,
+  messaging,
+  technicianId,
+  builders,
+  category = null,
+  opts = {}
+) {
+  const list = (Array.isArray(builders) ? builders : [builders]).filter(
+    (fn) => typeof fn === 'function'
+  );
+  const betweenMs = Math.max(0, Number(opts.betweenMs) || 0);
+
   try {
     const { data: techRow, error: techErr } = await db
       .from('technicians')
@@ -202,22 +260,57 @@ async function sendToTechnicianDevices(db, messaging, technicianId, buildMessage
 
   const tokens = await getTechnicianFcmTokens(db, technicianId, category);
   if (tokens.length === 0) return { sent: 0, tokens: 0 };
+  if (list.length === 0) return { sent: 0, tokens: tokens.length, reason: 'no_payload' };
 
-  const results = await Promise.allSettled(tokens.map((t) => messaging.send(buildMessage(t))));
   const stale = [];
   let sent = 0;
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled') sent += 1;
-    else if (isStaleTokenError(r.reason)) stale.push(tokens[i]);
-    else console.error('[fcm-helper] send failed', r.reason?.message || r.reason);
-  });
+  let errorCount = 0;
+  let staleCount = 0;
+
+  for (const token of tokens) {
+    let deviceOk = false;
+    let deviceStale = false;
+    for (let i = 0; i < list.length; i += 1) {
+      if (i > 0 && betweenMs > 0) await sleep(betweenMs);
+      const result = await sendFcmWithRetry(messaging, list[i](token));
+      if (result.ok) {
+        deviceOk = true;
+      } else if (result.stale) {
+        deviceStale = true;
+        staleCount += 1;
+      } else {
+        errorCount += 1;
+      }
+    }
+    if (deviceOk) sent += 1;
+    else if (deviceStale) stale.push(token);
+  }
+
   await pruneTechnicianFcmTokens(db, technicianId, stale);
-  return { sent, tokens: tokens.length };
+  const failReason =
+    sent > 0
+      ? undefined
+      : stale.length === tokens.length
+        ? 'stale_token'
+        : errorCount > 0
+          ? 'fcm_error'
+          : 'stale_token';
+  return {
+    sent,
+    tokens: tokens.length,
+    staleCount,
+    errorCount,
+    ...(failReason ? { reason: failReason } : {}),
+  };
 }
 
-function isStaleTokenError(err) {
-  const code = err?.errorInfo?.code || err?.code || '';
-  return String(code).includes('registration-token-not-registered');
+/**
+ * Send one FCM message to every device of a technician. Optional `category`
+ * filters by per-technician push_prefs + per-device push_prefs.
+ * Skips when technician push_notifications_enabled = false.
+ */
+async function sendToTechnicianDevices(db, messaging, technicianId, buildMessage, category = null) {
+  return sendToTechnicianDevicesMany(db, messaging, technicianId, [buildMessage], category);
 }
 
 module.exports = {
@@ -226,7 +319,10 @@ module.exports = {
   getTechnicianFcmTokens,
   pruneTechnicianFcmTokens,
   sendToTechnicianDevices,
+  sendToTechnicianDevicesMany,
+  sendFcmWithRetry,
   isStaleTokenError,
+  isTransientFcmError,
   isPushEnabledRow,
   isCategoryEnabled,
   ADMIN_PUSH_CATEGORIES,

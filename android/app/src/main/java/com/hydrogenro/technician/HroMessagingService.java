@@ -53,6 +53,36 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         }
     }
 
+    @Override
+    public void onNewToken(@NonNull String token) {
+        try {
+            super.onNewToken(token);
+        } catch (Throwable t) {
+            Log.w(TAG, "super.onNewToken failed", t);
+        }
+        try {
+            DevicePrefsPlugin.saveFcmToken(getApplicationContext(), token);
+            Log.i(TAG, "FCM token rotated (len=" + token.length() + ")");
+        } catch (Throwable t) {
+            Log.w(TAG, "save rotated FCM token failed", t);
+        }
+    }
+
+    /** Keep the radio up long enough to post tray + overlay on sleeping Samsung phones. */
+    private void acquireBriefWakeLock() {
+        try {
+            android.os.PowerManager pm =
+                (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm == null) return;
+            android.os.PowerManager.WakeLock wl =
+                pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "hro:jobpush");
+            wl.setReferenceCounted(false);
+            wl.acquire(4000L);
+        } catch (Throwable t) {
+            Log.w(TAG, "wake lock skipped", t);
+        }
+    }
+
     private void handleMessage(@NonNull RemoteMessage remoteMessage) {
         // Opportunistic retry of any offline dismiss/open acks.
         TechPushAckReceiver.flushPendingAsync(getApplicationContext());
@@ -83,6 +113,7 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             return;
         }
         if ("job_alert_overlay".equals(data.get("type"))) {
+            acquireBriefWakeLock();
             showJobAlertOverlay(data);
             return;
         }
@@ -429,6 +460,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         String tag = data.get("tag");
         if (tag == null || tag.isEmpty()) tag = "job_alert_overlay";
 
+        // Tray first so Samsung still gets the sound if overlay drawing throws.
+        postJobAlertTray(
+            context, title, body, jobId, color, tag, event,
+            data.get("ackToken"), data.get("ackUrl"), data.get("source"));
         JobAlertOverlay.show(
             context,
             title,
@@ -440,9 +475,6 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             data.get("ackToken"),
             data.get("ackUrl"),
             data.get("source"));
-        postJobAlertTray(
-            context, title, body, jobId, color, tag, event,
-            data.get("ackToken"), data.get("ackUrl"), data.get("source"));
     }
 
     private void postJobAlertTray(
@@ -489,6 +521,7 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                 jobId);
 
         String channelId = NotificationChannels.channelForJobEvent(event);
+        boolean assign = NotificationChannels.isAssignEvent(event);
         NotificationCompat.Builder builder =
             new NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(R.drawable.ic_stat_notify)
@@ -496,8 +529,13 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setPriority(assign
+                    ? NotificationCompat.PRIORITY_MAX
+                    : NotificationCompat.PRIORITY_HIGH)
+                .setCategory(assign
+                    ? NotificationCompat.CATEGORY_EVENT
+                    : NotificationCompat.CATEGORY_MESSAGE)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setContentIntent(openPending)
                 .setAutoCancel(true);

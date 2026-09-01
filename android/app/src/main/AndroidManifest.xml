@@ -133,6 +133,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Job-assign FCM: Samsung/Doze delay without this (user still must Allow). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- navigator.vibrate in the WebView (button haptics) is silently ignored without this -->
     <uses-permission android:name="android.permission.VIBRATE" />
