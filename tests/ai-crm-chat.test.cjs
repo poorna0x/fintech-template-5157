@@ -1351,6 +1351,89 @@ function testNearbyRadiusParsesMetres() {
     inferDeterministicPlan('for which customer we sold the softener around 35000').tools,
     ['job_search', 'customer_search']
   );
+
+  const lastInstallQ = 'which is the last softener installation we did';
+  const lastInstall = extractSaleLookup(lastInstallQ);
+  assert.equal(lastInstall.serviceNeedle, 'soft');
+  assert.equal(lastInstall.wantLatest, true);
+  assert.equal(lastInstall.completedOnly, true);
+  assert.equal(lastInstall.wantsInstall, true);
+  assert.equal(lastInstall.excludeDemo, true);
+  assert.deepEqual(inferDeterministicPlan(lastInstallQ).tools, ['job_search', 'customer_search']);
+  assert.deepEqual(
+    augmentPlanTools(
+      { route: 'crm', tools: ['job_search', 'customer_search'], rewrittenQuery: lastInstallQ },
+      lastInstallQ
+    ).tools,
+    ['job_search', 'customer_search']
+  );
+
+  const lastAnswer = formatStatsAnswerForTools(
+    {
+      hints: { saleLookup: lastInstall },
+      customers: [
+        { id: 'c1', name: 'Rajendra Akula', customerCode: 'C1717' },
+        { id: 'c2', name: 'Kannababu Rongala', customerCode: 'C1500' },
+        { id: 'c3', name: 'Lavanya Prasanna', customerCode: 'C0550' },
+      ],
+      jobs: [
+        {
+          customerId: 'c1',
+          jobNumber: 'WS47285301',
+          serviceType: 'SOFTENER',
+          serviceSubType: 'New Softener Installation',
+          status: 'COMPLETED',
+          completedAt: '2026-08-14',
+          paymentAmount: 15000,
+        },
+        {
+          customerId: 'c2',
+          jobNumber: 'RO57186860',
+          serviceType: 'SOFTENER',
+          serviceSubType: 'Installation',
+          status: 'COMPLETED',
+          completedAt: '2026-07-03',
+          paymentAmount: 15000,
+        },
+      ],
+      stats: {
+        rangeLabel: 'today',
+        jobsCompletedInRange: 5,
+        openJobsTotal: 0,
+        openJobsStatuses: ['PENDING'],
+        pendingPaymentsListed: 6,
+        pendingPaymentsListedTotal: 23110,
+        completedJobValueInRange: 11450,
+      },
+    },
+    ['job_search', 'customer_search']
+  );
+  assert.match(lastAnswer, /^Last softener installation\n/m);
+  assert.match(lastAnswer, /Rajendra Akula · C1717 · WS47285301/);
+  assert.match(lastAnswer, /New Softener Installation · Completed · 2026-08-14 · INR 15,000/);
+  assert.match(lastAnswer, /\n\nRecent\n/);
+  assert.match(lastAnswer, /Kannababu Rongala · C1500 · RO57186860/);
+  assert.doesNotMatch(lastAnswer, /Jobs · today/);
+  assert.doesNotMatch(lastAnswer, /Pending payments/);
+  assert.doesNotMatch(lastAnswer, /Revenue · today/);
+  assert.doesNotMatch(lastAnswer, /SOFTENER New Softener/);
+  assert.doesNotMatch(lastAnswer, /Statuses · PENDING/);
+  assert.doesNotMatch(lastAnswer, /Lavanya Prasanna/);
+
+  const dump = formatStatsAnswerForTools(
+    {
+      stats: {
+        rangeLabel: 'today',
+        jobsCompletedInRange: 5,
+        openJobsTotal: 0,
+        openJobsStatuses: ['PENDING'],
+      },
+    },
+    ['jobs_overview']
+  );
+  assert.match(dump, /Completed · 5/);
+  assert.match(dump, /Open · 0/);
+  assert.doesNotMatch(dump, /Statuses ·/);
 }
 
 async function testMockCrmChat() {

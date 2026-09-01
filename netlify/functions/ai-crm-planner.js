@@ -62,7 +62,8 @@ function plannerSystemInstruction() {
     'For conversation, tools=[], rewrittenQuery="", and provide a concise helpful directAnswer.',
     'Use route=crm when the user asks to find, count, compare, rank, summarize, create, or edit CRM records.',
     'For route=crm you MUST pick at least one tool. Never return an empty tools array for CRM questions.',
-    'When unsure which tool fits, prefer jobs_overview plus payments or revenue for a safe read-only snapshot.',
+    'Choose only the tools the question needs. A last/latest installation or sale lookup is job_search, not today\'s jobs-payments-revenue snapshot.',
+    'Use jobs_overview plus payments or revenue only when the admin asked for a summary, how business is going, or those totals.',
     `CRM tools are allowlisted: ${ALLOWED_CRM_TOOLS.join(', ')}.`,
     'Choose only tools needed for the request. Never request SQL, database access, deletion, sending, or external URLs.',
     'customer_search and job_search look up specific records the message names, so include the name, phone, code or job number in rewrittenQuery.',
@@ -269,11 +270,16 @@ function looksLikeCrmQuestion(text) {
 }
 
 function looksLikeSaleLookup(text, lower) {
+  const value = String(lower || '');
   const hasAmount = /\b(?:₹|rs\.?|inr)?\s*\d{1,2}(?:,\d{2}){2,}\b|\b\d{4,6}\b|\b\d+(?:\.\d+)?\s*k\b/i.test(text);
-  const hasProduct = /\b(?:softeners?|\bro\b|installation|filter)\b/.test(lower);
+  const hasProduct = /\b(?:softeners?|\bro\b|installation|filter)\b/.test(value);
   const hasSale =
-    /\b(?:sold|sale|billed|charged|invoiced|which customer|whose|who (?:bought|purchased|took))\b/.test(lower);
-  return hasSale && (hasAmount || hasProduct);
+    /\b(?:sold|sale|billed|charged|invoiced|which customer|whose|who (?:bought|purchased|took))\b/.test(value);
+  const hasLastProduct =
+    /\b(?:last|latest|most recent)\b/.test(value) &&
+    hasProduct &&
+    /\b(?:install|job|we did|sold|sale|completed|done)\b/.test(value);
+  return (hasSale && (hasAmount || hasProduct)) || hasLastProduct;
 }
 
 function looksLikeSqlAnalyticsQuestion(lower) {
@@ -1124,7 +1130,7 @@ function augmentPlanTools(plan, message) {
   const combined = `${plan.rewrittenQuery || ''} ${message || ''}`;
   const searchOnly = tools.length > 0 && tools.every((tool) => SEARCH_ONLY_TOOLS.has(tool));
   const namesSomeone = hasSearchableTarget(extractQueryHints(combined), null);
-  if (searchOnly && !namesSomeone) {
+  if (searchOnly && !namesSomeone && !looksLikeSaleLookup(combined, combined.toLowerCase())) {
     tools.push('jobs_overview');
   }
   // Without a search tool a named person is never looked up, and the answer ends

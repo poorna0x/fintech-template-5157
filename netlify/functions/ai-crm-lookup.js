@@ -1151,16 +1151,42 @@ function extractSaleLookup(message) {
   else if (/\b(?:\bro\b|reverse osmosis)\b/.test(lower)) serviceNeedle = 'ro';
   else if (/\binstall/.test(lower)) serviceNeedle = 'install';
 
+  const wantsLast = /\b(?:last|latest|most recent)\b/.test(lower);
+  const wantsInstall = /\binstall/.test(lower);
   const asksWhichCustomer =
     /\b(?:which|whose|who(?:'s| is)?|find|sold|sale|billed|charged|invoiced)\b/.test(lower) &&
     (amount != null || serviceNeedle);
-  if (!asksWhichCustomer) return null;
-  return { amount, serviceNeedle };
+  const asksLastProductJob =
+    wantsLast &&
+    (serviceNeedle || wantsInstall) &&
+    /\b(?:install|job|sale|sold|we did|you did|completed|done)\b/.test(lower);
+  if (!asksWhichCustomer && !asksLastProductJob) return null;
+  return {
+    amount,
+    serviceNeedle: serviceNeedle || (wantsInstall ? 'install' : null),
+    wantLatest: wantsLast,
+    completedOnly: wantsLast || /\b(?:we did|completed|done)\b/.test(lower),
+    wantsInstall,
+    excludeDemo: wantsInstall,
+  };
+}
+
+function jobRecencyMs(job) {
+  return Date.parse(job?.completedAt || job?.scheduledDate || '') || 0;
+}
+
+function jobLooksLikeDemo(job) {
+  return /\bdemo\b/i.test(`${job?.serviceSubType || ''} ${job?.serviceType || ''}`);
+}
+
+function jobLooksLikeInstall(job) {
+  return /\binstall/i.test(`${job?.serviceSubType || ''} ${job?.serviceType || ''}`);
 }
 
 async function searchJobsBySale(db, sale) {
   if (!sale || (!sale.amount && !sale.serviceNeedle)) return [];
-  let q = db.from('jobs').select(JOB_COLS).order('created_at', { ascending: false }).limit(40);
+  let q = db.from('jobs').select(JOB_COLS).order('completed_at', { ascending: false }).limit(40);
+  if (sale.completedOnly) q = q.eq('status', 'COMPLETED');
   if (sale.serviceNeedle === 'soft') {
     q = q.or('service_type.ilike.%soft%,service_sub_type.ilike.%soft%');
   } else if (sale.serviceNeedle === 'ro') {
@@ -1174,6 +1200,8 @@ async function searchJobsBySale(db, sale) {
     return [];
   }
   let rows = (data || []).map(slimJob).filter(Boolean);
+  if (sale.excludeDemo) rows = rows.filter((job) => !jobLooksLikeDemo(job));
+  if (sale.wantsInstall) rows = rows.filter((job) => jobLooksLikeInstall(job));
   if (sale.amount) {
     const slack = Math.max(sale.amount * 0.15, 2000);
     rows = rows
@@ -1182,10 +1210,12 @@ async function searchJobsBySale(db, sale) {
         return { job, value, delta: Math.abs(value - sale.amount) };
       })
       .filter((row) => row.value > 0 && row.delta <= slack)
-      .sort((a, b) => a.delta - b.delta)
+      .sort((a, b) => a.delta - b.delta || jobRecencyMs(b.job) - jobRecencyMs(a.job))
       .map((row) => row.job);
+  } else {
+    rows.sort((a, b) => jobRecencyMs(b) - jobRecencyMs(a));
   }
-  return rows.slice(0, 8);
+  return rows.slice(0, sale.wantLatest ? 6 : 8);
 }
 
 async function searchJobs(db, hints, customerIds) {
@@ -2204,15 +2234,62 @@ function formatJobStatusLabel(status) {
   );
 }
 
-function formatSaleJobLine(job, customers) {
+function titleCaseLabel(value) {
+  const raw = String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!raw) return '';
+  if (/^[A-Z0-9]{2,4}$/.test(raw)) return raw;
+  return raw.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatServiceKind(type, subType) {
+  const kind = titleCaseLabel(type);
+  const detail = titleCaseLabel(subType);
+  if (!detail) return kind || '—';
+  if (!kind) return detail;
+  if (detail.toLowerCase().includes(kind.toLowerCase())) return detail;
+  return `${kind} · ${detail}`;
+}
+
+function formatJobDate(job) {
+  const raw = String(job?.completedAt || job?.scheduledDate || '').slice(0, 10);
+  return raw || '—';
+}
+
+function formatSaleJobLines(job, customers) {
   const customer = (customers || []).find((c) => c.id === job.customerId);
-  const date = String(job.scheduledDate || job.completedAt || '').slice(0, 10) || '—';
+  const title = [customer?.name || '—', customer?.customerCode || '—', job.jobNumber || '—'].join(' · ');
   const amount = job.paymentAmount || job.actualCost;
-  let line = `· ${customer?.name || '—'} · ${customer?.customerCode || '—'} · ${job.jobNumber || '—'}`;
-  line += ` · ${String(job.serviceType || '—')}${job.serviceSubType ? ` ${job.serviceSubType}` : ''}`;
-  line += ` · ${String(job.status || '—').replace(/_/g, ' ')} · ${date}`;
-  if (amount) line += ` · ${formatInr(amount)}`;
-  return line;
+  const detail = [
+    formatServiceKind(job.serviceType, job.serviceSubType),
+    formatJobStatusLabel(job.status),
+    formatJobDate(job),
+    amount ? formatInr(amount) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return [`· ${title}`, `    ${detail}`];
+}
+
+function saleLookupHeading(sale) {
+  if (!sale) return 'Jobs';
+  if (sale.wantLatest) {
+    if (sale.serviceNeedle === 'soft') {
+      return sale.wantsInstall ? 'Last softener installation' : 'Last softener job';
+    }
+    if (sale.serviceNeedle === 'ro') return 'Last RO job';
+    if (sale.wantsInstall) return 'Last installation';
+    return 'Last matching job';
+  }
+  if (sale.serviceNeedle === 'soft') return 'Softener jobs';
+  if (sale.serviceNeedle === 'ro') return 'RO jobs';
+  return 'Jobs';
+}
+
+function formatSaleJobLine(job, customers) {
+  return formatSaleJobLines(job, customers).join('\n');
 }
 
 /** Structured multi-section text for live ops (not one paragraph). */
@@ -2286,9 +2363,17 @@ function formatInr(amount) {
 }
 
 function formatStatsSection(title, rows) {
-  const body = (rows || []).filter(Boolean);
+  const body = (rows || []).filter((line) => line != null && line !== false);
   if (!body.length) return '';
-  return [title, ...body.map((line) => (line.startsWith('  ') ? line : `  ${line}`))].join('\n');
+  return [
+    title,
+    ...body.map((line) => {
+      const text = String(line);
+      if (!text.trim()) return '';
+      if (text.startsWith('    ') || text.startsWith('  ')) return text;
+      return `  ${text.trim()}`;
+    }),
+  ].join('\n');
 }
 
 function formatStatsAnswerForTools(pack, tools) {
@@ -2303,7 +2388,9 @@ function formatStatsAnswerForTools(pack, tools) {
     if (stats.jobsScheduledInRange != null) rows.push(`Scheduled · ${stats.jobsScheduledInRange}`);
     if (stats.openJobsTotal != null) {
       rows.push(`Open · ${stats.openJobsTotal}`);
-      if (stats.openJobsStatuses?.length) rows.push(`Statuses · ${stats.openJobsStatuses.join(', ')}`);
+      if (stats.openJobsTotal > 0 && stats.openJobsStatuses?.length) {
+        rows.push(`Statuses · ${stats.openJobsStatuses.map(formatJobStatusLabel).join(', ')}`);
+      }
     }
     if (stats.followUpJobsTotal != null) rows.push(`Follow-ups · ${stats.followUpJobsTotal}`);
     if (stats.jobsCompletedByTechnicianInRange != null) {
@@ -2469,7 +2556,7 @@ function formatStatsAnswerForTools(pack, tools) {
     );
   }
 
-  if (selected.includes('customer_search')) {
+  if (selected.includes('customer_search') && !pack.hints?.saleLookup) {
     if (pack.customers?.length) {
       const place = pack.hints?.placeHint;
       const withAmc = pack.hints?.requireAmc;
@@ -2495,7 +2582,7 @@ function formatStatsAnswerForTools(pack, tools) {
         !selected.includes('job_search') &&
         !selected.includes('jobs_overview')
       ) {
-        const jobRows = pack.jobs.slice(0, 8).map((job) => formatSaleJobLine(job, pack.customers));
+        const jobRows = pack.jobs.slice(0, 8).flatMap((job) => formatSaleJobLines(job, pack.customers));
         sections.push(formatStatsSection('Jobs', jobRows));
       }
     } else if (!selected.includes('customer_value_ranking') && !pack.jobs?.length) {
@@ -2509,10 +2596,32 @@ function formatStatsAnswerForTools(pack, tools) {
 
   if (selected.includes('job_search') || (selected.includes('jobs_overview') && pack.jobs?.length)) {
     if (pack.jobs?.length) {
-      const rows = pack.jobs.slice(0, 6).map((job) => formatSaleJobLine(job, pack.customers));
-      sections.push(formatStatsSection('Jobs', rows));
+      const sale = pack.hints?.saleLookup || null;
+      const jobs = pack.jobs.slice(0, 6);
+      if (sale?.wantLatest) {
+        const [latest, ...recent] = jobs;
+        sections.push(
+          formatStatsSection(saleLookupHeading(sale), formatSaleJobLines(latest, pack.customers))
+        );
+        if (recent.length) {
+          sections.push(
+            formatStatsSection(
+              'Recent',
+              recent.flatMap((job) => formatSaleJobLines(job, pack.customers))
+            )
+          );
+        }
+      } else {
+        const heading = sale ? saleLookupHeading(sale) : 'Jobs';
+        sections.push(
+          formatStatsSection(
+            heading,
+            jobs.flatMap((job) => formatSaleJobLines(job, pack.customers))
+          )
+        );
+      }
     } else if (selected.includes('job_search')) {
-      sections.push('Jobs\n  No matches found.');
+      sections.push(formatStatsSection(saleLookupHeading(pack.hints?.saleLookup), ['No matches found.']));
     }
   }
 
@@ -3313,6 +3422,7 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
 
   const hints = extractQueryHints(message);
   const saleLookup = extractSaleLookup(message);
+  hints.saleLookup = saleLookup;
   const detected = detectOverviewIntent(message, todayKey);
   const plannedScopes = scopesForPlannerTools(plannerTools);
   if (Array.isArray(plannerTools) && plannerTools.length) {
@@ -3427,10 +3537,12 @@ async function lookupCrmContext({ message, focusCustomerId, plannerTools } = {})
     technicians = overview.technicians || [];
 
     const jobIds = new Set(jobs.map((j) => j.id));
-    for (const job of overview.jobs) {
-      if (jobIds.has(job.id)) continue;
-      jobIds.add(job.id);
-      jobs.push(job);
+    if (!saleLookup) {
+      for (const job of overview.jobs) {
+        if (jobIds.has(job.id)) continue;
+        jobIds.add(job.id);
+        jobs.push(job);
+      }
     }
 
     const reminderIds = new Set(reminders.map((r) => r.id));
@@ -4275,6 +4387,8 @@ module.exports = {
   extractLocationFromMessage,
   extractRadiusKm,
   extractSaleLookup,
+  formatSaleJobLines,
+  formatServiceKind,
   formatRadiusLabel,
   formatDistanceLabel,
   detectLocationSearch,
