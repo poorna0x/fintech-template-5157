@@ -1,0 +1,14 @@
+---
+description: One concern per commit so pushing to main is a clean step
+alwaysApply: true
+---
+
+# Focused commits (ready for main)
+
+Keep commits small and single-purpose so any one of them can be pushed to `main` without dragging unrelated WIP.
+
+- **One concern per commit** (e.g. FCM delivery, then separately PDF edit-mode, then separately AI prompt copy).
+- Do **not** mix Android/APK, Netlify functions, CRM UI, and prompt-only edits in the same commit unless they are the same fix.
+- When leftover local edits are unrelated to the current request, leave them unstaged — or commit them separately if the user wants them saved.
+- Commit message: 1–2 sentences on **why**, matching recent `main` style.
+- **Do not** `git push origin main` unless the user asks (still “push” / “push to main”).
