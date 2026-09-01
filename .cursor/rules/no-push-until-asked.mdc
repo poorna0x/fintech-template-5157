@@ -8,6 +8,7 @@ alwaysApply: true
 **Source of truth:** `local-commits-push-main.mdc`.
 
 - Commit locally on **main** after each meaningful change.
-- **Never** `git push origin main` unless the user clearly asks (“push to main”, “merge to main”).
+- **Never** `git push origin main` unless the user clearly asks (“push to main”, “push all to main”, “merge to main”).
+- Then push **once**: a single `git push origin main` of every local commit.
 - “Push” without naming main → do **not** push `origin/main`.
 - Never force-push `main`.

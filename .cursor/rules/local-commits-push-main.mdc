@@ -1,33 +1,32 @@
 ---
-description: Commit every change locally on main; push origin/main only when asked
+description: Commit every change locally on main; one git push origin main only when asked
 alwaysApply: true
 ---
 
-# Local commits → push to main only when asked
+# Local commits → one push to main when asked
 
 Work on **`main`**. After every meaningful change, **commit locally**. Do not wait for “commit”.
-
-This supersedes feature-branch auto-push while we iterate on live `main`.
 
 ## After each task (do this without being asked)
 
 1. **One concern per commit** (see `focused-commits-for-main.mdc`).
 2. `git add` only that change. Never stage `.env.local` or secrets.
 3. `git commit` on **main**. Leave unrelated dirty files unstaged.
-4. **Do not push.** Local `main` may sit ahead of `origin/main`.
+4. **Do not push.** Keep stacking local commits until they ask.
 
 If the user says “don’t commit until I say”, pause until they lift it.
 
-## When they say “push to main” / “merge to main”
+## When they say push to main
 
-1. `git status` and `git log origin/main..HEAD --oneline`.
-2. Commit any leftover work that belongs with this batch (still focused commits).
-3. Show the user the exact local commits that will go live.
-4. `git push origin main` — **all** of those commits, in order.
-5. Never `--force` / `--force-with-lease` on `main`.
-6. Do **not** Netlify-deploy unless they also ask to deploy.
+Phrases that count: “push to main”, “push all to main”, “merge to main”.
+
+1. Commit any leftover work that belongs (still focused commits).
+2. `git status` and `git log origin/main..HEAD --oneline`.
+3. **One** `git push origin main` — the whole local stack, in order. Not a PR, not a side branch, not one push per commit.
+4. Never `--force` / `--force-with-lease` on `main`.
+5. Do **not** Netlify-deploy unless they also ask to deploy.
 
 ## Ambiguous “push”
 
-- “**push to main**” / “**merge to main**” → `git push origin main`.
-- “**push**” alone, or push a branch name other than main → **do not** push `origin/main`; ask or push only that named branch.
+- Names **main** → that one `git push origin main`.
+- “Push” alone, or another branch name → **do not** push `origin/main`.

@@ -12,4 +12,4 @@ Keep commits small and single-purpose so any one of them can be pushed to `main`
 - When leftover local edits are unrelated to the current request, leave them unstaged — or commit them separately if the user wants them saved.
 - Commit message: 1–2 sentences on **why**, matching recent `main` style.
 - After the change is done, **commit locally** (see `local-commits-push-main.mdc`). Do not wait for “commit”.
-- **Do not** `git push origin main` unless the user says “push to main” / “merge to main”.
+- **Do not** `git push origin main` unless the user says “push to main” / “push all to main” / “merge to main”. Then push once.
