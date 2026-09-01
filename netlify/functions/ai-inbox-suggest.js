@@ -148,6 +148,7 @@ function buildSystemInstruction(operation, allowPricesOrOpts = false) {
     'Read past spelling mistakes, grammar errors, and shorthand in the customer thread. Infer the intended meaning. Never copy typos into replyText.',
     'replyText must be a sendable, grammatically correct WhatsApp draft in natural India English.',
     'Make replyText directly usable: acknowledge the customer message, give one clear next step, and avoid generic filler.',
+    'If customer asks when last service was, use Last service date on file. Never ask for a location pin to look up last service.',
     'If customer asks about price/payment/discount or raises a complaint, keep the reply safe and set requiresHuman=true.',
     'A trusted requested-detail verification in the user prompt is server-calculated from message types and booking state. Always honor it. If a requested location/photo is still missing, politely ask for it again and never claim it was received.',
     'If unsure, set requiresHuman=true and ask a clarifying question in replyText.',
@@ -279,6 +280,30 @@ function inferRecentDetailRequest(rows) {
   return null;
 }
 
+function isNewStandaloneQuestion(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (/\?/.test(t)) return true;
+  return /\b(when was|when is|what(?:'s| is| was)|how much|last service|amc expiry|warranty|quotation|quote|price)\b/i.test(
+    t
+  );
+}
+
+function formatIstDay(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    return d.toLocaleDateString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return null;
+  }
+}
+
 function detectPendingDetailRequest(rows, bookingState) {
   const chronological = Array.isArray(rows) ? rows : [];
   const step = String(bookingState?.step || '').trim();
@@ -299,6 +324,8 @@ function detectPendingDetailRequest(rows, bookingState) {
     );
   const latestInbound = inboundAfterRequest.at(-1) || null;
   if (!latestInbound || rowSatisfiesDetail(latestInbound, request.kind)) return null;
+  // New question (e.g. "When was my last service") is not a failed location/photo reply.
+  if (isNewStandaloneQuestion(latestInbound.body)) return null;
 
   const receivedType = String(latestInbound.msg_type || 'text').toLowerCase();
   return {
@@ -380,13 +407,26 @@ async function loadThreadContext(phoneDigits) {
   }
 
   let customerName = null;
+  let lastServiceLabel = null;
   if (customerId) {
     const { data: cust } = await db
       .from('customers')
-      .select('id, full_name')
+      .select('id, full_name, last_service_date')
       .eq('id', customerId)
       .maybeSingle();
     customerName = cust?.full_name ? String(cust.full_name).trim() : null;
+    lastServiceLabel = formatIstDay(cust?.last_service_date);
+    if (!lastServiceLabel) {
+      const { data: lastJob } = await db
+        .from('jobs')
+        .select('completed_at')
+        .eq('customer_id', customerId)
+        .not('completed_at', 'is', null)
+        .order('completed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      lastServiceLabel = formatIstDay(lastJob?.completed_at);
+    }
   }
 
   const phoneCandidates = [...new Set(e164Candidates)];
@@ -408,6 +448,7 @@ async function loadThreadContext(phoneDigits) {
     messages: mapThreadToMessages(chronological),
     customerId,
     customerName,
+    lastServiceLabel,
     detailVerification,
     latestInbound,
   };
@@ -429,6 +470,11 @@ function buildUserPrompt(ctx, operation, instruction) {
     return lines.join('\n');
   }
   if (ctx.customerName) lines.push(`Customer name: ${ctx.customerName}`);
+  if (operation === 'suggest_reply') {
+    lines.push(
+      `Last service date on file: ${ctx.lastServiceLabel || 'not on file yet'}`
+    );
+  }
   if (ctx.latestInbound?.body || ctx.latestInbound?.msgType) {
     lines.push(
       `Latest customer message (${ctx.latestInbound.msgType || 'text'}): ${
@@ -741,6 +787,8 @@ module.exports._test = {
   buildUserPrompt,
   isPolishDraftInstruction,
   detectPendingDetailRequest,
+  isNewStandaloneQuestion,
+  formatIstDay,
   enforceDetailVerification,
   looksLikeMapsLocationText,
   buildQuotationBriefPrompt,

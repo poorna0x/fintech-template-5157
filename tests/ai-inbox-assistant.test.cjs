@@ -96,6 +96,7 @@ function testBuildUserPromptWrapsAdminInstruction() {
   );
   assert.doesNotMatch(without, /<draft>/);
   assert.match(without, /The composer is empty. Draft a reply to the latest customer message/);
+  assert.match(without, /Last service date on file/);
   assert.match(without, /grammatically correct WhatsApp text/);
   assert.match(without, /Recent WhatsApp thread/);
 }
@@ -292,6 +293,23 @@ function testRequestedDetailVerification() {
     }),
     null,
     'an inbound message from before the request must not be treated as a failed reply'
+  );
+
+  assert.equal(
+    detectPendingDetailRequest(
+      [
+        rows[0],
+        {
+          direction: 'inbound',
+          msg_type: 'text',
+          body: 'When was my last service',
+          created_at: '2026-08-17T10:03:00.000Z',
+        },
+      ],
+      { step: 'await_location', __requestedAt: '2026-08-17T10:00:00.000Z' }
+    ),
+    null,
+    'a new question must not be treated as a failed location reply'
   );
 }
 
