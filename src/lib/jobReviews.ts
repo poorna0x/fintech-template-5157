@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from '@/lib/supabaseConfig';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import type { DocumentBrand } from '@/lib/service-brands';
-import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
+import { normalizeDocumentBrand } from '@/lib/service-brands';
 import { sendAdminWhatsAppTemplate, sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
 import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
@@ -144,19 +144,14 @@ export function buildAskReviewWhatsAppMessage(opts: {
   customerName?: string | null;
   brand: DocumentBrand;
   reviewUrl: string;
-  jobRef?: string | null;
 }): string {
   const name = whatsappGreetingName(opts.customerName, 'there');
-  const brandLabel = getDocumentBrandLabel(opts.brand);
-  const jobRef = String(opts.jobRef || '').trim();
   return [
     `Hi ${name}, 👋`,
-    `Thank you for your recent water purifier service visit with ${brandLabel}.`,
-    ...(jobRef ? [`🧾 Visit: ${jobRef}`] : []),
+    '',
+    'Please take a minute to review us.',
     '',
     waLabeledLink('⭐', 'Review us', opts.reviewUrl),
-    '',
-    '💬 Reply on this chat if you need any help.',
   ].join('\n');
 }
 
@@ -229,7 +224,6 @@ export async function sendAskReviewForJob(opts: {
     customerName: opts.customerName,
     brand,
     reviewUrl: url,
-    jobRef: opts.jobNumber || null,
   });
   const source = opts.source || 'job_completion';
   const windowClosed =

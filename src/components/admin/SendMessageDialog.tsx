@@ -6,7 +6,7 @@ import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Job } from '@/types';
-import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { cn, formatPhoneForWhatsApp } from '@/lib/utils';
 import { buildJobCompletionMessageFromJob, formatJobCompletionColdTemplatePreview } from '@/lib/job-completion-message';
 import {
   jobHasCompletionMessageSent,
@@ -19,9 +19,15 @@ import {
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
-import { createJobReviewInvite } from '@/lib/jobReviews';
+import {
+  createJobReviewInvite,
+  sendAskReviewForJob,
+  buildAskReviewWhatsAppMessage,
+  jobHasSkipReview,
+} from '@/lib/jobReviews';
 
 type DeliveryMode = 'api' | 'wa_me';
+type PayloadMode = 'full' | 'review';
 
 interface SendMessageDialogProps {
   open: boolean;
@@ -44,6 +50,28 @@ function formatSentAt(iso: string): string {
   }
 }
 
+function MessagePreviewScroll({
+  children,
+  className = '',
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        'mt-2 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain',
+        'touch-pan-y whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3',
+        'text-sm text-foreground/90 [-webkit-overflow-scrolling:touch]',
+        className
+      )}
+      onWheel={(event) => event.stopPropagation()}
+    >
+      {children}
+    </div>
+  );
+}
+
 const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   open,
   onOpenChange,
@@ -57,6 +85,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   const [cloudApiAllowed, setCloudApiAllowed] = useState(false);
   const [reviewUrl, setReviewUrl] = useState<string | null>(null);
   const [reviewLinkReady, setReviewLinkReady] = useState(false);
+  const [reviewAlreadySubmitted, setReviewAlreadySubmitted] = useState(false);
+  const [payloadMode, setPayloadMode] = useState<PayloadMode>('full');
   const jobId = job?.id ? String(job.id) : '';
 
   useEffect(() => {
@@ -67,10 +97,15 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       setCloudApiAllowed(false);
       setReviewUrl(null);
       setReviewLinkReady(false);
+      setReviewAlreadySubmitted(false);
+      setPayloadMode('full');
       return;
     }
-    let cancelled = false;
     const rec = job as Record<string, unknown> | null;
+    const resent = rec ? jobHasCompletionMessageSent(rec) : false;
+    const skipReview = rec ? jobHasSkipReview(rec) : false;
+    setPayloadMode(resent && !skipReview ? 'review' : 'full');
+    let cancelled = false;
     const technicianRaw =
       rec?.completed_by ||
       rec?.completedBy ||
@@ -100,6 +135,9 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       setDeliveryMode(allowCloud ? 'api' : 'wa_me');
       const url = String(invite?.url || '').trim();
       setReviewUrl(url || null);
+      const alreadyReviewed = invite?.alreadySubmitted === true;
+      setReviewAlreadySubmitted(alreadyReviewed);
+      if (alreadyReviewed) setPayloadMode('full');
       setReviewLinkReady(true);
     })();
     return () => {
@@ -120,6 +158,9 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
   const alreadySent = jobHasCompletionMessageSent(jobRec);
   const dontSend = jobHasDontSendCompletionMessage(jobRec);
+  const skipReview = jobHasSkipReview(jobRec);
+  const canChooseReviewOnly = alreadySent && !skipReview;
+  const reviewOnly = payloadMode === 'review' && canChooseReviewOnly;
   const requirements = parseRequirements((job as any).requirements || job.requirements);
   const messageSentAt = requirements.find((r: any) => r?.message_sent_at)?.message_sent_at as
     | string
@@ -130,6 +171,14 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     reviewUrl: reviewUrl || undefined,
   });
   const whatsappMessage = completion.whatsappMessage;
+  const reviewMessage = reviewUrl
+    ? buildAskReviewWhatsAppMessage({
+        customerName: completion.customerName,
+        brand: completion.documentBrand,
+        reviewUrl,
+      })
+    : '';
+  const previewMessage = reviewOnly ? reviewMessage : whatsappMessage;
   const brandLabel = getDocumentBrandLabel(completion.documentBrand);
   const brandContact =
     completion.documentBrand === 'elevenro'
@@ -151,8 +200,51 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       return;
     }
     const mode: DeliveryMode = cloudApiAllowed ? deliveryMode : 'wa_me';
+    const sendReview = reviewOnly;
+    if (sendReview && reviewAlreadySubmitted) {
+      toast.error('This visit was already reviewed');
+      return;
+    }
+    if (sendReview && !reviewUrl) {
+      toast.error('Review link is not ready yet');
+      return;
+    }
     setSending(true);
     try {
+      if (sendReview) {
+        const technicianRaw =
+          jobRec.completed_by ||
+          jobRec.completedBy ||
+          jobRec.assigned_technician_id ||
+          jobRec.assignedTechnicianId ||
+          '';
+        const result = await sendAskReviewForJob({
+          to,
+          customerId: customerId ? String(customerId) : '',
+          customerName: completion.customerName,
+          jobId,
+          technicianId: String(technicianRaw || '').trim() || null,
+          brand: completion.documentBrand,
+          jobNumber: completion.jobNumber || null,
+          reviewUrl,
+          forceWaMe: mode === 'wa_me',
+          source: 'job_completion',
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Could not send review request');
+          return;
+        }
+        toast.success(
+          result.usedTemplate
+            ? 'Review request sent (template)'
+            : mode === 'wa_me'
+              ? 'Opened phone WhatsApp for review'
+              : 'Review request sent'
+        );
+        onOpenChange(false);
+        return;
+      }
+
       if (mode === 'wa_me') {
         const result = await sendAdminWhatsAppText({
           to,
@@ -219,13 +311,17 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   };
 
   const isPhoneOpen = deliveryMode === 'wa_me' || !cloudApiAllowed;
-  const sendPrimaryLabel = isPhoneOpen
-    ? alreadySent
-      ? 'Open WhatsApp again'
-      : 'Open WhatsApp'
-    : alreadySent
-      ? 'Send again via Cloud API'
-      : 'Send via Cloud API';
+  const sendPrimaryLabel = (() => {
+    if (reviewOnly) {
+      return isPhoneOpen ? 'Open review on WhatsApp' : 'Send review via Cloud API';
+    }
+    if (isPhoneOpen) {
+      return alreadySent ? 'Open WhatsApp again' : 'Open WhatsApp';
+    }
+    return alreadySent ? 'Send full message again' : 'Send via Cloud API';
+  })();
+  const sendDisabled =
+    sending || !reviewLinkReady || (reviewOnly && reviewAlreadySubmitted);
   const primaryDigits = formatPhoneForWhatsApp(customerPhone).slice(-10);
   const altDigits = formatPhoneForWhatsApp(alternatePhone).slice(-10);
 
@@ -233,8 +329,9 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={
-          'flex max-h-[min(92dvh,920px)] w-[calc(100vw-1.25rem)] max-w-xl flex-col gap-0 ' +
-          'overflow-hidden p-0 sm:w-full'
+          brandConfirmed
+            ? 'flex h-[min(92dvh,920px)] max-h-[min(92dvh,920px)] w-[calc(100vw-1.25rem)] max-w-xl flex-col gap-0 overflow-hidden p-0 sm:w-full'
+            : 'flex max-h-[min(92dvh,920px)] w-[calc(100vw-1.25rem)] max-w-xl flex-col gap-0 overflow-hidden p-0 sm:w-full'
         }
       >
         <DialogHeader className="shrink-0 space-y-1.5 border-b px-4 pb-3 pt-5 pr-12 text-left sm:px-6">
@@ -246,9 +343,9 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3 sm:px-6">
           {!brandConfirmed ? (
-            <div className="space-y-3">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
               <div className="rounded-lg border border-border bg-muted/40 p-3 text-center sm:p-4">
                 <div className="mb-1.5 text-xs text-muted-foreground sm:text-sm">
                   You are about to send this message as
@@ -268,7 +365,10 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                     <p className="font-medium">Already marked Message Sent</p>
                     <p className="mt-0.5 text-xs text-emerald-800">
                       {messageSentAt
-                        ? `Last sent ${formatSentAt(String(messageSentAt))}. You can send again — status will update.`
+                        ? `Last sent ${formatSentAt(String(messageSentAt))}. `
+                        : ''}
+                      {canChooseReviewOnly
+                        ? 'Send the full message again, or just the review.'
                         : 'You can send again — status will update.'}
                     </p>
                   </div>
@@ -283,7 +383,8 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
               ) : null}
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+              <div className="max-h-[min(38vh,16rem)] shrink-0 space-y-4 overflow-y-auto overscroll-contain">
               <div className="rounded-lg bg-muted/40 p-3 sm:p-4">
                 <div className="mb-2 text-sm text-muted-foreground">
                   Sending as: <span className="font-medium text-foreground">{brandContact.label}</span>
@@ -307,8 +408,48 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 )}
               </div>
 
+              {canChooseReviewOnly ? (
+                <div className="space-y-1.5">
+                  <Label>What to send</Label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      className={
+                        payloadMode === 'full'
+                          ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950'
+                          : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50'
+                      }
+                      onClick={() => setPayloadMode('full')}
+                    >
+                      <span className="block">Full completion message</span>
+                      <span className="block text-[11px] font-normal opacity-80">
+                        Same visit summary as before
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={reviewAlreadySubmitted}
+                      className={
+                        payloadMode === 'review'
+                          ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2.5 text-left text-sm font-medium text-emerald-950 disabled:opacity-60'
+                          : 'rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50'
+                      }
+                      onClick={() => {
+                        if (!reviewAlreadySubmitted) setPayloadMode('review');
+                      }}
+                    >
+                      <span className="block">Review only</span>
+                      <span className="block text-[11px] font-normal opacity-80">
+                        {reviewAlreadySubmitted
+                          ? 'This visit was already reviewed'
+                          : 'Just the Review us link'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               {cloudApiAllowed ? (
-                <>
                 <div className="space-y-1.5">
                   <Label>How to send</Label>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -342,55 +483,47 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                     </button>
                   </div>
                 </div>
+              ) : null}
+              </div>
 
-              <div>
-                <Label>Message preview (24h chat)</Label>
-                <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+              <div className="flex min-h-0 flex-1 flex-col">
+                <Label className="shrink-0">
+                  {reviewOnly
+                    ? 'Review message preview'
+                    : cloudApiAllowed
+                      ? 'Message preview (24h chat)'
+                      : 'Message Preview'}
+                </Label>
+                <MessagePreviewScroll className="min-h-[9rem] flex-1">
                   {reviewLinkReady ? (
-                    whatsappMessage
+                    previewMessage
                   ) : (
                     <span className="inline-flex items-center gap-2 text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Preparing review link…
                     </span>
                   )}
-                </div>
+                </MessagePreviewScroll>
+                {cloudApiAllowed && completion.amountPendingValue <= 0 && !reviewOnly ? (
+                  <div className="mt-3 shrink-0">
+                    <Label>If the 24h window is closed (cold template)</Label>
+                    <MessagePreviewScroll className="max-h-36 min-h-0">
+                      {formatJobCompletionColdTemplatePreview({
+                        customerName: completion.customerName,
+                        amountCollected: completion.amountCollected,
+                        jobRef: completion.jobNumber || null,
+                        documentBrand: completion.documentBrand,
+                        reviewUrl,
+                      })}
+                    </MessagePreviewScroll>
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      Cold send uses a Review us button (opens the same link) once Meta approves the
+                      new template. Until then, fallback is the older job-done letter without the
+                      button.
+                    </p>
+                  </div>
+                ) : null}
               </div>
-              {completion.amountPendingValue <= 0 ? (
-                <div>
-                  <Label>If the 24h window is closed (cold template)</Label>
-                  <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
-                    {formatJobCompletionColdTemplatePreview({
-                      customerName: completion.customerName,
-                      amountCollected: completion.amountCollected,
-                      jobRef: completion.jobNumber || null,
-                      documentBrand: completion.documentBrand,
-                      reviewUrl,
-                    })}
-                  </div>
-                  <p className="mt-1.5 text-[11px] text-muted-foreground">
-                    Cold send uses a Review us button (opens the same link) once Meta approves the
-                    new template. Until then, fallback is the older job-done letter without the
-                    button.
-                  </p>
-                </div>
-              ) : null}
-                </>
-              ) : (
-                <div>
-                  <Label>Message Preview</Label>
-                  <div className="mt-2 max-h-[min(70vh,28rem)] overflow-y-auto overscroll-contain whitespace-pre-wrap break-all rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
-                    {reviewLinkReady ? (
-                      whatsappMessage
-                    ) : (
-                      <span className="inline-flex items-center gap-2 text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Preparing review link…
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -438,7 +571,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                   <Button
                     type="button"
                     className="h-11 rounded-xl bg-[#25D366] px-3 text-white shadow-sm hover:bg-[#1ebe5d]"
-                    disabled={sending || !reviewLinkReady}
+                    disabled={sendDisabled}
                     onClick={() => void sendToPhone(customerPhone)}
                   >
                     {sending ? (
@@ -459,7 +592,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                     type="button"
                     variant="outline"
                     className="h-11 rounded-xl border-[#25D366]/50 bg-white px-3 text-emerald-800 shadow-sm hover:bg-emerald-50 hover:text-emerald-900"
-                    disabled={sending || !reviewLinkReady}
+                    disabled={sendDisabled}
                     onClick={() => void sendToPhone(alternatePhone)}
                   >
                     {sending ? (
@@ -481,7 +614,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 <Button
                   type="button"
                   className="h-11 w-full rounded-xl bg-[#25D366] px-4 text-white shadow-sm hover:bg-[#1ebe5d] sm:w-auto"
-                  disabled={sending || !reviewLinkReady}
+                  disabled={sendDisabled}
                   onClick={() => void sendToPhone(customerPhone)}
                 >
                   {sending ? (
