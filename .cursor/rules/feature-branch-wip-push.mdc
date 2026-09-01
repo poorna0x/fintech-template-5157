@@ -1,14 +1,10 @@
 ---
-description: Keep feature-branch commits pushed so main merge is easy later
+description: Feature-branch auto-push is off while iterating on main
 alwaysApply: true
 ---
 
-# Feature branch WIP → keep remote updated
+# Feature branch WIP
 
-When changing code on a feature branch (not `main`):
+**Paused.** We commit on **`main` locally** and only `git push origin main` when the user says “push to main”. See `local-commits-push-main.mdc`.
 
-- After meaningful edits, **commit + push that branch** to origin.
-- Goal: remote branch always has latest WIP so merging / pushing to **main** later is one clean step.
-- Do **not** push or merge **main** unless the user explicitly asks.
-
-Active WhatsApp-era preference still applies where relevant: prefer the agreed feature branch for related work; see `whatsapp-crm-feature-branch.mdc`.
+Do **not** auto-push feature branches. If the user explicitly names another branch to push, push **only** that branch — never `origin/main`.

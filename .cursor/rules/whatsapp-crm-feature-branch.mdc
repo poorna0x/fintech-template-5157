@@ -1,17 +1,10 @@
 ---
-description: Work on WhatsApp CRM feature branch until merge to main
+description: WhatsApp/CRM work now lands as local commits on main
 alwaysApply: true
 ---
 
-# Branch: WhatsApp CRM (until main)
+# WhatsApp / CRM branch
 
-Until the user explicitly says to merge / push this work to **main**:
+**Superseded.** Do not check out `feat/whatsapp-crm-2026-08-07` for new work.
 
-- **Active branch:** `feat/whatsapp-crm-2026-08-07`
-- Put **all** related commits on this branch (checkout it first if needed) — not only WhatsApp-named files; any work in this period goes here.
-- **While iterating:** after meaningful chunks of work, **commit and push this feature branch** (`git push -u origin HEAD`) so WIP is on the remote — do **not** wait for an explicit “push” each time (unless the user said not to). Same habit as `feature-branch-wip-push.mdc` / updated push policy.
-- When the user asks to **push** (without saying main): push **only** this branch.
-- **Do not merge into `main`**, create a main-bound release, or `git push origin main` unless the user clearly asks (e.g. "merge to main", "push to main").
-- Prefer rebasing this branch onto latest `origin/main` before the final main merge if asked, to reduce conflicts.
-
-Unrelated sitemap-only noise can stay uncommitted unless the user asks to include it.
+Put new commits on **`main` (local only)**. Push them with **all other local main commits** only when the user says “push to main”. See `local-commits-push-main.mdc`.

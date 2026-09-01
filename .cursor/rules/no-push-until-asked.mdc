@@ -1,22 +1,13 @@
 ---
-description: Push feature-branch WIP; never push/merge main unless asked
+description: Never push origin/main unless the user says push to main
 alwaysApply: true
 ---
 
 # Git push policy
 
-## Feature branch (default while iterating)
+**Source of truth:** `local-commits-push-main.mdc`.
 
-After a **meaningful chunk** of work on the current non-`main` branch:
-
-1. **Commit** on that branch (clear message; no secrets).
-2. **Push that branch only** (`git push -u origin HEAD`) so remote WIP stays current.
-
-Do this without waiting for an explicit “push” / “commit” each time — keeps later merge-to-main easy.
-
-If the user says “don’t push until I say” / “save only”, pause proactive push until they lift it.
-
-## Main (hard gate)
-
-- **Never** merge into `main`, `git push origin main`, or create a main-bound release unless the user clearly asks (e.g. “merge to main”, “push to main”).
-- When they say “push” without naming main → push **only** the current feature branch.
+- Commit locally on **main** after each meaningful change.
+- **Never** `git push origin main` unless the user clearly asks (“push to main”, “merge to main”).
+- “Push” without naming main → do **not** push `origin/main`.
+- Never force-push `main`.

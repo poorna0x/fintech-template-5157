@@ -11,4 +11,5 @@ Keep commits small and single-purpose so any one of them can be pushed to `main`
 - Do **not** mix Android/APK, Netlify functions, CRM UI, and prompt-only edits in the same commit unless they are the same fix.
 - When leftover local edits are unrelated to the current request, leave them unstaged — or commit them separately if the user wants them saved.
 - Commit message: 1–2 sentences on **why**, matching recent `main` style.
-- **Do not** `git push origin main` unless the user asks (still “push” / “push to main”).
+- After the change is done, **commit locally** (see `local-commits-push-main.mdc`). Do not wait for “commit”.
+- **Do not** `git push origin main` unless the user says “push to main” / “merge to main”.
