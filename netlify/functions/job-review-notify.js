@@ -62,6 +62,17 @@ async function sendJobReviewNotifications(db, token, opts = {}) {
   }
 
   let techName = 'Technician';
+  let customerName = '';
+  if (review.job_id) {
+    const { data: jobRow } = await db
+      .from('jobs')
+      .select('customers(full_name)')
+      .eq('id', review.job_id)
+      .maybeSingle();
+    const cust = jobRow?.customers;
+    const custObj = Array.isArray(cust) ? cust[0] : cust;
+    customerName = String(custObj?.full_name || '').trim();
+  }
   if (review.technician_id) {
     const { data: tech } = await db
       .from('technicians')
@@ -74,8 +85,12 @@ async function sendJobReviewNotifications(db, token, opts = {}) {
   const stars = Number(review.rating) || 0;
   const starText = stars > 0 ? `${'★'.repeat(stars)}${'☆'.repeat(Math.max(0, 5 - stars))} ${stars}/5` : 'Review';
   const comment = String(review.comment || '').trim();
-  const title = `New review · ${techName}`;
-  const message = comment ? `${starText}\n${comment.slice(0, 120)}` : starText;
+  const title = customerName
+    ? `New review · ${customerName}`
+    : `New review · ${techName}`;
+  const message = comment
+    ? `${techName} · ${starText}\n${comment.slice(0, 120)}`
+    : `${techName} · ${starText}`;
 
   let adminSent = 0;
   let technicianSent = 0;

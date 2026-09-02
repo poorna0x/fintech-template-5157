@@ -342,12 +342,22 @@ export async function sendAskReviewForLastCompletedJob(opts: {
   const customerId = String(opts.customerId || '').trim();
   if (!customerId) return { ok: false, error: 'Link a CRM customer to this chat first' };
 
+  let customerName = whatsappGreetingName(opts.customerName, '');
+  if (!customerName) {
+    const { data } = await supabase
+      .from('customers')
+      .select('full_name')
+      .eq('id', customerId)
+      .maybeSingle();
+    customerName = whatsappGreetingName(data?.full_name, '');
+  }
+
   const job = await fetchLastCompletedJobForCustomer(customerId);
   if (!job) return { ok: false, error: 'No completed job for this customer' };
   return sendAskReviewForJob({
     to: opts.to,
     customerId,
-    customerName: opts.customerName,
+    customerName: customerName || null,
     jobId: job.id,
     technicianId: job.technicianId,
     brand: job.brand || opts.brand,
