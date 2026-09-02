@@ -60,9 +60,11 @@ function MessagePreviewScroll({
   return (
     <div
       className={cn(
-        'mt-2 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain',
-        'touch-pan-y whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3',
-        'text-sm text-foreground/90 [-webkit-overflow-scrolling:touch]',
+        // Mobile: no nested pane — the dialog body is the only scroller (iOS).
+        // Desktop: bounded preview with its own scroll.
+        'mt-2 whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 text-sm text-foreground/90',
+        'max-h-none overflow-visible',
+        'sm:min-h-0 sm:max-h-[min(50dvh,28rem)] sm:overflow-y-auto sm:overflow-x-hidden sm:overscroll-contain sm:touch-pan-y',
         className
       )}
       onWheel={(event) => event.stopPropagation()}
@@ -350,7 +352,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[min(92dvh,920px)] w-[calc(100vw-1.25rem)] max-w-xl flex-col gap-0 overflow-hidden p-0 sm:w-full"
+        className="flex h-[min(92dvh,920px)] max-h-[min(92dvh,920px)] w-[calc(100vw-1.25rem)] max-w-xl flex-col gap-0 overflow-hidden p-0 sm:h-auto sm:w-full"
       >
         <DialogHeader className="shrink-0 space-y-1.5 border-b px-4 pb-3 pt-5 pr-12 text-left sm:px-6">
           <DialogTitle className="text-base leading-snug sm:text-lg">
@@ -363,7 +365,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3 sm:px-6">
           {!brandConfirmed ? (
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch]">
               <div className="rounded-lg border border-border bg-muted/40 p-3 text-center sm:p-4">
                 <div className="mb-1.5 text-xs text-muted-foreground sm:text-sm">
                   You are about to send this message as
@@ -401,7 +403,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
               ) : null}
             </div>
           ) : (
-            <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch]">
               <div className="rounded-lg bg-muted/40 p-3 sm:p-4">
                 <div className="mb-2 text-sm text-muted-foreground">
                   Sending as: <span className="font-medium text-foreground">{brandContact.label}</span>
@@ -510,7 +512,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                       ? 'Message preview (24h chat)'
                       : 'Message Preview'}
                 </Label>
-                <MessagePreviewScroll className="max-h-[min(55dvh,28rem)]">
+                <MessagePreviewScroll>
                   {previewMessage}
                 </MessagePreviewScroll>
                 {!reviewLinkReady && !skipReview ? (
@@ -522,7 +524,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 {cloudApiAllowed && completion.amountPendingValue <= 0 && !reviewOnly ? (
                   <div className="mt-3">
                     <Label>If the 24h window is closed (cold template)</Label>
-                    <MessagePreviewScroll className="max-h-36 min-h-0">
+                    <MessagePreviewScroll className="sm:max-h-36">
                       {formatJobCompletionColdTemplatePreview({
                         customerName: completion.customerName,
                         amountCollected: completion.amountCollected,
