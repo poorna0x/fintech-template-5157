@@ -109,14 +109,11 @@ export function AdminDeleteConfirmDialogs({
               id="job-delete-remark"
               value={jobDeleteRemark}
               onChange={(e) => setJobDeleteRemark(e.target.value)}
-              placeholder="Why is this job being deleted? (saved on the customer for Reports)"
+              placeholder="Why is this job being deleted? (optional)"
               rows={3}
               maxLength={2000}
               className="resize-none"
             />
-            <p className="text-xs text-muted-foreground">
-              Leave blank to skip — delete still proceeds. Remark appears under Deleted jobs in Customer Report.
-            </p>
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

@@ -25,7 +25,9 @@ export async function deleteAdminJob(
   try {
     const customerId =
       (jobToDelete as any).customer_id || jobToDelete.customerId || null;
-    if (customerId) {
+    const trimmedRemark = remark?.trim() || '';
+    // Only persist when admin entered a remark — blank deletes leave no report row.
+    if (customerId && trimmedRemark) {
       let deletedBy: string | null = null;
       try {
         const { data: authData } = await supabase.auth.getUser();
@@ -41,7 +43,7 @@ export async function deleteAdminJob(
         job_status: (jobToDelete as any).status || jobToDelete.status || null,
         service_type:
           (jobToDelete as any).service_type || jobToDelete.serviceType || null,
-        remark: remark?.trim() || null,
+        remark: trimmedRemark,
         deleted_by: deletedBy,
       });
       if (eventError) {

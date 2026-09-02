@@ -8178,6 +8178,8 @@ export const db = {
         .from('customer_job_delete_events')
         .select('id,customer_id,job_id,job_number,job_status,service_type,remark,created_at')
         .eq('customer_id', customerId)
+        .not('remark', 'is', null)
+        .neq('remark', '')
         .order('created_at', { ascending: false })
         .limit(100);
       return { data: data || [], error };

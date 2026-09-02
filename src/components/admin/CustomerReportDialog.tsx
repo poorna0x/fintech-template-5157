@@ -665,12 +665,12 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                                 Deleted {whenLabel}
                               </div>
                             ) : null}
-                            <div className="pt-1">
-                              <span className="text-muted-foreground">Remark:</span>{' '}
-                              <span className="whitespace-pre-wrap break-words">
-                                {remarkText || '—'}
-                              </span>
-                            </div>
+                            {remarkText ? (
+                              <div className="pt-1">
+                                <span className="text-muted-foreground">Remark:</span>{' '}
+                                <span className="whitespace-pre-wrap break-words">{remarkText}</span>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </div>
