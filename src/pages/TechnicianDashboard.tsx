@@ -4218,6 +4218,39 @@ const TechnicianDashboard = () => {
     if (draft) writeTechnicianCompleteJobDraft(draft);
   }, [completeDialogOpen, selectedJobForComplete, isSubmittingJobCompletion, captureCompleteJobDraft]);
 
+  // When technician reaches payment-screenshot step, pull any photo the customer
+  // already sent on WhatsApp (pay-QR watch) into the same slot as a manual upload.
+  useEffect(() => {
+    if (!completeDialogOpen || completeJobStep !== 5) return;
+    const jobId = selectedJobForComplete?.id;
+    if (!jobId) return;
+    if (typeof paymentScreenshot === 'string' && /^https?:\/\//i.test(paymentScreenshot.trim())) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select('requirements, after_photos')
+          .eq('id', jobId)
+          .maybeSingle();
+        if (cancelled || error || !data) return;
+        const { paymentScreenshot: fromJob } = resolveJobBillAndPaymentPhotos(data as any);
+        if (fromJob && !cancelled) {
+          setPaymentScreenshot(fromJob);
+        }
+      } catch {
+        /* soft-fail */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only refresh when entering step 5 / opening dialog
+  }, [completeDialogOpen, completeJobStep, selectedJobForComplete?.id]);
 
   // Actually open the completion dialog
   const performCompleteJob = async (job: Job) => {
@@ -4370,6 +4403,18 @@ const TechnicianDashboard = () => {
     setCustomerHasPrefilter(customerPrefilter);
 
     setRawWaterTds('');
+
+    // Prefill payment screenshot if customer already sent it via WhatsApp pay-QR watch.
+    try {
+      const { paymentScreenshot: existingPay } = resolveJobBillAndPaymentPhotos(
+        jobWithCustomer as any
+      );
+      if (existingPay) {
+        setPaymentScreenshot(existingPay);
+      }
+    } catch {
+      /* ignore */
+    }
 
     setCompleteDialogOpen(true);
   };
@@ -9914,9 +9959,11 @@ const TechnicianDashboard = () => {
                 <CompletionPhotoStep
                   label="Payment screenshot (optional)"
                   hint={
-                    paymentMode === 'ONLINE'
-                      ? 'UPI or bank payment confirmation, if available.'
-                      : 'Payment proof screenshot, if available.'
+                    paymentScreenshot && /^https?:\/\//i.test(paymentScreenshot)
+                      ? 'Customer WhatsApp payment photo is already filled in. You can replace it if needed.'
+                      : paymentMode === 'ONLINE'
+                        ? 'UPI or bank payment confirmation, if available. If the customer already sent it on WhatsApp after your pay QR, it appears here automatically.'
+                        : 'Payment proof screenshot, if available. Customer WhatsApp photos after your pay QR also land here.'
                   }
                   images={paymentScreenshot ? [paymentScreenshot] : []}
                   onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}

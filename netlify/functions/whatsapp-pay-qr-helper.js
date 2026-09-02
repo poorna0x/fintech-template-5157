@@ -9,6 +9,7 @@ const {
   insertWhatsAppMessage,
   normalizePhoneE164,
   uploadOutboundFileToWhatsAppMedia,
+  uploadBufferToCloudinaryOnly,
 } = require('./whatsapp-helper');
 const { createR2SignedGetUrl, getR2ObjectBytes } = require('./r2-helper');
 
@@ -340,6 +341,155 @@ async function isPayQrWhatsAppEnabled(db, technicianId) {
   }
 }
 
+function normalizePhotoUrlForCompare(url) {
+  return String(url || '')
+    .split('?')[0]
+    .split('#')[0]
+    .trim()
+    .toLowerCase();
+}
+
+function extractPhotoUrlList(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (typeof entry === 'string') return entry.trim();
+      if (entry && typeof entry === 'object') {
+        return String(entry.url || entry.secure_url || '').trim();
+      }
+      return '';
+    })
+    .filter((u) => /^https?:\/\//i.test(u));
+}
+
+function parseJobRequirements(raw) {
+  if (Array.isArray(raw)) return [...raw];
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? [...parsed] : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/**
+ * Re-host inbound WhatsApp media (often private R2) to public Cloudinary so the
+ * technician complete-job payment-screenshot UI can show/use it.
+ */
+async function publicHttpsUrlForJobPayment(mediaUrl) {
+  const raw = String(mediaUrl || '').trim();
+  if (!raw) return null;
+  if (/^https:\/\/res\.cloudinary\.com\//i.test(raw)) return raw;
+
+  const media = await bufferFromMediaUrl(raw);
+  if (!media?.buffer?.length) return null;
+
+  const uploaded = await uploadBufferToCloudinaryOnly(
+    media.buffer,
+    media.mime || 'image/jpeg',
+    'payment-screenshot.jpg',
+    'payment-receipts'
+  );
+  if (uploaded?.url) return uploaded.url;
+
+  // Preset may restrict folders — fall back to a known-good gallery folder.
+  const fallback = await uploadBufferToCloudinaryOnly(
+    media.buffer,
+    media.mime || 'image/jpeg',
+    'payment-screenshot.jpg',
+    'ro-service'
+  );
+  return fallback?.url || null;
+}
+
+/**
+ * Save customer WhatsApp payment photo onto the job the same way complete-job
+ * step 5 does: requirements.qr_photos.payment_screenshot + payment_photos + after_photos.
+ * Soft-fails (returns null) so technician FCM/WhatsApp still run.
+ */
+async function attachPayQrPhotoToJob(db, jobId, mediaUrl) {
+  if (!db || !isUuid(jobId) || !mediaUrl) return null;
+  try {
+    const httpsUrl = await publicHttpsUrlForJobPayment(mediaUrl);
+    if (!httpsUrl) {
+      console.warn('[pay-qr-watch] could not re-host payment photo for job', jobId);
+      return null;
+    }
+
+    const { data: job, error: jobErr } = await db
+      .from('jobs')
+      .select('id, requirements, after_photos')
+      .eq('id', jobId)
+      .maybeSingle();
+    if (jobErr || !job) {
+      console.warn('[pay-qr-watch] job lookup failed', jobErr?.message || 'missing');
+      return null;
+    }
+
+    const requirements = parseJobRequirements(job.requirements);
+    const compare = normalizePhotoUrlForCompare(httpsUrl);
+
+    const qrIdx = requirements.findIndex((r) => r && typeof r === 'object' && r.qr_photos);
+    if (qrIdx >= 0) {
+      const existingShot = String(requirements[qrIdx].qr_photos?.payment_screenshot || '').trim();
+      requirements[qrIdx] = {
+        ...requirements[qrIdx],
+        qr_photos: {
+          ...(requirements[qrIdx].qr_photos || {}),
+          // Keep first screenshot as primary; later photos go to payment_photos.
+          payment_screenshot: existingShot || httpsUrl,
+          shared_via_whatsapp: true,
+          from_customer_whatsapp: true,
+        },
+      };
+    } else {
+      requirements.push({
+        qr_photos: {
+          payment_screenshot: httpsUrl,
+          shared_via_whatsapp: true,
+          from_customer_whatsapp: true,
+        },
+      });
+    }
+
+    const payIdx = requirements.findIndex((r) => r && typeof r === 'object' && r.payment_photos);
+    const existingPay = extractPhotoUrlList(
+      payIdx >= 0 ? requirements[payIdx].payment_photos : []
+    );
+    if (!existingPay.some((u) => normalizePhotoUrlForCompare(u) === compare)) {
+      const mergedPay = [...existingPay, httpsUrl];
+      if (payIdx >= 0) requirements[payIdx] = { payment_photos: mergedPay };
+      else requirements.push({ payment_photos: mergedPay });
+    }
+
+    const after = extractPhotoUrlList(job.after_photos);
+    if (!after.some((u) => normalizePhotoUrlForCompare(u) === compare)) {
+      after.push(httpsUrl);
+    }
+
+    const { error: upErr } = await db
+      .from('jobs')
+      .update({
+        requirements,
+        after_photos: after,
+      })
+      .eq('id', jobId);
+    if (upErr) {
+      console.warn('[pay-qr-watch] job payment attach failed', upErr.message);
+      return null;
+    }
+
+    console.log('[pay-qr-watch] attached payment screenshot to job', jobId);
+    return httpsUrl;
+  } catch (err) {
+    console.warn('[pay-qr-watch] attachPayQrPhotoToJob threw', err?.message || err);
+    return null;
+  }
+}
+
 async function notifyTechnicianPayQrPhoto({
   db,
   accessToken,
@@ -347,10 +497,13 @@ async function notifyTechnicianPayQrPhoto({
   watch,
   phone,
   mediaUrl,
+  attachedToJob,
 }) {
   const customerName = await resolveCustomerDisplayName(db, phone, watch.customer_name);
   const title = 'Payment screenshot';
-  const body = `Image shared by ${customerName}.`;
+  const body = attachedToJob
+    ? `Image shared by ${customerName}. Saved on the job — open Complete Job to see it.`
+    : `Image shared by ${customerName}.`;
   const technicianId = watch.technician_id;
   const pushImageUrl = await httpsUrlForPush(mediaUrl);
 
@@ -417,9 +570,11 @@ async function notifyTechnicianPayQrPhoto({
 }
 
 /**
- * If this inbound photo is within an active pay-QR watch, forward to that technician.
+ * If this inbound photo is within an active pay-QR watch:
+ * 1) Attach it to the job's payment-screenshot fields (complete-job step 5)
+ * 2) Forward to that technician via FCM / WhatsApp
  * Lookup is awaited; FCM / WhatsApp fan-out is fire-and-forget so the webhook can ACK fast.
- * @returns {{ handled: boolean, technicianId?: string }}
+ * @returns {{ handled: boolean, technicianId?: string, attachedUrl?: string|null }}
  */
 async function handlePayQrWatchInbound({ db, accessToken, phoneNumberId, msg, media }) {
   const msgType = String(msg?.type || '').toLowerCase();
@@ -434,6 +589,15 @@ async function handlePayQrWatchInbound({ db, accessToken, phoneNumberId, msg, me
   if (!watch?.technician_id) return { handled: false };
 
   const mediaUrl = media?.media_url || null;
+  let attachedUrl = null;
+  if (watch.job_id && mediaUrl) {
+    try {
+      attachedUrl = await attachPayQrPhotoToJob(db, watch.job_id, mediaUrl);
+    } catch (err) {
+      console.warn('[pay-qr-watch] job attach failed', err?.message || err);
+    }
+  }
+
   try {
     await notifyTechnicianPayQrPhoto({
       db,
@@ -442,12 +606,13 @@ async function handlePayQrWatchInbound({ db, accessToken, phoneNumberId, msg, me
       watch,
       phone,
       mediaUrl,
+      attachedToJob: Boolean(attachedUrl),
     });
   } catch (err) {
     console.warn('[pay-qr-watch] notify failed', err?.message || err);
   }
 
-  return { handled: true, technicianId: watch.technician_id };
+  return { handled: true, technicianId: watch.technician_id, attachedUrl };
 }
 
 module.exports = {
@@ -457,4 +622,5 @@ module.exports = {
   upsertPayQrWatch,
   findActivePayQrWatch,
   handlePayQrWatchInbound,
+  attachPayQrPhotoToJob,
 };
