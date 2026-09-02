@@ -1220,9 +1220,24 @@ export function findLongestAreaMatchInText(completeAddress: string): string | nu
   if (hits.length === 0) return null;
 
   const maxLen = Math.max(...hits.map((h) => h.len));
-  const nearLongest = hits.filter((h) => h.len >= maxLen * 0.75);
+  let nearLongest = hits.filter((h) => h.len >= maxLen * 0.75);
+
+  const specific = nearLongest.filter((h) => !isBroadAdminWard(h.name));
+  if (specific.length) nearLongest = specific;
+
+  const layoutHits = nearLongest.filter((h) => /\blayout\b/i.test(h.name));
+  if (layoutHits.length) nearLongest = layoutHits;
+
   nearLongest.sort((a, b) => b.lastIndex - a.lastIndex || b.len - a.len);
   return nearLongest[0]?.name ?? null;
+}
+
+/** Wider admin villages/wards — too broad when a layout or neighborhood exists. */
+export function isBroadAdminWard(name: string): boolean {
+  const n = normalizeForComparison(name);
+  if (!n) return false;
+  if (n.startsWith('munneko')) return true;
+  return false;
 }
 
 export type GoogleAddressComponentLike = {
@@ -1230,20 +1245,6 @@ export type GoogleAddressComponentLike = {
   short_name?: string;
   types?: string[];
 };
-
-const GOOGLE_SHORT_LOCATION_TYPES = [
-  'neighborhood',
-  'sublocality_level_1',
-  'sublocality',
-  'sublocality_level_2',
-  'sublocality_level_3',
-  'administrative_area_level_3',
-  'administrative_area_level_4',
-  'administrative_area_level_2',
-  // Small towns/villages often come as locality (Bengaluru is filtered as generic)
-  'locality',
-  'premise',
-] as const;
 
 /** Prefer these Google component types for CRM Location (not broad admin wards). */
 const GOOGLE_LOCAL_LOCATION_TYPES = new Set<string>([
@@ -1277,10 +1278,12 @@ function joinGoogleComponentTextByTypes(
 function areaFromGoogleComponentTypes(
   components: GoogleAddressComponentLike[] | null | undefined,
   types: readonly string[],
-  useAreaList: boolean
+  useAreaList: boolean,
+  options?: { skipBroadWards?: boolean }
 ): string | null {
   if (!Array.isArray(components) || components.length === 0) return null;
 
+  const labels: string[] = [];
   for (const type of types) {
     const comp = components.find((c) => Array.isArray(c.types) && c.types.includes(type));
     const raw = componentLabel(comp || {});
@@ -1288,15 +1291,20 @@ function areaFromGoogleComponentTypes(
 
     const cleaned = raw.replace(/\s+(Taluk|District|Hobli)$/i, '').trim();
     if (!cleaned || isGenericGeoLocality(cleaned)) continue;
-
-    if (useAreaList) {
-      const fromList = findLongestAreaMatchInText(cleaned);
-      if (fromList) return clipVisibleAddress(fromList);
-    }
-    return clipVisibleAddress(cleaned);
+    if (options?.skipBroadWards && isBroadAdminWard(cleaned)) continue;
+    labels.push(cleaned);
   }
 
-  return null;
+  if (labels.length === 0) return null;
+
+  if (useAreaList) {
+    const fromList = findLongestAreaMatchInText(labels.join(', '));
+    if (fromList) return clipVisibleAddress(fromList);
+  }
+
+  const nonBroad = labels.filter((l) => !isBroadAdminWard(l));
+  const pick = nonBroad[0] || labels[0];
+  return pick ? clipVisibleAddress(pick) : null;
 }
 
 function componentLabel(comp: GoogleAddressComponentLike): string {
@@ -1348,7 +1356,9 @@ export function shortLocationFromGoogleComponents(
   const localOnly = options?.localOnly === true;
 
   const localTypes = [...GOOGLE_LOCAL_LOCATION_TYPES];
-  const fromLocal = areaFromGoogleComponentTypes(components, localTypes, useAreaList);
+  const fromLocal = areaFromGoogleComponentTypes(components, localTypes, useAreaList, {
+    skipBroadWards: options?.localOnly === true,
+  });
   if (fromLocal) return fromLocal;
   if (localOnly) return null;
 
@@ -1400,14 +1410,16 @@ function resolveVisibleAreaFromGeocode(options: {
 
   if (localComponentText) {
     const fromLocalComponents = findLongestAreaMatchInText(localComponentText);
-    if (fromLocalComponents) return clipVisibleAddress(fromLocalComponents);
+    if (fromLocalComponents && !isBroadAdminWard(fromLocalComponents)) {
+      return clipVisibleAddress(fromLocalComponents);
+    }
   }
 
   const fromLocalLabels = shortLocationFromGoogleComponents(components, {
     useAreaList: true,
     localOnly: true,
   });
-  if (fromLocalLabels) return fromLocalLabels;
+  if (fromLocalLabels && !isBroadAdminWard(fromLocalLabels)) return fromLocalLabels;
 
   for (const text of hintTexts) {
     const longest = findLongestAreaMatchInText(text);
@@ -1684,6 +1696,36 @@ function mapGeocodeComponents(
   }));
 }
 
+/** POI + street + top hits — street-only rows miss neighborhood/layout names. */
+function mergeGeocodeComponentsForLocation(
+  results: google.maps.GeocoderResult[] | null | undefined
+): GoogleAddressComponentLike[] {
+  if (!results?.length) return [];
+  const seen = new Set<string>();
+  const merged: GoogleAddressComponentLike[] = [];
+
+  const addFrom = (result: google.maps.GeocoderResult | null | undefined) => {
+    if (!result?.address_components?.length) return;
+    for (const c of result.address_components) {
+      const label = (c.long_name || c.short_name || '').trim();
+      const types = (c.types || []).join(',');
+      const key = `${label.toLowerCase()}|${types}`;
+      if (!label || seen.has(key)) continue;
+      seen.add(key);
+      merged.push({
+        long_name: c.long_name,
+        short_name: c.short_name,
+        types: c.types ? [...c.types] : [],
+      });
+    }
+  };
+
+  addFrom(pickPoiGeocodeResult(results));
+  addFrom(pickStreetGeocodeResult(results));
+  for (const result of results.slice(0, 5)) addFrom(result);
+  return merged;
+}
+
 /** Browser reverse-geocode — street line + POI name + components for Location. */
 export async function reverseGeocodeLatLng(
   lat: number,
@@ -1716,7 +1758,7 @@ export async function reverseGeocodeLatLng(
 
         resolve({
           formattedAddress,
-          addressComponents: mapGeocodeComponents(streetResult ?? hintResult),
+          addressComponents: mergeGeocodeComponentsForLocation(results),
           streetAddress: streetAddressFromGeocodeResult(
             streetResult,
             poiResult?.formatted_address || formattedAddress
