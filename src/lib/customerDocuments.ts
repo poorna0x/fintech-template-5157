@@ -124,7 +124,7 @@ export async function uploadCustomerGalleryPdf(opts: {
         return {
           ok: false,
           error:
-            'Upload service not found. Restart npm run dev so customer-documents runs on localhost:8888.',
+            'Upload service not found. For local dev, restart npm run dev (Vite + Netlify functions).',
         };
       }
       const missingTable = res.status === 503 || isMissingTableError(msg);
@@ -156,7 +156,7 @@ export async function uploadCustomerGalleryPdf(opts: {
       return {
         ok: false,
         error:
-          'Could not reach the upload service. Restart npm run dev and ensure customer-documents runs on :8888.',
+          'Could not reach the upload service. For local dev, restart npm run dev (Vite + Netlify functions).',
       };
     }
     return { ok: false, error: message };
