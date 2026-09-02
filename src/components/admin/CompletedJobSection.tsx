@@ -22,6 +22,7 @@ import OfficeJobPartsDialog from './OfficeJobPartsDialog';
 import { db } from '@/lib/supabase';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { getValidCustomerEmail } from '@/lib/customer-email';
+import { jobVisitRawWaterTdsPpm } from '@/lib/jobRawWaterTds';
 import {
   isJobPendingPaymentOpen,
   parseJobPendingPayment,
@@ -494,11 +495,14 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           })()}
 
           {/* Raw Water TDS */}
-          {((job as any).customer?.raw_water_tds != null && (job as any).customer?.raw_water_tds > 0) && (
+          {(() => {
+            const tds = jobVisitRawWaterTdsPpm(job as any);
+            return tds != null ? (
             <div className="text-gray-700 break-words">
-              <span className="text-gray-500 font-medium">Raw Water TDS:</span> {(job as any).customer.raw_water_tds} ppm
+              <span className="text-gray-500 font-medium">Raw Water TDS:</span> {tds} ppm
             </div>
-          )}
+            ) : null;
+          })()}
 
           {/* Profit: masked until tapped (Amount − spare parts − lead − commission) */}
           {showProfit && (

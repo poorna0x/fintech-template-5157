@@ -18,6 +18,7 @@ import { RefreshCw } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { broadcastTechnicianJobListRefreshForJob } from '@/lib/technicianJobListSync';
 import { parseJobRequirements } from '@/lib/adminUtils';
+import { rawWaterTdsForJobComplete } from '@/lib/jobRawWaterTds';
 import { billPhotosRequirement, type PhotoCaptureSource } from '@/lib/billPhotoCapture';
 import { getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
 import PendingPaymentFields from '@/components/job/PendingPaymentFields';
@@ -470,6 +471,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
           mode: (finalPaymentMode || '') as any,
           paidTodayAmount: paidTodayForPending,
         }),
+        raw_water_tds: rawWaterTdsForJobComplete(isSoftenerService(), rawWaterTds),
       };
 
       // If completing from admin page with selected technician, ensure job is assigned to that technician

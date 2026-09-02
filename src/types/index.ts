@@ -192,6 +192,10 @@ export interface Job {
   completedAt?: string;
   service_brand?: 'elevenro' | 'hydrogenro' | string;
 
+  /** Raw water TDS (ppm) captured at this visit. Null if not entered / softener. */
+  raw_water_tds?: number | null;
+  rawWaterTds?: number | null;
+
   // Timestamps
   createdAt: string;
   updatedAt: string;

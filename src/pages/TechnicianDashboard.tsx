@@ -73,6 +73,7 @@ import {
 } from '@/lib/technicianOtpRequests';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
+import { rawWaterTdsForJobComplete, jobVisitRawWaterTdsPpm } from '@/lib/jobRawWaterTds';
 import { applyOtherEnRouteResetLocal, revertOtherEnRouteJobsToAssigned } from '@/lib/revertOtherEnRouteJobs';
 import { mapCustomerGstFields } from '@/lib/customerGst';
 import {
@@ -5115,6 +5116,7 @@ const TechnicianDashboard = () => {
                   ? parseMoneyAmount(billAmount)
                   : 0,
                 customer: job.customer,
+                raw_water_tds: rawWaterTdsForJobComplete(isSoftenerService(), rawWaterTds),
               }
             : job
         )
@@ -5522,6 +5524,7 @@ const TechnicianDashboard = () => {
           completed_at: new Date().toISOString(),
           completed_by: user?.id || user?.technicianId || null,
           requirements: JSON.stringify(reqsForRetry),
+          raw_water_tds: rawWaterTdsForJobComplete(isSoftenerService(), rawWaterTds),
         };
         const { error: retryErr } = await withTimeout(
           db.jobs.update(jobId, phaseBRetry),
@@ -5621,6 +5624,7 @@ const TechnicianDashboard = () => {
             mode: (paymentMode || '') as any,
             paidTodayAmount: paidTodayForPending,
           }),
+          raw_water_tds: rawWaterTdsForJobComplete(isSoftenerService(), rawWaterTds),
         };
 
         // Fetch latest job data to ensure we have the most up-to-date requirements
@@ -5968,6 +5972,7 @@ const TechnicianDashboard = () => {
           completed_at: new Date().toISOString(),
           completed_by: user?.id || user?.technicianId || null,
           requirements: JSON.stringify(reqsForPhaseB),
+          raw_water_tds: rawWaterTdsForJobComplete(isSoftenerService(), rawWaterTds),
         };
         const { error: phaseBError } = await withTimeout(
           db.jobs.update(jobId, phaseBData),
@@ -7580,12 +7585,15 @@ const TechnicianDashboard = () => {
                       })()}
 
                       {/* Raw Water TDS */}
-                      {((job as any).customer?.raw_water_tds != null && (job as any).customer?.raw_water_tds > 0) && (
+                      {(() => {
+                        const tds = jobVisitRawWaterTdsPpm(job as any);
+                        return tds != null ? (
                         <div className="text-sm mb-3">
                           <span className="font-medium text-gray-700 inline-block w-28">Raw Water TDS:</span>
-                          <span className="text-gray-600">{(job as any).customer.raw_water_tds} ppm</span>
+                          <span className="text-gray-600">{tds} ppm</span>
                         </div>
-                      )}
+                        ) : null;
+                      })()}
 
                       {/* Estimated Cost */}
                       {(job as any).estimated_cost ? (
@@ -11334,13 +11342,16 @@ const TechnicianDashboard = () => {
                                 return null;
                               })()}
 
-                              {/* Raw Water TDS - from selectedCustomerForReport (jobs from getByCustomerId don't have customer) */}
-                              {((selectedCustomerForReport as any)?.raw_water_tds != null && (selectedCustomerForReport as any)?.raw_water_tds > 0) && (
+                              {/* Raw Water TDS for this visit */}
+                              {(() => {
+                                const tds = jobVisitRawWaterTdsPpm(job as any);
+                                return tds != null ? (
                                 <div className="flex items-start gap-2">
                                   <span className="text-sm font-medium text-gray-700 w-36 shrink-0">Raw Water TDS:</span>
-                                  <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{(selectedCustomerForReport as any).raw_water_tds} ppm</span>
+                                  <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{tds} ppm</span>
                                 </div>
-                              )}
+                                ) : null;
+                              })()}
                               
                               {/* QR Code */}
                               {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (

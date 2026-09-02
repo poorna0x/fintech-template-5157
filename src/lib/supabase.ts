@@ -17,6 +17,13 @@ import {
   resolveJobSelect,
 } from './visit-order-columns';
 import {
+  isMissingRawWaterTdsColumnError,
+  isRawWaterTdsColumnAssumedAvailable,
+  markRawWaterTdsColumnMissing,
+  omitRawWaterTdsFromJobUpdate,
+  resolveRawWaterTdsJobSelect,
+} from './job-raw-water-tds-columns';
+import {
   normalizeAmcAgreementNumber,
   parseAmcAgreementNumberFromAdditionalInfo,
   amcCreatedOnIstDay,
@@ -92,11 +99,25 @@ const JOB_SELECT_ONGOING_AND_TECH = [
   'payment_status',
   'lead_cost',
   'parts_cost_total',
+  'raw_water_tds',
 ].join(',');
 
-/** Job list select — strips `visit_order` if the DB column is not migrated yet. */
+/** Job list select — strips optional columns until their SQL migrations are applied. */
 function jobSelectOngoingAndTech(): string {
-  return resolveJobSelect(JOB_SELECT_ONGOING_AND_TECH);
+  return resolveRawWaterTdsJobSelect(resolveJobSelect(JOB_SELECT_ONGOING_AND_TECH));
+}
+
+function jobColsSelect(cols: string): string {
+  return resolveRawWaterTdsJobSelect(resolveJobSelect(cols));
+}
+
+function isMissingOptionalJobColumnError(error: unknown): boolean {
+  return isMissingVisitOrderColumnError(error) || isMissingRawWaterTdsColumnError(error);
+}
+
+function markMissingOptionalJobColumn(error: unknown): void {
+  if (isMissingVisitOrderColumnError(error)) markVisitOrderColumnMissing();
+  if (isMissingRawWaterTdsColumnError(error)) markRawWaterTdsColumnMissing();
 }
 
 /** Large JSON arrays — omitted from `JOB_SELECT_ONGOING_AND_TECH`; batch-fetch when UI needs thumbnails. */
@@ -220,6 +241,7 @@ const JOB_BY_CUSTOMER_SLIM_COLS = [
   'lead_cost',
   'parts_cost_total',
   'requirements',
+  'raw_water_tds',
 ] as const;
 
 /** Admin job-number search — no requirements JSON (keeps egress low). */
@@ -1988,13 +2010,18 @@ export const db = {
 
     /** Low-egress jobs-by-customer list. Avoids big payload fields. */
     async getByCustomerIdSlim(customerId: string) {
-      const cols = JOB_BY_CUSTOMER_SLIM_COLS.join(', ');
+      const run = () =>
+        supabase
+          .from('jobs')
+          .select(jobColsSelect(JOB_BY_CUSTOMER_SLIM_COLS.join(', ')))
+          .eq('customer_id', customerId)
+          .order('created_at', { ascending: false });
 
-      const { data, error } = await supabase
-        .from('jobs')
-        .select(cols)
-        .eq('customer_id', customerId)
-        .order('created_at', { ascending: false });
+      let { data, error } = await run();
+      if (error && isMissingRawWaterTdsColumnError(error)) {
+        markRawWaterTdsColumnMissing();
+        ({ data, error } = await run());
+      }
 
       return { data, error };
     },
@@ -2005,16 +2032,22 @@ export const db = {
      * extra row to detect whether more pages exist without a separate count query.
      */
     async getByCustomerIdSlimPaged(customerId: string, limit: number = 50, offset: number = 0) {
-      const cols = JOB_BY_CUSTOMER_SLIM_COLS.join(', ');
       const safeLimit = Math.min(Math.max(1, limit), 200);
       const safeOffset = Math.max(0, offset);
 
-      const { data, error } = await supabase
-        .from('jobs')
-        .select(cols)
-        .eq('customer_id', customerId)
-        .order('created_at', { ascending: false })
-        .range(safeOffset, safeOffset + safeLimit); // fetch limit + 1 to detect more
+      const run = () =>
+        supabase
+          .from('jobs')
+          .select(jobColsSelect(JOB_BY_CUSTOMER_SLIM_COLS.join(', ')))
+          .eq('customer_id', customerId)
+          .order('created_at', { ascending: false })
+          .range(safeOffset, safeOffset + safeLimit); // fetch limit + 1 to detect more
+
+      let { data, error } = await run();
+      if (error && isMissingRawWaterTdsColumnError(error)) {
+        markRawWaterTdsColumnMissing();
+        ({ data, error } = await run());
+      }
 
       if (error) return { data: [], hasMore: false, error };
 
@@ -2027,20 +2060,23 @@ export const db = {
      * Customer / technician “report” UI: completed jobs only; no photo arrays (use enrichJobsWithAfterPhotosIfNeeded).
      */
     async getByCustomerIdForReport(customerId: string) {
-      const cols = [
-        ...JOB_BY_CUSTOMER_SLIM_COLS,
-        'brand',
-        'model',
-        'completion_notes',
-        'description',
-      ].join(', ');
+      const run = () =>
+        supabase
+          .from('jobs')
+          .select(
+            jobColsSelect(
+              [...JOB_BY_CUSTOMER_SLIM_COLS, 'brand', 'model', 'completion_notes', 'description'].join(', ')
+            )
+          )
+          .eq('customer_id', customerId)
+          .eq('status', 'COMPLETED')
+          .order('created_at', { ascending: false });
 
-      const { data, error } = await supabase
-        .from('jobs')
-        .select(cols)
-        .eq('customer_id', customerId)
-        .eq('status', 'COMPLETED')
-        .order('created_at', { ascending: false });
+      let { data, error } = await run();
+      if (error && isMissingRawWaterTdsColumnError(error)) {
+        markRawWaterTdsColumnMissing();
+        ({ data, error } = await run());
+      }
 
       return { data, error };
     },
@@ -2300,8 +2336,8 @@ export const db = {
       };
 
       let { data, error } = await run();
-      if (error && isMissingVisitOrderColumnError(error)) {
-        markVisitOrderColumnMissing();
+      if (error && isMissingOptionalJobColumnError(error)) {
+        markMissingOptionalJobColumn(error);
         ({ data, error } = await run());
       }
       return { data, error };
@@ -2598,16 +2634,27 @@ export const db = {
       });
       
       try {
-        const payload = { ...updates } as Database['public']['Tables']['jobs']['Update'];
+        const payload = { ...updates } as Database['public']['Tables']['jobs']['Update'] & Record<string, unknown>;
         if (payload.requirements !== undefined) {
           payload.requirements = coerceJobRequirementsForDb(payload.requirements) as typeof payload.requirements;
         }
+        const payloadForWrite = isRawWaterTdsColumnAssumedAvailable()
+          ? payload
+          : omitRawWaterTdsFromJobUpdate(payload);
 
         // First, try update without select to avoid relationship query issues
-        const { error: updateError } = await supabase
+        let { error: updateError } = await supabase
         .from('jobs')
-        .update(payload)
+        .update(payloadForWrite)
           .eq('id', id);
+
+        if (updateError && isMissingRawWaterTdsColumnError(updateError) && ('raw_water_tds' in payload || 'rawWaterTds' in payload)) {
+          markRawWaterTdsColumnMissing();
+          ({ error: updateError } = await supabase
+            .from('jobs')
+            .update(omitRawWaterTdsFromJobUpdate(payload))
+            .eq('id', id));
+        }
         
         if (updateError) {
           console.error('❌ [db.jobs.update] Supabase update error:', {
@@ -2623,11 +2670,19 @@ export const db = {
         }
         
         // Re-fetch the row with the same column set as list views so merged client state shows edits without a manual refresh
-        const { data, error: selectError } = await supabase
+        let { data, error: selectError } = await supabase
           .from('jobs')
           .select(jobSelectOngoingAndTech())
           .eq('id', id)
           .single();
+        if (selectError && isMissingOptionalJobColumnError(selectError)) {
+          markMissingOptionalJobColumn(selectError);
+          ({ data, error: selectError } = await supabase
+            .from('jobs')
+            .select(jobSelectOngoingAndTech())
+            .eq('id', id)
+            .single());
+        }
       
         if (selectError) {
           console.warn('⚠️ [db.jobs.update] Select error (non-critical):', {
@@ -2792,8 +2847,8 @@ export const db = {
 
       let resultSets = await runSlice();
       const firstPassError = resultSets.find((res) => res.error)?.error;
-      if (firstPassError && isMissingVisitOrderColumnError(firstPassError)) {
-        markVisitOrderColumnMissing();
+      if (firstPassError && isMissingOptionalJobColumnError(firstPassError)) {
+        markMissingOptionalJobColumn(firstPassError);
         resultSets = await runSlice();
       }
 
@@ -3245,6 +3300,7 @@ export const db = {
         'assigned_by',
         'assigned_date',
         'completion_notes',
+        'raw_water_tds',
       ];
 
       if (!isCompletedOnly) {
@@ -3270,7 +3326,7 @@ export const db = {
         jobColList.push('before_photos', 'after_photos', 'images');
       }
       // Completed list: photos via enrichJobsWithAfterPhotosIfNeeded / loadCompletedJobDetails (not paginated rows).
-      const jobCols = jobColList.join(',');
+      const jobCols = jobColsSelect(jobColList.join(','));
 
       const customerColsSlim = [
         'id',
@@ -3381,6 +3437,10 @@ export const db = {
       }
 
       const { data, error, count } = await query.range(from, to);
+      if (error && isMissingRawWaterTdsColumnError(error) && isRawWaterTdsColumnAssumedAvailable()) {
+        markRawWaterTdsColumnMissing();
+        return this.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter, opts);
+      }
 
       return {
         data: data || [],
@@ -3800,7 +3860,9 @@ export const db = {
      * Same date logic as getForAnalyticsInRange when startDate/endDate provided; when omitted, returns up to 5000 jobs (no date filter).
      */
     async getJobsWithCustomerLocationInRange(startDate?: Date, endDate?: Date) {
-      const cols = 'id,customer_id,status,created_at,completed_at,end_time,service_sub_type,payment_amount,actual_cost,job_number';
+      const cols = jobColsSelect(
+        'id,customer_id,status,created_at,completed_at,end_time,service_sub_type,payment_amount,actual_cost,job_number,raw_water_tds'
+      );
       const select = `${cols},customer:customers(visible_address,raw_water_tds,address)`;
       const limit = 5000;
 
@@ -3824,6 +3886,11 @@ export const db = {
             .order('created_at', { ascending: false })
             .limit(limit)
         ]);
+        const rangeErr = completedRes.error || otherRes.error;
+        if (rangeErr && isMissingRawWaterTdsColumnError(rangeErr) && isRawWaterTdsColumnAssumedAvailable()) {
+          markRawWaterTdsColumnMissing();
+          return this.getJobsWithCustomerLocationInRange(startDate, endDate);
+        }
         if (completedRes.error) return { data: [], error: completedRes.error };
         if (otherRes.error) return { data: [], error: otherRes.error };
         const completed = completedRes.data || [];
@@ -3841,6 +3908,10 @@ export const db = {
         .select(select)
         .order('created_at', { ascending: false })
         .limit(limit);
+      if (error && isMissingRawWaterTdsColumnError(error) && isRawWaterTdsColumnAssumedAvailable()) {
+        markRawWaterTdsColumnMissing();
+        return this.getJobsWithCustomerLocationInRange(startDate, endDate);
+      }
       return { data: data || [], error };
     },
 
@@ -3955,8 +4026,8 @@ export const db = {
       };
 
       let { data: rows, error: err } = await run();
-      if (err && isMissingVisitOrderColumnError(err)) {
-        markVisitOrderColumnMissing();
+      if (err && isMissingOptionalJobColumnError(err)) {
+        markMissingOptionalJobColumn(err);
         ({ data: rows, error: err } = await run());
       }
 

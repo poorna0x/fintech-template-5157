@@ -11,6 +11,7 @@ import { getJobEquipmentDisplay, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { fetchSubmittedJobReviewRatingsByJobIds } from '@/lib/jobReviews';
+import { jobVisitRawWaterTdsPpm } from '@/lib/jobRawWaterTds';
 
 interface CustomerReportDialogProps {
   open: boolean;
@@ -371,8 +372,11 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                         })()}
 
                         {(() => {
-                          const tds = (customer as any).raw_water_tds ?? (customer as any).rawWaterTds;
-                          return tds != null && tds > 0 ? (
+                          const tds = jobVisitRawWaterTdsPpm({
+                            ...(job as any),
+                            customer,
+                          });
+                          return tds != null ? (
                             <div className="flex items-start gap-2">
                               <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">Raw Water TDS:</span>
                               <span className="text-sm text-foreground flex-1 min-w-0 break-words">{tds} ppm</span>
