@@ -5,13 +5,24 @@ import { Badge } from '@/components/ui/badge';
 import { Customer, Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
 import { getCustomerGstNumber } from '@/lib/customerGst';
-import { CheckCircle, Star } from 'lucide-react';
+import { CheckCircle, Star, Trash2 } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { getJobEquipmentDisplay, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { fetchSubmittedJobReviewRatingsByJobIds } from '@/lib/jobReviews';
 import { jobVisitRawWaterTdsPpm } from '@/lib/jobRawWaterTds';
+
+type CustomerJobDeleteEvent = {
+  id: string;
+  customer_id: string;
+  job_id?: string | null;
+  job_number?: string | null;
+  job_status?: string | null;
+  service_type?: string | null;
+  remark?: string | null;
+  created_at: string;
+};
 
 interface CustomerReportDialogProps {
   open: boolean;
@@ -40,6 +51,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
   const [reviewRatings, setReviewRatings] = useState<Record<string, number>>({});
+  const [deletedJobEvents, setDeletedJobEvents] = useState<CustomerJobDeleteEvent[]>([]);
+  const [loadingDeletedJobs, setLoadingDeletedJobs] = useState(false);
 
   const customerId = customer?.id;
 
@@ -47,6 +60,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     if (!open) {
       setCustomerReportJobs([]);
       setReviewRatings({});
+      setDeletedJobEvents([]);
       return;
     }
     if (!customerId) return;
@@ -54,20 +68,31 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     let cancelled = false;
     const loadCustomerReportJobs = async () => {
       setLoadingCustomerReportJobs(true);
+      setLoadingDeletedJobs(true);
       try {
-        const { data, error } = await db.jobs.getByCustomerIdForReportEnriched(customerId);
+        const [{ data, error }, deletedRes] = await Promise.all([
+          db.jobs.getByCustomerIdForReportEnriched(customerId),
+          db.customerJobDeleteEvents.listByCustomerId(customerId),
+        ]);
         if (cancelled) return;
         if (error) {
           console.error('Error loading customer report jobs:', error);
-          return;
+        } else {
+          setCustomerReportJobs(data || []);
+          const ids = (data || []).map((j: { id?: string }) => String(j.id || '')).filter(Boolean);
+          if (ids.length) {
+            const ratings = await fetchSubmittedJobReviewRatingsByJobIds(ids);
+            if (!cancelled) setReviewRatings(ratings);
+          } else if (!cancelled) {
+            setReviewRatings({});
+          }
         }
-        setCustomerReportJobs(data || []);
-        const ids = (data || []).map((j: { id?: string }) => String(j.id || '')).filter(Boolean);
-        if (ids.length) {
-          const ratings = await fetchSubmittedJobReviewRatingsByJobIds(ids);
-          if (!cancelled) setReviewRatings(ratings);
-        } else if (!cancelled) {
-          setReviewRatings({});
+        if (deletedRes.error) {
+          // Table may not exist until SQL is run — soft-fail.
+          console.warn('Error loading deleted job events:', deletedRes.error);
+          setDeletedJobEvents([]);
+        } else {
+          setDeletedJobEvents((deletedRes.data || []) as CustomerJobDeleteEvent[]);
         }
       } catch (error) {
         if (!cancelled) {
@@ -76,6 +101,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
       } finally {
         if (!cancelled) {
           setLoadingCustomerReportJobs(false);
+          setLoadingDeletedJobs(false);
         }
       }
     };
@@ -594,6 +620,66 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
               </div>
             )}
           </div>
+
+          {/* Deleted jobs (admin delete + optional remark) */}
+          {(loadingDeletedJobs || deletedJobEvents.length > 0) && (
+            <div>
+              <h3 className="font-semibold text-lg mb-3">
+                Deleted Jobs ({loadingDeletedJobs ? '…' : deletedJobEvents.length})
+              </h3>
+              {loadingDeletedJobs ? (
+                <div className="text-center py-6 text-muted-foreground">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900 mx-auto mb-2" />
+                  <p className="text-sm">Loading deleted jobs…</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {deletedJobEvents.map((ev) => {
+                    const whenLabel = ev.created_at ? formatCompletedWhen(ev.created_at) : null;
+                    const remarkText = (ev.remark || '').trim();
+                    return (
+                      <div
+                        key={ev.id}
+                        className="border border-border rounded-lg p-3 bg-muted/20"
+                      >
+                        <div className="flex items-start gap-2">
+                          <Trash2 className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
+                          <div className="min-w-0 flex-1 space-y-1 text-sm">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium">
+                                {ev.job_number || 'Job'}
+                              </span>
+                              {ev.job_status ? (
+                                <Badge variant="outline" className="text-xs">
+                                  {ev.job_status}
+                                </Badge>
+                              ) : null}
+                              {ev.service_type ? (
+                                <Badge variant="secondary" className="text-xs">
+                                  {ev.service_type}
+                                </Badge>
+                              ) : null}
+                            </div>
+                            {whenLabel ? (
+                              <div className="text-muted-foreground text-xs">
+                                Deleted {whenLabel}
+                              </div>
+                            ) : null}
+                            <div className="pt-1">
+                              <span className="text-muted-foreground">Remark:</span>{' '}
+                              <span className="whitespace-pre-wrap break-words">
+                                {remarkText || '—'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         
         <DialogFooter>

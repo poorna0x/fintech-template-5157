@@ -6139,18 +6139,22 @@ const AdminDashboard = () => {
     setCompleteDialogOpen(true);
   };
 
-  const handleDeleteJob = async () => {
-    await deleteAdminJob(jobToDelete, {
-      statusFilter,
-      setJobs,
-      setCustomerJobs,
-      setLoadedCompletedJobDetails,
-      setLoadingCompletedJobDetails,
-      setTotalCount,
-      closeAdminModal,
-      setDeleteJobDialogOpen,
-      setJobToDelete,
-    });
+  const handleDeleteJob = async (remark?: string) => {
+    await deleteAdminJob(
+      jobToDelete,
+      {
+        statusFilter,
+        setJobs,
+        setCustomerJobs,
+        setLoadedCompletedJobDetails,
+        setLoadingCompletedJobDetails,
+        setTotalCount,
+        closeAdminModal,
+        setDeleteJobDialogOpen,
+        setJobToDelete,
+      },
+      remark
+    );
   };
 
   const handleCustomerStatusUpdate = async (

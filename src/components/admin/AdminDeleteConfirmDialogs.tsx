@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,6 +9,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import type { Customer, Job } from '@/types';
 
 type AdminDeleteConfirmDialogsProps = {
@@ -20,7 +22,7 @@ type AdminDeleteConfirmDialogsProps = {
   deleteJobOpen: boolean;
   onDeleteJobOpenChange: (open: boolean) => void;
   jobToDelete: Job | null;
-  onConfirmDeleteJob: () => void;
+  onConfirmDeleteJob: (remark?: string) => void;
 
   deletePhotoOpen: boolean;
   onDeletePhotoOpenChange: (open: boolean) => void;
@@ -51,6 +53,12 @@ export function AdminDeleteConfirmDialogs({
   isDeletingCustomerPhoto,
   onConfirmDeleteCustomerPhoto,
 }: AdminDeleteConfirmDialogsProps) {
+  const [jobDeleteRemark, setJobDeleteRemark] = useState('');
+
+  useEffect(() => {
+    if (!deleteJobOpen) setJobDeleteRemark('');
+  }, [deleteJobOpen]);
+
   return (
     <>
       <AlertDialog open={deleteCustomerOpen} onOpenChange={onDeleteCustomerOpenChange}>
@@ -75,20 +83,47 @@ export function AdminDeleteConfirmDialogs({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={deleteJobOpen} onOpenChange={onDeleteJobOpenChange}>
+      <AlertDialog
+        open={deleteJobOpen}
+        onOpenChange={(open) => {
+          if (!open) setJobDeleteRemark('');
+          onDeleteJobOpenChange(open);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Job</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete job <strong>{(jobToDelete as any)?.job_number}</strong>?
+              Are you sure you want to delete job{' '}
+              <strong>{(jobToDelete as any)?.job_number || (jobToDelete as any)?.jobNumber}</strong>?
               <br />
               <br />
               This action cannot be undone and will permanently remove the job and all associated data.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-2 py-1">
+            <Label htmlFor="job-delete-remark" className="text-sm font-medium text-foreground">
+              Remark (optional)
+            </Label>
+            <Textarea
+              id="job-delete-remark"
+              value={jobDeleteRemark}
+              onChange={(e) => setJobDeleteRemark(e.target.value)}
+              placeholder="Why is this job being deleted? (saved on the customer for Reports)"
+              rows={3}
+              maxLength={2000}
+              className="resize-none"
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave blank to skip — delete still proceeds. Remark appears under Deleted jobs in Customer Report.
+            </p>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirmDeleteJob} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction
+              onClick={() => onConfirmDeleteJob(jobDeleteRemark.trim() || undefined)}
+              className="bg-red-600 hover:bg-red-700"
+            >
               Delete Job
             </AlertDialogAction>
           </AlertDialogFooter>

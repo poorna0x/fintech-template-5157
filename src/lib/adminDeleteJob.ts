@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { toast } from 'sonner';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import { broadcastTechnicianJobListRefreshForJob } from '@/lib/technicianJobListSync';
-import { db } from '@/lib/supabase';
+import { db, supabase } from '@/lib/supabase';
 import type { Job } from '@/types';
 
 export async function deleteAdminJob(
@@ -17,11 +17,41 @@ export async function deleteAdminJob(
     closeAdminModal: () => void;
     setDeleteJobDialogOpen: Dispatch<SetStateAction<boolean>>;
     setJobToDelete: Dispatch<SetStateAction<Job | null>>;
-  }
+  },
+  remark?: string
 ) {
   if (!jobToDelete) return;
 
   try {
+    const customerId =
+      (jobToDelete as any).customer_id || jobToDelete.customerId || null;
+    if (customerId) {
+      let deletedBy: string | null = null;
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        deletedBy = authData?.user?.id || null;
+      } catch {
+        deletedBy = null;
+      }
+      const { error: eventError } = await db.customerJobDeleteEvents.insert({
+        customer_id: String(customerId),
+        job_id: jobToDelete.id || null,
+        job_number:
+          (jobToDelete as any).job_number || jobToDelete.jobNumber || null,
+        job_status: (jobToDelete as any).status || jobToDelete.status || null,
+        service_type:
+          (jobToDelete as any).service_type || jobToDelete.serviceType || null,
+        remark: remark?.trim() || null,
+        deleted_by: deletedBy,
+      });
+      if (eventError) {
+        console.warn('Job delete remark save failed (continuing delete):', eventError);
+        toast.warning(
+          'Could not save delete remark on customer (run scripts/add-customer-job-delete-events.sql). Job will still be deleted.'
+        );
+      }
+    }
+
     broadcastTechnicianJobListRefreshForJob(jobToDelete);
     const { error } = await db.jobs.delete(jobToDelete.id);
 
@@ -39,8 +69,8 @@ export async function deleteAdminJob(
     ctx.setJobs((prev) => prev.filter((job) => job.id !== deletedId));
     ctx.setCustomerJobs((prev) => {
       const updated = { ...prev };
-      Object.keys(updated).forEach((customerId) => {
-        updated[customerId] = updated[customerId].filter((job) => job.id !== deletedId);
+      Object.keys(updated).forEach((customerIdKey) => {
+        updated[customerIdKey] = updated[customerIdKey].filter((job) => job.id !== deletedId);
       });
       return updated;
     });

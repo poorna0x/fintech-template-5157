@@ -8140,6 +8140,51 @@ export const db = {
   },
 
   /**
+   * Admin job-delete audit on the customer (optional remark). Survives hard job delete.
+   * Requires scripts/add-customer-job-delete-events.sql.
+   */
+  customerJobDeleteEvents: {
+    async insert(row: {
+      customer_id: string;
+      job_id?: string | null;
+      job_number?: string | null;
+      job_status?: string | null;
+      service_type?: string | null;
+      remark?: string | null;
+      deleted_by?: string | null;
+    }) {
+      const remark =
+        typeof row.remark === 'string' && row.remark.trim()
+          ? row.remark.trim().slice(0, 2000)
+          : null;
+      const { data, error } = await supabase
+        .from('customer_job_delete_events')
+        .insert({
+          customer_id: row.customer_id,
+          job_id: row.job_id || null,
+          job_number: row.job_number || null,
+          job_status: row.job_status || null,
+          service_type: row.service_type || null,
+          remark,
+          deleted_by: row.deleted_by || null,
+        })
+        .select('id')
+        .single();
+      return { data, error };
+    },
+
+    async listByCustomerId(customerId: string) {
+      const { data, error } = await supabase
+        .from('customer_job_delete_events')
+        .select('id,customer_id,job_id,job_number,job_status,service_type,remark,created_at')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      return { data: data || [], error };
+    },
+  },
+
+  /**
    * Website booking funnel: record name + phone when user leaves mid-flow (anon insert).
    * Admin: slim `select` + dismiss update. Poll interval should stay ≥ 60s to limit egress.
    */

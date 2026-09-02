@@ -657,6 +657,31 @@ export interface Database {
           dismissed_at: string | null;
         }>;
       };
+      customer_job_delete_events: {
+        Row: {
+          id: string;
+          customer_id: string;
+          job_id: string | null;
+          job_number: string | null;
+          job_status: string | null;
+          service_type: string | null;
+          remark: string | null;
+          deleted_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          customer_id: string;
+          job_id?: string | null;
+          job_number?: string | null;
+          job_status?: string | null;
+          service_type?: string | null;
+          remark?: string | null;
+          deleted_by?: string | null;
+        };
+        Update: Partial<{
+          remark: string | null;
+        }>;
+      };
       reminders: {
         Row: {
           id: string;
