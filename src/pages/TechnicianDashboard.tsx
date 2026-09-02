@@ -4993,6 +4993,11 @@ const TechnicianDashboard = () => {
               jobForWa = {
                 ...(fresh as Record<string, unknown>),
                 customer: (fresh as any).customer || selectedJobForComplete.customer,
+                service_brand:
+                  serviceBrand ||
+                  (fresh as any).service_brand ||
+                  (selectedJobForComplete as any).service_brand ||
+                  (selectedJobForComplete as any).serviceBrand,
               };
             }
           } catch {

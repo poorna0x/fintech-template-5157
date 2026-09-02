@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -16,7 +16,7 @@ import {
 import {
   sendAdminWhatsAppText,
 } from '@/lib/sendAdminWhatsAppApi';
-import { getDocumentBrandLabel } from '@/lib/service-brands';
+import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
 import {
@@ -88,6 +88,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   const [reviewAlreadySubmitted, setReviewAlreadySubmitted] = useState(false);
   const [payloadMode, setPayloadMode] = useState<PayloadMode>('full');
   const jobId = job?.id ? String(job.id) : '';
+  const invitePromiseRef = useRef<ReturnType<typeof createJobReviewInvite> | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -125,9 +126,17 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
         })
         .catch(() => false);
 
-      const inviteTask = jobId
-        ? createJobReviewInvite({ jobId, technicianId })
-        : Promise.resolve(null);
+      const inviteTask =
+        jobId && !skipReview
+          ? createJobReviewInvite({
+              jobId,
+              technicianId,
+              brand:
+                normalizeDocumentBrand(rec?.service_brand) ||
+                normalizeDocumentBrand(rec?.serviceBrand),
+            })
+          : Promise.resolve(null);
+      invitePromiseRef.current = inviteTask;
 
       const [allowCloud, invite] = await Promise.all([settingsTask, inviteTask]);
       if (cancelled) return;
@@ -205,12 +214,26 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       toast.error('This visit was already reviewed');
       return;
     }
-    if (sendReview && !reviewUrl) {
-      toast.error('Review link is not ready yet');
-      return;
-    }
     setSending(true);
     try {
+      let resolvedReviewUrl = reviewUrl;
+      if (!skipReview && !resolvedReviewUrl && invitePromiseRef.current) {
+        const invite = await invitePromiseRef.current;
+        const url = String(invite?.url || '').trim();
+        if (url) {
+          resolvedReviewUrl = url;
+          setReviewUrl(url);
+        }
+      }
+      if (sendReview && !resolvedReviewUrl) {
+        toast.error('Review link is not ready yet');
+        return;
+      }
+      const textToSend = resolvedReviewUrl
+        ? buildJobCompletionMessageFromJob({ ...jobRec, reviewUrl: resolvedReviewUrl })
+            .whatsappMessage
+        : whatsappMessage;
+
       if (sendReview) {
         const technicianRaw =
           jobRec.completed_by ||
@@ -226,7 +249,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
           technicianId: String(technicianRaw || '').trim() || null,
           brand: completion.documentBrand,
           jobNumber: completion.jobNumber || null,
-          reviewUrl,
+          reviewUrl: resolvedReviewUrl,
           forceWaMe: mode === 'wa_me',
           source: 'job_completion',
         });
@@ -248,7 +271,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
       if (mode === 'wa_me') {
         const result = await sendAdminWhatsAppText({
           to,
-          text: whatsappMessage,
+          text: textToSend,
           customerId: customerId ? String(customerId) : null,
           source: 'job_completion',
           forceWaMe: true,
@@ -266,7 +289,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
       const result = await sendJobCompletionWhatsApp({
         to,
-        text: whatsappMessage,
+        text: textToSend,
         customerId: customerId ? String(customerId) : null,
         customerName: completion.customerName,
         amountCollected: completion.amountCollected,
@@ -276,7 +299,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
         amountPending: completion.amountPendingValue,
         pendingDueDate: completion.pendingDueDate || null,
         jobRef: completion.jobNumber || null,
-        reviewUrl,
+        reviewUrl: resolvedReviewUrl,
         fallbackWaMe: false,
       });
 
@@ -320,8 +343,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
     }
     return alreadySent ? 'Send full message again' : 'Send via Cloud API';
   })();
-  const sendDisabled =
-    sending || !reviewLinkReady || (reviewOnly && reviewAlreadySubmitted);
+  const sendDisabled = sending || (reviewOnly && (reviewAlreadySubmitted || !reviewUrl));
   const primaryDigits = formatPhoneForWhatsApp(customerPhone).slice(-10);
   const altDigits = formatPhoneForWhatsApp(alternatePhone).slice(-10);
 
@@ -493,15 +515,14 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                       : 'Message Preview'}
                 </Label>
                 <MessagePreviewScroll className="max-h-56">
-                  {reviewLinkReady ? (
-                    previewMessage
-                  ) : (
-                    <span className="inline-flex items-center gap-2 text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Preparing review link…
-                    </span>
-                  )}
+                  {previewMessage}
                 </MessagePreviewScroll>
+                {!reviewLinkReady && !skipReview ? (
+                  <p className="mt-1.5 inline-flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Adding review link…
+                  </p>
+                ) : null}
                 {cloudApiAllowed && completion.amountPendingValue <= 0 && !reviewOnly ? (
                   <div className="mt-3">
                     <Label>If the 24h window is closed (cold template)</Label>

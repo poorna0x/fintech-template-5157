@@ -100,12 +100,17 @@ exports.handler = async (event) => {
           uuidRe.test(String(id || ''))
         ) || null
       : staff.userId;
+  const requestedBrand = String(body.brand || '')
+    .trim()
+    .toLowerCase();
   const brand =
-    String(job.service_brand || '')
-      .trim()
-      .toLowerCase() === 'elevenro'
-      ? 'elevenro'
-      : 'hydrogenro';
+    requestedBrand === 'elevenro' || requestedBrand === 'hydrogenro'
+      ? requestedBrand
+      : String(job.service_brand || '')
+            .trim()
+            .toLowerCase() === 'elevenro'
+        ? 'elevenro'
+        : 'hydrogenro';
 
   const { data: existing, error: existingErr } = await db
     .from('job_reviews')

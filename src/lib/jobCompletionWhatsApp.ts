@@ -38,7 +38,7 @@ import {
   fetchLastInboundAt,
   isCustomerServiceWindowClosed,
 } from '@/lib/whatsappInbox';
-import { getDocumentBrandLabel } from '@/lib/service-brands';
+import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import type { Job } from '@/types';
 import {
@@ -479,7 +479,12 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
           (job.assigned_technician_id as string) ||
           (job.assignedTechnicianId as string) ||
           null;
-        const invite = await createJobReviewInvite({ jobId, technicianId });
+        const invite = await createJobReviewInvite({
+          jobId,
+          technicianId,
+          brand: normalizeDocumentBrand(job.service_brand) || normalizeDocumentBrand(job.serviceBrand),
+          skipCache: true,
+        });
         if (invite?.url) {
           job.reviewUrl = invite.url;
           job.reviewToken = invite.token;

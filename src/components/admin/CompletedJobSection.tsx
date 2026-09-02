@@ -160,16 +160,21 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const [profitRevealed, setProfitRevealed] = useState(false);
   const [sendMessageConfirmOpen, setSendMessageConfirmOpen] = useState(false);
 
-  // Pre-warm the review invite so the Send WhatsApp dialog opens instantly
+  // Pre-warm the review invite so the Send WhatsApp dialog opens instantly.
+  // Only after COMPLETED — minting on create defaults the URL to HydrogenRO.
   const prefetchedRef = useRef(false);
   useEffect(() => {
     if (prefetchedRef.current) return;
+    if (String((job as any)?.status || '').toUpperCase() !== 'COMPLETED') return;
     const jobId = String((job as any)?.id || '').trim();
     if (!jobId) return;
     prefetchedRef.current = true;
-    const techId = String((job as any)?.completed_by || (job as any)?.assigned_technician_id || '').trim() || undefined;
-    prefetchJobReviewInvite(jobId, techId);
-  }, [(job as any)?.id]);
+    const techId =
+      String((job as any)?.completed_by || (job as any)?.assigned_technician_id || '').trim() ||
+      undefined;
+    const brand = normalizeDocumentBrand((job as any)?.service_brand);
+    prefetchJobReviewInvite(jobId, techId, brand);
+  }, [(job as any)?.id, (job as any)?.status, (job as any)?.service_brand]);
 
   useEffect(() => {
     if (!profitRevealed) return;
@@ -849,7 +854,14 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             variant="outline"
             onMouseEnter={() => {
               const jobId = String((job as any)?.id || '').trim();
-              if (jobId) prefetchJobReviewInvite(jobId, String((job as any)?.completed_by || (job as any)?.assigned_technician_id || '').trim() || undefined);
+              if (!jobId) return;
+              prefetchJobReviewInvite(
+                jobId,
+                String(
+                  (job as any)?.completed_by || (job as any)?.assigned_technician_id || ''
+                ).trim() || undefined,
+                normalizeDocumentBrand((job as any)?.service_brand)
+              );
             }}
             onClick={() => {
               if (dontSendMessage) {

@@ -25,12 +25,25 @@ export type JobReviewInvite = {
 const _reviewInviteCache = new Map<string, { invite: JobReviewInvite; ts: number }>();
 const INVITE_CACHE_TTL_MS = 10 * 60 * 1000;
 
-/** Pre-mint the review invite for a job in the background so the dialog opens instantly. */
-export function prefetchJobReviewInvite(jobId: string, technicianId?: string | null): void {
+function cachedInviteIsUsable(
+  cached: { invite: JobReviewInvite; ts: number } | undefined,
+  brand?: DocumentBrand | null
+): cached is { invite: JobReviewInvite; ts: number } {
+  if (!cached || Date.now() - cached.ts >= INVITE_CACHE_TTL_MS) return false;
+  if (brand && cached.invite.brand && cached.invite.brand !== brand) return false;
+  return true;
+}
+
+/** Pre-mint the review invite for a completed job so the dialog opens instantly. */
+export function prefetchJobReviewInvite(
+  jobId: string,
+  technicianId?: string | null,
+  brand?: DocumentBrand | null
+): void {
   if (!jobId) return;
   const cached = _reviewInviteCache.get(jobId);
-  if (cached && Date.now() - cached.ts < INVITE_CACHE_TTL_MS) return;
-  void createJobReviewInvite({ jobId, technicianId }).then((invite) => {
+  if (cachedInviteIsUsable(cached, brand)) return;
+  void createJobReviewInvite({ jobId, technicianId, brand }).then((invite) => {
     if (invite?.url) _reviewInviteCache.set(jobId, { invite, ts: Date.now() });
   });
 }
@@ -389,14 +402,15 @@ export async function createJobReviewInvite(opts: {
   jobId: string;
   technicianId?: string | null;
   skipCache?: boolean;
+  brand?: DocumentBrand | null;
 }): Promise<JobReviewInvite | null> {
   const jobId = String(opts.jobId || '').trim();
   if (!jobId) return null;
+  const brand = normalizeDocumentBrand(opts.brand);
 
-  // Return cached invite immediately (avoids cold-start latency when dialog opens)
   if (!opts.skipCache) {
     const cached = _reviewInviteCache.get(jobId);
-    if (cached && Date.now() - cached.ts < INVITE_CACHE_TTL_MS) return cached.invite;
+    if (cachedInviteIsUsable(cached, brand)) return cached.invite;
   }
 
   const technicianId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -405,19 +419,36 @@ export async function createJobReviewInvite(opts: {
     ? String(opts.technicianId).trim()
     : null;
 
-  const fromFn = await mintInviteViaFunction(jobId, technicianId);
-  if (fromFn?.url || fromFn?.alreadySubmitted) {
-    _reviewInviteCache.set(jobId, { invite: fromFn, ts: Date.now() });
-    return fromFn;
+  const usable = (invite: JobReviewInvite | null) =>
+    Boolean(invite?.url || invite?.alreadySubmitted);
+
+  const fromFnP = mintInviteViaFunction(jobId, technicianId, brand);
+  const fromRpcP = mintInviteViaBrowserRpc(jobId, technicianId);
+  let first = await Promise.any([
+    fromFnP.then((invite) => {
+      if (usable(invite)) return invite as JobReviewInvite;
+      throw new Error('empty');
+    }),
+    fromRpcP.then((invite) => {
+      if (usable(invite)) return invite as JobReviewInvite;
+      throw new Error('empty');
+    }),
+  ]).catch(() => null);
+
+  if (brand && first && first.brand !== brand) {
+    const fromFn = await fromFnP.catch(() => null);
+    if (usable(fromFn)) first = fromFn;
+    else if (first.token) {
+      first = { ...first, brand, url: jobReviewPublicUrl(first.token, brand) };
+    }
   }
 
-  const fromRpc = await mintInviteViaBrowserRpc(jobId, technicianId);
-  if (fromRpc?.url || fromRpc?.alreadySubmitted) {
-    _reviewInviteCache.set(jobId, { invite: fromRpc, ts: Date.now() });
-    return fromRpc;
+  if (first) {
+    _reviewInviteCache.set(jobId, { invite: first, ts: Date.now() });
+    return first;
   }
 
-  return fromFn || fromRpc;
+  return (await fromFnP) || (await fromRpcP);
 }
 
 async function mintInviteViaBrowserRpc(
@@ -455,7 +486,8 @@ async function mintInviteViaBrowserRpc(
 
 async function mintInviteViaFunction(
   jobId: string,
-  technicianId: string | null
+  technicianId: string | null,
+  brand?: DocumentBrand | null
 ): Promise<JobReviewInvite | null> {
   try {
     const access = await resolveSupabaseAccessTokenForApi();
@@ -466,7 +498,11 @@ async function mintInviteViaFunction(
         Authorization: `Bearer ${access}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ jobId, technicianId }),
+      body: JSON.stringify({
+        jobId,
+        technicianId,
+        ...(brand ? { brand } : {}),
+      }),
     });
     const json = await res.json().catch(() => null);
     if (!res.ok) {
@@ -495,7 +531,12 @@ export async function ensureJobReviewInviteOnJob(
   const attempts = Math.max(1, Number(opts?.attempts) || 3);
   let last: JobReviewInvite | null = null;
   for (let i = 0; i < attempts; i++) {
-    last = await createJobReviewInvite({ jobId, technicianId });
+    last = await createJobReviewInvite({
+      jobId,
+      technicianId,
+      brand: normalizeDocumentBrand(job.service_brand) || normalizeDocumentBrand(job.serviceBrand),
+      skipCache: true,
+    });
     if (last?.url) {
       job.reviewUrl = last.url;
       job.reviewToken = last.token;
