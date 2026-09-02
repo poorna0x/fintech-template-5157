@@ -177,7 +177,9 @@ export const CompletionPhotoStep: React.FC<CompletionPhotoStepProps> = ({
         </span>
         <div className="min-w-0 pt-0.5">
           <Label className="text-sm font-semibold text-gray-900">{label}</Label>
-          <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{hint}</p>
+          {hint ? (
+            <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{hint}</p>
+          ) : null}
         </div>
       </div>
     )}

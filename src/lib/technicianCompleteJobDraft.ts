@@ -45,6 +45,10 @@ export type TechnicianCompleteJobDraft = {
   /** When selectedQrCodeId is share_qr_link, the Dynamic UPI common QR id. */
   shareLinkUpiQrId?: string;
   paymentScreenshot: string;
+  /** Pay-QR WhatsApp watch — resume polling after dialog close. */
+  waitingPayQrPhoto?: boolean;
+  payQrWatchUntil?: number;
+  payQrDismissedUrls?: string[];
   otpInput: string[];
   serviceBrand: ServiceBrand | null;
   selectedQrCodeName?: string;

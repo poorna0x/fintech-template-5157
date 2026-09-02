@@ -40,6 +40,8 @@ type ShareQrLinkPanelProps = {
   commonQrCodes: CommonQrCode[];
   /** Technician personal Dynamic UPI options (optional). */
   technicians?: TechnicianQrPickerRow[];
+  /** When set, only this technician's personal Dynamic UPI is listed (not every roster tech). */
+  currentTechnicianId?: string | null;
   selectedUpiQrId: string;
   onSelectUpiQrId: (id: string) => void;
   amount: number;
@@ -50,6 +52,8 @@ type ShareQrLinkPanelProps = {
   jobId?: string | null;
   customerId?: string | null;
   jobRef?: string | null;
+  /** Fired after pay QR is sent — parent can poll for customer payment photo. */
+  onShareSuccess?: () => void;
 };
 
 /** Build the same concise share text as the public /p pay page. */
@@ -85,6 +89,7 @@ export function buildTechSharePayMessage(input: {
 export default function ShareQrLinkPanel({
   commonQrCodes,
   technicians = [],
+  currentTechnicianId,
   selectedUpiQrId,
   onSelectUpiQrId,
   amount,
@@ -95,6 +100,7 @@ export default function ShareQrLinkPanel({
   jobId,
   customerId,
   jobRef,
+  onShareSuccess,
 }: ShareQrLinkPanelProps) {
   const { cloudApiOn } = useWhatsAppCloudApiGate('pending_payment');
   const [sharing, setSharing] = useState(false);
@@ -115,7 +121,11 @@ export default function ShareQrLinkPanel({
         phone: qr.phone,
         imageUrl: qr.qrCodeUrl,
       }));
-    const fromTech: ShareUpiOption[] = technicians
+    const techPool =
+      currentTechnicianId && String(currentTechnicianId).trim()
+        ? technicians.filter((t) => String(t.id) === String(currentTechnicianId))
+        : technicians;
+    const fromTech: ShareUpiOption[] = techPool
       .filter((t) => isDynamicUpiTechnician(t))
       .map((t) => ({
         key: `technician_${t.id}`,
@@ -126,7 +136,7 @@ export default function ShareQrLinkPanel({
         imageUrl: t.qrCode,
       }));
     return [...fromCommon, ...fromTech];
-  }, [commonQrCodes, technicians]);
+  }, [commonQrCodes, technicians, currentTechnicianId]);
 
   const selectedQr = useMemo(
     () => dynamicOptions.find((q) => q.key === selectedUpiQrId) || null,
@@ -204,8 +214,9 @@ export default function ShareQrLinkPanel({
         return;
       }
       toast.success(
-        'Pay QR sent on WhatsApp. Photos from this number for the next 30 minutes will be forwarded to you.'
+        'Pay QR sent on WhatsApp. Continuing to payment screenshot — waiting for customer photo.'
       );
+      onShareSuccess?.();
     } catch (e) {
       console.error('[ShareQrLink]', e);
       toast.error('Failed to send pay QR on WhatsApp');

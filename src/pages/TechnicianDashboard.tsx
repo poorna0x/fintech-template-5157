@@ -59,12 +59,13 @@ import {
   IndianRupee,
   Pencil,
   Search,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
-import { getJobEquipmentDisplay, resolveJobEquipment, parseJobRequirements, isOfficeCompletedJob, isOpenAmcServiceJob } from '@/lib/adminUtils';
+import { getJobEquipmentDisplay, resolveJobEquipment, parseJobRequirements, isOfficeCompletedJob, isOpenAmcServiceJob, extractPhotoUrls, normalizePhotoUrl } from '@/lib/adminUtils';
 import {
   applyOtpToRequirements,
   getStoredOtpFromRequirements,
@@ -152,6 +153,36 @@ function resolveEffectiveQrCodeId(selectedQrCodeId: string, shareLinkUpiQrId: st
   }
   if (!selectedQrCodeId || selectedQrCodeId === 'no-qr') return '';
   return selectedQrCodeId;
+}
+
+function normalizePayPhotoCompare(url: string): string {
+  return String(url || '').split('?')[0].split('#')[0].trim().toLowerCase();
+}
+
+/** Latest job payment photo not explicitly removed by the technician on step 5. */
+function resolveLatestAcceptablePayQrPhoto(
+  job: { requirements?: unknown },
+  dismissed: ReadonlySet<string>
+): string | null {
+  const requirements = parseJobRequirements(job.requirements);
+  const candidates: string[] = [];
+  const paymentPhotosReq = requirements.find((r: any) => r?.payment_photos)?.payment_photos;
+  if (Array.isArray(paymentPhotosReq)) {
+    candidates.push(...extractPhotoUrls(paymentPhotosReq));
+  }
+  const qrShot = requirements.find((r: any) => r?.qr_photos)?.qr_photos?.payment_screenshot;
+  const qrUrl = normalizePhotoUrl(qrShot);
+  if (
+    qrUrl &&
+    !candidates.some((u) => normalizePayPhotoCompare(u) === normalizePayPhotoCompare(qrUrl))
+  ) {
+    candidates.unshift(qrUrl);
+  }
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    const url = candidates[i];
+    if (url && !dismissed.has(normalizePayPhotoCompare(url))) return url;
+  }
+  return null;
 }
 import { resolveJobBillingAmount } from '@/lib/jobAnalytics';
 import { compareJobsByVisitOrder, getJobVisitOrder, getVisitOrderVisibleForTechnician } from '@/lib/adminVisitOrder';
@@ -506,6 +537,10 @@ const TechnicianDashboard = () => {
   const qrLiveRef = useRef<TechnicianQrLiveRef>(emptyTechnicianQrLiveRef());
   /** Avoid repeated `loadQrCodes({ force })` on every deps tick while staying on payment step; still refresh on step entry or bill becoming eligible. */
   const qrPaymentStepPrevStepRef = useRef<number | null>(null);
+  /** Until this timestamp, poll step 5 for customer WhatsApp payment photo after pay-QR send. */
+  const payQrWatchUntilRef = useRef(0);
+  /** Payment URLs the tech removed on step 5 — do not auto-refill from the job. */
+  const payQrDismissedUrlsRef = useRef<Set<string>>(new Set());
   const qrPaymentStepHadBillRef = useRef(false);
   const lastJobIdsRef = useRef<Set<string>>(new Set()); // Track job IDs from last active session
   const hasJobsRef = useRef<boolean>(false); // Track if we have loaded jobs at least once
@@ -727,6 +762,7 @@ const TechnicianDashboard = () => {
   const [selectedQrCodeName, setSelectedQrCodeName] = useState<string>('');
   const [selectedQrCodeUrlState, setSelectedQrCodeUrlState] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
+  const [waitingPayQrPhoto, setWaitingPayQrPhoto] = useState(false);
   const [partialCashAmount, setPartialCashAmount] = useState<string>('');
   const [partialOnlineAmount, setPartialOnlineAmount] = useState<string>('');
   const [pendingPaidTodayEnabled, setPendingPaidTodayEnabled] = useState(false);
@@ -3948,6 +3984,9 @@ const TechnicianDashboard = () => {
     setAmcServicePeriodKind('');
     setAmcServicePeriodCustomMonths(4);
     setPaymentScreenshot('');
+    setWaitingPayQrPhoto(false);
+    payQrWatchUntilRef.current = 0;
+    payQrDismissedUrlsRef.current = new Set();
     setPaymentMode('');
     setPartialCashAmount('');
     setPartialOnlineAmount('');
@@ -4107,6 +4146,12 @@ const TechnicianDashboard = () => {
       selectedQrCodeId,
       shareLinkUpiQrId,
       paymentScreenshot,
+      waitingPayQrPhoto,
+      payQrWatchUntil: payQrWatchUntilRef.current > 0 ? payQrWatchUntilRef.current : undefined,
+      payQrDismissedUrls:
+        payQrDismissedUrlsRef.current.size > 0
+          ? [...payQrDismissedUrlsRef.current]
+          : undefined,
       otpInput,
       serviceBrand,
       selectedQrCodeName,
@@ -4146,6 +4191,7 @@ const TechnicianDashboard = () => {
     selectedQrCodeId,
     shareLinkUpiQrId,
     paymentScreenshot,
+    waitingPayQrPhoto,
     otpInput,
     serviceBrand,
     selectedQrCodeName,
@@ -4191,6 +4237,13 @@ const TechnicianDashboard = () => {
     setSelectedQrCodeName(draft.selectedQrCodeName || '');
     setSelectedQrCodeUrlState(draft.selectedQrCodeUrl || '');
     setPaymentScreenshot(draft.paymentScreenshot);
+    const watchUntil = Number(draft.payQrWatchUntil) || 0;
+    payQrWatchUntilRef.current = watchUntil > Date.now() ? watchUntil : 0;
+    payQrDismissedUrlsRef.current = new Set(
+      Array.isArray(draft.payQrDismissedUrls) ? draft.payQrDismissedUrls : []
+    );
+    const watchStillActive = payQrWatchUntilRef.current > Date.now();
+    setWaitingPayQrPhoto(Boolean(draft.waitingPayQrPhoto) && watchStillActive);
     setOtpInput(draft.otpInput?.length === 4 ? draft.otpInput : ['', '', '', '']);
     setOtpError('');
     setServiceBrand(draft.serviceBrand);
@@ -4219,38 +4272,67 @@ const TechnicianDashboard = () => {
   }, [completeDialogOpen, selectedJobForComplete, isSubmittingJobCompletion, captureCompleteJobDraft]);
 
   // When technician reaches payment-screenshot step, pull any photo the customer
-  // already sent on WhatsApp (pay-QR watch) into the same slot as a manual upload.
+  // already sent on WhatsApp (pay-QR watch). Poll after send until photo lands or watch expires.
   useEffect(() => {
     if (!completeDialogOpen || completeJobStep !== 5) return;
     const jobId = selectedJobForComplete?.id;
     if (!jobId) return;
-    if (typeof paymentScreenshot === 'string' && /^https?:\/\//i.test(paymentScreenshot.trim())) {
-      return;
-    }
 
     let cancelled = false;
-    void (async () => {
+
+    const pullPaymentPhoto = async (): Promise<string | null> => {
       try {
         const { data, error } = await supabase
           .from('jobs')
           .select('requirements, after_photos')
           .eq('id', jobId)
           .maybeSingle();
-        if (cancelled || error || !data) return;
-        const { paymentScreenshot: fromJob } = resolveJobBillAndPaymentPhotos(data as any);
-        if (fromJob && !cancelled) {
-          setPaymentScreenshot(fromJob);
-        }
+        if (cancelled || error || !data) return null;
+        return resolveLatestAcceptablePayQrPhoto(
+          data as { requirements?: unknown },
+          payQrDismissedUrlsRef.current
+        );
       } catch {
-        /* soft-fail */
+        return null;
       }
-    })();
+    };
+
+    const applyPulledPhoto = (fromJob: string | null) => {
+      if (cancelled || !fromJob) return;
+      setPaymentScreenshot((prev) => (prev === fromJob ? prev : fromJob));
+      setWaitingPayQrPhoto(false);
+    };
+
+    void pullPaymentPhoto().then(applyPulledPhoto);
+
+    const watchActive =
+      waitingPayQrPhoto || payQrWatchUntilRef.current > Date.now();
+
+    if (!watchActive) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (payQrWatchUntilRef.current > 0 && Date.now() > payQrWatchUntilRef.current) {
+        setWaitingPayQrPhoto(false);
+        window.clearInterval(intervalId);
+        return;
+      }
+      void pullPaymentPhoto().then(applyPulledPhoto);
+    }, 3000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only refresh when entering step 5 / opening dialog
-  }, [completeDialogOpen, completeJobStep, selectedJobForComplete?.id]);
+  }, [
+    completeDialogOpen,
+    completeJobStep,
+    selectedJobForComplete?.id,
+    waitingPayQrPhoto,
+  ]);
 
   // Actually open the completion dialog
   const performCompleteJob = async (job: Job) => {
@@ -9633,6 +9715,8 @@ const TechnicianDashboard = () => {
                             if (value === SHARE_QR_LINK_VALUE) {
                               qrType = 'share_link';
                               setShareLinkUpiQrId('');
+                              setSelectedQrCodeUrlState('');
+                              setSelectedQrCodeName('');
                             } else if (value.startsWith('common_')) {
                               setShareLinkUpiQrId('');
                               qrType = 'common';
@@ -9708,14 +9792,18 @@ const TechnicianDashboard = () => {
 
                       {selectedQrCodeId === SHARE_QR_LINK_VALUE ? (
                         <ShareQrLinkPanel
-                          commonQrCodes={
-                            commonQrCodes.length > 0 ? commonQrCodes : allCommonQrCodes
-                          }
+                          commonQrCodes={commonQrCodes}
                           technicians={
-                            (technicians.length > 0
-                              ? technicians
-                              : allTechnicians) as TechnicianQrPickerRow[]
+                            (() => {
+                              const tid = user?.technicianId || user?.id;
+                              if (!tid) return [] as TechnicianQrPickerRow[];
+                              const pool =
+                                technicians.length > 0 ? technicians : allTechnicians;
+                              const me = pool.find((t) => String(t.id) === String(tid));
+                              return me ? ([me] as TechnicianQrPickerRow[]) : [];
+                            })()
                           }
+                          currentTechnicianId={user?.technicianId || user?.id || null}
                           selectedUpiQrId={shareLinkUpiQrId}
                           onSelectUpiQrId={(id) => {
                             setShareLinkUpiQrId(id);
@@ -9738,14 +9826,17 @@ const TechnicianDashboard = () => {
                             const bareId = id.startsWith('common_')
                               ? id.replace('common_', '')
                               : id;
-                            const selectedQr =
-                              commonQrCodes.find((qr) => qr.id === bareId) ||
-                              allCommonQrCodes.find((qr) => qr.id === bareId);
+                            const selectedQr = commonQrCodes.find((qr) => qr.id === bareId);
                             if (selectedQr) {
                               setQrCodeType('common');
                               setSelectedQrCodeName(selectedQr.name);
                               setSelectedQrCodeUrlState(selectedQr.qrCodeUrl || '');
                             }
+                          }}
+                          onShareSuccess={() => {
+                            payQrWatchUntilRef.current = Date.now() + 30 * 60 * 1000;
+                            setWaitingPayQrPhoto(true);
+                            setCompleteJobStep(5);
                           }}
                           amount={(() => {
                             if (
@@ -9956,17 +10047,38 @@ const TechnicianDashboard = () => {
 
               {/* Step 5: Payment Screenshot (optional) - only show if bill amount is not zero */}
               {completeJobStep === 5 && !isBillAmountZero() && (
-                <CompletionPhotoStep
-                  label="Payment screenshot (optional)"
-                  hint={
-                    paymentScreenshot && /^https?:\/\//i.test(paymentScreenshot)
-                      ? 'Customer WhatsApp payment photo is already filled in. You can replace it if needed.'
-                      : paymentMode === 'ONLINE'
-                        ? 'UPI or bank payment confirmation, if available. If the customer already sent it on WhatsApp after your pay QR, it appears here automatically.'
-                        : 'Payment proof screenshot, if available. Customer WhatsApp photos after your pay QR also land here.'
-                  }
+                <div className="space-y-3">
+                  {waitingPayQrPhoto &&
+                  !(
+                    typeof paymentScreenshot === 'string' &&
+                    /^https?:\/\//i.test(paymentScreenshot.trim())
+                  ) ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2.5 text-sm text-emerald-900">
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      <span>Waiting for customer payment photo on WhatsApp…</span>
+                    </div>
+                  ) : null}
+                  <CompletionPhotoStep
+                    key={`pay-screenshot-${paymentScreenshot || 'empty'}`}
+                    label="Payment screenshot (optional)"
+                    hint=""
                   images={paymentScreenshot ? [paymentScreenshot] : []}
-                  onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
+                  onImagesChange={(images) => {
+                    const next = images[0] || '';
+                    setPaymentScreenshot((prev) => {
+                      if (
+                        !next &&
+                        typeof prev === 'string' &&
+                        /^https?:\/\//i.test(prev.trim())
+                      ) {
+                        payQrDismissedUrlsRef.current.add(normalizePayPhotoCompare(prev));
+                        if (payQrWatchUntilRef.current > Date.now()) {
+                          setWaitingPayQrPhoto(true);
+                        }
+                      }
+                      return next;
+                    });
+                  }}
                   onUploadStateChange={setIsPaymentScreenshotUploading}
                   maxImages={1}
                   folder="payment-receipts"
@@ -9976,6 +10088,7 @@ const TechnicianDashboard = () => {
                   quality={0.3}
                   useSecondaryAccount
                 />
+                </div>
               )}
 
               {/* Step 7: OTP Verification */}
