@@ -93,7 +93,7 @@ export const TECH_WHATSAPP_LABELS: Record<
   pay_qr_screenshot: {
     label: TECH_PUSH_LABELS.pay_qr_screenshot.label + ' (WhatsApp)',
     description:
-      'Payment screenshot after you send a pay QR — also WhatsApp when enabled (photo when the 24h window is open).',
+      'Payment screenshot after you send a pay QR — also WhatsApp when enabled (inside or outside the 24h window).',
   },
   worked_hours: {
     label: TECH_PUSH_LABELS.worked_hours.label + ' (WhatsApp)',

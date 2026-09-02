@@ -462,7 +462,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           })}
           <ToggleRow
             label={TECH_PUSH_LABELS.pay_qr_screenshot.label}
-            description="When a technician sends a pay QR, customer photos for the next 30 minutes are WhatsApp’d to that technician (photo when the 24h window is open)."
+            description="When a technician sends a pay QR, customer photos for the next 30 minutes are WhatsApp’d to that technician — inside or outside the 24h window."
             checked={settings.tech_push_whatsapp?.pay_qr_screenshot !== false}
             disabled={!settings.enabled}
             onCheckedChange={(v) =>
