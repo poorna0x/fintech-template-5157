@@ -37,6 +37,10 @@ import {
   type SentEmailLogQueryFilters,
 } from './sent-email-log-filters';
 import { buildCompletedJobsDateOrFilter } from './jobAnalytics';
+import {
+  isActiveTechnicianAccount,
+  isSalaryListedTechnician,
+} from './technicianAccountStatus';
 
 export { supabaseAuthClient as supabase };
 export { generateJobNumber } from './jobNumber';
@@ -390,9 +394,9 @@ export const CUSTOMER_TECHNICIAN_UPDATE_COLUMNS = [
   'model',
 ].join(',');
 
-/** Assignment / map / calling: exclude INACTIVE; null treated as active (legacy rows). */
+/** Assignment / map / calling: Active only; null treated as active (legacy rows). */
 const TECHNICIAN_ROSTER_ACTIVE_OR =
-  'account_status.is.null,account_status.eq.ACTIVE,account_status.eq.SUSPENDED';
+  'account_status.is.null,account_status.eq.ACTIVE';
 
 /**
  * Direct-select columns for the public.technicians table.
@@ -4079,9 +4083,10 @@ export const db = {
 
     /**
      * Admin list including `salary` — uses `get_technicians_for_admin` SECURITY DEFINER RPC.
-     * @param activeRosterOnly When true, excludes INACTIVE. When false or omitted, returns everyone (Settings, analytics, salary name lookup, duplicate checks).
+     * @param activeRosterOnly When true, Active only (Suspended hidden). Set includeSuspended to also keep Suspended for salary screens.
+     * @param includeSuspended With activeRosterOnly, keep Suspended (hide Inactive only).
      */
-    async getAll(limit?: number, options?: { activeRosterOnly?: boolean }) {
+    async getAll(limit?: number, options?: { activeRosterOnly?: boolean; includeSuspended?: boolean }) {
       const activeOnly = options?.activeRosterOnly === true;
       const { data, error } = await supabase.rpc('get_technicians_for_admin');
       if (error) return { data: null, error };
@@ -4089,10 +4094,8 @@ export const db = {
       const raw = (data ?? []) as unknown[];
       let rows: any[] = Array.isArray(raw) ? raw.slice() : [];
       if (activeOnly) {
-        rows = rows.filter((t: any) => {
-          const status = t?.account_status;
-          return status == null || status === 'ACTIVE' || status === 'SUSPENDED';
-        });
+        const keep = options?.includeSuspended ? isSalaryListedTechnician : isActiveTechnicianAccount;
+        rows = rows.filter((t: any) => keep(t));
       }
       rows.sort((a: any, b: any) => {
         const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
@@ -4106,7 +4109,7 @@ export const db = {
     },
 
     /** Admin list without live GPS blob — use `getById` / `reload` / measure-distance refresh for `current_location`. */
-    async getAllForDashboard(limit?: number, options?: { activeRosterOnly?: boolean }) {
+    async getAllForDashboard(limit?: number, options?: { activeRosterOnly?: boolean; includeSuspended?: boolean }) {
       const activeOnly = options?.activeRosterOnly !== false;
       const { data, error } = await supabase.rpc('get_technicians_for_admin');
       if (error) return { data: null, error };
@@ -4114,10 +4117,8 @@ export const db = {
       const raw = (data ?? []) as unknown[];
       let rows: any[] = Array.isArray(raw) ? raw.slice() : [];
       if (activeOnly) {
-        rows = rows.filter((t: any) => {
-          const status = t?.account_status;
-          return status == null || status === 'ACTIVE' || status === 'SUSPENDED';
-        });
+        const keep = options?.includeSuspended ? isSalaryListedTechnician : isActiveTechnicianAccount;
+        rows = rows.filter((t: any) => keep(t));
       }
       rows.sort((a: any, b: any) => {
         const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
@@ -4137,7 +4138,7 @@ export const db = {
     },
 
     /** Analytics-only roster: id, name, salary fields — no phone/GPS/photo. Falls back to getAllForDashboard. */
-    async getAllForAnalytics(limit?: number, options?: { activeRosterOnly?: boolean }) {
+    async getAllForAnalytics(limit?: number, options?: { activeRosterOnly?: boolean; includeSuspended?: boolean }) {
       const activeOnly = options?.activeRosterOnly !== false;
       const { data, error } = await supabase.rpc('get_technicians_for_analytics');
       if (error) {
@@ -4149,10 +4150,8 @@ export const db = {
 
       let rows: any[] = Array.isArray(data) ? data.slice() : [];
       if (activeOnly) {
-        rows = rows.filter((t: any) => {
-          const status = t?.account_status;
-          return status == null || status === 'ACTIVE' || status === 'SUSPENDED';
-        });
+        const keep = options?.includeSuspended ? isSalaryListedTechnician : isActiveTechnicianAccount;
+        rows = rows.filter((t: any) => keep(t));
       }
       rows.sort((a: any, b: any) => {
         const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
@@ -4167,7 +4166,7 @@ export const db = {
 
     /**
      * Slim list for dropdowns.
-     * @param activeRosterOnly When true (default), excludes INACTIVE. Set false for payments/reports that must list former technicians.
+     * @param activeRosterOnly When true (default), Active only. Set false for reports that must list former technicians.
      */
     async getList(limit?: number, options?: { activeRosterOnly?: boolean }) {
       const activeOnly = options?.activeRosterOnly !== false;
@@ -4196,7 +4195,8 @@ export const db = {
         }
         return { data: [] as Record<string, unknown>[], error: null };
       }
-      return { data, error };
+      const rows = Array.isArray(data) ? data.filter((t) => isActiveTechnicianAccount(t as any)) : data;
+      return { data: rows, error };
     },
     
     async getAvailable() {
@@ -4207,8 +4207,7 @@ export const db = {
       const rows: any[] = Array.isArray(raw) ? raw.slice() : [];
       const filtered = rows.filter((t: any) => {
         if (t?.status !== 'AVAILABLE') return false;
-        const status = t?.account_status;
-        return status == null || status === 'ACTIVE' || status === 'SUSPENDED';
+        return isActiveTechnicianAccount(t);
       });
       filtered.sort((a: any, b: any) => {
         const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;

@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Technician } from '@/types';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 
 type LiveLocationRow = {
   technician_id: string;
@@ -322,8 +323,7 @@ const TechnicianLiveLocationDialog = ({
 
   const activeTechs = technicians.filter((t) => {
     if ((t as any).isActive === false) return false;
-    const status = String((t as any).account_status || 'ACTIVE').toUpperCase();
-    return status === 'ACTIVE';
+    return isActiveTechnicianAccount(t);
   });
   const hasCoords = row != null && row.latitude != null && row.longitude != null;
 

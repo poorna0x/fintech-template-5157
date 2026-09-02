@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Job, Technician } from '@/types';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 
 interface AddTeamDialogProps {
   open: boolean;
@@ -38,7 +39,7 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({
   // Filter out the assigned technician and existing team members
   const availableTechnicians = technicians.filter(tech => {
     // Exclude inactive technicians
-    if ((tech as any).account_status === 'INACTIVE') return false;
+    if (!isActiveTechnicianAccount(tech)) return false;
     // Exclude the primary assigned technician
     if (tech.id === assignedTechnicianId) return false;
     // Exclude existing team members

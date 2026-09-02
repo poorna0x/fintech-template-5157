@@ -31,6 +31,7 @@ import { Loader2, ShoppingBag, Search, Check, X, Plus, ListOrdered, Wallet } fro
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { db } from '@/lib/supabase';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 import { toast } from 'sonner';
 import { filterInventoryByApproxSearch } from '@/lib/inventorySearch';
 import { getInventoryBillName } from '@/lib/inventoryBillName';
@@ -251,7 +252,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     if (!open) return;
     let cancelled = false;
     setLoadingQr(true);
-    Promise.all([db.commonQrCodes.getAll(), db.technicians.getAll(100)])
+    Promise.all([db.commonQrCodes.getAll(), db.technicians.getAll(100, { activeRosterOnly: true })])
       .then(([qrRes, techRes]) => {
         if (cancelled) return;
         const options: QrOption[] = [];
@@ -273,6 +274,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
           });
         });
         (techRes?.data || []).forEach((t: any) => {
+          if (!isActiveTechnicianAccount(t)) return;
           const tech = {
             id: String(t.id),
             fullName: String(t.full_name || t.fullName || 'Technician'),

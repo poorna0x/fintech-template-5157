@@ -62,7 +62,7 @@ AS $$
     AND public.auth_user_role() = 'technician'
     AND (
       t.account_status IS NULL
-      OR t.account_status IN ('ACTIVE', 'SUSPENDED')
+      OR t.account_status = 'ACTIVE'
     )
   ORDER BY t.created_at DESC;
 $$;

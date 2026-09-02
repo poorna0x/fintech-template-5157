@@ -1,5 +1,6 @@
 import { normalizeLeadType, getLeadSourceFromJob } from '@/lib/adminUtils';
 import { resolveJobBillingAmount } from '@/lib/jobAnalytics';
+import { technicianAccountStatusSuffix } from '@/lib/technicianAccountStatus';
 
 /** Types + mappers for `get_analytics_dashboard` RPC (admin-only, SECURITY DEFINER). */
 
@@ -217,7 +218,7 @@ export function mapTechnicianStatsFromDashboard(
 }> {
   return (rows || []).map((row) => {
     const tech = technicians.find((t) => t.id === row.technician_id);
-    const inactive = tech?.account_status === 'INACTIVE' ? ' (Inactive)' : '';
+    const inactive = technicianAccountStatusSuffix(tech);
     return {
       id: row.technician_id,
       name: `${tech?.full_name || 'Unknown'}${inactive}`,

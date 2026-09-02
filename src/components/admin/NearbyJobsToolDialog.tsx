@@ -22,6 +22,7 @@ import { ExternalLink, Loader2, MapPinned, Radar } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { Technician } from '@/types';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 import {
   clampNearbyRadiusKm,
   DEFAULT_NEARBY_RADIUS_KM,
@@ -63,8 +64,7 @@ export default function NearbyJobsToolDialog({
       technicians
         .filter((t) => {
           if ((t as any).isActive === false) return false;
-          const account = String((t as any).account_status || '').toUpperCase();
-          return !account || account === 'ACTIVE' || account === 'SUSPENDED';
+          return isActiveTechnicianAccount(t);
         })
         .slice()
         .sort((a, b) => techDisplayName(a).localeCompare(techDisplayName(b))),

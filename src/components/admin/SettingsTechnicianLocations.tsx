@@ -3,6 +3,7 @@ import { Clock, Loader2, MapPin } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { Technician } from '@/types';
 import { fetchTechFieldDay, isAfterNinePmIst, todayIstDateKey, type TechFieldDayRow } from '@/lib/techFieldDay';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 
 export function SettingsTechnicianLocations({
   technicians,
@@ -40,10 +41,7 @@ export function SettingsTechnicianLocations({
     };
   }, [showHours]);
 
-  const locationTechnicians = technicians.filter((t) => {
-    const status = String((t as any).account_status || 'ACTIVE').toUpperCase();
-    return status === 'ACTIVE';
-  });
+  const locationTechnicians = technicians.filter((t) => isActiveTechnicianAccount(t));
 
   return (
     <>

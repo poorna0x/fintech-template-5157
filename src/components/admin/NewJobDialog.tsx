@@ -10,7 +10,8 @@ import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmen
 import { FollowUpCreateSection } from '@/components/admin/FollowUpCreateSection';
 import type { FollowUpScheduleValue } from '@/components/admin/FollowUpScheduleFields';
 import { MapPin, Upload, ChevronDown } from 'lucide-react';
-import { Customer } from '@/types';
+import type { Customer, Technician } from '@/types';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
@@ -1139,7 +1140,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   <SelectContent>
                     <SelectItem value="none">None (Assign later)</SelectItem>
                     {technicians
-                      .filter((tech) => tech && tech.id && (tech.fullName || tech.full_name))
+                      .filter((tech) => tech && tech.id && (tech.fullName || tech.full_name) && isActiveTechnicianAccount(tech))
                       .map((tech) => {
                         const techName = tech.fullName || tech.full_name || 'Unknown';
                         const techCode = tech.employeeId || tech.employee_id;

@@ -12,6 +12,7 @@ import {
   resolveJobBillingAmount,
 } from '@/lib/jobAnalytics';
 import { getTotalSalaryForCalendarMonth, getTechnicianMonthlyBaseSalary } from '@/lib/technicianSalaryForPeriod';
+import { technicianAccountStatusSuffix } from '@/lib/technicianAccountStatus';
 import { toast } from 'sonner';
 import {
   BarChart3,
@@ -380,7 +381,7 @@ function buildAnalyticsPayloadFromDashboard(
 
   const softenerTechStats = (soft?.technician_stats || []).map((row) => {
     const tech = technicians.find((t) => t.id === row.technician_id);
-    const inactive = tech?.account_status === 'INACTIVE' ? ' (Inactive)' : '';
+    const inactive = technicianAccountStatusSuffix(tech);
     return {
       id: row.technician_id,
       name: `${tech?.full_name || 'Unknown'}${inactive}`,
@@ -966,7 +967,7 @@ const Analytics = () => {
             const pendingEarnings = techPayments.filter((p: any) => p.payment_status === 'PENDING').reduce((s: number, p: any) => s + (Number(p.commission_amount) || 0), 0);
             return {
               id: tech.id,
-              name: `${tech.full_name}${tech.account_status === 'INACTIVE' ? ' (Inactive)' : ''}`,
+              name: `${tech.full_name}${technicianAccountStatusSuffix(tech)}`,
               totalJobs: techJobs.length,
               completedJobs: techJobs.filter((j: any) => j.status === 'COMPLETED').length,
               totalEarnings,
@@ -1052,7 +1053,7 @@ const Analytics = () => {
             const pendingEarnings = techPayments.filter((p: any) => p.payment_status === 'PENDING').reduce((s: number, p: any) => s + (Number(p.commission_amount) || 0), 0);
             return {
               id: tech.id,
-              name: `${tech.full_name}${tech.account_status === 'INACTIVE' ? ' (Inactive)' : ''}`,
+              name: `${tech.full_name}${technicianAccountStatusSuffix(tech)}`,
               totalJobs: techJobs.length,
               completedJobs: techJobs.filter((j: any) => j.status === 'COMPLETED').length,
               totalEarnings,
@@ -1110,7 +1111,7 @@ const Analytics = () => {
         if (!technicianStatsMap[techId]) {
           technicianStatsMap[techId] = {
             id: techId,
-            name: `${(tech as any).full_name || (tech as any).fullName || 'Unknown'}${tech.account_status === 'INACTIVE' ? ' (Inactive)' : ''}`,
+            name: `${(tech as any).full_name || (tech as any).fullName || 'Unknown'}${technicianAccountStatusSuffix(tech)}`,
             totalJobs: 0,
             completedJobs: 0,
             periodEarnings: 0,
@@ -1261,7 +1262,7 @@ const Analytics = () => {
         if (!softenerTechnicianStatsMap[techId]) {
           softenerTechnicianStatsMap[techId] = {
             id: techId,
-            name: `${(tech as any).full_name || (tech as any).fullName || 'Unknown'}${tech.account_status === 'INACTIVE' ? ' (Inactive)' : ''}`,
+            name: `${(tech as any).full_name || (tech as any).fullName || 'Unknown'}${technicianAccountStatusSuffix(tech)}`,
             totalJobs: 0,
             completedJobs: 0,
             periodEarnings: 0

@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { getTechPushOverlayPref, setTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 import type { Technician } from '@/types';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 
 type MessageTechnicianDialogProps = {
   open: boolean;
@@ -53,7 +54,7 @@ const MessageTechnicianDialog = ({
   const [results, setResults] = useState<Record<string, SendStatus>>({});
 
   const activeTechnicians = useMemo(
-    () => technicians.filter((t) => (t as any).isActive !== false),
+    () => technicians.filter((t) => (t as any).isActive !== false && isActiveTechnicianAccount(t)),
     [technicians]
   );
 

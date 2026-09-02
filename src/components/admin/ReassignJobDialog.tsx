@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
 import { getFreshGoogleMapsLinkForJobRow, getLocationUnavailableMessage, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 
 interface ReassignJobDialogProps {
   open: boolean;
@@ -408,8 +409,9 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
     // Don't auto-calculate distances - only calculate when user clicks "Reassign by Distance" button
   }, [open]);
 
+  const assignedId = (job as any)?.assigned_technician_id || job?.assignedTechnicianId;
   const inactiveTechnicians = (techniciansWithDistances.length > 0 ? techniciansWithDistances : technicians).filter(
-    (tech) => tech.account_status !== 'INACTIVE'
+    (tech) => isActiveTechnicianAccount(tech) || (assignedId && tech.id === assignedId)
   );
   const technicianPickerBlocked = techniciansRefreshing && inactiveTechnicians.length === 0;
 

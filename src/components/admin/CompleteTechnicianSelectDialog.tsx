@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Job, Technician } from '@/types';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 
 type CompleteTechnicianSelectDialogProps = {
   open: boolean;
@@ -63,7 +64,7 @@ export default function CompleteTechnicianSelectDialog({
               <SelectContent>
                 <SelectItem value="office">Office (no technician)</SelectItem>
                 {technicians
-                  .filter((tech) => !(tech as any).account_status || (tech as any).account_status === 'ACTIVE')
+                  .filter((tech) => isActiveTechnicianAccount(tech))
                   .map((technician) => (
                     <SelectItem key={technician.id} value={technician.id}>
                       {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})

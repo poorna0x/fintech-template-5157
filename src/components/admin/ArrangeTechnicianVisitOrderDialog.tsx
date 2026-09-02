@@ -39,6 +39,7 @@ import { geocodeFromPlaceHints } from '@/lib/googleMapsLink';
 import { openGoogleMapsMultiStopDirections, readLocationLatLng } from '@/lib/maps';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
 type ArrangeTechnicianVisitOrderDialogProps = {
@@ -123,8 +124,7 @@ export default function ArrangeTechnicianVisitOrderDialog({
       technicians
         .filter((t) => {
           if ((t as any).isActive === false) return false;
-          const account = String((t as any).account_status || '').toUpperCase();
-          return !account || account === 'ACTIVE' || account === 'SUSPENDED';
+          return isActiveTechnicianAccount(t);
         })
         .slice()
         .sort((a, b) =>

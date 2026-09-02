@@ -11,6 +11,7 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import { db } from '@/lib/supabase';
 import { getFreshGoogleMapsLinkForJobRow, getLocationUnavailableMessage, jobRowNeedsMapsLinkResolve, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 
 interface AssignJobDialogProps {
   open: boolean;
@@ -429,8 +430,9 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
     }
   };
 
+  const assignedId = (job as any)?.assigned_technician_id || job?.assignedTechnicianId;
   const inactiveTechnicians = (techniciansWithDistances.length > 0 ? techniciansWithDistances : technicians).filter(
-    (tech) => tech.account_status !== 'INACTIVE'
+    (tech) => isActiveTechnicianAccount(tech) || (assignedId && tech.id === assignedId)
   );
   const technicianPickerBlocked = techniciansRefreshing && inactiveTechnicians.length === 0;
 
