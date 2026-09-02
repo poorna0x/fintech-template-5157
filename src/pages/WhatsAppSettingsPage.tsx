@@ -432,8 +432,8 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           <CardTitle className="text-base">Technician push → WhatsApp</CardTitle>
           <CardDescription>
             Job assign and unassign can still WhatsApp the technician (Dashboard master + Auto-send
-            above). All other technician alerts stay on the app only — no WhatsApp for going?,
-            start, call, office, OTP, parts, bill, cash, wrong line, pay QR, hours, or reviews.
+            above). After a pay QR send, customer payment photos are WhatsApp’d to that technician
+            for 30 minutes (and pushed to the app). Other alerts stay on the app only.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -460,6 +460,18 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
               />
             );
           })}
+          <ToggleRow
+            label={TECH_PUSH_LABELS.pay_qr_screenshot.label}
+            description="When a technician sends a pay QR, customer photos for the next 30 minutes are WhatsApp’d to that technician (photo when the 24h window is open)."
+            checked={settings.tech_push_whatsapp?.pay_qr_screenshot !== false}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) =>
+              patch('tech_push_whatsapp', {
+                ...settings.tech_push_whatsapp,
+                pay_qr_screenshot: v,
+              })
+            }
+          />
         </CardContent>
       </Card>
 

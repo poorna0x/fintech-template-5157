@@ -4299,9 +4299,9 @@ const Settings = () => {
                   <div className="space-y-2 rounded-md border border-emerald-200/80 bg-emerald-50/30 px-3 py-2.5 dark:bg-emerald-950/20">
                     <p className="text-sm font-medium">WhatsApp for this technician</p>
                     <p className="text-xs text-muted-foreground leading-snug mb-2">
-                      Same categories as job WhatsApp, plus customer tech-share. Nudges, OTP,
-                      hours, cash, and similar alerts stay on the app only. Global: Settings →
-                      WhatsApp. Assign master: Dashboard Settings.
+                      Same categories as job WhatsApp, plus pay-QR payment photos and customer
+                      tech-share. Nudges, OTP, hours, cash, and similar alerts stay on the app
+                      only. Global: Settings → WhatsApp. Assign master: Dashboard Settings.
                     </p>
                     {TECH_WHATSAPP_EDITABLE_CATEGORIES.map((key) => {
                       const meta = TECH_WHATSAPP_LABELS[key];

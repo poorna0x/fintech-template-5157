@@ -3,6 +3,7 @@
  * that number are forwarded to the sending technician for 30 minutes.
  */
 const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
+const { maybeSendTechnicianPushWhatsApp } = require('./tech-push-whatsapp-helper');
 const {
   callWhatsAppApi,
   insertWhatsAppMessage,
@@ -312,6 +313,33 @@ async function sendImageToTechnicianWhatsApp({
   }
 }
 
+async function isPayQrWhatsAppEnabled(db, technicianId) {
+  try {
+    const { data: settings } = await db
+      .from('whatsapp_crm_settings')
+      .select('enabled, tech_push_whatsapp')
+      .eq('id', 1)
+      .maybeSingle();
+    if (settings?.enabled === false) return false;
+    const global = settings?.tech_push_whatsapp;
+    if (global && typeof global === 'object' && global.pay_qr_screenshot === false) {
+      return false;
+    }
+    const { data: tech } = await db
+      .from('technicians')
+      .select('whatsapp_prefs')
+      .eq('id', technicianId)
+      .maybeSingle();
+    const prefs = tech?.whatsapp_prefs;
+    if (prefs && typeof prefs === 'object' && prefs.pay_qr_screenshot === false) {
+      return false;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 async function notifyTechnicianPayQrPhoto({
   db,
   accessToken,
@@ -361,7 +389,31 @@ async function notifyTechnicianPayQrPhoto({
   } catch (err) {
     console.warn('[pay-qr-watch] FCM failed', err?.message || err);
   }
-  // Payment screenshot stays on the technician app (FCM). Do not WhatsApp it.
+
+  const waOn = await isPayQrWhatsAppEnabled(db, technicianId);
+  let imageSent = false;
+  if (waOn && accessToken && phoneNumberId && mediaUrl) {
+    const img = await sendImageToTechnicianWhatsApp({
+      db,
+      accessToken,
+      phoneNumberId,
+      technicianId,
+      mediaUrl,
+      customerName,
+    });
+    imageSent = Boolean(img?.sent);
+  }
+
+  // Photo is the WhatsApp path. Text only if the image could not be delivered
+  // (24h closed and template not approved yet).
+  if (waOn && !imageSent) {
+    void maybeSendTechnicianPushWhatsApp(db, {
+      technicianId,
+      category: CATEGORY,
+      title,
+      body,
+    });
+  }
 }
 
 /**

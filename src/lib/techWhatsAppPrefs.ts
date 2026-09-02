@@ -27,13 +27,16 @@ export type TechWhatsAppCategory = (typeof TECH_WHATSAPP_CATEGORIES)[number];
 
 export type TechWhatsAppPrefs = Record<TechWhatsAppCategory, boolean>;
 
-/** Push-mirror WhatsApp is off — those alerts stay on the technician app only. */
-export const TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES = [] as const satisfies readonly TechPushCategory[];
+/** Push-mirror WhatsApp: pay-QR customer photos only (other alerts stay on the app). */
+export const TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES = [
+  'pay_qr_screenshot',
+] as const satisfies readonly TechPushCategory[];
 
 /** Toggles shown on Edit technician / WhatsApp settings (not app-only alerts). */
 export const TECH_WHATSAPP_EDITABLE_CATEGORIES = [
   'job_assigned',
   'job_unassigned',
+  'pay_qr_screenshot',
   'tech_assigned_customer',
   'tech_unassigned_customer',
 ] as const satisfies readonly TechWhatsAppCategory[];

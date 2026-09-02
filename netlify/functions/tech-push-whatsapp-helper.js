@@ -14,10 +14,11 @@ const {
 const SKIP_CATEGORIES = new Set(['job_assigned', 'job_unassigned', 'location_ping']);
 
 /**
- * Push-mirror WhatsApp is off — those alerts stay on the technician app only
- * (going?, start, call, office, OTP, parts, bill, cash, wrong line, pay QR, hours, reviews).
+ * Push-mirror WhatsApp is off for most alerts (going?, start, call, office,
+ * OTP, parts, bill, cash, wrong line, hours, reviews). Pay-QR customer photos
+ * are the exception: text fallback when the image could not be delivered.
  */
-const MIRROR_CATEGORIES = new Set();
+const MIRROR_CATEGORIES = new Set(['pay_qr_screenshot']);
 
 function isCategoryOn(prefs, category) {
   if (!category) return false;
