@@ -46,6 +46,21 @@ export type WhatsAppThread = {
 
 const MS_24H = 24 * 60 * 60 * 1000;
 
+/** WhatsApp inbox timestamps — always 12-hour clock (en-IN). */
+export const WHATSAPP_INBOX_TIME_LOCALE = 'en-IN';
+export const WHATSAPP_INBOX_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+};
+export const WHATSAPP_INBOX_DATETIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: 'numeric',
+  month: 'short',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+};
+
 const READ_STORAGE_KEY = 'wa_inbox_read_at_v1';
 
 export function isFailedDeliveryStatus(status: string | null | undefined): boolean {
@@ -1808,12 +1823,15 @@ export function patchThreadFromMessage(
     (isFailedDeliveryStatus(row.status) || Boolean(row.error_message?.trim()));
 
   const idx = threads.findIndex((t) => t.phone_e164 === phone);
+  const priorName = idx >= 0 ? threads[idx].customer_name : null;
+  const resolvedName =
+    (row.customer_id && nameByCustomerId?.get(row.customer_id)) ||
+    priorName ||
+    null;
   const next: WhatsAppThread = {
     phone_e164: phone,
     customer_id: row.customer_id || (idx >= 0 ? threads[idx].customer_id : null),
-    customer_name:
-      (row.customer_id && nameByCustomerId?.get(row.customer_id)) ||
-      (idx >= 0 ? threads[idx].customer_name : null),
+    customer_name: resolvedName,
     last_body: preview,
     last_at: row.created_at,
     last_direction: row.direction,
@@ -1832,6 +1850,79 @@ export function patchThreadFromMessage(
   const copy = [...threads];
   copy.splice(idx, 1);
   return [next, ...copy];
+}
+
+const waCustomerNameCache = new Map<string, string>();
+const WA_CUSTOMER_NAME_CACHE_MAX = 400;
+
+function rememberWaCustomerName(key: string, name: string): string {
+  const label = String(name || '').trim();
+  if (!label) return '';
+  if (waCustomerNameCache.size >= WA_CUSTOMER_NAME_CACHE_MAX) {
+    const drop = waCustomerNameCache.keys().next().value;
+    if (drop) waCustomerNameCache.delete(drop);
+  }
+  waCustomerNameCache.set(key, label);
+  return label;
+}
+
+/** CRM display name for toast/OS alerts when the thread cache has no name yet. */
+export async function resolveWhatsAppCustomerNameForAlert(
+  phoneE164: string,
+  customerId?: string | null
+): Promise<string | null> {
+  const phone = String(phoneE164 || '').replace(/\D/g, '');
+  const id = String(customerId || '').trim();
+  if (id) {
+    const cached = waCustomerNameCache.get(`id:${id}`);
+    if (cached) return cached;
+  }
+  if (phone) {
+    const cached = waCustomerNameCache.get(`p:${phone}`);
+    if (cached) return cached;
+  }
+
+  if (id) {
+    const { data } = await supabase
+      .from('customers')
+      .select('full_name, phone, alternate_phone')
+      .eq('id', id)
+      .maybeSingle();
+    const name = String(data?.full_name || '').trim();
+    if (name) {
+      rememberWaCustomerName(`id:${id}`, name);
+      for (const key of whatsappPhoneLookupKeys(phone || data?.phone || data?.alternate_phone || '')) {
+        rememberWaCustomerName(`p:${key}`, name);
+      }
+      return name;
+    }
+  }
+
+  if (phone.length >= 10) {
+    const last10 = phone.slice(-10);
+    const { data } = await supabase
+      .from('customers')
+      .select('id, full_name, phone, alternate_phone')
+      .or(`phone.like.%${last10}%,alternate_phone.like.%${last10}%`)
+      .limit(8);
+    for (const row of data || []) {
+      const label = String(row.full_name || '').trim();
+      if (!label) continue;
+      const matchKeys = new Set<string>();
+      for (const raw of [row.phone, row.alternate_phone]) {
+        for (const key of whatsappPhoneLookupKeys(String(raw || ''))) matchKeys.add(key);
+      }
+      if (!matchKeys.has(phone) && !matchKeys.has(last10) && !matchKeys.has(`91${last10}`)) {
+        continue;
+      }
+      if (row.id) rememberWaCustomerName(`id:${row.id}`, label);
+      for (const key of matchKeys) rememberWaCustomerName(`p:${key}`, label);
+      rememberWaCustomerName(`p:${phone}`, label);
+      return label;
+    }
+  }
+
+  return null;
 }
 
 function looksLikeWhatsAppLocationPreview(body: string, msgType?: string | null): boolean {
@@ -2238,20 +2329,15 @@ export function formatThreadTime(iso: string): string {
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate();
   if (sameDay) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString(WHATSAPP_INBOX_TIME_LOCALE, WHATSAPP_INBOX_TIME_OPTIONS);
   }
-  return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString(WHATSAPP_INBOX_TIME_LOCALE, { day: 'numeric', month: 'short' });
 }
 
 export function formatBubbleTime(iso: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '';
-  return d.toLocaleString([], {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return d.toLocaleString(WHATSAPP_INBOX_TIME_LOCALE, WHATSAPP_INBOX_DATETIME_OPTIONS);
 }
 
 export function displayPhone(phoneE164: string): string {

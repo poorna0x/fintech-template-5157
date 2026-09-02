@@ -52,6 +52,8 @@ import {
   invalidateInboundWindowCache,
   isCustomerServiceWindowClosed,
   isWithinCustomerServiceWindow,
+  WHATSAPP_INBOX_TIME_LOCALE,
+  WHATSAPP_INBOX_TIME_OPTIONS,
 } from '@/lib/whatsappInbox';
 import { supabase } from '@/lib/supabaseClient';
 import { toastIfAborted, toastSendCancelled } from '@/lib/abortSend';
@@ -1176,7 +1178,7 @@ export function AdminWhatsAppComposerPanel({
                 ) : null}
                 <div className="flex items-center justify-end gap-1 px-2 pb-1.5">
                   <span className="text-[10px] text-slate-500">
-                    {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date().toLocaleTimeString(WHATSAPP_INBOX_TIME_LOCALE, WHATSAPP_INBOX_TIME_OPTIONS)}
                   </span>
                   <span className="text-[11px] leading-none text-[#53bdeb]" aria-hidden>
                     ✓✓

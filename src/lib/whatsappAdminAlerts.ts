@@ -18,6 +18,7 @@ import {
   patchThreadFromMessage,
   peekWhatsAppInboxThreadsCache,
   previewMessageBody,
+  resolveWhatsAppCustomerNameForAlert,
   resolveWhatsAppHeaderUnreadCount,
   writeWhatsAppInboxThreadsCache,
   type WhatsAppMessageRow,
@@ -88,6 +89,30 @@ function bumpUnreadFromInbound(row: WhatsAppMessageRow): WhatsAppThreadNameHint 
   dispatchWhatsAppUnreadChanged(resolveWhatsAppHeaderUnreadCount(threads, readMap));
 
   return { customerName: thread?.customer_name || null, phone };
+}
+
+async function enrichInboundAlertHint(
+  row: WhatsAppMessageRow,
+  hint: WhatsAppThreadNameHint
+): Promise<WhatsAppThreadNameHint> {
+  if (hint.customerName?.trim()) return hint;
+  const name = await resolveWhatsAppCustomerNameForAlert(hint.phone, row.customer_id);
+  if (!name) return hint;
+
+  const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
+  const prevThreads = cached?.threads ?? [];
+  const threads = prevThreads.map((t) =>
+    t.phone_e164 === hint.phone
+      ? {
+          ...t,
+          customer_name: name,
+          customer_id: t.customer_id || row.customer_id || null,
+        }
+      : t
+  );
+  writeWhatsAppInboxThreadsCache(threads, { rangeKey: cached?.rangeKey || 'today' });
+
+  return { customerName: name, phone: hint.phone };
 }
 
 function shouldSuppressAlert(phone: string): boolean {
@@ -215,7 +240,9 @@ function handleInboundInsert(row: Partial<WhatsAppMessageRow> | null): void {
   }
 
   const hint = bumpUnreadFromInbound(row as WhatsAppMessageRow);
-  notifyInbound(row as WhatsAppMessageRow, hint);
+  void enrichInboundAlertHint(row as WhatsAppMessageRow, hint).then((resolved) => {
+    notifyInbound(row as WhatsAppMessageRow, resolved);
+  });
 }
 
 /** Register React Router navigate for toast / notification clicks. */
