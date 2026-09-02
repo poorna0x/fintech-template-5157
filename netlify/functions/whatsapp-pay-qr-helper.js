@@ -3,7 +3,6 @@
  * that number are forwarded to the sending technician for 30 minutes.
  */
 const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
-const { maybeSendTechnicianPushWhatsApp } = require('./tech-push-whatsapp-helper');
 const {
   callWhatsAppApi,
   insertWhatsAppMessage,
@@ -17,6 +16,8 @@ const WATCH_MINUTES = 30;
 const CATEGORY = 'pay_qr_screenshot';
 /** IMAGE-header UTILITY — customer photo to technician when the 24h window is closed. */
 const TECH_PHOTO_TEMPLATE = 'svc_tech_customer_photo_v1';
+/** Cold text when IMAGE template + session image both fail (24h closed on business line). */
+const TECH_PAY_QR_TEXT_TEMPLATE = 'svc_smoke_update';
 
 function isHttps(url) {
   return /^https:\/\//i.test(String(url || '').trim());
@@ -235,43 +236,38 @@ async function sendImageToTechnicianWhatsApp({
     );
     if (!uploaded?.id) return { sent: false };
 
-    // Unknown / open window: try free-form first (same as pay-QR). Skip the extra
-    // lookup only when we already know there is no inbound in 24h — still try anyway
-    // because a missed phone-format match used to skip a real open window.
-    const session = await callWhatsAppApi(phoneNumberId, accessToken, {
-      messaging_product: 'whatsapp',
-      to,
-      type: 'image',
-      image: {
-        id: uploaded.id,
-        caption,
-      },
-    });
-    const sessionWaId = session?.data?.messages?.[0]?.id || null;
-    if (session.ok) {
+    const persistCold = async (cold) => {
+      const waId = cold?.data?.messages?.[0]?.id || null;
       await persistTechImageSend(db, {
         to,
-        waId: sessionWaId,
+        waId,
         caption,
         mediaUrl,
         mime: media.mime,
-        ok: true,
+        ok: Boolean(cold?.ok),
+        error: cold?.ok ? null : JSON.stringify(cold?.data?.error || {}),
+        templateName: TECH_PHOTO_TEMPLATE,
       });
-      return { sent: true, via: 'session', waId: sessionWaId };
-    }
-    if (!isClosedWindowError(session) && (await hasInboundWindow(db, to))) {
-      await persistTechImageSend(db, {
-        to,
-        waId: sessionWaId,
-        caption,
-        mediaUrl,
-        mime: media.mime,
-        ok: false,
-        error: JSON.stringify(session.data?.error || {}),
-      });
-      return { sent: false };
-    }
+      return waId;
+    };
 
+    const persistSession = async (session) => {
+      const waId = session?.data?.messages?.[0]?.id || null;
+      await persistTechImageSend(db, {
+        to,
+        waId,
+        caption,
+        mediaUrl,
+        mime: media.mime,
+        ok: Boolean(session?.ok),
+        error: session?.ok ? null : JSON.stringify(session?.data?.error || {}),
+      });
+      return waId;
+    };
+
+    // 1. Cold IMAGE template first — technicians are usually outside the 24h window
+    // on the business WhatsApp line. Session-first used to Meta-accept then fail
+    // delivery ("Re-engagement message"), which skipped the text fallback.
     const cold = await callWhatsAppApi(phoneNumberId, accessToken, {
       messaging_product: 'whatsapp',
       to,
@@ -291,18 +287,34 @@ async function sendImageToTechnicianWhatsApp({
         ],
       },
     });
-    const waId = cold?.data?.messages?.[0]?.id || null;
-    await persistTechImageSend(db, {
-      to,
-      waId,
-      caption,
-      mediaUrl,
-      mime: media.mime,
-      ok: Boolean(cold.ok),
-      error: JSON.stringify(cold.data?.error || {}),
-      templateName: TECH_PHOTO_TEMPLATE,
-    });
-    if (cold.ok) return { sent: true, via: 'template', waId };
+    if (cold.ok) {
+      const waId = await persistCold(cold);
+      return { sent: true, via: 'template', waId };
+    }
+
+    // 2. Free-form session image only when the tech recently messaged the business line.
+    const windowOpen = await hasInboundWindow(db, to);
+    if (windowOpen) {
+      const session = await callWhatsAppApi(phoneNumberId, accessToken, {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'image',
+        image: {
+          id: uploaded.id,
+          caption,
+        },
+      });
+      if (session.ok) {
+        const waId = await persistSession(session);
+        return { sent: true, via: 'session', waId };
+      }
+      if (!isClosedWindowError(session)) {
+        await persistSession(session);
+        return { sent: false };
+      }
+    }
+
+    await persistCold(cold);
     console.warn(
       '[pay-qr-watch] tech photo template failed (pending approval?)',
       cold.data?.error?.message || cold.data?.error || cold.status
@@ -311,6 +323,90 @@ async function sendImageToTechnicianWhatsApp({
   } catch (err) {
     console.warn('[pay-qr-watch] tech image send failed', err?.message || err);
     return { sent: false };
+  }
+}
+
+/** Cold template text to technician when pay-QR photo image could not be delivered. */
+async function sendPayQrTextFallbackToTechnician({
+  db,
+  accessToken,
+  phoneNumberId,
+  technicianId,
+  title,
+  body,
+}) {
+  if (!db || !accessToken || !phoneNumberId || !technicianId) {
+    return { sent: false, reason: 'bad_args' };
+  }
+  try {
+    const { data: tech } = await db
+      .from('technicians')
+      .select('full_name, phone, whatsapp_phone')
+      .eq('id', technicianId)
+      .maybeSingle();
+    const to = normalizePhoneE164(tech?.whatsapp_phone || tech?.phone);
+    if (!to) return { sent: false, reason: 'no_phone' };
+
+    const { whatsappGreetingName } = require('./whatsapp-greeting-name');
+    const techName = whatsappGreetingName(tech?.full_name, 'there');
+
+    const cold = await callWhatsAppApi(phoneNumberId, accessToken, {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'template',
+      template: {
+        name: TECH_PAY_QR_TEXT_TEMPLATE,
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: techName }],
+          },
+        ],
+      },
+    });
+    const coldWaId = cold?.data?.messages?.[0]?.id || null;
+    const notice = [title, body].filter(Boolean).join('\n\n').slice(0, 4096);
+    if (cold.ok) {
+      await insertWhatsAppMessage(db, {
+        wa_message_id: coldWaId,
+        direction: 'outbound',
+        phone_e164: to,
+        msg_type: 'template',
+        body: notice || title || body,
+        status: 'sent',
+        template_name: TECH_PAY_QR_TEXT_TEMPLATE,
+      });
+      return { sent: true, via: 'template', waId: coldWaId };
+    }
+
+    if (await hasInboundWindow(db, to)) {
+      const text = title && body ? `*${title}*\n\n${body}` : title || body;
+      const session = await callWhatsAppApi(phoneNumberId, accessToken, {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { preview_url: false, body: text.slice(0, 4096) },
+      });
+      const waId = session?.data?.messages?.[0]?.id || null;
+      await insertWhatsAppMessage(db, {
+        wa_message_id: waId,
+        direction: 'outbound',
+        phone_e164: to,
+        msg_type: 'text',
+        body: text,
+        status: session.ok ? 'sent' : 'failed',
+        error_message: session.ok
+          ? null
+          : JSON.stringify(session.data?.error || {}).slice(0, 500),
+      });
+      if (session.ok) return { sent: true, via: 'session', waId };
+    }
+
+    return { sent: false, reason: 'template_and_session_failed' };
+  } catch (err) {
+    console.warn('[pay-qr-watch] tech text fallback failed', err?.message || err);
+    return { sent: false, reason: 'error' };
   }
 }
 
@@ -510,7 +606,7 @@ async function notifyTechnicianPayQrPhoto({
   try {
     const messaging = await getMessaging(db);
     if (messaging) {
-      await sendToTechnicianDevices(
+      const pushResult = await sendToTechnicianDevices(
         db,
         messaging,
         technicianId,
@@ -538,6 +634,15 @@ async function notifyTechnicianPayQrPhoto({
         }),
         CATEGORY
       );
+      console.log('[pay-qr-watch] FCM push', {
+        technicianId,
+        sent: pushResult?.sent ?? 0,
+        tokens: pushResult?.tokens ?? 0,
+        skipped: pushResult?.skipped,
+        reason: pushResult?.reason,
+      });
+    } else {
+      console.warn('[pay-qr-watch] FCM skipped — Firebase not configured');
     }
   } catch (err) {
     console.warn('[pay-qr-watch] FCM failed', err?.message || err);
@@ -557,14 +662,21 @@ async function notifyTechnicianPayQrPhoto({
     imageSent = Boolean(img?.sent);
   }
 
-  // Photo is the WhatsApp path. Text only if the image could not be delivered
-  // (24h closed and template not approved yet).
-  if (waOn && !imageSent) {
-    void maybeSendTechnicianPushWhatsApp(db, {
+  // Photo is the WhatsApp path. Cold text template if image could not be delivered.
+  if (waOn && !imageSent && accessToken && phoneNumberId) {
+    const textWa = await sendPayQrTextFallbackToTechnician({
+      db,
+      accessToken,
+      phoneNumberId,
       technicianId,
-      category: CATEGORY,
       title,
       body,
+    });
+    console.log('[pay-qr-watch] WhatsApp text fallback', {
+      technicianId,
+      sent: Boolean(textWa?.sent),
+      via: textWa?.via,
+      reason: textWa?.reason,
     });
   }
 }

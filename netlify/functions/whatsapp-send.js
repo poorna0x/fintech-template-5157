@@ -987,19 +987,29 @@ exports.handler = async (event) => {
 
     if (
       isPayQrOutbound &&
-      watchSource === 'pending_payment' &&
+      (watchPhotos || watchSource === 'pending_payment') &&
       auth.role === 'technician' &&
       auth.userId &&
       db
     ) {
       try {
         const { upsertPayQrWatch } = require('./whatsapp-pay-qr-helper');
-        await upsertPayQrWatch(db, {
+        const watchRow = await upsertPayQrWatch(db, {
           phoneE164: to,
           technicianId: auth.userId,
           jobId: body.jobId || body.job_id || null,
           customerName: body.customerName || body.customer_name || null,
         });
+        if (watchRow?.id) {
+          console.log('[whatsapp-send] pay-qr watch registered', {
+            watchId: watchRow.id,
+            technicianId: auth.userId,
+            phone: to,
+            jobId: body.jobId || body.job_id || null,
+          });
+        } else {
+          console.warn('[whatsapp-send] pay-qr watch not registered (insert returned null)');
+        }
       } catch (err) {
         console.warn('[whatsapp-send] pay-qr watch failed', err?.message || err);
       }
