@@ -400,7 +400,7 @@ export const bangaloreAreas = [
   'Belathur', 'Benniganahalli', 'Bettahalli', 'Bhattarahalli', 'Bhoganahalli', 'Bikasipura',
   'Byatarayanapura', 'Byrathi', 'Channasandra', 'Chikkabanavara', 'Chikkabidarakallu',
   'Chikkabommasandra', 'Chikkagubbi', 'Chikkanahalli', 'Chikkasandra', 'Chinnapanahalli',
-  'Chokkanahalli', 'Dasarahalli', 'Doddagubbi', 'Doddabidarakallu', 'Doddabommasandra',
+  'Chinnappanahalli', 'Chokkanahalli', 'Dasarahalli', 'Doddagubbi', 'Doddabidarakallu', 'Doddabommasandra',
   'Doddanekundi', 'Dodda Nekkundi', 'Doddakallasandra', 'Ejipura', 'Gandhipuram',
   'Ganganagar', 'Geddalahalli', 'Gokula', 'Gopalan', 'Goraguntepalya', 'Gottigere',
   'Govindarajanagar', 'Guddadahalli', 'Gunjurpalya', 'Hadosiddapura', 'Halanayakanahalli',
@@ -449,7 +449,7 @@ export const bangaloreAreas = [
   'Rajanukunte', 'Sarjapur', 'Seegehalli', 'Singasandra', 'Thanisandra', 'Thubarahalli',
   'Uttarahalli', 'Varthur', 'Veerasandra', 'Vidyaranyapura', 'Yelahanka', 'Yeshwanthpur',
   'Ambalipura', 'Anjanapura', 'Belathur', 'Benniganahalli', 'Bhoganahalli', 'Byrathi',
-  'Chikkabanavara', 'Chinnapanahalli', 'Garudacharpalya', 'Geddalahalli', 'Goraguntepalya',
+  'Chikkabanavara', 'Chinnapanahalli', 'Chinnappanahalli', 'Garudacharpalya', 'Geddalahalli', 'Goraguntepalya',
   'Halasuru', 'Harohalli', 'Hemmigepura', 'Herohalli', 'Hopefarm', 'Hunasamaranahalli',
   'Kalkere', 'Kattigenahalli', 'Kodigehalli', 'Kogilu', 'Koralur', 'Mallathahalli',
   'Malleshpalya', 'Medahalli', 'Meenakunte', 'Naganathapura', 'Newthippasandra',
@@ -1245,6 +1245,60 @@ const GOOGLE_SHORT_LOCATION_TYPES = [
   'premise',
 ] as const;
 
+/** Prefer these Google component types for CRM Location (not broad admin wards). */
+const GOOGLE_LOCAL_LOCATION_TYPES = new Set<string>([
+  'neighborhood',
+  'sublocality_level_1',
+  'sublocality',
+  'sublocality_level_2',
+  'sublocality_level_3',
+  'premise',
+]);
+
+const GOOGLE_BROAD_LOCATION_TYPES = [
+  'administrative_area_level_3',
+  'administrative_area_level_4',
+  'administrative_area_level_2',
+  'locality',
+] as const;
+
+function joinGoogleComponentTextByTypes(
+  components: GoogleAddressComponentLike[],
+  types: Set<string> | readonly string[]
+): string {
+  const allowed = types instanceof Set ? types : new Set(types);
+  return components
+    .filter((c) => Array.isArray(c.types) && c.types.some((t) => allowed.has(t)))
+    .map((c) => componentLabel(c))
+    .filter(Boolean)
+    .join(', ');
+}
+
+function areaFromGoogleComponentTypes(
+  components: GoogleAddressComponentLike[] | null | undefined,
+  types: readonly string[],
+  useAreaList: boolean
+): string | null {
+  if (!Array.isArray(components) || components.length === 0) return null;
+
+  for (const type of types) {
+    const comp = components.find((c) => Array.isArray(c.types) && c.types.includes(type));
+    const raw = componentLabel(comp || {});
+    if (!raw || isGenericGeoLocality(raw)) continue;
+
+    const cleaned = raw.replace(/\s+(Taluk|District|Hobli)$/i, '').trim();
+    if (!cleaned || isGenericGeoLocality(cleaned)) continue;
+
+    if (useAreaList) {
+      const fromList = findLongestAreaMatchInText(cleaned);
+      if (fromList) return clipVisibleAddress(fromList);
+    }
+    return clipVisibleAddress(cleaned);
+  }
+
+  return null;
+}
+
 function componentLabel(comp: GoogleAddressComponentLike): string {
   return (comp.long_name || comp.short_name || '').trim();
 }
@@ -1287,36 +1341,18 @@ export function extractPlaceFromPlusCodeAddress(formatted: string): string | nul
  */
 export function shortLocationFromGoogleComponents(
   components: GoogleAddressComponentLike[] | null | undefined,
-  options?: { useAreaList?: boolean }
+  options?: { useAreaList?: boolean; localOnly?: boolean }
 ): string | null {
   if (!Array.isArray(components) || components.length === 0) return null;
   const useAreaList = options?.useAreaList !== false;
+  const localOnly = options?.localOnly === true;
 
-  // List match on every component label (and combined text) — works when Google
-  // puts the place in administrative_area_level_* instead of neighborhood.
-  if (useAreaList) {
-    const combined = joinGoogleComponentText(components);
-    const listFromAll = findLongestAreaMatchInText(combined);
-    if (listFromAll) return clipVisibleAddress(listFromAll);
-  }
+  const localTypes = [...GOOGLE_LOCAL_LOCATION_TYPES];
+  const fromLocal = areaFromGoogleComponentTypes(components, localTypes, useAreaList);
+  if (fromLocal) return fromLocal;
+  if (localOnly) return null;
 
-  for (const type of GOOGLE_SHORT_LOCATION_TYPES) {
-    const comp = components.find((c) => Array.isArray(c.types) && c.types.includes(type));
-    const raw = componentLabel(comp || {});
-    if (!raw || isGenericGeoLocality(raw)) continue;
-
-    // Strip trailing " Taluk" / " District" for cleaner short location
-    const cleaned = raw.replace(/\s+(Taluk|District|Hobli)$/i, '').trim();
-    if (!cleaned || isGenericGeoLocality(cleaned)) continue;
-
-    if (useAreaList) {
-      const fromList = findLongestAreaMatchInText(cleaned);
-      if (fromList) return clipVisibleAddress(fromList);
-    }
-    return clipVisibleAddress(cleaned);
-  }
-
-  return null;
+  return areaFromGoogleComponentTypes(components, GOOGLE_BROAD_LOCATION_TYPES, useAreaList);
 }
 
 /**
@@ -1342,31 +1378,45 @@ export function resolveVisibleAddressFromGoogleOnly(options: {
 
 /**
  * Resolve short/visible location after Fetch Address:
- * 1) bangaloreAreas list (longest whole-word match in address / Google component text)
- * 2) Plus Code place name (e.g. "3Q5F+23 Amanidoddakere, India")
- * 3) Google reverse-geocode address_components — neighborhood / sublocality / locality
- *    (same Maps API response; no extra call)
+ * 1) Local Google components (neighborhood / sublocality / layout) + area list
+ * 2) Street / formatted hints
+ * 3) All components + broad admin wards (legacy fallback)
  */
 function resolveVisibleAreaFromGeocode(options: {
   formattedAddress?: string | null;
   addressComponents?: GoogleAddressComponentLike[] | null;
   addressHints?: Array<string | null | undefined>;
 }): string | null {
-  const componentText = Array.isArray(options.addressComponents)
-    ? joinGoogleComponentText(options.addressComponents)
+  const components = Array.isArray(options.addressComponents) ? options.addressComponents : [];
+  const componentText = components.length ? joinGoogleComponentText(components) : '';
+  const localComponentText = components.length
+    ? joinGoogleComponentTextByTypes(components, GOOGLE_LOCAL_LOCATION_TYPES)
     : '';
 
-  // Hints must be from THIS geocode (new formatted line), never the customer's
-  // previous street — that made Fetch Address keep the old Location (e.g. Koramangala).
-  const texts = [
+  const hintTexts = [
     options.formattedAddress,
-    componentText,
     ...(options.addressHints || []),
   ].filter((t): t is string => typeof t === 'string' && t.trim().length > 0);
 
-  for (const text of texts) {
+  if (localComponentText) {
+    const fromLocalComponents = findLongestAreaMatchInText(localComponentText);
+    if (fromLocalComponents) return clipVisibleAddress(fromLocalComponents);
+  }
+
+  const fromLocalLabels = shortLocationFromGoogleComponents(components, {
+    useAreaList: true,
+    localOnly: true,
+  });
+  if (fromLocalLabels) return fromLocalLabels;
+
+  for (const text of hintTexts) {
     const longest = findLongestAreaMatchInText(text);
     if (longest) return clipVisibleAddress(longest);
+  }
+
+  if (componentText) {
+    const fromAllComponents = findLongestAreaMatchInText(componentText);
+    if (fromAllComponents) return clipVisibleAddress(fromAllComponents);
   }
 
   if (options.formattedAddress) {
@@ -1378,8 +1428,7 @@ function resolveVisibleAreaFromGeocode(options: {
     }
   }
 
-  // No list match — use Google's place label from the same geocode (not our area DB).
-  return shortLocationFromGoogleComponents(options.addressComponents, { useAreaList: false });
+  return shortLocationFromGoogleComponents(components, { useAreaList: false });
 }
 
 export function resolveVisibleAddressFromGeocode(options: {
