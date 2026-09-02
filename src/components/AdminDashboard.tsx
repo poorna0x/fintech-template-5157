@@ -303,6 +303,7 @@ import ServiceHistoryDialog from './admin/ServiceHistoryDialog';
 import PhotoGalleryDialog from './admin/PhotoGalleryDialog';
 import PhotoViewerDialog from './admin/PhotoViewerDialog';
 import CustomerPhotoGalleryDialog from './admin/CustomerPhotoGalleryDialog';
+import { isCustomerPdfFile, uploadCustomerGalleryPdf } from '@/lib/customerDocuments';
 import AssignJobDialog from './admin/AssignJobDialog';
 import AddTeamDialog from './admin/AddTeamDialog';
 import RemoveTeamDialog from './admin/RemoveTeamDialog';
@@ -3920,16 +3921,44 @@ const AdminDashboard = () => {
   const handlePhotoUpload = async (files: FileList) => {
     if (!selectedCustomerForPhotos) return;
 
+    const fileArray = Array.from(files);
+    const pdfFiles = fileArray.filter(isCustomerPdfFile);
+    const imageFiles = fileArray.filter((file) => !isCustomerPdfFile(file));
+
+    const customerUuid =
+      typeof selectedCustomerForPhotos.id === 'string' && selectedCustomerForPhotos.id.includes('-')
+        ? selectedCustomerForPhotos.id
+        : '';
+    if (pdfFiles.length > 0) {
+      if (!customerUuid) {
+        toast.error('Save the customer first, then add PDFs');
+      } else {
+        let pdfSaved = 0;
+        for (const file of pdfFiles) {
+          const result = await uploadCustomerGalleryPdf({ customerId: customerUuid, file });
+          if (!result.ok) {
+            toast.error(result.error || `Could not upload ${file.name}`);
+            continue;
+          }
+          pdfSaved += 1;
+        }
+        if (pdfSaved > 0) {
+          toast.success(pdfSaved === 1 ? 'PDF saved' : `${pdfSaved} PDFs saved`);
+        }
+      }
+    }
+
+    if (imageFiles.length === 0) return;
+
     setIsUploadingPhoto(true);
     setIsCompressingImage(true);
     const customerId = selectedCustomerForPhotos.customer_id || selectedCustomerForPhotos.customerId;
     
     // Create thumbnails immediately for preview (use stable id per file index for correct lookup in loop)
     const thumbnailMap: {[key: string]: {url: string, uploading: boolean}} = {};
-    const fileArray = Array.from(files);
     const uploadTimestamp = Date.now();
 
-    fileArray.forEach((file, index) => {
+    imageFiles.forEach((file, index) => {
       if (!validateImageFile(file).valid) return;
       // Create thumbnail URL
       const thumbnailUrl = URL.createObjectURL(file);
@@ -3943,8 +3972,8 @@ const AdminDashboard = () => {
     try {
       const uploadedPhotos: string[] = [];
       
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
         const validation = validateImageFile(file);
         if (!validation.valid) {
           toast.error(validation.error ?? `File ${file.name} is not valid`);

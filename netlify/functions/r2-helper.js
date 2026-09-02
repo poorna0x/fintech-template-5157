@@ -10,7 +10,8 @@
  *   CLOUDFLARE_R2_SIGNED_URL_TTL_SECONDS
  *
  * Ops: bucket must be private — disable r2.dev public access. Objects are
- * referenced as r2:whatsapp/... and served only via short-lived signed GETs.
+ * referenced as r2:whatsapp/... or r2:customer/docs/... and served only via
+ * short-lived signed GETs.
  */
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
@@ -125,6 +126,11 @@ function safeFilename(name, fallback = 'file') {
   return base || fallback;
 }
 
+function isAllowedR2ObjectKey(key) {
+  const k = String(key || '').replace(/^\/+/, '');
+  return k.startsWith('whatsapp/') || k.startsWith('customer/docs/');
+}
+
 function buildObjectKey(folder, filename) {
   const now = new Date();
   const yyyy = now.getUTCFullYear();
@@ -134,7 +140,24 @@ function buildObjectKey(folder, filename) {
   let prefix = 'whatsapp/inbound';
   if (folder === 'outbound') prefix = 'whatsapp/outbound';
   else if (folder === 'accept') prefix = 'whatsapp/accept';
+  else if (folder === 'customer' || folder === 'customer-docs') prefix = 'customer/docs';
   return `${prefix}/${yyyy}/${mm}/${id}-${safe}`;
+}
+
+function buildCustomerDocKey(customerId, filename) {
+  const cid = String(customerId || '')
+    .trim()
+    .replace(/[^a-fA-F0-9-]/g, '')
+    .slice(0, 36);
+  if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cid)) {
+    return null;
+  }
+  const now = new Date();
+  const yyyy = now.getUTCFullYear();
+  const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const id = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+  const safe = safeFilename(filename, 'document.pdf');
+  return `customer/docs/${cid}/${yyyy}/${mm}/${id}-${safe}`;
 }
 
 /** Store as r2:key in whatsapp_messages.media_url */
@@ -148,13 +171,9 @@ function parseR2ObjectKey(mediaUrlOrRef) {
   if (!raw) return null;
   if (raw.startsWith(R2_KEY_PREFIX)) {
     const key = raw.slice(R2_KEY_PREFIX.length).replace(/^\/+/, '');
-    return key.startsWith('whatsapp/') ? key : null;
+    return isAllowedR2ObjectKey(key) ? key : null;
   }
-  // Plain key stored without prefix
-  if (raw.startsWith('whatsapp/inbound/') || raw.startsWith('whatsapp/outbound/') || raw.startsWith('whatsapp/accept/')) {
-    return raw;
-  }
-  return null;
+  return isAllowedR2ObjectKey(raw) ? raw : null;
 }
 
 function isR2MediaRef(mediaUrlOrRef) {
@@ -202,11 +221,44 @@ async function uploadAcceptOriginalToR2(buffer, mime, filename) {
   return uploadWhatsAppMediaToR2(buffer, mime, filename, 'accept');
 }
 
+/**
+ * Customer gallery PDF. Key includes customer UUID so ops can prefix-list one customer.
+ * Returns { key, ref, filename, mime } or null.
+ */
+async function uploadCustomerDocumentToR2(buffer, mime, filename, customerId) {
+  const config = await getR2Config();
+  const client = getR2Client(config);
+  const key = buildCustomerDocKey(customerId, filename);
+  if (!config || !client || !buffer?.length || !key) return null;
+
+  const contentType = String(mime || 'application/pdf').trim() || 'application/pdf';
+  try {
+    await client.send(
+      new PutObjectCommand({
+        Bucket: config.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      })
+    );
+    return {
+      key,
+      ref: toMediaRef(key),
+      url: toMediaRef(key),
+      filename: safeFilename(filename, 'document.pdf'),
+      mime: contentType,
+    };
+  } catch (err) {
+    console.warn('[r2-helper] customer doc upload failed', err?.message || err);
+    return null;
+  }
+}
+
 async function deleteR2Object(objectKeyOrRef) {
   const config = await getR2Config();
   const client = getR2Client(config);
-  const key = parseR2ObjectKey(objectKeyOrRef) || String(objectKeyOrRef || '').trim();
-  if (!config || !client || !key || !key.startsWith('whatsapp/')) {
+  const key = parseR2ObjectKey(objectKeyOrRef) || String(objectKeyOrRef || '').trim().replace(/^r2:/, '');
+  if (!config || !client || !key || !isAllowedR2ObjectKey(key)) {
     return { ok: false, skipped: true };
   }
   try {
@@ -280,6 +332,7 @@ function folderForObjectKey(key) {
   if (raw.startsWith('whatsapp/inbound/')) return 'inbound';
   if (raw.startsWith('whatsapp/outbound/')) return 'outbound';
   if (raw.startsWith('whatsapp/accept/')) return 'accept';
+  if (raw.startsWith('customer/docs/')) return 'customer-docs';
   const slash = raw.indexOf('/');
   if (slash > 0) return raw.slice(0, slash);
   return 'other';
@@ -368,10 +421,12 @@ module.exports = {
   getR2ConfigFromEnv,
   toMediaRef,
   parseR2ObjectKey,
+  isAllowedR2ObjectKey,
   isR2MediaRef,
   uploadWhatsAppMediaToR2,
   uploadOutboundMediaToR2,
   uploadAcceptOriginalToR2,
+  uploadCustomerDocumentToR2,
   deleteR2Object,
   createR2SignedGetUrl,
   getR2ObjectBytes,

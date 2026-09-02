@@ -114,7 +114,7 @@ exports.handler = async (event) => {
 
   const key = parseR2ObjectKey(mediaRef);
   if (!key) {
-    return json(400, headers, { error: 'Not an R2 WhatsApp media reference' });
+    return json(400, headers, { error: 'Not an R2 media reference' });
   }
 
   if (wantProxy) {

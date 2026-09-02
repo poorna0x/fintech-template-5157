@@ -1287,7 +1287,9 @@ export function isR2MediaRef(mediaUrl: string | null | undefined): boolean {
     raw.startsWith('r2:') ||
     raw.startsWith('whatsapp-media:') ||
     raw.startsWith('whatsapp/inbound/') ||
-    raw.startsWith('whatsapp/outbound/')
+    raw.startsWith('whatsapp/outbound/') ||
+    raw.startsWith('whatsapp/accept/') ||
+    raw.startsWith('customer/docs/')
   );
 }
 

@@ -41,6 +41,10 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/customer-documents': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/whatsapp-purge-messages': {
         target: 'http://localhost:8888',
         changeOrigin: true,

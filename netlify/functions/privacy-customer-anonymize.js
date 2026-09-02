@@ -189,6 +189,24 @@ exports.handler = async (event) => {
     console.warn('[privacy-customer-anonymize] wa unlink soft-fail', err?.message || err);
   }
 
+  // Gallery PDFs are personal files — drop R2 objects + rows (table may not exist yet).
+  try {
+    const { deleteR2Object } = require('./r2-helper');
+    const { data: docs, error: docsErr } = await db
+      .from('customer_documents')
+      .select('id, media_url')
+      .eq('customer_id', customerId)
+      .limit(200);
+    if (!docsErr && docs?.length) {
+      for (const row of docs) {
+        if (row.media_url) await deleteR2Object(row.media_url);
+      }
+      await db.from('customer_documents').delete().eq('customer_id', customerId);
+    }
+  } catch (err) {
+    console.warn('[privacy-customer-anonymize] customer docs soft-fail', err?.message || err);
+  }
+
   const noteLine = `Anonymized CRM ${code} on ${nowIso.slice(0, 10)} (jobs/AMC kept).`;
   const prevNotes = String(requestRow.admin_notes || body.admin_notes || '').trim();
   const adminNotes = prevNotes ? `${prevNotes}\n${noteLine}` : noteLine;

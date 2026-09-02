@@ -14,7 +14,20 @@ import {
   removeWhatsAppThreadMessageCache,
   type WhatsAppCustomerDocument,
 } from '@/lib/whatsappInbox';
+import {
+  customerDocumentsTableHint,
+  deleteCustomerGalleryDocument,
+  isCustomerPdfFile,
+  listCustomerGalleryDocuments,
+  uploadCustomerGalleryPdf,
+  type CustomerGalleryDocument,
+} from '@/lib/customerDocuments';
+import { filesToFileList } from '@/lib/cameraUtils';
 import { cn } from '@/lib/utils';
+
+type GalleryDocRow =
+  | { source: 'upload'; id: string; filename: string | null; media_url: string; media_mime: string | null; created_at: string; byte_size: number | null }
+  | (WhatsAppCustomerDocument & { source: 'whatsapp'; byte_size?: number | null });
 
 interface CustomerPhotoGalleryDialogProps {
   open: boolean;
@@ -41,12 +54,24 @@ function directHttpsUrl(ref: string | null | undefined): string | null {
   return /^https:\/\//i.test(raw) ? raw : null;
 }
 
-function documentLabel(row: WhatsAppCustomerDocument): string {
+function documentLabel(row: GalleryDocRow): string {
   const name = String(row.filename || '').trim();
   if (name) return name;
-  if (isWhatsAppOutboundImageMessage(row)) return 'WhatsApp photo';
-  if (String(row.media_mime || '').includes('pdf') || row.msg_type === 'pdf') return 'PDF';
-  return 'WhatsApp document';
+  if (row.source === 'whatsapp' && isWhatsAppOutboundImageMessage(row)) return 'WhatsApp photo';
+  if (String(row.media_mime || '').includes('pdf')) return 'PDF';
+  return row.source === 'upload' ? 'PDF' : 'WhatsApp document';
+}
+
+function mergeGalleryDocs(
+  uploaded: CustomerGalleryDocument[],
+  whatsapp: WhatsAppCustomerDocument[]
+): GalleryDocRow[] {
+  const rows: GalleryDocRow[] = [
+    ...uploaded.map((row) => ({ source: 'upload' as const, ...row })),
+    ...whatsapp.map((row) => ({ source: 'whatsapp' as const, ...row })),
+  ];
+  rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  return rows;
 }
 
 const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
@@ -63,16 +88,18 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
   onCameraCapture,
   onDragOver,
   onDragLeave,
-  onDrop,
   onPhotoClick,
   onDeletePhoto
 }) => {
   const [tab, setTab] = useState('photos');
-  const [docs, setDocs] = useState<WhatsAppCustomerDocument[]>([]);
+  const [waDocs, setWaDocs] = useState<WhatsAppCustomerDocument[]>([]);
+  const [uploadedDocs, setUploadedDocs] = useState<CustomerGalleryDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [docsError, setDocsError] = useState<string | null>(null);
   const [docsLoadedFor, setDocsLoadedFor] = useState<string | null>(null);
   const [busyDocId, setBusyDocId] = useState<string | null>(null);
+  const [isUploadingPdf, setIsUploadingPdf] = useState(false);
+  const [missingDocsTable, setMissingDocsTable] = useState(false);
 
   const customerId = customer?.customer_id || customer?.customerId || '';
   const customerUuid =
@@ -93,38 +120,52 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
       return;
     }
     setDocsLoadedFor(null);
-    setDocs([]);
+    setWaDocs([]);
+    setUploadedDocs([]);
     setDocsError(null);
+    setMissingDocsTable(false);
     setTab('photos');
   }, [open, loadKey]);
 
-  // Prefetch WhatsApp docs on open (same whatsapp_messages.media_url — no second copy).
-  // Documents tab only appears when at least one doc exists.
+  // Prefetch uploaded gallery PDFs + WhatsApp files on open.
   useEffect(() => {
     if (!open || !customer || docsLoadedFor === loadKey) return;
     let cancelled = false;
     setDocsLoading(true);
     setDocsError(null);
     void (async () => {
-      const result = await listCustomerWhatsAppDocuments(supabase, {
-        customerId: customerUuid || null,
-        phone: customerPhone,
-        alternatePhone: customerAlt,
-        limit: 80,
-      });
+      const [waResult, uploadedResult] = await Promise.all([
+        listCustomerWhatsAppDocuments(supabase, {
+          customerId: customerUuid || null,
+          phone: customerPhone,
+          alternatePhone: customerAlt,
+          limit: 80,
+        }),
+        customerUuid
+          ? listCustomerGalleryDocuments(customerUuid)
+          : Promise.resolve({ rows: [] as CustomerGalleryDocument[] }),
+      ]);
       if (cancelled) return;
       setDocsLoading(false);
-      if (result.error) {
-        setDocsError(result.error);
-        setDocs([]);
-        setDocsLoadedFor(loadKey);
-        setTab('photos');
-        toast.error('Could not load WhatsApp documents');
-        return;
-      }
-      setDocs(result.rows);
       setDocsLoadedFor(loadKey);
-      if (result.rows.length === 0) setTab('photos');
+      if (waResult.error) {
+        setDocsError(waResult.error);
+        setWaDocs([]);
+        toast.error('Could not load WhatsApp documents');
+      } else {
+        setWaDocs(waResult.rows);
+      }
+      if (uploadedResult.missingTable) {
+        setMissingDocsTable(true);
+        setUploadedDocs([]);
+      } else if (uploadedResult.error) {
+        setMissingDocsTable(false);
+        setUploadedDocs([]);
+        toast.error(uploadedResult.error);
+      } else {
+        setMissingDocsTable(false);
+        setUploadedDocs(uploadedResult.rows);
+      }
     })();
     return () => {
       cancelled = true;
@@ -133,19 +174,89 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
 
   if (!customer) return null;
 
-  const showDocumentsTab = docs.length > 0;
+  const galleryDocs = mergeGalleryDocs(uploadedDocs, waDocs);
+  const showDocumentsTab = galleryDocs.length > 0;
+  const galleryBusy = isUploadingPhoto || isUploadingPdf;
 
-  const resolveDocUrl = async (row: WhatsAppCustomerDocument): Promise<string | null> => {
+  const uploadPdfsFromGallery = async (files: File[]): Promise<number> => {
+    if (!files.length) return 0;
+    if (!customerUuid) {
+      toast.error('Save the customer first, then add PDFs');
+      return 0;
+    }
+    if (missingDocsTable) {
+      toast.error(customerDocumentsTableHint());
+      return 0;
+    }
+    let added = 0;
+    for (const file of files) {
+      const result = await uploadCustomerGalleryPdf({ customerId: customerUuid, file });
+      if (!result.ok || !result.document) {
+        if (result.missingTable) {
+          setMissingDocsTable(true);
+          toast.error(result.error || customerDocumentsTableHint());
+          break;
+        }
+        toast.error(result.error || `Could not upload ${file.name}`);
+        continue;
+      }
+      added += 1;
+      setUploadedDocs((prev) => [result.document!, ...prev.filter((d) => d.id !== result.document!.id)]);
+    }
+    return added;
+  };
+
+  const ingestGalleryFiles = async (fileList: FileList | File[]) => {
+    if (galleryBusy) return;
+    const all = Array.from(fileList);
+    if (all.length === 0) return;
+    const pdfs = all.filter(isCustomerPdfFile);
+    const images = all.filter((file) => !isCustomerPdfFile(file));
+    if (pdfs.length) {
+      setIsUploadingPdf(true);
+      try {
+        const added = await uploadPdfsFromGallery(pdfs);
+        if (added > 0) {
+          toast.success(added === 1 ? 'PDF saved' : `${added} PDFs saved`);
+        }
+      } finally {
+        setIsUploadingPdf(false);
+      }
+    }
+    if (images.length) onPhotoUpload(filesToFileList(images));
+  };
+
+  const pickGalleryFiles = () => {
+    if (galleryBusy) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = 'image/*,.pdf,application/pdf';
+    input.onchange = (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (files) void ingestGalleryFiles(files);
+    };
+    input.click();
+  };
+
+  const handleGalleryDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onDragLeave(e);
+    if (e.dataTransfer.files?.length) void ingestGalleryFiles(e.dataTransfer.files);
+  };
+
+  const resolveDocUrl = async (row: GalleryDocRow): Promise<string | null> => {
     const direct = directHttpsUrl(row.media_url);
     if (direct) return direct;
     const signed = await fetchWhatsAppR2SignedUrl({
       mediaUrl: row.media_url,
-      messageId: row.id,
+      messageId: row.source === 'whatsapp' ? row.id : undefined,
     });
     return signed.ok && signed.url ? signed.url : null;
   };
 
-  const openDoc = async (row: WhatsAppCustomerDocument) => {
+  const openDoc = async (row: GalleryDocRow) => {
     setBusyDocId(row.id);
     try {
       const url = await resolveDocUrl(row);
@@ -159,7 +270,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
     }
   };
 
-  const downloadDoc = async (row: WhatsAppCustomerDocument) => {
+  const downloadDoc = async (row: GalleryDocRow) => {
     setBusyDocId(row.id);
     try {
       const url = await resolveDocUrl(row);
@@ -180,17 +291,27 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
     }
   };
 
-  const deleteDoc = async (row: WhatsAppCustomerDocument) => {
+  const deleteDoc = async (row: GalleryDocRow) => {
     const label = documentLabel(row);
-    if (
-      !window.confirm(
-        `Delete “${label}” from this customer and Cloudflare?\n\nIt will also be removed from the WhatsApp inbox.`
-      )
-    ) {
+    const confirmText =
+      row.source === 'whatsapp'
+        ? `Delete “${label}” from this customer and Cloudflare?\n\nIt will also be removed from the WhatsApp inbox.`
+        : `Delete “${label}” from this customer and Cloudflare?`;
+    if (!window.confirm(confirmText)) {
       return;
     }
     setBusyDocId(row.id);
     try {
+      if (row.source === 'upload') {
+        const result = await deleteCustomerGalleryDocument(row.id);
+        if (!result.ok) {
+          toast.error(result.error || 'Could not delete file');
+          return;
+        }
+        setUploadedDocs((prev) => prev.filter((d) => d.id !== row.id));
+        toast.success('Deleted');
+        return;
+      }
       const result = await purgeWhatsAppMessages({
         messageId: row.id,
         messageIds: [row.id],
@@ -208,9 +329,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
         }
       }
       removeWhatsAppThreadMessageCache(row.id, row.phone_e164);
-      const next = docs.filter((d) => d.id !== row.id);
-      setDocs(next);
-      if (next.length === 0) setTab('photos');
+      setWaDocs((prev) => prev.filter((d) => d.id !== row.id));
       toast.success('Deleted');
     } finally {
       setBusyDocId(null);
@@ -266,7 +385,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                 <FileText className="h-4 w-4 shrink-0" aria-hidden />
                 Documents
                 <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none group-data-[state=active]:bg-white/20">
-                  {docs.length}
+                  {galleryDocs.length}
                 </span>
               </TabsTrigger>
             </TabsList>
@@ -280,21 +399,13 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                 isDragOverPhotos 
                   ? 'border-blue-500 bg-blue-100 scale-105' 
                   : 'border-border hover:border-blue-400 hover:bg-blue-50'
-              } ${isUploadingPhoto ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              }               ${isUploadingPhoto || isUploadingPdf ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
-              onDrop={onDrop}
+              onDrop={handleGalleryDrop}
               onClick={(e) => {
                 if ((e.target as HTMLElement).closest('button')) return;
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.multiple = true;
-                input.accept = 'image/*';
-                input.onchange = (e) => {
-                  const files = (e.target as HTMLInputElement).files;
-                  if (files) onPhotoUpload(files);
-                };
-                input.click();
+                pickGalleryFiles();
               }}
             >
               <div className="space-y-4 sm:space-y-6">
@@ -323,17 +434,9 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                       variant="outline"
                       onClick={(e) => {
                         e.stopPropagation();
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.multiple = true;
-                        input.accept = 'image/*';
-                        input.onchange = (e) => {
-                          const files = (e.target as HTMLInputElement).files;
-                          if (files) onPhotoUpload(files);
-                        };
-                        input.click();
+                        pickGalleryFiles();
                       }}
-                      disabled={isUploadingPhoto}
+                      disabled={galleryBusy}
                       className="flex items-center gap-2 w-full sm:w-auto min-h-[44px]"
                     >
                       <Upload className="w-4 h-4" />
@@ -346,7 +449,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                         e.stopPropagation();
                         onCameraCapture();
                       }}
-                      disabled={isUploadingPhoto}
+                      disabled={galleryBusy}
                       className="flex items-center gap-2 w-full sm:w-auto min-h-[44px]"
                     >
                       <Camera className="w-4 h-4" />
@@ -389,18 +492,8 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.multiple = true;
-                      input.accept = 'image/*';
-                      input.onchange = (e) => {
-                        const files = (e.target as HTMLInputElement).files;
-                        if (files) onPhotoUpload(files);
-                      };
-                      input.click();
-                    }}
-                    disabled={isUploadingPhoto}
+                    onClick={() => pickGalleryFiles()}
+                    disabled={galleryBusy}
                     className="flex items-center gap-2 flex-1 sm:flex-none min-h-[44px]"
                   >
                     <Upload className="w-4 h-4" />
@@ -428,7 +521,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                 }`}
                 onDragOver={onDragOver}
                 onDragLeave={onDragLeave}
-                onDrop={onDrop}
+                onDrop={handleGalleryDrop}
               >
                 {/* Show uploading thumbnails first */}
                 {Object.entries(uploadingThumbnails).map(([thumbnailId, thumbnail]) => (
@@ -514,18 +607,18 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
             ) : (
               <div className="min-w-0 space-y-2">
                 <p className="text-sm font-medium text-foreground">
-                  {docs.length} file{docs.length !== 1 ? 's' : ''} sent on WhatsApp
+                  {galleryDocs.length} file{galleryDocs.length !== 1 ? 's' : ''} sent on WhatsApp
                 </p>
                 <p className="text-xs text-muted-foreground break-words">
                   Photos and PDFs stored on Cloudflare. Same as the inbox — delete the chat
                   message and it leaves here too.
                 </p>
                 <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-                  {docs.map((row) => {
-                    const isImage = isWhatsAppOutboundImageMessage(row);
+                  {galleryDocs.map((row) => {
+                    const isImage = row.source === 'whatsapp' && isWhatsAppOutboundImageMessage(row);
                     return (
                     <li
-                      key={row.id}
+                      key={`${row.source}-${row.id}`}
                       className="flex min-w-0 flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:gap-3"
                     >
                       <div className="flex min-w-0 flex-1 items-start gap-3">
