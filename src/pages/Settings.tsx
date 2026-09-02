@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { 
   Settings as SettingsIcon, 
@@ -41,7 +42,8 @@ import {
   CalendarPlus,
   Database,
   Star,
-  Sparkles
+  Sparkles,
+  ChevronDown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -333,6 +335,7 @@ const Settings = () => {
     const stored = localStorage.getItem('technician_location_tracking_enabled');
     return stored !== null ? stored === 'true' : true; // Default to enabled
   });
+  const [suspendedTechniciansOpen, setSuspendedTechniciansOpen] = useState(false);
 
   const [followUpGlowEnabled, setFollowUpGlowEnabledState] = useState<boolean>(isFollowUpGlowEnabled);
   const [followUpDisplaySettings, setFollowUpDisplaySettingsState] = useState(
@@ -2616,8 +2619,11 @@ const Settings = () => {
     );
   }
 
-  const activeTechniciansList = technicians.filter((t) => t.account_status !== 'INACTIVE');
-  const inactiveTechniciansList = technicians.filter((t) => t.account_status === 'INACTIVE');
+  const technicianAccountStatus = (t: Technician) =>
+    String((t as any).account_status || 'ACTIVE').toUpperCase();
+  const activeTechniciansList = technicians.filter((t) => technicianAccountStatus(t) === 'ACTIVE');
+  const suspendedTechniciansList = technicians.filter((t) => technicianAccountStatus(t) === 'SUSPENDED');
+  const inactiveTechniciansList = technicians.filter((t) => technicianAccountStatus(t) === 'INACTIVE');
 
   const renderTechnicianCard = (technician: Technician) => (
     <Card key={technician.id} className="hover:shadow-md transition-shadow">
@@ -3690,7 +3696,7 @@ const Settings = () => {
                       Technician Management
                     </CardTitle>
                   <CardDescription className="text-sm mt-1">
-                      Use Edit → account status to deactivate. Inactive staff stay in the database but are hidden from assignments, maps, Technician Payments, and salary totals.
+                      Use Edit → account status. Inactive staff stay in the database but are hidden from assignments, maps, Technician Payments, and salary totals. Suspended cannot log in; they are listed in a collapsed section below.
                     </CardDescription>
                   </div>
                 {!isManager ? (
@@ -3715,6 +3721,35 @@ const Settings = () => {
                   <p className="text-sm text-muted-foreground py-4">No active technicians yet. Add one above.</p>
                 )}
               </div>
+              {suspendedTechniciansList.length > 0 && (
+                <Collapsible open={suspendedTechniciansOpen} onOpenChange={setSuspendedTechniciansOpen}>
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-left touch-manipulation"
+                    >
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-semibold text-foreground">
+                          Suspended ({suspendedTechniciansList.length})
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                          Cannot log in. Still on salary and assignment lists until you set Inactive.
+                        </p>
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                          suspendedTechniciansOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3">
+                      {suspendedTechniciansList.map((technician) => renderTechnicianCard(technician))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
               {inactiveTechniciansList.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold text-foreground mb-1">Inactive</h3>
