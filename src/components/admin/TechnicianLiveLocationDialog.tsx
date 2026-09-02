@@ -320,7 +320,11 @@ const TechnicianLiveLocationDialog = ({
     return cleanup;
   }, [open, technicianId, startWatching, cleanup]);
 
-  const activeTechs = technicians.filter((t) => (t as any).isActive !== false);
+  const activeTechs = technicians.filter((t) => {
+    if ((t as any).isActive === false) return false;
+    const status = String((t as any).account_status || 'ACTIVE').toUpperCase();
+    return status === 'ACTIVE';
+  });
   const hasCoords = row != null && row.latitude != null && row.longitude != null;
 
   return (

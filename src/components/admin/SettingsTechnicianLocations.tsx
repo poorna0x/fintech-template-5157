@@ -40,6 +40,11 @@ export function SettingsTechnicianLocations({
     };
   }, [showHours]);
 
+  const locationTechnicians = technicians.filter((t) => {
+    const status = String((t as any).account_status || 'ACTIVE').toUpperCase();
+    return status === 'ACTIVE';
+  });
+
   return (
     <>
       {showHours && !hoursLoaded && !hoursError ? (
@@ -52,7 +57,7 @@ export function SettingsTechnicianLocations({
         <p className="text-xs text-amber-800 dark:text-amber-400 mb-4">{hoursError}</p>
       ) : null}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {technicians.map((technician) => {
+        {locationTechnicians.map((technician) => {
           const hasLocation =
             technician.currentLocation &&
             technician.currentLocation.latitude &&
@@ -142,7 +147,7 @@ export function SettingsTechnicianLocations({
             </Card>
           );
         })}
-        {technicians.length === 0 ? (
+        {locationTechnicians.length === 0 ? (
           <div className="col-span-full text-center py-8 text-muted-foreground">
             No technicians found.
           </div>
