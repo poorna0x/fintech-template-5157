@@ -19,6 +19,7 @@ import {
   completePendingPaymentReminder,
 } from '@/lib/jobPendingPayment';
 import { billPhotosRequirement } from '@/lib/billPhotoCapture';
+import { isSoftenerJobVisit, rawWaterTdsForJobComplete } from '@/lib/jobRawWaterTds';
 
 export type SaveAdminCompletedJobEditParams = {
   selectedCompletedJob: Job | null;
@@ -453,6 +454,13 @@ try {
         ? 'elevenro'
         : 'hydrogenro'
   };
+  const jobIsSoftener = isSoftenerJobVisit(selectedCompletedJob as any);
+  if (!jobIsSoftener) {
+    updateData.raw_water_tds = rawWaterTdsForJobComplete(
+      false,
+      String(completedJobEditData.rawWaterTds ?? '')
+    );
+  }
   const paymentScreenshotsUrls = Array.isArray(completedJobEditData.paymentScreenshots)
     ? completedJobEditData.paymentScreenshots.filter((u: any) => typeof u === 'string' && u.trim())
     : [];
@@ -492,6 +500,34 @@ try {
   if (error) {
     toast.error('Failed to update job: ' + error.message);
   } else {
+    if (!jobIsSoftener) {
+      try {
+        const customerId =
+          (selectedCompletedJob as any).customer?.id ||
+          (selectedCompletedJob as any).customer_id ||
+          selectedCompletedJob.customerId;
+        if (customerId) {
+          const { data: latestRow } = await supabase
+            .from('jobs')
+            .select('id')
+            .eq('customer_id', customerId)
+            .eq('status', 'COMPLETED')
+            .order('completed_at', { ascending: false, nullsFirst: false })
+            .limit(1)
+            .maybeSingle();
+          if (latestRow?.id === selectedCompletedJob.id) {
+            const { error: custErr } = await db.customers.update(String(customerId), {
+              raw_water_tds: updateData.raw_water_tds ?? 0,
+            });
+            if (custErr) {
+              toast.warning('Job saved, but customer latest TDS was not updated.');
+            }
+          }
+        }
+      } catch (tdsSyncErr) {
+        console.error('Customer latest TDS sync failed:', tdsSyncErr);
+      }
+    }
     // "Hide from top-up" inventory correction: a part hidden from top-up is treated
     // as taken directly from MAIN, so move it main → tech (subtract main, add tech).
     // Un-hiding reverses it. Diff is taken against the job's previously-saved hide

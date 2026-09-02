@@ -15,7 +15,7 @@ export function rawWaterTdsForJobComplete(isSoftener: boolean, input: string): n
   return n;
 }
 
-function jobLooksLikeSoftener(job: {
+export function isSoftenerJobVisit(job: {
   service_type?: unknown;
   serviceType?: unknown;
   service_sub_type?: unknown;
@@ -53,9 +53,30 @@ export function jobVisitRawWaterTdsPpm(job: {
   if (visitTdsFieldWasStored(own)) {
     return parsePositiveTdsPpm(own);
   }
-  if (jobLooksLikeSoftener(job)) return null;
+  if (isSoftenerJobVisit(job)) return null;
   return (
     parsePositiveTdsPpm(job.customer?.raw_water_tds) ??
     parsePositiveTdsPpm(job.customer?.rawWaterTds)
   );
+}
+
+/** Prefill for completed-job edit. Own visit value first; legacy RO jobs use customer TDS. */
+export function rawWaterTdsEditInput(job: {
+  raw_water_tds?: unknown;
+  rawWaterTds?: unknown;
+  service_type?: unknown;
+  serviceType?: unknown;
+  service_sub_type?: unknown;
+  serviceSubType?: unknown;
+  customer?: { raw_water_tds?: unknown; rawWaterTds?: unknown } | null;
+}): string {
+  if (isSoftenerJobVisit(job)) return '';
+  const own = job.raw_water_tds !== undefined && job.raw_water_tds !== null ? job.raw_water_tds : job.rawWaterTds;
+  if (visitTdsFieldWasStored(own)) {
+    const n = parseInt(String(own).trim(), 10);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    return String(n);
+  }
+  const fallback = jobVisitRawWaterTdsPpm(job);
+  return fallback != null ? String(fallback) : '';
 }

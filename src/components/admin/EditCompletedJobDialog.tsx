@@ -35,6 +35,7 @@ import {
 } from '@/lib/billPhotoCapture';
 import { isNativeApp } from '@/lib/isNativeApp';
 import { captureNativeCameraPhoto, filesToFileList } from '@/lib/cameraUtils';
+import { isSoftenerJobVisit } from '@/lib/jobRawWaterTds';
 
 function sanitizeMoneyInput(raw: string): string {
   if (raw == null) return '';
@@ -437,6 +438,26 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               </p>
             )}
           </div>
+
+          {!isSoftenerJobVisit(job as any) && (
+            <div>
+              <Label htmlFor="edit-raw-water-tds">Raw water TDS (ppm)</Label>
+              <Input
+                id="edit-raw-water-tds"
+                type="text"
+                inputMode="numeric"
+                placeholder="e.g. 500"
+                value={editData.rawWaterTds ?? ''}
+                onChange={(e) =>
+                  onEditDataChange({
+                    ...editData,
+                    rawWaterTds: e.target.value.replace(/\D/g, '').slice(0, 4),
+                  })
+                }
+                className="max-w-[140px]"
+              />
+            </div>
+          )}
 
           {/* Payment Method — Cash / Online / Partial / Pending */}
           <div>

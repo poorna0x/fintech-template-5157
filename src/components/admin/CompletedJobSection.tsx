@@ -22,7 +22,7 @@ import OfficeJobPartsDialog from './OfficeJobPartsDialog';
 import { db } from '@/lib/supabase';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { getValidCustomerEmail } from '@/lib/customer-email';
-import { jobVisitRawWaterTdsPpm } from '@/lib/jobRawWaterTds';
+import { jobVisitRawWaterTdsPpm, rawWaterTdsEditInput } from '@/lib/jobRawWaterTds';
 import {
   isJobPendingPaymentOpen,
   parseJobPendingPayment,
@@ -815,6 +815,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 qrCodeName: qrPhotos?.selected_qr_code_name || '',
                 amcInfo: amcInfo || null,
                 completionNotes: completionNotes || '',
+                rawWaterTds: rawWaterTdsEditInput({
+                  ...(job as any),
+                  customer: (job as any).customer,
+                }),
                 completedBy: (job as any).completed_by || job.completedBy || (isOfficeCompletedJob(job) ? 'office' : ''),
                 hidePartsFromTopup: requirements.some((r: any) => r?.hide_parts_from_topup === true),
                 topupHiddenInventoryIds: (() => {
