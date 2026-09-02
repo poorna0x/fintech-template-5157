@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -39,6 +39,12 @@ import {
 import type { WarrantyCardPDFData } from '@/lib/warranty-card-pdf-generator';
 import { forceLightThemeClass } from '@/lib/force-light-theme';
 import {
+  clearWhatsAppDeliveryBanner,
+  reportWhatsAppPdfNotDelivered,
+  reportWhatsAppPdfPartialDelivery,
+  WhatsAppDeliveryInlineBanner,
+} from '@/components/whatsapp/WhatsAppDeliveryBanner';
+import {
   openWhatsAppMeDeepLink,
   resolveBillCustomerDisplayName,
   sendAdminWhatsAppDocumentWithColdFallback,
@@ -52,12 +58,15 @@ import {
 } from '@/lib/whatsappInbox';
 import {
   customerIdForWhatsAppDest,
+  extraWhatsAppPhoneFromCustomer,
   resolveWhatsAppDestinations,
 } from '@/lib/whatsappPhoneTarget';
 import {
   sendWhatsAppToMany,
   whatsappMultiSendOkMessage,
 } from '@/lib/whatsappMultiDestSend';
+import { isNotOnWhatsAppError } from '@/lib/whatsappDeliveryError';
+import { toastIfAborted, toastIfCancelledBeforeSend, toastSendCancelled } from '@/lib/abortSend';
 
 type SendChannel = 'email' | 'whatsapp' | 'both';
 
@@ -82,6 +91,7 @@ export interface WarrantyCardEmailSendDialogProps {
   customerEmailOnFile?: string | null;
   customerId?: string;
   defaultPhone?: string | null;
+  defaultAlternatePhone?: string | null;
   allowWhatsApp?: boolean;
   onSaveCustomerEmail?: (email: string) => Promise<WarrantyEmailPersistResult>;
   onSent?: () => void;
@@ -95,6 +105,7 @@ export default function WarrantyCardEmailSendDialog({
   customerEmailOnFile,
   customerId,
   defaultPhone,
+  defaultAlternatePhone,
   allowWhatsApp = true,
   onSaveCustomerEmail,
   onSent,
@@ -111,6 +122,20 @@ export default function WarrantyCardEmailSendDialog({
   const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
   const [requireAccept, setRequireAccept] = useState(false);
+  const [waDeliveryError, setWaDeliveryError] = useState<string | null>(null);
+  const sendAbortRef = useRef<AbortController | null>(null);
+
+  const startSendAbort = () => {
+    sendAbortRef.current?.abort();
+    const ac = new AbortController();
+    sendAbortRef.current = ac;
+    return ac.signal;
+  };
+
+  const requestClose = () => {
+    if (sending) sendAbortRef.current?.abort();
+    onOpenChange(false);
+  };
 
   useEffect(() => {
     if (!open) {
@@ -121,7 +146,7 @@ export default function WarrantyCardEmailSendDialog({
     setRecipientEmail(seeded || '');
     const phone = String(defaultPhone || pdfData?.customer?.phone || '').trim();
     setWhatsappPhone(phone);
-    setExtraWhatsappPhone('');
+    setExtraWhatsappPhone(extraWhatsAppPhoneFromCustomer(phone, defaultAlternatePhone));
     setRequireAccept(false);
     setMessage(getDefaultDocumentMessage('warranty_document'));
     setChannel(
@@ -133,7 +158,9 @@ export default function WarrantyCardEmailSendDialog({
     );
     setWindowOpen(null);
     setWindowHoursLeft(null);
-  }, [open, customerEmailOnFile, defaultPhone, pdfData?.customer?.phone, waEnabled]);
+    setWaDeliveryError(null);
+    clearWhatsAppDeliveryBanner();
+  }, [open, customerEmailOnFile, defaultPhone, defaultAlternatePhone, pdfData?.customer?.phone, waEnabled]);
 
   useEffect(() => {
     if (!open || !waEnabled) return;
@@ -208,6 +235,7 @@ export default function WarrantyCardEmailSendDialog({
     }
 
     setSending(true);
+    const signal = startSendAbort();
     const toastId = toast.loading('Generating PDF and sending email…');
 
     try {
@@ -236,7 +264,13 @@ export default function WarrantyCardEmailSendDialog({
         recipientEmails: [trimmed],
         customMessage: message.trim() || undefined,
         customerId,
+        signal,
       });
+
+      if (result.cancelled) {
+        toastSendCancelled(toastId, 'email');
+        return;
+      }
 
       if (!result.ok) {
         toast.error(result.error || 'Could not send email', { id: toastId });
@@ -247,6 +281,7 @@ export default function WarrantyCardEmailSendDialog({
       onSent?.();
       onOpenChange(false);
     } catch (error) {
+      if (toastIfAborted(error, toastId, 'email')) return;
       const msg = error instanceof Error ? error.message : 'Failed to send email';
       toast.error('Could not send warranty card email', { id: toastId, description: msg });
     } finally {
@@ -267,7 +302,12 @@ export default function WarrantyCardEmailSendDialog({
     const destinations = resolved.destinations;
     const customerName = resolveBillCustomerDisplayName(pdfData.customer);
     const customerIdFor = (to: string) =>
-      customerIdForWhatsAppDest(to, defaultPhone || pdfData.customer?.phone, customerId || null);
+      customerIdForWhatsAppDest(
+        to,
+        defaultPhone || pdfData.customer?.phone,
+        customerId || null,
+        defaultAlternatePhone
+      );
 
     if (!cloudApiOn) {
       if (requireAccept) {
@@ -294,6 +334,7 @@ export default function WarrantyCardEmailSendDialog({
     }
 
     setSending(true);
+    const signal = startSendAbort();
     const toastId = toast.loading('Preparing PDF for WhatsApp…');
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
@@ -306,7 +347,7 @@ export default function WarrantyCardEmailSendDialog({
 
       if (requireAccept) {
         toast.loading('Generating preview + original…', { id: toastId });
-        const pair = await generateWarrantyAcceptPdfPair(pdfData, { customerId });
+        const pair = await generateWarrantyAcceptPdfPair(pdfData, { customerId, signal });
         const fanout = await sendWhatsAppToMany(
           destinations,
           (to, windowClosed) =>
@@ -328,6 +369,7 @@ export default function WarrantyCardEmailSendDialog({
               originalPdfBase64: pair.originalPdfBase64,
               previewPdfBase64: pair.previewPdfBase64,
               preferColdTemplate: windowClosed,
+              signal,
             }),
           (to, windowClosed, _i, total) => {
             toast.loading(
@@ -338,10 +380,16 @@ export default function WarrantyCardEmailSendDialog({
                   : 'Sending Accept preview on WhatsApp…',
               { id: toastId }
             );
-          }
+          },
+          signal
         );
+        if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+          return;
+        }
         if (fanout.sent === 0) {
-          toast.error(fanout.lastError || 'Could not send Accept preview', { id: toastId });
+          const err = fanout.lastError || 'Could not send Accept preview';
+          setWaDeliveryError(err);
+          reportWhatsAppPdfNotDelivered(err, toastId);
           return;
         }
         if (fanout.sent > 1) {
@@ -366,7 +414,7 @@ export default function WarrantyCardEmailSendDialog({
         return;
       }
 
-      const pdf = await generateWarrantyCardPdfBase64(pdfData);
+      const pdf = await generateWarrantyCardPdfBase64(pdfData, { signal });
       const caption = (
         message.trim() ||
         buildDocumentPdfWhatsAppCaption({
@@ -387,6 +435,7 @@ export default function WarrantyCardEmailSendDialog({
             customerId: customerIdFor(to),
             source: 'documents',
             preferColdTemplate: windowClosed,
+            signal,
             cold: {
               kind: 'warranty',
               brand,
@@ -403,11 +452,15 @@ export default function WarrantyCardEmailSendDialog({
                 : 'Sending on WhatsApp…',
             { id: toastId }
           );
-        }
+        },
+        signal
       );
+      if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+        return;
+      }
 
       if (fanout.sent === 0) {
-        if (destinations.length === 1) {
+        if (destinations.length === 1 && !isNotOnWhatsAppError(fanout.lastError)) {
           openWhatsAppMeDeepLink(destinations[0], caption);
           toast.success(
             'Opened phone WhatsApp (template PDF failed) — attach the PDF manually if needed',
@@ -417,8 +470,19 @@ export default function WarrantyCardEmailSendDialog({
           onOpenChange(false);
           return;
         }
-        toast.error(fanout.lastError || 'Could not send on WhatsApp', { id: toastId });
+        const err = fanout.lastError || 'Could not send on WhatsApp';
+        setWaDeliveryError(err);
+        reportWhatsAppPdfNotDelivered(err, toastId);
         return;
+      }
+
+      if (fanout.lastError && fanout.sent < destinations.length) {
+        setWaDeliveryError(fanout.lastError);
+        reportWhatsAppPdfPartialDelivery({
+          sent: fanout.sent,
+          total: destinations.length,
+          lastError: fanout.lastError,
+        });
       }
 
       toast.success(
@@ -436,10 +500,11 @@ export default function WarrantyCardEmailSendDialog({
       onSent?.();
       onOpenChange(false);
     } catch (error) {
+      if (toastIfAborted(error, toastId)) return;
       console.error(error);
-      toast.error(error instanceof Error ? error.message : 'Could not send on WhatsApp', {
-        id: toastId,
-      });
+      const err = error instanceof Error ? error.message : 'Could not send on WhatsApp';
+      setWaDeliveryError(err);
+      reportWhatsAppPdfNotDelivered(err, toastId);
     } finally {
       setSending(false);
     }
@@ -460,6 +525,7 @@ export default function WarrantyCardEmailSendDialog({
     }
 
     setSending(true);
+    const signal = startSendAbort();
     const toastId = toast.loading('Sending email and WhatsApp…');
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
@@ -485,7 +551,12 @@ export default function WarrantyCardEmailSendDialog({
         recipientEmails: [trimmed],
         customMessage: message.trim() || undefined,
         customerId,
+        signal,
       });
+      if (emailResult.cancelled) {
+        toastSendCancelled(toastId, 'email');
+        return;
+      }
       if (!emailResult.ok) {
         toast.error(emailResult.error || 'Could not send email', { id: toastId });
         return;
@@ -499,34 +570,49 @@ export default function WarrantyCardEmailSendDialog({
       const destinations = resolved.destinations;
       const customerName = resolveBillCustomerDisplayName(pdfData.customer);
       const customerIdFor = (to: string) =>
-        customerIdForWhatsAppDest(to, defaultPhone || pdfData.customer?.phone, customerId || null);
+        customerIdForWhatsAppDest(
+        to,
+        defaultPhone || pdfData.customer?.phone,
+        customerId || null,
+        defaultAlternatePhone
+      );
 
       toast.loading('Sending WhatsApp…', { id: toastId });
       if (requireAccept) {
-        const pair = await generateWarrantyAcceptPdfPair(pdfData, { customerId });
-        const fanout = await sendWhatsAppToMany(destinations, (to, windowClosed) =>
-          sendDocumentAcceptInvite({
-            to,
-            brand,
-            docType: 'warranty',
-            documentLabel: 'warranty card',
-            documentRef: pdfData.customer.customer_id,
-            sourceKey:
-              pdfData.warranty.id && pdfData.warranty.id !== 'draft'
-                ? pdfData.warranty.id
-                : `draft:${pdfData.customer.customer_id}`,
-            customerId: customerIdFor(to),
-            customerName,
-            filename: pair.filename,
-            verifyCode: pair.verifyCode,
-            previewVerifyCode: pair.previewVerifyCode,
-            originalPdfBase64: pair.originalPdfBase64,
-            previewPdfBase64: pair.previewPdfBase64,
-            preferColdTemplate: windowClosed,
-          })
+        const pair = await generateWarrantyAcceptPdfPair(pdfData, { customerId, signal });
+        const fanout = await sendWhatsAppToMany(
+          destinations,
+          (to, windowClosed) =>
+            sendDocumentAcceptInvite({
+              to,
+              brand,
+              docType: 'warranty',
+              documentLabel: 'warranty card',
+              documentRef: pdfData.customer.customer_id,
+              sourceKey:
+                pdfData.warranty.id && pdfData.warranty.id !== 'draft'
+                  ? pdfData.warranty.id
+                  : `draft:${pdfData.customer.customer_id}`,
+              customerId: customerIdFor(to),
+              customerName,
+              filename: pair.filename,
+              verifyCode: pair.verifyCode,
+              previewVerifyCode: pair.previewVerifyCode,
+              originalPdfBase64: pair.originalPdfBase64,
+              previewPdfBase64: pair.previewPdfBase64,
+              preferColdTemplate: windowClosed,
+              signal,
+            }),
+          undefined,
+          signal
         );
+        if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+          return;
+        }
         if (fanout.sent === 0) {
-          toast.error(fanout.lastError || 'Email sent, but Accept WhatsApp failed', { id: toastId });
+          const err = fanout.lastError || 'Email sent, but Accept WhatsApp failed';
+          setWaDeliveryError(err);
+          reportWhatsAppPdfNotDelivered(err, toastId);
           return;
         }
         if (fanout.sent > 1) {
@@ -540,7 +626,7 @@ export default function WarrantyCardEmailSendDialog({
         onOpenChange(false);
         return;
       }
-      const pdf = await generateWarrantyCardPdfBase64(pdfData);
+      const pdf = await generateWarrantyCardPdfBase64(pdfData, { customerId, signal });
       const caption = (
         message.trim() ||
         buildDocumentPdfWhatsAppCaption({
@@ -549,23 +635,31 @@ export default function WarrantyCardEmailSendDialog({
           customerName,
         })
       ).slice(0, 1024);
-      const fanout = await sendWhatsAppToMany(destinations, (to, windowClosed) =>
-        sendAdminWhatsAppDocumentWithColdFallback({
-          to,
-          pdfBase64: pdf.pdfBase64,
-          filename: pdf.filename,
-          caption,
-          customerId: customerIdFor(to),
-          source: 'documents',
-          preferColdTemplate: windowClosed,
-          cold: {
-            kind: 'warranty',
-            brand,
-            customerName,
-            documentLabel: 'warranty card',
-          },
-        })
+      const fanout = await sendWhatsAppToMany(
+        destinations,
+        (to, windowClosed) =>
+          sendAdminWhatsAppDocumentWithColdFallback({
+            to,
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
+            caption,
+            customerId: customerIdFor(to),
+            source: 'documents',
+            preferColdTemplate: windowClosed,
+            signal,
+            cold: {
+              kind: 'warranty',
+              brand,
+              customerName,
+              documentLabel: 'warranty card',
+            },
+          }),
+        undefined,
+        signal
       );
+      if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+        return;
+      }
 
       let waNote =
         fanout.sent > 1
@@ -574,24 +668,32 @@ export default function WarrantyCardEmailSendDialog({
             ? 'WhatsApp PDF sent via template'
             : 'WhatsApp PDF sent';
       if (fanout.sent === 0) {
-        if (destinations.length === 1) {
+        if (destinations.length === 1 && !isNotOnWhatsAppError(fanout.lastError)) {
           openWhatsAppMeDeepLink(destinations[0], caption);
           waNote = 'WhatsApp opened on phone as backup';
         } else {
-          toast.warning('Email sent, but WhatsApp failed', {
-            id: toastId,
-            description: fanout.lastError,
-          });
-          onSent?.();
-          onOpenChange(false);
+          const err = fanout.lastError || 'Email sent, but WhatsApp failed';
+          setWaDeliveryError(err);
+          reportWhatsAppPdfNotDelivered(err, toastId);
           return;
         }
+      }
+
+      if (fanout.sent > 0 && fanout.lastError && fanout.sent < destinations.length) {
+        setWaDeliveryError(fanout.lastError);
+        reportWhatsAppPdfPartialDelivery({
+          sent: fanout.sent,
+          total: destinations.length,
+          lastError: fanout.lastError,
+        });
+        waNote = `PDF sent to ${fanout.sent} of ${destinations.length} numbers`;
       }
 
       toast.success(`Email + ${waNote}`, { id: toastId });
       onSent?.();
       onOpenChange(false);
     } catch (error) {
+      if (toastIfAborted(error, toastId)) return;
       console.error(error);
       toast.error(error instanceof Error ? error.message : 'Could not send both', {
         id: toastId,
@@ -602,7 +704,10 @@ export default function WarrantyCardEmailSendDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
+    <Dialog open={open} onOpenChange={(next) => {
+      if (!next && sending) sendAbortRef.current?.abort();
+      onOpenChange(next);
+    }}>
       <DialogContent
         className={forceLightThemeClass(
           'max-w-lg w-[calc(100vw-1.25rem)] sm:w-full max-h-[min(92dvh,720px)] overflow-y-auto p-0 gap-0'
@@ -620,6 +725,13 @@ export default function WarrantyCardEmailSendDialog({
         </DialogHeader>
 
         <div className="px-4 sm:px-6 py-4 space-y-4">
+          <WhatsAppDeliveryInlineBanner
+            message={waDeliveryError}
+            onDismiss={() => {
+              setWaDeliveryError(null);
+              clearWhatsAppDeliveryBanner();
+            }}
+          />
           {pdfData ? (
             <div className="rounded-lg border bg-slate-50 px-3 py-2.5 text-sm">
               <span className="font-medium text-slate-900">{pdfData.customer.name}</span>
@@ -785,8 +897,7 @@ export default function WarrantyCardEmailSendDialog({
             type="button"
             variant="outline"
             className="w-full sm:w-auto"
-            disabled={sending}
-            onClick={() => onOpenChange(false)}
+            onClick={requestClose}
           >
             Cancel
           </Button>

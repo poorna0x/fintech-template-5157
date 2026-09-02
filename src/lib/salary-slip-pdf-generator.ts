@@ -14,6 +14,7 @@ import {
   recordDocumentPdfAuthenticity,
   todayYmdIst,
 } from './documentPdfAuthenticity';
+import { throwIfAborted } from './abortSend';
 import { toast } from 'sonner';
 
 interface Payment {
@@ -951,8 +952,10 @@ export function getSalarySlipPreviewHtml(
 export async function generateSalarySlipPdfBase64(
   breakdown: TechnicianSalaryBreakdown,
   period: { start: Date; end: Date },
-  includeDayWiseBreakdown: boolean = true
+  includeDayWiseBreakdown: boolean = true,
+  signal?: AbortSignal
 ): Promise<GenerateDocumentPdfBase64Result> {
+  throwIfAborted(signal);
   const verifyCode = generateDocumentPdfVerifyCode();
   const generatedOnYmd = todayYmdIst();
   const pdfData = buildSalarySlipPdfData(
@@ -965,6 +968,7 @@ export async function generateSalarySlipPdfBase64(
   const pdf = await generateDocumentPdfBase64({
     html: generateSalarySlipHTML(pdfData, includeDayWiseBreakdown),
     filename,
+    signal,
   });
   const recorded = await recordDocumentPdfAuthenticity({
     docType: 'salary_slip',

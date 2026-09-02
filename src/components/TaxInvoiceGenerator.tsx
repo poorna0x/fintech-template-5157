@@ -891,6 +891,8 @@ export default function TaxInvoiceGenerator({
         state: editAddress.state || '',
         pincode: editAddress.pincode || '',
         phone: editableCustomer.phone,
+        alternate_phone:
+          String(customer?.alternate_phone || customer?.alternatePhone || '').trim() || undefined,
         email: editableCustomer.email,
         gstNumber: editableCustomer.gst
       },

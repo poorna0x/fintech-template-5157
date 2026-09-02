@@ -15,6 +15,7 @@ import { normalizeRecipientList, formatRecipientsForEmailApi } from '@/lib/email
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
+import { isAbortError, SEND_CANCELLED_MESSAGE, throwIfAborted } from '@/lib/abortSend';
 import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   generateDocumentPdfVerifyCode,
@@ -32,6 +33,7 @@ export interface SendAmcAgreementEmailParams {
   pdfOptions?: AMCPDFOptions;
   /** Override default template message body */
   customMessage?: string;
+  signal?: AbortSignal;
 }
 
 export interface SendAmcAgreementEmailResult {
@@ -39,6 +41,7 @@ export interface SendAmcAgreementEmailResult {
   error?: string;
   sentCount?: number;
   failedRecipients?: string[];
+  cancelled?: boolean;
 }
 
 function formatInrAmount(amount: number): string {
@@ -56,6 +59,7 @@ export async function sendAmcAgreementEmail(
     endDateIso,
     pdfOptions,
     customMessage,
+    signal,
   } = params;
 
   const recipients = normalizeRecipientList(recipientEmails);
@@ -80,6 +84,7 @@ export async function sendAmcAgreementEmail(
   };
   const html = generateAMCHTML(billToAmcPdfData(bill), authPdfOptions);
 
+  throwIfAborted(signal);
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     return {
@@ -93,7 +98,8 @@ export async function sendAmcAgreementEmail(
   let size: number;
 
   try {
-    const pdf = await generateDocumentPdfBase64({ html, filename: pdfFilename });
+    throwIfAborted(signal);
+    const pdf = await generateDocumentPdfBase64({ html, filename: pdfFilename, signal });
     pdfBase64 = pdf.pdfBase64;
     filename = pdf.filename;
     size = pdf.size;
@@ -108,6 +114,9 @@ export async function sendAmcAgreementEmail(
       generatedOnYmd,
     });
   } catch (error) {
+    if (isAbortError(error)) {
+      return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+    }
     const message = error instanceof Error ? error.message : 'PDF generation failed';
     return {
       ok: false,
@@ -162,8 +171,13 @@ export async function sendAmcAgreementEmail(
       attachments: [attachment],
       customerId: bill.customer?.id,
     },
-    accessToken
+    accessToken,
+    signal
   );
+
+  if (result.cancelled) {
+    return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+  }
 
   if (!result.ok) {
     return {

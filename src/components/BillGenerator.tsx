@@ -670,6 +670,8 @@ export default function BillGenerator({
         state: billAddress.state,
         pincode: billAddress.pincode,
         phone: editableCustomer.phone,
+        alternate_phone:
+          String(customer?.alternate_phone || customer?.alternatePhone || '').trim() || undefined,
         email: editableCustomer.email,
         gstNumber: editableCustomer.gst
       },

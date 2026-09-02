@@ -497,6 +497,8 @@ export default function QuotationGenerator({
         name: editableCustomer.name,
         fullName: editableCustomer.name,
         phone: editableCustomer.phone,
+        alternate_phone:
+          String(customer?.alternate_phone || customer?.alternatePhone || '').trim() || undefined,
         email: editableCustomer.email,
         address: {
           street: editAddress.street,

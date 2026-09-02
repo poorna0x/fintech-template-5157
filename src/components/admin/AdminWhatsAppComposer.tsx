@@ -54,6 +54,7 @@ import {
   isWithinCustomerServiceWindow,
 } from '@/lib/whatsappInbox';
 import { supabase } from '@/lib/supabaseClient';
+import { toastIfAborted, toastSendCancelled } from '@/lib/abortSend';
 
 type PreviewMode = 'mobile' | 'desktop';
 type MobilePanel = 'compose' | 'preview';
@@ -114,6 +115,7 @@ export function AdminWhatsAppComposerPanel({
   const [lastServiceBrand, setLastServiceBrand] = useState<DocumentBrand | null>(null);
   const [linkedCustomerId, setLinkedCustomerId] = useState<string | null>(initialCustomerId ?? null);
   const [sending, setSending] = useState(false);
+  const sendAbortRef = useRef<AbortController | null>(null);
   const [attachFile, setAttachFile] = useState<File | null>(null);
   const [attachPreviewUrl, setAttachPreviewUrl] = useState<string | null>(null);
   const [attachDragOver, setAttachDragOver] = useState(false);
@@ -415,6 +417,9 @@ export function AdminWhatsAppComposerPanel({
       return;
     }
     if (sending) return;
+    const ac = new AbortController();
+    sendAbortRef.current = ac;
+    const signal = ac.signal;
     setSending(true);
     try {
       const wantsAutoPdf = Boolean(templateMeta.autoAttachPdf && selectedSourceId);
@@ -438,7 +443,12 @@ export function AdminWhatsAppComposerPanel({
           source: 'composer',
           forceWaMe: true,
           fallbackWaMe: false,
+          signal,
         });
+        if (result.cancelled) {
+          toastSendCancelled();
+          return;
+        }
         if (!result.ok) {
           toast.error(result.error || 'Could not open WhatsApp');
           return;
@@ -474,7 +484,12 @@ export function AdminWhatsAppComposerPanel({
           caption: whatsappPreview.text.slice(0, 1024),
           customerId: linkedCustomerId,
           source: 'composer',
+          signal,
         });
+        if (mediaResult.cancelled) {
+          toastSendCancelled();
+          return;
+        }
         if (!mediaResult.ok) {
           toast.error(mediaResult.error || 'Attachment send failed');
           return;
@@ -500,8 +515,10 @@ export function AdminWhatsAppComposerPanel({
             templateType,
             sourceRecordId: selectedSourceId,
             documentBrand: activeBrand,
+            signal,
           });
         } catch (err) {
+          if (toastIfAborted(err)) return;
           toast.error(err instanceof Error ? err.message : 'Could not generate PDF');
           return;
         }
@@ -537,6 +554,7 @@ export function AdminWhatsAppComposerPanel({
           customerId: linkedCustomerId,
           source: 'composer',
           preferColdTemplate: windowClosed,
+          signal,
           cold: {
             kind: templateType,
             brand: activeBrand,
@@ -545,6 +563,10 @@ export function AdminWhatsAppComposerPanel({
             documentLabel,
           },
         });
+        if (docResult.cancelled) {
+          toastSendCancelled();
+          return;
+        }
         if (!docResult.ok) {
           toast.error(
             docResult.error ||
@@ -588,6 +610,7 @@ export function AdminWhatsAppComposerPanel({
         source: 'composer',
         fallbackWaMe: true,
         preferColdTemplate: windowClosed,
+        signal,
         coldTemplate: coldTpl
           ? {
               name: coldTpl.name,
@@ -596,6 +619,10 @@ export function AdminWhatsAppComposerPanel({
             }
           : null,
       });
+      if (result.cancelled) {
+        toastSendCancelled();
+        return;
+      }
       if (!result.ok) {
         toast.error(result.error || 'Send failed');
         return;
@@ -617,6 +644,8 @@ export function AdminWhatsAppComposerPanel({
             : `Opened WhatsApp for ${phone.trim()}`
         );
       }
+    } catch (err) {
+      toastIfAborted(err);
     } finally {
       setSending(false);
     }
@@ -760,9 +789,15 @@ export function AdminWhatsAppComposerPanel({
                 type="button"
                 variant="outline"
                 className="w-full sm:w-auto"
-                onClick={() => setSendPhase('compose')}
+                onClick={() => {
+                  if (sending) {
+                    sendAbortRef.current?.abort();
+                    return;
+                  }
+                  setSendPhase('compose');
+                }}
               >
-                Back
+                {sending ? 'Cancel' : 'Back'}
               </Button>
               {hasAlternate ? (
                 <>

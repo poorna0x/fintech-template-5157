@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -25,17 +25,23 @@ import {
 } from '@/lib/sendAdminWhatsAppApi';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
 import { buildDocumentPdfWhatsAppCaption } from '@/lib/document-pdf-whatsapp-caption';
+import { toastIfAborted, toastIfCancelledBeforeSend } from '@/lib/abortSend';
 import {
-  fetchLastInboundAt,
-  invalidateInboundWindowCache,
-  isCustomerServiceWindowClosed,
-} from '@/lib/whatsappInbox';
-import { supabase } from '@/lib/supabaseClient';
+  sendWhatsAppToMany,
+} from '@/lib/whatsappMultiDestSend';
 import {
+  customerAlternatePhone,
   customerIdForWhatsAppDest,
+  extraWhatsAppPhoneFromCustomer,
   resolveWhatsAppDestinations,
   uniqueWhatsAppPhones,
 } from '@/lib/whatsappPhoneTarget';
+import {
+  clearWhatsAppDeliveryBanner,
+  reportWhatsAppPdfNotDelivered,
+  reportWhatsAppPdfPartialDelivery,
+  WhatsAppDeliveryInlineBanner,
+} from '@/components/whatsapp/WhatsAppDeliveryBanner';
 
 export interface AmcDocumentActionsProps {
   bill: Bill | null;
@@ -78,12 +84,27 @@ export default function AmcDocumentActions({
   const [downloading, setDownloading] = useState(false);
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
   const [requireAccept, setRequireAccept] = useState(false);
+  const sendAbortRef = useRef<AbortController | null>(null);
   const [waPhone, setWaPhone] = useState(() => String(bill?.customer?.phone || '').trim());
-  const [extraWaPhone, setExtraWaPhone] = useState('');
+  const [extraWaPhone, setExtraWaPhone] = useState(() =>
+    extraWhatsAppPhoneFromCustomer(
+      String(bill?.customer?.phone || '').trim(),
+      customerAlternatePhone(bill?.customer)
+    )
+  );
+  const [waDeliveryError, setWaDeliveryError] = useState<string | null>(null);
 
   useEffect(() => {
-    setWaPhone(String(bill?.customer?.phone || '').trim());
-  }, [bill?.customer?.phone]);
+    const phone = String(bill?.customer?.phone || '').trim();
+    setWaPhone(phone);
+    setExtraWaPhone(
+      extraWhatsAppPhoneFromCustomer(phone, customerAlternatePhone(bill?.customer))
+    );
+  }, [
+    bill?.customer?.phone,
+    bill?.customer?.alternate_phone,
+    bill?.customer?.alternatePhone,
+  ]);
 
   const defaultRecipients = useMemo(() => {
     const valid = getValidCustomerEmail(customerEmail);
@@ -163,6 +184,9 @@ export default function AmcDocumentActions({
       return;
     }
     setSendingWhatsApp(true);
+    const ac = new AbortController();
+    sendAbortRef.current = ac;
+    const signal = ac.signal;
     const toastId = toast.loading('Preparing AMC for WhatsApp…');
     try {
       if (onPersistBeforeAction) {
@@ -180,118 +204,133 @@ export default function AmcDocumentActions({
       toast.loading('Generating PDF…', { id: toastId });
       const customerName = resolveBillCustomerDisplayName(bill.customer);
       const customerIdFor = (to: string) =>
-        customerIdForWhatsAppDest(to, customerPhone, bill.customer?.id || null);
+        customerIdForWhatsAppDest(
+          to,
+          customerPhone,
+          bill.customer?.id || null,
+          customerAlternatePhone(bill.customer)
+        );
 
       if (requireAccept && !compact) {
         toast.loading('Generating preview + original…', { id: toastId });
-        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions);
-        let sent = 0;
-        let lastError = '';
-        for (const to of destinations) {
-          const inboundAt = await fetchLastInboundAt(to, supabase);
-          const windowClosed = isCustomerServiceWindowClosed(inboundAt);
-          toast.loading(
-            windowClosed
-              ? `Sending Accept preview to ${to} (cold template)…`
-              : `Sending Accept preview to ${to}…`,
-            { id: toastId }
-          );
-          const invite = await sendDocumentAcceptInvite({
-            to,
-            brand,
-            docType: 'amc',
-            documentLabel: 'AMC agreement',
-            documentRef: bill.billNumber,
-            sourceKey: bill.billNumber,
-            customerId: customerIdFor(to),
-            customerName,
-            filename: pair.filename,
-            verifyCode: pair.verifyCode,
-            previewVerifyCode: pair.previewVerifyCode,
-            originalPdfBase64: pair.originalPdfBase64,
-            previewPdfBase64: pair.previewPdfBase64,
-            preferColdTemplate: windowClosed,
-          });
-          if (!invite.ok) {
-            lastError = invite.error || 'Could not send Accept preview';
-            continue;
-          }
-          sent += 1;
-          invalidateInboundWindowCache(to);
-        }
-        if (sent === 0) {
-          toast.error(lastError || 'Could not send Accept preview', { id: toastId });
+        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions, signal);
+        const fanout = await sendWhatsAppToMany(
+          destinations,
+          (to, windowClosed) =>
+            sendDocumentAcceptInvite({
+              to,
+              brand,
+              docType: 'amc',
+              documentLabel: 'AMC agreement',
+              documentRef: bill.billNumber,
+              sourceKey: bill.billNumber,
+              customerId: customerIdFor(to),
+              customerName,
+              filename: pair.filename,
+              verifyCode: pair.verifyCode,
+              previewVerifyCode: pair.previewVerifyCode,
+              originalPdfBase64: pair.originalPdfBase64,
+              previewPdfBase64: pair.previewPdfBase64,
+              preferColdTemplate: windowClosed,
+              signal,
+            }),
+          (to, windowClosed) => {
+            toast.loading(
+              windowClosed
+                ? `Sending Accept preview to ${to} (cold template)…`
+                : `Sending Accept preview to ${to}…`,
+              { id: toastId }
+            );
+          },
+          signal
+        );
+        if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
           return;
         }
-        showAcceptPreviewSentToast(toastId, 'api');
+        if (fanout.sent === 0) {
+          const err = fanout.lastError || 'Could not send Accept preview';
+          setWaDeliveryError(err);
+          reportWhatsAppPdfNotDelivered(err, toastId);
+          return;
+        }
+        showAcceptPreviewSentToast(toastId, fanout.lastVia);
         onSent?.();
         return;
       }
 
-      const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
+      const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions, signal);
       const caption = buildDocumentPdfWhatsAppCaption({
         kind: 'amc',
         brand,
         customerName,
       }).slice(0, 1024);
-      let sent = 0;
-      let usedTemplate = false;
-      let lastError = '';
-      for (const to of destinations) {
-        const inboundAt = await fetchLastInboundAt(to, supabase);
-        const windowClosed = isCustomerServiceWindowClosed(inboundAt);
-        toast.loading(
-          destinations.length > 1
-            ? `Sending AMC PDF to ${to}…`
-            : windowClosed
-              ? '24h window closed — sending PDF via template…'
-              : 'Sending on WhatsApp…',
-          { id: toastId }
-        );
-        const result = await sendAdminWhatsAppDocumentWithColdFallback({
-          to,
-          pdfBase64: pdf.pdfBase64,
-          filename: pdf.filename,
-          caption,
-          customerId: customerIdFor(to),
-          source: 'documents',
-          preferColdTemplate: windowClosed,
-          cold: {
-            kind: 'amc',
-            brand,
-            customerName,
-          },
-        });
-        if (!result.ok) {
-          lastError =
-            result.error ||
-            '24h window closed — cold PDF template not approved yet (svc_doc_amc_*_v2)';
-          continue;
-        }
-        sent += 1;
-        if (result.viaColdTemplate) usedTemplate = true;
-        invalidateInboundWindowCache(to);
-      }
-      if (sent === 0) {
-        toast.error(lastError || 'Could not send AMC on WhatsApp', { id: toastId });
+      const fanout = await sendWhatsAppToMany(
+        destinations,
+        (to, windowClosed) =>
+          sendAdminWhatsAppDocumentWithColdFallback({
+            to,
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
+            caption,
+            customerId: customerIdFor(to),
+            source: 'documents',
+            preferColdTemplate: windowClosed,
+            signal,
+            cold: {
+              kind: 'amc',
+              brand,
+              customerName,
+            },
+          }),
+        (to, windowClosed) => {
+          toast.loading(
+            destinations.length > 1
+              ? `Sending AMC PDF to ${to}…`
+              : windowClosed
+                ? '24h window closed — sending PDF via template…'
+                : 'Sending on WhatsApp…',
+            { id: toastId }
+          );
+        },
+        signal
+      );
+      if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
         return;
       }
+      if (fanout.sent === 0) {
+        const err = fanout.lastError || 'Could not send AMC on WhatsApp';
+        setWaDeliveryError(err);
+        reportWhatsAppPdfNotDelivered(err, toastId);
+        return;
+      }
+      if (fanout.sent < destinations.length && fanout.lastError) {
+        setWaDeliveryError(fanout.lastError);
+        reportWhatsAppPdfPartialDelivery({
+          sent: fanout.sent,
+          total: destinations.length,
+          lastError: fanout.lastError,
+        });
+      } else {
+        setWaDeliveryError(null);
+        clearWhatsAppDeliveryBanner();
+      }
       const extra =
-        sent < destinations.length && lastError ? ` (${destinations.length - sent} failed)` : '';
+        fanout.sent < destinations.length && fanout.lastError ? `. ${fanout.lastError}` : '';
       toast.success(
-        sent > 1
-          ? `AMC PDF sent on WhatsApp to ${sent} numbers${extra}`
-          : usedTemplate
-            ? 'AMC PDF sent via WhatsApp template'
-            : 'AMC PDF sent on WhatsApp',
+        fanout.sent > 1
+          ? `AMC PDF sent on WhatsApp to ${fanout.sent} numbers${extra}`
+          : fanout.usedTemplate
+            ? `AMC PDF sent via WhatsApp template${extra}`
+            : `AMC PDF sent on WhatsApp${extra}`,
         { id: toastId }
       );
       onSent?.();
     } catch (error) {
+      if (toastIfAborted(error, toastId)) return;
       console.error(error);
-      toast.error(error instanceof Error ? error.message : 'Could not send AMC on WhatsApp', {
-        id: toastId,
-      });
+      const err = error instanceof Error ? error.message : 'Could not send AMC on WhatsApp';
+      setWaDeliveryError(err);
+      reportWhatsAppPdfNotDelivered(err, toastId);
     } finally {
       setSendingWhatsApp(false);
     }
@@ -299,6 +338,17 @@ export default function AmcDocumentActions({
 
   return (
     <>
+      {waDeliveryError ? (
+        <div className="mb-2.5">
+          <WhatsAppDeliveryInlineBanner
+            message={waDeliveryError}
+            onDismiss={() => {
+              setWaDeliveryError(null);
+              clearWhatsAppDeliveryBanner();
+            }}
+          />
+        </div>
+      ) : null}
       {canWhatsApp && !compact ? (
         <div className="mb-2 space-y-2">
           {cloudApiOn ? (
@@ -423,6 +473,16 @@ export default function AmcDocumentActions({
             ? `WhatsApp AMC PDF (${compactPhones.length})`
             : 'WhatsApp AMC PDF'}
         </Button>
+        {sendingWhatsApp ? (
+          <Button
+            type="button"
+            variant="outline"
+            className={compact ? 'h-11 w-full justify-center rounded-xl' : 'h-10 w-full justify-center'}
+            onClick={() => sendAbortRef.current?.abort()}
+          >
+            Cancel send
+          </Button>
+        ) : null}
         {compact ? null : (
           <Button
             type="button"

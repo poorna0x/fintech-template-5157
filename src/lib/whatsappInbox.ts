@@ -1171,6 +1171,50 @@ export function noteWhatsAppOutboundInLocalCaches(opts: {
   writeWhatsAppInboxThreadsCache([nextThread, ...others], { rangeKey: list.rangeKey });
 }
 
+/** After Meta marks a PDF send undeliverable — keep inbox cache in sync with the error toast. */
+export function markWhatsAppOutboundFailedInLocalCaches(opts: {
+  phoneE164: string;
+  messageId?: string | null;
+  error?: string | null;
+}): void {
+  const phone = String(opts.phoneE164 || '').replace(/\D/g, '');
+  if (!phone) return;
+  const err = String(opts.error || 'Message undeliverable').trim() || 'Message undeliverable';
+  const id = String(opts.messageId || '').trim();
+
+  const prevThread = peekWhatsAppThreadMessagesCache(phone);
+  if (prevThread?.messages?.length && id) {
+    const existing = prevThread.messages.find((m) => m.id === id);
+    if (existing) {
+      upsertWhatsAppThreadMessageCache(phone, {
+        ...existing,
+        status: 'failed',
+        error_message: err,
+      });
+    } else {
+      invalidateWhatsAppThreadMessagesCache(phone);
+    }
+  } else {
+    invalidateWhatsAppThreadMessagesCache(phone);
+  }
+
+  const list = peekWhatsAppInboxThreadsCache();
+  if (!list?.threads?.length) {
+    invalidateWhatsAppInboxThreadsCache();
+    return;
+  }
+  const existing = list.threads.find((t) => String(t.phone_e164).replace(/\D/g, '') === phone);
+  if (!existing) return;
+  const nextThread: WhatsAppThread = {
+    ...existing,
+    last_status: 'failed',
+    last_error: err,
+    has_failed: true,
+  };
+  const others = list.threads.filter((t) => String(t.phone_e164).replace(/\D/g, '') !== phone);
+  writeWhatsAppInboxThreadsCache([nextThread, ...others], { rangeKey: list.rangeKey });
+}
+
 export function invalidateWhatsAppThreadMessagesCache(phoneE164?: string | null): void {
   const phone = String(phoneE164 || '').replace(/\D/g, '');
   if (phone) {

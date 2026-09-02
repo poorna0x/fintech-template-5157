@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Mail, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -37,6 +37,12 @@ import {
   sendAmcAgreementEmail,
 } from '@/lib/send-amc-agreement-email';
 import { forceLightThemeClass } from '@/lib/force-light-theme';
+import {
+  clearWhatsAppDeliveryBanner,
+  reportWhatsAppPdfNotDelivered,
+  reportWhatsAppPdfPartialDelivery,
+  WhatsAppDeliveryInlineBanner,
+} from '@/components/whatsapp/WhatsAppDeliveryBanner';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
 import { generateAmcPdfBase64ForWhatsApp } from '@/lib/send-amc-whatsapp';
 import {
@@ -57,13 +63,17 @@ import {
   isWithinCustomerServiceWindow,
 } from '@/lib/whatsappInbox';
 import {
+  customerAlternatePhone,
   customerIdForWhatsAppDest,
+  extraWhatsAppPhoneFromCustomer,
   resolveWhatsAppDestinations,
 } from '@/lib/whatsappPhoneTarget';
 import {
   sendWhatsAppToMany,
   whatsappMultiSendOkMessage,
 } from '@/lib/whatsappMultiDestSend';
+import { isNotOnWhatsAppError } from '@/lib/whatsappDeliveryError';
+import { toastIfAborted, toastIfCancelledBeforeSend, toastSendCancelled } from '@/lib/abortSend';
 
 export type AmcPersistResult = { ok: boolean; error?: string };
 export type AmcSendChannel = 'email' | 'whatsapp' | 'both';
@@ -139,6 +149,20 @@ export default function AmcEmailSendDialog({
   const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
   const [requireAccept, setRequireAccept] = useState(false);
+  const [waDeliveryError, setWaDeliveryError] = useState<string | null>(null);
+  const sendAbortRef = useRef<AbortController | null>(null);
+
+  const startSendAbort = () => {
+    sendAbortRef.current?.abort();
+    const ac = new AbortController();
+    sendAbortRef.current = ac;
+    return ac.signal;
+  };
+
+  const requestClose = () => {
+    if (sending) sendAbortRef.current?.abort();
+    onOpenChange(false);
+  };
   const defaultRecipientsKey = (defaultRecipients || []).join('|');
 
   useEffect(() => {
@@ -167,12 +191,17 @@ export default function AmcEmailSendDialog({
       bill?.customer?.email
     );
     applySeed(localSeed);
-    setWhatsappPhone(String(bill?.customer?.phone || '').trim());
-    setExtraWhatsappPhone('');
+    const phone = String(bill?.customer?.phone || '').trim();
+    setWhatsappPhone(phone);
+    setExtraWhatsappPhone(
+      extraWhatsAppPhoneFromCustomer(phone, customerAlternatePhone(bill?.customer))
+    );
     setRequireAccept(false);
     setMessage(getDefaultDocumentMessage('amc_document'));
     setWindowOpen(null);
     setWindowHoursLeft(null);
+    setWaDeliveryError(null);
+    clearWhatsAppDeliveryBanner();
 
     const customerId = String(bill?.customer?.id || '').trim();
     if (localSeed.length > 0 || !customerId) {
@@ -207,6 +236,8 @@ export default function AmcEmailSendDialog({
     bill?.customer?.id,
     bill?.customer?.email,
     bill?.customer?.phone,
+    bill?.customer?.alternate_phone,
+    bill?.customer?.alternatePhone,
     waEnabled,
     defaultRecipientsKey,
   ]);
@@ -307,6 +338,7 @@ export default function AmcEmailSendDialog({
     }
 
     setSending(true);
+    const signal = startSendAbort();
     const toastId = toast.loading('Generating PDF and sending email…');
 
     try {
@@ -354,7 +386,13 @@ export default function AmcEmailSendDialog({
         endDateIso,
         pdfOptions,
         customMessage: message.trim() || undefined,
+        signal,
       });
+
+      if (result.cancelled) {
+        toastSendCancelled(toastId, 'email');
+        return;
+      }
 
       if (!result.ok) {
         toast.error(result.error || 'Could not send email', { id: toastId });
@@ -384,6 +422,7 @@ export default function AmcEmailSendDialog({
       onSent?.();
       onOpenChange(false);
     } catch (error) {
+      if (toastIfAborted(error, toastId, 'email')) return;
       const msg = error instanceof Error ? error.message : 'Failed to send email';
       toast.error('Could not send AMC email', { id: toastId, description: msg });
     } finally {
@@ -404,7 +443,12 @@ export default function AmcEmailSendDialog({
     const destinations = resolved.destinations;
     const customerName = resolveBillCustomerDisplayName(bill.customer);
     const customerIdFor = (to: string) =>
-      customerIdForWhatsAppDest(to, bill.customer?.phone, bill.customer?.id || null);
+      customerIdForWhatsAppDest(
+        to,
+        bill.customer?.phone,
+        bill.customer?.id || null,
+        customerAlternatePhone(bill.customer)
+      );
 
     if (!cloudApiOn) {
       if (requireAccept) {
@@ -431,6 +475,7 @@ export default function AmcEmailSendDialog({
     }
 
     setSending(true);
+    const signal = startSendAbort();
     const toastId = toast.loading('Preparing AMC for WhatsApp…');
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
@@ -452,7 +497,7 @@ export default function AmcEmailSendDialog({
 
       if (requireAccept) {
         toast.loading('Generating preview + original…', { id: toastId });
-        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions);
+        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions, signal);
         const fanout = await sendWhatsAppToMany(
           destinations,
           (to, windowClosed) =>
@@ -471,6 +516,7 @@ export default function AmcEmailSendDialog({
               originalPdfBase64: pair.originalPdfBase64,
               previewPdfBase64: pair.previewPdfBase64,
               preferColdTemplate: windowClosed,
+              signal,
             }),
           (to, windowClosed, _i, total) => {
             toast.loading(
@@ -481,10 +527,16 @@ export default function AmcEmailSendDialog({
                   : 'Sending Accept preview on WhatsApp…',
               { id: toastId }
             );
-          }
+          },
+          signal
         );
+        if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+          return;
+        }
         if (fanout.sent === 0) {
-          toast.error(fanout.lastError || 'Could not send Accept preview', { id: toastId });
+          const err = fanout.lastError || 'Could not send Accept preview';
+          setWaDeliveryError(err);
+          reportWhatsAppPdfNotDelivered(err, toastId);
           return;
         }
         if (onPersistAfterWhatsApp) {
@@ -522,7 +574,7 @@ export default function AmcEmailSendDialog({
         return;
       }
 
-      const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
+      const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions, signal);
       const caption = (
         message.trim() ||
         buildDocumentPdfWhatsAppCaption({
@@ -542,6 +594,7 @@ export default function AmcEmailSendDialog({
             customerId: customerIdFor(to),
             source: 'documents',
             preferColdTemplate: windowClosed,
+            signal,
             cold: {
               kind: 'amc',
               brand,
@@ -557,11 +610,15 @@ export default function AmcEmailSendDialog({
                 : 'Sending on WhatsApp…',
             { id: toastId }
           );
-        }
+        },
+        signal
       );
+      if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+        return;
+      }
 
       if (fanout.sent === 0) {
-        if (destinations.length === 1) {
+        if (destinations.length === 1 && !isNotOnWhatsAppError(fanout.lastError)) {
           openWhatsAppMeDeepLink(destinations[0], caption);
           toast.success(
             'Opened phone WhatsApp (template PDF failed) — attach the PDF manually if needed',
@@ -571,7 +628,9 @@ export default function AmcEmailSendDialog({
           onOpenChange(false);
           return;
         }
-        toast.error(fanout.lastError || 'Could not send AMC on WhatsApp', { id: toastId });
+        const err = fanout.lastError || 'Could not send AMC on WhatsApp';
+        setWaDeliveryError(err);
+        reportWhatsAppPdfNotDelivered(err, toastId);
         return;
       }
 
@@ -589,6 +648,15 @@ export default function AmcEmailSendDialog({
         }
       }
 
+      if (fanout.lastError && fanout.sent < destinations.length) {
+        setWaDeliveryError(fanout.lastError);
+        reportWhatsAppPdfPartialDelivery({
+          sent: fanout.sent,
+          total: destinations.length,
+          lastError: fanout.lastError,
+        });
+      }
+
       toast.success(
         whatsappMultiSendOkMessage({
           sent: fanout.sent,
@@ -604,10 +672,11 @@ export default function AmcEmailSendDialog({
       onSent?.();
       onOpenChange(false);
     } catch (error) {
+      if (toastIfAborted(error, toastId)) return;
       console.error(error);
-      toast.error(error instanceof Error ? error.message : 'Could not send AMC on WhatsApp', {
-        id: toastId,
-      });
+      const err = error instanceof Error ? error.message : 'Could not send AMC on WhatsApp';
+      setWaDeliveryError(err);
+      reportWhatsAppPdfNotDelivered(err, toastId);
     } finally {
       setSending(false);
     }
@@ -646,6 +715,7 @@ export default function AmcEmailSendDialog({
     }
 
     setSending(true);
+    const signal = startSendAbort();
     const toastId = toast.loading('Sending email and WhatsApp…');
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
@@ -691,7 +761,12 @@ export default function AmcEmailSendDialog({
         endDateIso,
         pdfOptions,
         customMessage: message.trim() || undefined,
+        signal,
       });
+      if (emailResult.cancelled) {
+        toastSendCancelled(toastId, 'email');
+        return;
+      }
       if (!emailResult.ok) {
         toast.error(emailResult.error || 'Could not send email', { id: toastId });
         return;
@@ -715,31 +790,46 @@ export default function AmcEmailSendDialog({
       const destinations = resolved.destinations;
       const customerName = resolveBillCustomerDisplayName(bill.customer);
       const customerIdFor = (to: string) =>
-        customerIdForWhatsAppDest(to, bill.customer?.phone, bill.customer?.id || null);
+        customerIdForWhatsAppDest(
+        to,
+        bill.customer?.phone,
+        bill.customer?.id || null,
+        customerAlternatePhone(bill.customer)
+      );
 
       toast.loading('Sending WhatsApp…', { id: toastId });
       if (requireAccept) {
-        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions);
-        const fanout = await sendWhatsAppToMany(destinations, (to, windowClosed) =>
-          sendDocumentAcceptInvite({
-            to,
-            brand,
-            docType: 'amc',
-            documentLabel: 'AMC agreement',
-            documentRef: bill.billNumber,
-            sourceKey: bill.billNumber,
-            customerId: customerIdFor(to),
-            customerName,
-            filename: pair.filename,
-            verifyCode: pair.verifyCode,
-            previewVerifyCode: pair.previewVerifyCode,
-            originalPdfBase64: pair.originalPdfBase64,
-            previewPdfBase64: pair.previewPdfBase64,
-            preferColdTemplate: windowClosed,
-          })
+        const pair = await generateAmcAcceptPdfPair(bill, pdfOptions, signal);
+        const fanout = await sendWhatsAppToMany(
+          destinations,
+          (to, windowClosed) =>
+            sendDocumentAcceptInvite({
+              to,
+              brand,
+              docType: 'amc',
+              documentLabel: 'AMC agreement',
+              documentRef: bill.billNumber,
+              sourceKey: bill.billNumber,
+              customerId: customerIdFor(to),
+              customerName,
+              filename: pair.filename,
+              verifyCode: pair.verifyCode,
+              previewVerifyCode: pair.previewVerifyCode,
+              originalPdfBase64: pair.originalPdfBase64,
+              previewPdfBase64: pair.previewPdfBase64,
+              preferColdTemplate: windowClosed,
+              signal,
+            }),
+          undefined,
+          signal
         );
+        if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+          return;
+        }
         if (fanout.sent === 0) {
-          toast.error(fanout.lastError || 'Email sent, but Accept WhatsApp failed', { id: toastId });
+          const err = fanout.lastError || 'Email sent, but Accept WhatsApp failed';
+          setWaDeliveryError(err);
+          reportWhatsAppPdfNotDelivered(err, toastId);
           return;
         }
         if (onPersistAfterWhatsApp) {
@@ -756,7 +846,7 @@ export default function AmcEmailSendDialog({
         onOpenChange(false);
         return;
       }
-      const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
+      const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions, signal);
       const caption = (
         message.trim() ||
         buildDocumentPdfWhatsAppCaption({
@@ -765,22 +855,30 @@ export default function AmcEmailSendDialog({
           customerName,
         })
       ).slice(0, 1024);
-      const fanout = await sendWhatsAppToMany(destinations, (to, windowClosed) =>
-        sendAdminWhatsAppDocumentWithColdFallback({
-          to,
-          pdfBase64: pdf.pdfBase64,
-          filename: pdf.filename,
-          caption,
-          customerId: customerIdFor(to),
-          source: 'documents',
-          preferColdTemplate: windowClosed,
-          cold: {
-            kind: 'amc',
-            brand,
-            customerName,
-          },
-        })
+      const fanout = await sendWhatsAppToMany(
+        destinations,
+        (to, windowClosed) =>
+          sendAdminWhatsAppDocumentWithColdFallback({
+            to,
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
+            caption,
+            customerId: customerIdFor(to),
+            source: 'documents',
+            preferColdTemplate: windowClosed,
+            signal,
+            cold: {
+              kind: 'amc',
+              brand,
+              customerName,
+            },
+          }),
+        undefined,
+        signal
       );
+      if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+        return;
+      }
 
       let waNote =
         fanout.sent > 1
@@ -789,18 +887,25 @@ export default function AmcEmailSendDialog({
             ? 'WhatsApp PDF sent via template'
             : 'WhatsApp PDF sent';
       if (fanout.sent === 0) {
-        if (destinations.length === 1) {
+        if (destinations.length === 1 && !isNotOnWhatsAppError(fanout.lastError)) {
           openWhatsAppMeDeepLink(destinations[0], caption);
           waNote = 'WhatsApp opened on phone as backup';
         } else {
-          toast.warning('Email sent, but WhatsApp failed', {
-            id: toastId,
-            description: fanout.lastError,
-          });
-          onSent?.();
-          onOpenChange(false);
+          const err = fanout.lastError || 'Email sent, but WhatsApp failed';
+          setWaDeliveryError(err);
+          reportWhatsAppPdfNotDelivered(err, toastId);
           return;
         }
+      }
+
+      if (fanout.sent > 0 && fanout.lastError && fanout.sent < destinations.length) {
+        setWaDeliveryError(fanout.lastError);
+        reportWhatsAppPdfPartialDelivery({
+          sent: fanout.sent,
+          total: destinations.length,
+          lastError: fanout.lastError,
+        });
+        waNote = `PDF sent to ${fanout.sent} of ${destinations.length} numbers`;
       }
 
       if (onPersistAfterWhatsApp) {
@@ -811,6 +916,7 @@ export default function AmcEmailSendDialog({
       onSent?.();
       onOpenChange(false);
     } catch (error) {
+      if (toastIfAborted(error, toastId)) return;
       console.error(error);
       toast.error(error instanceof Error ? error.message : 'Could not send both', {
         id: toastId,
@@ -821,7 +927,10 @@ export default function AmcEmailSendDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
+    <Dialog open={open} onOpenChange={(next) => {
+      if (!next && sending) sendAbortRef.current?.abort();
+      onOpenChange(next);
+    }}>
       <DialogContent
         dismissible={false}
         className={forceLightThemeClass(
@@ -840,6 +949,13 @@ export default function AmcEmailSendDialog({
         </DialogHeader>
 
         <div className="px-4 sm:px-6 py-4 space-y-4">
+          <WhatsAppDeliveryInlineBanner
+            message={waDeliveryError}
+            onDismiss={() => {
+              setWaDeliveryError(null);
+              clearWhatsAppDeliveryBanner();
+            }}
+          />
           {bill ? (
             <div className="rounded-lg border bg-slate-50 px-3 py-2.5 text-sm space-y-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -1067,8 +1183,7 @@ export default function AmcEmailSendDialog({
             type="button"
             variant="outline"
             className="w-full sm:w-auto"
-            onClick={() => onOpenChange(false)}
-            disabled={sending}
+            onClick={requestClose}
           >
             Cancel
           </Button>

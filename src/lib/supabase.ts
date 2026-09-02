@@ -1747,7 +1747,7 @@ export const db = {
     async getAddressById(id: string) {
       const { data, error } = await supabase
         .from('customers')
-        .select('address, email')
+        .select('address, email, alternate_phone')
         .eq('id', id)
         .single();
       return { data, error };

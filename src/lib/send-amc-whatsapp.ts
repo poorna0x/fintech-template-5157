@@ -12,11 +12,14 @@ import {
 } from '@/lib/documentPdfAuthenticity';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
+import { throwIfAborted } from '@/lib/abortSend';
 
 export async function generateAmcPdfBase64ForWhatsApp(
   bill: Bill,
-  pdfOptions?: AMCPDFOptions
+  pdfOptions?: AMCPDFOptions,
+  signal?: AbortSignal
 ): Promise<{ pdfBase64: string; filename: string; size: number }> {
+  throwIfAborted(signal);
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     throw new Error('Could not verify your session. Please try again.');
@@ -31,7 +34,8 @@ export async function generateAmcPdfBase64ForWhatsApp(
     authenticityVerifyCode: verifyCode,
     authenticityGeneratedOnYmd: generatedOnYmd,
   });
-  const pdf = await generateDocumentPdfBase64({ html, filename: pdfFilename });
+  throwIfAborted(signal);
+  const pdf = await generateDocumentPdfBase64({ html, filename: pdfFilename, signal });
   const recorded = await recordDocumentPdfAuthenticity({
     docType: 'amc',
     sourceKey: String(bill.billNumber || '').trim() || `amc-${Date.now()}`,

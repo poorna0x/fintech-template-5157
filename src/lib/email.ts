@@ -9,6 +9,12 @@ import {
   type BookingConfirmationEmailData,
 } from '@/lib/booking-confirmation-email';
 import { resolveSupabaseAccessTokenForApi, refreshSupabaseSessionInBackground } from '@/lib/ensureSupabaseSession';
+import {
+  abortSignalWithTimeout,
+  isAbortError,
+  SEND_CANCELLED_MESSAGE,
+  throwIfAborted,
+} from '@/lib/abortSend';
 
 export type BookingConfirmationData = BookingConfirmationEmailData;
 
@@ -104,8 +110,9 @@ export class EmailService {
   /** AMC agreement with PDF attachment — admin or technician session. */
   async sendAmcAgreementEmail(
     payload: AdminComposerEmailPayload,
-    accessToken?: string | null
-  ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
+    accessToken?: string | null,
+    signal?: AbortSignal
+  ): Promise<{ ok: boolean; error?: string; messageId?: string; cancelled?: boolean }> {
     const trackingFields = {
       templateType: payload.templateType,
       ...(payload.jobId ? { jobId: payload.jobId } : {}),
@@ -113,6 +120,7 @@ export class EmailService {
     };
 
     const sendOnce = async (token: string) => {
+      throwIfAborted(signal);
       const response = await fetch(this.previewApiUrl, {
         method: 'POST',
         headers: {
@@ -137,6 +145,7 @@ export class EmailService {
               }
             : {}),
         }),
+        signal: abortSignalWithTimeout(signal, 120_000),
       });
 
       const result = await response.json().catch(() => ({}));
@@ -145,40 +154,52 @@ export class EmailService {
 
     let token = accessToken ?? (await resolveSupabaseAccessTokenForApi());
     if (!token && this.previewSecret) {
-      // Dev-only fallback
-      const response = await fetch(this.previewApiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Email-Preview-Secret': this.previewSecret,
-        },
-        body: JSON.stringify({
-          purpose: 'amc_agreement',
-          documentBrand: payload.documentBrand,
-          to: payload.to,
-          subject: payload.subject,
-          html: payload.html,
-          text: payload.text,
-          ...trackingFields,
-          ...(payload.attachments?.length
-            ? {
-                attachments: payload.attachments.map(({ filename, contentType, content }) => ({
-                  filename,
-                  contentType,
-                  content,
-                })),
-              }
-            : {}),
-        }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
+      try {
+        throwIfAborted(signal);
+        // Dev-only fallback
+        const response = await fetch(this.previewApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Email-Preview-Secret': this.previewSecret,
+          },
+          body: JSON.stringify({
+            purpose: 'amc_agreement',
+            documentBrand: payload.documentBrand,
+            to: payload.to,
+            subject: payload.subject,
+            html: payload.html,
+            text: payload.text,
+            ...trackingFields,
+            ...(payload.attachments?.length
+              ? {
+                  attachments: payload.attachments.map(({ filename, contentType, content }) => ({
+                    filename,
+                    contentType,
+                    content,
+                  })),
+                }
+              : {}),
+          }),
+          signal: abortSignalWithTimeout(signal, 120_000),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          return {
+            ok: false,
+            error: result.error || response.statusText || 'Failed to send email',
+          };
+        }
+        return { ok: true, messageId: result.messageId };
+      } catch (error) {
+        if (isAbortError(error)) {
+          return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+        }
         return {
           ok: false,
-          error: result.error || response.statusText || 'Failed to send email',
+          error: error instanceof Error ? error.message : 'Failed to send email',
         };
       }
-      return { ok: true, messageId: result.messageId };
     }
 
     if (!token) {
@@ -221,6 +242,9 @@ export class EmailService {
 
       return { ok: true, messageId: result.messageId };
     } catch (error) {
+      if (isAbortError(error)) {
+        return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+      }
       return {
         ok: false,
         error: error instanceof Error ? error.message : 'Failed to send email',
@@ -231,8 +255,9 @@ export class EmailService {
   /** Admin email composer — supports attachments; requires admin session or preview secret. */
   async sendAdminComposerEmail(
     payload: AdminComposerEmailPayload,
-    accessToken?: string | null
-  ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
+    accessToken?: string | null,
+    signal?: AbortSignal
+  ): Promise<{ ok: boolean; error?: string; messageId?: string; cancelled?: boolean }> {
     const trackingFields = {
       templateType: payload.templateType,
       ...(payload.jobId ? { jobId: payload.jobId } : {}),
@@ -240,6 +265,7 @@ export class EmailService {
     };
 
     const sendOnce = async (token: string) => {
+      throwIfAborted(signal);
       const response = await fetch(this.previewApiUrl, {
         method: 'POST',
         headers: {
@@ -267,6 +293,7 @@ export class EmailService {
               }
             : {}),
         }),
+        signal: abortSignalWithTimeout(signal, 120_000),
       });
 
       const result = await response.json().catch(() => ({}));
@@ -276,42 +303,54 @@ export class EmailService {
     let token = accessToken ?? (await resolveSupabaseAccessTokenForApi());
 
     if (!token && this.previewSecret) {
-      const response = await fetch(this.previewApiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Email-Preview-Secret': this.previewSecret,
-        },
-        body: JSON.stringify({
-          purpose:
-            payload.templateType === 'booking_confirmation'
-              ? 'booking_confirmation'
-              : 'admin_composer',
-          documentBrand: payload.documentBrand,
-          to: payload.to,
-          subject: payload.subject,
-          html: payload.html,
-          text: payload.text,
-          ...trackingFields,
-          ...(payload.attachments?.length
-            ? {
-                attachments: payload.attachments.map(({ filename, contentType, content }) => ({
-                  filename,
-                  contentType,
-                  content,
-                })),
-              }
-            : {}),
-        }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
+      try {
+        throwIfAborted(signal);
+        const response = await fetch(this.previewApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Email-Preview-Secret': this.previewSecret,
+          },
+          body: JSON.stringify({
+            purpose:
+              payload.templateType === 'booking_confirmation'
+                ? 'booking_confirmation'
+                : 'admin_composer',
+            documentBrand: payload.documentBrand,
+            to: payload.to,
+            subject: payload.subject,
+            html: payload.html,
+            text: payload.text,
+            ...trackingFields,
+            ...(payload.attachments?.length
+              ? {
+                  attachments: payload.attachments.map(({ filename, contentType, content }) => ({
+                    filename,
+                    contentType,
+                    content,
+                  })),
+                }
+              : {}),
+          }),
+          signal: abortSignalWithTimeout(signal, 120_000),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          return {
+            ok: false,
+            error: result.error || response.statusText || 'Failed to send email',
+          };
+        }
+        return { ok: true, messageId: result.messageId };
+      } catch (error) {
+        if (isAbortError(error)) {
+          return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+        }
         return {
           ok: false,
-          error: result.error || response.statusText || 'Failed to send email',
+          error: error instanceof Error ? error.message : 'Failed to send email',
         };
       }
-      return { ok: true, messageId: result.messageId };
     }
 
     if (!token) {
@@ -357,6 +396,9 @@ export class EmailService {
 
       return { ok: true, messageId: result.messageId };
     } catch (error) {
+      if (isAbortError(error)) {
+        return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+      }
       return {
         ok: false,
         error: error instanceof Error ? error.message : 'Failed to send email',

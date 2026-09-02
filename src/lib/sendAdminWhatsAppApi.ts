@@ -2,8 +2,13 @@
  * Admin Cloud API WhatsApp send — shared by inbox, composer, Calling, pending payments.
  * Falls back to wa.me when the 24h customer-service window is closed (or on request).
  */
+import { abortSignalWithTimeout, isAbortError, SEND_CANCELLED_MESSAGE, throwIfAborted } from '@/lib/abortSend';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import {
+  confirmWhatsAppCloudDelivery,
+  friendlyWhatsAppDeliveryError,
+} from '@/lib/whatsappDeliveryError';
 import type { DocumentBrand } from '@/lib/service-brands';
 import {
   coldDocBodyParams,
@@ -21,7 +26,10 @@ import {
   putCachedMediaBlob,
   whatsappMediaCacheKey,
 } from '@/lib/whatsappMediaCache';
-import { noteWhatsAppOutboundInLocalCaches } from '@/lib/whatsappInbox';
+import {
+  markWhatsAppOutboundFailedInLocalCaches,
+  noteWhatsAppOutboundInLocalCaches,
+} from '@/lib/whatsappInbox';
 
 export type AdminWhatsAppSendVia = 'api' | 'wa_me';
 
@@ -35,6 +43,8 @@ export type AdminWhatsAppSendResult = {
   needsWindowOrTemplate?: boolean;
   /** True when Settings → WhatsApp toggled this surface off. */
   featureDisabled?: boolean;
+  /** User cancelled before WhatsApp accepted the message. */
+  cancelled?: boolean;
 };
 
 function noteApiSendInInboxCaches(
@@ -85,7 +95,7 @@ function isFeatureDisabledResponse(data: { code?: string } | null | undefined): 
 }
 
 const WINDOW_ERROR_RE =
-  /24\s*hour|customer care window|session|re-?engage|template|131047|131026|131051|132018|outside|expired|business.?initiated|not.?allowed.*session/i;
+  /24\s*hour|customer care window|session|re-?engage|template|131047|131051|132018|outside|expired|business.?initiated|not.?allowed.*session/i;
 
 function isWindowOrTemplateError(message: string): boolean {
   return WINDOW_ERROR_RE.test(message);
@@ -97,6 +107,29 @@ function friendlyWhatsAppAuthError(errMsg: string): string {
     return 'Sign in as a technician or admin to send WhatsApp';
   }
   return raw || 'Send failed';
+}
+
+/** Wait for Meta delivery on PDF sends only — toast “not on WhatsApp” if undeliverable. */
+async function withPdfDeliveryCheck(
+  to: string,
+  result: AdminWhatsAppSendResult
+): Promise<AdminWhatsAppSendResult> {
+  if (!result.ok) {
+    return { ...result, error: friendlyWhatsAppDeliveryError(result.error, to) };
+  }
+  const delivery = await confirmWhatsAppCloudDelivery({
+    rowId: result.messageId,
+    phone: to,
+  });
+  if (!delivery.ok) {
+    markWhatsAppOutboundFailedInLocalCaches({
+      phoneE164: to,
+      messageId: result.messageId,
+      error: delivery.error,
+    });
+    return { ok: false, error: delivery.error };
+  }
+  return result;
 }
 
 export function resolveBillCustomerDisplayName(
@@ -126,6 +159,7 @@ export type SendAdminWhatsAppTextOptions = {
   fallbackWaMe?: boolean;
   /** Skip API and only open wa.me. */
   forceWaMe?: boolean;
+  signal?: AbortSignal;
 };
 
 export async function sendAdminWhatsAppText(
@@ -137,6 +171,7 @@ export async function sendAdminWhatsAppText(
   if (!text) return { ok: false, error: 'Message is empty' };
 
   if (options.forceWaMe) {
+    throwIfAborted(options.signal);
     openWhatsAppMeDeepLink(to, text);
     return { ok: true, via: 'wa_me' };
   }
@@ -151,6 +186,7 @@ export async function sendAdminWhatsAppText(
   }
 
   try {
+    throwIfAborted(options.signal);
     const res = await fetch('/.netlify/functions/whatsapp-send', {
       method: 'POST',
       headers: {
@@ -168,6 +204,7 @@ export async function sendAdminWhatsAppText(
           ? { seedPendingAction: options.seedPendingAction }
           : {}),
       }),
+      signal: abortSignalWithTimeout(options.signal, 120_000),
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
@@ -205,6 +242,9 @@ export async function sendAdminWhatsAppText(
 
     return { ok: false, error: errMsg, needsWindowOrTemplate: needsWindow };
   } catch (err) {
+    if (isAbortError(err)) {
+      return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+    }
     const errMsg = err instanceof Error ? err.message : 'Send failed';
     if (options.fallbackWaMe !== false) {
       openWhatsAppMeDeepLink(to, text);
@@ -310,6 +350,7 @@ export type SendAdminWhatsAppDocumentOptions = {
   source?: WhatsAppSendSource;
   /** Documents cannot open via wa.me with file — no deep-link fallback. */
   fallbackWaMe?: boolean;
+  signal?: AbortSignal;
 };
 
 export async function sendAdminWhatsAppDocument(
@@ -329,6 +370,7 @@ export async function sendAdminWhatsAppDocument(
   }
 
   try {
+    throwIfAborted(options.signal);
     const res = await fetch('/.netlify/functions/whatsapp-send', {
       method: 'POST',
       headers: {
@@ -345,6 +387,7 @@ export async function sendAdminWhatsAppDocument(
         ...(options.customerId ? { customerId: options.customerId } : {}),
         ...(options.source ? { source: options.source } : {}),
       }),
+      signal: abortSignalWithTimeout(options.signal, 120_000),
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
@@ -355,14 +398,17 @@ export async function sendAdminWhatsAppDocument(
         mediaMime: 'application/pdf',
         customerId: options.customerId,
       });
-      return {
+      return withPdfDeliveryCheck(to, {
         ok: true,
         via: 'api',
         messageId: data?.messageId ? String(data.messageId) : null,
-      };
+      });
     }
-    const errMsg = friendlyWhatsAppAuthError(
-      String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
+    const errMsg = friendlyWhatsAppDeliveryError(
+      friendlyWhatsAppAuthError(
+        String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
+      ),
+      to
     );
     if (isFeatureDisabledResponse(data)) {
       return { ok: false, error: errMsg, featureDisabled: true };
@@ -373,6 +419,9 @@ export async function sendAdminWhatsAppDocument(
       needsWindowOrTemplate: isWindowOrTemplateError(errMsg),
     };
   } catch (err) {
+    if (isAbortError(err)) {
+      return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+    }
     return { ok: false, error: err instanceof Error ? err.message : 'Send failed' };
   }
 }
@@ -389,6 +438,7 @@ export type SendAdminWhatsAppMediaOptions = {
   /** Technician JWT: record 30-min inbound photo watch for this number. */
   watchPhotos?: boolean;
   jobId?: string | null;
+  signal?: AbortSignal;
 };
 
 /** Send image (jpeg/png/webp) or WhatsApp-supported document from inbox attachments. */
@@ -413,6 +463,7 @@ export async function sendAdminWhatsAppMedia(
   const type = isImage ? 'image' : 'document';
 
   try {
+    throwIfAborted(options.signal);
     const res = await fetch('/.netlify/functions/whatsapp-send', {
       method: 'POST',
       headers: {
@@ -431,6 +482,7 @@ export async function sendAdminWhatsAppMedia(
         ...(options.watchPhotos ? { watchPhotos: true } : {}),
         ...(options.jobId ? { jobId: options.jobId } : {}),
       }),
+      signal: abortSignalWithTimeout(options.signal, 120_000),
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
@@ -441,15 +493,22 @@ export async function sendAdminWhatsAppMedia(
         mediaMime: mimeType,
         customerId: options.customerId,
       });
-      return {
-        ok: true,
-        via: 'api',
+      const sent = {
+        ok: true as const,
+        via: 'api' as const,
         messageId: data?.messageId ? String(data.messageId) : null,
       };
+      const isPdf = /pdf/i.test(mimeType) || /\.pdf$/i.test(filename);
+      if (isPdf) {
+        return withPdfDeliveryCheck(to, sent);
+      }
+      return sent;
     }
-    const errMsg = friendlyWhatsAppAuthError(
+    const isPdf = /pdf/i.test(mimeType) || /\.pdf$/i.test(filename);
+    const rawErr = friendlyWhatsAppAuthError(
       String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
     );
+    const errMsg = isPdf ? friendlyWhatsAppDeliveryError(rawErr, to) : rawErr;
     if (isFeatureDisabledResponse(data)) {
       return { ok: false, error: errMsg, featureDisabled: true };
     }
@@ -459,6 +518,9 @@ export async function sendAdminWhatsAppMedia(
       needsWindowOrTemplate: isWindowOrTemplateError(errMsg),
     };
   } catch (err) {
+    if (isAbortError(err)) {
+      return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+    }
     return { ok: false, error: err instanceof Error ? err.message : 'Send failed' };
   }
 }
@@ -574,6 +636,7 @@ export type SendAdminWhatsAppTemplateOptions = {
     filename?: string;
     mimeType?: string;
   } | null;
+  signal?: AbortSignal;
 };
 
 export async function sendAdminWhatsAppTemplate(
@@ -590,6 +653,7 @@ export async function sendAdminWhatsAppTemplate(
   }
 
   try {
+    throwIfAborted(options.signal);
     const res = await fetch('/.netlify/functions/whatsapp-send', {
       method: 'POST',
       headers: {
@@ -631,6 +695,7 @@ export async function sendAdminWhatsAppTemplate(
         ...(options.watchPhotos ? { watchPhotos: true } : {}),
         ...(options.jobId ? { jobId: options.jobId } : {}),
       }),
+      signal: abortSignalWithTimeout(options.signal, 120_000),
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
@@ -651,20 +716,34 @@ export async function sendAdminWhatsAppTemplate(
         customerName: options.customerName,
         templateName,
       });
-      return {
-        ok: true,
-        via: 'api',
+      const sent = {
+        ok: true as const,
+        via: 'api' as const,
         messageId: data?.messageId ? String(data.messageId) : null,
       };
+      if (options.headerDocument) {
+        return withPdfDeliveryCheck(to, sent);
+      }
+      return sent;
     }
-    const errMsg = friendlyWhatsAppAuthError(
-      String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
-    );
+    const errMsg = options.headerDocument
+      ? friendlyWhatsAppDeliveryError(
+          friendlyWhatsAppAuthError(
+            String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
+          ),
+          to
+        )
+      : friendlyWhatsAppAuthError(
+          String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`)
+        );
     if (isFeatureDisabledResponse(data)) {
       return { ok: false, error: errMsg, featureDisabled: true };
     }
     return { ok: false, error: errMsg };
   } catch (err) {
+    if (isAbortError(err)) {
+      return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+    }
     return { ok: false, error: err instanceof Error ? err.message : 'Send failed' };
   }
 }
@@ -709,6 +788,9 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
   if (textResult.featureDisabled) {
     return textResult;
   }
+  if (textResult.cancelled) {
+    return textResult;
+  }
 
   if (textResult.needsWindowOrTemplate && coldName) {
     const tpl = await sendAdminWhatsAppTemplate({
@@ -723,11 +805,15 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
       customerName: options.customerName,
       source: options.source,
       seedPendingAction: options.seedPendingAction,
+      signal: options.signal,
     });
     if (tpl.ok) {
       return { ...tpl, usedTemplate: true };
     }
     if (tpl.featureDisabled) {
+      return tpl;
+    }
+    if (tpl.cancelled) {
       return tpl;
     }
 
@@ -751,6 +837,7 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
         customerName: options.customerName,
         source: options.source,
         seedPendingAction: options.seedPendingAction,
+        signal: options.signal,
       });
       if (smoke.ok) {
         return { ...smoke, usedTemplate: true };
@@ -897,6 +984,7 @@ export type SendColdDocumentInviteOptions = {
   /** Required for one-shot cold PDF (DOCUMENT-header template). */
   pdfBase64: string;
   filename?: string;
+  signal?: AbortSignal;
 };
 
 /**
@@ -932,6 +1020,7 @@ export async function sendColdDocumentInvite(
       },
       customerId: options.customerId,
       source: options.source || 'documents',
+      signal: options.signal,
     });
   }
 
@@ -952,6 +1041,7 @@ export async function sendColdDocumentInvite(
     },
     customerId: options.customerId,
     source: options.source || 'documents',
+    signal: options.signal,
   });
 }
 
@@ -989,6 +1079,7 @@ export async function sendAdminWhatsAppDocumentWithColdFallback(
       amount: cold.amount,
       ref: cold.ref,
       documentLabel: cold.documentLabel,
+      signal: docOpts.signal,
     });
     return invite.ok ? { ...invite, viaColdTemplate: true } : invite;
   };
@@ -1000,6 +1091,7 @@ export async function sendAdminWhatsAppDocumentWithColdFallback(
   const result = await sendAdminWhatsAppDocument(docOpts);
   if (result.ok) return result;
   if (result.featureDisabled) return result;
+  if (result.cancelled) return result;
 
   if (result.needsWindowOrTemplate) {
     return tryCold();

@@ -68,14 +68,37 @@ export function uniqueWhatsAppPhones(raws: Array<string | null | undefined>): st
   return out;
 }
 
+export function customerAlternatePhone(customer?: {
+  alternate_phone?: string | null;
+  alternatePhone?: string | null;
+} | null): string {
+  if (!customer) return '';
+  return String(customer.alternate_phone || customer.alternatePhone || '').trim();
+}
+
+/** Extra WhatsApp field: alternate number when valid and not the same last-10 as primary. */
+export function extraWhatsAppPhoneFromCustomer(
+  primaryPhone?: string | null,
+  alternatePhone?: string | null
+): string {
+  const dests = uniqueWhatsAppPhones([primaryPhone, alternatePhone]);
+  const primaryKey = normalizePhoneDigits(primaryPhone || '').slice(-10);
+  if (primaryKey.length < 10) return '';
+  return dests.find((p) => normalizePhoneDigits(p).slice(-10) !== primaryKey) || '';
+}
+
 export function customerIdForWhatsAppDest(
   to: string,
   customerPhone?: string | null,
-  customerId?: string | null
+  customerId?: string | null,
+  alternatePhone?: string | null
 ): string | null {
   const dest = normalizePhoneDigits(to).slice(-10);
-  const onFile = normalizePhoneDigits(customerPhone || '').slice(-10);
-  if (!dest || !onFile || dest !== onFile) return null;
+  if (!dest) return null;
+  const onFile = uniqueWhatsAppPhones([customerPhone, alternatePhone]).some(
+    (p) => normalizePhoneDigits(p).slice(-10) === dest
+  );
+  if (!onFile) return null;
   return customerId || null;
 }
 

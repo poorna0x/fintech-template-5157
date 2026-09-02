@@ -72,6 +72,9 @@ export function buildTechnicianReferenceAmcBill(input: TechnicianReferenceAmcInp
       state: billCustomerAddress.state,
       pincode: billCustomerAddress.pincode,
       phone: input.customer.phone || '',
+      alternate_phone:
+        String(input.customer.alternate_phone || input.customer.alternatePhone || '').trim() ||
+        undefined,
       email: input.customer.email || '',
       gstNumber: getCustomerGstNumber(input.customer),
       roModel,

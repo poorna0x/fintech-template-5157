@@ -1,5 +1,6 @@
 import { toast } from 'sonner';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import { abortSignalWithTimeout, isAbortError, throwIfAborted } from '@/lib/abortSend';
 
 const PDF_ENDPOINT = '/.netlify/functions/generate-pdf';
 const PDF_COMPRESS_ENDPOINT = '/.netlify/functions/ilovepdf-compress';
@@ -46,6 +47,7 @@ export interface DownloadDocumentPdfOptions {
   html: string;
   filename: string;
   origin?: string;
+  signal?: AbortSignal;
 }
 
 function isPdfBytes(bytes: Uint8Array): boolean {
@@ -204,7 +206,13 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-async function postPdfRequest(html: string, filename: string, accessToken: string) {
+async function postPdfRequest(
+  html: string,
+  filename: string,
+  accessToken: string,
+  signal?: AbortSignal
+) {
+  throwIfAborted(signal);
   const response = await fetch(PDF_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -212,7 +220,7 @@ async function postPdfRequest(html: string, filename: string, accessToken: strin
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({ html, filename }),
-    signal: AbortSignal.timeout(PDF_REQUEST_TIMEOUT_MS),
+    signal: abortSignalWithTimeout(signal, PDF_REQUEST_TIMEOUT_MS),
   });
 
   const contentType = response.headers.get('content-type') || '';
@@ -249,12 +257,18 @@ async function postPdfRequest(html: string, filename: string, accessToken: strin
   return { response, error: null, payload: { rawBuffer: buffer } as { rawBuffer: ArrayBuffer } };
 }
 
+function shouldRetryPdfCompress(skipReason?: string | null): boolean {
+  return /^(failed|no_time)$/i.test(String(skipReason || '').trim());
+}
+
 async function postCompressRequest(
   pdfBase64: string,
   filename: string,
-  accessToken: string
+  accessToken: string,
+  signal?: AbortSignal
 ): Promise<{ pdfBase64: string; compressed?: boolean; skipReason?: string | null } | null> {
   try {
+    throwIfAborted(signal);
     const response = await fetch(PDF_COMPRESS_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -262,7 +276,7 @@ async function postCompressRequest(
         Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ pdfBase64, filename }),
-      signal: AbortSignal.timeout(PDF_REQUEST_TIMEOUT_MS),
+      signal: abortSignalWithTimeout(signal, PDF_REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) return null;
     const payload = (await response.json().catch(() => ({}))) as {
@@ -273,28 +287,54 @@ async function postCompressRequest(
     if (!payload.pdfBase64) return null;
     return payload;
   } catch (err) {
+    if (isAbortError(err)) throw err;
     console.warn('[pdf] follow-up compress skipped', err);
     return null;
   }
 }
 
-async function fetchPdfFromServer(html: string, filename: string): Promise<{
+async function compressPdfFollowUp(
+  pdfBase64: string,
+  filename: string,
+  accessToken: string,
+  signal?: AbortSignal
+): Promise<{ pdfBase64: string; compressed?: boolean; skipReason?: string | null } | null> {
+  let compressed = await postCompressRequest(pdfBase64, filename, accessToken, signal);
+  const retry =
+    !compressed?.pdfBase64 ||
+    (compressed.compressed !== true && shouldRetryPdfCompress(compressed.skipReason));
+  if (retry) {
+    throwIfAborted(signal);
+    await new Promise((r) => setTimeout(r, 400));
+    const second = await postCompressRequest(pdfBase64, filename, accessToken, signal);
+    if (second?.pdfBase64) compressed = second;
+  }
+  return compressed;
+}
+
+async function fetchPdfFromServer(
+  html: string,
+  filename: string,
+  signal?: AbortSignal
+): Promise<{
   buffer: ArrayBuffer;
   pdfBase64: string;
   filename: string;
 }> {
+  throwIfAborted(signal);
   let accessToken = await resolveSupabaseAccessTokenForApi();
   if (!accessToken) {
     throw new Error('Sign in to generate PDFs');
   }
 
-  let attempt = await postPdfRequest(html, filename, accessToken);
+  let attempt = await postPdfRequest(html, filename, accessToken, signal);
 
   if (attempt.response.status === 401 || attempt.response.status === 403) {
+    throwIfAborted(signal);
     const retryToken = await resolveSupabaseAccessTokenForApi();
     if (retryToken && retryToken !== accessToken) {
       accessToken = retryToken;
-      attempt = await postPdfRequest(html, filename, retryToken);
+      attempt = await postPdfRequest(html, filename, retryToken, signal);
     }
   }
 
@@ -327,15 +367,18 @@ async function fetchPdfFromServer(html: string, filename: string): Promise<{
 
   let pdfBase64 = payload.pdfBase64;
   if (payload.compressPending && !payload.compressed) {
-    const compressed = await postCompressRequest(
+    const compressed = await compressPdfFollowUp(
       pdfBase64,
       payload.filename || filename,
-      accessToken
+      accessToken,
+      signal
     );
     if (compressed?.pdfBase64) {
       pdfBase64 = compressed.pdfBase64;
     }
-    if (compressed && compressed.compressed !== true) {
+    if (!compressed?.pdfBase64) {
+      console.warn('[pdf] iLovePDF follow-up failed; sending uncompressed PDF');
+    } else if (compressed.compressed !== true) {
       console.warn('[pdf] follow-up compress did not shrink', compressed.skipReason || 'unknown');
     }
   }
@@ -395,7 +438,11 @@ export async function generateDocumentPdfBase64(
 ): Promise<GenerateDocumentPdfBase64Result> {
   const html = withAbsoluteAssetUrls(options.html, options.origin);
   const filename = sanitizeFilename(options.filename);
-  const { pdfBase64, filename: resolvedFilename } = await fetchPdfFromServer(html, filename);
+  const { pdfBase64, filename: resolvedFilename } = await fetchPdfFromServer(
+    html,
+    filename,
+    options.signal
+  );
   const size = Math.ceil((pdfBase64.length * 3) / 4);
   return { pdfBase64, filename: resolvedFilename, size };
 }

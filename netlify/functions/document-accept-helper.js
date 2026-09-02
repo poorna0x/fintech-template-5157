@@ -245,9 +245,9 @@ function isOutsideServiceWindowError(result) {
   );
   const code = String(result.data?.error?.code || '');
   return (
-    /24\s*hour|customer care window|session|re-?engage|131047|131026|131051|132018|outside|expired|business.?initiated|not.?allowed.*session/i.test(
+    /24\s*hour|customer care window|session|re-?engage|131047|131051|132018|outside|expired|business.?initiated|not.?allowed.*session/i.test(
       msg
-    ) || ['131047', '131026', '131051', '132018'].includes(code)
+    ) || ['131047', '131051', '132018'].includes(code)
   );
 }
 

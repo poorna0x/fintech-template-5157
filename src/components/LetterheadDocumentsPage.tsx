@@ -806,6 +806,7 @@ export default function LetterheadDocumentsPage({
                     customerId: '',
                     customerCode: '',
                     customerPhone: '',
+                    customerAlternatePhone: '',
                     customerEmail: '',
                     customerName: '',
                     customerCompany: '',
@@ -1576,6 +1577,7 @@ function customerRowToDocPatch(row: any): Partial<LetterheadDocumentData> {
     customerName: row?.full_name || '',
     customerCompany: row?.visible_address || '',
     customerPhone: row?.phone || '',
+    customerAlternatePhone: String(row?.alternate_phone || row?.alternatePhone || ''),
     customerEmail: row?.email || '',
     siteLocation,
   };

@@ -11,6 +11,7 @@ import { normalizeRecipientList, formatRecipientsForEmailApi } from '@/lib/email
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
+import { isAbortError, SEND_CANCELLED_MESSAGE, throwIfAborted } from '@/lib/abortSend';
 import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { generateBillHTML } from '@/lib/pdf-generator';
 import { generateQuotationHTML } from '@/lib/quotation-pdf-generator';
@@ -35,6 +36,7 @@ export interface SendGeneratorDocumentEmailParams {
   recipientEmails: string[];
   customMessage?: string;
   dueDateIso?: string;
+  signal?: AbortSignal;
 }
 
 export interface SendGeneratorDocumentEmailResult {
@@ -42,6 +44,7 @@ export interface SendGeneratorDocumentEmailResult {
   error?: string;
   sentCount?: number;
   failedRecipients?: string[];
+  cancelled?: boolean;
 }
 
 function formatInrAmount(amount: number): string {
@@ -138,17 +141,21 @@ function customerDisplayName(bill: Bill): string {
 /** PDF base64 helper (same HTML as email). Fingerprints hash-only. */
 export async function generateGeneratorDocumentPdfBase64(
   kind: GeneratorDocumentEmailKind,
-  bill: Bill
+  bill: Bill,
+  signal?: AbortSignal
 ): Promise<{ pdfBase64: string; filename: string; size: number }> {
+  throwIfAborted(signal);
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     throw new Error('Could not verify your session. Please try again.');
   }
   const verifyCode = generateDocumentPdfVerifyCode();
   const filename = pdfFilenameForKind(kind, bill);
+  throwIfAborted(signal);
   const pdf = await generateDocumentPdfBase64({
     html: pdfHtmlForKind(kind, bill, { authenticityVerifyCode: verifyCode }),
     filename,
+    signal,
   });
   await fingerprintGeneratorPdf({
     kind,
@@ -163,7 +170,7 @@ export async function generateGeneratorDocumentPdfBase64(
 export async function sendGeneratorDocumentEmail(
   params: SendGeneratorDocumentEmailParams
 ): Promise<SendGeneratorDocumentEmailResult> {
-  const { kind, bill, brand, recipientEmails, customMessage, dueDateIso } = params;
+  const { kind, bill, brand, recipientEmails, customMessage, dueDateIso, signal } = params;
 
   const recipients = normalizeRecipientList(recipientEmails);
   if (!recipients.length) {
@@ -180,6 +187,7 @@ export async function sendGeneratorDocumentEmail(
   const verifyCode = generateDocumentPdfVerifyCode();
   const html = pdfHtmlForKind(kind, bill, { authenticityVerifyCode: verifyCode });
 
+  throwIfAborted(signal);
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     return {
@@ -193,7 +201,8 @@ export async function sendGeneratorDocumentEmail(
   let size: number;
 
   try {
-    const pdf = await generateDocumentPdfBase64({ html, filename: pdfFilename });
+    throwIfAborted(signal);
+    const pdf = await generateDocumentPdfBase64({ html, filename: pdfFilename, signal });
     pdfBase64 = pdf.pdfBase64;
     filename = pdf.filename;
     size = pdf.size;
@@ -205,6 +214,9 @@ export async function sendGeneratorDocumentEmail(
       filename,
     });
   } catch (error) {
+    if (isAbortError(error)) {
+      return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+    }
     const message = error instanceof Error ? error.message : 'PDF generation failed';
     return {
       ok: false,
@@ -258,8 +270,13 @@ export async function sendGeneratorDocumentEmail(
       attachments: [attachment],
       customerId: bill.customer?.id,
     },
-    accessToken
+    accessToken,
+    signal
   );
+
+  if (result.cancelled) {
+    return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+  }
 
   if (!result.ok) {
     return {

@@ -9,6 +9,7 @@ import {
   type DocumentBrand,
 } from '@/lib/service-brands';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
+import { throwIfAborted } from '@/lib/abortSend';
 import { db } from '@/lib/supabase';
 import { supabase } from '@/lib/supabaseClient';
 import {
@@ -122,9 +123,11 @@ export async function buildComposerAutoAttachments(params: {
   templateType: AdminEmailTemplateType;
   sourceRecordId: string | null;
   documentBrand: DocumentBrand;
+  signal?: AbortSignal;
 }): Promise<EmailAttachmentPayload[]> {
-  const { templateType, sourceRecordId, documentBrand } = params;
+  const { templateType, sourceRecordId, documentBrand, signal } = params;
   if (!sourceRecordId) return [];
+  throwIfAborted(signal);
 
   if (templateType === 'invoice') {
     const { data: inv, error } = await supabase
@@ -145,7 +148,8 @@ export async function buildComposerAutoAttachments(params: {
       },
     } as Parameters<typeof generateTaxInvoiceHTML>[0]);
     const filename = `Tax_Invoice_${pdfData.billNumber.replace(/\s+/g, '_')}.pdf`;
-    const pdf = await generateDocumentPdfBase64({ html, filename });
+    throwIfAborted(signal);
+    const pdf = await generateDocumentPdfBase64({ html, filename, signal });
     await recordDocumentPdfAuthenticity({
       docType: 'invoice',
       sourceKey: pdfData.billNumber,
@@ -181,7 +185,8 @@ export async function buildComposerAutoAttachments(params: {
       authenticityVerifyCode: verifyCode,
     });
     const filename = `Bill_${billData.billNumber.replace(/\s+/g, '_')}.pdf`;
-    const pdf = await generateDocumentPdfBase64({ html, filename });
+    throwIfAborted(signal);
+    const pdf = await generateDocumentPdfBase64({ html, filename, signal });
     await recordDocumentPdfAuthenticity({
       docType: 'service_bill',
       sourceKey: billData.billNumber,

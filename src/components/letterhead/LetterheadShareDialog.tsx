@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Mail, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -22,6 +22,12 @@ import { buildDocumentPdfWhatsAppCaption } from '@/lib/document-pdf-whatsapp-cap
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import { forceLightThemeClass } from '@/lib/force-light-theme';
 import {
+  clearWhatsAppDeliveryBanner,
+  reportWhatsAppPdfNotDelivered,
+  reportWhatsAppPdfPartialDelivery,
+  WhatsAppDeliveryInlineBanner,
+} from '@/components/whatsapp/WhatsAppDeliveryBanner';
+import {
   generateLetterheadPdfBase64,
   letterheadShareLabel,
   type LetterheadDocumentData,
@@ -43,7 +49,9 @@ import {
   hoursLeftInWindow,
   isWithinCustomerServiceWindow,
 } from '@/lib/whatsappInbox';
-import { customerIdForWhatsAppDest, resolveWhatsAppDestinations } from '@/lib/whatsappPhoneTarget';
+import { customerIdForWhatsAppDest, extraWhatsAppPhoneFromCustomer, resolveWhatsAppDestinations } from '@/lib/whatsappPhoneTarget';
+import { isNotOnWhatsAppError } from '@/lib/whatsappDeliveryError';
+import { toastIfAborted, toastIfCancelledBeforeSend, toastSendCancelled } from '@/lib/abortSend';
 import {
   sendWhatsAppToMany,
 } from '@/lib/whatsappMultiDestSend';
@@ -80,6 +88,20 @@ export default function LetterheadShareDialog({
   const [windowChecking, setWindowChecking] = useState(false);
   const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
+  const [waDeliveryError, setWaDeliveryError] = useState<string | null>(null);
+  const sendAbortRef = useRef<AbortController | null>(null);
+
+  const startSendAbort = () => {
+    sendAbortRef.current?.abort();
+    const ac = new AbortController();
+    sendAbortRef.current = ac;
+    return ac.signal;
+  };
+
+  const requestClose = () => {
+    if (sending) sendAbortRef.current?.abort();
+    onOpenChange(false);
+  };
 
   const brand = data.brand;
   const brandLabel = getDocumentBrandLabel(brand);
@@ -91,7 +113,9 @@ export default function LetterheadShareDialog({
     setRecipientEmail(seeded || '');
     const phone = String(data.customerPhone || '').trim();
     setWhatsappPhone(phone);
-    setExtraWhatsappPhone('');
+    setExtraWhatsappPhone(
+      extraWhatsAppPhoneFromCustomer(phone, data.customerAlternatePhone)
+    );
     setMessage(defaultLetterheadShareMessage(data));
     setChannel(
       pickDefaultChannel({
@@ -102,6 +126,8 @@ export default function LetterheadShareDialog({
     );
     setWindowOpen(null);
     setWindowHoursLeft(null);
+    setWaDeliveryError(null);
+    clearWhatsAppDeliveryBanner();
     // Seed once when the dialog opens; don't reset while the parent draft autosaves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -158,7 +184,12 @@ export default function LetterheadShareDialog({
 
   const customerName = data.customerName?.trim() || 'there';
   const customerIdFor = (to: string) =>
-    customerIdForWhatsAppDest(to, data.customerPhone, data.customerId || null);
+    customerIdForWhatsAppDest(
+      to,
+      data.customerPhone,
+      data.customerId || null,
+      data.customerAlternatePhone
+    );
 
   const captionForWhatsApp = () =>
     (
@@ -173,29 +204,35 @@ export default function LetterheadShareDialog({
 
   const sendWhatsAppPdfs = async (
     toastId: string | number,
-    destinations: string[]
+    destinations: string[],
+    signal: AbortSignal
   ) => {
     toast.loading('Generating PDF…', { id: toastId });
-    const pdf = await generateLetterheadPdfBase64(data);
+    const pdf = await generateLetterheadPdfBase64(data, signal);
     const caption = captionForWhatsApp();
     toast.loading('Sending WhatsApp…', { id: toastId });
-    return sendWhatsAppToMany(destinations, (to, windowClosed) =>
-      sendAdminWhatsAppDocumentWithColdFallback({
-        to,
-        pdfBase64: pdf.pdfBase64,
-        filename: pdf.filename,
-        caption,
-        customerId: customerIdFor(to),
-        source: 'documents',
-        preferColdTemplate: windowClosed,
-        cold: {
-          kind: 'generic',
-          brand,
-          customerName,
-          documentLabel: docLabel,
-          ref: data.documentNumber || undefined,
-        },
-      })
+    return sendWhatsAppToMany(
+      destinations,
+      (to, windowClosed) =>
+        sendAdminWhatsAppDocumentWithColdFallback({
+          to,
+          pdfBase64: pdf.pdfBase64,
+          filename: pdf.filename,
+          caption,
+          customerId: customerIdFor(to),
+          source: 'documents',
+          preferColdTemplate: windowClosed,
+          signal,
+          cold: {
+            kind: 'generic',
+            brand,
+            customerName,
+            documentLabel: docLabel,
+            ref: data.documentNumber || undefined,
+          },
+        }),
+      undefined,
+      signal
     );
   };
 
@@ -206,6 +243,7 @@ export default function LetterheadShareDialog({
       return;
     }
     setSending(true);
+    const signal = startSendAbort();
     const toastId = toast.loading('Generating PDF and sending email…');
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
@@ -218,7 +256,12 @@ export default function LetterheadShareDialog({
         brand,
         recipientEmails: [trimmed],
         customMessage: message.trim() || undefined,
+        signal,
       });
+      if (result.cancelled) {
+        toastSendCancelled(toastId, 'email');
+        return;
+      }
       if (!result.ok) {
         toast.error(result.error || 'Could not send email', { id: toastId });
         return;
@@ -226,6 +269,7 @@ export default function LetterheadShareDialog({
       toast.success(getLetterheadEmailSuccessMessage(brand, [trimmed]), { id: toastId });
       onOpenChange(false);
     } catch (error) {
+      if (toastIfAborted(error, toastId, 'email')) return;
       toast.error(error instanceof Error ? error.message : 'Could not send email', { id: toastId });
     } finally {
       setSending(false);
@@ -250,6 +294,7 @@ export default function LetterheadShareDialog({
       return;
     }
     setSending(true);
+    const signal = startSendAbort();
     const toastId = toast.loading('Preparing PDF for WhatsApp…');
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
@@ -257,20 +302,38 @@ export default function LetterheadShareDialog({
         toast.error('Could not refresh your session. Please try again.', { id: toastId });
         return;
       }
-      const fanout = await sendWhatsAppPdfs(toastId, resolved.destinations);
+      const fanout = await sendWhatsAppPdfs(toastId, resolved.destinations, signal);
+      if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+        return;
+      }
       if (fanout.sent === 0) {
-        if (resolved.destinations.length === 1) {
+        if (
+          resolved.destinations.length === 1 &&
+          !isNotOnWhatsAppError(fanout.lastError)
+        ) {
           openWhatsAppMeDeepLink(resolved.destinations[0], captionForWhatsApp());
           toast.success('WhatsApp opened on phone as backup', { id: toastId });
           onOpenChange(false);
           return;
         }
-        toast.error(fanout.lastError || 'Could not send on WhatsApp', { id: toastId });
+        const err = fanout.lastError || 'Could not send on WhatsApp';
+        setWaDeliveryError(err);
+        reportWhatsAppPdfNotDelivered(err, toastId);
         return;
+      }
+      if (fanout.lastError && fanout.sent < resolved.destinations.length) {
+        setWaDeliveryError(fanout.lastError);
+        reportWhatsAppPdfPartialDelivery({
+          sent: fanout.sent,
+          total: resolved.destinations.length,
+          lastError: fanout.lastError,
+        });
       }
       toast.success(
         fanout.sent > 1
-          ? `WhatsApp PDF sent to ${fanout.sent} numbers`
+          ? fanout.lastError && fanout.sent < resolved.destinations.length
+            ? `PDF sent to ${fanout.sent} of ${resolved.destinations.length} numbers`
+            : `WhatsApp PDF sent to ${fanout.sent} numbers`
           : fanout.usedTemplate
             ? 'WhatsApp PDF sent via template'
             : 'WhatsApp PDF sent',
@@ -278,9 +341,10 @@ export default function LetterheadShareDialog({
       );
       onOpenChange(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not send on WhatsApp', {
-        id: toastId,
-      });
+      if (toastIfAborted(error, toastId)) return;
+      const err = error instanceof Error ? error.message : 'Could not send on WhatsApp';
+      setWaDeliveryError(err);
+      reportWhatsAppPdfNotDelivered(err, toastId);
     } finally {
       setSending(false);
     }
@@ -296,6 +360,7 @@ export default function LetterheadShareDialog({
       return;
     }
     setSending(true);
+    const signal = startSendAbort();
     const toastId = toast.loading('Sending email and WhatsApp…');
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
@@ -309,7 +374,12 @@ export default function LetterheadShareDialog({
         brand,
         recipientEmails: [recipientEmail.trim()],
         customMessage: message.trim() || undefined,
+        signal,
       });
+      if (emailResult.cancelled) {
+        toastSendCancelled(toastId, 'email');
+        return;
+      }
       if (!emailResult.ok) {
         toast.error(emailResult.error || 'Could not send email', { id: toastId });
         return;
@@ -329,7 +399,10 @@ export default function LetterheadShareDialog({
         onOpenChange(false);
         return;
       }
-      const fanout = await sendWhatsAppPdfs(toastId, resolved.destinations);
+      const fanout = await sendWhatsAppPdfs(toastId, resolved.destinations, signal);
+      if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+        return;
+      }
       let waNote =
         fanout.sent > 1
           ? `WhatsApp PDF sent to ${fanout.sent} numbers`
@@ -337,21 +410,32 @@ export default function LetterheadShareDialog({
             ? 'WhatsApp PDF sent via template'
             : 'WhatsApp PDF sent';
       if (fanout.sent === 0) {
-        if (resolved.destinations.length === 1) {
+        if (
+          resolved.destinations.length === 1 &&
+          !isNotOnWhatsAppError(fanout.lastError)
+        ) {
           openWhatsAppMeDeepLink(resolved.destinations[0], captionForWhatsApp());
           waNote = 'WhatsApp opened on phone as backup';
         } else {
-          toast.warning('Email sent, but WhatsApp failed', {
-            id: toastId,
-            description: fanout.lastError,
-          });
-          onOpenChange(false);
+          const err = fanout.lastError || 'Email sent, but WhatsApp failed';
+          setWaDeliveryError(err);
+          reportWhatsAppPdfNotDelivered(err, toastId);
           return;
         }
+      }
+      if (fanout.sent > 0 && fanout.lastError && fanout.sent < resolved.destinations.length) {
+        setWaDeliveryError(fanout.lastError);
+        reportWhatsAppPdfPartialDelivery({
+          sent: fanout.sent,
+          total: resolved.destinations.length,
+          lastError: fanout.lastError,
+        });
+        waNote = `PDF sent to ${fanout.sent} of ${resolved.destinations.length} numbers`;
       }
       toast.success(`Email + ${waNote}`, { id: toastId });
       onOpenChange(false);
     } catch (error) {
+      if (toastIfAborted(error, toastId)) return;
       toast.error(error instanceof Error ? error.message : 'Could not send both', { id: toastId });
     } finally {
       setSending(false);
@@ -359,7 +443,10 @@ export default function LetterheadShareDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
+    <Dialog open={open} onOpenChange={(next) => {
+      if (!next && sending) sendAbortRef.current?.abort();
+      onOpenChange(next);
+    }}>
       <DialogContent
         className={forceLightThemeClass(
           'max-w-lg w-[calc(100vw-1.25rem)] sm:w-full max-h-[min(92dvh,720px)] overflow-y-auto p-0 gap-0'
@@ -376,6 +463,13 @@ export default function LetterheadShareDialog({
         </DialogHeader>
 
         <div className="px-4 sm:px-6 py-4 space-y-4">
+          <WhatsAppDeliveryInlineBanner
+            message={waDeliveryError}
+            onDismiss={() => {
+              setWaDeliveryError(null);
+              clearWhatsAppDeliveryBanner();
+            }}
+          />
           {data.customerName ? (
             <div className="rounded-lg border bg-muted/40 px-3 py-2.5 text-sm">
               <span className="font-medium">{data.customerName}</span>
@@ -507,8 +601,7 @@ export default function LetterheadShareDialog({
             type="button"
             variant="outline"
             className="w-full sm:w-auto cursor-pointer"
-            disabled={sending}
-            onClick={() => onOpenChange(false)}
+            onClick={requestClose}
           >
             Cancel
           </Button>

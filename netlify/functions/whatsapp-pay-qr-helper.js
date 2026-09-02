@@ -38,7 +38,7 @@ function isUuid(value) {
 
 function isClosedWindowError(result) {
   const blob = JSON.stringify(result?.data?.error || result?.data || result || {});
-  return /24\s*hour|re-?engage|131047|131026|customer care window|session|not.?allowed.*session/i.test(
+  return /24\s*hour|re-?engage|131047|customer care window|session|not.?allowed.*session/i.test(
     blob
   );
 }

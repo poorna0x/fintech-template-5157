@@ -24,6 +24,13 @@ import {
   billToQuotationPdfData,
   billToTaxInvoicePdfData,
 } from '@/lib/document-preview-utils';
+import { confirmWhatsAppCloudDelivery, friendlyWhatsAppDeliveryError } from '@/lib/whatsappDeliveryError';
+import {
+  abortSignalWithTimeout,
+  isAbortError,
+  SEND_CANCELLED_MESSAGE,
+  throwIfAborted,
+} from '@/lib/abortSend';
 import { billToAmcPdfData, generateAMCHTML, type AMCPDFOptions } from '@/lib/amc-pdf-generator';
 import {
   generateWarrantyCardHTML,
@@ -178,8 +185,10 @@ async function recordAcceptPreviewAuthenticity(params: {
 /** Original (fingerprinted) + watermarked preview PDFs for Accept flow. */
 export async function generateDocumentAcceptPdfPair(
   kind: GeneratorDocumentEmailKind,
-  bill: Bill
+  bill: Bill,
+  signal?: AbortSignal
 ): Promise<DocumentAcceptPdfPair> {
+  throwIfAborted(signal);
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     throw new Error('Could not verify your session. Please try again.');
@@ -194,11 +203,13 @@ export async function generateDocumentAcceptPdfPair(
     previewHtmlForKind(kind, bill, previewVerifyCode)
   );
 
+  throwIfAborted(signal);
   const [original, preview] = await Promise.all([
-    generateDocumentPdfBase64({ html: originalHtml, filename }),
+    generateDocumentPdfBase64({ html: originalHtml, filename, signal }),
     generateDocumentPdfBase64({
       html: previewHtml,
       filename: `PREVIEW_${filename}`,
+      signal,
     }),
   ]);
 
@@ -251,8 +262,10 @@ export async function generateDocumentAcceptPdfPair(
 /** AMC original + watermarked preview for Accept flow. */
 export async function generateAmcAcceptPdfPair(
   bill: Bill,
-  pdfOptions?: AMCPDFOptions
+  pdfOptions?: AMCPDFOptions,
+  signal?: AbortSignal
 ): Promise<DocumentAcceptPdfPair> {
+  throwIfAborted(signal);
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     throw new Error('Could not verify your session. Please try again.');
@@ -274,11 +287,13 @@ export async function generateAmcAcceptPdfPair(
   const filename = `AMC_${String(bill.billNumber || 'agreement').replace(/\s+/g, '_')}.pdf`;
   const html = generateAMCHTML(data, opts);
   const previewHtml = withDocumentAcceptPreviewWatermark(generateAMCHTML(data, previewOpts));
+  throwIfAborted(signal);
   const [original, preview] = await Promise.all([
-    generateDocumentPdfBase64({ html, filename }),
+    generateDocumentPdfBase64({ html, filename, signal }),
     generateDocumentPdfBase64({
       html: previewHtml,
       filename: `PREVIEW_${filename}`,
+      signal,
     }),
   ]);
   const sourceKey = String(bill.billNumber || '').trim() || `amc-${Date.now()}`;
@@ -318,8 +333,9 @@ export async function generateAmcAcceptPdfPair(
 /** Warranty original + watermarked preview for Accept flow. */
 export async function generateWarrantyAcceptPdfPair(
   data: WarrantyCardPDFData,
-  opts?: { customerId?: string | null }
+  opts?: { customerId?: string | null; signal?: AbortSignal }
 ): Promise<DocumentAcceptPdfPair> {
+  throwIfAborted(opts?.signal);
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     throw new Error('Could not verify your session. Please try again.');
@@ -345,11 +361,13 @@ export async function generateWarrantyAcceptPdfPair(
   const previewHtml = withDocumentAcceptPreviewWatermark(
     generateWarrantyCardHTML(previewFingerprinted)
   );
+  throwIfAborted(opts?.signal);
   const [original, preview] = await Promise.all([
-    generateDocumentPdfBase64({ html, filename }),
+    generateDocumentPdfBase64({ html, filename, signal: opts?.signal }),
     generateDocumentPdfBase64({
       html: previewHtml,
       filename: `PREVIEW_${filename}`,
+      signal: opts?.signal,
     }),
   ]);
   const sourceKey =
@@ -406,6 +424,7 @@ export type SendDocumentAcceptInviteParams = {
   previewPdfBase64: string;
   /** When 24h window is closed, skip interactive (Meta 200 then Re-engagement). */
   preferColdTemplate?: boolean;
+  signal?: AbortSignal;
 };
 
 export async function sendDocumentAcceptInvite(
@@ -416,49 +435,76 @@ export async function sendDocumentAcceptInvite(
   inviteId?: string;
   expiresAt?: string;
   via?: 'interactive' | 'cold_template' | string;
+  cancelled?: boolean;
 }> {
-  const sessionReady = await ensureSupabaseSessionForWrite();
-  if (!sessionReady.ok) {
-    return { ok: false, error: 'Could not verify your session' };
-  }
-  const token = await resolveSupabaseAccessTokenForApi();
-  if (!token) return { ok: false, error: 'Not signed in' };
+  try {
+    throwIfAborted(params.signal);
+    const sessionReady = await ensureSupabaseSessionForWrite();
+    if (!sessionReady.ok) {
+      return { ok: false, error: 'Could not verify your session' };
+    }
+    const token = await resolveSupabaseAccessTokenForApi();
+    if (!token) return { ok: false, error: 'Not signed in' };
 
-  const res = await fetch('/.netlify/functions/document-accept-send', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      to: params.to,
-      brand: params.brand,
-      docType: params.docType,
-      documentLabel: params.documentLabel,
-      documentRef: params.documentRef,
-      sourceKey: params.sourceKey,
-      customerId: params.customerId,
-      customerName: params.customerName,
-      amountDisplay: params.amountDisplay,
-      filename: params.filename,
-      verifyCode: params.verifyCode,
-      previewVerifyCode: params.previewVerifyCode,
-      originalPdfBase64: params.originalPdfBase64,
-      previewPdfBase64: params.previewPdfBase64,
-      preferColdTemplate: params.preferColdTemplate === true,
-    }),
-  });
+    throwIfAborted(params.signal);
+    const res = await fetch('/.netlify/functions/document-accept-send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        to: params.to,
+        brand: params.brand,
+        docType: params.docType,
+        documentLabel: params.documentLabel,
+        documentRef: params.documentRef,
+        sourceKey: params.sourceKey,
+        customerId: params.customerId,
+        customerName: params.customerName,
+        amountDisplay: params.amountDisplay,
+        filename: params.filename,
+        verifyCode: params.verifyCode,
+        previewVerifyCode: params.previewVerifyCode,
+        originalPdfBase64: params.originalPdfBase64,
+        previewPdfBase64: params.previewPdfBase64,
+        preferColdTemplate: params.preferColdTemplate === true,
+      }),
+      signal: abortSignalWithTimeout(params.signal, 120_000),
+    });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data?.ok) {
-    return { ok: false, error: data?.error || data?.details || `Accept send failed (${res.status})` };
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok) {
+      return {
+        ok: false,
+        error: friendlyWhatsAppDeliveryError(
+          data?.error || data?.details || `Accept send failed (${res.status})`,
+          params.to
+        ),
+      };
+    }
+    const delivery = await confirmWhatsAppCloudDelivery({
+      rowId: data.waMessageId || data.messageId || null,
+      phone: params.to,
+    });
+    if (!delivery.ok) {
+      return { ok: false, error: delivery.error };
+    }
+    return {
+      ok: true,
+      inviteId: data.inviteId,
+      expiresAt: data.expiresAt,
+      via: data.via,
+    };
+  } catch (err) {
+    if (isAbortError(err)) {
+      return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+    }
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Accept send failed',
+    };
   }
-  return {
-    ok: true,
-    inviteId: data.inviteId,
-    expiresAt: data.expiresAt,
-    via: data.via,
-  };
 }
 
 /** Email preview PDF + secure Review & Accept link (original after Accept). */
@@ -469,47 +515,61 @@ export async function sendDocumentEmailAcceptInvite(
   error?: string;
   inviteId?: string;
   expiresAt?: string;
+  cancelled?: boolean;
 }> {
-  const sessionReady = await ensureSupabaseSessionForWrite();
-  if (!sessionReady.ok) {
-    return { ok: false, error: 'Could not verify your session' };
-  }
-  const token = await resolveSupabaseAccessTokenForApi();
-  if (!token) return { ok: false, error: 'Not signed in' };
+  try {
+    throwIfAborted(params.signal);
+    const sessionReady = await ensureSupabaseSessionForWrite();
+    if (!sessionReady.ok) {
+      return { ok: false, error: 'Could not verify your session' };
+    }
+    const token = await resolveSupabaseAccessTokenForApi();
+    if (!token) return { ok: false, error: 'Not signed in' };
 
-  const res = await fetch('/.netlify/functions/document-accept-email-send', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      to: params.to,
-      brand: params.brand,
-      docType: params.docType,
-      documentLabel: params.documentLabel,
-      documentRef: params.documentRef,
-      sourceKey: params.sourceKey,
-      customerId: params.customerId,
-      customerName: params.customerName,
-      amountDisplay: params.amountDisplay,
-      filename: params.filename,
-      verifyCode: params.verifyCode,
-      previewVerifyCode: params.previewVerifyCode,
-      originalPdfBase64: params.originalPdfBase64,
-      previewPdfBase64: params.previewPdfBase64,
-    }),
-  });
+    throwIfAborted(params.signal);
+    const res = await fetch('/.netlify/functions/document-accept-email-send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        to: params.to,
+        brand: params.brand,
+        docType: params.docType,
+        documentLabel: params.documentLabel,
+        documentRef: params.documentRef,
+        sourceKey: params.sourceKey,
+        customerId: params.customerId,
+        customerName: params.customerName,
+        amountDisplay: params.amountDisplay,
+        filename: params.filename,
+        verifyCode: params.verifyCode,
+        previewVerifyCode: params.previewVerifyCode,
+        originalPdfBase64: params.originalPdfBase64,
+        previewPdfBase64: params.previewPdfBase64,
+      }),
+      signal: abortSignalWithTimeout(params.signal, 120_000),
+    });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data?.ok) {
-    return { ok: false, error: data?.error || data?.details || `Accept email failed (${res.status})` };
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok) {
+      return { ok: false, error: data?.error || data?.details || `Accept email failed (${res.status})` };
+    }
+    return {
+      ok: true,
+      inviteId: data.inviteId,
+      expiresAt: data.expiresAt,
+    };
+  } catch (err) {
+    if (isAbortError(err)) {
+      return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+    }
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Accept email failed',
+    };
   }
-  return {
-    ok: true,
-    inviteId: data.inviteId,
-    expiresAt: data.expiresAt,
-  };
 }
 
 export type PublicDocumentAcceptInvite = {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Mail, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -31,6 +31,12 @@ import {
 } from '@/lib/send-generator-document-email';
 import { forceLightThemeClass } from '@/lib/force-light-theme';
 import {
+  clearWhatsAppDeliveryBanner,
+  reportWhatsAppPdfNotDelivered,
+  reportWhatsAppPdfPartialDelivery,
+  WhatsAppDeliveryInlineBanner,
+} from '@/components/whatsapp/WhatsAppDeliveryBanner';
+import {
   generateDocumentAcceptPdfPair,
   sendDocumentAcceptInvite,
   sendDocumentEmailAcceptInvite,
@@ -51,13 +57,17 @@ import {
   isWithinCustomerServiceWindow,
 } from '@/lib/whatsappInbox';
 import {
+  customerAlternatePhone,
   customerIdForWhatsAppDest,
+  extraWhatsAppPhoneFromCustomer,
   resolveWhatsAppDestinations,
 } from '@/lib/whatsappPhoneTarget';
 import {
   sendWhatsAppToMany,
   whatsappMultiSendOkMessage,
 } from '@/lib/whatsappMultiDestSend';
+import { isNotOnWhatsAppError } from '@/lib/whatsappDeliveryError';
+import { toastIfAborted, toastIfCancelledBeforeSend, toastSendCancelled } from '@/lib/abortSend';
 
 type SendChannel = 'email' | 'whatsapp' | 'both';
 
@@ -184,6 +194,20 @@ export default function DocumentEmailSendDialog({
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
   /** Preview PDF first; original released per channel after the customer accepts. */
   const [requireAccept, setRequireAccept] = useState(false);
+  const [waDeliveryError, setWaDeliveryError] = useState<string | null>(null);
+  const sendAbortRef = useRef<AbortController | null>(null);
+
+  const startSendAbort = () => {
+    sendAbortRef.current?.abort();
+    const ac = new AbortController();
+    sendAbortRef.current = ac;
+    return ac.signal;
+  };
+
+  const requestClose = () => {
+    if (sending) sendAbortRef.current?.abort();
+    onOpenChange(false);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -191,7 +215,9 @@ export default function DocumentEmailSendDialog({
     setRecipientRows(seeded.length ? seeded : [emptyRow()]);
     const phone = String(bill?.customer?.phone || '').trim();
     setWhatsappPhone(phone);
-    setExtraWhatsappPhone('');
+    setExtraWhatsappPhone(
+      extraWhatsAppPhoneFromCustomer(phone, customerAlternatePhone(bill?.customer))
+    );
     setRequireAccept(false);
     const nextChannel = pickDefaultChannel({
       allowWhatsApp: waEnabled,
@@ -215,6 +241,8 @@ export default function DocumentEmailSendDialog({
     );
     setWindowOpen(null);
     setWindowHoursLeft(null);
+    setWaDeliveryError(null);
+    clearWhatsAppDeliveryBanner();
   }, [
     open,
     defaultRecipients,
@@ -288,6 +316,7 @@ export default function DocumentEmailSendDialog({
     toastId?: string | number;
     /** Reuse an already generated preview/original pair (Both + Require Accept). */
     acceptPair?: DocumentAcceptPdfPair;
+    signal?: AbortSignal;
   }) => {
     if (!bill || !brand) {
       toast.error('Document details are missing');
@@ -316,6 +345,7 @@ export default function DocumentEmailSendDialog({
           : 'Generating PDF and sending email…'
       );
     if (opts?.toastId == null) setSending(true);
+    const signal = opts?.signal ?? startSendAbort();
 
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
@@ -330,12 +360,16 @@ export default function DocumentEmailSendDialog({
         if (!opts?.acceptPair) {
           toast.loading('Generating preview + original…', { id: toastId });
         }
-        const pair = opts?.acceptPair ?? (await generateDocumentAcceptPdfPair(kind, bill));
+        const pair = opts?.acceptPair ?? (await generateDocumentAcceptPdfPair(kind, bill, signal));
         const customerName = resolveBillCustomerDisplayName(bill.customer);
 
         let sent = 0;
         let lastError = '';
         for (let i = 0; i < recipients.length; i += 1) {
+          if (signal.aborted) {
+            toastSendCancelled(toastId, 'email');
+            return { ok: false as const };
+          }
           const to = recipients[i];
           toast.loading(
             recipients.length > 1
@@ -358,7 +392,12 @@ export default function DocumentEmailSendDialog({
             previewVerifyCode: pair.previewVerifyCode,
             originalPdfBase64: pair.originalPdfBase64,
             previewPdfBase64: pair.previewPdfBase64,
+            signal,
           });
+          if (invite.cancelled) {
+            if (sent === 0) toastSendCancelled(toastId, 'email');
+            return { ok: false as const };
+          }
           if (!invite.ok) {
             lastError = invite.error || 'Could not send the Accept email';
             continue;
@@ -410,7 +449,13 @@ export default function DocumentEmailSendDialog({
         recipientEmails: recipients,
         dueDateIso,
         customMessage: emailBody,
+        signal,
       });
+
+      if (result.cancelled) {
+        toastSendCancelled(toastId, 'email');
+        return { ok: false as const };
+      }
 
       if (!result.ok) {
         toast.error(result.error || 'Could not send email', { id: toastId });
@@ -434,6 +479,7 @@ export default function DocumentEmailSendDialog({
         lastError: '',
       };
     } catch (error) {
+      if (toastIfAborted(error, toastId, 'email')) return { ok: false as const };
       const msg = error instanceof Error ? error.message : 'Failed to send email';
       toast.error(requireAccept ? 'Could not send the Accept email' : 'Could not send email', {
         id: toastId,
@@ -455,6 +501,7 @@ export default function DocumentEmailSendDialog({
     toastId?: string | number;
     /** Reuse an already generated preview/original pair (Both + Require Accept). */
     acceptPair?: DocumentAcceptPdfPair;
+    signal?: AbortSignal;
   }) => {
     if (!bill || !brand) {
       toast.error('Document details are missing');
@@ -468,7 +515,12 @@ export default function DocumentEmailSendDialog({
     const destinations = resolved.destinations;
     const customerName = resolveBillCustomerDisplayName(bill.customer);
     const customerIdFor = (to: string) =>
-      customerIdForWhatsAppDest(to, bill.customer?.phone, bill.customer?.id || null);
+      customerIdForWhatsAppDest(
+        to,
+        bill.customer?.phone,
+        bill.customer?.id || null,
+        customerAlternatePhone(bill.customer)
+      );
 
     if (!cloudApiOn) {
       if (requireAccept) {
@@ -501,6 +553,8 @@ export default function DocumentEmailSendDialog({
 
     const toastId = opts?.toastId ?? toast.loading('Preparing PDF for WhatsApp…');
     if (opts?.toastId == null) setSending(true);
+    setWaDeliveryError(null);
+    const signal = opts?.signal ?? startSendAbort();
 
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
@@ -515,7 +569,7 @@ export default function DocumentEmailSendDialog({
         if (!opts?.acceptPair) {
           toast.loading('Generating preview + original…', { id: toastId });
         }
-        const pair = opts?.acceptPair ?? (await generateDocumentAcceptPdfPair(kind, bill));
+        const pair = opts?.acceptPair ?? (await generateDocumentAcceptPdfPair(kind, bill, signal));
         const fanout = await sendWhatsAppToMany(
           destinations,
           (to, windowClosed) =>
@@ -535,6 +589,7 @@ export default function DocumentEmailSendDialog({
               originalPdfBase64: pair.originalPdfBase64,
               previewPdfBase64: pair.previewPdfBase64,
               preferColdTemplate: windowClosed,
+              signal,
             }),
           (to, windowClosed, _i, total) => {
             toast.loading(
@@ -545,10 +600,16 @@ export default function DocumentEmailSendDialog({
                   : 'Sending Accept preview on WhatsApp…',
               { id: toastId }
             );
-          }
+          },
+          signal
         );
+        if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+          return { ok: false as const };
+        }
         if (fanout.sent === 0) {
-          toast.error(fanout.lastError || 'Could not send Accept preview', { id: toastId });
+          const err = fanout.lastError || 'Could not send Accept preview';
+          setWaDeliveryError(err);
+          reportWhatsAppPdfNotDelivered(err, toastId);
           return { ok: false as const };
         }
         if (!opts?.keepOpen) {
@@ -575,7 +636,7 @@ export default function DocumentEmailSendDialog({
         return { ok: true as const, toastId, via: 'accept_preview' as const, sent: fanout.sent };
       }
 
-      const pdf = await generateGeneratorDocumentPdfBase64(kind, bill);
+      const pdf = await generateGeneratorDocumentPdfBase64(kind, bill, signal);
       const caption = (
         message.trim() ||
         defaultMessageForChannel({
@@ -599,6 +660,7 @@ export default function DocumentEmailSendDialog({
             customerId: customerIdFor(to),
             source: 'documents',
             preferColdTemplate: windowClosed,
+            signal,
             cold: {
               kind,
               customerName,
@@ -617,11 +679,15 @@ export default function DocumentEmailSendDialog({
                 : 'Sending on WhatsApp…',
             { id: toastId }
           );
-        }
+        },
+        signal
       );
+      if (toastIfCancelledBeforeSend(fanout.cancelled, fanout.sent, toastId)) {
+        return { ok: false as const };
+      }
 
       if (fanout.sent === 0) {
-        if (destinations.length === 1) {
+        if (destinations.length === 1 && !isNotOnWhatsAppError(fanout.lastError)) {
           openWhatsAppMeDeepLink(destinations[0], caption);
           if (!opts?.keepOpen) {
             toast.success(
@@ -633,23 +699,39 @@ export default function DocumentEmailSendDialog({
           }
           return { ok: true as const, toastId, via: 'wa_me' as const, sent: 0 };
         }
-        toast.error(fanout.lastError || 'Could not send on WhatsApp', { id: toastId });
+        const err = fanout.lastError || 'Could not send on WhatsApp';
+        setWaDeliveryError(err);
+        reportWhatsAppPdfNotDelivered(err, toastId);
         return { ok: false as const };
       }
 
+      if (fanout.lastError && fanout.sent < destinations.length) {
+        reportWhatsAppPdfPartialDelivery({
+          sent: fanout.sent,
+          total: destinations.length,
+          lastError: fanout.lastError,
+        });
+        setWaDeliveryError(fanout.lastError);
+      } else {
+        setWaDeliveryError(null);
+        clearWhatsAppDeliveryBanner();
+      }
+
       if (!opts?.keepOpen) {
-        toast.success(
-          whatsappMultiSendOkMessage({
-            sent: fanout.sent,
-            total: destinations.length,
-            usedTemplate: fanout.usedTemplate,
-            lastError: fanout.lastError,
-            one: 'PDF sent on WhatsApp',
-            oneTemplate: 'PDF sent via WhatsApp template',
-            many: 'PDF sent on WhatsApp',
-          }),
-          { id: toastId }
-        );
+        const okMsg = whatsappMultiSendOkMessage({
+          sent: fanout.sent,
+          total: destinations.length,
+          usedTemplate: fanout.usedTemplate,
+          lastError: fanout.lastError,
+          one: 'PDF sent on WhatsApp',
+          oneTemplate: 'PDF sent via WhatsApp template',
+          many: 'PDF sent on WhatsApp',
+        });
+        if (fanout.lastError && fanout.sent < destinations.length) {
+          toast.warning(okMsg, { id: toastId });
+        } else {
+          toast.success(okMsg, { id: toastId });
+        }
         onSent?.();
         onOpenChange(false);
       }
@@ -660,10 +742,11 @@ export default function DocumentEmailSendDialog({
         sent: fanout.sent,
       };
     } catch (error) {
+      if (toastIfAborted(error, toastId)) return { ok: false as const };
       console.error(error);
-      toast.error(error instanceof Error ? error.message : 'Could not send on WhatsApp', {
-        id: toastId,
-      });
+      const err = error instanceof Error ? error.message : 'Could not send on WhatsApp';
+      setWaDeliveryError(err);
+      reportWhatsAppPdfNotDelivered(err, toastId);
       return { ok: false as const };
     } finally {
       if (opts?.toastId == null && !opts?.keepOpen) setSending(false);
@@ -681,6 +764,7 @@ export default function DocumentEmailSendDialog({
     }
 
     setSending(true);
+    const signal = startSendAbort();
     const toastId = toast.loading(
       requireAccept ? 'Sending Accept invites…' : 'Sending email and WhatsApp…'
     );
@@ -694,8 +778,9 @@ export default function DocumentEmailSendDialog({
         }
         toast.loading('Generating preview + original…', { id: toastId });
         try {
-          acceptPair = await generateDocumentAcceptPdfPair(kind, bill);
+          acceptPair = await generateDocumentAcceptPdfPair(kind, bill, signal);
         } catch (error) {
+          if (toastIfAborted(error, toastId)) return;
           toast.error(
             error instanceof Error ? error.message : 'Could not prepare the Accept PDFs',
             { id: toastId }
@@ -705,13 +790,14 @@ export default function DocumentEmailSendDialog({
       }
 
       toast.loading(requireAccept ? 'Sending Accept email…' : 'Sending email…', { id: toastId });
-      const emailResult = await handleSendEmail({ keepOpen: true, toastId, acceptPair });
+      const emailResult = await handleSendEmail({ keepOpen: true, toastId, acceptPair, signal });
+      if (signal.aborted) return;
 
       toast.loading(
         requireAccept ? 'Sending Accept preview on WhatsApp…' : 'Sending WhatsApp…',
         { id: toastId }
       );
-      const waResult = await handleSendWhatsApp({ keepOpen: true, toastId, acceptPair });
+      const waResult = await handleSendWhatsApp({ keepOpen: true, toastId, acceptPair, signal });
       if (!emailResult.ok && !waResult.ok) {
         toast.error(
           requireAccept
@@ -733,14 +819,7 @@ export default function DocumentEmailSendDialog({
         return;
       }
       if (!waResult.ok) {
-        toast.warning(
-          requireAccept
-            ? 'Accept email sent, but the WhatsApp Accept preview failed'
-            : 'Email sent, but WhatsApp failed',
-          { id: toastId }
-        );
-        onSent?.();
-        onOpenChange(false);
+        toast.dismiss(toastId);
         return;
       }
 
@@ -801,7 +880,10 @@ export default function DocumentEmailSendDialog({
         : 'preview PDF on WhatsApp, then I Accept for the original (works inside 24h and via cold template when closed).';
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
+    <Dialog open={open} onOpenChange={(next) => {
+      if (!next && sending) sendAbortRef.current?.abort();
+      onOpenChange(next);
+    }}>
       <DialogContent
         dismissible={false}
         className={forceLightThemeClass(
@@ -824,6 +906,13 @@ export default function DocumentEmailSendDialog({
         </DialogHeader>
 
         <div className="px-4 sm:px-6 py-4 space-y-4">
+          <WhatsAppDeliveryInlineBanner
+            message={waDeliveryError}
+            onDismiss={() => {
+              setWaDeliveryError(null);
+              clearWhatsAppDeliveryBanner();
+            }}
+          />
           {bill ? (
             <div className="rounded-lg border bg-slate-50 px-3 py-2.5 text-sm space-y-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -1050,8 +1139,7 @@ export default function DocumentEmailSendDialog({
             type="button"
             variant="outline"
             className="w-full sm:w-auto"
-            onClick={() => onOpenChange(false)}
-            disabled={sending}
+            onClick={requestClose}
           >
             Cancel
           </Button>

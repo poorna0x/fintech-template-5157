@@ -22,6 +22,7 @@ import {
   generateDocumentPdfBase64,
   withAbsoluteAssetUrls,
 } from './server-pdf-download';
+import { throwIfAborted } from './abortSend';
 import {
   formatDocumentPdfVerifyFooterLine,
   generateDocumentPdfVerifyCode,
@@ -293,6 +294,8 @@ export interface LetterheadDocumentData {
   customerId?: string;
   customerCode?: string;
   customerPhone?: string;
+  /** CRM alternate mobile — prefilled into Share another number. */
+  customerAlternatePhone?: string;
   customerEmail?: string;
 
   /** Document body — alternating text blocks, tables, images and page breaks. */
@@ -1356,14 +1359,17 @@ async function fingerprintLetterheadPdf(params: {
 
 /** Puppeteer PDF + hash-only fingerprint (email / WhatsApp). */
 export async function generateLetterheadPdfBase64(
-  data: LetterheadDocumentData
+  data: LetterheadDocumentData,
+  signal?: AbortSignal
 ): Promise<{ pdfBase64: string; filename: string; size: number }> {
+  throwIfAborted(signal);
   const verifyCode = generateDocumentPdfVerifyCode();
   const fingerprinted = withLetterheadAuthenticity(data, verifyCode);
   const filename = letterheadPdfFilename(fingerprinted);
   const pdf = await generateDocumentPdfBase64({
     html: buildLetterheadDocumentHtml(fingerprinted),
     filename,
+    signal,
   });
   await fingerprintLetterheadPdf({
     data: fingerprinted,

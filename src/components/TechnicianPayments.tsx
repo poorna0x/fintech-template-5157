@@ -19,6 +19,7 @@ import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { sendSalarySlipWhatsApp } from '@/lib/sendSalarySlipWhatsApp';
+import { toastIfAborted, toastSendCancelled } from '@/lib/abortSend';
 import { supabase } from '@/lib/supabase';
 import { generateSalarySlipPDF, getSalarySlipPreviewHtml } from '@/lib/salary-slip-pdf-generator';
 import { runAfterDialogClose } from '@/lib/document-preview-utils';
@@ -319,6 +320,7 @@ const TechnicianPayments = () => {
   const [salarySlipDialogOpen, setSalarySlipDialogOpen] = useState(false);
   const [selectedBreakdownForSlip, setSelectedBreakdownForSlip] = useState<TechnicianSalaryBreakdown | null>(null);
   const [salarySlipSending, setSalarySlipSending] = useState(false);
+  const salarySlipAbortRef = useRef<AbortController | null>(null);
   const [includeDayWiseBreakdown, setIncludeDayWiseBreakdown] = useState(true);
   const [salarySlipPreviewOpen, setSalarySlipPreviewOpen] = useState(false);
   const [salarySlipPreviewHtml, setSalarySlipPreviewHtml] = useState<string | null>(null);
@@ -1651,6 +1653,8 @@ const TechnicianPayments = () => {
       return;
     }
     setSalarySlipSending(true);
+    const ac = new AbortController();
+    salarySlipAbortRef.current = ac;
     const toastId = toast.loading(
       cloudApiOn ? 'Generating salary slip PDF…' : 'Opening WhatsApp…'
     );
@@ -1675,7 +1679,12 @@ const TechnicianPayments = () => {
         breakdown: selectedBreakdownForSlip,
         period: commissionPeriod,
         includeDayWiseBreakdown,
+        signal: ac.signal,
       });
+      if (result.cancelled) {
+        toastSendCancelled(toastId);
+        return;
+      }
       if (result.ok) {
         toast.success(
           result.viaColdTemplate
@@ -1692,6 +1701,7 @@ const TechnicianPayments = () => {
       }
       toast.error(result.error || 'WhatsApp send failed', { id: toastId });
     } catch (err) {
+      if (toastIfAborted(err, toastId)) return;
       toast.error(err instanceof Error ? err.message : 'WhatsApp send failed', { id: toastId });
     } finally {
       setSalarySlipSending(false);
@@ -3904,11 +3914,15 @@ const TechnicianPayments = () => {
               variant="outline"
               className="h-10 w-full"
               onClick={() => {
+                if (salarySlipSending) {
+                  salarySlipAbortRef.current?.abort();
+                  return;
+                }
                 setSalarySlipDialogOpen(false);
                 setSelectedBreakdownForSlip(null);
               }}
             >
-              Cancel
+              {salarySlipSending ? 'Cancel send' : 'Cancel'}
             </Button>
             <Button
               onClick={() => {
@@ -4006,6 +4020,15 @@ const TechnicianPayments = () => {
           });
         }}
         extraFooter={
+          salarySlipSending ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => salarySlipAbortRef.current?.abort()}
+            >
+              Cancel send
+            </Button>
+          ) : (
           <Button
             type="button"
             variant="outline"
@@ -4013,13 +4036,10 @@ const TechnicianPayments = () => {
             onClick={() => void handleSendSalarySlipWhatsApp()}
             className="border-green-600 text-green-700 hover:bg-green-50"
           >
-            {salarySlipSending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <WhatsAppIcon className="w-4 h-4 mr-2" />
-            )}
+            <WhatsAppIcon className="w-4 h-4 mr-2" />
             Send WhatsApp
           </Button>
+          )
         }
       />
 

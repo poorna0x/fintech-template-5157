@@ -8,6 +8,7 @@ import { normalizeRecipientList, formatRecipientsForEmailApi } from '@/lib/email
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import { isAbortError, SEND_CANCELLED_MESSAGE, throwIfAborted } from '@/lib/abortSend';
 import {
   generateLetterheadPdfBase64,
   letterheadPdfFilename,
@@ -25,7 +26,8 @@ export async function sendLetterheadDocumentEmail(params: {
   brand: DocumentBrand;
   recipientEmails: string[];
   customMessage?: string;
-}): Promise<{ ok: boolean; error?: string; sentCount?: number }> {
+  signal?: AbortSignal;
+}): Promise<{ ok: boolean; error?: string; sentCount?: number; cancelled?: boolean }> {
   const recipients = normalizeRecipientList(params.recipientEmails);
   if (!recipients.length) {
     return { ok: false, error: 'Add at least one valid email address' };
@@ -35,6 +37,7 @@ export async function sendLetterheadDocumentEmail(params: {
     return { ok: false, error: 'Add at least one valid email address' };
   }
 
+  throwIfAborted(params.signal);
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     return { ok: false, error: 'Could not verify your session. Please try again in a moment.' };
@@ -44,11 +47,14 @@ export async function sendLetterheadDocumentEmail(params: {
   let filename: string;
   let size: number;
   try {
-    const pdf = await generateLetterheadPdfBase64(params.data);
+    const pdf = await generateLetterheadPdfBase64(params.data, params.signal);
     pdfBase64 = pdf.pdfBase64;
     filename = pdf.filename;
     size = pdf.size;
   } catch (error) {
+    if (isAbortError(error)) {
+      return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+    }
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'PDF generation failed',
@@ -98,8 +104,13 @@ export async function sendLetterheadDocumentEmail(params: {
       ],
       customerId: params.data.customerId || null,
     },
-    accessToken
+    accessToken,
+    params.signal
   );
+
+  if (result.cancelled) {
+    return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+  }
 
   if (!result.ok) {
     return { ok: false, error: result.error || 'Could not send to any recipient' };

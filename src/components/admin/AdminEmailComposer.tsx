@@ -67,6 +67,7 @@ import {
 } from '@/lib/ensureSupabaseSession';
 import { forceLightSelectContentClass, forceLightThemeClass } from '@/lib/force-light-theme';
 import { wrapEmailHtmlForPreview, type EmailPreviewTheme } from '@/lib/email-preview-html';
+import { toastIfAborted, toastSendCancelled } from '@/lib/abortSend';
 
 type PreviewMode = 'mobile' | 'desktop';
 type MobilePanel = 'compose' | 'preview';
@@ -137,6 +138,7 @@ export function AdminEmailComposerPanel({
   const [sentSummary, setSentSummary] = useState<SentEmailSummary | null>(null);
   const [attachmentsUploading, setAttachmentsUploading] = useState(false);
   const [sending, setSending] = useState(false);
+  const sendAbortRef = useRef<AbortController | null>(null);
   const [sourceMode, setSourceMode] = useState<EmailSourceMode>('crm');
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [crmDataLoaded, setCrmDataLoaded] = useState(false);
@@ -496,6 +498,9 @@ export function AdminEmailComposerPanel({
 
     setSendPhase('sending');
     setSending(true);
+    const ac = new AbortController();
+    sendAbortRef.current = ac;
+    const signal = ac.signal;
 
     let sendAttachments = attachments.map(stripAttachmentPayload);
     if (templateMeta.autoAttachPdf && selectedSourceId) {
@@ -504,6 +509,7 @@ export function AdminEmailComposerPanel({
           templateType,
           sourceRecordId: selectedSourceId,
           documentBrand: activeBrand,
+          signal,
         });
         const existingNames = new Set(sendAttachments.map((a) => a.filename.toLowerCase()));
         for (const attachment of autoAttachments) {
@@ -514,6 +520,7 @@ export function AdminEmailComposerPanel({
       } catch (error) {
         setSending(false);
         setSendPhase('confirm');
+        if (toastIfAborted(error, undefined, 'email')) return;
         toast.error(
           error instanceof Error ? error.message : 'Could not generate PDF attachment'
         );
@@ -533,9 +540,16 @@ export function AdminEmailComposerPanel({
         jobId: linkedJobId,
         customerId: linkedCustomerId,
       },
-      accessToken
+      accessToken,
+      signal
     );
     setSending(false);
+
+    if (result.cancelled) {
+      setSendPhase('confirm');
+      toastSendCancelled(undefined, 'email');
+      return;
+    }
 
     if (result.ok) {
       const summary: SentEmailSummary = {
@@ -732,9 +746,19 @@ export function AdminEmailComposerPanel({
         )}
 
         {sendPhase === 'sending' && (
-          <div className="flex items-center justify-center gap-2 py-4 text-sm text-slate-600">
-            <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
-            Sending email from {activeBrandLabel}…
+          <div className="flex flex-col items-center gap-3 py-4">
+            <div className="flex items-center justify-center gap-2 text-sm text-slate-600">
+              <Loader2 className="w-4 h-4 animate-spin text-slate-600" />
+              Sending email from {activeBrandLabel}…
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => sendAbortRef.current?.abort()}
+            >
+              Cancel
+            </Button>
           </div>
         )}
       </CardContent>

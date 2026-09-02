@@ -81,6 +81,7 @@ interface CustomerPick {
   customer_id: string;
   full_name: string;
   phone: string;
+  alternate_phone?: string;
   model: string;
   brand: string;
   visible_address: string;
@@ -284,6 +285,7 @@ export default function WarrantyManagementDialog({
           customer_id: String(row.customer_id ?? ''),
           full_name: String(row.full_name ?? ''),
           phone: String(row.phone ?? ''),
+          alternate_phone: String(row.alternate_phone ?? ''),
           model: String(row.model ?? ''),
           brand: String(row.brand ?? ''),
           visible_address: String(row.visible_address ?? ''),
@@ -322,6 +324,10 @@ export default function WarrantyManagementDialog({
         ...pick,
         addressText: buildAddressText(addrRow.address) || pick.visible_address,
         email: typeof addrRow.email === 'string' ? addrRow.email : null,
+        alternate_phone:
+          typeof addrRow.alternate_phone === 'string' && addrRow.alternate_phone.trim()
+            ? addrRow.alternate_phone.trim()
+            : pick.alternate_phone,
       });
 
       if (warrantiesRes.error) {
@@ -1459,6 +1465,7 @@ export default function WarrantyManagementDialog({
         customerEmailOnFile={customer?.email}
         customerId={customer?.id}
         defaultPhone={customer?.phone}
+        defaultAlternatePhone={customer?.alternate_phone}
         onSaveCustomerEmail={handleSaveCustomerEmail}
       />
     </Dialog>

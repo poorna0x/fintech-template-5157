@@ -9,6 +9,7 @@ import { normalizeRecipientList, formatRecipientsForEmailApi } from '@/lib/email
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
+import { isAbortError, SEND_CANCELLED_MESSAGE, throwIfAborted } from '@/lib/abortSend';
 import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   generateWarrantyCardHTML,
@@ -26,6 +27,7 @@ export interface SendWarrantyCardEmailParams {
   recipientEmails: string[];
   customMessage?: string;
   customerId?: string;
+  signal?: AbortSignal;
 }
 
 export interface SendWarrantyCardEmailResult {
@@ -33,6 +35,7 @@ export interface SendWarrantyCardEmailResult {
   error?: string;
   sentCount?: number;
   failedRecipients?: string[];
+  cancelled?: boolean;
 }
 
 function warrantyPdfFilename(data: WarrantyCardPDFData): string {
@@ -90,8 +93,9 @@ async function fingerprintWarrantyPdf(params: {
 /** PDF base64 helper. Fingerprints hash-only. */
 export async function generateWarrantyCardPdfBase64(
   data: WarrantyCardPDFData,
-  opts?: { customerId?: string | null }
+  opts?: { customerId?: string | null; signal?: AbortSignal }
 ): Promise<{ pdfBase64: string; filename: string; size: number }> {
+  throwIfAborted(opts?.signal);
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     throw new Error('Could not verify your session. Please try again.');
@@ -100,9 +104,11 @@ export async function generateWarrantyCardPdfBase64(
   const generatedOnYmd = todayYmdIst();
   const fingerprinted = withWarrantyAuthenticity(data, verifyCode, generatedOnYmd);
   const filename = warrantyPdfFilename(fingerprinted);
+  throwIfAborted(opts?.signal);
   const pdf = await generateDocumentPdfBase64({
     html: generateWarrantyCardHTML(fingerprinted),
     filename,
+    signal: opts?.signal,
   });
   await fingerprintWarrantyPdf({
     data: fingerprinted,
@@ -118,7 +124,7 @@ export async function generateWarrantyCardPdfBase64(
 export async function sendWarrantyCardEmail(
   params: SendWarrantyCardEmailParams
 ): Promise<SendWarrantyCardEmailResult> {
-  const { data, brand, recipientEmails, customMessage, customerId } = params;
+  const { data, brand, recipientEmails, customMessage, customerId, signal } = params;
 
   const recipients = normalizeRecipientList(recipientEmails);
   if (!recipients.length) {
@@ -136,6 +142,7 @@ export async function sendWarrantyCardEmail(
   const fingerprinted = withWarrantyAuthenticity(data, verifyCode, generatedOnYmd);
   const html = generateWarrantyCardHTML(fingerprinted);
 
+  throwIfAborted(signal);
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
     return {
@@ -149,7 +156,8 @@ export async function sendWarrantyCardEmail(
   let size: number;
 
   try {
-    const pdf = await generateDocumentPdfBase64({ html, filename: pdfFilename });
+    throwIfAborted(signal);
+    const pdf = await generateDocumentPdfBase64({ html, filename: pdfFilename, signal });
     pdfBase64 = pdf.pdfBase64;
     filename = pdf.filename;
     size = pdf.size;
@@ -162,6 +170,9 @@ export async function sendWarrantyCardEmail(
       generatedOnYmd,
     });
   } catch (error) {
+    if (isAbortError(error)) {
+      return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+    }
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'PDF generation failed',
@@ -215,8 +226,13 @@ export async function sendWarrantyCardEmail(
       attachments: [attachment],
       customerId: customerId ?? null,
     },
-    accessToken
+    accessToken,
+    signal
   );
+
+  if (result.cancelled) {
+    return { ok: false, cancelled: true, error: SEND_CANCELLED_MESSAGE };
+  }
 
   if (!result.ok) {
     return {

@@ -435,6 +435,9 @@ export interface Bill {
     state: string;
     pincode: string;
     phone: string;
+    /** CRM alternate mobile — used to prefill “Also send to” on PDF WhatsApp. */
+    alternate_phone?: string;
+    alternatePhone?: string;
     email: string;
     gstNumber?: string;
   };

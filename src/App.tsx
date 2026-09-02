@@ -1,5 +1,6 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
+import { WhatsAppDeliveryBannerHost } from "@/components/whatsapp/WhatsAppDeliveryBanner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
@@ -225,6 +226,7 @@ const App = () => (
         {import.meta.env.DEV ? <PerformanceMonitor /> : null}
         <Toaster />
         <Sonner />
+        <WhatsAppDeliveryBannerHost />
         <BrowserRouter>
           <NativeBackButton />
           <ScrollToTopOnNavigate />
