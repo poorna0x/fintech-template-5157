@@ -7,6 +7,7 @@ import {
   readCustomerEquipmentSlot,
 } from '@/lib/equipment-suggestions';
 import { isLeadSourceRequiresOtp, normalizeWebsiteLeadBrandLabel } from '@/lib/leadCatalog';
+import { removePlusCode } from '@/lib/maps';
 
 /** Technician employee id used for zero-commission (office) completions. */
 export const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
@@ -1402,9 +1403,12 @@ export function nextVisibleAddressFromMapsFetch(
 }
 
 export type ReverseGeocodeResult = {
+  /** POI or best Google formatted line — used for Location extraction hints. */
   formattedAddress: string;
   addressComponents: GoogleAddressComponentLike[];
-  /** When the pin is on a POI/building, Google often names it here instead of in street_address. */
+  /** Normal street line (road + area + city) without Block/Tower sub-building prefixes. */
+  streetAddress: string | null;
+  /** Society / shop name from Maps link or POI — prepend to streetAddress when useful. */
   establishmentLabel?: string | null;
 };
 
@@ -1420,24 +1424,218 @@ const REVERSE_GEO_POI_TYPES = new Set([
   'lodging',
 ]);
 
-function pickReverseGeocodeResult(
+/** Block / tower wing labels Google adds at large layouts — not wanted in Complete Address. */
+export function isSubBuildingAddressPart(part: string): boolean {
+  const p = String(part || '').trim();
+  if (!p || p.length > 48) return false;
+  if (/^block\s*[-.]?\s*[a-z0-9]+$/i.test(p)) return true;
+  if (/^blk\s*[-.]?\s*[a-z0-9]+$/i.test(p)) return true;
+  if (/^tower\s+[a-z0-9]+$/i.test(p)) return true;
+  if (/^wing\s+[a-z0-9]+$/i.test(p)) return true;
+  return false;
+}
+
+export function stripSubBuildingPartsFromAddressLine(line: string): string {
+  const parts = String(line || '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return String(line || '').trim();
+  const filtered = parts.filter((p) => !isSubBuildingAddressPart(p));
+  return (filtered.length ? filtered : parts).join(', ');
+}
+
+function findGeocodeComponent(
+  components: GoogleAddressComponentLike[],
+  type: string
+): GoogleAddressComponentLike | undefined {
+  return components.find((c) => Array.isArray(c.types) && c.types.includes(type));
+}
+
+function componentLabelsFromGeocode(
+  components: GoogleAddressComponentLike[]
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const comp of components) {
+    if (!Array.isArray(comp.types)) continue;
+    const label = componentLabel(comp);
+    if (!label) continue;
+    for (const type of comp.types) {
+      if (!map.has(type)) map.set(type, label);
+    }
+  }
+  return map;
+}
+
+function buildStreetLineFromGeocodeComponents(
+  components: GoogleAddressComponentLike[]
+): string | null {
+  if (!components.length) return null;
+  const byType = componentLabelsFromGeocode(components);
+  const get = (type: string) => byType.get(type) || '';
+
+  const parts: string[] = [];
+  const streetNumber = get('street_number');
+  const route = get('route');
+  if (streetNumber && route) parts.push(`${streetNumber}, ${route}`);
+  else if (route) parts.push(route);
+  else if (streetNumber) parts.push(streetNumber);
+
+  const subpremise = get('subpremise');
+  if (subpremise && !isSubBuildingAddressPart(subpremise)) {
+    parts.push(subpremise);
+  }
+
+  const seen = new Set(parts.map((p) => p.toLowerCase()));
+  const areaTypes = [
+    'neighborhood',
+    'sublocality_level_1',
+    'sublocality',
+    'sublocality_level_2',
+    'sublocality_level_3',
+    'administrative_area_level_3',
+  ] as const;
+  for (const type of areaTypes) {
+    const label = get(type);
+    if (!label || isGenericGeoLocality(label)) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(label);
+  }
+
+  const city = get('locality');
+  if (city && !seen.has(city.toLowerCase())) {
+    seen.add(city.toLowerCase());
+    parts.push(city);
+  }
+
+  const state = get('administrative_area_level_1');
+  const pin = get('postal_code');
+  if (state && pin) parts.push(`${state} ${pin}`);
+  else if (pin) parts.push(pin);
+  else if (state) parts.push(state);
+
+  const country = get('country');
+  if (country) parts.push(country);
+
+  return parts.length ? parts.join(', ') : null;
+}
+
+function normalizeStreetAddressLine(line: string | null | undefined): string | null {
+  const cleaned = stripSubBuildingPartsFromAddressLine(
+    removePlusCode(String(line || '')).replace(/\s+/g, ' ').trim()
+  );
+  return cleaned || null;
+}
+
+function pickStreetGeocodeResult(
   results: google.maps.GeocoderResult[] | null | undefined
 ): google.maps.GeocoderResult | null {
   if (!results?.length) return null;
-  const poi = results.find((r) => r.types?.some((t) => REVERSE_GEO_POI_TYPES.has(t)));
-  return poi ?? results[0];
+  const street = results.find((r) => r.types?.includes('street_address'));
+  if (street) return street;
+  const route = results.find((r) => r.types?.includes('route'));
+  if (route) return route;
+  const withoutBlockLead = results.find((r) => {
+    const first = r.formatted_address?.split(',')[0]?.trim() || '';
+    return first && !isSubBuildingAddressPart(first);
+  });
+  return withoutBlockLead ?? results[0];
+}
+
+function pickPoiGeocodeResult(
+  results: google.maps.GeocoderResult[] | null | undefined
+): google.maps.GeocoderResult | null {
+  if (!results?.length) return null;
+  return results.find((r) => r.types?.some((t) => REVERSE_GEO_POI_TYPES.has(t))) ?? null;
+}
+
+function streetAddressFromGeocodeResult(
+  streetResult: google.maps.GeocoderResult | null | undefined,
+  fallbackFormatted: string | null | undefined
+): string | null {
+  const fromComponents = streetResult?.address_components?.length
+    ? buildStreetLineFromGeocodeComponents(
+        (streetResult.address_components || []).map((c) => ({
+          long_name: c.long_name,
+          short_name: c.short_name,
+          types: c.types ? [...c.types] : [],
+        }))
+      )
+    : null;
+  if (fromComponents) return normalizeStreetAddressLine(fromComponents);
+  if (streetResult?.formatted_address) {
+    return normalizeStreetAddressLine(streetResult.formatted_address);
+  }
+  if (fallbackFormatted) return normalizeStreetAddressLine(fallbackFormatted);
+  return null;
 }
 
 function establishmentLabelFromGeocodeResult(
-  result: google.maps.GeocoderResult | null | undefined
+  poiResult: google.maps.GeocoderResult | null | undefined
 ): string | null {
-  if (!result?.formatted_address) return null;
-  if (!result.types?.some((t) => REVERSE_GEO_POI_TYPES.has(t))) return null;
-  return mapsPlaceLabelForStreetAddress(result.formatted_address.split(',')[0]) ||
-    visibleAddressFromMapsPlaceName(result.formatted_address);
+  if (!poiResult?.formatted_address) return null;
+  if (!poiResult.types?.some((t) => REVERSE_GEO_POI_TYPES.has(t))) return null;
+
+  const parts = poiResult.formatted_address
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  for (const part of parts) {
+    if (isSubBuildingAddressPart(part)) continue;
+    if (isGenericGeoLocality(part)) continue;
+    const label = mapsPlaceLabelForStreetAddress(part);
+    if (label) return label;
+  }
+
+  const premise = findGeocodeComponent(
+    (poiResult.address_components || []).map((c) => ({
+      long_name: c.long_name,
+      short_name: c.short_name,
+      types: c.types ? [...c.types] : [],
+    })),
+    'premise'
+  );
+  const premiseLabel = mapsPlaceLabelForStreetAddress(componentLabel(premise || {}));
+  return premiseLabel || null;
 }
 
-/** Browser reverse-geocode — returns formatted address + components (one Google call). */
+/** Build Complete Address after Fetch: Maps place name + normal street (no Block/Tower prefix). */
+export function composeFetchAddressFromGeocode(opts: {
+  geocode: ReverseGeocodeResult | null;
+  placeName?: string | null;
+  placeHintUsed?: string | null;
+}): {
+  completeAddress: string | null;
+  locationHintsFormatted: string | null;
+} {
+  const geocode = opts.geocode;
+  const street = geocode?.streetAddress || null;
+  const mapsPlaceLabel =
+    opts.placeName || opts.placeHintUsed || geocode?.establishmentLabel || null;
+  const completeAddress = street
+    ? prependMapsPlaceNameToStreetAddress(mapsPlaceLabel, street)
+    : mapsPlaceLabel
+      ? prependMapsPlaceNameToStreetAddress(mapsPlaceLabel, null)
+      : null;
+  return {
+    completeAddress,
+    locationHintsFormatted: geocode?.formattedAddress || street,
+  };
+}
+
+function mapGeocodeComponents(
+  result: google.maps.GeocoderResult | null | undefined
+): GoogleAddressComponentLike[] {
+  return (result?.address_components || []).map((c) => ({
+    long_name: c.long_name,
+    short_name: c.short_name,
+    types: c.types ? [...c.types] : [],
+  }));
+}
+
+/** Browser reverse-geocode — street line + POI name + components for Location. */
 export async function reverseGeocodeLatLng(
   lat: number,
   lng: number
@@ -1453,20 +1651,29 @@ export async function reverseGeocodeLatLng(
           status === 'OK' ||
           (typeof window.google?.maps?.GeocoderStatus !== 'undefined' &&
             status === window.google.maps.GeocoderStatus.OK);
-        const best = ok ? pickReverseGeocodeResult(results) : null;
-        if (best?.formatted_address) {
-          resolve({
-            formattedAddress: best.formatted_address,
-            addressComponents: (best.address_components || []).map((c) => ({
-              long_name: c.long_name,
-              short_name: c.short_name,
-              types: c.types ? [...c.types] : [],
-            })),
-            establishmentLabel: establishmentLabelFromGeocodeResult(best),
-          });
-        } else {
+        if (!ok || !results?.length) {
           resolve(null);
+          return;
         }
+
+        const poiResult = pickPoiGeocodeResult(results);
+        const streetResult = pickStreetGeocodeResult(results);
+        const hintResult = poiResult ?? streetResult ?? results[0];
+        const formattedAddress = hintResult?.formatted_address || '';
+        if (!formattedAddress) {
+          resolve(null);
+          return;
+        }
+
+        resolve({
+          formattedAddress,
+          addressComponents: mapGeocodeComponents(streetResult ?? hintResult),
+          streetAddress: streetAddressFromGeocodeResult(
+            streetResult,
+            poiResult?.formatted_address || formattedAddress
+          ),
+          establishmentLabel: establishmentLabelFromGeocodeResult(poiResult),
+        });
       });
     });
   } catch (error) {

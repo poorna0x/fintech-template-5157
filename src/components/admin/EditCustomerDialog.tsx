@@ -12,7 +12,7 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import { MapPin, Download, ExternalLink, Trash2, X } from 'lucide-react';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { MANAGER_RESTRICTED_TITLE } from '@/lib/managerAccess';
-import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, prependMapsPlaceNameToStreetAddress, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
+import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, composeFetchAddressFromGeocode, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { hasAlternateLocation, getAlternateAddress, getAlternateLocation, getJobServiceSite } from '@/lib/customer-locations';
@@ -31,7 +31,6 @@ import {
   resolveGoogleMapsInputToCoords,
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
-import { removePlusCode } from '@/lib/maps';
 import { beginWebClipboardRead, readClipboardText } from '@/lib/nativeClipboard';
 
 /** Persist a coords URL so assign/distance never depends on short-link expand again. */
@@ -913,22 +912,19 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       }
 
       const geocodeResult = await reverseGeocode(coords.latitude, coords.longitude);
-      // Keep raw Google line (may include Plus Code) for short-location extraction.
-      const rawFormatted = geocodeResult?.formattedAddress ?? null;
-      // Full Address never keeps Plus Codes like "VM99+4P".
-      const geocodedStreet = rawFormatted
-        ? removePlusCode(rawFormatted).replace(/\s+/g, ' ').trim() || null
-        : null;
-      const mapsPlaceLabel = placeName || placeHintUsed || geocodeResult?.establishmentLabel;
-      const address = geocodedStreet
-        ? prependMapsPlaceNameToStreetAddress(mapsPlaceLabel, geocodedStreet)
-        : null;
+      const { completeAddress: address, locationHintsFormatted } = composeFetchAddressFromGeocode({
+        geocode: geocodeResult,
+        placeName,
+        placeHintUsed,
+      });
+      const rawFormatted = locationHintsFormatted ?? geocodeResult?.formattedAddress ?? null;
+      const geocodedStreet = geocodeResult?.streetAddress ?? null;
 
       // Location: area list / Google locality only (not the Maps business name).
       const extractedLocation = resolveVisibleAddressFromGeocode({
         formattedAddress: rawFormatted,
         addressComponents: geocodeResult?.addressComponents,
-        addressHints: geocodedStreet ? [geocodedStreet] : [],
+        addressHints: geocodedStreet ? [geocodedStreet, rawFormatted].filter(Boolean) as string[] : [],
       });
       
       setEditFormData(prev => {

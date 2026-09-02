@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { MapPin, Download, ExternalLink, Loader2, ChevronDown, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, prependMapsPlaceNameToStreetAddress, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
+import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, composeFetchAddressFromGeocode, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import {
   isLeadSourceAllowCustomText,
   isLeadSourceRequiresOtp,
@@ -37,7 +37,6 @@ import {
   resolveGoogleMapsInputToCoords,
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
-import { removePlusCode } from '@/lib/maps';
 import { beginWebClipboardRead, readClipboardText } from '@/lib/nativeClipboard';
 import {
   EQUIPMENT_BRAND_DATA as brandData,
@@ -801,22 +800,19 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
 
       const geocodeResult = await reverseGeocode(coords.latitude, coords.longitude);
-      // Keep raw Google line (may include Plus Code) for short-location extraction.
-      const rawFormatted = geocodeResult?.formattedAddress ?? null;
-      // Full Address never keeps Plus Codes like "VM99+4P".
-      const geocodedStreet = rawFormatted
-        ? removePlusCode(rawFormatted).replace(/\s+/g, ' ').trim() || null
-        : null;
-      const mapsPlaceLabel = placeName || placeHintUsed || geocodeResult?.establishmentLabel;
-      const address = geocodedStreet
-        ? prependMapsPlaceNameToStreetAddress(mapsPlaceLabel, geocodedStreet)
-        : null;
+      const { completeAddress: address, locationHintsFormatted } = composeFetchAddressFromGeocode({
+        geocode: geocodeResult,
+        placeName,
+        placeHintUsed,
+      });
+      const rawFormatted = locationHintsFormatted ?? geocodeResult?.formattedAddress ?? null;
+      const geocodedStreet = geocodeResult?.streetAddress ?? null;
 
       // Location: area list / Google locality only (not the Maps business name).
       const extractedLocation = resolveVisibleAddressFromGeocode({
         formattedAddress: rawFormatted,
         addressComponents: geocodeResult?.addressComponents,
-        addressHints: geocodedStreet ? [geocodedStreet] : [],
+        addressHints: geocodedStreet ? [geocodedStreet, rawFormatted].filter(Boolean) as string[] : [],
       });
 
       setAddFormData((prev) => ({
