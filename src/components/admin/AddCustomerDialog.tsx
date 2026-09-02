@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { MapPin, Download, ExternalLink, Loader2, ChevronDown, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
+import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, prependMapsPlaceNameToStreetAddress, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import {
   isLeadSourceAllowCustomText,
   isLeadSourceRequiresOtp,
@@ -774,7 +774,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         return;
       }
 
-      const { coords, didExpandShortLink, placeHintUsed } = resolved;
+      const { coords, didExpandShortLink, placeHintUsed, placeName } = resolved;
       const stableMapsLink = `https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`;
       fetchedCoordsRef.current = {
         latitude: coords.latitude,
@@ -804,15 +804,19 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       // Keep raw Google line (may include Plus Code) for short-location extraction.
       const rawFormatted = geocodeResult?.formattedAddress ?? null;
       // Full Address never keeps Plus Codes like "VM99+4P".
-      const address = rawFormatted
+      const geocodedStreet = rawFormatted
         ? removePlusCode(rawFormatted).replace(/\s+/g, ' ').trim() || null
         : null;
+      const mapsPlaceLabel = placeName || placeHintUsed || geocodeResult?.establishmentLabel;
+      const address = geocodedStreet
+        ? prependMapsPlaceNameToStreetAddress(mapsPlaceLabel, geocodedStreet)
+        : null;
 
-      // List/DB match first, then Google place components from the same Fetch (no extra API call)
+      // Location: area list / Google locality only (not the Maps business name).
       const extractedLocation = resolveVisibleAddressFromGeocode({
         formattedAddress: rawFormatted,
         addressComponents: geocodeResult?.addressComponents,
-        addressHints: address ? [address] : [],
+        addressHints: geocodedStreet ? [geocodedStreet] : [],
       });
 
       setAddFormData((prev) => ({

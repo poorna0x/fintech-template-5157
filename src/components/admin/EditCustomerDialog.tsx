@@ -12,7 +12,7 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import { MapPin, Download, ExternalLink, Trash2, X } from 'lucide-react';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { MANAGER_RESTRICTED_TITLE } from '@/lib/managerAccess';
-import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
+import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, prependMapsPlaceNameToStreetAddress, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { hasAlternateLocation, getAlternateAddress, getAlternateLocation, getJobServiceSite } from '@/lib/customer-locations';
@@ -861,7 +861,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         return;
       }
 
-      const { coords, didExpandShortLink, placeHintUsed } = resolved;
+      const { coords, didExpandShortLink, placeHintUsed, placeName } = resolved;
       // Always persist a coords URL — short/place links without lat/lng in the string
       // made assign-by-distance resolve again even after a successful Fetch.
       const stableMapsLink = mapsLinkFromCoords(coords.latitude, coords.longitude);
@@ -916,15 +916,19 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       // Keep raw Google line (may include Plus Code) for short-location extraction.
       const rawFormatted = geocodeResult?.formattedAddress ?? null;
       // Full Address never keeps Plus Codes like "VM99+4P".
-      const address = rawFormatted
+      const geocodedStreet = rawFormatted
         ? removePlusCode(rawFormatted).replace(/\s+/g, ' ').trim() || null
         : null;
-      
-      // New Maps result only — do not hint with the previous street (that locked Location).
+      const mapsPlaceLabel = placeName || placeHintUsed || geocodeResult?.establishmentLabel;
+      const address = geocodedStreet
+        ? prependMapsPlaceNameToStreetAddress(mapsPlaceLabel, geocodedStreet)
+        : null;
+
+      // Location: area list / Google locality only (not the Maps business name).
       const extractedLocation = resolveVisibleAddressFromGeocode({
         formattedAddress: rawFormatted,
         addressComponents: geocodeResult?.addressComponents,
-        addressHints: address ? [address] : [],
+        addressHints: geocodedStreet ? [geocodedStreet] : [],
       });
       
       setEditFormData(prev => {

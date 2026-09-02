@@ -497,8 +497,29 @@ export type ResolveGoogleMapsInputResult =
       resolvedLocation: string;
       didExpandShortLink: boolean;
       placeHintUsed?: string;
+      /** Place / society name parsed from the link or share text (when available). */
+      placeName?: string;
     }
   | { ok: false; error: string };
+
+function deriveMapsPlaceName(opts: {
+  resolvedLocation: string;
+  shareText?: string | null;
+  apiPlaceName?: string | null;
+  placeHintUsed?: string | null;
+}): string | undefined {
+  const candidates = [
+    opts.placeHintUsed,
+    opts.apiPlaceName,
+    extractPlaceNameFromMapsUrl(opts.resolvedLocation),
+    opts.shareText ? extractPlaceHintFromShareText(opts.shareText) : null,
+  ].filter((c): c is string => typeof c === 'string' && c.trim().length > 0);
+  for (const candidate of candidates) {
+    const primary = candidate.split(',')[0].trim();
+    if (primary.length >= 3 && !/^-?\d/.test(primary)) return primary;
+  }
+  return undefined;
+}
 
 /**
  * Resolve pasted Maps URL / short link to coordinates.
@@ -522,6 +543,7 @@ export async function resolveGoogleMapsInputToCoords(
   let resolvedLocation = googleLocation;
   let coords = extractCoordinatesFromGoogleMapsLink(resolvedLocation);
   let didExpandShortLink = false;
+  let apiPlaceName: string | undefined;
   const accessToken = options.accessToken ?? null;
 
   if (!coords && isGoogleMapsShortLink(resolvedLocation)) {
@@ -531,6 +553,7 @@ export async function resolveGoogleMapsInputToCoords(
       const resolved = resolveResult.data;
       resolvedLocation = resolved.expandedUrl;
       didExpandShortLink = true;
+      apiPlaceName = resolved.placeName;
       coords =
         resolved.latitude !== undefined && resolved.longitude !== undefined
           ? { latitude: resolved.latitude, longitude: resolved.longitude }
@@ -539,6 +562,7 @@ export async function resolveGoogleMapsInputToCoords(
       if (resolveResult.expandedUrl) {
         resolvedLocation = resolveResult.expandedUrl;
         didExpandShortLink = true;
+        apiPlaceName = resolveResult.placeName;
         coords = extractCoordinatesFromGoogleMapsLink(resolveResult.expandedUrl);
       }
     }
@@ -558,12 +582,19 @@ export async function resolveGoogleMapsInputToCoords(
       const geocoded = await geocodeFromPlaceHints(placeHints, accessToken);
       if (geocoded) {
         coords = { latitude: geocoded.geocoded.latitude, longitude: geocoded.geocoded.longitude };
+        const placeHintUsed = geocoded.hint.split(',')[0];
         return {
           ok: true,
           coords,
           resolvedLocation,
           didExpandShortLink,
-          placeHintUsed: geocoded.hint.split(',')[0],
+          placeHintUsed,
+          placeName: deriveMapsPlaceName({
+            resolvedLocation,
+            shareText: options.shareText,
+            apiPlaceName,
+            placeHintUsed,
+          }),
         };
       }
 
@@ -583,12 +614,18 @@ export async function resolveGoogleMapsInputToCoords(
     const geocoded = await geocodeFromPlaceHints(placeHints, accessToken);
     if (geocoded) {
       coords = { latitude: geocoded.geocoded.latitude, longitude: geocoded.geocoded.longitude };
+      const placeHintUsed = geocoded.hint.split(',')[0];
       return {
         ok: true,
         coords,
         resolvedLocation,
         didExpandShortLink: false,
-        placeHintUsed: geocoded.hint.split(',')[0],
+        placeHintUsed,
+        placeName: deriveMapsPlaceName({
+          resolvedLocation,
+          shareText: options.shareText,
+          placeHintUsed,
+        }),
       };
     }
     return { ok: false, error: 'Could not extract coordinates from this link.' };
@@ -598,5 +635,15 @@ export async function resolveGoogleMapsInputToCoords(
     return { ok: false, error: 'Could not extract coordinates from this link.' };
   }
 
-  return { ok: true, coords, resolvedLocation, didExpandShortLink };
+  return {
+    ok: true,
+    coords,
+    resolvedLocation,
+    didExpandShortLink,
+    placeName: deriveMapsPlaceName({
+      resolvedLocation,
+      shareText: options.shareText,
+      apiPlaceName,
+    }),
+  };
 }

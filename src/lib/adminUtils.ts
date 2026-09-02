@@ -1081,6 +1081,62 @@ function clipVisibleAddress(value: string): string {
   return value.trim().substring(0, VISIBLE_ADDRESS_MAX_LEN);
 }
 
+/** Landmark / society name from Maps share text or /place/… URL (not street or area list). */
+export function visibleAddressFromMapsPlaceName(
+  placeName: string | null | undefined
+): string | null {
+  const raw = String(placeName || '').trim();
+  if (!raw || raw.length < 3) return null;
+  const primary = raw.split(',')[0].trim();
+  if (!primary || primary.length < 3) return null;
+  if (/^-?\d/.test(primary)) return null;
+  if (/^[\d\s\-+()]+$/.test(primary)) return null;
+  if (isGenericGeoLocality(primary)) return null;
+  return clipVisibleAddress(primary);
+}
+
+/** Short business / society label for Complete Address — e.g. "Trust Flow" before "| …". */
+export function mapsPlaceLabelForStreetAddress(
+  placeName: string | null | undefined
+): string | null {
+  const raw = String(placeName || '').trim();
+  if (!raw) return null;
+
+  let primary = raw.split('|')[0].split(',')[0].trim();
+  primary = primary.replace(/\s*[-–|]\s*Google Maps.*$/i, '').trim();
+  if (!primary || primary.length < 3) return null;
+  if (/^-?\d/.test(primary)) return null;
+  if (/^[\d\s\-+()]+$/.test(primary)) return null;
+  if (isGenericGeoLocality(primary)) return null;
+  return primary;
+}
+
+/** Prepend Maps place name to geocoded street line; skip when already at the start. */
+export function prependMapsPlaceNameToStreetAddress(
+  placeName: string | null | undefined,
+  streetAddress: string | null | undefined
+): string {
+  const label = mapsPlaceLabelForStreetAddress(placeName);
+  const street = String(streetAddress || '').trim();
+  if (!label) return street;
+  if (!street) return label;
+
+  const labelLower = label.toLowerCase();
+  const streetLower = street.toLowerCase();
+  if (streetLower === labelLower) return street;
+  if (streetLower.startsWith(`${labelLower},`) || streetLower.startsWith(`${labelLower} `)) {
+    return street;
+  }
+
+  const firstPart = street.split(',')[0].trim().toLowerCase();
+  if (firstPart === labelLower || firstPart.startsWith(`${labelLower} `)) return street;
+
+  const idx = streetLower.indexOf(labelLower);
+  if (idx >= 0 && idx <= 8) return street;
+
+  return `${label}, ${street}`;
+}
+
 function isGenericGeoLocality(name: string): boolean {
   const n = name.trim().toLowerCase();
   if (!n || n.length < 3) return true;
@@ -1290,7 +1346,7 @@ export function resolveVisibleAddressFromGoogleOnly(options: {
  * 3) Google reverse-geocode address_components — neighborhood / sublocality / locality
  *    (same Maps API response; no extra call)
  */
-export function resolveVisibleAddressFromGeocode(options: {
+function resolveVisibleAreaFromGeocode(options: {
   formattedAddress?: string | null;
   addressComponents?: GoogleAddressComponentLike[] | null;
   addressHints?: Array<string | null | undefined>;
@@ -1325,6 +1381,14 @@ export function resolveVisibleAddressFromGeocode(options: {
   return shortLocationFromGoogleComponents(options.addressComponents, { useAreaList: false });
 }
 
+export function resolveVisibleAddressFromGeocode(options: {
+  formattedAddress?: string | null;
+  addressComponents?: GoogleAddressComponentLike[] | null;
+  addressHints?: Array<string | null | undefined>;
+}): string | null {
+  return resolveVisibleAreaFromGeocode(options);
+}
+
 /** Location field after Fetch Address: overwrite from Maps, or clear if Google gave a new line. */
 export function nextVisibleAddressFromMapsFetch(
   extracted: string | null | undefined,
@@ -1340,7 +1404,38 @@ export function nextVisibleAddressFromMapsFetch(
 export type ReverseGeocodeResult = {
   formattedAddress: string;
   addressComponents: GoogleAddressComponentLike[];
+  /** When the pin is on a POI/building, Google often names it here instead of in street_address. */
+  establishmentLabel?: string | null;
 };
+
+const REVERSE_GEO_POI_TYPES = new Set([
+  'establishment',
+  'point_of_interest',
+  'premise',
+  'subpremise',
+  'shopping_mall',
+  'store',
+  'food',
+  'health',
+  'lodging',
+]);
+
+function pickReverseGeocodeResult(
+  results: google.maps.GeocoderResult[] | null | undefined
+): google.maps.GeocoderResult | null {
+  if (!results?.length) return null;
+  const poi = results.find((r) => r.types?.some((t) => REVERSE_GEO_POI_TYPES.has(t)));
+  return poi ?? results[0];
+}
+
+function establishmentLabelFromGeocodeResult(
+  result: google.maps.GeocoderResult | null | undefined
+): string | null {
+  if (!result?.formatted_address) return null;
+  if (!result.types?.some((t) => REVERSE_GEO_POI_TYPES.has(t))) return null;
+  return mapsPlaceLabelForStreetAddress(result.formatted_address.split(',')[0]) ||
+    visibleAddressFromMapsPlaceName(result.formatted_address);
+}
 
 /** Browser reverse-geocode — returns formatted address + components (one Google call). */
 export async function reverseGeocodeLatLng(
@@ -1358,14 +1453,16 @@ export async function reverseGeocodeLatLng(
           status === 'OK' ||
           (typeof window.google?.maps?.GeocoderStatus !== 'undefined' &&
             status === window.google.maps.GeocoderStatus.OK);
-        if (ok && results && results[0]?.formatted_address) {
+        const best = ok ? pickReverseGeocodeResult(results) : null;
+        if (best?.formatted_address) {
           resolve({
-            formattedAddress: results[0].formatted_address,
-            addressComponents: (results[0].address_components || []).map((c) => ({
+            formattedAddress: best.formatted_address,
+            addressComponents: (best.address_components || []).map((c) => ({
               long_name: c.long_name,
               short_name: c.short_name,
               types: c.types ? [...c.types] : [],
             })),
+            establishmentLabel: establishmentLabelFromGeocodeResult(best),
           });
         } else {
           resolve(null);
