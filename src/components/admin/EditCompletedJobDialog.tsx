@@ -335,7 +335,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const hiddenPartIds: string[] = Array.isArray(editData.topupHiddenInventoryIds)
+  const hiddenPartIds: string[] = Array.isArray(editData?.topupHiddenInventoryIds)
     ? editData.topupHiddenInventoryIds
     : [];
 
@@ -439,7 +439,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             )}
           </div>
 
-          {!isSoftenerJobVisit(job as any) && (
+          {job && !isSoftenerJobVisit(job) && (
             <div>
               <Label htmlFor="edit-raw-water-tds">Raw water TDS (ppm)</Label>
               <Input

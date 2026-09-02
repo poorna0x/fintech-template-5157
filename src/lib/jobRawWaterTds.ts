@@ -20,7 +20,8 @@ export function isSoftenerJobVisit(job: {
   serviceType?: unknown;
   service_sub_type?: unknown;
   serviceSubType?: unknown;
-}): boolean {
+} | null | undefined): boolean {
+  if (!job) return false;
   const serviceType = String(job.service_type || job.serviceType || '').toUpperCase();
   const serviceSubType = String(job.service_sub_type || job.serviceSubType || '').toUpperCase();
   return (
@@ -48,7 +49,8 @@ export function jobVisitRawWaterTdsPpm(job: {
   service_sub_type?: unknown;
   serviceSubType?: unknown;
   customer?: { raw_water_tds?: unknown; rawWaterTds?: unknown } | null;
-}): number | null {
+} | null | undefined): number | null {
+  if (!job) return null;
   const own = job.raw_water_tds !== undefined && job.raw_water_tds !== null ? job.raw_water_tds : job.rawWaterTds;
   if (visitTdsFieldWasStored(own)) {
     return parsePositiveTdsPpm(own);
@@ -69,8 +71,8 @@ export function rawWaterTdsEditInput(job: {
   service_sub_type?: unknown;
   serviceSubType?: unknown;
   customer?: { raw_water_tds?: unknown; rawWaterTds?: unknown } | null;
-}): string {
-  if (isSoftenerJobVisit(job)) return '';
+} | null | undefined): string {
+  if (!job || isSoftenerJobVisit(job)) return '';
   const own = job.raw_water_tds !== undefined && job.raw_water_tds !== null ? job.raw_water_tds : job.rawWaterTds;
   if (visitTdsFieldWasStored(own)) {
     const n = parseInt(String(own).trim(), 10);
