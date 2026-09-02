@@ -350,11 +350,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={
-          brandConfirmed
-            ? 'flex h-[min(92dvh,920px)] max-h-[min(92dvh,920px)] w-[calc(100vw-1.25rem)] max-w-xl flex-col gap-0 overflow-hidden p-0 sm:w-full'
-            : 'flex max-h-[min(92dvh,920px)] w-[calc(100vw-1.25rem)] max-w-xl flex-col gap-0 overflow-hidden p-0 sm:w-full'
-        }
+        className="flex max-h-[min(92dvh,920px)] w-[calc(100vw-1.25rem)] max-w-xl flex-col gap-0 overflow-hidden p-0 sm:w-full"
       >
         <DialogHeader className="shrink-0 space-y-1.5 border-b px-4 pb-3 pt-5 pr-12 text-left sm:px-6">
           <DialogTitle className="text-base leading-snug sm:text-lg">
@@ -405,7 +401,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
               ) : null}
             </div>
           ) : (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain">
+            <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain">
               <div className="rounded-lg bg-muted/40 p-3 sm:p-4">
                 <div className="mb-2 text-sm text-muted-foreground">
                   Sending as: <span className="font-medium text-foreground">{brandContact.label}</span>
@@ -514,7 +510,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                       ? 'Message preview (24h chat)'
                       : 'Message Preview'}
                 </Label>
-                <MessagePreviewScroll className="max-h-56">
+                <MessagePreviewScroll className="max-h-[min(55dvh,28rem)]">
                   {previewMessage}
                 </MessagePreviewScroll>
                 {!reviewLinkReady && !skipReview ? (
