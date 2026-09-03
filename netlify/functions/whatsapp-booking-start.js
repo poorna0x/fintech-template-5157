@@ -1,6 +1,6 @@
 /**
  * Admin inbox Quick actions — start booking-bot steps (or cold template when 24h closed).
- * Auth: admin JWT. Gate: enabled + allow_booking_bot (+ allow_cold_templates for cold path).
+ * Auth: admin JWT. Gate: enabled (+ allow_booking_bot for book flows only; ask templates still send).
  */
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
@@ -32,6 +32,13 @@ const ACTIONS = new Set([
   'request_name',
   'water_filter_service',
   'book_location_photo',
+]);
+
+/** Full booking flows — require allow_booking_bot. Ask-only actions still send when bot is off. */
+const BOOKING_FLOW_ACTIONS = new Set([
+  'book_service',
+  'book_location_photo',
+  'water_filter_service',
 ]);
 
 function json(statusCode, headers, payload) {
@@ -371,16 +378,24 @@ exports.handler = async (event) => {
     return json(500, headers, { error: 'Database not configured' });
   }
 
-  const botOn = await isBookingBotEnabled(db);
-  if (!botOn) {
+  const settings = await loadCrmSettings(db);
+  if (settings.enabled === false) {
     return json(403, headers, {
       code: 'WHATSAPP_FEATURE_DISABLED',
-      feature: 'booking_bot',
-      error: 'Booking bot is disabled in WhatsApp settings',
+      feature: 'enabled',
+      error: 'WhatsApp Cloud API is disabled in Settings → WhatsApp settings',
     });
   }
 
-  const settings = await loadCrmSettings(db);
+  const botOn = await isBookingBotEnabled(db);
+  if (!botOn && BOOKING_FLOW_ACTIONS.has(action)) {
+    return json(403, headers, {
+      code: 'WHATSAPP_FEATURE_DISABLED',
+      feature: 'booking_bot',
+      error:
+        'Booking flows are disabled in WhatsApp settings. Ask location / photo / name quick actions still work.',
+    });
+  }
   const { accessToken, phoneNumberId } = await getWhatsAppCredentials(db);
   if (!accessToken || !phoneNumberId) {
     return json(500, headers, { error: 'WhatsApp credentials missing' });
