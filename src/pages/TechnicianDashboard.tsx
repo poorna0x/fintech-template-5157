@@ -4278,13 +4278,17 @@ const TechnicianDashboard = () => {
     const jobId = selectedJobForComplete?.id;
     if (!jobId) return;
 
+    const hasPaymentPhoto =
+      typeof paymentScreenshot === 'string' &&
+      /^https?:\/\//i.test(paymentScreenshot.trim());
+
     let cancelled = false;
 
     const pullPaymentPhoto = async (): Promise<string | null> => {
       try {
         const { data, error } = await supabase
           .from('jobs')
-          .select('requirements, after_photos')
+          .select('requirements')
           .eq('id', jobId)
           .maybeSingle();
         if (cancelled || error || !data) return null;
@@ -4303,10 +4307,13 @@ const TechnicianDashboard = () => {
       setWaitingPayQrPhoto(false);
     };
 
-    void pullPaymentPhoto().then(applyPulledPhoto);
+    if (!hasPaymentPhoto) {
+      void pullPaymentPhoto().then(applyPulledPhoto);
+    }
 
     const watchActive =
-      waitingPayQrPhoto || payQrWatchUntilRef.current > Date.now();
+      !hasPaymentPhoto &&
+      (waitingPayQrPhoto || payQrWatchUntilRef.current > Date.now());
 
     if (!watchActive) {
       return () => {
@@ -4332,6 +4339,7 @@ const TechnicianDashboard = () => {
     completeJobStep,
     selectedJobForComplete?.id,
     waitingPayQrPhoto,
+    paymentScreenshot,
   ]);
 
   // Actually open the completion dialog
