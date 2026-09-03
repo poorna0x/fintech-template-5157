@@ -52,7 +52,6 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
   const [reviewRatings, setReviewRatings] = useState<Record<string, number>>({});
   const [deletedJobEvents, setDeletedJobEvents] = useState<CustomerJobDeleteEvent[]>([]);
-  const [loadingDeletedJobs, setLoadingDeletedJobs] = useState(false);
 
   const customerId = customer?.id;
 
@@ -68,7 +67,6 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     let cancelled = false;
     const loadCustomerReportJobs = async () => {
       setLoadingCustomerReportJobs(true);
-      setLoadingDeletedJobs(true);
       try {
         const [{ data, error }, deletedRes] = await Promise.all([
           db.jobs.getByCustomerIdForReportEnriched(customerId),
@@ -101,7 +99,6 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
       } finally {
         if (!cancelled) {
           setLoadingCustomerReportJobs(false);
-          setLoadingDeletedJobs(false);
         }
       }
     };
@@ -197,11 +194,13 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
 
           {/* Completed Jobs */}
           <div>
-            <h3 className="font-semibold text-lg mb-3">Completed Jobs ({completedJobs.length})</h3>
+            <h3 className="font-semibold text-lg mb-3">
+              Completed Jobs ({loadingCustomerReportJobs ? '…' : completedJobs.length})
+            </h3>
             {loadingCustomerReportJobs ? (
               <div className="text-center py-8 text-muted-foreground">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-3"></div>
-                <p className="text-sm">Loading completed jobs...</p>
+                <p className="text-sm">Loading report…</p>
               </div>
             ) : completedJobs.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
@@ -621,19 +620,13 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
             )}
           </div>
 
-          {/* Deleted jobs (admin delete + optional remark) */}
-          {(loadingDeletedJobs || deletedJobEvents.length > 0) && (
+          {/* Deleted jobs (admin delete + optional remark) — only after main load */}
+          {!loadingCustomerReportJobs && deletedJobEvents.length > 0 && (
             <div>
               <h3 className="font-semibold text-lg mb-3">
-                Deleted Jobs ({loadingDeletedJobs ? '…' : deletedJobEvents.length})
+                Deleted Jobs ({deletedJobEvents.length})
               </h3>
-              {loadingDeletedJobs ? (
-                <div className="text-center py-6 text-muted-foreground">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900 mx-auto mb-2" />
-                  <p className="text-sm">Loading deleted jobs…</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
+              <div className="space-y-3">
                   {deletedJobEvents.map((ev) => {
                     const whenLabel = ev.created_at ? formatCompletedWhen(ev.created_at) : null;
                     const remarkText = (ev.remark || '').trim();
@@ -677,7 +670,6 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                     );
                   })}
                 </div>
-              )}
             </div>
           )}
         </div>

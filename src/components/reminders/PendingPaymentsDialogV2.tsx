@@ -528,7 +528,6 @@ export function SettingsPendingPaymentsDialogV2({
   const [reportCustomer, setReportCustomer] = useState<Customer | null>(null);
   const [reportTechnicians, setReportTechnicians] = useState<Technician[]>([]);
   const [reportOpening, setReportOpening] = useState(false);
-  const [reportOpeningName, setReportOpeningName] = useState('');
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
   const {
     openSuspendedViewer,
@@ -1466,14 +1465,12 @@ export function SettingsPendingPaymentsDialogV2({
 
   const handleCustomerReports = async () => {
     const p = customerActionTarget;
-    const label = p?.entity_id ? customerLabels[p.entity_id as string] : undefined;
     setCustomerActionOpen(false);
     if (!p?.entity_id) {
       setCustomerActionTarget(null);
       toast.error('Customer not linked to this payment');
       return;
     }
-    setReportOpeningName(label?.name || 'customer');
     setReportOpening(true);
     try {
       const [{ data: customer, error }, techResult] = await Promise.all([
@@ -1508,7 +1505,6 @@ export function SettingsPendingPaymentsDialogV2({
       toast.error(err?.message || 'Failed to open customer report');
     } finally {
       setReportOpening(false);
-      setReportOpeningName('');
       setCustomerActionTarget(null);
     }
   };
@@ -1742,25 +1738,6 @@ export function SettingsPendingPaymentsDialogV2({
             </div>
           )}
         </div>
-
-        <Dialog open={reportOpening}>
-          <DialogContent
-            className="sm:max-w-sm p-6"
-            hideCloseButton
-            dismissible={false}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-          >
-            <div className="flex flex-col items-center gap-3 py-2 text-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              <DialogHeader className="space-y-1">
-                <DialogTitle className="text-base">Opening report</DialogTitle>
-                <DialogDescription>
-                  Loading {reportOpeningName || 'customer'}…
-                </DialogDescription>
-              </DialogHeader>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         <Dialog
           open={customerActionOpen}
