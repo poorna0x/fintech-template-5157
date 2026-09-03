@@ -1170,7 +1170,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         return;
       }
 
-      const toastId = toast.loading('Opening…');
+      // Finite duration so a stuck loading toast can never block the UI forever
+      // (blob new-tab open can race dismiss; sonner loading is otherwise Infinity).
+      const toastId = toast.loading('Opening…', { duration: 20_000 });
       try {
         const href = await Promise.race([
           resolveMediaHref(row),
@@ -1182,12 +1184,19 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           toast.error('Could not open attachment', { id: toastId });
           return;
         }
-        window.open(href, '_blank', 'noopener,noreferrer');
+        // Clear loading BEFORE window.open — blob tabs can steal focus and leave
+        // an undismissable loading toast on the main tab.
         toast.dismiss(toastId);
+        const opened = window.open(href, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+          toast.message('Popup blocked — use Download instead');
+        }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Could not open attachment', {
           id: toastId,
         });
+      } finally {
+        toast.dismiss(toastId);
       }
     },
     [resolveMediaHref, openImageViewer]
