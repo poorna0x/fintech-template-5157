@@ -13,7 +13,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 type AdminClipboardPlugin = {
-  readText(): Promise<{ value?: string }>;
+  readText(): Promise<{ value?: string; timestampMs?: number }>;
 };
 
 const AdminClipboard = registerPlugin<AdminClipboardPlugin>('AdminClipboard');
@@ -63,21 +63,42 @@ export function beginWebClipboardRead(): Promise<string> | null {
   return navigator.clipboard.readText();
 }
 
-async function readViaAdminClipboardPlugin(): Promise<string | null> {
+async function readViaAdminClipboardPlugin(): Promise<{
+  text: string;
+  timestampMs: number | null;
+} | null> {
   if (!Capacitor.isPluginAvailable('AdminClipboard')) return null;
   try {
-    const { value } = await AdminClipboard.readText();
-    return typeof value === 'string' ? value : '';
+    const result = await AdminClipboard.readText();
+    const text = typeof result.value === 'string' ? result.value : '';
+    const timestampMs =
+      typeof result.timestampMs === 'number' && result.timestampMs > 0
+        ? result.timestampMs
+        : null;
+    return { text, timestampMs };
   } catch {
     return null;
   }
+}
+
+/** Text + copy time when AdminClipboard provides it (Android APK). */
+export async function readClipboardPayload(): Promise<{
+  text: string;
+  timestampMs: number | null;
+}> {
+  if (isNativePlatform()) {
+    const adminRead = await readViaAdminClipboardPlugin();
+    if (adminRead !== null) return adminRead;
+    return { text: await readClipboardText(), timestampMs: null };
+  }
+  return { text: await readClipboardText(), timestampMs: null };
 }
 
 export async function readClipboardText(): Promise<string> {
   if (isNativePlatform()) {
     // Prefer admin-hardened reader (Maps shares, UI-thread, coerceToText).
     const adminRead = await readViaAdminClipboardPlugin();
-    if (adminRead !== null) return adminRead;
+    if (adminRead !== null) return adminRead.text;
 
     const { Clipboard } = await import('@capacitor/clipboard');
     try {

@@ -13,10 +13,11 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
- * Robust clipboard read for Fetch Address. The stock @capacitor/clipboard
- * plugin often returns empty for Google Maps shares (HTML / URI clips, or
- * plain-text mime with a null getText()). Always coerce every item on the
- * main thread and concatenate — Maps shares are usually "Place\nhttps://…".
+ * Robust clipboard read for Fetch Address / Add Customer autofill.
+ * Stock @capacitor/clipboard often returns empty for Google Maps shares
+ * (HTML / URI clips). Coerce every item on the main thread.
+ * Also returns ClipDescription timestamp (API 26+) so JS can enforce a
+ * short freshness window (e.g. 15s) when Add Customer opens or resumes.
  */
 @CapacitorPlugin(name = "AdminClipboard")
 public class AdminClipboardPlugin extends Plugin {
@@ -63,8 +64,17 @@ public class AdminClipboardPlugin extends Plugin {
                     }
                 }
 
+                long copiedAt = 0L;
+                if (android.os.Build.VERSION.SDK_INT >= 26) {
+                    android.content.ClipDescription desc = clip.getDescription();
+                    if (desc != null) {
+                        copiedAt = desc.getTimestamp();
+                    }
+                }
+
                 JSObject result = new JSObject();
                 result.put("value", out.toString());
+                result.put("timestampMs", copiedAt);
                 call.resolve(result);
             } catch (Exception e) {
                 call.reject(e.getMessage() != null ? e.getMessage() : "clipboard_read_failed");
@@ -80,6 +90,7 @@ public class AdminClipboardPlugin extends Plugin {
     private static void resolveEmpty(PluginCall call) {
         JSObject result = new JSObject();
         result.put("value", "");
+        result.put("timestampMs", 0L);
         call.resolve(result);
     }
 }

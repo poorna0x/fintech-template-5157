@@ -37,7 +37,15 @@ import {
   resolveGoogleMapsInputToCoords,
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
-import { beginWebClipboardRead, readClipboardText } from '@/lib/nativeClipboard';
+import { beginWebClipboardRead, readClipboardPayload, readClipboardText } from '@/lib/nativeClipboard';
+import {
+  clipboardFingerprint,
+  describeParsedCustomerClipboard,
+  isFreshClipboardTimestamp,
+  parseCustomerClipboardText,
+  type AutofilledCustomerFields,
+} from '@/lib/parseCustomerClipboard';
+import { Capacitor } from '@capacitor/core';
 import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
@@ -252,6 +260,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   }, []);
   // Guards against double-clicks and other re-entrancy on the Fetch Address button.
   const [isFetchingAddress, setIsFetchingAddress] = useState(false);
+  const fetchingAddressRef = useRef(false);
+  const autofilledRef = useRef<AutofilledCustomerFields>({});
+  const lastAutoClipFpRef = useRef('');
+  const autoFillInFlightRef = useRef(false);
+  const autofillGenerationRef = useRef(0);
+  const [hasAutofilledPhone, setHasAutofilledPhone] = useState(false);
   const [step5JobData, setStep5JobData] = useState(() => ({
     ...createDefaultStep5JobData(),
     ...(initialDraftRef.current?.step5JobData || {}),
@@ -305,6 +319,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       setAnyEquipmentUploading(false);
       // Closing must drop Fetch coords — dialog stays mounted while closed.
       clearLocationFetchState();
+      autofilledRef.current = {};
+      lastAutoClipFpRef.current = '';
+      setHasAutofilledPhone(false);
     }
   }, [open, clearLocationFetchState]);
 
@@ -419,6 +436,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     clearAddCustomerDraft();
     clearLocationFetchState();
     resetFlatHouseNo();
+    autofilledRef.current = {};
+    lastAutoClipFpRef.current = '';
+    setHasAutofilledPhone(false);
     setAddFormData(createDefaultAddFormData());
     setStep5JobData(createDefaultStep5JobData());
     setCurrentStep(1);
@@ -586,7 +606,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       // lat/lng can be saved onto this customer while the pasted link looks correct.
       fetchedCoordsRef.current = null;
       mapsShareTextRef.current = text.trim() ? text : '';
+      autofilledRef.current.maps = false;
     }
+    if (field === 'email') autofilledRef.current.email = false;
+    if (field === 'address') autofilledRef.current.address = false;
+    if (field === 'visible_address') autofilledRef.current.visible_address = false;
 
     if (formErrors[field]) {
       setFormErrors(prev => ({
@@ -596,7 +620,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     }
   };
 
-  const handlePhoneChange = (value: string) => {
+  const handlePhoneChange = (value: string, opts?: { fromAutofill?: boolean }) => {
     const cleaned = value.replace(/\D/g, '');
     
     let processed = cleaned;
@@ -614,11 +638,47 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       phone: limited
     }));
 
+    if (!opts?.fromAutofill) {
+      autofilledRef.current.phone = false;
+      setHasAutofilledPhone(false);
+    }
+
     if (formErrors.phone) {
       setFormErrors(prev => ({
         ...prev,
         phone: ''
       }));
+    }
+  };
+
+  const clearAutofilledCustomerFields = () => {
+    const flags = autofilledRef.current;
+    // Bump generation so an in-flight Maps fetch cannot repopulate cleared fields.
+    autofillGenerationRef.current += 1;
+    setAddFormData((prev) => {
+      const next = { ...prev };
+      // X on phone always clears phone, plus any other auto-filled fields.
+      next.phone = '';
+      if (flags.email) next.email = '';
+      if (flags.maps) {
+        next.google_location = '';
+        googleLocationRef.current = '';
+        mapsShareTextRef.current = '';
+        fetchedCoordsRef.current = null;
+      }
+      if (flags.address) next.address = '';
+      if (flags.visible_address) {
+        next.visible_address = '';
+        locationManuallyEditedRef.current = false;
+      }
+      return next;
+    });
+    autofilledRef.current = {};
+    // Keep lastAutoClipFpRef so the same clipboard item is not re-applied after X.
+    setHasAutofilledPhone(false);
+    setDuplicateFoundOnBlur(null);
+    if (formErrors.phone) {
+      setFormErrors((prev) => ({ ...prev, phone: '' }));
     }
   };
 
@@ -751,59 +811,39 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     return link;
   };
 
-  const fetchAddressFromGoogleLocation = async () => {
-    // Prevent overlapping runs (double-clicks, accidental Enter while busy).
-    if (isFetchingAddress) return;
-
-    // Desktop only: start clipboard read in the same tick as the click (no await
-    // before this). beginWebClipboardRead() is a no-op on the admin APK.
-    const fieldNow =
-      extractMapsUrlFromText(googleLocationRef.current || '') ||
-      sanitizeGoogleMapsInput(googleLocationRef.current || '');
-    const earlyWebClipboard = !fieldNow ? beginWebClipboardRead() : null;
-
+  const fetchAddressFromMapsUrl = async (
+    mapsInput: string,
+    opts?: { quiet?: boolean; fromAutofill?: boolean }
+  ) => {
+    const quiet = opts?.quiet === true;
+    const fromAutofill = opts?.fromAutofill === true;
+    const generationAtStart = autofillGenerationRef.current;
+    if (fetchingAddressRef.current) return;
+    fetchingAddressRef.current = true;
     setIsFetchingAddress(true);
 
     let loadingToast: string | number | undefined;
     try {
-      let googleLocation = extractMapsUrlFromText(googleLocationRef.current || '') ||
-        sanitizeGoogleMapsInput(googleLocationRef.current || '');
-
-      if (!googleLocation) {
-        // No link in the field — try the clipboard so the user can skip pasting.
-        const clipboardLink = await readMapsLinkFromClipboard(earlyWebClipboard);
-        if (!clipboardLink) return;
-
-        // Race-safe: the user may have started typing during the clipboard read.
-        // Re-read the latest value via the ref, NOT the captured closure.
-        const latestTyped =
-          extractMapsUrlFromText(googleLocationRef.current || '') ||
-          sanitizeGoogleMapsInput(googleLocationRef.current || '');
-        if (latestTyped) {
-          googleLocation = latestTyped;
-        } else {
-          googleLocation = clipboardLink;
-          setAddFormData((prev) => ({ ...prev, google_location: clipboardLink }));
-          googleLocationRef.current = clipboardLink;
-          toast.info('Pasted link from clipboard');
-        }
-      }
+      const googleLocation =
+        extractMapsUrlFromText(mapsInput) || sanitizeGoogleMapsInput(mapsInput);
 
       if (!isGoogleMapsUrl(googleLocation)) {
-        toast.error('Please enter a valid Google Maps link');
+        if (!quiet) toast.error('Please enter a valid Google Maps link');
         return;
       }
 
       const token = await resolveSupabaseAccessTokenForApi();
-      if (isGoogleMapsShortLink(googleLocation)) {
+      if (!quiet && isGoogleMapsShortLink(googleLocation)) {
         loadingToast = toast.loading('Resolving short link...');
       }
 
       const resolved = await resolveGoogleMapsInputToCoords(googleLocation, {
         shareText: mapsShareTextRef.current,
-        addressHint: addFormData.address,
+        addressHint: addFormDataRef.current.address,
         accessToken: token,
       });
+
+      if (fromAutofill && generationAtStart !== autofillGenerationRef.current) return;
 
       if (loadingToast !== undefined) {
         toast.dismiss(loadingToast);
@@ -811,7 +851,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
 
       if (!resolved.ok) {
-        toast.error(resolved.error, { duration: 8000 });
+        if (!quiet) toast.error(resolved.error, { duration: 8000 });
+        else toast.error(resolved.error);
         return;
       }
 
@@ -823,14 +864,16 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       };
       setAddFormData((prev) => ({ ...prev, google_location: stableMapsLink }));
       googleLocationRef.current = stableMapsLink;
-      if (didExpandShortLink) {
+      if (!quiet && didExpandShortLink) {
         toast.info('Short link expanded');
       }
-      if (placeHintUsed) {
+      if (!quiet && placeHintUsed) {
         toast.info(`Found location from place name: ${placeHintUsed}`);
       }
 
-      loadingToast = toast.loading('Fetching address from Google Maps...');
+      if (!quiet) {
+        loadingToast = toast.loading('Fetching address from Google Maps...');
+      }
 
       try {
         const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -842,6 +885,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
 
       const geocodeResult = await reverseGeocode(coords.latitude, coords.longitude);
+      if (fromAutofill && generationAtStart !== autofillGenerationRef.current) return;
+
       const { completeAddress: address, locationHintsFormatted } = composeFetchAddressFromGeocode({
         geocode: geocodeResult,
         placeName,
@@ -850,32 +895,57 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       const rawFormatted = locationHintsFormatted ?? geocodeResult?.formattedAddress ?? null;
       const geocodedStreet = geocodeResult?.streetAddress ?? null;
 
-      // Location: area list / Google locality only (not the Maps business name).
       const extractedLocation = resolveVisibleAddressFromGeocode({
         formattedAddress: rawFormatted,
         addressComponents: geocodeResult?.addressComponents,
         addressHints: geocodedStreet ? [geocodedStreet, rawFormatted].filter(Boolean) as string[] : [],
       });
 
-      setAddFormData((prev) => ({
-        ...prev,
-        google_location: stableMapsLink,
-        address: address
-          ? withFlatHousePrefix(capitalizeFirstLetter(address), flatHouseNoRef.current)
-          : prev.address,
-        visible_address: (() => {
-          const next = nextVisibleAddressFromMapsFetch(
-            extractedLocation,
-            address,
-            prev.visible_address
-          );
-          return next ? capitalizeFirstLetter(next) : next;
-        })(),
-      }));
+      setAddFormData((prev) => {
+        const canWriteAddress =
+          !fromAutofill || !prev.address.trim() || Boolean(autofilledRef.current.address);
+        const canWriteVisible =
+          !fromAutofill ||
+          !prev.visible_address.trim() ||
+          Boolean(autofilledRef.current.visible_address);
+
+        const nextAddress =
+          canWriteAddress && address
+            ? withFlatHousePrefix(capitalizeFirstLetter(address), flatHouseNoRef.current)
+            : prev.address;
+        const nextVisible = canWriteVisible
+          ? (() => {
+              const next = nextVisibleAddressFromMapsFetch(
+                extractedLocation,
+                address,
+                prev.visible_address
+              );
+              return next ? capitalizeFirstLetter(next) : next;
+            })()
+          : prev.visible_address;
+
+        if (fromAutofill) {
+          if (nextAddress && nextAddress !== prev.address) autofilledRef.current.address = true;
+          if (nextVisible && nextVisible !== prev.visible_address) {
+            autofilledRef.current.visible_address = true;
+          }
+        }
+        return {
+          ...prev,
+          google_location: stableMapsLink,
+          address: nextAddress,
+          visible_address: nextVisible,
+        };
+      });
       lastAppliedFlatHouseRef.current = flatHouseNoRef.current.trim();
 
-      if (extractedLocation) {
+      if (extractedLocation && (!fromAutofill || !locationManuallyEditedRef.current)) {
         locationManuallyEditedRef.current = false;
+      }
+
+      if (quiet) {
+        if (address) toast.success('Address ready');
+        return;
       }
 
       if (address) {
@@ -892,12 +962,160 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
     } catch (error) {
       console.error('Error fetching address:', error);
-      toast.error('Failed to fetch address. Please try again.');
+      if (!quiet) toast.error('Failed to fetch address. Please try again.');
     } finally {
-      // Always dismiss the spinner toast and release the busy lock, no matter
-      // which branch we exited through.
       if (loadingToast !== undefined) toast.dismiss(loadingToast);
+      fetchingAddressRef.current = false;
       setIsFetchingAddress(false);
+    }
+  };
+
+  const tryAutoFillFromRecentClipboard = useCallback(async () => {
+    if (!open || showResumePrompt || autoFillInFlightRef.current) return;
+    // Freshness needs Android clip timestamp — skip on web / old APKs without it.
+    if (!Capacitor.isNativePlatform()) return;
+
+    autoFillInFlightRef.current = true;
+    try {
+      let text = '';
+      let timestampMs: number | null = null;
+      try {
+        const payload = await readClipboardPayload();
+        text = payload.text;
+        timestampMs = payload.timestampMs;
+      } catch {
+        return;
+      }
+      if (!text.trim() || !isFreshClipboardTimestamp(timestampMs)) return;
+
+      const fp = clipboardFingerprint(text);
+      if (fp === lastAutoClipFpRef.current) return;
+
+      const parsed = parseCustomerClipboardText(text);
+      if (!parsed.phone && !parsed.email && !parsed.mapsUrl) {
+        // Remember junk so we do not re-read it on every focus.
+        lastAutoClipFpRef.current = fp;
+        return;
+      }
+
+      const form = addFormDataRef.current;
+      const nextPhone = parsed.phone && !form.phone.trim() ? parsed.phone : '';
+      const nextEmail = parsed.email && !form.email.trim() ? parsed.email : '';
+      const nextMaps = parsed.mapsUrl && !form.google_location.trim() ? parsed.mapsUrl : '';
+      if (!nextPhone && !nextEmail && !nextMaps) {
+        lastAutoClipFpRef.current = fp;
+        return;
+      }
+
+      if (nextPhone) autofilledRef.current.phone = true;
+      if (nextEmail) autofilledRef.current.email = true;
+      if (nextMaps) {
+        autofilledRef.current.maps = true;
+        googleLocationRef.current = nextMaps;
+        mapsShareTextRef.current = text;
+      }
+
+      setAddFormData((prev) => ({
+        ...prev,
+        ...(nextPhone ? { phone: nextPhone } : null),
+        ...(nextEmail ? { email: nextEmail } : null),
+        ...(nextMaps ? { google_location: nextMaps } : null),
+      }));
+
+      if (nextPhone) setHasAutofilledPhone(true);
+      lastAutoClipFpRef.current = fp;
+
+      toast.success(
+        `Filled ${describeParsedCustomerClipboard({
+          phone: nextPhone,
+          email: nextEmail,
+          mapsUrl: nextMaps,
+        })} from clipboard`
+      );
+
+      if (nextMaps) {
+        void fetchAddressFromMapsUrl(nextMaps, { quiet: true, fromAutofill: true });
+      }
+    } finally {
+      autoFillInFlightRef.current = false;
+    }
+  // fetchAddressFromMapsUrl is stable enough via refs; intentionally omit to avoid re-bind loops.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, showResumePrompt]);
+
+  useEffect(() => {
+    if (!open || showResumePrompt) return;
+
+    void tryAutoFillFromRecentClipboard();
+
+    const onFocus = () => {
+      void tryAutoFillFromRecentClipboard();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void tryAutoFillFromRecentClipboard();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    let removeAppListener: (() => void) | undefined;
+    void import('@capacitor/app')
+      .then(({ App }) =>
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) void tryAutoFillFromRecentClipboard();
+        })
+      )
+      .then((handle) => {
+        removeAppListener = () => {
+          void handle.remove();
+        };
+      })
+      .catch(() => {
+        /* web */
+      });
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      removeAppListener?.();
+    };
+  }, [open, showResumePrompt, tryAutoFillFromRecentClipboard]);
+
+  const fetchAddressFromGoogleLocation = async () => {
+    // Prevent overlapping runs (double-clicks, accidental Enter while busy).
+    if (isFetchingAddress || fetchingAddressRef.current) return;
+
+    // Desktop only: start clipboard read in the same tick as the click (no await
+    // before this). beginWebClipboardRead() is a no-op on the admin APK.
+    const fieldNow =
+      extractMapsUrlFromText(googleLocationRef.current || '') ||
+      sanitizeGoogleMapsInput(googleLocationRef.current || '');
+    const earlyWebClipboard = !fieldNow ? beginWebClipboardRead() : null;
+
+    try {
+      let googleLocation = extractMapsUrlFromText(googleLocationRef.current || '') ||
+        sanitizeGoogleMapsInput(googleLocationRef.current || '');
+
+      if (!googleLocation) {
+        const clipboardLink = await readMapsLinkFromClipboard(earlyWebClipboard);
+        if (!clipboardLink) return;
+
+        const latestTyped =
+          extractMapsUrlFromText(googleLocationRef.current || '') ||
+          sanitizeGoogleMapsInput(googleLocationRef.current || '');
+        if (latestTyped) {
+          googleLocation = latestTyped;
+        } else {
+          googleLocation = clipboardLink;
+          setAddFormData((prev) => ({ ...prev, google_location: clipboardLink }));
+          googleLocationRef.current = clipboardLink;
+          toast.info('Pasted link from clipboard');
+        }
+      }
+
+      await fetchAddressFromMapsUrl(googleLocation);
+    } catch (error) {
+      console.error('Error fetching address:', error);
+      toast.error('Failed to fetch address. Please try again.');
     }
   };
 
@@ -1556,6 +1774,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       clearAddCustomerDraft();
       clearLocationFetchState();
       resetFlatHouseNo();
+      autofilledRef.current = {};
+      lastAutoClipFpRef.current = '';
+      setHasAutofilledPhone(false);
       setAddFormData(createDefaultAddFormData());
       setCurrentStep(1);
       setFormErrors({});
@@ -1704,16 +1925,30 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               >
                 <div className="space-y-2">
                   <Label htmlFor="add_phone" className="text-sm font-medium">Primary Phone *</Label>
-                  <Input
-                    id="add_phone"
-                    value={addFormData.phone}
-                    onChange={(e) => { handlePhoneChange(e.target.value); setDuplicateFoundOnBlur(null); }}
-                    placeholder="Enter 10-digit phone number"
-                    autoComplete="tel"
-                    inputMode="tel"
-                    className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      id="add_phone"
+                      value={addFormData.phone}
+                      onChange={(e) => { handlePhoneChange(e.target.value); setDuplicateFoundOnBlur(null); }}
+                      placeholder="Enter 10-digit phone number"
+                      autoComplete="tel"
+                      inputMode="tel"
+                      className={`text-sm pr-9 ${formErrors.phone ? 'border-red-500' : ''}`}
+                      required
+                    />
+                    {(addFormData.phone || hasAutofilledPhone) && (
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label="Clear phone and auto-filled fields"
+                        title="Clear phone and auto-filled fields"
+                        onClick={clearAutofilledCustomerFields}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                   {formErrors?.phone && (
                     <p className="text-xs text-red-500">{formErrors.phone}</p>
                   )}
