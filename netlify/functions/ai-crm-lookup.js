@@ -60,7 +60,7 @@ function normalizeCrmQueryText(value) {
 }
 
 const CUSTOMER_COLS =
-  'id, customer_id, full_name, phone, alternate_phone, email, service_type, brand, model, last_service_date, customer_tier, status, visible_address';
+  'id, customer_id, full_name, phone, alternate_phone, email, service_type, brand, model, last_service_date, customer_tier, status, visible_address, created_at';
 
 const JOB_COLS =
   'id, job_number, customer_id, status, service_type, service_sub_type, service_brand, payment_amount, actual_cost, payment_method, completed_at, end_time, scheduled_date, assigned_technician_id, completed_by, follow_up_date, follow_up_time, follow_up_notes, follow_up_scheduled_at, requirements';
@@ -152,7 +152,7 @@ const NAME_STOP_WORDS = new Set(
     'anyone', 'are', 'assign', 'assigned', 'balance', 'bill', 'booked', 'booking', 'business', 'called', 'can',
     'cancel', 'cancelled', 'candy', 'cash', 'categories', 'category', 'change', 'charge', 'check', 'closed', 'collect',
     'collected', 'coming', 'company', 'complaint', 'complaints', 'complete', 'completed',
-    'added', 'confirm', 'contact', 'cost', 'count', 'create', 'customer', 'customers', 'date', 'day',
+    'added', 'confirm', 'contact', 'cost', 'count', 'create', 'created', 'customer', 'customers', 'date', 'day',
     'days', 'description', 'detail', 'details', 'did', 'document', 'documents', 'does', 'done', 'due', 'dues', 'earn',
     'evening', 'expense', 'expenses', 'expire', 'expired', 'expiring', 'expiry', 'filter', 'filters', 'find', 'finished',
     'follow', 'followup', 'followups', 'for', 'from', 'get', 'give', 'has', 'have', 'his', 'her',
@@ -234,6 +234,12 @@ const PLACE_TRAILING_STOP = new Set([
 const PLACE_PERIOD_WORDS = new Set([
   'all', 'entire', 'lifetime', 'history', 'past', 'period', 'range', 'time', 'times', 'alltime',
 ]);
+/** Sentence glue that the “… customers” pattern must never treat as an area. */
+const PLACE_SENTENCE_NOISE = new Set([
+  'a', 'an', 'add', 'added', 'create', 'created', 'did', 'do', 'does', 'i', 'joined', 'made', 'make',
+  'my', 'open', 'opened', 'our', 'registered', 'that', 'the', 'them', 'these', 'they', 'this', 'those',
+  'we', 'when', 'you', 'your',
+]);
 
 /** Area after "in/at/near …" — not a person name. */
 function extractPlaceHint(message) {
@@ -250,16 +256,31 @@ function extractPlaceHint(message) {
     raw = leading?.[1] ? String(leading[1]).trim() : '';
   }
   if (!raw) return null;
+  // "when did we created this customer" is a question about one record, not
+  // "customers in C1831 we created". Codes are never area names.
+  if (/\bC\d{2,}\b/i.test(raw)) return null;
   const words = raw
     .split(/\s+/)
     .map((w) => w.replace(/^[.'-]+|[.'-]+$/g, ''))
     .filter(Boolean)
-    .filter((w) => !PLACE_TRAILING_STOP.has(w.toLowerCase()) && !NAME_STOP_WORDS.has(w.toLowerCase()));
+    .filter(
+      (w) =>
+        !PLACE_TRAILING_STOP.has(w.toLowerCase()) &&
+        !NAME_STOP_WORDS.has(w.toLowerCase()) &&
+        !PLACE_SENTENCE_NOISE.has(w.toLowerCase())
+    );
   if (!words.length) return null;
   if (words.every((w) => PLACE_PERIOD_WORDS.has(w.toLowerCase()))) return null;
   const place = words.slice(0, 4).join(' ');
   if (place.length < 4) return null;
   return place;
+}
+
+/** True when the admin is asking when a customer record was added — not to create one. */
+function messageWantsCustomerCreatedDate(message) {
+  const lower = normalizeCrmQueryText(message).toLowerCase();
+  if (!/\b(?:when|what date|which date|how long ago|on what day)\b/.test(lower)) return false;
+  return /\b(?:creat(?:e|ed)|add(?:ed)?|open(?:ed)?|register(?:ed)?|joined)\b/.test(lower);
 }
 
 function messageWantsAmcCustomers(message) {
@@ -313,8 +334,11 @@ function extractQueryHints(message) {
   const phoneMatch = text.match(/(?:\+?91[\s-]*)?([6-9]\d{9})\b/);
   const phone = phoneMatch?.[1] || null;
 
-  const jobMatch = text.match(/\b(?:job\s*#?\s*)?([A-Z]{1,4}\d{2,}[A-Z0-9-]*)\b/i);
-  const jobNumber = jobMatch?.[1] && /[0-9]/.test(jobMatch[1]) ? jobMatch[1] : null;
+  const idMatch = text.match(/\b(?:job\s*#?\s*)?([A-Z]{1,4}\d{2,}[A-Z0-9-]*)\b/i);
+  const rawId = idMatch?.[1] && /[0-9]/.test(idMatch[1]) ? idMatch[1] : null;
+  // C1831 is a customer code. Only treat it as a job number when the admin said "job".
+  const jobNumber =
+    rawId && !(/^[C][0-9]+$/i.test(rawId) && !/\bjobs?\b/i.test(text)) ? rawId : null;
 
   const nameTokens = extractNameTokens(text);
   const placeHint = extractPlaceHint(text);
@@ -331,7 +355,7 @@ function extractQueryHints(message) {
   // Partial phones and customer/job codes are the only free-text terms worth a
   // substring search. Searching the whole sentence makes "hi" match "Rohith".
   const lookupTerms = [];
-  if (jobNumber) lookupTerms.push(jobNumber);
+  if (rawId) lookupTerms.push(rawId);
   if (!phone) {
     const searchText = text
       .replace(/\b20\d{2}-\d{2}-\d{2}\b/g, ' ')
@@ -860,6 +884,7 @@ function slimCustomer(row) {
     model: row.model || null,
     lastServiceDate: row.last_service_date || null,
     visibleAddress: row.visible_address ? String(row.visible_address).trim() : null,
+    createdAt: row.created_at || null,
     tier: row.customer_tier || null,
     status: row.status || null,
   };
@@ -1054,17 +1079,31 @@ async function searchCustomers(db, hints, focusCustomerId, opts = {}) {
   }
 
   if (hints.placeHint) {
-    const byPlace = await searchCustomersByPlace(db, hints.placeHint, {
-      requireAmc: Boolean(hints.requireAmc),
-    });
-    if (out.length && (hints.nameTokens || []).length) {
-      const placeIds = new Set(byPlace.map((row) => row.id));
-      const filtered = out.filter((row) => placeIds.has(row.id));
+    const exactCodes = new Set(
+      (hints.lookupTerms || [])
+        .map((term) => String(term || '').toUpperCase())
+        .filter((term) => /^C\d+$/.test(term))
+    );
+    const exactHits = exactCodes.size
+      ? out.filter((row) => exactCodes.has(String(row.customerCode || '').toUpperCase()))
+      : [];
+    // A named customer code is the target. Do not replace it with an empty area search.
+    if (exactHits.length) {
       out.length = 0;
-      out.push(...(filtered.length ? filtered : byPlace));
+      out.push(...exactHits);
     } else {
-      out.length = 0;
-      out.push(...byPlace);
+      const byPlace = await searchCustomersByPlace(db, hints.placeHint, {
+        requireAmc: Boolean(hints.requireAmc),
+      });
+      if (out.length && (hints.nameTokens || []).length) {
+        const placeIds = new Set(byPlace.map((row) => row.id));
+        const filtered = out.filter((row) => placeIds.has(row.id));
+        out.length = 0;
+        out.push(...(filtered.length ? filtered : byPlace));
+      } else {
+        out.length = 0;
+        out.push(...byPlace);
+      }
     }
   }
 
@@ -2560,15 +2599,24 @@ function formatStatsAnswerForTools(pack, tools) {
     if (pack.customers?.length) {
       const place = pack.hints?.placeHint;
       const withAmc = pack.hints?.requireAmc;
+      const wantsCreated = messageWantsCustomerCreatedDate(pack.hints?.raw || '');
       const heading = place
         ? `Customers in ${place}${withAmc ? ' with AMC' : ''}`
-        : 'Customers';
+        : wantsCreated
+          ? 'Customer created'
+          : 'Customers';
       const rows = pack.customers.slice(0, 6).map((customer) => {
+        const createdMs = Date.parse(customer.createdAt);
+        const createdDay = Number.isFinite(createdMs) ? istDateKey(new Date(createdMs)) : null;
         const bits = [
           customer.name || '—',
           customer.customerCode || '—',
-          customer.phone || '—',
         ];
+        if (wantsCreated) {
+          bits.push(createdDay ? `created ${createdDay}` : 'created date unknown');
+        }
+        bits.push(customer.phone || '—');
+        if (!wantsCreated && createdDay) bits.push(`added ${createdDay}`);
         if (customer.visibleAddress) bits.push(customer.visibleAddress);
         if (customer.amcEndDate) bits.push(`AMC until ${customer.amcEndDate}`);
         return `· ${bits.join(' · ')}`;
@@ -2578,6 +2626,7 @@ function formatStatsAnswerForTools(pack, tools) {
       // When a specific customer is found, show their jobs including follow-up details
       if (
         pack.jobs?.length &&
+        !wantsCreated &&
         !pack.hints?.requireAmc &&
         !selected.includes('job_search') &&
         !selected.includes('jobs_overview')
@@ -3893,7 +3942,7 @@ function formatContextForPrompt(pack) {
     lines.push('Customers:');
     for (const c of pack.customers) {
       lines.push(
-        `- id=${c.id}; code=${c.customerCode || '—'}; name=${c.name}; phone=${c.phone || '—'}; lastService=${c.lastServiceDate || '—'}; type=${c.serviceType || '—'}${c.confirmedPaidTotal != null ? `; confirmedFullyPaidINR=${c.confirmedPaidTotal}; completedJobBilledINR=${c.billedTotal}; fullyPaidJobs=${c.fullyPaidJobs}; completedJobs=${c.completedJobs}` : ''}`
+        `- id=${c.id}; code=${c.customerCode || '—'}; name=${c.name}; phone=${c.phone || '—'}; created=${c.createdAt || '—'}; lastService=${c.lastServiceDate || '—'}; type=${c.serviceType || '—'}${c.confirmedPaidTotal != null ? `; confirmedFullyPaidINR=${c.confirmedPaidTotal}; completedJobBilledINR=${c.billedTotal}; fullyPaidJobs=${c.fullyPaidJobs}; completedJobs=${c.completedJobs}` : ''}`
       );
     }
   }
@@ -4353,6 +4402,7 @@ module.exports = {
   extractQueryHints,
   extractPlaceHint,
   messageWantsAmcCustomers,
+  messageWantsCustomerCreatedDate,
   hasSearchableTarget,
   hasConcreteCustomerLookupTarget,
   extractQuickPaymentAmount,

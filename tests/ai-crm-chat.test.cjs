@@ -27,6 +27,7 @@ const {
   isQuickPaymentQrGenerationRequest,
   isQuickPaymentQrSendRequest,
   addDaysKey,
+  messageWantsCustomerCreatedDate,
   CUSTOMER_LIMIT,
   JOB_LIMIT,
   OVERVIEW_JOB_LIMIT,
@@ -438,6 +439,10 @@ function testDeterministicFastRoutesStayReadOnlyAndNarrow() {
     'technician_billing_ranking',
   ]);
   assert.deepEqual(inferDeterministicPlan('find customer C0006').tools, ['customer_search']);
+  assert.deepEqual(inferDeterministicPlan('C1831 when did we created this customer').tools, [
+    'customer_search',
+  ]);
+  assert.deepEqual(inferDeterministicPlan('C1831 when did you create this').tools, ['customer_search']);
   assert.deepEqual(inferDeterministicPlan('how many km did jyotirling drive today').tools, [
     'technician_field_stats',
   ]);
@@ -979,6 +984,56 @@ function testLookupHintsAndLimits() {
   assert.ok(JOB_LIMIT <= 15);
 }
 
+function testCustomerCreatedDateLookup() {
+  const withCustomer = 'C1831 when did we created this customer';
+  const withThis = 'C1831 when did you create this';
+  for (const q of [withCustomer, withThis]) {
+    const hints = extractQueryHints(q);
+    assert.equal(hints.placeHint, null, `"${q}" must not be an area search`);
+    assert.equal(hints.jobNumber, null, `"${q}" is a customer code, not a job number`);
+    assert.ok(hints.lookupTerms.includes('C1831'), q);
+    assert.equal(hints.nameTokens.includes('created'), false, q);
+    assert.equal(messageWantsCustomerCreatedDate(q), true, q);
+    assert.deepEqual(inferDeterministicPlan(q).tools, ['customer_search'], q);
+  }
+
+  assert.equal(inferDeterministicPlan('create a customer named Ramesh'), null);
+  assert.equal(extractQueryHints('find me customer who has amc in Devanahalli').placeHint, 'Devanahalli');
+  assert.equal(extractQueryHints('Whitefield customers with amc').placeHint, 'Whitefield');
+
+  const answer = formatStatsAnswerForTools(
+    {
+      hints: { raw: withThis },
+      customers: [
+        {
+          id: 'uuid-1',
+          name: 'Ratna G',
+          customerCode: 'C1831',
+          phone: '9538712096',
+          createdAt: '2025-03-12T08:30:00.000Z',
+        },
+      ],
+      jobs: [
+        {
+          id: 'job-1',
+          customerId: 'uuid-1',
+          jobNumber: 'RO16530632',
+          serviceType: 'RO',
+          serviceSubType: 'Service',
+          status: 'PENDING',
+          scheduledDate: '2026-09-03',
+        },
+      ],
+      stats: { rangeLabel: 'today' },
+    },
+    ['customer_search']
+  );
+  assert.match(answer, /Customer created/);
+  assert.match(answer, /Ratna G · C1831 · created 2025-03-12/);
+  assert.doesNotMatch(answer, /RO16530632/);
+  assert.doesNotMatch(answer, /No matches found/);
+}
+
 function testAreaAndAmcCustomerSearch() {
   const q = 'find me customer who has amc in Devanahalli';
   const hints = extractQueryHints(q);
@@ -1498,6 +1553,7 @@ async function main() {
   testNavigationTargetsAndQrPhrases();
   testMutationToolsBanned();
   testLookupHintsAndLimits();
+  testCustomerCreatedDateLookup();
   testAreaAndAmcCustomerSearch();
   testNameSurvivesActionSentences();
   testGreetingsDoNotSearchTheCrm();

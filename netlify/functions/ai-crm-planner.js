@@ -14,6 +14,7 @@ const {
   detectOverviewIntent,
   detectTechnicianFieldStats,
   messageWantsAmcCustomers,
+  messageWantsCustomerCreatedDate,
 } = require('./ai-crm-lookup');
 
 const SEARCH_ONLY_TOOLS = new Set(['customer_search', 'job_search']);
@@ -443,7 +444,7 @@ function inferDeterministicPlan(message, history = []) {
     (/\bcreate\b/.test(lower) && !/\b(?:service )?job\b/.test(lower)) ||
     (/\bsend\b/.test(lower) && !/\b(?:draft|compose|write|prepare|open|payment|pay|qr|link)\b/.test(lower)) ||
     /\b(?:complete|finish|close)\s+(?:the\s+)?job\b/.test(lower);
-  if (wantsHardMutation) {
+  if (wantsHardMutation && !messageWantsCustomerCreatedDate(text)) {
     return null;
   }
   if (
@@ -1051,9 +1052,10 @@ function inferDeterministicPlan(message, history = []) {
 
   if (
     hasConcreteCustomerLookupTarget(directHints, text, null) &&
-    !/\b(?:create|add|edit|update|change|delete|remove|send|draft|prepare|turn|disable|enable|assign|complete|book|schedule)\b/i.test(
-      lower
-    )
+    (messageWantsCustomerCreatedDate(text) ||
+      !/\b(?:create|add|edit|update|change|delete|remove|send|draft|prepare|turn|disable|enable|assign|complete|book|schedule)\b/i.test(
+        lower
+      ))
   ) {
     const tools = [];
     if (directHints.jobNumber && /\bjob\b/i.test(lower) && !/\bcustomer\b/i.test(lower)) {
