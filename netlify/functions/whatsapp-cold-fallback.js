@@ -641,6 +641,10 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push('svc_wfs_ask_loc', [name]);
     push('svc_ask_location', [name, 'Water Filter Service']);
   }
+  if (primaryName === 'svc_ask_location_v2' || primaryName === 'svc_ask_location_v3') {
+    const fromLabel = String(bodyParams?.[1] || '').trim() || 'Water Filter Service';
+    push('svc_ask_location', [name, fromLabel]);
+  }
   if (primaryName === 'svc_ask_location') {
     push(VISIT, [name, 'please share your Google Maps location pin on this chat']);
   }
@@ -725,26 +729,18 @@ async function sendTemplateWithColdFallbacks({
   const headers = Array.isArray(headerComponents) ? headerComponents : [];
   const urlButtons = Array.isArray(buttonUrlParams) ? buttonUrlParams : [];
   templateName = resolveWaTemplateName(templateName);
-  if (isBlockedMarketingTemplateName(templateName)) {
-    return {
-      ok: false,
-      result: {
+  const blockedPrimary = isBlockedMarketingTemplateName(templateName);
+  let result = blockedPrimary
+    ? {
         ok: false,
         status: 400,
         data: { error: { message: 'Marketing WhatsApp templates are not allowed' } },
-      },
-      templateName,
-      bodyParams: params,
-      headerComponents: headers,
-      buttonUrlParams: urlButtons,
-    };
-  }
-
-  let result = await callWhatsAppApi(
-    phoneNumberId,
-    accessToken,
-    buildTemplatePayload(to, templateName, languageCode, params, headers, urlButtons)
-  );
+      }
+    : await callWhatsAppApi(
+        phoneNumberId,
+        accessToken,
+        buildTemplatePayload(to, templateName, languageCode, params, headers, urlButtons)
+      );
 
   if (result.ok) {
     return {
@@ -757,7 +753,7 @@ async function sendTemplateWithColdFallbacks({
     };
   }
 
-  if (!enableFallback || !isTemplateMetaError(result)) {
+  if (!enableFallback || (!blockedPrimary && !isTemplateMetaError(result))) {
     return {
       ok: false,
       result,

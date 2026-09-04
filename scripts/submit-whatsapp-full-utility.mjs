@@ -11,6 +11,7 @@
  *   node scripts/submit-whatsapp-full-utility.mjs --preview-md  # write docs/whatsapp-cold-template-previews.md
  *   node scripts/submit-whatsapp-full-utility.mjs --submit       # submit missing only
    *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-tech-customer-photo
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-ask-location-v3
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-overdue
    *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-missed-call-v5
  */
@@ -93,6 +94,7 @@ const MARKETING_DELETE_NAMES = [
   'svc_wfs_ask_name_ero_v1',
   'svc_wfs_ask_name_simple_hro_v1',
   'svc_wfs_ask_name_simple_v1', // “Hi from Water Filter Service”
+  'svc_ask_location_v2', // Meta recategorized as MARKETING (short share-location CTA)
 ];
 
 /** Old drafts replaced by newer UTILITY copy (ask-loc-from, This is… ask-name, hello v2). */
@@ -502,6 +504,26 @@ const WFS_V3_UTILITY_TEMPLATES = [
     body: 'Hi {{1}}, this is a message about your water purifier service account. Please reply on this chat.',
     examples: ['Rahul'],
     noButtons: true,
+  },
+];
+
+/**
+ * Simple cold ask location — name + service account + Send location QR.
+ * v2 (name-only “please share location”) → Meta MARKETING. v3 locks UTILITY.
+ * Tap QR → bot sends native WhatsApp location_request_message (Send location).
+ */
+const ASK_LOCATION_SIMPLE_V2_TEMPLATES = [
+  {
+    name: 'svc_ask_location_v2',
+    skipSubmit: true,
+    body: 'Hi {{1}}, please share your Google Maps location.',
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_ask_location_v3',
+    lockCategory: true,
+    body: 'Hi {{1}}, this is {{2}}. Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+    examples: ['Rahul', 'Eleven RO Water Filter Service'],
   },
 ];
 
@@ -2245,6 +2267,27 @@ function askLocShareLocationPayload(t) {
   };
 }
 
+/** Simple ask location: Send location QR only (tap → native location picker). */
+function askLocSendLocationPayload(t) {
+  const bodyComp = { type: 'BODY', text: t.body };
+  if (Array.isArray(t.examples) && t.examples.length > 0) {
+    bodyComp.example = { body_text: [t.examples] };
+  }
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: t.lockCategory ? false : true,
+    components: [
+      bodyComp,
+      {
+        type: 'BUTTONS',
+        buttons: [{ type: 'QUICK_REPLY', text: 'Send location' }],
+      },
+    ],
+  };
+}
+
 function docPdfPayloadSync(t, headerHandle = SAMPLE_PDF) {
   const websiteUrl = t.websiteUrl || websiteUrlForTemplate(t.name);
   const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: t.callPhone }];
@@ -2533,6 +2576,9 @@ function collectAllTemplatePreviewEntries() {
   for (const t of WFS_JUST_HI_TEMPLATES) push('WFS just hi', t, corePayload);
   // skip WFS_HI_FROM — superseded by hello / “This is …” (MARKETING-prone)
   for (const t of WFS_V3_UTILITY_TEMPLATES) push('WFS greeting v3', t, corePayload);
+  for (const t of ASK_LOCATION_SIMPLE_V2_TEMPLATES) {
+    push('Ask location simple (Send location)', t, askLocSendLocationPayload);
+  }
   for (const t of WFS_COLLECT_TEMPLATES) push('WFS collect info', t, corePayload);
   for (const t of WFS_ASK_NAME_TEMPLATES) push('WFS ask name', t, corePayload);
   for (const t of WFS_ASK_NAME_SIMPLE_TEMPLATES) push('WFS ask name (short)', t, corePayload);
@@ -3022,6 +3068,18 @@ async function main() {
     }
     queue.push({ label: t.name, payload: corePayload(t) });
   }
+  for (const t of ASK_LOCATION_SIMPLE_V2_TEMPLATES) {
+    if (t.skipSubmit) {
+      console.log(`SKIP ${t.name} — marketing-prone (use svc_ask_location_v3 / svc_ask_location)`);
+      continue;
+    }
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: askLocSendLocationPayload(t) });
+  }
   for (const t of WFS_COLLECT_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
@@ -3293,6 +3351,31 @@ async function main() {
     const keep = new Set(TECH_CUSTOMER_PHOTO_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyAskLocationV2 =
+    process.argv.includes('--only-ask-location-v2') ||
+    process.argv.includes('--only-ask-location-v3');
+  if (onlyAskLocationV2) {
+    const keep = new Set(
+      ASK_LOCATION_SIMPLE_V2_TEMPLATES.filter((t) => !t.skipSubmit).map((t) => t.name)
+    );
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+    if (doSubmit && token) {
+      const v2 = byName.get('svc_ask_location_v2');
+      if (v2 && String(v2.category || '').toUpperCase() === 'MARKETING') {
+        const r = await deleteByName(token, 'svc_ask_location_v2');
+        console.log(
+          r.ok ? 'DELETED' : 'FAIL',
+          'svc_ask_location_v2',
+          v2.status,
+          v2.category || '',
+          r.ok ? '' : JSON.stringify(r.data)
+        );
+      }
     }
   }
 

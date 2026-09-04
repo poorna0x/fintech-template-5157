@@ -197,12 +197,12 @@ export function isAskNameTemplateName(name: string): boolean {
   return /^svc_wfs_ask_name(_simple)?(_(hro|ero))?(_v\d+)?$/i.test(String(name || '').trim());
 }
 
-/** Cold ask location — plain UTILITY (no Share location QR). Reply → Send location once. */
+/** Cold ask location — approved UTILITY (name + from-label). v2 is Meta MARKETING. */
 export function resolveWfsAskLocTemplateName(_ctx: WhatsAppQuickReplyContext): string {
   return 'svc_ask_location';
 }
 
-/** Shorter cold ask location — same no-QR path. */
+/** Shorter cold ask location — same approved UTILITY until v3 is APPROVED. */
 export function resolveWfsAskLocSimpleTemplateName(_ctx: WhatsAppQuickReplyContext): string {
   return 'svc_ask_location';
 }
@@ -210,21 +210,27 @@ export function resolveWfsAskLocSimpleTemplateName(_ctx: WhatsAppQuickReplyConte
 export function isAskLocationTemplateName(name: string): boolean {
   const n = String(name || '').trim();
   if (/ask_loc_flat_photo/i.test(n)) return false;
-  return n === 'svc_ask_location' || /^svc_wfs_ask_loc/i.test(n);
+  return (
+    n === 'svc_ask_location' ||
+    n === 'svc_ask_location_v2' ||
+    n === 'svc_ask_location_v3' ||
+    /^svc_wfs_ask_loc/i.test(n)
+  );
 }
 
 export function askLocationTemplateFallbackNames(): string[] {
   return [
     'svc_ask_location',
+    'svc_ask_location_v3',
+    'svc_wfs_ask_loc_simple_v3',
+    'svc_wfs_ask_loc_simple_hro_v3',
+    'svc_wfs_ask_loc_simple_ero_v3',
     'svc_wfs_ask_loc_from_v1',
     'svc_wfs_ask_loc_from_hro_v1',
     'svc_wfs_ask_loc_from_ero_v1',
     'svc_wfs_ask_loc_v3',
     'svc_wfs_ask_loc_hro_v3',
     'svc_wfs_ask_loc_ero_v3',
-    'svc_wfs_ask_loc_simple_v3',
-    'svc_wfs_ask_loc_simple_hro_v3',
-    'svc_wfs_ask_loc_simple_ero_v3',
   ];
 }
 

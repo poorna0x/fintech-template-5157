@@ -109,6 +109,7 @@ const BLOCKED_MARKETING_TEMPLATE_NAMES = new Set([
   'svc_wfs_ask_name_ero_v1',
   'svc_wfs_ask_name_simple_hro_v1',
   'svc_wfs_ask_name_simple_v1',
+  'svc_ask_location_v2',
 ]);
 
 /**
@@ -116,9 +117,11 @@ const BLOCKED_MARKETING_TEMPLATE_NAMES = new Set([
  * @param {string} name
  */
 function isBlockedMarketingTemplateName(name) {
-  const resolved = resolveWaTemplateName(String(name || '').trim());
-  if (!resolved) return false;
-  return BLOCKED_MARKETING_TEMPLATE_NAMES.has(resolved);
+  const n = String(name || '').trim();
+  if (!n) return false;
+  if (BLOCKED_MARKETING_TEMPLATE_NAMES.has(n)) return true;
+  const resolved = resolveWaTemplateName(n);
+  return Boolean(resolved) && BLOCKED_MARKETING_TEMPLATE_NAMES.has(resolved);
 }
 
 module.exports = {

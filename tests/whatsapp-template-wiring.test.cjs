@@ -57,6 +57,34 @@ function testQuickCustomerColdPrimary() {
   );
   assert.match(source, /existing_service_schedule_\$\{suffix\}_cta_v3/);
   assert.match(source, /unregistered_number_service_\$\{suffix\}_cta_v2/);
+  assert.doesNotMatch(source, /name:\s*'svc_ask_location_v2'/);
+  assert.match(
+    source,
+    /function coldAskLocationParams[\s\S]*?name:\s*'svc_ask_location'/
+  );
+}
+
+function testAskLocationV2FallsBackToApprovedUtility() {
+  const attempts = buildFallbackAttempts('svc_ask_location_v2', ['Rahul'], false);
+  const askLocation = attempts.find((attempt) => attempt.name === 'svc_ask_location');
+  assert.ok(askLocation, 'marketing v2 must fall back to approved svc_ask_location');
+  assert.deepEqual(askLocation.params, ['Rahul', 'Water Filter Service']);
+  assert.equal(
+    attempts.some((attempt) => attempt.name === 'svc_ask_location_v2'),
+    false,
+    'must never retry MARKETING svc_ask_location_v2'
+  );
+}
+
+function testAskLocationV3FallsBackToApprovedUtility() {
+  const attempts = buildFallbackAttempts(
+    'svc_ask_location_v3',
+    ['Rahul', 'Eleven RO Water Filter Service'],
+    false
+  );
+  const askLocation = attempts.find((attempt) => attempt.name === 'svc_ask_location');
+  assert.ok(askLocation, 'pending v3 must fall back to approved svc_ask_location');
+  assert.deepEqual(askLocation.params, ['Rahul', 'Eleven RO Water Filter Service']);
 }
 
 function testLocationFallbackParameterCounts() {
@@ -136,6 +164,8 @@ function testMissedCallV5FallsBackToV4WithNameOnly() {
 
 testDocumentFallbacksKeepPdfHeader();
 testQuickCustomerColdPrimary();
+testAskLocationV2FallsBackToApprovedUtility();
+testAskLocationV3FallsBackToApprovedUtility();
 testLocationFallbackParameterCounts();
 testUtilityAliasesResolveToCurrentVersions();
 testLatestCtasRemainVisible();

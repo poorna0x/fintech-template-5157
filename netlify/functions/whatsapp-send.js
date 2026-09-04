@@ -30,7 +30,6 @@ const {
 } = require('./whatsapp-unsolicited-media');
 const {
   resolveWaTemplateName,
-  isBlockedMarketingTemplateName,
 } = require('./whatsapp-template-resolve');
 const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
 const { seedAdminPendingAction } = require('./whatsapp-booking-bot');
@@ -587,11 +586,6 @@ exports.handler = async (event) => {
     if (!templateName) {
       return json(400, headers, { error: 'templateName required' });
     }
-    if (isBlockedMarketingTemplateName(templateName)) {
-      return json(400, headers, {
-        error: 'Marketing WhatsApp templates are not allowed',
-      });
-    }
     if (templateName === 'hello_world') {
       return json(400, headers, {
         error:
@@ -894,6 +888,8 @@ exports.handler = async (event) => {
     const seedPending = String(body.seedPendingAction || body.seed_pending_action || '').trim();
     const templateSeedMap = {
       svc_ask_location: 'request_location',
+      svc_ask_location_v2: 'request_location',
+      svc_ask_location_v3: 'request_location',
       svc_wfs_ask_loc: 'request_location',
       svc_wfs_ask_loc_hro: 'request_location',
       svc_wfs_ask_loc_ero: 'request_location',

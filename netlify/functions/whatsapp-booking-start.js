@@ -83,8 +83,7 @@ function coldAskLocFlatPhotoParams(brand, customerName) {
 
 function coldAskLocationParams(brand, customerName) {
   const name = String(customerName || 'Customer').trim() || 'Customer';
-  // No "Share location" quick-reply — that forced a 2nd step before the native
-  // Send location button. Plain ask → customer replies → bot sends Send location once.
+  // Approved UTILITY (2 body params). svc_ask_location_v2 is Meta MARKETING — never send.
   return {
     name: 'svc_ask_location',
     languageCode: 'en',
@@ -210,15 +209,15 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
     return {
       primary: { ...ask, seedPending: 'request_location' },
       fallback: {
-        name: 'svc_visit_reminder',
+        name: 'svc_wfs_ask_loc_simple_v3',
         languageCode: 'en',
-        bodyParams: [name, 'please reply and share your service location pin'],
+        bodyParams: [name],
         seedPending: 'request_location',
       },
       fallback2: {
-        name: 'svc_smoke_update',
+        name: 'svc_visit_reminder',
         languageCode: 'en',
-        bodyParams: [name],
+        bodyParams: [name, 'please share your Google Maps location pin on this chat'],
         seedPending: 'request_location',
       },
     };

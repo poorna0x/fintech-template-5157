@@ -149,7 +149,10 @@ function resolveGreetingIntent({ id, title, text } = {}) {
   if (
     /\bshare_location\b/.test(blob) ||
     /\bshare location\b/.test(blob) ||
-    /^share location$/.test(String(title || '').trim().toLowerCase())
+    /^share location$/.test(String(title || '').trim().toLowerCase()) ||
+    /\bsend_location\b/.test(blob) ||
+    /\bsend location\b/.test(blob) ||
+    /^send location$/.test(String(title || '').trim().toLowerCase())
   ) {
     return 'request_location';
   }
@@ -2541,7 +2544,7 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
       serviceLabel: seed.serviceLabel,
       leadCost: seed.leadCost,
       requireOtp: seed.requireOtp,
-      // Legacy Share location QR already asked — only show Send location.
+      // Share/Send location QR already asked — only show native Send location.
       ...(fromShareLoc ? { locationBodyOnly: true } : {}),
     });
     return { ok: true };
@@ -2590,7 +2593,7 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
       });
       await sendLocationRequest({
         ...ctx,
-        bodyText: 'Tap *Send location* below.',
+        bodyText: 'Please share your Google Maps location.\n\nTap *Send location* below.',
       });
       return { ok: true };
     }
@@ -3876,7 +3879,7 @@ async function handleBookingBotInbound({
     });
     await sendLocationRequest({
       ...ctx,
-      bodyText: 'Tap *Send location* below.',
+      bodyText: 'Please share your Google Maps location.\n\nTap *Send location* below.',
     });
     return { handled: true };
   }
@@ -4953,7 +4956,7 @@ async function handleBookingBotInbound({
       if (state?.step === 'await_location' || state?.needNewLocation) {
         await sendLocationRequest({
           ...ctx,
-          bodyText: 'Tap *Send location* below.',
+          bodyText: 'Please share your Google Maps location.\n\nTap *Send location* below.',
         });
       } else {
         await setBookingState(db, to, {
@@ -4963,7 +4966,7 @@ async function handleBookingBotInbound({
         });
         await sendLocationRequest({
           ...ctx,
-          bodyText: 'Tap *Send location* below.',
+          bodyText: 'Please share your Google Maps location.\n\nTap *Send location* below.',
         });
       }
       return { handled: true };
