@@ -15,9 +15,11 @@ import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloud
 import { rotateImageUrlAndReupload } from '@/lib/imageRotate';
 import {
   deriveAmcServicePeriodKind,
+  getDefaultAmcServicePeriodMonths,
   resolveAmcServicePeriodMonths,
   type AmcServicePeriodKind,
 } from '@/lib/amcAutoJobSchedule';
+import { getTodayLocalDate } from '@/lib/adminDashboardDateHelpers';
 import { getDefaultLeadCost } from '@/lib/adminUtils';
 import {
   isLeadSourceAllowCustomText,
@@ -50,6 +52,28 @@ function sanitizeMoneyInput(raw: string): string {
     cleaned = cleaned.slice(0, dotIdx + 3);
   }
   return cleaned;
+}
+
+function amcEndDateFromStart(ymd: string, years: number): string {
+  const [y, m, d] = String(ymd || '').split('-').map(Number);
+  if (!y || !m || !d) return '';
+  const dt = new Date(y, m - 1, d);
+  dt.setFullYear(dt.getFullYear() + Math.max(1, years));
+  dt.setDate(dt.getDate() - 1);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+function defaultEditAmcInfo() {
+  const start = getTodayLocalDate();
+  const years = 1;
+  return {
+    date_given: start,
+    end_date: amcEndDateFromStart(start, years),
+    years,
+    includes_prefilter: false,
+    service_period_months: getDefaultAmcServicePeriodMonths(),
+    technician_reference: true,
+  };
 }
 
 function parseMoneyAmount(raw: string): number {
@@ -98,6 +122,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
   const paymentInputRef = useRef<HTMLInputElement>(null);
   // Snapshot of editData when the dialog opened, to detect whether anything changed / discard on dismiss.
   const initialDataSnapshotRef = useRef<string | null>(null);
+  const amcInfoBackupRef = useRef<any>(null);
 
   const uploadFiles = useCallback(async (files: File[], isPayment: boolean): Promise<string[]> => {
     const added: string[] = [];
@@ -329,8 +354,10 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
     if (open) {
       try { initialDataSnapshotRef.current = JSON.stringify(editData ?? {}); }
       catch { initialDataSnapshotRef.current = null; }
+      amcInfoBackupRef.current = editData?.amcInfo || null;
     } else {
       initialDataSnapshotRef.current = null;
+      amcInfoBackupRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -676,11 +703,47 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             </div>
           )}
 
-          {/* AMC Details */}
-          {editData.amcInfo && (
+          {/* AMC — technician may have added one; admin can keep, edit, or remove */}
           <div className="border-t pt-4">
-            <Label className="text-base font-semibold">AMC Details</Label>
-            <div className="space-y-3 mt-2">
+            <Label className="text-base font-semibold">Need AMC?</Label>
+            <p className="text-xs text-muted-foreground mt-1">
+              Choose No to remove AMC this technician added on this job.
+            </p>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (editData.amcInfo) return;
+                  onEditDataChange({
+                    ...editData,
+                    amcInfo: amcInfoBackupRef.current || defaultEditAmcInfo(),
+                  });
+                }}
+                className={`p-3 rounded-lg border-2 text-sm font-medium transition-colors ${
+                  editData.amcInfo
+                    ? 'border-primary bg-primary/5 text-foreground'
+                    : 'border-border bg-card text-muted-foreground hover:border-primary/30'
+                }`}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (editData.amcInfo) amcInfoBackupRef.current = editData.amcInfo;
+                  onEditDataChange({ ...editData, amcInfo: null });
+                }}
+                className={`p-3 rounded-lg border-2 text-sm font-medium transition-colors ${
+                  !editData.amcInfo
+                    ? 'border-primary bg-primary/5 text-foreground'
+                    : 'border-border bg-card text-muted-foreground hover:border-primary/30'
+                }`}
+              >
+                No
+              </button>
+            </div>
+            {editData.amcInfo && (
+            <div className="space-y-3 mt-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label htmlFor="amc-start-date">Start Date</Label>
@@ -688,7 +751,12 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                     value={editData.amcInfo?.date_given ? new Date(editData.amcInfo.date_given).toISOString().split('T')[0] : undefined}
                     onChange={(v) => {
                       if (v) {
-                        const amcInfo = { ...editData.amcInfo, date_given: v };
+                        const years = Number(editData.amcInfo?.years) || 1;
+                        const amcInfo = {
+                          ...editData.amcInfo,
+                          date_given: v,
+                          end_date: amcEndDateFromStart(v, years) || editData.amcInfo?.end_date,
+                        };
                         onEditDataChange({ ...editData, amcInfo });
                       }
                     }}
@@ -719,7 +787,15 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                     type="number"
                     value={editData.amcInfo?.years || 1}
                     onChange={(e) => {
-                      const amcInfo = { ...editData.amcInfo, years: parseInt(e.target.value) || 1 };
+                      const years = parseInt(e.target.value, 10) || 1;
+                      const start = editData.amcInfo?.date_given
+                        ? String(editData.amcInfo.date_given).split('T')[0]
+                        : getTodayLocalDate();
+                      const amcInfo = {
+                        ...editData.amcInfo,
+                        years,
+                        end_date: amcEndDateFromStart(start, years) || editData.amcInfo?.end_date,
+                      };
                       onEditDataChange({ ...editData, amcInfo });
                     }}
                   />
@@ -792,8 +868,8 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 );
               })()}
             </div>
+            )}
           </div>
-          )}
 
           {/* Completion Notes */}
           <div>

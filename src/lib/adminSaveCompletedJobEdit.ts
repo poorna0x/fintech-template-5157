@@ -110,13 +110,21 @@ try {
     requirements = [];
   }
 
-  // Update or add AMC info
+  // Update or add AMC info; No (null) removes technician AMC from this job.
   const amcIndex = requirements.findIndex((r: any) => r?.amc_info);
   if (completedJobEditData.amcInfo) {
     if (amcIndex >= 0) {
       requirements[amcIndex].amc_info = completedJobEditData.amcInfo;
     } else {
       requirements.push({ amc_info: completedJobEditData.amcInfo });
+    }
+  } else if (amcIndex >= 0) {
+    const row = requirements[amcIndex];
+    if (row && typeof row === 'object') {
+      delete row.amc_info;
+      if (Object.keys(row).length === 0) {
+        requirements.splice(amcIndex, 1);
+      }
     }
   }
 
@@ -797,6 +805,30 @@ try {
         } catch (amcSyncErr) {
           console.error('AMC contract sync failed:', amcSyncErr);
         }
+      }
+    } else {
+      try {
+        const { data: jobAmcs, error: jobAmcErr } = await supabase
+          .from('amc_contracts')
+          .select('id')
+          .eq('job_id', selectedCompletedJob.id)
+          .eq('status', 'ACTIVE');
+        if (jobAmcErr) {
+          toast.warning('Job saved but could not cancel AMC for this job');
+        } else if (jobAmcs?.length) {
+          for (const row of jobAmcs) {
+            const { error: cancelErr } = await db.amcContracts.update(row.id, {
+              status: 'CANCELLED',
+            });
+            if (cancelErr) {
+              toast.warning('Job saved but AMC contract cancel failed');
+              break;
+            }
+          }
+        }
+      } catch (amcCancelErr) {
+        console.error('AMC contract cancel failed:', amcCancelErr);
+        toast.warning('Job saved but AMC contract cancel failed');
       }
     }
 
