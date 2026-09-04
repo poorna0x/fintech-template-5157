@@ -115,18 +115,6 @@ const createDefaultStep5JobData = () => ({
 
 const ADD_CUSTOMER_STEPS = ['Personal', 'Address', 'Services', 'Job'] as const;
 
-async function hasFreshCustomerClipboard(): Promise<boolean> {
-  try {
-    if (!Capacitor.isNativePlatform()) return false;
-    const payload = await readClipboardPayload();
-    if (!payload.text.trim() || !isFreshClipboardTimestamp(payload.timestampMs)) return false;
-    const parsed = parseCustomerClipboardText(payload.text);
-    return Boolean(parsed.phone || parsed.email || parsed.mapsUrl);
-  } catch {
-    return false;
-  }
-}
-
 function clampAddCustomerStep(step: number) {
   if (!Number.isFinite(step) || step < 1) return 1;
   return Math.min(step, ADD_CUSTOMER_STEPS.length);
@@ -252,6 +240,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const lastAutoClipFpRef = useRef('');
   const autoFillInFlightRef = useRef(false);
   const autofillGenerationRef = useRef(0);
+  /** Only paste clipboard after Start new / no-draft open — never while resuming a draft. */
+  const clipboardAutofillEnabledRef = useRef(false);
   const [hasAutofilledPhone, setHasAutofilledPhone] = useState(false);
   const [step5JobData, setStep5JobData] = useState(() => ({
     ...createDefaultStep5JobData(),
@@ -358,12 +348,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     googleLocationRef.current = '';
   }, [clearLocationFetchState]);
 
-  // On open: resume draft only if it has real data AND there is no fresh clipboard
-  // (phone/email/Maps in last 15s). Fresh copy → start blank and autofill; no prompt.
+  // On open: unfinished draft always asks Resume / Start new (even if clipboard is fresh).
+  // Fresh clipboard pastes only when there is no draft, or after Start new.
   useEffect(() => {
     if (!open) {
       setShowResumePrompt(false);
       setOpenGateReady(false);
+      clipboardAutofillEnabledRef.current = false;
       wasOpenRef.current = false;
       return;
     }
@@ -371,32 +362,25 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     wasOpenRef.current = true;
     setOpenGateReady(false);
     setShowResumePrompt(false);
+    clipboardAutofillEnabledRef.current = false;
 
     let cancelled = false;
     void (async () => {
       const draft = loadAddCustomerDraft();
       const hasDraft = draftHasData(draft);
-      const freshClip = await hasFreshCustomerClipboard();
       if (cancelled) return;
-
-      if (freshClip) {
-        // New customer from clipboard — discard unfinished draft without asking.
-        clearAddCustomerDraft();
-        resetToBlankCustomerForm();
-        setShowResumePrompt(false);
-        setOpenGateReady(true);
-        return;
-      }
 
       if (hasDraft && draft) {
         applyDraftToForm(draft);
+        clipboardAutofillEnabledRef.current = false;
         setShowResumePrompt(true);
         setOpenGateReady(true);
         return;
       }
 
-      // No resume-worthy draft: clean slate (avoid leftover in-memory fields).
+      // No resume-worthy draft: clean slate, then allow clipboard autofill.
       resetToBlankCustomerForm();
+      clipboardAutofillEnabledRef.current = true;
       setShowResumePrompt(false);
       setOpenGateReady(true);
     })();
@@ -457,6 +441,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     autofilledRef.current = {};
     lastAutoClipFpRef.current = '';
     setHasAutofilledPhone(false);
+    clipboardAutofillEnabledRef.current = false;
     if (draft) applyDraftToForm(draft);
     setShowResumePrompt(false);
   };
@@ -475,6 +460,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const handleStartNewEntry = () => {
     clearAddCustomerDraft();
     resetToBlankCustomerForm();
+    // Allow paste of whatever was copied in the last 15s onto this blank form.
+    clipboardAutofillEnabledRef.current = true;
     setShowResumePrompt(false);
   };
 
@@ -1004,7 +991,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     const dialogIsOpen = () =>
       dialogOpenRef.current && !showResumePromptRef.current && openGateReadyRef.current;
 
-    if (!dialogIsOpen() || autoFillInFlightRef.current) return;
+    if (!dialogIsOpen() || !clipboardAutofillEnabledRef.current || autoFillInFlightRef.current) {
+      return;
+    }
     // Freshness needs Android clip timestamp — skip on web / old APKs without it.
     if (!Capacitor.isNativePlatform()) return;
 
