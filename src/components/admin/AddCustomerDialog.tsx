@@ -11,7 +11,7 @@ import { Customer } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
-import { MapPin, Download, ExternalLink, Loader2, ChevronDown, X, Check } from 'lucide-react';
+import { Download, Loader2, ChevronDown, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, composeFetchAddressFromGeocode, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import {
@@ -70,9 +70,9 @@ const createDefaultAddFormData = () => ({
   phone: '',
   alternate_phone: '',
   email: '',
-  service_types: [] as string[],
-  equipment: {} as { [serviceType: string]: { brand: string; model: string } },
-  photos: {} as { [serviceType: string]: string[] },
+  service_types: ['RO'] as string[],
+  equipment: { RO: { brand: '', model: '' } } as { [serviceType: string]: { brand: string; model: string } },
+  photos: { RO: [] as string[] } as { [serviceType: string]: string[] },
   behavior: '',
   native_language: '',
   status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
@@ -139,7 +139,41 @@ const draftHasData = (draft: ReturnType<typeof loadAddCustomerDraft>): boolean =
   );
 };
 
-const ADD_CUSTOMER_STEPS = ['Personal', 'Address', 'Services', 'Review', 'Job'] as const;
+const ADD_CUSTOMER_STEPS = ['Personal', 'Address', 'Services', 'Job'] as const;
+
+function clampAddCustomerStep(step: number) {
+  if (!Number.isFinite(step) || step < 1) return 1;
+  return Math.min(step, ADD_CUSTOMER_STEPS.length);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Remove a previously prepended flat/house prefix from Complete Address. */
+function stripLeadingFlatHouse(address: string, flat: string): string {
+  const a = address.trim();
+  const f = flat.trim();
+  if (!a || !f) return a;
+  const re = new RegExp(`^${escapeRegExp(f)}(?:$|\\s*[,\\-–]\\s*|\\s+)`, 'i');
+  if (re.test(a)) return a.replace(re, '').trim();
+  return a;
+}
+
+/** Put flat/house at the start of Complete Address, without duplicating it. */
+function withFlatHousePrefix(address: string, flat: string): string {
+  const f = flat.trim();
+  const a = address.trim();
+  if (!f) return a;
+  if (!a) return f;
+  const already = new RegExp(`^${escapeRegExp(f)}(?:$|\\s*[,\\-–]|\\s+)`, 'i');
+  if (already.test(a)) return a;
+  return `${f}, ${a}`;
+}
+
+function replaceFlatHousePrefix(address: string, prevFlat: string, nextFlat: string): string {
+  return withFlatHousePrefix(stripLeadingFlatHouse(address, prevFlat), nextFlat);
+}
 
 interface AddCustomerDialogProps {
   open: boolean;
@@ -165,7 +199,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 }) => {
   const initialDraftRef = useRef(loadAddCustomerDraft());
   const [currentStep, setCurrentStep] = useState(() =>
-    typeof initialDraftRef.current?.currentStep === 'number' ? initialDraftRef.current.currentStep : 1
+    clampAddCustomerStep(
+      typeof initialDraftRef.current?.currentStep === 'number' ? initialDraftRef.current.currentStep : 1
+    )
   );
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
@@ -187,6 +223,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     ...(initialDraftRef.current?.addFormData || {}),
   }));
   const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
+  /** Helper only — merged into Complete Address on blur / fetch / next. Not saved alone. */
+  const [flatHouseNo, setFlatHouseNo] = useState('');
+  const flatHouseNoRef = useRef('');
+  const lastAppliedFlatHouseRef = useRef('');
   const [brandSuggestions, setBrandSuggestions] = useState<string[]>([]);
   const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
   const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
@@ -346,7 +386,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       const resumed = { ...createDefaultAddFormData(), ...(draft.addFormData || {}) };
       setAddFormData(resumed);
       setStep5JobData({ ...createDefaultStep5JobData(), ...(draft.step5JobData || {}) });
-      if (typeof draft.currentStep === 'number') setCurrentStep(draft.currentStep);
+      if (typeof draft.currentStep === 'number') setCurrentStep(clampAddCustomerStep(draft.currentStep));
       if (typeof draft.shouldCreateJob === 'boolean') setShouldCreateJob(draft.shouldCreateJob);
       // If draft Maps URL already embeds coords, restore them so save doesn't need re-Fetch.
       const draftLink = String(resumed.google_location || '').trim();
@@ -358,9 +398,27 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     setShowResumePrompt(false);
   };
 
+  const resetFlatHouseNo = () => {
+    setFlatHouseNo('');
+    flatHouseNoRef.current = '';
+    lastAppliedFlatHouseRef.current = '';
+  };
+
+  const applyFlatHousePrefix = (rawFlat?: string) => {
+    const nextFlat = (rawFlat ?? flatHouseNoRef.current).trim();
+    const prevFlat = lastAppliedFlatHouseRef.current;
+    lastAppliedFlatHouseRef.current = nextFlat;
+    setAddFormData((prev) => {
+      const nextAddress = replaceFlatHousePrefix(prev.address, prevFlat, nextFlat);
+      if (nextAddress === prev.address) return prev;
+      return { ...prev, address: nextAddress };
+    });
+  };
+
   const handleStartNewEntry = () => {
     clearAddCustomerDraft();
     clearLocationFetchState();
+    resetFlatHouseNo();
     setAddFormData(createDefaultAddFormData());
     setStep5JobData(createDefaultStep5JobData());
     setCurrentStep(1);
@@ -470,6 +528,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const nextStep = async () => {
+    if (currentStep === 2) {
+      applyFlatHousePrefix();
+    }
     if (!validateStep(currentStep)) return;
     if (currentStep === 1) {
       if (onCheckExistingCustomer) {
@@ -490,7 +551,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         setDuplicateFoundOnBlur(null);
       }
     }
-    setCurrentStep(prev => Math.min(prev + 1, 5));
+    setCurrentStep(prev => Math.min(prev + 1, ADD_CUSTOMER_STEPS.length));
   };
 
   const prevStep = () => {
@@ -504,7 +565,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const shouldCapitalizeAddFormField = (field: string): boolean => {
-    return ['full_name', 'address', 'visible_address', 'behavior', 'notes'].includes(field);
+    return ['full_name', 'visible_address', 'behavior', 'notes'].includes(field);
   };
 
   const handleAddFormChange = (field: string, value: string | string[]) => {
@@ -609,25 +670,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       area.toLowerCase().includes(searchTerm)
     ).slice(0, 12);
   }, [addFormData.visible_address]);
-
-  const handleFetchLocationFromAddress = () => {
-    const address = addFormData.address || '';
-    const currentAddress = address.trim();
-    
-    if (!currentAddress || currentAddress.length === 0) {
-      toast.error('Please enter a complete address first');
-      return;
-    }
-
-    const extracted = extractLocationFromAddressString(currentAddress);
-    if (extracted) {
-      handleAddFormChange('visible_address', extracted);
-      locationManuallyEditedRef.current = false;
-      toast.success(`Location extracted: ${extracted}`);
-    } else {
-      toast.warning('Could not extract location from address. Please enter manually.');
-    }
-  };
 
   const loadGoogleMapsScript = (): Promise<void> => {
     return new Promise((resolve, reject) => {
@@ -818,7 +860,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       setAddFormData((prev) => ({
         ...prev,
         google_location: stableMapsLink,
-        address: address ? capitalizeFirstLetter(address) : prev.address,
+        address: address
+          ? withFlatHousePrefix(capitalizeFirstLetter(address), flatHouseNoRef.current)
+          : prev.address,
         visible_address: (() => {
           const next = nextVisibleAddressFromMapsFetch(
             extractedLocation,
@@ -828,6 +872,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           return next ? capitalizeFirstLetter(next) : next;
         })(),
       }));
+      lastAppliedFlatHouseRef.current = flatHouseNoRef.current.trim();
 
       if (extractedLocation) {
         locationManuallyEditedRef.current = false;
@@ -1015,13 +1060,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const handleCreateCustomer = async () => {
-    if (currentStep === 4) {
-      setCurrentStep(5);
-      return;
-    }
-    
-    if (currentStep === 5) {
-      if (shouldCreateJob) {
+    if (currentStep !== 4) return;
+
+    if (shouldCreateJob) {
         if (scheduleAsFollowUp) {
           if (!followUpSchedule.followUpDate?.trim() || !followUpSchedule.followUpTime?.trim()) {
             toast.error('Please pick a follow-up date and time', TOAST_VALIDATION);
@@ -1080,7 +1121,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
       
       await createCustomer();
-    }
   };
 
   const createCustomer = async () => {
@@ -1515,6 +1555,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       // Customer created — discard the saved draft and reset the form.
       clearAddCustomerDraft();
       clearLocationFetchState();
+      resetFlatHouseNo();
       setAddFormData(createDefaultAddFormData());
       setCurrentStep(1);
       setFormErrors({});
@@ -1783,28 +1824,56 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               </div>
 
               <div className="space-y-2">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <Label htmlFor="add_address">Complete Address</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleFetchLocationFromAddress}
-                    className="w-full sm:w-auto whitespace-nowrap"
-                    title="Extract or replace location from complete address"
-                    disabled={!addFormData.address || addFormData.address.trim().length === 0}
-                  >
-                    <MapPin className="w-3 h-3 mr-1" />
-                    Fetch Location
-                  </Button>
+                <Label htmlFor="add_flat_house_no">Flat No / House No</Label>
+                <div className="relative">
+                  <Input
+                    id="add_flat_house_no"
+                    name="hro_flat_house_no"
+                    value={flatHouseNo}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      flatHouseNoRef.current = value;
+                      setFlatHouseNo(value);
+                      applyFlatHousePrefix(value);
+                    }}
+                    onBlur={() => applyFlatHousePrefix()}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-form-type="other"
+                    placeholder="e.g., A-102, 1st Floor"
+                    className="text-sm pr-9"
+                  />
+                  {flatHouseNo.trim() ? (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                      title="Clear flat / house no"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        flatHouseNoRef.current = '';
+                        setFlatHouseNo('');
+                        applyFlatHousePrefix('');
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="add_address">Complete Address</Label>
                 <Textarea
                   id="add_address"
                   value={addFormData.address}
                   onChange={(e) => handleAddFormChange('address', e.target.value)}
                   autoCapitalize="sentences"
                   placeholder="Enter complete address (e.g., 123 MG Road, Koramangala, Bangalore, Karnataka, 560034)"
-                  rows={3}
+                  rows={2}
                   className={`resize-none ${formErrors.address ? 'border-red-500' : ''}`}
                 />
                 {formErrors?.address && (
@@ -1816,17 +1885,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 <Label htmlFor="add_google_location" className="text-sm font-medium text-foreground">
                   Google Maps Location
                 </Label>
-                <Input
-                  id="add_google_location"
-                  value={addFormData.google_location}
-                  onChange={(e) => {
-                    mapsShareTextRef.current = e.target.value;
-                    handleAddFormChange('google_location', e.target.value);
-                  }}
-                  placeholder="Paste Google Maps share link here..."
-                  className="w-full text-sm"
-                />
-                <div className={`grid gap-2 ${addFormData.google_location ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="add_google_location"
+                    value={addFormData.google_location}
+                    onChange={(e) => {
+                      mapsShareTextRef.current = e.target.value;
+                      handleAddFormChange('google_location', e.target.value);
+                    }}
+                    placeholder="Paste Google Maps share link here..."
+                    className="min-w-0 w-0 flex-1 text-sm"
+                  />
                   <Button
                     type="button"
                     variant="outline"
@@ -1834,7 +1903,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     onClick={fetchAddressFromGoogleLocation}
                     disabled={isFetchingAddress}
                     aria-busy={isFetchingAddress}
-                    className="w-full whitespace-nowrap"
+                    className="h-10 shrink-0 whitespace-nowrap"
                     title={
                       addFormData.google_location
                         ? 'Fetch address from Google Maps link'
@@ -1848,24 +1917,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     )}
                     {isFetchingAddress ? 'Fetching…' : 'Fetch Address'}
                   </Button>
-                  {addFormData.google_location && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const link =
-                          extractMapsUrlFromText(addFormData.google_location) ||
-                          sanitizeGoogleMapsInput(addFormData.google_location);
-                        window.open(link, '_blank', 'noopener,noreferrer');
-                      }}
-                      className="w-full whitespace-nowrap"
-                      title="Open in Google Maps"
-                    >
-                      <ExternalLink className="w-3 h-3 mr-1" />
-                      Test
-                    </Button>
-                  )}
                 </div>
               </div>
             </div>
@@ -2015,72 +2066,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             </div>
           )}
 
-          {/* Step 4: Review & Notes */}
+          {/* Step 4: Create Job Option */}
           {currentStep === 4 && (
-            <div className="space-y-4">
-              <div className="bg-muted/40 p-4 rounded-lg space-y-3">
-                <h3 className="font-semibold text-foreground">Customer Information Summary</h3>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium text-muted-foreground">Name:</span>
-                    <p className="text-foreground">{addFormData.full_name || 'Not provided'}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-muted-foreground">Phone:</span>
-                    <p className="text-foreground">{addFormData.phone || 'Not provided'}</p>
-                  </div>
-                  {addFormData.alternate_phone && (
-                    <div>
-                      <span className="font-medium text-muted-foreground">Alternate Phone:</span>
-                      <p className="text-foreground">{addFormData.alternate_phone}</p>
-                    </div>
-                  )}
-                  <div>
-                    <span className="font-medium text-muted-foreground">Email:</span>
-                    <p className="text-foreground">{addFormData.email || 'Not provided'}</p>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <span className="font-medium text-muted-foreground">Location:</span>
-                    <p className="text-foreground">{addFormData.visible_address || 'Not provided'}</p>
-                    <span className="font-medium text-muted-foreground">Complete Address:</span>
-                    <p className="text-foreground">{addFormData.address || 'Not provided'}</p>
-                    {addFormData.google_location && (
-                      <div className="mt-1">
-                        <span className="font-medium text-muted-foreground">Google Maps:</span>
-                        <p className="text-blue-600 text-sm break-all">{addFormData.google_location}</p>
-                      </div>
-                    )}
-                  </div>
-                  <div className="sm:col-span-2">
-                    <span className="font-medium text-muted-foreground">Services & Equipment:</span>
-                    <div className="mt-1 space-y-2">
-                      {addFormData.service_types.map((serviceType) => {
-                        const serviceInfo = [
-                          { value: 'RO', label: 'RO (Reverse Osmosis)' },
-                          { value: 'SOFTENER', label: 'Water Softener' }
-                        ].find(s => s.value === serviceType);
-                        
-                        const equipment = addFormData.equipment[serviceType];
-                        
-                        return (
-                          <div key={serviceType} className="flex items-center gap-2 text-sm">
-                            <span className="font-medium">{serviceInfo?.label}:</span>
-                            <span className="text-foreground/90">
-                              {equipment?.brand} - {equipment?.model}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 5: Create Job Option */}
-          {currentStep === 5 && (
             <div className="space-y-4">
               {anyEquipmentUploading && (
                 <p className="text-xs text-muted-foreground flex items-center gap-1.5 px-1">
@@ -2386,10 +2373,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           
           <div className="order-1 sm:order-2">
             {currentStep < 4 ? (
-              <Button onClick={nextStep} className=" w-full sm:w-auto text-sm">
-                Next Step
-              </Button>
-            ) : currentStep === 4 ? (
               <Button onClick={nextStep} className=" w-full sm:w-auto text-sm">
                 Next Step
               </Button>
