@@ -93,6 +93,10 @@ interface CompletedJobSectionProps {
   onOpenOfficeParts?: () => void;
   onOfficePartsOpenChange?: (open: boolean) => void;
   officePartsDialogOpen?: boolean;
+  onOfficeJobPatched?: (
+    jobId: string,
+    patch: { requirements: unknown; parts_cost_total: number }
+  ) => void;
   onOpenCompletionEmail?: () => void;
   onCompletionEmailOpenChange?: (open: boolean) => void;
   completionEmailOpen?: boolean;
@@ -138,6 +142,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   onOpenOfficeParts,
   onOfficePartsOpenChange,
   officePartsDialogOpen: officePartsDialogOpenProp,
+  onOfficeJobPatched,
   onOpenCompletionEmail,
   onCompletionEmailOpenChange,
   completionEmailOpen: completionEmailOpenProp,
@@ -1089,7 +1094,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             }
           }}
           job={job}
-          onPartsChanged={(total) => setOfficePartsOverride(total)}
+          onPartsChanged={(total, jobPatch) => {
+            setOfficePartsOverride(total);
+            if (job?.id && jobPatch) onOfficeJobPatched?.(job.id, jobPatch);
+          }}
         />
       )}
     </div>

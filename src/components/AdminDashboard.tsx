@@ -1831,6 +1831,37 @@ const AdminDashboard = () => {
     }
   }, [loadedCompletedJobDetails, loadingCompletedJobDetails]);
 
+  const patchLoadedCompletedJob = useCallback(
+    (jobId: string, patch: { requirements?: unknown; parts_cost_total?: number }) => {
+      if (!jobId || !patch) return;
+      setLoadedCompletedJobDetails((prev) => {
+        const existing = prev[jobId];
+        if (!existing) return prev;
+        return { ...prev, [jobId]: { ...existing, ...patch } };
+      });
+      setJobs((prev) =>
+        prev.map((job) => (job.id === jobId ? { ...job, ...patch } : job))
+      );
+      setCustomerJobs((prev) => {
+        let touched = false;
+        const next: typeof prev = { ...prev };
+        for (const [cid, list] of Object.entries(prev)) {
+          const idx = list.findIndex((row) => row.id === jobId);
+          if (idx < 0) continue;
+          touched = true;
+          const copy = [...list];
+          copy[idx] = { ...copy[idx], ...patch };
+          next[cid] = copy;
+        }
+        return touched ? next : prev;
+      });
+      setSelectedCompletedJob((prev) =>
+        prev && prev.id === jobId ? { ...prev, ...patch } : prev
+      );
+    },
+    []
+  );
+
   /** Keep embedded job.customer in sync after Edit Customer (completed tab reads email from job rows). */
   const patchCustomerContactOnJobs = useCallback(
     (
@@ -5278,7 +5309,7 @@ const AdminDashboard = () => {
   };
 
   // Reload AMC status from database
-  const reloadAMCStatus = async () => {
+  const reloadAMCStatus = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('amc_contracts')
@@ -5300,7 +5331,7 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error('Error reloading AMC status:', error);
     }
-  };
+  }, []);
 
   const reloadCustomerPriorServiceStatus = async () => {
     try {
@@ -6531,6 +6562,7 @@ const AdminDashboard = () => {
     setSelectedPhoto,
     onAdminModalOpenChange,
     loadCompletedJobDetails,
+    patchLoadedCompletedJob,
     setSelectedJobDescription,
     setDescriptionDialogOpen,
     openPhotoGallery,
@@ -6644,6 +6676,7 @@ const AdminDashboard = () => {
       loadFilteredJobs,
       setLoadedCompletedJobDetails,
     });
+    void reloadAMCStatus();
   }, [
     selectedCompletedJob,
     completedJobEditData,
@@ -6651,6 +6684,7 @@ const AdminDashboard = () => {
     currentPage,
     closeAdminModal,
     loadFilteredJobs,
+    reloadAMCStatus,
   ]);
   
   // New stats for the dashboard cards (filtered by today)

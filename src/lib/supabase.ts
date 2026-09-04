@@ -2616,16 +2616,33 @@ export const db = {
         0
       );
 
+      const requirements = coerceJobRequirementsForDb(reqs);
       const { error } = await supabase
         .from('jobs')
         .update({
-          requirements: coerceJobRequirementsForDb(reqs),
+          requirements,
           parts_cost_total: partsCostTotal,
         } as Database['public']['Tables']['jobs']['Update'])
         .eq('id', jobId);
 
       if (error) return { data: null, error };
-      return { data: { id: jobId, parts_cost_total: partsCostTotal }, error: null };
+      return { data: { id: jobId, parts_cost_total: partsCostTotal, requirements }, error: null };
+    },
+
+    async getOfficePartsState(jobId: string) {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('requirements, parts_cost_total')
+        .eq('id', jobId)
+        .maybeSingle();
+      if (error) return { data: null, error };
+      return {
+        data: {
+          requirements: (data as any)?.requirements ?? [],
+          parts_cost_total: Number((data as any)?.parts_cost_total) || 0,
+        },
+        error: null,
+      };
     },
     
     async update(id: string, updates: Database['public']['Tables']['jobs']['Update']) {

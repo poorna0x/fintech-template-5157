@@ -635,6 +635,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                     parsedAdminUrl.modal === 'office-parts' &&
                     parsedAdminUrl.jobId === fullJob.id
                   }
+                  onOfficeJobPatched={(jobId, patch) => a.patchLoadedCompletedJob(jobId, patch)}
                   onOpenCompletionEmail={() =>
                     a.openAdminModal('completion-email', { jobId: fullJob.id })
                   }

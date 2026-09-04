@@ -103,6 +103,10 @@ export interface AdminDashboardListActions {
   >;
   onAdminModalOpenChange: (modal: AdminModalSlug, open: boolean) => void;
   loadCompletedJobDetails: (jobId: string) => Promise<void>;
+  patchLoadedCompletedJob: (
+    jobId: string,
+    patch: { requirements?: unknown; parts_cost_total?: number }
+  ) => void;
   setSelectedJobDescription: React.Dispatch<
     React.SetStateAction<{ jobId: string; description: string } | null>
   >;

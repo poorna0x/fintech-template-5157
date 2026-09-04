@@ -39,7 +39,10 @@ interface OfficeJobPartsDialogProps {
   onOpenChange: (open: boolean) => void;
   job: Job | null;
   /** Reports the new parts cost total after each change so the caller can update profit display. */
-  onPartsChanged?: (partsCostTotal: number) => void;
+  onPartsChanged?: (
+    partsCostTotal: number,
+    jobPatch?: { requirements: unknown; parts_cost_total: number }
+  ) => void;
 }
 
 const formatCurrency = (amount: number): string => {
@@ -80,19 +83,24 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
     if (!open || !job) return;
     let cancelled = false;
     setLoading(true);
-    db.inventory
-      .getAvailableSlim()
-      .then(async ({ data, error }) => {
+    Promise.all([
+      db.inventory.getAvailableSlim(),
+      db.jobs.getOfficePartsState(job.id),
+    ])
+      .then(async ([invResult, partsState]) => {
         if (cancelled) return;
-        let inv = error ? [] : ((data as InventoryItem[]) || []);
+        let inv = invResult.error ? [] : ((invResult.data as InventoryItem[]) || []);
         if (inv.length === 0) {
           const all = await db.inventory.getAll();
           if (cancelled) return;
           inv = ((all.data as InventoryItem[]) || []).filter((i) => Number(i.quantity) > 0);
         }
         setInventory(inv);
+        const jobForParts = partsState.data
+          ? { ...job, requirements: partsState.data.requirements }
+          : job;
         // Enrich existing parts (esp. legacy ones) with current name/code from inventory.
-        const existing = getOfficeJobParts(job).map((p) => {
+        const existing = getOfficeJobParts(jobForParts).map((p) => {
           const match = inv.find((i) => i.id === p.inventory_id);
           return {
             ...p,
@@ -102,6 +110,12 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
           };
         });
         setParts(existing);
+        if (partsState.data) {
+          onPartsChanged?.(partsState.data.parts_cost_total, {
+            requirements: partsState.data.requirements,
+            parts_cost_total: partsState.data.parts_cost_total,
+          });
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -132,12 +146,17 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
 
   const persist = async (nextParts: OfficeJobPart[]) => {
     if (!job?.id) return;
-    const { error } = await db.jobs.setOfficeJobParts(job.id, nextParts);
+    const { data, error } = await db.jobs.setOfficeJobParts(job.id, nextParts);
     if (error) {
       throw new Error(error.message || 'Failed to save parts');
     }
-    const total = nextParts.reduce((s, p) => s + p.quantity * p.unit_price, 0);
-    onPartsChanged?.(total);
+    const total =
+      data?.parts_cost_total ??
+      nextParts.reduce((s, p) => s + p.quantity * p.unit_price, 0);
+    onPartsChanged?.(total, {
+      requirements: data?.requirements,
+      parts_cost_total: total,
+    });
   };
 
   const handleAddPart = async (inv: InventoryItem) => {
