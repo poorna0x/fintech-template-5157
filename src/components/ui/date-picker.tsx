@@ -2,14 +2,10 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-// The actual calendar pulls in MUI + emotion + dayjs. Load it lazily so that
-// heavy dependency graph is only fetched when a date picker is opened, keeping
-// it out of the shared vendor chunk that loads on every page.
-const DatePickerCalendar = React.lazy(() => import("./date-picker-calendar"));
-
-/** Compact DateCalendar height; used to pick top vs bottom before open. */
+/** Compact month grid height; used to pick top vs bottom before open. */
 const CALENDAR_ESTIMATED_HEIGHT = 360;
 
 export interface DatePickerProps {
@@ -22,10 +18,22 @@ export interface DatePickerProps {
   disabled?: boolean;
 }
 
-function formatDisplayDate(value: string | undefined): string {
-  if (!value) return "";
+function parseYmd(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
   const d = new Date(value + "T12:00:00");
-  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  return isNaN(d.getTime()) ? undefined : d;
+}
+
+function toYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatDisplayDate(value: string | undefined): string {
+  const d = parseYmd(value);
+  return d ? d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "";
 }
 
 function pickPopoverSide(trigger: HTMLElement): "top" | "bottom" {
@@ -46,6 +54,7 @@ export function DatePicker({
   const [open, setOpen] = React.useState(false);
   const [side, setSide] = React.useState<"top" | "bottom">("bottom");
   const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const selected = parseYmd(value);
   const displayText = formatDisplayDate(value) || placeholder;
 
   const handleOpenChange = (next: boolean) => {
@@ -84,21 +93,17 @@ export function DatePicker({
         collisionPadding={12}
         avoidCollisions
       >
-        <React.Suspense
-          fallback={
-            <div className="flex h-[320px] w-[320px] items-center justify-center text-sm text-muted-foreground">
-              Loading…
-            </div>
-          }
-        >
-          <DatePickerCalendar
-            value={value}
-            onSelect={(d) => {
-              onChange?.(d);
-              setOpen(false);
-            }}
-          />
-        </React.Suspense>
+        <Calendar
+          mode="single"
+          selected={selected}
+          defaultMonth={selected}
+          onSelect={(d) => {
+            if (!d) return;
+            onChange?.(toYmd(d));
+            setOpen(false);
+          }}
+          initialFocus
+        />
       </PopoverContent>
     </Popover>
   );
