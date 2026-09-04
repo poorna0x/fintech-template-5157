@@ -132,20 +132,44 @@ const clearAddCustomerDraft = () => {
 };
 
 // Whether a saved draft holds enough typed info to be worth resuming.
+// Default RO-only (no name/phone/address) is not worth a resume prompt.
 const draftHasData = (draft: ReturnType<typeof loadAddCustomerDraft>): boolean => {
   const f = draft?.addFormData;
   if (!f) return false;
-  return Boolean(
+  if (
     f.full_name ||
-      f.phone ||
-      f.alternate_phone ||
-      f.email ||
-      f.address ||
-      f.visible_address ||
-      f.notes ||
-      (Array.isArray(f.service_types) && f.service_types.length > 0)
-  );
+    f.phone ||
+    f.alternate_phone ||
+    f.email ||
+    f.address ||
+    f.visible_address ||
+    f.notes ||
+    f.google_location
+  ) {
+    return true;
+  }
+  const types = Array.isArray(f.service_types) ? f.service_types.filter(Boolean) : [];
+  if (types.length === 0) return false;
+  if (types.length === 1 && types[0] === 'RO') {
+    const ro = f.equipment?.RO;
+    const hasRoGear = Boolean(ro?.brand?.trim() || ro?.model?.trim());
+    const hasRoPhotos = Array.isArray(f.photos?.RO) && f.photos.RO.length > 0;
+    return hasRoGear || hasRoPhotos;
+  }
+  return true;
 };
+
+async function hasFreshCustomerClipboard(): Promise<boolean> {
+  try {
+    if (!Capacitor.isNativePlatform()) return false;
+    const payload = await readClipboardPayload();
+    if (!payload.text.trim() || !isFreshClipboardTimestamp(payload.timestampMs)) return false;
+    const parsed = parseCustomerClipboardText(payload.text);
+    return Boolean(parsed.phone || parsed.email || parsed.mapsUrl);
+  } catch {
+    return false;
+  }
+}
 
 const ADD_CUSTOMER_STEPS = ['Personal', 'Address', 'Services', 'Job'] as const;
 
@@ -242,6 +266,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [duplicateFoundOnBlur, setDuplicateFoundOnBlur] = useState<Customer | null>(null);
   // When the dialog opens with a saved (uncreated) draft, ask whether to resume or start fresh.
   const [showResumePrompt, setShowResumePrompt] = useState(false);
+  /** False until open-time draft vs fresh-clipboard decision finishes. */
+  const [openGateReady, setOpenGateReady] = useState(false);
   const wasOpenRef = useRef(false);
   const locationManuallyEditedRef = useRef(false);
   // Mirrors addFormData.google_location for race-safe reads across async awaits
@@ -326,21 +352,57 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   }, [open, clearLocationFetchState]);
 
   useEffect(() => {
-    if (!open || currentStep !== 1 || showResumePrompt) return;
+    if (!open || currentStep !== 1 || showResumePrompt || !openGateReady) return;
     const timer = window.setTimeout(focusStepOneName, 150);
     return () => window.clearTimeout(timer);
-  }, [open, currentStep, showResumePrompt, focusStepOneName]);
+  }, [open, currentStep, showResumePrompt, openGateReady, focusStepOneName]);
 
-  // On open, if there's an uncreated draft, ask the admin to resume or start new.
+  // On open: resume draft only if it has real data AND there is no fresh clipboard
+  // (phone/email/Maps in last 15s). Fresh copy → start blank and autofill; no prompt.
   useEffect(() => {
-    if (open && !wasOpenRef.current) {
-      setShowResumePrompt(draftHasData(loadAddCustomerDraft()));
-    }
     if (!open) {
       setShowResumePrompt(false);
+      setOpenGateReady(false);
+      wasOpenRef.current = false;
+      return;
     }
-    wasOpenRef.current = open;
-  }, [open]);
+    if (wasOpenRef.current) return;
+    wasOpenRef.current = true;
+    setOpenGateReady(false);
+
+    let cancelled = false;
+    void (async () => {
+      const hasDraft = draftHasData(loadAddCustomerDraft());
+      const freshClip = await hasFreshCustomerClipboard();
+      if (cancelled) return;
+
+      if (freshClip) {
+        clearAddCustomerDraft();
+        clearLocationFetchState();
+        resetFlatHouseNo();
+        autofilledRef.current = {};
+        lastAutoClipFpRef.current = '';
+        autofillGenerationRef.current += 1;
+        setHasAutofilledPhone(false);
+        setAddFormData(createDefaultAddFormData());
+        setStep5JobData(createDefaultStep5JobData());
+        setCurrentStep(1);
+        setFormErrors({});
+        setDuplicateFoundOnBlur(null);
+        setShouldCreateJob(true);
+        setShowResumePrompt(false);
+        setOpenGateReady(true);
+        return;
+      }
+
+      setShowResumePrompt(hasDraft);
+      setOpenGateReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, clearLocationFetchState]);
 
   // Persist in-progress input so closing the dialog (or a refresh) doesn't lose it.
   // Only while open, so the post-submit reset doesn't re-write an empty draft.
@@ -971,7 +1033,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const tryAutoFillFromRecentClipboard = useCallback(async () => {
-    if (!open || showResumePrompt || autoFillInFlightRef.current) return;
+    if (!open || showResumePrompt || !openGateReady || autoFillInFlightRef.current) return;
     // Freshness needs Android clip timestamp — skip on web / old APKs without it.
     if (!Capacitor.isNativePlatform()) return;
 
@@ -1041,10 +1103,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     }
   // fetchAddressFromMapsUrl is stable enough via refs; intentionally omit to avoid re-bind loops.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, showResumePrompt]);
+  }, [open, showResumePrompt, openGateReady]);
 
   useEffect(() => {
-    if (!open || showResumePrompt) return;
+    if (!open || showResumePrompt || !openGateReady) return;
 
     void tryAutoFillFromRecentClipboard();
 
@@ -1078,7 +1140,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       document.removeEventListener('visibilitychange', onVisibility);
       removeAppListener?.();
     };
-  }, [open, showResumePrompt, tryAutoFillFromRecentClipboard]);
+  }, [open, showResumePrompt, openGateReady, tryAutoFillFromRecentClipboard]);
 
   const fetchAddressFromGoogleLocation = async () => {
     // Prevent overlapping runs (double-clicks, accidental Enter while busy).
