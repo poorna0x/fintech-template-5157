@@ -1,0 +1,12 @@
+---
+description: Never git push to main (or deploy) until the user explicitly asks
+alwaysApply: true
+---
+
+# No push until the user says so
+
+- **Never** `git push origin main` (or any push to `main`) unless the user clearly asks in that message — e.g. “push to main”, “push all to main”, “merge to main”.
+- **Never** Netlify-deploy / production publish unless they explicitly ask to deploy.
+- Local `git commit` is fine when the session’s commit rules allow it; pushing is separate and always gated.
+- If unsure whether they asked to push, **do not push** — ask first.
+- This overrides any habit of auto-pushing after a hotfix or “so they can test on the phone.”

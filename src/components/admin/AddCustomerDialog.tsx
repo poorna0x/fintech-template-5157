@@ -47,6 +47,12 @@ import {
 } from '@/lib/parseCustomerClipboard';
 import { Capacitor } from '@capacitor/core';
 import {
+  clearAddCustomerDraft,
+  draftHasData,
+  loadAddCustomerDraft,
+  saveAddCustomerDraft,
+} from '@/lib/addCustomerDraft';
+import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
 } from '@/lib/equipment-suggestions';
@@ -71,8 +77,6 @@ export interface JobAssignedToTechnicianPayload {
 
 // Keep unsaved Add Customer input in localStorage so closing the dialog (or a refresh)
 // doesn't lose what was typed. Cleared once the customer is created.
-const ADD_CUSTOMER_DRAFT_KEY = 'add_customer_draft_v1';
-
 const createDefaultAddFormData = () => ({
   full_name: '',
   phone: '',
@@ -109,55 +113,7 @@ const createDefaultStep5JobData = () => ({
   require_otp: false,
 });
 
-const loadAddCustomerDraft = (): {
-  addFormData?: Partial<ReturnType<typeof createDefaultAddFormData>>;
-  step5JobData?: Partial<ReturnType<typeof createDefaultStep5JobData>>;
-  currentStep?: number;
-  shouldCreateJob?: boolean;
-} | null => {
-  try {
-    const raw = localStorage.getItem(ADD_CUSTOMER_DRAFT_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-};
-
-const clearAddCustomerDraft = () => {
-  try {
-    localStorage.removeItem(ADD_CUSTOMER_DRAFT_KEY);
-  } catch {
-    /* ignore */
-  }
-};
-
-// Whether a saved draft holds enough typed info to be worth resuming.
-// Default RO-only (no name/phone/address) is not worth a resume prompt.
-const draftHasData = (draft: ReturnType<typeof loadAddCustomerDraft>): boolean => {
-  const f = draft?.addFormData;
-  if (!f) return false;
-  if (
-    f.full_name ||
-    f.phone ||
-    f.alternate_phone ||
-    f.email ||
-    f.address ||
-    f.visible_address ||
-    f.notes ||
-    f.google_location
-  ) {
-    return true;
-  }
-  const types = Array.isArray(f.service_types) ? f.service_types.filter(Boolean) : [];
-  if (types.length === 0) return false;
-  if (types.length === 1 && types[0] === 'RO') {
-    const ro = f.equipment?.RO;
-    const hasRoGear = Boolean(ro?.brand?.trim() || ro?.model?.trim());
-    const hasRoPhotos = Array.isArray(f.photos?.RO) && f.photos.RO.length > 0;
-    return hasRoGear || hasRoPhotos;
-  }
-  return true;
-};
+const ADD_CUSTOMER_STEPS = ['Personal', 'Address', 'Services', 'Job'] as const;
 
 async function hasFreshCustomerClipboard(): Promise<boolean> {
   try {
@@ -170,8 +126,6 @@ async function hasFreshCustomerClipboard(): Promise<boolean> {
     return false;
   }
 }
-
-const ADD_CUSTOMER_STEPS = ['Personal', 'Address', 'Services', 'Job'] as const;
 
 function clampAddCustomerStep(step: number) {
   if (!Number.isFinite(step) || step < 1) return 1;
@@ -269,6 +223,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   /** False until open-time draft vs fresh-clipboard decision finishes. */
   const [openGateReady, setOpenGateReady] = useState(false);
   const wasOpenRef = useRef(false);
+  /** Live dialog flags — autofill must not toast after close (stale listeners / in-flight reads). */
+  const dialogOpenRef = useRef(open);
+  const showResumePromptRef = useRef(showResumePrompt);
+  const openGateReadyRef = useRef(openGateReady);
+  dialogOpenRef.current = open;
+  showResumePromptRef.current = showResumePrompt;
+  openGateReadyRef.current = openGateReady;
   const locationManuallyEditedRef = useRef(false);
   // Mirrors addFormData.google_location for race-safe reads across async awaits
   // (e.g. while clipboard.readText is in flight, the user might start typing).
@@ -357,6 +318,46 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     return () => window.clearTimeout(timer);
   }, [open, currentStep, showResumePrompt, openGateReady, focusStepOneName]);
 
+  const resetFlatHouseNo = () => {
+    setFlatHouseNo('');
+    flatHouseNoRef.current = '';
+    lastAppliedFlatHouseRef.current = '';
+  };
+
+  const applyDraftToForm = useCallback((draft: NonNullable<ReturnType<typeof loadAddCustomerDraft>>) => {
+    clearLocationFetchState();
+    const resumed = { ...createDefaultAddFormData(), ...(draft.addFormData || {}) };
+    setAddFormData(resumed);
+    setStep5JobData({ ...createDefaultStep5JobData(), ...(draft.step5JobData || {}) });
+    if (typeof draft.currentStep === 'number') setCurrentStep(clampAddCustomerStep(draft.currentStep));
+    if (typeof draft.shouldCreateJob === 'boolean') setShouldCreateJob(draft.shouldCreateJob);
+    const draftLink = String(resumed.google_location || '').trim();
+    googleLocationRef.current = draftLink;
+    mapsShareTextRef.current = draftLink;
+    if (draftLink) {
+      const fromUrl = extractCoordinatesFromGoogleMapsLink(draftLink);
+      if (fromUrl) fetchedCoordsRef.current = fromUrl;
+    } else {
+      fetchedCoordsRef.current = null;
+    }
+  }, [clearLocationFetchState]);
+
+  const resetToBlankCustomerForm = useCallback(() => {
+    clearLocationFetchState();
+    resetFlatHouseNo();
+    autofilledRef.current = {};
+    lastAutoClipFpRef.current = '';
+    autofillGenerationRef.current += 1;
+    setHasAutofilledPhone(false);
+    setAddFormData(createDefaultAddFormData());
+    setStep5JobData(createDefaultStep5JobData());
+    setCurrentStep(1);
+    setFormErrors({});
+    setDuplicateFoundOnBlur(null);
+    setShouldCreateJob(true);
+    googleLocationRef.current = '';
+  }, [clearLocationFetchState]);
+
   // On open: resume draft only if it has real data AND there is no fresh clipboard
   // (phone/email/Maps in last 15s). Fresh copy → start blank and autofill; no prompt.
   useEffect(() => {
@@ -369,54 +370,48 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     if (wasOpenRef.current) return;
     wasOpenRef.current = true;
     setOpenGateReady(false);
+    setShowResumePrompt(false);
 
     let cancelled = false;
     void (async () => {
-      const hasDraft = draftHasData(loadAddCustomerDraft());
+      const draft = loadAddCustomerDraft();
+      const hasDraft = draftHasData(draft);
       const freshClip = await hasFreshCustomerClipboard();
       if (cancelled) return;
 
       if (freshClip) {
+        // New customer from clipboard — discard unfinished draft without asking.
         clearAddCustomerDraft();
-        clearLocationFetchState();
-        resetFlatHouseNo();
-        autofilledRef.current = {};
-        lastAutoClipFpRef.current = '';
-        autofillGenerationRef.current += 1;
-        setHasAutofilledPhone(false);
-        setAddFormData(createDefaultAddFormData());
-        setStep5JobData(createDefaultStep5JobData());
-        setCurrentStep(1);
-        setFormErrors({});
-        setDuplicateFoundOnBlur(null);
-        setShouldCreateJob(true);
+        resetToBlankCustomerForm();
         setShowResumePrompt(false);
         setOpenGateReady(true);
         return;
       }
 
-      setShowResumePrompt(hasDraft);
+      if (hasDraft && draft) {
+        applyDraftToForm(draft);
+        setShowResumePrompt(true);
+        setOpenGateReady(true);
+        return;
+      }
+
+      // No resume-worthy draft: clean slate (avoid leftover in-memory fields).
+      resetToBlankCustomerForm();
+      setShowResumePrompt(false);
       setOpenGateReady(true);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [open, clearLocationFetchState]);
+  }, [open, applyDraftToForm, resetToBlankCustomerForm]);
 
-  // Persist in-progress input so closing the dialog (or a refresh) doesn't lose it.
-  // Only while open, so the post-submit reset doesn't re-write an empty draft.
+  // Persist only after open-gate finishes and not while the resume prompt is up,
+  // so we never overwrite a real draft with empty/stale in-memory form during open.
   useEffect(() => {
-    if (!open) return;
-    try {
-      localStorage.setItem(
-        ADD_CUSTOMER_DRAFT_KEY,
-        JSON.stringify({ addFormData, step5JobData, currentStep, shouldCreateJob })
-      );
-    } catch {
-      /* ignore quota/serialization errors */
-    }
-  }, [open, addFormData, step5JobData, currentStep, shouldCreateJob]);
+    if (!open || !openGateReady || showResumePrompt) return;
+    saveAddCustomerDraft({ addFormData, step5JobData, currentStep, shouldCreateJob });
+  }, [open, openGateReady, showResumePrompt, addFormData, step5JobData, currentStep, shouldCreateJob]);
 
   // Keep ref synced with the latest google_location so async handlers can read
   // the current value without re-running themselves on every keystroke.
@@ -459,28 +454,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   const handleResumeDraft = () => {
     const draft = loadAddCustomerDraft();
-    // Never keep Fetch coords from a previous create — resume only restores form fields.
-    clearLocationFetchState();
-    if (draft) {
-      const resumed = { ...createDefaultAddFormData(), ...(draft.addFormData || {}) };
-      setAddFormData(resumed);
-      setStep5JobData({ ...createDefaultStep5JobData(), ...(draft.step5JobData || {}) });
-      if (typeof draft.currentStep === 'number') setCurrentStep(clampAddCustomerStep(draft.currentStep));
-      if (typeof draft.shouldCreateJob === 'boolean') setShouldCreateJob(draft.shouldCreateJob);
-      // If draft Maps URL already embeds coords, restore them so save doesn't need re-Fetch.
-      const draftLink = String(resumed.google_location || '').trim();
-      if (draftLink) {
-        const fromUrl = extractCoordinatesFromGoogleMapsLink(draftLink);
-        if (fromUrl) fetchedCoordsRef.current = fromUrl;
-      }
-    }
+    autofilledRef.current = {};
+    lastAutoClipFpRef.current = '';
+    setHasAutofilledPhone(false);
+    if (draft) applyDraftToForm(draft);
     setShowResumePrompt(false);
-  };
-
-  const resetFlatHouseNo = () => {
-    setFlatHouseNo('');
-    flatHouseNoRef.current = '';
-    lastAppliedFlatHouseRef.current = '';
   };
 
   const applyFlatHousePrefix = (rawFlat?: string) => {
@@ -496,17 +474,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   const handleStartNewEntry = () => {
     clearAddCustomerDraft();
-    clearLocationFetchState();
-    resetFlatHouseNo();
-    autofilledRef.current = {};
-    lastAutoClipFpRef.current = '';
-    setHasAutofilledPhone(false);
-    setAddFormData(createDefaultAddFormData());
-    setStep5JobData(createDefaultStep5JobData());
-    setCurrentStep(1);
-    setFormErrors({});
-    setDuplicateFoundOnBlur(null);
-    setShouldCreateJob(true);
+    resetToBlankCustomerForm();
     setShowResumePrompt(false);
   };
 
@@ -1033,7 +1001,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const tryAutoFillFromRecentClipboard = useCallback(async () => {
-    if (!open || showResumePrompt || !openGateReady || autoFillInFlightRef.current) return;
+    const dialogIsOpen = () =>
+      dialogOpenRef.current && !showResumePromptRef.current && openGateReadyRef.current;
+
+    if (!dialogIsOpen() || autoFillInFlightRef.current) return;
     // Freshness needs Android clip timestamp — skip on web / old APKs without it.
     if (!Capacitor.isNativePlatform()) return;
 
@@ -1048,6 +1019,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       } catch {
         return;
       }
+      // Dialog may have closed while we were reading the clipboard.
+      if (!dialogIsOpen()) return;
       if (!text.trim() || !isFreshClipboardTimestamp(timestampMs)) return;
 
       const fp = clipboardFingerprint(text);
@@ -1068,6 +1041,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         lastAutoClipFpRef.current = fp;
         return;
       }
+
+      if (!dialogIsOpen()) return;
 
       if (nextPhone) autofilledRef.current.phone = true;
       if (nextEmail) autofilledRef.current.email = true;
@@ -1103,7 +1078,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     }
   // fetchAddressFromMapsUrl is stable enough via refs; intentionally omit to avoid re-bind loops.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, showResumePrompt, openGateReady]);
+  }, []);
 
   useEffect(() => {
     if (!open || showResumePrompt || !openGateReady) return;
@@ -1111,22 +1086,32 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     void tryAutoFillFromRecentClipboard();
 
     const onFocus = () => {
+      if (!dialogOpenRef.current) return;
       void tryAutoFillFromRecentClipboard();
     };
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') void tryAutoFillFromRecentClipboard();
+      if (document.visibilityState !== 'visible' || !dialogOpenRef.current) return;
+      void tryAutoFillFromRecentClipboard();
     };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
 
+    let cancelled = false;
     let removeAppListener: (() => void) | undefined;
     void import('@capacitor/app')
       .then(({ App }) =>
         App.addListener('appStateChange', ({ isActive }) => {
-          if (isActive) void tryAutoFillFromRecentClipboard();
+          if (!isActive) return;
+          // Only while Add Customer is actually open (refs survive stale closures).
+          if (!dialogOpenRef.current) return;
+          void tryAutoFillFromRecentClipboard();
         })
       )
       .then((handle) => {
+        if (cancelled) {
+          void handle.remove();
+          return;
+        }
         removeAppListener = () => {
           void handle.remove();
         };
@@ -1136,6 +1121,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       });
 
     return () => {
+      cancelled = true;
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
       removeAppListener?.();
@@ -1861,15 +1847,25 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   return (
     <>
-    <AlertDialog open={showResumePrompt} onOpenChange={(o) => { if (!o) setShowResumePrompt(false); }}>
+    <AlertDialog
+      open={showResumePrompt}
+      onOpenChange={(o) => {
+        // Dismiss without choosing = keep the draft already loaded (same as Resume).
+        if (!o) setShowResumePrompt(false);
+      }}
+    >
       <AlertDialogContent className="!w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md p-5 sm:p-6">
         <AlertDialogHeader>
           <AlertDialogTitle>Resume previous entry?</AlertDialogTitle>
           <AlertDialogDescription>
             You have unsaved customer details from before that weren't created yet.
-            {addFormData.full_name || addFormData.phone ? (
+            {(addFormData.full_name?.trim() || addFormData.phone?.trim()) ? (
               <span className="block mt-2 font-medium text-foreground">
-                {[addFormData.full_name, addFormData.phone].filter(Boolean).join(' · ')}
+                {[addFormData.full_name?.trim(), addFormData.phone?.trim()].filter(Boolean).join(' · ')}
+              </span>
+            ) : addFormData.email?.trim() || addFormData.visible_address?.trim() ? (
+              <span className="block mt-2 font-medium text-foreground">
+                {[addFormData.email?.trim(), addFormData.visible_address?.trim()].filter(Boolean).join(' · ')}
               </span>
             ) : null}
           </AlertDialogDescription>
