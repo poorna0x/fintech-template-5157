@@ -20,7 +20,6 @@ import {
   Radar,
   PhoneCall,
   Receipt,
-  RefreshCw,
   Repeat,
   Search,
   Settings,
@@ -55,7 +54,6 @@ type AdminDashboardHeaderProps = {
   onSearch: () => void;
   onClearSearch: () => void;
   isSearching: boolean;
-  onManualRefresh: () => void;
   toolsMenuOpen: boolean;
   onToolsMenuOpenChange: (open: boolean) => void;
   onOpenAdminTool: (tool: AdminToolDialog) => void;
@@ -110,7 +108,6 @@ export function AdminDashboardHeader({
   onSearch,
   onClearSearch,
   isSearching,
-  onManualRefresh,
   toolsMenuOpen,
   onToolsMenuOpenChange,
   onOpenAdminTool,
@@ -162,15 +159,6 @@ export function AdminDashboardHeader({
                     <span className="hidden sm:inline text-sm">Search</span>
                   </div>
                 )}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 px-2.5 shrink-0"
-                title="Refresh data (no full page reload)"
-                onClick={onManualRefresh}
-              >
-                <RefreshCw className="w-4 h-4" />
               </Button>
               {searchQuery && (
                 <Button onClick={onClearSearch} variant="outline" size="sm" className="h-9 px-2.5 shrink-0" title="Clear">
@@ -431,15 +419,6 @@ export function AdminDashboardHeader({
             ) : (
               <Search className="w-4 h-4" />
             )}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 px-2.5 shrink-0"
-            title="Refresh data (no full page reload)"
-            onClick={onManualRefresh}
-          >
-            <RefreshCw className="w-4 h-4" />
           </Button>
           {searchQuery && (
             <Button onClick={onClearSearch} variant="outline" size="sm" className="h-9 px-2.5 shrink-0" title="Clear">

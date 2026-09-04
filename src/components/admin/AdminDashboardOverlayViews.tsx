@@ -28,6 +28,7 @@ export type AdminDashboardOverlayViewsProps = {
   onLetterheadBack: () => void;
   currentView: AdminDashboardView;
   onViewChange: (view: AdminDashboardView) => void;
+  onLogoClick?: () => void;
 };
 
 export function hasAdminDashboardOverlayView(props: AdminDashboardOverlayViewsProps): boolean {
@@ -43,7 +44,7 @@ export default function AdminDashboardOverlayViews(props: AdminDashboardOverlayV
   if (props.showGSTInvoicesPage) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
+        <AdminHeader onLogoClick={props.onLogoClick} />
         <div
           className={cn(
             'container mx-auto px-3 sm:px-4',
@@ -74,7 +75,11 @@ export default function AdminDashboardOverlayViews(props: AdminDashboardOverlayV
   if (props.showAMCViewPage) {
     return (
       <Suspense fallback={<AdminScreenLoader message="Loading AMC..." />}>
-        <AMCViewPage onBack={props.onHideAMCView} onAMCDeleted={props.onAMCDeleted} />
+        <AMCViewPage
+          onBack={props.onHideAMCView}
+          onAMCDeleted={props.onAMCDeleted}
+          onLogoClick={props.onLogoClick}
+        />
       </Suspense>
     );
   }
@@ -95,6 +100,7 @@ export default function AdminDashboardOverlayViews(props: AdminDashboardOverlayV
       <AdminTabViewShell
         loadingMessage="Loading payments..."
         onBack={() => props.onViewChange('dashboard')}
+        onLogoClick={props.onLogoClick}
       >
         <TechnicianPayments />
       </AdminTabViewShell>
@@ -106,6 +112,7 @@ export default function AdminDashboardOverlayViews(props: AdminDashboardOverlayV
       <AdminTabViewShell
         loadingMessage="Loading billing..."
         onBack={() => props.onViewChange('dashboard')}
+        onLogoClick={props.onLogoClick}
       >
         <BillingStats />
       </AdminTabViewShell>
@@ -117,6 +124,7 @@ export default function AdminDashboardOverlayViews(props: AdminDashboardOverlayV
       <AdminTabViewShell
         loadingMessage=""
         onBack={() => props.onViewChange('dashboard')}
+        onLogoClick={props.onLogoClick}
       >
         <Analytics />
       </AdminTabViewShell>
@@ -128,6 +136,7 @@ export default function AdminDashboardOverlayViews(props: AdminDashboardOverlayV
       <AdminTabViewShell
         loadingMessage="Loading inventory..."
         onBack={() => props.onViewChange('dashboard')}
+        onLogoClick={props.onLogoClick}
       >
         <InventoryManagement />
       </AdminTabViewShell>

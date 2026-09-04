@@ -2,7 +2,7 @@
 import React from 'react';
 import { Droplets } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { isTechnicianPortalPath } from '@/lib/authPortal';
+import { getAuthPortal, isTechnicianPortalPath } from '@/lib/authPortal';
 
 interface LogoProps {
   /** When true, use neutral z-index to avoid overlap on some mobile browsers (e.g. Samsung) */
@@ -11,50 +11,64 @@ interface LogoProps {
   brandName?: string;
   /** When false, render only the icon without the brand text. Defaults to true. */
   showName?: boolean;
+  /** Override click (e.g. admin dashboard refresh). Skips public-home navigation. */
+  onClick?: () => void;
 }
 
-const Logo = ({ inFooter = false, brandName = 'Hydrogen RO', showName = true }: LogoProps) => {
+const Logo = ({
+  inFooter = false,
+  brandName = 'Hydrogen RO',
+  showName = true,
+  onClick,
+}: LogoProps) => {
   const navigate = useNavigate();
   const location = useLocation();
 
   const isTechnicianPage = isTechnicianPortalPath(location.pathname);
+  const isAdminPortal = getAuthPortal(location.pathname) === 'admin';
+  const isStatic = isTechnicianPage && !onClick;
 
-  const handleLogoClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Don't navigate on technician pages
-    if (isTechnicianPage) {
+  const activate = () => {
+    if (onClick) {
+      onClick();
       return;
     }
-    
-    // Navigate to home instead of refreshing
-    if (location.pathname === '/') {
-      // Already on homepage, just scroll to top
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-      // Navigate to homepage
-      navigate('/');
+    if (isTechnicianPage || isAdminPortal) {
+      return;
     }
+    if (location.pathname === '/') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    navigate('/');
   };
 
   return (
     <div
-      className={`flex items-center gap-2 ${isTechnicianPage ? 'cursor-default' : 'cursor-pointer hover:opacity-80'} transition-opacity relative whitespace-nowrap ${inFooter ? 'z-auto' : 'z-50'}`}
-      onClick={handleLogoClick}
+      className={`flex items-center gap-2 ${isStatic ? 'cursor-default' : 'cursor-pointer hover:opacity-80'} transition-opacity relative whitespace-nowrap ${inFooter ? 'z-auto' : 'z-50'}`}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isStatic) return;
+        activate();
+      }}
       style={{ position: 'relative', zIndex: inFooter ? 'auto' : 9999 }}
-      role={isTechnicianPage ? undefined : 'button'}
-      tabIndex={isTechnicianPage ? -1 : 0}
-      aria-label={isTechnicianPage ? undefined : `${brandName}, go to home`}
+      role={isStatic ? undefined : 'button'}
+      tabIndex={isStatic ? -1 : 0}
+      aria-label={
+        isStatic
+          ? undefined
+          : onClick
+            ? `${brandName}, refresh`
+            : isAdminPortal
+              ? `${brandName}`
+              : `${brandName}, go to home`
+      }
       onKeyDown={(e) => {
-        if (isTechnicianPage) return;
+        if (isStatic) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          if (location.pathname === '/') {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          } else {
-            navigate('/');
-          }
+          activate();
         }
       }}
     >

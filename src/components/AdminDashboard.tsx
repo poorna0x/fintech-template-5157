@@ -353,6 +353,7 @@ import JobDistanceMeasurementDialog, {
   type JobTechnicianDistanceRow,
 } from './admin/JobDistanceMeasurementDialog';
 import { OngoingJobsFiltersDialog } from './admin/OngoingJobsFiltersDialog';
+import { OngoingJobsEmptyState } from './admin/OngoingJobsEmptyState';
 import AdminDashboardOverlayViews, {
   hasAdminDashboardOverlayView,
 } from './admin/AdminDashboardOverlayViews';
@@ -6732,6 +6733,13 @@ const AdminDashboard = () => {
           ? 'completed'
           : 'jobs';
 
+  const hideOngoingEmptyChrome =
+    statusFilter === 'ONGOING' &&
+    displayedCustomers.length === 0 &&
+    !searchTerm.trim() &&
+    !showJobsListLoader &&
+    !hasOngoingClientFilters;
+
   // Auth gate handled by AdminPortal — dashboard mounts only when user is admin
   if (isDashboardBootstrapping) {
     return <AdminScreenLoader message="" />;
@@ -6767,13 +6775,14 @@ const AdminDashboard = () => {
         onLetterheadBack={() => navigate('/admin', { replace: true })}
         currentView={currentView}
         onViewChange={handleViewChange}
+        onLogoClick={() => void handleManualRefresh()}
       />
     );
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <AdminHeader />
+      <AdminHeader onLogoClick={() => void handleManualRefresh()} />
       
       <main className="container mx-auto px-4 py-4 sm:py-8">
         {isAdmin && (
@@ -6791,7 +6800,6 @@ const AdminDashboard = () => {
           onSearch={handleSearch}
           onClearSearch={handleClearSearch}
           isSearching={isSearching}
-          onManualRefresh={() => void handleManualRefresh()}
           toolsMenuOpen={toolsMenuOpen}
           onToolsMenuOpenChange={setToolsMenuOpen}
           onOpenAdminTool={openAdminTool}
@@ -6932,8 +6940,8 @@ const AdminDashboard = () => {
         )}
 
         {/* Customers with Jobs */}
-        <div className="mb-6 pb-2 sm:pb-0">
-          {!searchTerm.trim() && (
+        <div className={`${hideOngoingEmptyChrome ? 'mb-0' : 'mb-6'} pb-2 sm:pb-0`}>
+          {!searchTerm.trim() && !hideOngoingEmptyChrome && (
           <div className={`flex gap-2 ${
             statusFilter === 'RESCHEDULED'
               ? 'flex-col sm:flex-row sm:items-center sm:justify-between mb-1'
@@ -7012,7 +7020,7 @@ const AdminDashboard = () => {
             
           </div>
           )}
-          {!searchTerm.trim() && (
+          {!searchTerm.trim() && !(statusFilter === 'ONGOING' && displayedCustomers.length === 0) && (
             <p className={`text-xs text-gray-500 mb-3 ${statusFilter === 'ONGOING' || statusFilter === 'RESCHEDULED' ? 'hidden sm:block' : ''}`}>
               {statusFilter === 'ALL'
                 ? `Showing all ${displayedCustomers.length} customers (including those with no jobs)`
@@ -7078,33 +7086,35 @@ const AdminDashboard = () => {
             {showJobsListLoader ? (
               <AdminInlineLoader message={`Loading ${jobsListRefreshLabel} jobs...`} />
             ) : displayedCustomers.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 px-4 py-12 text-center">
-                {searchTerm.trim() ? (
-                  <>
-                    <p className="text-sm text-gray-600">
-                      No customers found for <span className="font-medium">"{searchTerm}"</span>
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-3"
-                      onClick={handleClearSearch}
-                    >
-                      Clear search
-                    </Button>
-                  </>
-                ) : statusFilter === 'ONGOING' ? (
-                  <p className="text-sm text-gray-600">No ongoing jobs right now.</p>
-                ) : statusFilter === 'COMPLETED' ? (
-                  <p className="text-sm text-gray-600">No completed jobs for the selected date or filters.</p>
-                ) : statusFilter === 'RESCHEDULED' ? (
-                  <p className="text-sm text-gray-600">No follow-up jobs scheduled.</p>
-                ) : statusFilter === 'CANCELLED' ? (
-                  <p className="text-sm text-gray-600">No denied jobs for the selected date.</p>
-                ) : (
-                  <p className="text-sm text-gray-600">No jobs to show for this filter.</p>
-                )}
-              </div>
+              searchTerm.trim() ? (
+                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 px-4 py-12 text-center">
+                  <p className="text-sm text-gray-600">
+                    No customers found for <span className="font-medium">"{searchTerm}"</span>
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={handleClearSearch}
+                  >
+                    Clear search
+                  </Button>
+                </div>
+              ) : statusFilter === 'ONGOING' ? (
+                <OngoingJobsEmptyState />
+              ) : (
+                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 px-4 py-12 text-center">
+                  {statusFilter === 'COMPLETED' ? (
+                    <p className="text-sm text-gray-600">No completed jobs for the selected date or filters.</p>
+                  ) : statusFilter === 'RESCHEDULED' ? (
+                    <p className="text-sm text-gray-600">No follow-up jobs scheduled.</p>
+                  ) : statusFilter === 'CANCELLED' ? (
+                    <p className="text-sm text-gray-600">No denied jobs for the selected date.</p>
+                  ) : (
+                    <p className="text-sm text-gray-600">No jobs to show for this filter.</p>
+                  )}
+                </div>
+              )
             ) : (
               <AdminDashboardListProvider data={adminListData} actionsRef={adminListActionsRef}>
                 <AdminCustomerJobsList />

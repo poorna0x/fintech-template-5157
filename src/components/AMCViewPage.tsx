@@ -94,9 +94,10 @@ interface AMCRecord {
 interface AMCViewPageProps {
   onBack: () => void;
   onAMCDeleted?: () => void;
+  onLogoClick?: () => void;
 }
 
-const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
+const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoClick }) => {
   const { user } = useAuth();
   const [amcRecords, setAmcRecords] = useState<AMCRecord[]>([]);
   const [technicians, setTechnicians] = useState<any[]>([]);
@@ -666,7 +667,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
+        <AdminHeader onLogoClick={onLogoClick} />
         <div className="container mx-auto px-4 py-8">
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
@@ -683,7 +684,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
   if (!user) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
+        <AdminHeader onLogoClick={onLogoClick} />
         <div className="container mx-auto px-4 py-4 sm:py-8">
           <Button variant="ghost" size="sm" onClick={onBack} className="text-gray-600 hover:text-gray-900 -ml-2 mb-4">
             <ArrowLeft className="w-4 h-4 mr-1" />
@@ -709,7 +710,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <AdminHeader />
+      <AdminHeader onLogoClick={onLogoClick} />
       <div className="container mx-auto px-4 py-4 sm:py-8">
         {/* Header */}
         <div className="mb-6">
