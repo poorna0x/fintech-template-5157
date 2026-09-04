@@ -258,12 +258,19 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const addFormDataRef = useRef(addFormData);
   addFormDataRef.current = addFormData;
   const fullNameInputRef = useRef<HTMLInputElement>(null);
+  /** Focus name only on first landing on step 1 for this open — not when tapping Previous. */
+  const didInitialStepOneFocusRef = useRef(false);
 
   const focusStepOneName = useCallback(() => {
     requestAnimationFrame(() => {
       fullNameInputRef.current?.focus({ preventScroll: true });
     });
   }, []);
+
+  const blurActiveField = () => {
+    const el = document.activeElement;
+    if (el instanceof HTMLElement) el.blur();
+  };
 
   const handleEquipmentUploadState = useCallback((serviceType: string, uploading: boolean) => {
     equipmentUploadingRef.current[serviceType] = uploading;
@@ -299,11 +306,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       autofilledRef.current = {};
       lastAutoClipFpRef.current = '';
       setHasAutofilledPhone(false);
+      didInitialStepOneFocusRef.current = false;
     }
   }, [open, clearLocationFetchState]);
 
   useEffect(() => {
     if (!open || currentStep !== 1 || showResumePrompt || !openGateReady) return;
+    if (didInitialStepOneFocusRef.current) return;
+    didInitialStepOneFocusRef.current = true;
     const timer = window.setTimeout(focusStepOneName, 150);
     return () => window.clearTimeout(timer);
   }, [open, currentStep, showResumePrompt, openGateReady, focusStepOneName]);
@@ -588,10 +598,18 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         setDuplicateFoundOnBlur(null);
       }
     }
-    setCurrentStep(prev => Math.min(prev + 1, ADD_CUSTOMER_STEPS.length));
+    const goingTo = Math.min(currentStep + 1, ADD_CUSTOMER_STEPS.length);
+    setCurrentStep(goingTo);
+    // Address step (and later): try clipboard again for Maps / email if copied after phone.
+    if (clipboardAutofillEnabledRef.current) {
+      window.setTimeout(() => {
+        void tryAutoFillFromRecentClipboard();
+      }, 0);
+    }
   };
 
   const prevStep = () => {
+    blurActiveField();
     setCurrentStep(prev => Math.max(prev - 1, 1));
   };
 
