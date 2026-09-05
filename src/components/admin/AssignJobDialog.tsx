@@ -443,12 +443,10 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
       return;
     }
 
-    const loading = toast.loading('Opening route in Maps…');
     try {
       const resolved = await resolveJobLatLngFromRow(job, {
         getJobByIdFull: db.jobs.getByIdFull,
       });
-      toast.dismiss(loading);
       if (!resolved) {
         toast.error(getLocationUnavailableMessage(job));
         return;
@@ -458,7 +456,6 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
         lng: resolved.lng,
       });
     } catch {
-      toast.dismiss(loading);
       toast.error('Could not open route');
     }
   };
@@ -617,12 +614,6 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 )}
               </SelectContent>
             </Select>
-            <div className="text-xs text-muted-foreground mt-1">
-              {techniciansWithDistances.length > 0
-                ? 'Technicians sorted by distance from job location. '
-                : null}
-              Shift+click a technician to open their current location → customer in Google Maps.
-            </div>
           </div>
         </div>
         
