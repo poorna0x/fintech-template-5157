@@ -189,6 +189,15 @@ export const WA_COLD = {
       cleanAmount(amount),
     ],
   },
+  /** Brand letter cold (Call us + Website) — Meta: svc_payment_received_letter_{hro|ero}_v1 */
+  payment_received_letter: {
+    name: 'svc_payment_received_letter_hro_v1',
+    language: 'en',
+    bodyParams: (customerName: string, amount: number | string) => [
+      cleanName(customerName),
+      cleanAmount(amount),
+    ],
+  },
   tech_assigned: {
     name: 'svc_tech_assigned',
     language: 'en',
@@ -614,6 +623,7 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   customer_followup: 'Follow-up → visit reminder',
   appointment_reminder: 'Appointment reminder (svc_visit_reminder)',
   payment_received: 'Payment received (svc_payment_received)',
+  payment_received_letter: 'Payment received letter (svc_payment_received_letter_*_v1)',
   tech_assigned: 'Technician assigned (svc_tech_assigned)',
   job_completion: 'Service completed (svc_job_done_letter_*_v5 Review us → v4 → v3 / svc_job_done)',
   job_completion_plain: 'Job done letter no buttons (svc_job_done_letter_*_plain_v2 → v1)',

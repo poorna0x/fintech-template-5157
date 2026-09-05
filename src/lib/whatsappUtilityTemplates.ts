@@ -32,10 +32,12 @@ function cleanAmount(amount: number | string): string {
 
 export function resolveColdPaymentReceived(
   customerName: string,
-  amount: number | string
+  amount: number | string,
+  brand: DocumentBrand = 'hydrogenro'
 ): ColdTemplatePayload {
+  // Prefer brand letter (Call us + Website). Cold-fallback → plain svc_payment_received.
   return {
-    name: resolveWaTemplateName(WA_COLD.payment_received.name),
+    name: resolveBrandLetterTemplateName('payment_received', brand, 'v1'),
     languageCode: WA_COLD.payment_received.language,
     bodyParams: WA_COLD.payment_received.bodyParams(customerName, amount),
   };

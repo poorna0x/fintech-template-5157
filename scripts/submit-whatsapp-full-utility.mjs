@@ -13,7 +13,8 @@
    *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-tech-customer-photo
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-ask-location-v3
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-overdue
-   *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-missed-call-v5
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-received
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-missed-call-v5
  */
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -1301,6 +1302,37 @@ function buildJobDoneLetterPlainTemplates() {
 
 const JOB_DONE_LETTER_PLAIN_TEMPLATES = buildJobDoneLetterPlainTemplates();
 
+/**
+ * Payment received letter v1 — Call us + Website (thanks for payment).
+ * Cold open when marking pending payment collected (outside 24h).
+ */
+function buildPaymentReceivedLetterV1Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      name: `svc_payment_received_letter_${suffix}_v1`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your payment.`,
+        ``,
+        `We have received your payment of INR {{2}}. Thank you. ✅`,
+        ``,
+        footer,
+        ``,
+        `💬 Reply on this chat if you need any help.`,
+      ].join('\n'),
+      examples: ['Rahul', '1500'],
+    });
+  }
+  return out;
+}
+
+const PAYMENT_RECEIVED_LETTER_V1_TEMPLATES = buildPaymentReceivedLetterV1Templates();
+
 /** Balance-due letter v4 — Call us + Pay now (UPI short link /p/{{1}}). */
 function buildBalanceDueLetterV4Templates() {
   const out = [];
@@ -2522,6 +2554,9 @@ function collectAllTemplatePreviewEntries() {
   for (const t of JOB_DONE_LETTER_PLAIN_TEMPLATES) {
     push('Job done letter (no buttons)', t, bodyOnlyPayload);
   }
+  for (const t of PAYMENT_RECEIVED_LETTER_V1_TEMPLATES) {
+    push('Payment received letter v1 (Call + Website)', t, letterPayload);
+  }
   for (const t of BALANCE_DUE_LETTER_V4_TEMPLATES) push('Balance due letter v4 (Pay now)', t, balanceDueLetterPayload);
   for (const t of BALANCE_DUE_LETTER_V5_TEMPLATES) {
     push('Balance due letter v5 (Pay now, no Text us)', t, balanceDueLetterPayload);
@@ -2892,6 +2927,14 @@ async function main() {
       continue;
     }
     queue.push({ label: t.name, payload: bodyOnlyPayload(t) });
+  }
+  for (const t of PAYMENT_RECEIVED_LETTER_V1_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
   }
   for (const t of BALANCE_DUE_LETTER_V4_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
@@ -3341,6 +3384,17 @@ async function main() {
   const onlyPaymentOverdue = process.argv.includes('--only-payment-overdue');
   if (onlyPaymentOverdue) {
     const keep = new Set(PAYMENT_OVERDUE_NOTICE_V1_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyPaymentReceived = process.argv.includes('--only-payment-received');
+  if (onlyPaymentReceived) {
+    const keep = new Set([
+      'svc_payment_received',
+      ...PAYMENT_RECEIVED_LETTER_V1_TEMPLATES.map((t) => t.name),
+    ]);
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

@@ -65,7 +65,8 @@ export type BrandLetterTemplateKind =
   | 'balance_due'
   | 'service_due'
   | 'booking_confirmed'
-  | 'booking_cancelled';
+  | 'booking_cancelled'
+  | 'payment_received';
 
 const LETTER_TEMPLATE_BASE: Record<BrandLetterTemplateKind, string> = {
   job_done: 'svc_job_done_letter',
@@ -73,6 +74,7 @@ const LETTER_TEMPLATE_BASE: Record<BrandLetterTemplateKind, string> = {
   service_due: 'svc_service_due_letter',
   booking_confirmed: 'svc_booking_confirmed_letter',
   booking_cancelled: 'svc_booking_cancelled_letter',
+  payment_received: 'svc_payment_received_letter',
 };
 
 /** Meta letter cold template — v9 = Pay now, no contact footer; v8 = Call-only. */
@@ -92,6 +94,7 @@ export function resolveBrandLetterTemplateName(
   if (version === 'v4') return `${base}_${suffix}_v4`;
   if (version === 'v3') return `${base}_${suffix}_v3`;
   if (version === 'v2') return `${base}_${suffix}_v2`;
+  if (version === 'v1') return `${base}_${suffix}_v1`;
   return `${base}_${suffix}`;
 }
 

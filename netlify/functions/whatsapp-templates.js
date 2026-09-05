@@ -114,6 +114,16 @@ const RECOMMENDED = [
     hint: 'Payment thanks ({{1}} name, {{2}} amount)',
   },
   {
+    name: 'svc_payment_received_letter_hro_v1',
+    language: 'en',
+    hint: 'Payment received letter Hydrogen RO ({{1}} name, {{2}} amount + Call/Website)',
+  },
+  {
+    name: 'svc_payment_received_letter_ero_v1',
+    language: 'en',
+    hint: 'Payment received letter Eleven RO ({{1}} name, {{2}} amount + Call/Website)',
+  },
+  {
     name: 'svc_doc_pdf_v2',
     language: 'en',
     hint: 'Cold PDF (DOCUMENT header · {{1}} name, {{2}} label)',

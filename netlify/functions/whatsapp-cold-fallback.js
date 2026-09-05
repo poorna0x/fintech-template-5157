@@ -252,6 +252,12 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(MISSED_CALL, [name]);
   }
 
+  // Payment-received letter → plain svc_payment_received (same {{1}} name, {{2}} amount)
+  if (/^svc_payment_received_letter_(ero|hro)_v1$/i.test(primaryName)) {
+    const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
+    push('svc_payment_received', [name, amount]);
+  }
+
   // Job-done letter v5 (Review us) → v4 → v3 → v2 → v1 → short svc_job_done
   if (/^svc_job_done_letter_(ero|hro)(_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';

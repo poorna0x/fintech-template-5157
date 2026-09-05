@@ -517,6 +517,8 @@ export function SettingsPendingPaymentsDialogV2({
   const [postCompleteWhatsappTarget, setPostCompleteWhatsappTarget] = useState<PendingPaymentReminder | null>(null);
   /** Captured before reload — `load()` drops completed customers from `customerLabels`. */
   const [postCompleteCustomerLabel, setPostCompleteCustomerLabel] = useState<CustomerLabel | null>(null);
+  /** True while Cloud API / template send is in flight (pending or payment-received dialogs). */
+  const [whatsappSending, setWhatsappSending] = useState(false);
 
   const [highlightReminderId, setHighlightReminderId] = useState<string | null>(null);
   const deepLinkHandledRef = useRef<string | null>(null);
@@ -542,7 +544,7 @@ export function SettingsPendingPaymentsDialogV2({
   const [reportSelectedBillPhotos, setReportSelectedBillPhotos] = useState<string[] | null>(null);
   const reportTechsLoadedRef = useRef(false);
 
-  const openWhatsApp = (
+  const openWhatsApp = async (
     phone: string,
     message: string,
     opts?: {
@@ -567,20 +569,21 @@ export function SettingsPendingPaymentsDialogV2({
         mimeType?: string;
       } | null;
     }
-  ) => {
-    if (!phone) return;
-    void (async () => {
-      const trimmed = message.trim();
-      if (!trimmed) {
-        toast.error('Message is empty');
-        return;
-      }
+  ): Promise<boolean> => {
+    if (!phone) return false;
+    const trimmed = message.trim();
+    if (!trimmed) {
+      toast.error('Message is empty');
+      return false;
+    }
 
+    setWhatsappSending(true);
+    try {
       // Cloud API kill switch: still open phone WhatsApp like pre-API CRM.
       if (!cloudApiOn) {
         openWhatsAppMeDeepLink(phone, trimmed);
         toast.success('Opened phone WhatsApp');
-        return;
+        return true;
       }
 
       const payHttpsLink =
@@ -636,11 +639,11 @@ export function SettingsPendingPaymentsDialogV2({
         });
         if (coldOverdue.ok) {
           toast.success('Overdue notice sent with Pay now button');
-          return;
+          return true;
         }
         if (coldOverdue.featureDisabled) {
           toast.error(coldOverdue.error || 'WhatsApp pending payment is disabled in Settings');
-          return;
+          return false;
         }
         // Template not approved yet — fall through to 24h CTA / freeform with Pay now.
       }
@@ -666,11 +669,11 @@ export function SettingsPendingPaymentsDialogV2({
                 ? 'Sent with UPI QR and Pay now button'
                 : 'Sent with UPI QR'
             );
-            return;
+            return true;
           }
           if (coldResult.featureDisabled) {
             toast.error(coldResult.error || 'WhatsApp pending payment is disabled in Settings');
-            return;
+            return false;
           }
           const textCold = await sendAdminWhatsAppTemplate({
             to: phone,
@@ -687,7 +690,7 @@ export function SettingsPendingPaymentsDialogV2({
                 ? 'Image template unavailable — sent text with Pay now'
                 : 'Image template unavailable — sent text balance-due template'
             );
-            return;
+            return true;
           }
         }
 
@@ -723,7 +726,7 @@ export function SettingsPendingPaymentsDialogV2({
             });
             if (cta.ok) {
               toast.success('Sent QR + Pay now button');
-              return;
+              return true;
             }
           }
           toast.success(
@@ -731,15 +734,15 @@ export function SettingsPendingPaymentsDialogV2({
               ? 'WhatsApp reminder sent with QR (Pay now button unavailable — check 24h window)'
               : 'WhatsApp reminder sent with image'
           );
-          return;
+          return true;
         }
         if (mediaResult.featureDisabled) {
           toast.error(mediaResult.error || 'WhatsApp pending payment is disabled in Settings');
-          return;
+          return false;
         }
         openWhatsAppMeDeepLink(phone, trimmed);
         toast.error(mediaResult.error || 'API send failed — opened phone WhatsApp');
-        return;
+        return false;
       }
 
       // Overdue + QR (template above failed or no pay code): session image + Pay now CTA when possible.
@@ -767,19 +770,19 @@ export function SettingsPendingPaymentsDialogV2({
             });
             if (cta.ok) {
               toast.success('Overdue notice sent with QR + Pay now');
-              return;
+              return true;
             }
           }
           toast.success('Overdue notice sent with QR');
-          return;
+          return true;
         }
         if (mediaResult.featureDisabled) {
           toast.error(mediaResult.error || 'WhatsApp pending payment is disabled in Settings');
-          return;
+          return false;
         }
         openWhatsAppMeDeepLink(phone, trimmed);
         toast.error(mediaResult.error || 'API send failed — opened phone WhatsApp');
-        return;
+        return false;
       }
 
       if (hasPayLink && opts?.coldPendingTemplate !== false) {
@@ -797,11 +800,11 @@ export function SettingsPendingPaymentsDialogV2({
           });
           if (ctaResult.ok) {
             toast.success(isOverdue ? 'Overdue notice sent with Pay now' : 'Sent with Pay now button');
-            return;
+            return true;
           }
           if (ctaResult.featureDisabled) {
             toast.error(ctaResult.error || 'WhatsApp pending payment is disabled in Settings');
-            return;
+            return false;
           }
           if (ctaResult.needsWindowOrTemplate) {
             const coldResult = await sendAdminWhatsAppTextWithOptionalTemplate({
@@ -823,19 +826,19 @@ export function SettingsPendingPaymentsDialogV2({
                   ? 'Cold overdue notice sent with Pay now button'
                   : 'Cold balance-due template sent with Pay now button'
               );
-              return;
+              return true;
             }
             if (coldResult.ok && coldResult.via === 'wa_me') {
               toast.message('24h window closed — opened WhatsApp with pay link');
-              return;
+              return true;
             }
             openWhatsAppMeDeepLink(phone, trimmed);
             toast.message('24h window closed — opened WhatsApp with pay link');
-            return;
+            return true;
           }
           openWhatsAppMeDeepLink(phone, trimmed);
           toast.error(ctaResult.error || 'API send failed — opened phone WhatsApp with pay link');
-          return;
+          return false;
         }
 
         const result = await sendAdminWhatsAppText({
@@ -849,11 +852,11 @@ export function SettingsPendingPaymentsDialogV2({
           toast.success(
             isOverdue ? 'Overdue payment notice sent (with pay link)' : 'WhatsApp reminder sent (with pay link)'
           );
-          return;
+          return true;
         }
         if (result.featureDisabled) {
           toast.error(result.error || 'WhatsApp pending payment is disabled in Settings');
-          return;
+          return false;
         }
         if (result.needsWindowOrTemplate) {
           const coldResult = await sendAdminWhatsAppTextWithOptionalTemplate({
@@ -875,19 +878,19 @@ export function SettingsPendingPaymentsDialogV2({
                 ? 'Cold overdue notice sent with Pay now button'
                 : 'Cold balance-due template sent with Pay now button'
             );
-            return;
+            return true;
           }
           if (coldResult.ok && coldResult.via === 'wa_me') {
             toast.message('24h window closed — opened WhatsApp with pay link');
-            return;
+            return true;
           }
           openWhatsAppMeDeepLink(phone, trimmed);
           toast.message('24h window closed — opened WhatsApp with pay link');
-          return;
+          return true;
         }
         openWhatsAppMeDeepLink(phone, trimmed);
         toast.error(result.error || 'API send failed — opened phone WhatsApp with pay link');
-        return;
+        return false;
       }
 
       const allowColdTpl = opts?.coldPendingTemplate !== false;
@@ -895,7 +898,7 @@ export function SettingsPendingPaymentsDialogV2({
         opts?.coldTemplateKind || (isOverdue ? 'payment_overdue' : 'pending_payment');
       const coldTemplate = allowColdTpl
         ? coldKind === 'payment_received'
-          ? resolveColdPaymentReceived(opts?.customerName || 'Customer', opts?.amount ?? 0)
+          ? resolveColdPaymentReceived(opts?.customerName || 'Customer', opts?.amount ?? 0, brand)
           : {
               name: coldTextTemplateName,
               languageCode: 'en',
@@ -913,23 +916,35 @@ export function SettingsPendingPaymentsDialogV2({
         coldTemplate: coldTemplate || undefined,
       });
 
+      const isPaymentReceived = opts?.coldTemplateKind === 'payment_received';
       if (result.ok) {
         if (result.usedTemplate) {
           toast.success(
-            isOverdue
-              ? 'Cold overdue notice sent (24h window was closed)'
-              : 'Cold balance-due template sent (24h window was closed)'
+            isPaymentReceived
+              ? 'Payment thanks sent (cold template — 24h window was closed)'
+              : isOverdue
+                ? 'Cold overdue notice sent (24h window was closed)'
+                : 'Cold balance-due template sent (24h window was closed)'
           );
         } else if (result.via === 'wa_me') {
           toast.message('Opened phone WhatsApp');
         } else {
-          toast.success(isOverdue ? 'Overdue payment notice sent' : 'WhatsApp reminder sent');
+          toast.success(
+            isPaymentReceived
+              ? 'Payment thanks sent'
+              : isOverdue
+                ? 'Overdue payment notice sent'
+                : 'WhatsApp reminder sent'
+          );
         }
-        return;
+        return true;
       }
 
       toast.error(result.error || 'WhatsApp send failed');
-    })();
+      return false;
+    } finally {
+      setWhatsappSending(false);
+    }
   };
 
   const openCall = (phone: string) => {
@@ -2007,56 +2022,86 @@ export function SettingsPendingPaymentsDialogV2({
                               <Button
                                 variant="default"
                                 className="bg-green-600 hover:bg-green-700 text-white"
+                                disabled={whatsappSending || !primaryPhone}
                                 onClick={() => {
                                   if (!primaryPhone) return;
-                                  openWhatsApp(primaryPhone, message, {
-                                    customerName: customer?.name,
-                                    amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
-                                    customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
-                                    coldTemplateKind: 'payment_received',
-                                  });
-                                  setPostCompleteWhatsappOpen(false);
+                                  void (async () => {
+                                    const ok = await openWhatsApp(primaryPhone, message, {
+                                      customerName: customer?.name,
+                                      amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
+                                      customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
+                                      brand: brandForCustomer(
+                                        postCompleteWhatsappTarget.entity_id as string | undefined
+                                      ),
+                                      coldTemplateKind: 'payment_received',
+                                    });
+                                    if (ok) setPostCompleteWhatsappOpen(false);
+                                  })();
                                 }}
                               >
-                                <WhatsAppIcon className="w-4 h-4 mr-2" />
-                                Primary: {primaryPhone}
+                                {whatsappSending ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <WhatsAppIcon className="w-4 h-4 mr-2" />
+                                )}
+                                {whatsappSending ? 'Sending…' : `Primary: ${primaryPhone}`}
                               </Button>
                               <Button
                                 variant="default"
                                 className="bg-green-600 hover:bg-green-700 text-white"
+                                disabled={whatsappSending || !alternatePhone}
                                 onClick={() => {
                                   if (!alternatePhone) return;
-                                  openWhatsApp(alternatePhone, message, {
-                                    customerName: customer?.name,
-                                    amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
-                                    customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
-                                    coldTemplateKind: 'payment_received',
-                                  });
-                                  setPostCompleteWhatsappOpen(false);
+                                  void (async () => {
+                                    const ok = await openWhatsApp(alternatePhone, message, {
+                                      customerName: customer?.name,
+                                      amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
+                                      customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
+                                      brand: brandForCustomer(
+                                        postCompleteWhatsappTarget.entity_id as string | undefined
+                                      ),
+                                      coldTemplateKind: 'payment_received',
+                                    });
+                                    if (ok) setPostCompleteWhatsappOpen(false);
+                                  })();
                                 }}
                               >
-                                <WhatsAppIcon className="w-4 h-4 mr-2" />
-                                Alternate: {alternatePhone}
+                                {whatsappSending ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <WhatsAppIcon className="w-4 h-4 mr-2" />
+                                )}
+                                {whatsappSending ? 'Sending…' : `Alternate: ${alternatePhone}`}
                               </Button>
                             </div>
                           ) : (
                             <Button
                               variant="default"
                               className="w-full bg-green-600 hover:bg-green-700 text-white"
+                              disabled={whatsappSending || !(primaryPhone || alternatePhone)}
                               onClick={() => {
                                 const phone = primaryPhone || alternatePhone;
                                 if (!phone) return;
-                                openWhatsApp(phone, message, {
-                                  customerName: customer?.name,
-                                  amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
-                                  customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
-                                  coldTemplateKind: 'payment_received',
-                                });
-                                setPostCompleteWhatsappOpen(false);
+                                void (async () => {
+                                  const ok = await openWhatsApp(phone, message, {
+                                    customerName: customer?.name,
+                                    amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
+                                    customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
+                                    brand: brandForCustomer(
+                                      postCompleteWhatsappTarget.entity_id as string | undefined
+                                    ),
+                                    coldTemplateKind: 'payment_received',
+                                  });
+                                  if (ok) setPostCompleteWhatsappOpen(false);
+                                })();
                               }}
                             >
-                              <WhatsAppIcon className="w-4 h-4 mr-2" />
-                              Send WhatsApp message
+                              {whatsappSending ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <WhatsAppIcon className="w-4 h-4 mr-2" />
+                              )}
+                              {whatsappSending ? 'Sending…' : 'Send WhatsApp message'}
                             </Button>
                           )}
                         </div>
@@ -2131,6 +2176,7 @@ export function SettingsPendingPaymentsDialogV2({
 
                   const sendWithPhone = (phone: string) => {
                     if (!phone) return;
+                    if (whatsappSending) return;
                     if (whatsappIncludeUpi && !canIncludeUpi) {
                       toast.error('Select a UPI account, or uncheck “Include UPI pay details”');
                       return;
@@ -2150,25 +2196,27 @@ export function SettingsPendingPaymentsDialogV2({
                     if (canIncludeUpi) {
                       setLastSelectedUpiAccountId(resolvedUpiAccountId);
                     }
-                    openWhatsApp(phone, message, {
-                      customerName: customer?.name,
-                      amount: Number(whatsappTarget.amount_pending) || 0,
-                      customerId: whatsappTarget.entity_id as string | undefined,
-                      dueDateYmd: dueYmd,
-                      invoiceRef: whatsappTarget.job_number || whatsappTarget.job_id || null,
-                      brand: brandForCustomer(whatsappTarget.entity_id as string | undefined),
-                      includePayLink: canIncludeUpi || messageHasPayLink,
-                      payHttpsLink: whatsappPayHttpsLink,
-                      coldTemplateKind: sendOverdue ? 'payment_overdue' : 'pending_payment',
-                      headerImage: whatsappAttachImage
-                        ? {
-                            imageBase64: whatsappAttachImage.base64,
-                            filename: whatsappAttachImage.filename,
-                            mimeType: whatsappAttachImage.mimeType,
-                          }
-                        : null,
-                    });
-                    setWhatsappDialogOpen(false);
+                    void (async () => {
+                      const ok = await openWhatsApp(phone, message, {
+                        customerName: customer?.name,
+                        amount: Number(whatsappTarget.amount_pending) || 0,
+                        customerId: whatsappTarget.entity_id as string | undefined,
+                        dueDateYmd: dueYmd,
+                        invoiceRef: whatsappTarget.job_number || whatsappTarget.job_id || null,
+                        brand: brandForCustomer(whatsappTarget.entity_id as string | undefined),
+                        includePayLink: canIncludeUpi || messageHasPayLink,
+                        payHttpsLink: whatsappPayHttpsLink,
+                        coldTemplateKind: sendOverdue ? 'payment_overdue' : 'pending_payment',
+                        headerImage: whatsappAttachImage
+                          ? {
+                              imageBase64: whatsappAttachImage.base64,
+                              filename: whatsappAttachImage.filename,
+                              mimeType: whatsappAttachImage.mimeType,
+                            }
+                          : null,
+                      });
+                      if (ok) setWhatsappDialogOpen(false);
+                    })();
                   };
 
                   return (
@@ -2484,38 +2532,53 @@ export function SettingsPendingPaymentsDialogV2({
                               <Button
                                 variant="default"
                                 className="bg-green-600 hover:bg-green-700 text-white"
+                                disabled={whatsappSending || whatsappDraftLoading}
                                 onClick={() => {
                                   if (!primaryPhone) return;
                                   sendWithPhone(primaryPhone);
                                 }}
                               >
-                                <WhatsAppIcon className="w-4 h-4 mr-2" />
-                                Primary: {primaryPhone}
+                                {whatsappSending ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <WhatsAppIcon className="w-4 h-4 mr-2" />
+                                )}
+                                {whatsappSending ? 'Sending…' : `Primary: ${primaryPhone}`}
                               </Button>
                               <Button
                                 variant="default"
                                 className="bg-green-600 hover:bg-green-700 text-white"
+                                disabled={whatsappSending || whatsappDraftLoading}
                                 onClick={() => {
                                   if (!alternatePhone) return;
                                   sendWithPhone(alternatePhone);
                                 }}
                               >
-                                <WhatsAppIcon className="w-4 h-4 mr-2" />
-                                Alternate: {alternatePhone}
+                                {whatsappSending ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <WhatsAppIcon className="w-4 h-4 mr-2" />
+                                )}
+                                {whatsappSending ? 'Sending…' : `Alternate: ${alternatePhone}`}
                               </Button>
                             </div>
                           ) : (
                             <Button
                               variant="default"
                               className="w-full bg-green-600 hover:bg-green-700 text-white"
+                              disabled={whatsappSending || whatsappDraftLoading}
                               onClick={() => {
                                 const phone = primaryPhone || alternatePhone;
                                 if (!phone) return;
                                 sendWithPhone(phone);
                               }}
                             >
-                              <WhatsAppIcon className="w-4 h-4 mr-2" />
-                              Send WhatsApp message
+                              {whatsappSending ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <WhatsAppIcon className="w-4 h-4 mr-2" />
+                              )}
+                              {whatsappSending ? 'Sending…' : 'Send WhatsApp message'}
                             </Button>
                           )}
                         </div>
