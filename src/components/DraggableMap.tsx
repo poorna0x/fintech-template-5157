@@ -26,6 +26,8 @@ interface DraggableMapProps {
   /** Urban Company-style: pin stays in the center, user pans the map. Booking picker only. */
   centerPin?: boolean;
   onMapReady?: (map: google.maps.Map | null) => void;
+  /** Center-pin mode: fired when the user starts panning, before the map settles. */
+  onMoveStart?: () => void;
 }
 
 function MapCenterPin({ lifting }: { lifting: boolean }) {
@@ -72,6 +74,7 @@ const DraggableMap = ({
   myLocation = null,
   centerPin = false,
   onMapReady,
+  onMoveStart,
 }: DraggableMapProps) => {
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -84,6 +87,7 @@ const DraggableMap = ({
   const myLocationRef = useRef(myLocation);
   const centerPinRef = useRef(centerPin);
   const onMapReadyRef = useRef(onMapReady);
+  const onMoveStartRef = useRef(onMoveStart);
   const liftingRef = useRef(false);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [lifting, setLifting] = useState(false);
@@ -94,6 +98,7 @@ const DraggableMap = ({
   myLocationRef.current = myLocation;
   centerPinRef.current = centerPin;
   onMapReadyRef.current = onMapReady;
+  onMoveStartRef.current = onMoveStart;
 
   const paintMyLocation = (map: google.maps.Map, loc: DraggableMapProps['myLocation']) => {
     if (!loc) {
@@ -151,6 +156,9 @@ const DraggableMap = ({
     let sizePoll: number | null = null;
     let dragListener: google.maps.MapsEventListener | null = null;
     let dragStartListener: google.maps.MapsEventListener | null = null;
+    let idleListener: google.maps.MapsEventListener | null = null;
+    let idleTimer: number | null = null;
+    let coastTimer: number | null = null;
 
     const clearNode = () => {
       if (mapElRef.current) {
@@ -177,17 +185,37 @@ const DraggableMap = ({
       });
 
       if (centerPinRef.current) {
+        let userPanned = false;
+        const emitCenter = () => {
+          const next = mapInstance.getCenter();
+          if (!next) return;
+          onChangeRef.current?.({ lat: next.lat(), lng: next.lng() });
+        };
         dragStartListener = mapInstance.addListener('drag', () => {
+          userPanned = true;
           if (liftingRef.current) return;
           liftingRef.current = true;
           setLifting(true);
+          onMoveStartRef.current?.();
         });
         dragListener = mapInstance.addListener('dragend', () => {
           liftingRef.current = false;
           setLifting(false);
-          const next = mapInstance.getCenter();
-          if (!next) return;
-          onChangeRef.current?.({ lat: next.lat(), lng: next.lng() });
+          // Mobile maps often keep coasting after finger-up; catch the settled center.
+          if (coastTimer != null) window.clearTimeout(coastTimer);
+          coastTimer = window.setTimeout(() => {
+            coastTimer = null;
+            emitCenter();
+          }, 420);
+        });
+        idleListener = mapInstance.addListener('idle', () => {
+          if (!userPanned) return;
+          userPanned = false;
+          if (idleTimer != null) window.clearTimeout(idleTimer);
+          idleTimer = window.setTimeout(() => {
+            idleTimer = null;
+            emitCenter();
+          }, 50);
         });
       } else {
         const markerInstance = new window.google.maps.Marker({
@@ -278,6 +306,15 @@ const DraggableMap = ({
           /* ignore */
         }
       }
+      if (idleListener) {
+        try {
+          google.maps.event.removeListener(idleListener);
+        } catch {
+          /* ignore */
+        }
+      }
+      if (idleTimer != null) window.clearTimeout(idleTimer);
+      if (coastTimer != null) window.clearTimeout(coastTimer);
       markerRef.current?.setMap(null);
       markerRef.current = null;
       myDotRef.current?.setMap(null);

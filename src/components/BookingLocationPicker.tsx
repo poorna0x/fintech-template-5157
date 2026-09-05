@@ -416,15 +416,16 @@ export default function BookingLocationPicker({
 
   const paintPinLabel = (coords: { lat: number; lng: number }) => {
     const last = lastLabelLookupRef.current;
-    const minMoveMeters = 12;
+    const minMoveMeters = 4;
     if (
       last &&
       haversineKm(last.lat, last.lng, coords.lat, coords.lng) * 1000 < minMoveMeters
     ) {
+      setGeocoding(false);
       return;
     }
 
-    const cacheKey = `${coords.lat.toFixed(4)},${coords.lng.toFixed(4)}`;
+    const cacheKey = `${coords.lat.toFixed(5)},${coords.lng.toFixed(5)}`;
     const cached = pinLabelCacheRef.current.get(cacheKey);
     if (cached) {
       lastLabelLookupRef.current = coords;
@@ -436,7 +437,7 @@ export default function BookingLocationPicker({
 
     const seq = ++pinLabelSeqRef.current;
     lastLabelLookupRef.current = coords;
-    if (!title && !address) setGeocoding(true);
+    setGeocoding(true);
     const safety = window.setTimeout(() => {
       if (seq === pinLabelSeqRef.current) setGeocoding(false);
     }, 4000);
@@ -574,10 +575,14 @@ export default function BookingLocationPicker({
     if (geocodeTimerRef.current != null) window.clearTimeout(geocodeTimerRef.current);
     geocodeTimerRef.current = window.setTimeout(() => {
       paintPinLabelRef.current(coords);
-    }, 300);
+    }, 40);
   }, []);
 
-  const canSave = houseFlat.trim().length > 0 && hasCoords(centerLiveRef.current) && Boolean(address.trim());
+  const canSave =
+    !geocoding &&
+    houseFlat.trim().length > 0 &&
+    hasCoords(centerLiveRef.current) &&
+    Boolean(address.trim());
 
   const handleSave = () => {
     const pin = centerLiveRef.current;
@@ -743,10 +748,11 @@ export default function BookingLocationPicker({
             mapInstanceRef.current = map;
             if (!map) return;
             const pin = centerLiveRef.current;
-            pinLabelCacheRef.current.delete(`${pin.lat.toFixed(4)},${pin.lng.toFixed(4)}`);
+            pinLabelCacheRef.current.delete(`${pin.lat.toFixed(5)},${pin.lng.toFixed(5)}`);
             lastLabelLookupRef.current = null;
             paintPinLabelRef.current(pin);
           }}
+          onMoveStart={() => setGeocoding(true)}
           onLocationChange={handleMapIdle}
         />
         <button
@@ -768,10 +774,17 @@ export default function BookingLocationPicker({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-[17px] font-bold leading-snug text-neutral-900 dark:text-foreground">
-            {geocoding && !title ? 'Finding address…' : title || 'Selected location'}
+            {geocoding ? (
+              <span className="inline-flex max-w-full items-center gap-2">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-sky-600" />
+                <span className="truncate">{title || 'Finding address…'}</span>
+              </span>
+            ) : (
+              title || 'Selected location'
+            )}
           </p>
           <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-neutral-500">
-            {geocoding && !address ? 'Updating from the map pin…' : address}
+            {geocoding ? 'Updating from the map pin…' : address}
           </p>
         </div>
         <button
