@@ -605,6 +605,17 @@ const Booking: React.FC = () => {
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   };
 
+  const handleLocationPinChange = (value: {
+    coordinates: { lat: number; lng: number };
+    googleMapsLink: string;
+  }) => {
+    setFormData((prev) => ({
+      ...prev,
+      coordinates: value.coordinates,
+      googleMapsLink: value.googleMapsLink,
+    }));
+  };
+
   useEffect(() => {
     if (currentStep !== 3) setLocationEditing(false);
   }, [currentStep]);
@@ -1222,11 +1233,10 @@ const Booking: React.FC = () => {
         formData.landmark,
         formData.address
       );
-      const pinUrl = hasValidMapCoordinates(formData.coordinates)
-        ? googleMapsPinUrl(formData.coordinates.lat, formData.coordinates.lng)
-        : isLikelyMapsLink(formData.googleMapsLink)
-          ? formData.googleMapsLink
-          : '';
+      if (!hasValidMapCoordinates(formData.coordinates)) {
+        throw new Error('Please pin your location on the map before submitting.');
+      }
+      const pinUrl = googleMapsPinUrl(formData.coordinates.lat, formData.coordinates.lng);
       const shortLocation = await resolveBookingVisibleAddress({
         address: formData.address,
         lat: formData.coordinates?.lat,
@@ -2254,6 +2264,7 @@ const Booking: React.FC = () => {
                     landmark: formData.landmark,
                   }}
                   onSave={handleLocationPickerSave}
+                  onPinChange={handleLocationPinChange}
                 />
 
                 {showValidation && (!hasValidMapCoordinates(formData.coordinates) || !formData.address) ? (

@@ -35,6 +35,8 @@ type BookingLocationPickerProps = {
   startOn?: PickerView;
   initial?: Partial<BookingLocationValue>;
   onSave: (value: BookingLocationValue) => void;
+  /** Fired whenever the pin is placed (search, GPS, or map settle) so the job always has coords. */
+  onPinChange?: (value: { coordinates: { lat: number; lng: number }; googleMapsLink: string }) => void;
   inlineSearch?: boolean;
   invalid?: boolean;
   showCancel?: boolean;
@@ -52,6 +54,29 @@ function hasCoords(coords?: { lat?: number; lng?: number } | null): boolean {
     Number.isFinite(lng) &&
     (lat !== 0 || lng !== 0)
   );
+}
+
+function coordsFromPlaceGeometry(
+  place: google.maps.places.PlaceResult | null
+): { lat: number; lng: number } | null {
+  const loc = place?.geometry?.location;
+  if (loc && typeof loc.lat === 'function' && typeof loc.lng === 'function') {
+    const lat = loc.lat();
+    const lng = loc.lng();
+    if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
+      return { lat, lng };
+    }
+  }
+  const viewport = place?.geometry?.viewport;
+  if (viewport && typeof viewport.getCenter === 'function') {
+    const center = viewport.getCenter();
+    const lat = center.lat();
+    const lng = center.lng();
+    if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
+      return { lat, lng };
+    }
+  }
+  return null;
 }
 
 function reverseGeocode(location: { lat: number; lng: number }): Promise<string | null> {
@@ -92,6 +117,7 @@ export default function BookingLocationPicker({
   startOn: _startOn = 'search',
   initial,
   onSave,
+  onPinChange,
   inlineSearch = false,
   invalid = false,
   showCancel = false,
@@ -128,6 +154,9 @@ export default function BookingLocationPicker({
   const skipSeedOnOpenRef = useRef(false);
   const savingRef = useRef(false);
   const centerLiveRef = useRef(BENGALURU);
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const onPinChangeRef = useRef(onPinChange);
+  onPinChangeRef.current = onPinChange;
   const paintPinLabelRef = useRef<(coords: { lat: number; lng: number }) => void>(() => {});
   const initialRef = useRef(initial);
   initialRef.current = initial;
@@ -307,12 +336,38 @@ export default function BookingLocationPicker({
   };
   paintPinLabelRef.current = paintPinLabel;
 
+  const emitPin = (coords: { lat: number; lng: number }) => {
+    if (!hasCoords(coords)) return;
+    centerLiveRef.current = coords;
+    onPinChangeRef.current?.({
+      coordinates: coords,
+      googleMapsLink: googleMapsPinUrl(coords.lat, coords.lng),
+    });
+  };
+
+  const readLivePin = () => {
+    const intended = centerLiveRef.current;
+    const mapCenter = mapInstanceRef.current?.getCenter();
+    if (mapCenter) {
+      const fromMap = { lat: mapCenter.lat(), lng: mapCenter.lng() };
+      if (hasCoords(fromMap)) {
+        if (!hasCoords(intended)) return fromMap;
+        const meters =
+          haversineKm(intended.lat, intended.lng, fromMap.lat, fromMap.lng) * 1000;
+        // Search/GPS already stored the intended pin; map may not have finished panning.
+        if (meters > 80) return intended;
+        return fromMap;
+      }
+    }
+    return intended;
+  };
+
   const applyCoords = async (
     coords: { lat: number; lng: number },
     preset?: { address?: string }
   ) => {
     setCenter(coords);
-    centerLiveRef.current = coords;
+    emitPin(coords);
     setZoom(DEFAULT_ZOOM);
     setCameraNonce((n) => n + 1);
     skipSeedOnOpenRef.current = true;
@@ -341,19 +396,16 @@ export default function BookingLocationPicker({
           },
           (place, status) => {
             sessionTokenRef.current = null;
-            if (
-              status === window.google.maps.places.PlacesServiceStatus.OK &&
-              place?.geometry?.location
-            ) {
-              const coords = {
-                lat: place.geometry.location.lat(),
-                lng: place.geometry.location.lng(),
-              };
-              const formatted = removePlusCode(place.formatted_address || prediction.mainText);
-              void applyCoords(coords, { address: formatted });
-            } else {
-              toast.error('Could not open that place. Try another search.');
+            if (status === window.google.maps.places.PlacesServiceStatus.OK) {
+              const coords = coordsFromPlaceGeometry(place);
+              if (coords) {
+                const formatted = removePlusCode(place?.formatted_address || prediction.mainText);
+                void applyCoords(coords, { address: formatted });
+                resolve();
+                return;
+              }
             }
+            toast.error('Could not open that place. Try another search.');
             resolve();
           }
         );
@@ -389,7 +441,7 @@ export default function BookingLocationPicker({
   };
 
   const handleMapIdle = useCallback((coords: { lat: number; lng: number }) => {
-    centerLiveRef.current = coords;
+    emitPin(coords);
     if (skipNextIdleLabelRef.current) {
       skipNextIdleLabelRef.current = false;
       lastLabelLookupRef.current = coords;
@@ -408,9 +460,10 @@ export default function BookingLocationPicker({
     Boolean(address.trim());
 
   const handleSave = () => {
-    const pin = centerLiveRef.current;
+    const pin = readLivePin();
     if (!canSave || savingRef.current || !hasCoords(pin)) return;
     savingRef.current = true;
+    emitPin(pin);
     onSave({
       address: address.trim(),
       coordinates: pin,
@@ -568,6 +621,7 @@ export default function BookingLocationPicker({
           centerPin
           myLocation={myLocation}
           onMapReady={(map) => {
+            mapInstanceRef.current = map;
             if (!map) return;
             const pin = centerLiveRef.current;
             pinLabelCacheRef.current.delete(`${pin.lat.toFixed(5)},${pin.lng.toFixed(5)}`);
