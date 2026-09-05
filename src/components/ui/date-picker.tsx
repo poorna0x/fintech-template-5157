@@ -78,7 +78,9 @@ export function DatePicker({
   };
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    // modal: keeps focus/pointer inside the calendar while open so Dialog
+    // dismiss layers do not treat calendar clicks as "outside" and close it.
+    <Popover modal open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           ref={triggerRef}
@@ -105,12 +107,14 @@ export function DatePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-auto max-h-[calc(100dvh-1.5rem)] overflow-y-auto p-0 z-[110]"
+        data-date-picker-content
+        className="w-auto max-h-[calc(100dvh-1.5rem)] overflow-y-auto p-0 z-[200] pointer-events-auto"
         align="start"
         side={side}
         sideOffset={6}
         collisionPadding={12}
         avoidCollisions
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <React.Suspense
           fallback={
