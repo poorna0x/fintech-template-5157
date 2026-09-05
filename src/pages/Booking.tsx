@@ -1227,6 +1227,11 @@ const Booking: React.FC = () => {
         : isLikelyMapsLink(formData.googleMapsLink)
           ? formData.googleMapsLink
           : '';
+      const shortLocation = await resolveBookingVisibleAddress({
+        address: formData.address,
+        lat: formData.coordinates?.lat,
+        lng: formData.coordinates?.lng,
+      });
       const bookingServiceAddress = {
         street: fullStreet,
         area: 'Bangalore',
@@ -1234,6 +1239,7 @@ const Booking: React.FC = () => {
         state: 'Karnataka',
         pincode: '560001',
         ...(formData.landmark.trim() ? { landmark: formData.landmark.trim() } : {}),
+        ...(shortLocation ? { visible_address: shortLocation } : {}),
       };
       const bookingServiceLocation = {
         latitude: formData.coordinates.lat,
@@ -1283,12 +1289,12 @@ const Booking: React.FC = () => {
         // Customer exists — update their information
         isExistingCustomer = true;
 
-        // Same or within 2 km: keep previous address/location (server-computed when possible)
+        // Same or within 1000 m: keep previous address/location (server-computed when possible)
         const keepPreviousLocationValue =
           (existingCustomer as { keepPreviousLocation?: boolean }).keepPreviousLocation ===
           true;
         const hasValidNewCoords = hasValidMapCoordinates(formData.coordinates);
-        // Server sets keepPreviousLocation when within 2 km or when new pin is missing.
+        // Server sets keepPreviousLocation when within 1000 m or when new pin is missing.
         // Also skip location overwrite when the form has no valid coordinates.
         const shouldUpdateLocation = !keepPreviousLocationValue && hasValidNewCoords;
 
@@ -1302,11 +1308,6 @@ const Booking: React.FC = () => {
         };
 
         if (shouldUpdateLocation) {
-          const shortLocation = await resolveBookingVisibleAddress({
-            address: formData.address,
-            lat: formData.coordinates.lat,
-            lng: formData.coordinates.lng,
-          });
           if (shortLocation) {
             updateData.visible_address = shortLocation;
           }
@@ -1358,12 +1359,6 @@ const Booking: React.FC = () => {
         
         customer = updatedCustomer;
       } else {
-        // Customer doesn't exist, create new one
-        const shortLocation = await resolveBookingVisibleAddress({
-          address: formData.address,
-          lat: formData.coordinates?.lat,
-          lng: formData.coordinates?.lng,
-        });
         const customerData = {
           full_name: formData.fullName,
           phone: formData.phone,
@@ -1423,7 +1418,7 @@ const Booking: React.FC = () => {
       }
 
       // Job always stores this visit (flat-first address + pin URL).
-      // Customer pin is left unchanged when the new pin is nearby (keepPreviousLocation).
+      // Customer pin is left unchanged when the new pin is within 1000 m (keepPreviousLocation).
       const jobServiceAddress = bookingServiceAddress;
       const jobServiceLocation = bookingServiceLocation;
 
@@ -2208,7 +2203,7 @@ const Booking: React.FC = () => {
           .join(', ');
         return (
           <div className="space-y-6">
-            <div className="text-center mb-6">
+            <div className="mb-6 px-4 text-center sm:px-6">
               <MapPin className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
               <h3 className="text-xl font-semibold text-foreground">Service Location</h3>
               <p className="text-muted-foreground">Where should we come?</p>
@@ -2272,12 +2267,12 @@ const Booking: React.FC = () => {
                 />
 
                 {showValidation && (!hasValidMapCoordinates(formData.coordinates) || !formData.address) ? (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-2 px-4 text-sm text-red-600 dark:text-red-400 sm:px-6">
                     Please search your location or use current location so we can pin where to come.
                   </p>
                 ) : null}
                 {showValidation && hasValidMapCoordinates(formData.coordinates) && formData.address && !formData.addressDetails.trim() ? (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-2 px-4 text-sm text-red-600 dark:text-red-400 sm:px-6">
                     Please enter your house / flat number so the technician reaches the exact door.
                   </p>
                 ) : null}
@@ -3154,8 +3149,12 @@ const Booking: React.FC = () => {
 
             {/* Form Content */}
             <BehavioralTracker>
-              <Card className="mb-6">
-                <CardContent className="p-4 sm:p-6">
+              <Card className={`mb-6 ${currentStep === 3 ? 'overflow-hidden' : ''}`}>
+                <CardContent
+                  className={
+                    currentStep === 3 && locationPickerOpen ? 'px-0 py-4 sm:py-6' : 'p-4 sm:p-6'
+                  }
+                >
                   {/* Honeypot field - hidden from users */}
                   <HoneypotField />
                   

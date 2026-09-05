@@ -46,6 +46,7 @@ describe('getJobLocationDisplay', () => {
           city: 'Bangalore',
           state: 'Karnataka',
           pincode: '560001',
+          visible_address: 'HSR Layout',
         },
         service_location: {
           latitude: 12.91,
@@ -57,11 +58,14 @@ describe('getJobLocationDisplay', () => {
       {
         address: { street: 'Old street', area: 'Bangalore', city: 'Bangalore', state: 'Karnataka', pincode: '560001' },
         location: { latitude: 12.97, longitude: 77.59, formattedAddress: 'Old street' },
+        visible_address: 'Koramangala',
       }
     );
 
     expect(display.address.street).toBe('A-102, Water tank, 5th Main, HSR Layout');
     expect(display.address.landmark).toBe('Water tank');
+    expect(display.address.visible_address).toBe('HSR Layout');
+    expect(display.visibleLabel).toBe('HSR Layout');
     expect(display.location.latitude).toBe(12.91);
     expect(display.location.googleLocation).toBe('https://www.google.com/maps?q=12.91,77.64');
   });

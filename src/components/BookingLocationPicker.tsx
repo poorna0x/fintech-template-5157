@@ -723,11 +723,11 @@ export default function BookingLocationPicker({
   ) : null;
 
   const mapCard = open ? (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-border dark:bg-card">
-      <p className="mb-3 text-sm text-muted-foreground">
+    <div className="w-full overflow-hidden bg-white dark:bg-card">
+      <p className="px-4 pb-3 pt-1 text-sm text-muted-foreground sm:px-6">
         Move the map to place the pin on your door. Your location stays as the blue dot.
       </p>
-      <div className="relative">
+      <div className="relative w-full">
         <DraggableMap
           center={center}
           zoom={zoom}
@@ -764,7 +764,8 @@ export default function BookingLocationPicker({
         </button>
       </div>
 
-      <div className="mt-4 flex items-start justify-between gap-3">
+      <div className="px-4 pb-4 pt-4 sm:px-6">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-[17px] font-bold leading-snug text-neutral-900 dark:text-foreground">
             {geocoding && !title ? 'Finding address…' : title || 'Selected location'}
@@ -837,6 +838,7 @@ export default function BookingLocationPicker({
             : 'Enter your house / flat number to continue.'}
         </p>
       ) : null}
+      </div>
     </div>
   ) : null;
 
