@@ -806,3 +806,22 @@ body.mobile-nav-open {
 [role="listbox"] {
   pointer-events: auto !important;
 }
+
+/*
+ * Safety net: if Radix/react-remove-scroll left pointer-events:none on #root after
+ * a dialog/select closed, the whole admin app ignores taps until force-quit. When no
+ * modal is open, force the app shell clickable again (Ongoing scroll → open anything).
+ */
+body:not(:has([role="dialog"][data-state="open"])):not(:has([role="alertdialog"][data-state="open"])) {
+  pointer-events: auto !important;
+}
+
+body:not(:has([role="dialog"][data-state="open"])):not(:has([role="alertdialog"][data-state="open"])) > #root {
+  pointer-events: auto !important;
+}
+
+/* Closed overlays must never keep eating taps after dismiss animations. */
+[data-radix-dialog-overlay][data-state="closed"],
+[data-radix-alert-dialog-overlay][data-state="closed"] {
+  pointer-events: none !important;
+}

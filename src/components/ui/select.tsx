@@ -3,6 +3,7 @@ import * as SelectPrimitive from "@radix-ui/react-select"
 import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { scheduleClearStaleScrollLock } from "@/lib/layoutStability"
 
 type SelectRootProps = React.ComponentPropsWithoutRef<typeof SelectPrimitive.Root>
 
@@ -35,6 +36,8 @@ const Select = ({
     (next: boolean) => {
       if (!isControlled) setUncontrolledOpen(next)
       onOpenChange?.(next)
+      // Select's DismissableLayer can leave body/root pointer-events:none after close.
+      if (!next) scheduleClearStaleScrollLock()
     },
     [isControlled, onOpenChange]
   )

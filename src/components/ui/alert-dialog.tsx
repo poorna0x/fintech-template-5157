@@ -3,8 +3,20 @@ import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
+import { scheduleClearStaleScrollLock } from "@/lib/layoutStability"
 
-const AlertDialog = AlertDialogPrimitive.Root
+const AlertDialog = ({
+  onOpenChange,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Root>) => (
+  <AlertDialogPrimitive.Root
+    {...props}
+    onOpenChange={(open) => {
+      onOpenChange?.(open)
+      if (!open) scheduleClearStaleScrollLock()
+    }}
+  />
+)
 
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger
 

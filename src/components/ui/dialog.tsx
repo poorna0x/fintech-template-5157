@@ -5,8 +5,20 @@ import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { guardDialogFromSonnerOutsideEvent } from "@/lib/sonner-dialog-guard"
 import { IOSSwitchHapticOverlay } from "@/components/IOSSwitchHapticOverlay"
+import { scheduleClearStaleScrollLock } from "@/lib/layoutStability"
 
-const Dialog = DialogPrimitive.Root
+const Dialog = ({
+  onOpenChange,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) => (
+  <DialogPrimitive.Root
+    {...props}
+    onOpenChange={(open) => {
+      onOpenChange?.(open)
+      if (!open) scheduleClearStaleScrollLock()
+    }}
+  />
+)
 
 const DialogTrigger = DialogPrimitive.Trigger
 

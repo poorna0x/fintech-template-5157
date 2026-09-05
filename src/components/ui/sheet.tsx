@@ -5,8 +5,20 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 import { IOSSwitchHapticOverlay } from "@/components/IOSSwitchHapticOverlay"
+import { scheduleClearStaleScrollLock } from "@/lib/layoutStability"
 
-const Sheet = SheetPrimitive.Root
+const Sheet = ({
+  onOpenChange,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Root>) => (
+  <SheetPrimitive.Root
+    {...props}
+    onOpenChange={(open) => {
+      onOpenChange?.(open)
+      if (!open) scheduleClearStaleScrollLock()
+    }}
+  />
+)
 
 const SheetTrigger = SheetPrimitive.Trigger
 
