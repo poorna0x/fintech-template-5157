@@ -2194,13 +2194,6 @@ const Booking: React.FC = () => {
           formData.landmark,
           formData.address
         );
-        const savedTitle = [
-          formData.addressDetails.trim(),
-          removePlusCode(formData.address).split(',')[0].trim(),
-        ]
-          .filter(Boolean)
-          .filter((part, index, parts) => index === 0 || part.toLowerCase() !== parts[0].toLowerCase())
-          .join(', ');
         return (
           <div className="space-y-6">
             <div className="mb-6 px-4 text-center sm:px-6">
@@ -2225,10 +2218,7 @@ const Booking: React.FC = () => {
                         onClick={() => openLocationPicker('map')}
                         className="min-w-0 flex-1 cursor-pointer text-left"
                       >
-                        <p className="truncate text-[17px] font-semibold text-foreground">
-                          {savedTitle || savedFullAddress}
-                        </p>
-                        <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+                        <p className="line-clamp-3 text-[15px] font-semibold leading-snug text-foreground">
                           {savedFullAddress}
                         </p>
                       </button>

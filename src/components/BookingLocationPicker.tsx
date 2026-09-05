@@ -12,24 +12,6 @@ import DraggableMap from '@/components/DraggableMap';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
 const DEFAULT_ZOOM = 18;
-const NEARBY_BUSINESS_MAX_METERS = 80;
-const GENERIC_PLACE_TYPES = new Set([
-  'route',
-  'street_address',
-  'plus_code',
-  'political',
-  'locality',
-  'sublocality',
-  'sublocality_level_1',
-  'sublocality_level_2',
-  'neighborhood',
-  'administrative_area_level_1',
-  'administrative_area_level_2',
-  'administrative_area_level_3',
-  'country',
-  'postal_code',
-  'geocode',
-]);
 
 export type BookingLocationValue = {
   address: string;
@@ -72,41 +54,7 @@ function hasCoords(coords?: { lat?: number; lng?: number } | null): boolean {
   );
 }
 
-function streetTitleFromComponents(
-  components: google.maps.GeocoderAddressComponent[] | undefined,
-  formatted: string
-): string {
-  const comps = components || [];
-  const pick = (...types: string[]) =>
-    comps.find((c) => types.some((t) => c.types.includes(t)))?.long_name;
-  const title =
-    pick('route') ||
-    pick('neighborhood', 'sublocality_level_2') ||
-    pick('sublocality', 'sublocality_level_1') ||
-    pick('premise', 'establishment') ||
-    removePlusCode(formatted).split(',')[0];
-  return (title || 'Selected location').trim();
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise((resolve) => {
-    const timer = window.setTimeout(() => resolve(fallback), ms);
-    promise.then(
-      (value) => {
-        window.clearTimeout(timer);
-        resolve(value);
-      },
-      () => {
-        window.clearTimeout(timer);
-        resolve(fallback);
-      }
-    );
-  });
-}
-
-function reverseGeocode(
-  location: { lat: number; lng: number }
-): Promise<{ address: string; title: string } | null> {
+function reverseGeocode(location: { lat: number; lng: number }): Promise<string | null> {
   return new Promise((resolve) => {
     if (!window.google?.maps?.Geocoder) {
       resolve(null);
@@ -116,11 +64,7 @@ function reverseGeocode(
       const geocoder = new window.google.maps.Geocoder();
       geocoder.geocode({ location }, (results, status) => {
         if (status === window.google.maps.GeocoderStatus.OK && results?.[0]) {
-          const formatted = removePlusCode(results[0].formatted_address || '');
-          resolve({
-            address: formatted,
-            title: streetTitleFromComponents(results[0].address_components, formatted),
-          });
+          resolve(removePlusCode(results[0].formatted_address || '') || null);
         } else {
           resolve(null);
         }
@@ -129,97 +73,6 @@ function reverseGeocode(
       resolve(null);
     }
   });
-}
-
-function isNamedBusiness(place: google.maps.places.PlaceResult): boolean {
-  const name = (place.name || '').trim();
-  if (!name) return false;
-  const types = place.types || [];
-  if (types.length > 0 && types.every((type) => GENERIC_PLACE_TYPES.has(type))) {
-    return false;
-  }
-  if (/^\d+$/.test(name)) return false;
-  if (/^(road|rd|street|st|cross|main)$/i.test(name)) return false;
-  return true;
-}
-
-function findNearbyBusiness(
-  location: { lat: number; lng: number },
-  host?: HTMLElement | google.maps.Map | null
-): Promise<{ name: string } | null> {
-  return new Promise((resolve) => {
-    if (!window.google?.maps?.places?.PlacesService) {
-      resolve(null);
-      return;
-    }
-
-    const pickClosest = (results: google.maps.places.PlaceResult[] | null) => {
-      if (!results?.length) return null;
-      let best: { name: string; meters: number } | null = null;
-      for (const place of results.slice(0, 24)) {
-        const loc = place.geometry?.location;
-        if (!loc || !isNamedBusiness(place)) continue;
-        const meters =
-          haversineKm(location.lat, location.lng, loc.lat(), loc.lng()) * 1000;
-        if (meters > NEARBY_BUSINESS_MAX_METERS) continue;
-        if (!best || meters < best.meters) {
-          best = { name: (place.name || '').trim(), meters };
-        }
-      }
-      return best;
-    };
-
-    try {
-      const service = new window.google.maps.places.PlacesService(
-        host && 'getCenter' in host
-          ? (host as google.maps.Map)
-          : ((host as HTMLElement | null) || document.createElement('div'))
-      );
-      const finish = (results: google.maps.places.PlaceResult[] | null) => {
-        const closest = pickClosest(results);
-        resolve(closest ? { name: closest.name } : null);
-      };
-      service.nearbySearch(
-        { location, radius: 120 },
-        (results, status) => {
-          if (status === window.google.maps.places.PlacesServiceStatus.OK) {
-            finish(results);
-            return;
-          }
-          service.nearbySearch(
-            {
-              location,
-              rankBy: window.google.maps.places.RankBy.DISTANCE,
-              type: 'store',
-            },
-            (fallbackResults, fallbackStatus) => {
-              if (fallbackStatus !== window.google.maps.places.PlacesServiceStatus.OK) {
-                resolve(null);
-                return;
-              }
-              finish(fallbackResults);
-            }
-          );
-        }
-      );
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
-function mergeBusinessLabel(
-  geo: { address: string; title: string } | null,
-  business: string | null | undefined
-): { address: string; title: string } | null {
-  const name = business?.trim();
-  if (!name) return geo;
-  const address = geo?.address || '';
-  const already = address.toLowerCase().includes(name.split('|')[0].trim().toLowerCase());
-  return {
-    title: name,
-    address: already ? address : [name, address].filter(Boolean).join(', '),
-  };
 }
 
 function looksLikeCopiedAddress(house: string, address: string): boolean {
@@ -255,7 +108,6 @@ export default function BookingLocationPicker({
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [cameraNonce, setCameraNonce] = useState(0);
   const [address, setAddress] = useState('');
-  const [title, setTitle] = useState('');
   const [houseFlat, setHouseFlat] = useState('');
   const [landmark, setLandmark] = useState('');
   const [myLocation, setMyLocation] = useState<{
@@ -271,14 +123,11 @@ export default function BookingLocationPicker({
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
   const pinLabelSeqRef = useRef(0);
   const lastLabelLookupRef = useRef<{ lat: number; lng: number } | null>(null);
-  const pinLabelCacheRef = useRef(
-    new Map<string, { address: string; title: string }>()
-  );
+  const pinLabelCacheRef = useRef(new Map<string, string>());
   const skipNextIdleLabelRef = useRef(false);
   const skipSeedOnOpenRef = useRef(false);
   const savingRef = useRef(false);
   const centerLiveRef = useRef(BENGALURU);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const paintPinLabelRef = useRef<(coords: { lat: number; lng: number }) => void>(() => {});
   const initialRef = useRef(initial);
   initialRef.current = initial;
@@ -296,7 +145,6 @@ export default function BookingLocationPicker({
       centerLiveRef.current = coords;
       setZoom(hasCoords(seed?.coordinates) ? DEFAULT_ZOOM : 12);
       setAddress(seed?.address ? removePlusCode(seed.address) : '');
-      setTitle(seed?.address ? removePlusCode(seed.address).split(',')[0].trim() : '');
       const seededHouse = (seed?.houseFlat || '').trim();
       const seededAddress = seed?.address ? removePlusCode(seed.address) : '';
       setHouseFlat(looksLikeCopiedAddress(seededHouse, seededAddress) ? '' : seededHouse);
@@ -429,8 +277,7 @@ export default function BookingLocationPicker({
     const cached = pinLabelCacheRef.current.get(cacheKey);
     if (cached) {
       lastLabelLookupRef.current = coords;
-      setAddress(cached.address);
-      setTitle(cached.title);
+      setAddress(cached);
       setGeocoding(false);
       return;
     }
@@ -447,26 +294,10 @@ export default function BookingLocationPicker({
         if (seq !== pinLabelSeqRef.current) return;
         window.clearTimeout(safety);
         if (geo) {
-          setAddress(geo.address);
-          setTitle(geo.title);
+          setAddress(geo);
+          pinLabelCacheRef.current.set(cacheKey, geo);
         }
         setGeocoding(false);
-
-        void withTimeout(
-          findNearbyBusiness(coords, mapInstanceRef.current || placesHostRef.current),
-          2500,
-          null
-        ).then((nearby) => {
-          if (seq !== pinLabelSeqRef.current) return;
-          const merged = mergeBusinessLabel(geo, nearby?.name);
-          if (merged) {
-            setAddress(merged.address);
-            setTitle(merged.title);
-            pinLabelCacheRef.current.set(cacheKey, merged);
-          } else if (geo) {
-            pinLabelCacheRef.current.set(cacheKey, geo);
-          }
-        });
       })
       .catch(() => {
         if (seq !== pinLabelSeqRef.current) return;
@@ -478,7 +309,7 @@ export default function BookingLocationPicker({
 
   const applyCoords = async (
     coords: { lat: number; lng: number },
-    preset?: { address?: string; title?: string }
+    preset?: { address?: string }
   ) => {
     setCenter(coords);
     centerLiveRef.current = coords;
@@ -488,7 +319,6 @@ export default function BookingLocationPicker({
     onOpenChange(true);
     if (preset?.address) {
       setAddress(removePlusCode(preset.address));
-      setTitle(preset.title || removePlusCode(preset.address).split(',')[0].trim());
       skipNextIdleLabelRef.current = true;
       lastLabelLookupRef.current = coords;
       return;
@@ -506,7 +336,7 @@ export default function BookingLocationPicker({
         service.getDetails(
           {
             placeId: prediction.placeId,
-            fields: ['formatted_address', 'geometry', 'address_components', 'name'],
+            fields: ['formatted_address', 'geometry'],
             ...(sessionTokenRef.current ? { sessionToken: sessionTokenRef.current } : {}),
           },
           (place, status) => {
@@ -520,14 +350,7 @@ export default function BookingLocationPicker({
                 lng: place.geometry.location.lng(),
               };
               const formatted = removePlusCode(place.formatted_address || prediction.mainText);
-              const placeName = (place.name || prediction.mainText || '').trim();
-              const streetTitle = streetTitleFromComponents(place.address_components, formatted);
-              void applyCoords(coords, {
-                address: placeName && formatted && !formatted.toLowerCase().includes(placeName.toLowerCase())
-                  ? `${placeName}, ${formatted}`
-                  : formatted,
-                title: placeName || streetTitle,
-              });
+              void applyCoords(coords, { address: formatted });
             } else {
               toast.error('Could not open that place. Try another search.');
             }
@@ -745,7 +568,6 @@ export default function BookingLocationPicker({
           centerPin
           myLocation={myLocation}
           onMapReady={(map) => {
-            mapInstanceRef.current = map;
             if (!map) return;
             const pin = centerLiveRef.current;
             pinLabelCacheRef.current.delete(`${pin.lat.toFixed(5)},${pin.lng.toFixed(5)}`);
@@ -778,18 +600,15 @@ export default function BookingLocationPicker({
       <div className="px-4 pb-4 pt-4 sm:px-6">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[17px] font-bold leading-snug text-neutral-900 dark:text-foreground">
+          <p className="line-clamp-2 text-[15px] font-semibold leading-snug text-neutral-900 dark:text-foreground">
             {geocoding ? (
               <span className="inline-flex max-w-full items-center gap-2">
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin text-sky-600" />
-                <span className="truncate">{title || 'Finding address…'}</span>
+                <span className="truncate">{address || 'Updating from the map pin…'}</span>
               </span>
             ) : (
-              title || 'Selected location'
+              address || 'Selected location'
             )}
-          </p>
-          <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-neutral-500">
-            {geocoding ? 'Updating from the map pin…' : address}
           </p>
         </div>
         <button
