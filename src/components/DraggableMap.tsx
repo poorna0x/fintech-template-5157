@@ -15,26 +15,169 @@ interface DraggableMapProps {
   onLocationChange?: (location: { lat: number; lng: number }) => void;
   zoom?: number;
   height?: string;
+  mapTypeControl?: boolean;
+  streetViewControl?: boolean;
+  fullscreenControl?: boolean;
+  zoomControl?: boolean;
+  /** Increment to pan/zoom to `center` even if lat/lng did not change. */
+  cameraNonce?: number;
+  /** Device GPS — shown as a blue “you are here” dot, separate from the draggable pin. */
+  myLocation?: { lat: number; lng: number; accuracyMeters?: number } | null;
+  /** Urban Company-style: pin stays in the center, user pans the map. Booking picker only. */
+  centerPin?: boolean;
+  onMapReady?: (map: google.maps.Map | null) => void;
 }
 
-const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }: DraggableMapProps) => {
+/** Muted silver/grey tiles used by UC-style booking maps. Shop names stay visible. */
+const GREY_MAP_STYLE: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#f5f5f5' }] },
+  {
+    featureType: 'administrative.land_parcel',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#bdbdbd' }],
+  },
+  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#eeeeee' }] },
+  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#5f5f5f' }] },
+  { featureType: 'poi', elementType: 'labels.text.stroke', stylers: [{ color: '#f5f5f5' }] },
+  { featureType: 'poi.business', elementType: 'labels', stylers: [{ visibility: 'on' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#e5e5e5' }] },
+  { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#9e9e9e' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road.arterial', elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#dadada' }] },
+  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
+  { featureType: 'road.local', elementType: 'labels.text.fill', stylers: [{ color: '#9e9e9e' }] },
+  { featureType: 'transit.line', elementType: 'geometry', stylers: [{ color: '#e5e5e5' }] },
+  { featureType: 'transit.station', elementType: 'geometry', stylers: [{ color: '#eeeeee' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c9c9c9' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#9e9e9e' }] },
+];
+
+function MapCenterPin({ lifting }: { lifting: boolean }) {
+  return (
+    <div
+      className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex flex-col items-center"
+      style={{ transform: 'translate(-50%, calc(-100% + 3px))' }}
+    >
+      <div
+        className={`flex flex-col items-center motion-reduce:translate-y-0 motion-reduce:transition-none ${
+          lifting ? '-translate-y-2' : 'translate-y-0'
+        }`}
+        style={{ transition: 'transform 180ms ease-out' }}
+      >
+        <svg
+          width="40"
+          height="54"
+          viewBox="0 0 40 54"
+          fill="none"
+          aria-hidden="true"
+          className="drop-shadow-[0_3px_6px_rgba(226,60,82,0.45)]"
+        >
+          <ellipse cx="20" cy="51.5" rx="6" ry="2.2" fill="rgba(0,0,0,0.28)" />
+          <path d="M20 30v19" stroke="#E23C52" strokeWidth="2.4" strokeLinecap="round" />
+          <circle cx="20" cy="16" r="15" fill="#E23C52" />
+          <circle cx="20" cy="16" r="8.2" fill="white" />
+          <circle cx="20" cy="16" r="4.4" fill="#E23C52" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+const DraggableMap = ({
+  center,
+  onLocationChange,
+  zoom = 15,
+  height = '400px',
+  mapTypeControl = true,
+  streetViewControl = true,
+  fullscreenControl = true,
+  zoomControl = true,
+  cameraNonce = 0,
+  myLocation = null,
+  centerPin = false,
+  onMapReady,
+}: DraggableMapProps) => {
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markerRef = useRef<google.maps.Marker | null>(null);
+  const myDotRef = useRef<google.maps.Marker | null>(null);
+  const myCircleRef = useRef<google.maps.Circle | null>(null);
   const onChangeRef = useRef(onLocationChange);
   const centerRef = useRef(center);
   const zoomRef = useRef(zoom);
+  const myLocationRef = useRef(myLocation);
+  const centerPinRef = useRef(centerPin);
+  const onMapReadyRef = useRef(onMapReady);
+  const liftingRef = useRef(false);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
+  const [lifting, setLifting] = useState(false);
 
   onChangeRef.current = onLocationChange;
   centerRef.current = center;
   zoomRef.current = zoom;
+  myLocationRef.current = myLocation;
+  centerPinRef.current = centerPin;
+  onMapReadyRef.current = onMapReady;
+
+  const paintMyLocation = (map: google.maps.Map, loc: DraggableMapProps['myLocation']) => {
+    if (!loc) {
+      myDotRef.current?.setMap(null);
+      myCircleRef.current?.setMap(null);
+      myDotRef.current = null;
+      myCircleRef.current = null;
+      return;
+    }
+    const pos = { lat: loc.lat, lng: loc.lng };
+    const radius = Math.min(Math.max(loc.accuracyMeters || 24, 18), 90);
+    if (!myCircleRef.current) {
+      myCircleRef.current = new google.maps.Circle({
+        map,
+        center: pos,
+        radius,
+        fillColor: '#4285F4',
+        fillOpacity: 0.16,
+        strokeColor: '#4285F4',
+        strokeOpacity: 0.35,
+        strokeWeight: 1,
+        clickable: false,
+        zIndex: 1,
+      });
+    } else {
+      myCircleRef.current.setCenter(pos);
+      myCircleRef.current.setRadius(radius);
+      myCircleRef.current.setMap(map);
+    }
+    if (!myDotRef.current) {
+      myDotRef.current = new google.maps.Marker({
+        map,
+        position: pos,
+        clickable: false,
+        zIndex: 2,
+        title: 'Your location',
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: '#4285F4',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2.5,
+        },
+      });
+    } else {
+      myDotRef.current.setPosition(pos);
+      myDotRef.current.setMap(map);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
     let resizeObserver: ResizeObserver | null = null;
     let sizePoll: number | null = null;
     let dragListener: google.maps.MapsEventListener | null = null;
+    let dragStartListener: google.maps.MapsEventListener | null = null;
 
     const clearNode = () => {
       if (mapElRef.current) {
@@ -51,29 +194,52 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
       const mapInstance = new window.google.maps.Map(el, {
         center: centerRef.current,
         zoom: zoomRef.current,
-        mapTypeControl: true,
-        streetViewControl: true,
-        fullscreenControl: true,
+        mapTypeControl,
+        streetViewControl,
+        fullscreenControl,
+        zoomControl,
         gestureHandling: 'greedy',
+        clickableIcons: !centerPinRef.current,
+        keyboardShortcuts: false,
+        ...(centerPinRef.current ? { styles: GREY_MAP_STYLE } : {}),
       });
-      const markerInstance = new window.google.maps.Marker({
-        position: centerRef.current,
-        map: mapInstance,
-        draggable: true,
-        title: 'Drag to select location',
-      });
-      dragListener = markerInstance.addListener('dragend', () => {
-        const position = markerInstance.getPosition();
-        if (position) {
-          onChangeRef.current?.({
-            lat: position.lat(),
-            lng: position.lng(),
-          });
-        }
-      });
+
+      if (centerPinRef.current) {
+        dragStartListener = mapInstance.addListener('drag', () => {
+          if (liftingRef.current) return;
+          liftingRef.current = true;
+          setLifting(true);
+        });
+        dragListener = mapInstance.addListener('dragend', () => {
+          liftingRef.current = false;
+          setLifting(false);
+          const next = mapInstance.getCenter();
+          if (!next) return;
+          onChangeRef.current?.({ lat: next.lat(), lng: next.lng() });
+        });
+      } else {
+        const markerInstance = new window.google.maps.Marker({
+          position: centerRef.current,
+          map: mapInstance,
+          draggable: true,
+          title: 'Drag to select location',
+          zIndex: 10,
+        });
+        dragListener = markerInstance.addListener('dragend', () => {
+          const position = markerInstance.getPosition();
+          if (position) {
+            onChangeRef.current?.({
+              lat: position.lat(),
+              lng: position.lng(),
+            });
+          }
+        });
+        markerRef.current = markerInstance;
+      }
       mapRef.current = mapInstance;
-      markerRef.current = markerInstance;
+      paintMyLocation(mapInstance, myLocationRef.current);
       setIsMapLoaded(true);
+      onMapReadyRef.current?.(mapInstance);
       window.setTimeout(() => {
         if (cancelled || !mapRef.current) return;
         try {
@@ -126,6 +292,13 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
       cancelled = true;
       resizeObserver?.disconnect();
       if (sizePoll != null) window.clearInterval(sizePoll);
+      if (dragStartListener) {
+        try {
+          google.maps.event.removeListener(dragStartListener);
+        } catch {
+          /* ignore */
+        }
+      }
       if (dragListener) {
         try {
           google.maps.event.removeListener(dragListener);
@@ -135,14 +308,19 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
       }
       markerRef.current?.setMap(null);
       markerRef.current = null;
+      myDotRef.current?.setMap(null);
+      myDotRef.current = null;
+      myCircleRef.current?.setMap(null);
+      myCircleRef.current = null;
+      onMapReadyRef.current?.(null);
       mapRef.current = null;
       clearNode();
     };
   }, []);
 
   useEffect(() => {
-    if (!mapRef.current || !markerRef.current) return;
-    markerRef.current.setPosition(center);
+    if (!mapRef.current) return;
+    if (markerRef.current) markerRef.current.setPosition(center);
     mapRef.current.setCenter(center);
   }, [center.lat, center.lng]);
 
@@ -150,8 +328,27 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
     mapRef.current?.setZoom(zoom);
   }, [zoom]);
 
+  useEffect(() => {
+    if (!cameraNonce || !mapRef.current) return;
+    const next = centerRef.current;
+    markerRef.current?.setPosition(next);
+    mapRef.current.setZoom(zoomRef.current);
+    mapRef.current.panTo(next);
+  }, [cameraNonce]);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    paintMyLocation(mapRef.current, myLocation);
+  }, [myLocation?.lat, myLocation?.lng, myLocation?.accuracyMeters]);
+
   return (
-    <div className="relative w-full overflow-hidden rounded-lg border-2 border-gray-300 shadow-lg">
+    <div
+      className={`relative w-full overflow-hidden ${
+        centerPin
+          ? 'rounded-xl border border-neutral-200 shadow-sm'
+          : 'rounded-lg border-2 border-gray-300 shadow-lg'
+      }`}
+    >
       <div
         ref={mapElRef}
         style={{
@@ -160,6 +357,7 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
           position: 'relative',
         }}
       />
+      {centerPin && isMapLoaded ? <MapCenterPin lifting={lifting} /> : null}
       {!isMapLoaded && (
         <div
           className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100"

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Loader2, LocateFixed, MapPin, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ensureGoogleMapsApi } from '@/lib/googleMapsLink';
@@ -9,10 +8,11 @@ import {
   isGeolocationPositionError,
 } from '@/lib/geolocation';
 import { haversineKm, removePlusCode, googleMapsPinUrl } from '@/lib/maps';
+import DraggableMap from '@/components/DraggableMap';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
 const DEFAULT_ZOOM = 18;
-const NEARBY_BUSINESS_MAX_METERS = 28;
+const NEARBY_BUSINESS_MAX_METERS = 80;
 const GENERIC_PLACE_TYPES = new Set([
   'route',
   'street_address',
@@ -145,7 +145,7 @@ function isNamedBusiness(place: google.maps.places.PlaceResult): boolean {
 
 function findNearbyBusiness(
   location: { lat: number; lng: number },
-  host?: HTMLElement | null
+  host?: HTMLElement | google.maps.Map | null
 ): Promise<{ name: string } | null> {
   return new Promise((resolve) => {
     if (!window.google?.maps?.places?.PlacesService) {
@@ -156,7 +156,7 @@ function findNearbyBusiness(
     const pickClosest = (results: google.maps.places.PlaceResult[] | null) => {
       if (!results?.length) return null;
       let best: { name: string; meters: number } | null = null;
-      for (const place of results.slice(0, 20)) {
+      for (const place of results.slice(0, 24)) {
         const loc = place.geometry?.location;
         if (!loc || !isNamedBusiness(place)) continue;
         const meters =
@@ -169,27 +169,29 @@ function findNearbyBusiness(
       return best;
     };
 
-    const finish = (results: google.maps.places.PlaceResult[] | null) => {
-      const closest = pickClosest(results);
-      resolve(closest ? { name: closest.name } : null);
-    };
-
     try {
-      const el = host || document.createElement('div');
-      const service = new window.google.maps.places.PlacesService(el);
+      const service = new window.google.maps.places.PlacesService(
+        host && 'getCenter' in host
+          ? (host as google.maps.Map)
+          : ((host as HTMLElement | null) || document.createElement('div'))
+      );
+      const finish = (results: google.maps.places.PlaceResult[] | null) => {
+        const closest = pickClosest(results);
+        resolve(closest ? { name: closest.name } : null);
+      };
       service.nearbySearch(
-        {
-          location,
-          rankBy: window.google.maps.places.RankBy.DISTANCE,
-          type: 'establishment',
-        },
+        { location, radius: 120 },
         (results, status) => {
           if (status === window.google.maps.places.PlacesServiceStatus.OK) {
             finish(results);
             return;
           }
           service.nearbySearch(
-            { location, radius: 40 },
+            {
+              location,
+              rankBy: window.google.maps.places.RankBy.DISTANCE,
+              type: 'store',
+            },
             (fallbackResults, fallbackStatus) => {
               if (fallbackStatus !== window.google.maps.places.PlacesServiceStatus.OK) {
                 resolve(null);
@@ -231,200 +233,10 @@ function looksLikeCopiedAddress(house: string, address: string): boolean {
   return /bengaluru|bangalore|karnataka|\blayout\b|\broad\b|\brd\b/.test(h) && h.includes(',');
 }
 
-function CloseButton({ onClick, label }: { onClick: () => void; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white text-neutral-900 shadow-[0_2px_10px_rgba(0,0,0,0.18)] transition-colors duration-200 hover:bg-neutral-50"
-    >
-      <X className="h-5 w-5" strokeWidth={2.25} />
-    </button>
-  );
-}
-
-/** Urban Company-style map pin: target head + needle. Tip of the stem is the map point. */
-function MapCenterPin({ lifting }: { lifting: boolean }) {
-  return (
-    <div
-      className="pointer-events-none absolute left-1/2 top-[46%] z-10 flex flex-col items-center"
-      style={{ transform: 'translate(-50%, calc(-100% + 3px))' }}
-    >
-      <div className="mb-1.5 max-w-[min(16.5rem,calc(100vw-2.5rem))] rounded-md bg-neutral-900 px-3 py-1.5 text-center text-xs font-medium leading-snug text-white shadow-md">
-        Place the pin accurately on map
-      </div>
-      <div
-        className={`flex flex-col items-center motion-reduce:translate-y-0 motion-reduce:transition-none ${
-          lifting ? '-translate-y-2' : 'translate-y-0'
-        }`}
-        style={{ transition: 'transform 180ms ease-out' }}
-      >
-        <svg
-          width="40"
-          height="54"
-          viewBox="0 0 40 54"
-          fill="none"
-          aria-hidden="true"
-          className="drop-shadow-[0_3px_6px_rgba(226,60,82,0.45)]"
-        >
-          <ellipse cx="20" cy="51.5" rx="6" ry="2.2" fill="rgba(0,0,0,0.28)" />
-          <path d="M20 30v19" stroke="#E23C52" strokeWidth="2.4" strokeLinecap="round" />
-          <circle cx="20" cy="16" r="15" fill="#E23C52" />
-          <circle cx="20" cy="16" r="8.2" fill="white" />
-          <circle cx="20" cy="16" r="4.4" fill="#E23C52" />
-        </svg>
-      </div>
-    </div>
-  );
-}
-
-function CenterPinMap({
-  center,
-  zoom,
-  cameraNonce,
-  onIdleCenter,
-}: {
-  center: { lat: number; lng: number };
-  zoom: number;
-  cameraNonce: number;
-  onIdleCenter: (coords: { lat: number; lng: number }) => void;
-}) {
-  const mapElRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const skipIdleRef = useRef(true);
-  const onIdleRef = useRef(onIdleCenter);
-  const centerRef = useRef(center);
-  const zoomRef = useRef(zoom);
-  const [loaded, setLoaded] = useState(false);
-
-  onIdleRef.current = onIdleCenter;
-  centerRef.current = center;
-  zoomRef.current = zoom;
-
-  useEffect(() => {
-    let cancelled = false;
-    let idleListener: google.maps.MapsEventListener | null = null;
-    let resizeObserver: ResizeObserver | null = null;
-    let sizePoll: number | null = null;
-    const mapEl = mapElRef.current;
-
-    const tryCreate = (): boolean => {
-      if (cancelled || mapRef.current || !mapElRef.current) return Boolean(mapRef.current);
-      if (!window.google?.maps?.Map) return false;
-      const el = mapElRef.current;
-      if (el.clientWidth < 8 || el.clientHeight < 8) return false;
-
-      skipIdleRef.current = true;
-      const map = new window.google.maps.Map(el, {
-        center: centerRef.current,
-        zoom: zoomRef.current,
-        disableDefaultUI: true,
-        clickableIcons: false,
-        gestureHandling: 'greedy',
-        scrollwheel: true,
-        disableDoubleClickZoom: false,
-        draggable: true,
-        keyboardShortcuts: false,
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: false,
-        zoomControl: false,
-      });
-      idleListener = map.addListener('idle', () => {
-        if (skipIdleRef.current) {
-          skipIdleRef.current = false;
-          return;
-        }
-        const next = map.getCenter();
-        if (!next) return;
-        onIdleRef.current({ lat: next.lat(), lng: next.lng() });
-      });
-      mapRef.current = map;
-      setLoaded(true);
-      window.setTimeout(() => {
-        if (cancelled || !mapRef.current) return;
-        try {
-          google.maps.event.trigger(mapRef.current, 'resize');
-        } catch {
-          /* ignore */
-        }
-        skipIdleRef.current = true;
-        mapRef.current.setCenter(centerRef.current);
-      }, 80);
-      return true;
-    };
-
-    const watchSize = () => {
-      if (tryCreate()) return;
-      if (mapElRef.current && typeof ResizeObserver !== 'undefined') {
-        resizeObserver = new ResizeObserver(() => {
-          if (tryCreate()) {
-            resizeObserver?.disconnect();
-            resizeObserver = null;
-          }
-        });
-        resizeObserver.observe(mapElRef.current);
-      }
-      sizePoll = window.setInterval(() => {
-        if (tryCreate() || cancelled) {
-          if (sizePoll != null) window.clearInterval(sizePoll);
-          sizePoll = null;
-          resizeObserver?.disconnect();
-          resizeObserver = null;
-        }
-      }, 80);
-    };
-
-    void (async () => {
-      try {
-        await ensureGoogleMapsApi();
-      } catch {
-        if (!cancelled) toast.error('Failed to load Google Maps. Please check your connection.');
-        return;
-      }
-      if (!cancelled) watchSize();
-    })();
-
-    return () => {
-      cancelled = true;
-      resizeObserver?.disconnect();
-      if (sizePoll != null) window.clearInterval(sizePoll);
-      if (idleListener) {
-        try {
-          google.maps.event.removeListener(idleListener);
-        } catch {
-          /* ignore */
-        }
-      }
-      mapRef.current = null;
-      mapEl?.replaceChildren();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!mapRef.current) return;
-    skipIdleRef.current = true;
-    mapRef.current.panTo({ lat: centerRef.current.lat, lng: centerRef.current.lng });
-    mapRef.current.setZoom(zoomRef.current);
-  }, [cameraNonce]);
-
-  return (
-    <div className="relative h-full w-full">
-      <div ref={mapElRef} className="h-full w-full touch-none" />
-      {!loaded && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-neutral-100">
-          <Loader2 className="h-8 w-8 animate-spin text-sky-600" />
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function BookingLocationPicker({
   open,
   onOpenChange,
-  startOn = 'search',
+  startOn: _startOn = 'search',
   initial,
   onSave,
   inlineSearch = false,
@@ -433,7 +245,6 @@ export default function BookingLocationPicker({
   onCancelSearch,
   onRequestSearch,
 }: BookingLocationPickerProps) {
-  const [view, setView] = useState<PickerView>('search');
   const [query, setQuery] = useState('');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searching, setSearching] = useState(false);
@@ -447,6 +258,11 @@ export default function BookingLocationPicker({
   const [title, setTitle] = useState('');
   const [houseFlat, setHouseFlat] = useState('');
   const [landmark, setLandmark] = useState('');
+  const [myLocation, setMyLocation] = useState<{
+    lat: number;
+    lng: number;
+    accuracyMeters?: number;
+  } | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const placesHostRef = useRef<HTMLDivElement>(null);
@@ -460,12 +276,12 @@ export default function BookingLocationPicker({
   );
   const skipNextIdleLabelRef = useRef(false);
   const skipSeedOnOpenRef = useRef(false);
-  const overlayFormRef = useRef<HTMLFormElement>(null);
   const savingRef = useRef(false);
+  const centerLiveRef = useRef(BENGALURU);
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const paintPinLabelRef = useRef<(coords: { lat: number; lng: number }) => void>(() => {});
   const initialRef = useRef(initial);
-  const startOnRef = useRef(startOn);
   initialRef.current = initial;
-  startOnRef.current = startOn;
 
   useEffect(() => {
     if (!open) return;
@@ -474,12 +290,11 @@ export default function BookingLocationPicker({
     } else {
       const seed = initialRef.current;
       const coords = hasCoords(seed?.coordinates) ? seed!.coordinates! : BENGALURU;
-      setView(startOnRef.current);
       setQuery('');
       setPredictions([]);
       setCenter(coords);
+      centerLiveRef.current = coords;
       setZoom(hasCoords(seed?.coordinates) ? DEFAULT_ZOOM : 12);
-      setCameraNonce((n) => n + 1);
       setAddress(seed?.address ? removePlusCode(seed.address) : '');
       setTitle(seed?.address ? removePlusCode(seed.address).split(',')[0].trim() : '');
       const seededHouse = (seed?.houseFlat || '').trim();
@@ -491,34 +306,6 @@ export default function BookingLocationPicker({
       setResolvingPlace(false);
       setGeocoding(false);
     }
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const form = overlayFormRef.current;
-    const viewport = window.visualViewport;
-    if (!form || !viewport) return;
-
-    const syncHeight = () => {
-      if (window.innerWidth >= 640) {
-        form.style.height = '';
-        return;
-      }
-      form.style.height = `${Math.round(viewport.height)}px`;
-    };
-    syncHeight();
-    viewport.addEventListener('resize', syncHeight);
-    viewport.addEventListener('scroll', syncHeight);
-    return () => {
-      viewport.removeEventListener('resize', syncHeight);
-      viewport.removeEventListener('scroll', syncHeight);
-      form.style.height = '';
-    };
   }, [open]);
 
   useEffect(() => {
@@ -529,6 +316,34 @@ export default function BookingLocationPicker({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onOpenChange]);
+
+  useEffect(() => {
+    if (!open || typeof navigator === 'undefined' || !navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const next = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracyMeters: position.coords.accuracy,
+        };
+        setMyLocation((prev) => {
+          if (
+            prev &&
+            haversineKm(prev.lat, prev.lng, next.lat, next.lng) * 1000 < 4 &&
+            Math.abs((prev.accuracyMeters || 0) - (next.accuracyMeters || 0)) < 8
+          ) {
+            return prev;
+          }
+          return next;
+        });
+      },
+      () => {
+        /* permission denied or unavailable — locate button still works */
+      },
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 25000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [open]);
 
   useEffect(() => {
     return () => {
@@ -601,9 +416,10 @@ export default function BookingLocationPicker({
 
   const paintPinLabel = (coords: { lat: number; lng: number }) => {
     const last = lastLabelLookupRef.current;
+    const minMoveMeters = 12;
     if (
       last &&
-      haversineKm(last.lat, last.lng, coords.lat, coords.lng) * 1000 < 16
+      haversineKm(last.lat, last.lng, coords.lat, coords.lng) * 1000 < minMoveMeters
     ) {
       return;
     }
@@ -632,21 +448,24 @@ export default function BookingLocationPicker({
         if (geo) {
           setAddress(geo.address);
           setTitle(geo.title);
-          pinLabelCacheRef.current.set(cacheKey, geo);
         }
         setGeocoding(false);
 
-        void withTimeout(findNearbyBusiness(coords, placesHostRef.current), 1200, null).then(
-          (nearby) => {
-            if (seq !== pinLabelSeqRef.current) return;
-            const merged = mergeBusinessLabel(geo, nearby?.name);
-            if (merged) {
-              setAddress(merged.address);
-              setTitle(merged.title);
-              pinLabelCacheRef.current.set(cacheKey, merged);
-            }
+        void withTimeout(
+          findNearbyBusiness(coords, mapInstanceRef.current || placesHostRef.current),
+          2500,
+          null
+        ).then((nearby) => {
+          if (seq !== pinLabelSeqRef.current) return;
+          const merged = mergeBusinessLabel(geo, nearby?.name);
+          if (merged) {
+            setAddress(merged.address);
+            setTitle(merged.title);
+            pinLabelCacheRef.current.set(cacheKey, merged);
+          } else if (geo) {
+            pinLabelCacheRef.current.set(cacheKey, geo);
           }
-        );
+        });
       })
       .catch(() => {
         if (seq !== pinLabelSeqRef.current) return;
@@ -654,15 +473,16 @@ export default function BookingLocationPicker({
         setGeocoding(false);
       });
   };
+  paintPinLabelRef.current = paintPinLabel;
 
   const applyCoords = async (
     coords: { lat: number; lng: number },
     preset?: { address?: string; title?: string }
   ) => {
     setCenter(coords);
+    centerLiveRef.current = coords;
     setZoom(DEFAULT_ZOOM);
     setCameraNonce((n) => n + 1);
-    setView('map');
     skipSeedOnOpenRef.current = true;
     onOpenChange(true);
     if (preset?.address) {
@@ -726,6 +546,11 @@ export default function BookingLocationPicker({
     try {
       await ensureGoogleMapsApi();
       const loc = await getDeviceLocation();
+      setMyLocation({
+        lat: loc.lat,
+        lng: loc.lng,
+        accuracyMeters: loc.accuracyMeters,
+      });
       await applyCoords({ lat: loc.lat, lng: loc.lng });
     } catch (error) {
       const message = isGeolocationPositionError(error)
@@ -739,8 +564,8 @@ export default function BookingLocationPicker({
     }
   };
 
-  const handleMapIdle = (coords: { lat: number; lng: number }) => {
-    setCenter(coords);
+  const handleMapIdle = useCallback((coords: { lat: number; lng: number }) => {
+    centerLiveRef.current = coords;
     if (skipNextIdleLabelRef.current) {
       skipNextIdleLabelRef.current = false;
       lastLabelLookupRef.current = coords;
@@ -748,19 +573,20 @@ export default function BookingLocationPicker({
     }
     if (geocodeTimerRef.current != null) window.clearTimeout(geocodeTimerRef.current);
     geocodeTimerRef.current = window.setTimeout(() => {
-      paintPinLabel(coords);
-    }, 450);
-  };
+      paintPinLabelRef.current(coords);
+    }, 300);
+  }, []);
 
-  const canSave = houseFlat.trim().length > 0 && hasCoords(center) && Boolean(address.trim());
+  const canSave = houseFlat.trim().length > 0 && hasCoords(centerLiveRef.current) && Boolean(address.trim());
 
   const handleSave = () => {
-    if (!canSave || savingRef.current) return;
+    const pin = centerLiveRef.current;
+    if (!canSave || savingRef.current || !hasCoords(pin)) return;
     savingRef.current = true;
     onSave({
       address: address.trim(),
-      coordinates: center,
-      googleMapsLink: googleMapsPinUrl(center.lat, center.lng),
+      coordinates: pin,
+      googleMapsLink: googleMapsPinUrl(pin.lat, pin.lng),
       houseFlat: houseFlat.trim(),
       landmark: landmark.trim(),
     });
@@ -826,7 +652,7 @@ export default function BookingLocationPicker({
     </>
   );
 
-  const searchCard = inlineSearch ? (
+  const searchCard = inlineSearch && !open ? (
     <div
       className={`rounded-2xl border bg-white p-4 shadow-sm dark:bg-card ${
         invalid ? 'border-red-500' : 'border-neutral-200 dark:border-border'
@@ -896,136 +722,129 @@ export default function BookingLocationPicker({
     </div>
   ) : null;
 
-  const mapOverlay =
-    open && typeof document !== 'undefined' ? (
-      <div
-        className="fixed inset-0 z-[80] flex justify-center overflow-hidden bg-neutral-900/50 overscroll-none sm:items-center sm:p-4"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Place pin on map"
-      >
-        <form
-          ref={overlayFormRef}
-          className="relative flex h-[100svh] w-full max-w-lg flex-col overflow-hidden bg-white text-neutral-900 sm:h-[min(100dvh,840px)] sm:rounded-2xl sm:shadow-2xl"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-          autoComplete="off"
-          onSubmit={(e) => e.preventDefault()}
+  const mapCard = open ? (
+    <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-border dark:bg-card">
+      <p className="mb-3 text-sm text-muted-foreground">
+        Move the map to place the pin on your door. Your location stays as the blue dot.
+      </p>
+      <div className="relative">
+        <DraggableMap
+          center={center}
+          zoom={zoom}
+          height="400px"
+          cameraNonce={cameraNonce}
+          mapTypeControl={false}
+          streetViewControl={false}
+          fullscreenControl={false}
+          zoomControl={false}
+          centerPin
+          myLocation={myLocation}
+          onMapReady={(map) => {
+            mapInstanceRef.current = map;
+            if (!map) return;
+            const pin = centerLiveRef.current;
+            pinLabelCacheRef.current.delete(`${pin.lat.toFixed(4)},${pin.lng.toFixed(4)}`);
+            lastLabelLookupRef.current = null;
+            paintPinLabelRef.current(pin);
+          }}
+          onLocationChange={handleMapIdle}
+        />
+        <button
+          type="button"
+          onClick={() => void handleUseCurrentLocation()}
+          disabled={gpsLoading}
+          aria-label="Use current location"
+          className="absolute bottom-4 right-3 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-sky-600 text-white shadow-[0_2px_10px_rgba(14,165,233,0.45)] transition-colors duration-200 hover:bg-sky-700 disabled:opacity-60"
         >
-          <div className="relative min-h-[28vh] flex-1">
-            <CenterPinMap
-              center={center}
-              zoom={zoom}
-              cameraNonce={cameraNonce}
-              onIdleCenter={handleMapIdle}
-            />
-            <CloseButton onClick={() => onOpenChange(false)} label="Close map" />
-
-            <MapCenterPin lifting={geocoding || gpsLoading} />
-
-            <button
-              type="button"
-              onClick={() => void handleUseCurrentLocation()}
-              disabled={gpsLoading}
-              aria-label="Use current location"
-              className="absolute right-3 top-[max(3.75rem,calc(env(safe-area-inset-top)+3rem))] z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-white text-neutral-900 shadow-[0_2px_10px_rgba(0,0,0,0.18)] transition-colors duration-200 hover:bg-neutral-50 disabled:opacity-60"
-            >
-              {gpsLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <LocateFixed className="h-5 w-5" />
-              )}
-            </button>
-          </div>
-
-          <div className="max-h-[58svh] shrink-0 overflow-y-auto overscroll-contain rounded-t-2xl bg-white px-4 pb-4 pt-2 shadow-[0_-8px_24px_rgba(0,0,0,0.08)]">
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-neutral-300" />
-
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[17px] font-bold leading-snug text-neutral-900">
-                  {geocoding && !title ? 'Finding address…' : title || 'Selected location'}
-                </p>
-                <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-neutral-500">
-                  {geocoding && !address ? 'Updating from the map pin…' : address}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setView('search');
-                  setQuery('');
-                  setPredictions([]);
-                  onOpenChange(false);
-                  onRequestSearch?.();
-                }}
-              className="mt-0.5 min-h-11 shrink-0 cursor-pointer rounded-lg border border-sky-600 px-3.5 py-1.5 text-sm font-medium text-sky-600 transition-colors duration-200 hover:bg-sky-50"
-              >
-                Change
-              </button>
-            </div>
-
-            <input
-              id="booking-house-flat"
-              name="hro-house-flat"
-              value={houseFlat}
-              onChange={(e) => setHouseFlat(e.target.value)}
-              onFocus={(e) => e.currentTarget.scrollIntoView({ block: 'center', behavior: 'smooth' })}
-              placeholder="House/Flat Number*"
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="next"
-              data-1p-ignore="true"
-              data-lpignore="true"
-              maxLength={80}
-              className="mt-3 h-12 w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15"
-            />
-            <input
-              id="booking-landmark"
-              name="hro-landmark"
-              value={landmark}
-              onChange={(e) => setLandmark(e.target.value)}
-              onFocus={(e) => e.currentTarget.scrollIntoView({ block: 'center', behavior: 'smooth' })}
-              placeholder="Landmark (Optional)"
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="done"
-              data-1p-ignore="true"
-              data-lpignore="true"
-              maxLength={80}
-              className="mt-2.5 h-12 w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15"
-            />
-
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!canSave}
-              className={`mt-3 flex h-12 w-full min-h-12 cursor-pointer items-center justify-center rounded-lg text-[15px] font-semibold transition-colors duration-200 ${
-                canSave
-                  ? 'bg-sky-600 text-white hover:bg-sky-700'
-                  : 'cursor-not-allowed bg-neutral-200 text-white'
-              }`}
-            >
-              Save and proceed
-            </button>
-            {!canSave ? (
-              <p className="mt-2 pb-1 text-center text-xs text-neutral-500">
-                {!address.trim()
-                  ? 'Wait for the address, or move the pin slightly.'
-                  : 'Enter your house / flat number to continue.'}
-              </p>
-            ) : null}
-          </div>
-        </form>
+          {gpsLoading ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            <LocateFixed className="h-5 w-5" />
+          )}
+        </button>
       </div>
-    ) : null;
+
+      <div className="mt-4 flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[17px] font-bold leading-snug text-neutral-900 dark:text-foreground">
+            {geocoding && !title ? 'Finding address…' : title || 'Selected location'}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-neutral-500">
+            {geocoding && !address ? 'Updating from the map pin…' : address}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setQuery('');
+            setPredictions([]);
+            onOpenChange(false);
+            onRequestSearch?.();
+          }}
+          className="mt-0.5 min-h-11 shrink-0 cursor-pointer rounded-lg border border-sky-600 px-3.5 py-1.5 text-sm font-medium text-sky-600 transition-colors duration-200 hover:bg-sky-50 dark:hover:bg-sky-950/40"
+        >
+          Change
+        </button>
+      </div>
+
+      <input
+        id="booking-house-flat"
+        name="hro-house-flat"
+        value={houseFlat}
+        onChange={(e) => setHouseFlat(e.target.value)}
+        placeholder="House/Flat Number*"
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        enterKeyHint="next"
+        data-1p-ignore="true"
+        data-lpignore="true"
+        maxLength={80}
+        className="mt-3 h-12 w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 dark:border-border dark:bg-background dark:text-foreground"
+      />
+      <input
+        id="booking-landmark"
+        name="hro-landmark"
+        value={landmark}
+        onChange={(e) => setLandmark(e.target.value)}
+        placeholder="Landmark (Optional)"
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        enterKeyHint="done"
+        data-1p-ignore="true"
+        data-lpignore="true"
+        maxLength={80}
+        className="mt-2.5 h-12 w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 dark:border-border dark:bg-background dark:text-foreground"
+      />
+
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={!canSave}
+        className={`mt-3 flex h-12 w-full min-h-12 cursor-pointer items-center justify-center rounded-lg text-[15px] font-semibold transition-colors duration-200 ${
+          canSave
+            ? 'bg-sky-600 text-white hover:bg-sky-700'
+            : 'cursor-not-allowed bg-neutral-200 text-white'
+        }`}
+      >
+        Save and proceed
+      </button>
+      {!canSave ? (
+        <p className="mt-2 pb-1 text-center text-xs text-neutral-500">
+          {!address.trim()
+            ? 'Wait for the address, or move the map slightly.'
+            : 'Enter your house / flat number to continue.'}
+        </p>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <>
       <div ref={placesHostRef} className="hidden" aria-hidden="true" />
       {searchCard}
-      {mapOverlay && typeof document !== 'undefined' ? createPortal(mapOverlay, document.body) : null}
+      {mapCard}
     </>
   );
 }
