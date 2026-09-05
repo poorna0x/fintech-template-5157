@@ -779,11 +779,20 @@ html body.with-scroll-bars-hidden {
   padding-right: 0 !important;
 }
 
-/* Settings / admin sticky headers must not slide when a dialog opens */
-html body[data-scroll-locked] .admin-page > .sticky {
-  left: 0;
-  right: 0;
-  width: 100%;
+/*
+ * Dialog scroll-lock (overflow:hidden on body) breaks position:sticky — the
+ * Hydrogen RO / Settings bars drop out of the viewport and the full page shows
+ * through the dim overlay. Pin them while locked. AdminHeader is always fixed;
+ * Settings still uses sticky until lock.
+ */
+html body[data-scroll-locked] .admin-page > .sticky,
+html body[data-scroll-locked] .admin-sticky-header {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  margin-right: 0 !important;
 }
 
 body.mobile-nav-open {
