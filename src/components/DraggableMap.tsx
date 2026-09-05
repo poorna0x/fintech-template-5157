@@ -28,8 +28,6 @@ interface DraggableMapProps {
   onMapReady?: (map: google.maps.Map | null) => void;
   /** Center-pin mode: fired when the user starts panning, before the map settles. */
   onMoveStart?: () => void;
-  /** When false, touches pass through so the page can scroll without moving the pin. */
-  interactive?: boolean;
 }
 
 function MapCenterPin({ lifting }: { lifting: boolean }) {
@@ -77,7 +75,6 @@ const DraggableMap = ({
   centerPin = false,
   onMapReady,
   onMoveStart,
-  interactive = true,
 }: DraggableMapProps) => {
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -91,7 +88,6 @@ const DraggableMap = ({
   const centerPinRef = useRef(centerPin);
   const onMapReadyRef = useRef(onMapReady);
   const onMoveStartRef = useRef(onMoveStart);
-  const interactiveRef = useRef(interactive);
   const liftingRef = useRef(false);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [lifting, setLifting] = useState(false);
@@ -103,7 +99,6 @@ const DraggableMap = ({
   centerPinRef.current = centerPin;
   onMapReadyRef.current = onMapReady;
   onMoveStartRef.current = onMoveStart;
-  interactiveRef.current = interactive;
 
   const paintMyLocation = (map: google.maps.Map, loc: DraggableMapProps['myLocation']) => {
     if (!loc) {
@@ -184,7 +179,7 @@ const DraggableMap = ({
         streetViewControl,
         fullscreenControl,
         zoomControl,
-        gestureHandling: interactiveRef.current ? 'greedy' : 'none',
+        gestureHandling: centerPinRef.current ? 'cooperative' : 'greedy',
         clickableIcons: !centerPinRef.current,
         keyboardShortcuts: false,
       });
@@ -352,17 +347,6 @@ const DraggableMap = ({
 
   useEffect(() => {
     if (!mapRef.current) return;
-    mapRef.current.setOptions({
-      gestureHandling: interactive ? 'greedy' : 'none',
-    });
-    if (!interactive) {
-      liftingRef.current = false;
-      setLifting(false);
-    }
-  }, [interactive]);
-
-  useEffect(() => {
-    if (!mapRef.current) return;
     paintMyLocation(mapRef.current, myLocation);
   }, [myLocation?.lat, myLocation?.lng, myLocation?.accuracyMeters]);
 
@@ -380,7 +364,6 @@ const DraggableMap = ({
           height,
           width: '100%',
           position: 'relative',
-          pointerEvents: interactive ? 'auto' : 'none',
         }}
       />
       {centerPin && isMapLoaded ? <MapCenterPin lifting={lifting} /> : null}

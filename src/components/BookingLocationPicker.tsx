@@ -233,10 +233,6 @@ function looksLikeCopiedAddress(house: string, address: string): boolean {
   return /bengaluru|bangalore|karnataka|\blayout\b|\broad\b|\brd\b/.test(h) && h.includes(',');
 }
 
-function isTouchPrimary(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
-}
-
 export default function BookingLocationPicker({
   open,
   onOpenChange,
@@ -267,8 +263,6 @@ export default function BookingLocationPicker({
     lng: number;
     accuracyMeters?: number;
   } | null>(null);
-  const [touchMap, setTouchMap] = useState(false);
-  const [mapInteractive, setMapInteractive] = useState(true);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const placesHostRef = useRef<HTMLDivElement>(null);
@@ -312,9 +306,6 @@ export default function BookingLocationPicker({
       setResolvingPlace(false);
       setGeocoding(false);
     }
-    const touch = isTouchPrimary();
-    setTouchMap(touch);
-    setMapInteractive(!touch);
   }, [open]);
 
   useEffect(() => {
@@ -739,9 +730,7 @@ export default function BookingLocationPicker({
   const mapCard = open ? (
     <div className="w-full overflow-hidden bg-white dark:bg-card">
       <p className="px-4 pb-3 pt-1 text-sm text-muted-foreground sm:px-6">
-        {touchMap
-          ? 'Scroll freely for house / flat. Tap Move pin only if you need to adjust.'
-          : 'Move the map to place the pin on your door. Your location stays as the blue dot.'}
+        Use two fingers to move the pin. One finger scrolls the page.
       </p>
       <div className="relative w-full">
         <DraggableMap
@@ -754,7 +743,6 @@ export default function BookingLocationPicker({
           fullscreenControl={false}
           zoomControl={false}
           centerPin
-          interactive={mapInteractive}
           myLocation={myLocation}
           onMapReady={(map) => {
             mapInstanceRef.current = map;
@@ -767,33 +755,11 @@ export default function BookingLocationPicker({
           onMoveStart={() => setGeocoding(true)}
           onLocationChange={handleMapIdle}
         />
-        {touchMap && !mapInteractive ? (
-          <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-3">
-            <span className="rounded-full bg-black/55 px-3 py-1 text-[12px] font-medium text-white shadow">
-              Scroll the page · pin stays put
-            </span>
-          </div>
-        ) : null}
-        {touchMap && mapInteractive ? (
-          <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-3">
-            <span className="rounded-full bg-sky-600 px-3 py-1 text-[12px] font-medium text-white shadow">
-              Drag to place pin · tap Done to scroll
-            </span>
-          </div>
-        ) : null}
-        {touchMap ? (
-          <button
-            type="button"
-            onClick={() => setMapInteractive((on) => !on)}
-            className={`absolute bottom-4 left-3 z-10 min-h-11 cursor-pointer rounded-full px-3.5 text-sm font-semibold shadow-[0_2px_10px_rgba(0,0,0,0.18)] transition-colors duration-200 ${
-              mapInteractive
-                ? 'bg-white text-sky-700 hover:bg-sky-50'
-                : 'bg-sky-600 text-white hover:bg-sky-700'
-            }`}
-          >
-            {mapInteractive ? 'Done' : 'Move pin'}
-          </button>
-        ) : null}
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-3 sm:hidden">
+          <span className="rounded-full bg-black/55 px-3 py-1 text-[12px] font-medium text-white shadow">
+            Two fingers to move pin
+          </span>
+        </div>
         <button
           type="button"
           onClick={() => void handleUseCurrentLocation()}
@@ -845,9 +811,6 @@ export default function BookingLocationPicker({
         name="hro-house-flat"
         value={houseFlat}
         onChange={(e) => setHouseFlat(e.target.value)}
-        onFocus={() => {
-          if (touchMap) setMapInteractive(false);
-        }}
         placeholder="House/Flat Number*"
         autoComplete="off"
         autoCorrect="off"
@@ -863,9 +826,6 @@ export default function BookingLocationPicker({
         name="hro-landmark"
         value={landmark}
         onChange={(e) => setLandmark(e.target.value)}
-        onFocus={() => {
-          if (touchMap) setMapInteractive(false);
-        }}
         placeholder="Landmark (Optional)"
         autoComplete="off"
         autoCorrect="off"
