@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { draftHasData } from '@/lib/addCustomerDraft';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  ADD_CUSTOMER_DRAFT_KEY,
+  draftHasData,
+  loadAddCustomerDraft,
+  persistAddCustomerDraft,
+} from '@/lib/addCustomerDraft';
 
 describe('draftHasData', () => {
   it('ignores empty draft', () => {
@@ -43,5 +48,43 @@ describe('draftHasData', () => {
 
   it('detects non-RO service type alone', () => {
     expect(draftHasData({ addFormData: { service_types: ['SOFTENER'] } })).toBe(true);
+  });
+});
+
+describe('persistAddCustomerDraft', () => {
+  const store = new Map<string, string>();
+
+  beforeEach(() => {
+    store.clear();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+    });
+  });
+
+  it('saves when form has phone', () => {
+    persistAddCustomerDraft({ addFormData: { phone: '9876543210' } });
+    expect(loadAddCustomerDraft()?.addFormData?.phone).toBe('9876543210');
+  });
+
+  it('removes draft when cleared to empty', () => {
+    persistAddCustomerDraft({ addFormData: { phone: '9876543210' } });
+    persistAddCustomerDraft({
+      addFormData: {
+        phone: '',
+        email: '',
+        address: '',
+        visible_address: '',
+        google_location: '',
+        service_types: ['RO'],
+      },
+    });
+    expect(store.has(ADD_CUSTOMER_DRAFT_KEY)).toBe(false);
+    expect(loadAddCustomerDraft()).toBeNull();
   });
 });

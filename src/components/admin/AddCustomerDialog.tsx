@@ -50,11 +50,13 @@ import {
   clearAddCustomerDraft,
   draftHasData,
   loadAddCustomerDraft,
-  saveAddCustomerDraft,
+  persistAddCustomerDraft,
 } from '@/lib/addCustomerDraft';
 import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
+  filterBrandSuggestions,
+  filterModelSuggestions,
 } from '@/lib/equipment-suggestions';
 import { getDefaultNewJobScheduledDate, getIstCalendarDate } from '@/lib/adminDashboardDateHelpers';
 import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
@@ -205,6 +207,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
   const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+  /** Which service row owns the open suggestion list (RO / SOFTENER). */
+  const [suggestForService, setSuggestForService] = useState<string | null>(null);
   const [duplicateFoundOnBlur, setDuplicateFoundOnBlur] = useState<Customer | null>(null);
   // When the dialog opens with a saved (uncreated) draft, ask whether to resume or start fresh.
   const [showResumePrompt, setShowResumePrompt] = useState(false);
@@ -402,9 +406,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   // Persist only after open-gate finishes and not while the resume prompt is up,
   // so we never overwrite a real draft with empty/stale in-memory form during open.
+  // Empty / cleared forms remove the draft so Resume does not come back after X clear.
   useEffect(() => {
     if (!open || !openGateReady || showResumePrompt) return;
-    saveAddCustomerDraft({ addFormData, step5JobData, currentStep, shouldCreateJob });
+    persistAddCustomerDraft({ addFormData, step5JobData, currentStep, shouldCreateJob });
   }, [open, openGateReady, showResumePrompt, addFormData, step5JobData, currentStep, shouldCreateJob]);
 
   // Keep ref synced with the latest google_location so async handlers can read
@@ -688,32 +693,39 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   const clearAutofilledCustomerFields = () => {
     const flags = autofilledRef.current;
-    // Bump generation so an in-flight Maps fetch cannot repopulate cleared fields.
+    // Bump generation so an in-flight Maps fetch / clipboard paste cannot repopulate.
     autofillGenerationRef.current += 1;
-    setAddFormData((prev) => {
-      const next = { ...prev };
-      // X on phone always clears phone, plus any other auto-filled fields.
-      next.phone = '';
-      if (flags.email) next.email = '';
-      if (flags.maps) {
-        next.google_location = '';
-        googleLocationRef.current = '';
-        mapsShareTextRef.current = '';
-        fetchedCoordsRef.current = null;
-      }
-      if (flags.address) next.address = '';
-      if (flags.visible_address) {
-        next.visible_address = '';
-        locationManuallyEditedRef.current = false;
-      }
-      return next;
-    });
+    const prev = addFormDataRef.current;
+    const next = { ...prev };
+    // X on phone always clears phone, plus any other auto-filled fields.
+    next.phone = '';
+    if (flags.email) next.email = '';
+    if (flags.maps) {
+      next.google_location = '';
+      googleLocationRef.current = '';
+      mapsShareTextRef.current = '';
+      fetchedCoordsRef.current = null;
+    }
+    if (flags.address) next.address = '';
+    if (flags.visible_address) {
+      next.visible_address = '';
+      locationManuallyEditedRef.current = false;
+    }
+    setAddFormData(next);
+    addFormDataRef.current = next;
     autofilledRef.current = {};
+    // Sync localStorage immediately — do not wait for the effect (close can race it).
+    persistAddCustomerDraft({
+      addFormData: next,
+      step5JobData,
+      currentStep,
+      shouldCreateJob,
+    });
     // Keep lastAutoClipFpRef so the same clipboard item is not re-applied after X.
     setHasAutofilledPhone(false);
     setDuplicateFoundOnBlur(null);
     if (formErrors.phone) {
-      setFormErrors((prev) => ({ ...prev, phone: '' }));
+      setFormErrors((prevErr) => ({ ...prevErr, phone: '' }));
     }
   };
 
@@ -893,11 +905,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
       const { coords, didExpandShortLink, placeHintUsed, placeName } = resolved;
       const stableMapsLink = `https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`;
+      if (fromAutofill && generationAtStart !== autofillGenerationRef.current) return;
+      setAddFormData((prev) => {
+        // Re-check inside updater: clear X can land between the await and this write.
+        if (fromAutofill && generationAtStart !== autofillGenerationRef.current) return prev;
+        return { ...prev, google_location: stableMapsLink };
+      });
+      if (fromAutofill && generationAtStart !== autofillGenerationRef.current) return;
       fetchedCoordsRef.current = {
         latitude: coords.latitude,
         longitude: coords.longitude,
       };
-      setAddFormData((prev) => ({ ...prev, google_location: stableMapsLink }));
       googleLocationRef.current = stableMapsLink;
       if (!quiet && didExpandShortLink) {
         toast.info('Short link expanded');
@@ -937,6 +955,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       });
 
       setAddFormData((prev) => {
+        if (fromAutofill && generationAtStart !== autofillGenerationRef.current) return prev;
         const canWriteAddress =
           !fromAutofill || !prev.address.trim() || Boolean(autofilledRef.current.address);
         const canWriteVisible =
@@ -1015,6 +1034,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     // Freshness needs Android clip timestamp — skip on web / old APKs without it.
     if (!Capacitor.isNativePlatform()) return;
 
+    const generationAtStart = autofillGenerationRef.current;
     autoFillInFlightRef.current = true;
     try {
       let text = '';
@@ -1026,8 +1046,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       } catch {
         return;
       }
-      // Dialog may have closed while we were reading the clipboard.
+      // Dialog may have closed / user hit clear X while we were reading the clipboard.
       if (!dialogIsOpen()) return;
+      if (generationAtStart !== autofillGenerationRef.current) return;
       if (!text.trim() || !isFreshClipboardTimestamp(timestampMs)) return;
 
       const fp = clipboardFingerprint(text);
@@ -1050,6 +1071,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
 
       if (!dialogIsOpen()) return;
+      if (generationAtStart !== autofillGenerationRef.current) return;
 
       if (nextPhone) autofilledRef.current.phone = true;
       if (nextEmail) autofilledRef.current.email = true;
@@ -1059,13 +1081,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         mapsShareTextRef.current = text;
       }
 
-      setAddFormData((prev) => ({
-        ...prev,
-        ...(nextPhone ? { phone: nextPhone } : null),
-        ...(nextEmail ? { email: nextEmail } : null),
-        ...(nextMaps ? { google_location: nextMaps } : null),
-      }));
+      setAddFormData((prev) => {
+        if (generationAtStart !== autofillGenerationRef.current) return prev;
+        return {
+          ...prev,
+          ...(nextPhone ? { phone: nextPhone } : null),
+          ...(nextEmail ? { email: nextEmail } : null),
+          ...(nextMaps ? { google_location: nextMaps } : null),
+        };
+      });
 
+      if (generationAtStart !== autofillGenerationRef.current) return;
       if (nextPhone) setHasAutofilledPhone(true);
       lastAutoClipFpRef.current = fp;
 
@@ -1175,51 +1201,57 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const handleBrandInput = (serviceType: string, value: string) => {
+    setSuggestForService(serviceType);
     if (value.trim() === '') {
+      setBrandSuggestions([]);
       setShowBrandSuggestions(false);
       return;
     }
-    
-    const searchTerm = value.toLowerCase();
-    const allLocalBrands: string[] = [];
-    Object.values(brandData).forEach(brands => {
-      allLocalBrands.push(...brands);
-    });
-    
-    const filtered = allLocalBrands.filter(brand => 
-      brand.toLowerCase().includes(searchTerm) && 
-      brand.toLowerCase() !== searchTerm.toLowerCase()
-    ).slice(0, 10);
-    
+
+    const term = value.trim().toLowerCase();
+    const firstLetter = value.trim().charAt(0).toUpperCase();
+    const letterBucket = brandData[firstLetter] || [];
+    const fromLetter = letterBucket.filter(
+      (brand) => brand.toLowerCase().includes(term) && brand.toLowerCase() !== term
+    );
+    const filtered =
+      fromLetter.length > 0
+        ? fromLetter.slice(0, 12)
+        : filterBrandSuggestions(value);
     setBrandSuggestions(filtered);
     setShowBrandSuggestions(filtered.length > 0);
   };
 
   const handleModelInput = (serviceType: string, value: string) => {
-    if (value.trim() === '') {
+    setSuggestForService(serviceType);
+    const brand = addFormDataRef.current.equipment[serviceType]?.brand || '';
+    if (!brand.trim()) {
+      setModelSuggestions([]);
       setShowModelSuggestions(false);
       return;
     }
-    
-    const searchTerm = value.toLowerCase();
-    const brand = addFormData.equipment[serviceType]?.brand || '';
-    
-    const localModels: string[] = [];
-    if (serviceType && brand && modelData[serviceType as keyof typeof modelData]) {
-      const serviceModels = modelData[serviceType as keyof typeof modelData] as Record<string, string[]>;
-      const brandKey = Object.keys(serviceModels).find(key => 
-        key.toLowerCase() === brand.toLowerCase()
-      );
-      if (brandKey && serviceModels[brandKey]) {
-        localModels.push(...(serviceModels[brandKey] || []));
-      }
+
+    const serviceModels = modelData[serviceType as keyof typeof modelData] as
+      | Record<string, string[]>
+      | undefined;
+    const brandKey = serviceModels
+      ? Object.keys(serviceModels).find((key) => key.toLowerCase() === brand.toLowerCase())
+      : undefined;
+    const brandModels = brandKey && serviceModels ? serviceModels[brandKey] || [] : [];
+
+    if (value.trim() === '') {
+      // Empty + known brand: show a short browse list (mobile often focuses before typing).
+      const browse = brandModels.slice(0, 12);
+      setModelSuggestions(browse);
+      setShowModelSuggestions(browse.length > 0);
+      return;
     }
-    
-    const filtered = localModels.filter(model => 
-      model.toLowerCase().includes(searchTerm) && 
-      model.toLowerCase() !== searchTerm.toLowerCase()
-    ).slice(0, 10);
-    
+
+    const filtered = filterModelSuggestions(
+      serviceType as 'RO' | 'SOFTENER',
+      brand,
+      value
+    );
     setModelSuggestions(filtered);
     setShowModelSuggestions(filtered.length > 0);
   };
@@ -1227,11 +1259,29 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const selectBrand = (serviceType: string, brand: string) => {
     handleEquipmentChange(serviceType, 'brand', brand);
     setShowBrandSuggestions(false);
+    setShowModelSuggestions(false);
+    setModelSuggestions([]);
+    setSuggestForService(null);
   };
 
   const selectModel = (serviceType: string, model: string) => {
     handleEquipmentChange(serviceType, 'model', model);
     setShowModelSuggestions(false);
+    setSuggestForService(null);
+  };
+
+  const focusEquipmentField = (
+    serviceType: string,
+    field: 'brand' | 'model',
+    el: HTMLElement | null
+  ) => {
+    // Keep field above the soft keyboard / footer so the list is visible.
+    window.setTimeout(() => {
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 50);
+    const value = addFormDataRef.current.equipment[serviceType]?.[field] || '';
+    if (field === 'brand') handleBrandInput(serviceType, value);
+    else handleModelInput(serviceType, value);
   };
 
   const handleServiceTypeToggle = (serviceType: string) => {
@@ -1854,8 +1904,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   return (
     <>
+    {/* Separate popup (not inside Add Customer) — choose before the form opens. */}
     <AlertDialog
-      open={showResumePrompt}
+      open={Boolean(open && showResumePrompt)}
       onOpenChange={(o) => {
         // Dismiss without choosing = keep the draft already loaded (same as Resume).
         if (!o) setShowResumePrompt(false);
@@ -1865,7 +1916,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         <AlertDialogHeader>
           <AlertDialogTitle>Resume previous entry?</AlertDialogTitle>
           <AlertDialogDescription>
-            You have unsaved customer details from before that weren't created yet.
+            You have unsaved customer details from before that weren&apos;t created yet.
             {(addFormData.full_name?.trim() || addFormData.phone?.trim()) ? (
               <span className="block mt-2 font-medium text-foreground">
                 {[addFormData.full_name?.trim(), addFormData.phone?.trim()].filter(Boolean).join(' · ')}
@@ -1887,7 +1938,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-    <Dialog open={open} onOpenChange={onOpenChange}>
+
+    <Dialog
+      open={Boolean(open && openGateReady && !showResumePrompt)}
+      onOpenChange={onOpenChange}
+    >
       <DialogContent
         dismissible={false}
         hideCloseButton
@@ -1960,7 +2015,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             })}
           </div>
         </DialogHeader>
-        
+
         <div className="py-6 px-2 sm:px-4 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
           {/* Step 1: Personal Information */}
           {currentStep === 1 && (
@@ -2274,63 +2329,87 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-2 relative">
+                          <div className="space-y-2">
                             <Label htmlFor={`brand_${serviceType}`}>Brand</Label>
-                            <Input
-                              id={`brand_${serviceType}`}
-                              value={equipment.brand}
-                              onChange={(e) => handleEquipmentChange(serviceType, 'brand', e.target.value)}
-                              autoCapitalize="sentences"
-                              placeholder={`Enter ${serviceType} brand`}
-                              className={formErrors[`equipment.${serviceType}.brand`] ? 'border-red-500' : ''}
-                              onBlur={() => {
-                                setTimeout(() => setShowBrandSuggestions(false), 200);
-                              }}
-                            />
-                            {showBrandSuggestions && brandSuggestions.length > 0 && (
-                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto [scrollbar-gutter:stable]">
-                                {brandSuggestions.map((brand, index) => (
-                                  <div
-                                    key={index}
-                                    className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
-                                    onClick={() => selectBrand(serviceType, brand)}
-                                  >
-                                    {brand}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                            <div className="relative z-20">
+                              <Input
+                                id={`brand_${serviceType}`}
+                                value={equipment.brand}
+                                onChange={(e) => handleEquipmentChange(serviceType, 'brand', e.target.value)}
+                                onFocus={(e) => focusEquipmentField(serviceType, 'brand', e.currentTarget)}
+                                autoCapitalize="words"
+                                autoCorrect="off"
+                                autoComplete="off"
+                                spellCheck={false}
+                                placeholder={`Enter ${serviceType} brand`}
+                                className={formErrors[`equipment.${serviceType}.brand`] ? 'border-red-500' : ''}
+                                onBlur={() => {
+                                  setTimeout(() => setShowBrandSuggestions(false), 200);
+                                }}
+                              />
+                              {suggestForService === serviceType &&
+                                showBrandSuggestions &&
+                                brandSuggestions.length > 0 && (
+                                <div className="absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-md border border-border bg-card shadow-lg [scrollbar-gutter:stable]">
+                                  {brandSuggestions.map((brand, index) => (
+                                    <button
+                                      key={index}
+                                      type="button"
+                                      className="w-full px-3 py-2.5 text-left text-sm text-foreground hover:bg-accent hover:text-accent-foreground touch-manipulation"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        selectBrand(serviceType, brand);
+                                      }}
+                                    >
+                                      {brand}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                             {formErrors?.[`equipment.${serviceType}.brand`] && (
                               <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.brand`]}</p>
                             )}
                           </div>
 
-                          <div className="space-y-2 relative">
+                          <div className="space-y-2">
                             <Label htmlFor={`model_${serviceType}`}>Model</Label>
-                            <Input
-                              id={`model_${serviceType}`}
-                              value={equipment.model}
-                              onChange={(e) => handleEquipmentChange(serviceType, 'model', e.target.value)}
-                              autoCapitalize="sentences"
-                              placeholder={`Enter ${serviceType} model`}
-                              className={formErrors[`equipment.${serviceType}.model`] ? 'border-red-500' : ''}
-                              onBlur={() => {
-                                setTimeout(() => setShowModelSuggestions(false), 200);
-                              }}
-                            />
-                            {showModelSuggestions && modelSuggestions.length > 0 && (
-                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto [scrollbar-gutter:stable]">
-                                {modelSuggestions.map((model, index) => (
-                                  <div
-                                    key={index}
-                                    className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
-                                    onClick={() => selectModel(serviceType, model)}
-                                  >
-                                    {model}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                            <div className="relative z-20">
+                              <Input
+                                id={`model_${serviceType}`}
+                                value={equipment.model}
+                                onChange={(e) => handleEquipmentChange(serviceType, 'model', e.target.value)}
+                                onFocus={(e) => focusEquipmentField(serviceType, 'model', e.currentTarget)}
+                                autoCapitalize="words"
+                                autoCorrect="off"
+                                autoComplete="off"
+                                spellCheck={false}
+                                placeholder={`Enter ${serviceType} model`}
+                                className={formErrors[`equipment.${serviceType}.model`] ? 'border-red-500' : ''}
+                                onBlur={() => {
+                                  setTimeout(() => setShowModelSuggestions(false), 200);
+                                }}
+                              />
+                              {suggestForService === serviceType &&
+                                showModelSuggestions &&
+                                modelSuggestions.length > 0 && (
+                                <div className="absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-md border border-border bg-card shadow-lg [scrollbar-gutter:stable]">
+                                  {modelSuggestions.map((model, index) => (
+                                    <button
+                                      key={index}
+                                      type="button"
+                                      className="w-full px-3 py-2.5 text-left text-sm text-foreground hover:bg-accent hover:text-accent-foreground touch-manipulation"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        selectModel(serviceType, model);
+                                      }}
+                                    >
+                                      {model}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                             {formErrors?.[`equipment.${serviceType}.model`] && (
                               <p className="text-sm text-red-500">{formErrors[`equipment.${serviceType}.model`]}</p>
                             )}

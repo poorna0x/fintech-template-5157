@@ -46,6 +46,18 @@ export function saveAddCustomerDraft(payload: AddCustomerDraft): void {
 }
 
 /**
+ * Persist a draft only when it has resume-worthy data; otherwise remove it
+ * so clearing autofill / emptying the form does not leave a stale Resume prompt.
+ */
+export function persistAddCustomerDraft(payload: AddCustomerDraft): void {
+  if (draftHasData(payload)) {
+    saveAddCustomerDraft(payload);
+  } else {
+    clearAddCustomerDraft();
+  }
+}
+
+/**
  * Whether a saved draft holds enough typed info to be worth resuming.
  * Default RO-only (no name/phone/address) is not worth a resume prompt.
  */
