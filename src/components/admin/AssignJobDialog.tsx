@@ -12,6 +12,7 @@ import { db } from '@/lib/supabase';
 import { getFreshGoogleMapsLinkForJobRow, getLocationUnavailableMessage, jobRowNeedsMapsLinkResolve, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
+import { openGoogleMapsDirectionsBetween, readLocationLatLng } from '@/lib/maps';
 
 interface AssignJobDialogProps {
   open: boolean;
@@ -430,6 +431,38 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
     }
   };
 
+  /** Shift+click a technician → Google Maps driving route from their pin to this job. */
+  const openTechnicianRouteToJob = async (technician: Technician) => {
+    const techLoc =
+      readLocationLatLng((technician as any).current_location) ||
+      readLocationLatLng(technician.currentLocation);
+    if (!techLoc) {
+      toast.error(
+        `${technician.fullName || 'Technician'} has no current location on file`
+      );
+      return;
+    }
+
+    const loading = toast.loading('Opening route in Maps…');
+    try {
+      const resolved = await resolveJobLatLngFromRow(job, {
+        getJobByIdFull: db.jobs.getByIdFull,
+      });
+      toast.dismiss(loading);
+      if (!resolved) {
+        toast.error(getLocationUnavailableMessage(job));
+        return;
+      }
+      openGoogleMapsDirectionsBetween(techLoc, {
+        lat: resolved.lat,
+        lng: resolved.lng,
+      });
+    } catch {
+      toast.dismiss(loading);
+      toast.error('Could not open route');
+    }
+  };
+
   const assignedId = (job as any)?.assigned_technician_id || job?.assignedTechnicianId;
   const inactiveTechnicians = (techniciansWithDistances.length > 0 ? techniciansWithDistances : technicians).filter(
     (tech) => isActiveTechnicianAccount(tech) || (assignedId && tech.id === assignedId)
@@ -555,7 +588,17 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                   inactiveTechnicians.map((technician) => {
                     const techWithDist = technician as TechnicianWithDistance;
                     return (
-                      <SelectItem key={technician.id} value={technician.id || 'unknown'}>
+                      <SelectItem
+                        key={technician.id}
+                        value={technician.id || 'unknown'}
+                        title="Shift+click to open this tech → customer route in Google Maps"
+                        onPointerDown={(e) => {
+                          if (!e.shiftKey) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void openTechnicianRouteToJob(technician);
+                        }}
+                      >
                         <div className="flex items-center justify-between w-full gap-2">
                           <span className="truncate flex-1 min-w-0">{technician.fullName || 'Unknown Technician'}</span>
                           {techWithDist.distance && techWithDist.distance !== 'N/A' && (
@@ -574,11 +617,12 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 )}
               </SelectContent>
             </Select>
-            {techniciansWithDistances.length > 0 && (
-              <div className="text-xs text-muted-foreground mt-1">
-                Technicians sorted by distance from job location
-              </div>
-            )}
+            <div className="text-xs text-muted-foreground mt-1">
+              {techniciansWithDistances.length > 0
+                ? 'Technicians sorted by distance from job location. '
+                : null}
+              Shift+click a technician to open their current location → customer in Google Maps.
+            </div>
           </div>
         </div>
         
