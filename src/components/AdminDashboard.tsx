@@ -11,6 +11,11 @@ import { useAdminJobsRealtime } from '@/hooks/useAdminJobsRealtime';
 import { useClearAdminModalOnIOSBackground } from '@/hooks/useClearAdminModalOnIOSBackground';
 import AdminHeader from '@/components/AdminHeader';
 import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
+import {
+  LIVE_BOOKING_BANNER_CHANGED_EVENT,
+  fetchLiveBookingBannerEnabled,
+  readLiveBookingBannerEnabledCached,
+} from '@/lib/liveBookingBannerSettings';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -397,6 +402,9 @@ const AdminDashboard = () => {
   const [followUpDisplaySettings, setFollowUpDisplaySettings] = useState(
     readFollowUpDisplaySettings
   );
+  const [liveBookingBannerEnabled, setLiveBookingBannerEnabled] = useState(
+    readLiveBookingBannerEnabledCached
+  );
   useEffect(() => {
     const onChanged = (event: Event) => {
       const detail = (event as CustomEvent<FollowUpDisplaySettings>).detail;
@@ -405,6 +413,23 @@ const AdminDashboard = () => {
     window.addEventListener(FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT, onChanged);
     return () =>
       window.removeEventListener(FOLLOW_UP_DISPLAY_SETTINGS_CHANGED_EVENT, onChanged);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchLiveBookingBannerEnabled().then(({ enabled }) => {
+      if (!cancelled) setLiveBookingBannerEnabled(enabled);
+    });
+    const onChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled: boolean }>).detail;
+      if (detail && typeof detail.enabled === 'boolean') {
+        setLiveBookingBannerEnabled(detail.enabled);
+      }
+    };
+    window.addEventListener(LIVE_BOOKING_BANNER_CHANGED_EVENT, onChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(LIVE_BOOKING_BANNER_CHANGED_EVENT, onChanged);
+    };
   }, []);
   const [technicians, setTechnicians] = useState<Technician[]>(() => {
     if (!initialDashboardCache?.technicianRows) return [];
@@ -6785,7 +6810,7 @@ const AdminDashboard = () => {
       <AdminHeader onLogoClick={() => void handleManualRefresh()} />
       
       <main className="container mx-auto px-4 py-4 sm:py-8">
-        {isAdmin && (
+        {isAdmin && liveBookingBannerEnabled && (
           <WebsiteBookingIntentBanner
             playAlert={playNotificationSound}
             stopAlert={stopNotificationSound}

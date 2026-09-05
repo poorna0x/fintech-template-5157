@@ -43,7 +43,8 @@ import {
   Database,
   Star,
   Sparkles,
-  ChevronDown
+  ChevronDown,
+  Megaphone
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -111,6 +112,10 @@ import {
   fetchPdfCompressionEnabled,
   savePdfCompressionEnabled,
 } from '@/lib/pdfCompressionSettings';
+import {
+  fetchLiveBookingBannerEnabled,
+  saveLiveBookingBannerEnabled,
+} from '@/lib/liveBookingBannerSettings';
 import { fetchOfficeLocation, saveOfficeLocation } from '@/lib/officeLocationSettings';
 import {
   extractCoordinatesFromGoogleMapsLink,
@@ -352,6 +357,8 @@ const Settings = () => {
   const [jobWaNotifySaving, setJobWaNotifySaving] = useState(false);
   const [pdfCompressionEnabled, setPdfCompressionEnabled] = useState(true);
   const [pdfCompressionSaving, setPdfCompressionSaving] = useState(false);
+  const [liveBookingBannerEnabled, setLiveBookingBannerEnabled] = useState(true);
+  const [liveBookingBannerSaving, setLiveBookingBannerSaving] = useState(false);
   const [officeMapsUrl, setOfficeMapsUrl] = useState('');
   const [officeLatLng, setOfficeLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [officeSaving, setOfficeSaving] = useState(false);
@@ -696,6 +703,9 @@ const Settings = () => {
     void fetchPdfCompressionEnabled().then(({ enabled }) => {
       if (!cancelled) setPdfCompressionEnabled(enabled);
     });
+    void fetchLiveBookingBannerEnabled().then(({ enabled }) => {
+      if (!cancelled) setLiveBookingBannerEnabled(enabled);
+    });
     void fetchOfficeLocation().then(({ office }) => {
       if (cancelled || !office) return;
       setOfficeLatLng({ lat: office.lat, lng: office.lng });
@@ -756,6 +766,27 @@ const Settings = () => {
       );
     } finally {
       setJobWaNotifySaving(false);
+    }
+  };
+
+  const handleLiveBookingBannerToggle = async (enabled: boolean) => {
+    const previous = liveBookingBannerEnabled;
+    setLiveBookingBannerEnabled(enabled);
+    setLiveBookingBannerSaving(true);
+    try {
+      const result = await saveLiveBookingBannerEnabled(enabled);
+      if (!result.ok) {
+        setLiveBookingBannerEnabled(previous);
+        toast.error(result.error || 'Could not save live booking banner setting');
+        return;
+      }
+      toast.success(
+        enabled
+          ? 'Live booking banner enabled on the dashboard'
+          : 'Live booking banner hidden on the dashboard'
+      );
+    } finally {
+      setLiveBookingBannerSaving(false);
     }
   };
 
@@ -3803,7 +3834,7 @@ const Settings = () => {
                 Dashboard Settings
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                Dashboard display, PDF compression, and job WhatsApp preferences
+                Dashboard display, live booking banner, PDF compression, and job WhatsApp preferences
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 space-y-3">
@@ -3848,6 +3879,32 @@ const Settings = () => {
                   className="ml-2 sm:ml-6 shrink-0 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>
+
+              {!isManager ? (
+              <div
+                id="live-booking-banner"
+                className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700"
+              >
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2 flex items-center gap-2">
+                    <Megaphone className="w-4 h-4 shrink-0" />
+                    Live booking banner
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
+                    Show the live website booking banner at the top of the admin dashboard when
+                    someone is filling /book. Applies for every admin. Off hides it without
+                    deleting records — the Done booking archive still keeps completed rows.
+                  </p>
+                </div>
+                <Switch
+                  checked={liveBookingBannerEnabled}
+                  disabled={liveBookingBannerSaving}
+                  onCheckedChange={(v) => void handleLiveBookingBannerToggle(v)}
+                  aria-label="Live booking banner"
+                  className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
+                />
+              </div>
+              ) : null}
 
               {!isManager ? (
               <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
