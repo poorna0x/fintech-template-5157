@@ -1,6 +1,10 @@
 import { Customer } from '@/types';
 import { extractCoordinates } from '@/lib/maps';
-import { getMapsSearchLinkFromAddress, resolveJobDestinationCoordsAsync } from '@/lib/jobLocationHelpers';
+import {
+  getLocationLinkFromObject,
+  getMapsSearchLinkFromAddress,
+  resolveJobDestinationCoordsAsync,
+} from '@/lib/jobLocationHelpers';
 
 export type CustomerLocationVariant = 'primary' | 'secondary';
 
@@ -180,23 +184,14 @@ export const mergeCustomerMapPinIntoJobLocation = (
   };
 };
 
-/** Open a location slice the same way admin does — raw Maps URL first, not rewritten coords. */
+/** Open a location slice the same way admin does — compact pin URL, no short-link hop. */
 const openLocationSliceInMaps = (
   location: JobLocationDisplay['location'],
   address?: Customer['address']
 ): boolean => {
-  const googleLoc = getGoogleLocationHref(location);
-  if (googleLoc && isValidGoogleMapsHref(googleLoc)) {
-    window.open(googleLoc, '_blank', 'noopener,noreferrer');
-    return true;
-  }
-  const coords = extractCoordinates(location);
-  if (coords && coords.latitude !== 0 && coords.longitude !== 0) {
-    window.open(
-      `https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`,
-      '_blank',
-      'noopener,noreferrer'
-    );
+  const pinLink = getLocationLinkFromObject(location);
+  if (pinLink) {
+    window.open(pinLink, '_blank', 'noopener,noreferrer');
     return true;
   }
   const searchLink = getMapsSearchLinkFromAddress(address);
@@ -337,7 +332,7 @@ export interface JobLocationDisplay {
   location: Customer['location'] & { googleLocation?: string | null };
 }
 
-/** Location on technician job cards — live customer for this job's site (same as admin). */
+/** Location on technician job cards — this job's snapshot first, then live customer for gaps. */
 export const getJobLocationDisplay = (
   job: unknown,
   customer?: unknown
@@ -349,54 +344,51 @@ export const getJobLocationDisplay = (
   const visFromJob =
     trim(serviceAddr?.visible_address) || trim((serviceAddr as { visibleAddress?: string })?.visibleAddress);
 
-  if (customer) {
-    const slice = getCustomerLocationSlice(customer as Customer, site);
-    return {
-      variant: site,
-      visibleLabel:
-        slice.visibleAddress ||
-        visFromJob ||
-        getJobLocationLabelForWhatsApp(
+  const customerSlice = customer
+    ? getCustomerLocationSlice(customer as Customer, site)
+    : null;
+
+  const jobHasStreet = Boolean(trim(serviceAddr?.street));
+  const jobHasPin = locationHasMapPin(serviceLoc);
+  const emptyAddress: Customer['address'] = {
+    street: '',
+    area: '',
+    city: '',
+    state: '',
+    pincode: '',
+  };
+
+  const address = jobHasStreet
+    ? {
+        ...(customerSlice?.address || emptyAddress),
+        ...serviceAddr,
+        street: String(serviceAddr?.street || '').trim(),
+        landmark: trim(serviceAddr?.landmark) || customerSlice?.address?.landmark,
+        visible_address: visFromJob || customerSlice?.address?.visible_address,
+      }
+    : customerSlice?.address || serviceAddr || emptyAddress;
+
+  const location = mergeCustomerMapPinIntoJobLocation(
+    jobHasPin || jobHasStreet ? serviceLoc : undefined,
+    customerSlice?.location
+  );
+
+  const visibleLabel =
+    visFromJob ||
+    customerSlice?.visibleAddress ||
+    (customer
+      ? getJobLocationLabelForWhatsApp(
           { service_site: site, service_address: serviceAddr },
           customer
-        ) ||
-        getPrimaryLocationLabel(customer as Customer),
-      address: slice.address,
-      location: slice.location,
-    };
-  }
-
-  const hasJobAddress =
-    Boolean(visFromJob) ||
-    Boolean(trim(serviceAddr?.street)) ||
-    locationHasMapPin(serviceLoc);
-
-  if (hasJobAddress) {
-    return {
-      variant: site,
-      visibleLabel: visFromJob || 'Location',
-      address: serviceAddr || {
-        street: '',
-        area: '',
-        city: '',
-        state: '',
-        pincode: '',
-      },
-      location:
-        serviceLoc ||
-        ({
-          latitude: 0,
-          longitude: 0,
-          formattedAddress: trim(serviceAddr?.street),
-        } as JobLocationDisplay['location']),
-    };
-  }
+        ) || getPrimaryLocationLabel(customer as Customer)
+      : '') ||
+    'Location';
 
   return {
-    variant: 'primary',
-    visibleLabel: 'Location',
-    address: { street: '', area: '', city: '', state: '', pincode: '' },
-    location: { latitude: 0, longitude: 0, formattedAddress: '' },
+    variant: site,
+    visibleLabel,
+    address,
+    location,
   };
 };
 

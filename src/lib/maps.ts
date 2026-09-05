@@ -17,13 +17,18 @@ export interface AddressData {
   fullAddress?: string;
 }
 
+/** Pin URL that opens Google Maps on the exact coordinates (no short-link resolve). */
+export function googleMapsPinUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+
 /**
  * Generate Google Maps URL for a location
  */
 export const generateGoogleMapsUrl = (location: LocationData, address?: string): string => {
   const { latitude, longitude } = location;
   if (latitude && longitude) {
-    return `https://www.google.com/maps/place/${latitude},${longitude}`;
+    return googleMapsPinUrl(latitude, longitude);
   }
   const query = address || 'Unknown Location';
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;

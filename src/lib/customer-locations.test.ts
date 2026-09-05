@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatSiteRoModel, getSiteEquipment } from './customer-locations';
+import { formatSiteRoModel, getJobLocationDisplay, getSiteEquipment } from './customer-locations';
 
 const dualSiteCustomer = {
   brand: 'AO Smith',
@@ -32,5 +32,37 @@ describe('getSiteEquipment', () => {
       brand: 'Kent',
       model: 'Grand Plus',
     });
+  });
+});
+
+describe('getJobLocationDisplay', () => {
+  it('uses the job snapshot address and pin even when the customer record differs', () => {
+    const display = getJobLocationDisplay(
+      {
+        service_address: {
+          street: 'A-102, Water tank, 5th Main, HSR Layout',
+          landmark: 'Water tank',
+          area: 'Bangalore',
+          city: 'Bangalore',
+          state: 'Karnataka',
+          pincode: '560001',
+        },
+        service_location: {
+          latitude: 12.91,
+          longitude: 77.64,
+          formattedAddress: 'A-102, Water tank, 5th Main, HSR Layout',
+          googleLocation: 'https://www.google.com/maps?q=12.91,77.64',
+        },
+      },
+      {
+        address: { street: 'Old street', area: 'Bangalore', city: 'Bangalore', state: 'Karnataka', pincode: '560001' },
+        location: { latitude: 12.97, longitude: 77.59, formattedAddress: 'Old street' },
+      }
+    );
+
+    expect(display.address.street).toBe('A-102, Water tank, 5th Main, HSR Layout');
+    expect(display.address.landmark).toBe('Water tank');
+    expect(display.location.latitude).toBe(12.91);
+    expect(display.location.googleLocation).toBe('https://www.google.com/maps?q=12.91,77.64');
   });
 });
