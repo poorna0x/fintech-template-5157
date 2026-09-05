@@ -58,9 +58,9 @@ export function manualChunks(id: string): string | undefined {
   // public site (blank page: "Cannot access 't' before initialization").
   // Rollup auto-splits it into lazy-loaded admin chart chunks only.
 
-  // NOTE: @mui/* / @emotion / dayjs are unused by the date picker (it uses
-  // react-day-picker in react-vendor). Do not pin them to a manual chunk if
-  // they get imported again — that can pull them into the public entry graph.
+  // NOTE: @mui/* / @emotion / dayjs are lazy-loaded only via DatePicker
+  // (date-picker-calendar.tsx). Do not pin them to a manual chunk — that can
+  // pull them into the public entry graph.
 
   // Single React chunk: react, radix, forms, and all React-dependent UI libs.
   if (

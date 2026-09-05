@@ -2,10 +2,14 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-/** Compact month grid height; used to pick top vs bottom before open. */
+// Google / Material DateCalendar — lazy so MUI stays out of the main vendor chunk.
+// Prefetch on mount / hover so the first open is usually instant (no "Loading…" flash).
+const loadDatePickerCalendar = () => import("./date-picker-calendar");
+const DatePickerCalendar = React.lazy(loadDatePickerCalendar);
+
+/** Compact DateCalendar height; used to pick top vs bottom before open. */
 const CALENDAR_ESTIMATED_HEIGHT = 360;
 
 export interface DatePickerProps {
@@ -18,22 +22,10 @@ export interface DatePickerProps {
   disabled?: boolean;
 }
 
-function parseYmd(value: string | undefined): Date | undefined {
-  if (!value) return undefined;
-  const d = new Date(value + "T12:00:00");
-  return isNaN(d.getTime()) ? undefined : d;
-}
-
-function toYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 function formatDisplayDate(value: string | undefined): string {
-  const d = parseYmd(value);
-  return d ? d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "";
+  if (!value) return "";
+  const d = new Date(value + "T12:00:00");
+  return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function pickPopoverSide(trigger: HTMLElement): "top" | "bottom" {
@@ -54,12 +46,33 @@ export function DatePicker({
   const [open, setOpen] = React.useState(false);
   const [side, setSide] = React.useState<"top" | "bottom">("bottom");
   const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const selected = parseYmd(value);
   const displayText = formatDisplayDate(value) || placeholder;
 
+  React.useEffect(() => {
+    let cancelled = false;
+    const prefetch = () => {
+      if (!cancelled) void loadDatePickerCalendar();
+    };
+    let idleId: number | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(prefetch);
+    } else {
+      timeoutId = setTimeout(prefetch, 400);
+    }
+    return () => {
+      cancelled = true;
+      if (idleId != null && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId != null) clearTimeout(timeoutId);
+    };
+  }, []);
+
   const handleOpenChange = (next: boolean) => {
-    if (next && triggerRef.current) {
-      setSide(pickPopoverSide(triggerRef.current));
+    if (next) {
+      void loadDatePickerCalendar();
+      if (triggerRef.current) setSide(pickPopoverSide(triggerRef.current));
     }
     setOpen(next);
   };
@@ -81,6 +94,12 @@ export function DatePicker({
             className,
           )}
           aria-label={placeholder}
+          onPointerEnter={() => {
+            void loadDatePickerCalendar();
+          }}
+          onFocus={() => {
+            void loadDatePickerCalendar();
+          }}
         >
           {displayText}
         </Button>
@@ -93,17 +112,21 @@ export function DatePicker({
         collisionPadding={12}
         avoidCollisions
       >
-        <Calendar
-          mode="single"
-          selected={selected}
-          defaultMonth={selected}
-          onSelect={(d) => {
-            if (!d) return;
-            onChange?.(toYmd(d));
-            setOpen(false);
-          }}
-          initialFocus
-        />
+        <React.Suspense
+          fallback={
+            <div className="flex h-[320px] w-[320px] items-center justify-center text-sm text-muted-foreground">
+              Loading…
+            </div>
+          }
+        >
+          <DatePickerCalendar
+            value={value}
+            onSelect={(d) => {
+              onChange?.(d);
+              setOpen(false);
+            }}
+          />
+        </React.Suspense>
       </PopoverContent>
     </Popover>
   );
