@@ -79,6 +79,86 @@ function coordsFromPlaceGeometry(
   return null;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        window.clearTimeout(timer);
+        resolve(fallback);
+      }
+    );
+  });
+}
+
+function firstResolvedPin(
+  ...attempts: Promise<{ coords: { lat: number; lng: number }; address: string } | null>[]
+): Promise<{ coords: { lat: number; lng: number }; address: string } | null> {
+  return new Promise((resolve) => {
+    let pending = attempts.length;
+    let settled = false;
+    const finish = (
+      value: { coords: { lat: number; lng: number }; address: string } | null
+    ) => {
+      if (settled) return;
+      if (value?.coords) {
+        settled = true;
+        resolve(value);
+        return;
+      }
+      pending -= 1;
+      if (pending <= 0) {
+        settled = true;
+        resolve(null);
+      }
+    };
+    for (const attempt of attempts) {
+      attempt.then(finish, () => finish(null));
+    }
+  });
+}
+
+function pinFromGeocoderResults(
+  results: google.maps.GeocoderResult[] | null
+): { coords: { lat: number; lng: number }; address: string } | null {
+  const result = results?.[0];
+  const loc = result?.geometry?.location;
+  if (!loc || typeof loc.lat !== 'function') return null;
+  const coords = { lat: loc.lat(), lng: loc.lng() };
+  if (!hasCoords(coords)) return null;
+  return {
+    coords,
+    address: removePlusCode(result.formatted_address || ''),
+  };
+}
+
+function geocodeByPlaceId(
+  placeId: string
+): Promise<{ coords: { lat: number; lng: number }; address: string } | null> {
+  return new Promise((resolve) => {
+    if (!window.google?.maps?.Geocoder) {
+      resolve(null);
+      return;
+    }
+    try {
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ placeId }, (results, status) => {
+        if (status === window.google.maps.GeocoderStatus.OK) {
+          resolve(pinFromGeocoderResults(results));
+          return;
+        }
+        resolve(null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 function reverseGeocode(location: { lat: number; lng: number }): Promise<string | null> {
   return new Promise((resolve) => {
     if (!window.google?.maps?.Geocoder) {
@@ -253,6 +333,9 @@ export default function BookingLocationPicker({
       }
       const service = new window.google.maps.places.AutocompleteService();
       const token = ensureSessionToken();
+      const timer = window.setTimeout(() => {
+        setSearching(false);
+      }, 6000);
       service.getPlacePredictions(
         {
           input: trimmed,
@@ -260,6 +343,7 @@ export default function BookingLocationPicker({
           ...(token ? { sessionToken: token } : {}),
         },
         (results, status) => {
+          window.clearTimeout(timer);
           setSearching(false);
           if (
             status !== window.google.maps.places.PlacesServiceStatus.OK ||
@@ -318,7 +402,7 @@ export default function BookingLocationPicker({
       if (seq === pinLabelSeqRef.current) setGeocoding(false);
     }, 4000);
 
-    void reverseGeocode(coords)
+    void withTimeout(reverseGeocode(coords), 4000, null)
       .then((geo) => {
         if (seq !== pinLabelSeqRef.current) return;
         window.clearTimeout(safety);
@@ -371,50 +455,75 @@ export default function BookingLocationPicker({
     setZoom(DEFAULT_ZOOM);
     setCameraNonce((n) => n + 1);
     skipSeedOnOpenRef.current = true;
-    onOpenChange(true);
     if (preset?.address) {
-      setAddress(removePlusCode(preset.address));
       skipNextIdleLabelRef.current = true;
       lastLabelLookupRef.current = coords;
+      setAddress(removePlusCode(preset.address));
       setGeocoding(false);
-      return;
     }
+    onOpenChange(true);
+    if (preset?.address) return;
     paintPinLabel(coords);
+  };
+
+  const detailsForPrediction = (
+    prediction: PlacePrediction
+  ): Promise<{ coords: { lat: number; lng: number }; address: string } | null> => {
+    return new Promise((resolve) => {
+      const host = placesHostRef.current || document.createElement('div');
+      if (!window.google?.maps?.places?.PlacesService) {
+        resolve(null);
+        return;
+      }
+      const service = new window.google.maps.places.PlacesService(host);
+      service.getDetails(
+        {
+          placeId: prediction.placeId,
+          fields: ['formatted_address', 'geometry'],
+          ...(sessionTokenRef.current ? { sessionToken: sessionTokenRef.current } : {}),
+        },
+        (place, status) => {
+          sessionTokenRef.current = null;
+          if (status !== window.google.maps.places.PlacesServiceStatus.OK) {
+            resolve(null);
+            return;
+          }
+          const coords = coordsFromPlaceGeometry(place);
+          if (!coords) {
+            resolve(null);
+            return;
+          }
+          resolve({
+            coords,
+            address: removePlusCode(place?.formatted_address || prediction.mainText),
+          });
+        }
+      );
+    });
   };
 
   const handleSelectPlace = async (prediction: PlacePrediction) => {
     setResolvingPlace(true);
+    setGeocoding(false);
     try {
       await ensureGoogleMapsApi();
-      const host = placesHostRef.current || document.createElement('div');
-      const service = new window.google.maps.places.PlacesService(host);
-      await new Promise<void>((resolve) => {
-        service.getDetails(
-          {
-            placeId: prediction.placeId,
-            fields: ['formatted_address', 'geometry'],
-            ...(sessionTokenRef.current ? { sessionToken: sessionTokenRef.current } : {}),
-          },
-          (place, status) => {
-            sessionTokenRef.current = null;
-            if (status === window.google.maps.places.PlacesServiceStatus.OK) {
-              const coords = coordsFromPlaceGeometry(place);
-              if (coords) {
-                const formatted = removePlusCode(place?.formatted_address || prediction.mainText);
-                void applyCoords(coords, { address: formatted });
-                resolve();
-                return;
-              }
-            }
-            toast.error('Could not open that place. Try another search.');
-            resolve();
-          }
-        );
+      const pin = await withTimeout(
+        firstResolvedPin(geocodeByPlaceId(prediction.placeId), detailsForPrediction(prediction)),
+        5000,
+        null
+      );
+      if (!pin?.coords) {
+        toast.error('Could not open that place. Try another search.');
+        return;
+      }
+      void applyCoords(pin.coords, {
+        address: pin.address || prediction.mainText,
       });
     } catch {
       toast.error('Could not open that place. Try again.');
     } finally {
       setResolvingPlace(false);
+      setGeocoding(false);
     }
   };
 
