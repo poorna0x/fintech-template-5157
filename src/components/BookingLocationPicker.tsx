@@ -376,6 +376,7 @@ export default function BookingLocationPicker({
       setAddress(removePlusCode(preset.address));
       skipNextIdleLabelRef.current = true;
       lastLabelLookupRef.current = coords;
+      setGeocoding(false);
       return;
     }
     paintPinLabel(coords);
@@ -445,6 +446,7 @@ export default function BookingLocationPicker({
     if (skipNextIdleLabelRef.current) {
       skipNextIdleLabelRef.current = false;
       lastLabelLookupRef.current = coords;
+      setGeocoding(false);
       return;
     }
     if (geocodeTimerRef.current != null) window.clearTimeout(geocodeTimerRef.current);
@@ -454,7 +456,6 @@ export default function BookingLocationPicker({
   }, []);
 
   const canSave =
-    !geocoding &&
     houseFlat.trim().length > 0 &&
     hasCoords(centerLiveRef.current) &&
     Boolean(address.trim());
@@ -623,10 +624,11 @@ export default function BookingLocationPicker({
           onMapReady={(map) => {
             mapInstanceRef.current = map;
             if (!map) return;
-            const pin = centerLiveRef.current;
-            pinLabelCacheRef.current.delete(`${pin.lat.toFixed(5)},${pin.lng.toFixed(5)}`);
-            lastLabelLookupRef.current = null;
-            paintPinLabelRef.current(pin);
+            if (skipNextIdleLabelRef.current) {
+              setGeocoding(false);
+              return;
+            }
+            paintPinLabelRef.current(centerLiveRef.current);
           }}
           onMoveStart={() => setGeocoding(true)}
           onLocationChange={handleMapIdle}
