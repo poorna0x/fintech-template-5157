@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -2007,70 +2006,55 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   return (
-    <>
-    {/* Separate popup (not inside Add Customer) — choose before the form opens. */}
-    <AlertDialog
-      open={Boolean(open && showResumePrompt)}
-      onOpenChange={(o) => {
-        // Dismiss without choosing = keep the draft already loaded (same as Resume).
-        if (!o) showResumePromptNow(false);
-      }}
-    >
-      <AlertDialogContent className="relative !w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md p-5 sm:p-6">
-        <button
-          type="button"
-          className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground active:bg-muted/60 focus:outline-none focus-visible:ring-0 touch-manipulation [-webkit-tap-highlight-color:transparent] sm:right-4 sm:top-4 sm:h-9 sm:w-9"
-          aria-label="Close"
-          onClick={() => {
-            showResumePromptNow(false);
-            onOpenChange(false);
-          }}
-        >
-          <X className="h-5 w-5" />
-        </button>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="pr-10">Resume previous entry?</AlertDialogTitle>
-          <AlertDialogDescription>
-            You have unsaved customer details that weren&apos;t created yet.{' '}
-            {universalResumeEnabled
-              ? 'They follow this admin login, so you can continue on another phone.'
-              : 'They are saved on this phone only until you create the customer.'}
-            {(addFormData.full_name?.trim() || addFormData.phone?.trim()) ? (
-              <span className="block mt-2 font-medium text-foreground">
-                {[addFormData.full_name?.trim(), addFormData.phone?.trim()].filter(Boolean).join(' · ')}
-              </span>
-            ) : addFormData.email?.trim() || addFormData.visible_address?.trim() ? (
-              <span className="block mt-2 font-medium text-foreground">
-                {[addFormData.email?.trim(), addFormData.visible_address?.trim()].filter(Boolean).join(' · ')}
-              </span>
-            ) : null}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
-          <AlertDialogCancel onClick={handleStartNewEntry} className="w-full sm:w-auto mt-0">
-            Start new
-          </AlertDialogCancel>
-          <AlertDialogAction onClick={handleResumeDraft} className="w-full sm:w-auto ">
-            Resume
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-
-    <Dialog
-      open={Boolean(open && !showResumePrompt)}
-      onOpenChange={(next) => {
-        // Hiding the form to show Resume is not a dismiss — forwarding false
-        // closed the parent modal and left a transparent overlay.
-        if (!next && showResumePromptRef.current) return;
-        onOpenChange(next);
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         dismissible={false}
         hideCloseButton
-        className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col"
+        className={cn(
+          showResumePrompt
+            ? 'w-[calc(100vw-2rem)] max-w-md p-5 sm:p-6'
+            : 'w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col'
+        )}
       >
+        {showResumePrompt ? (
+          <>
+            <button
+              type="button"
+              className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground active:bg-muted/60 focus:outline-none focus-visible:ring-0 touch-manipulation [-webkit-tap-highlight-color:transparent] sm:right-4 sm:top-4 sm:h-9 sm:w-9"
+              aria-label="Close"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <DialogHeader>
+              <DialogTitle className="pr-10">Resume previous entry?</DialogTitle>
+              <DialogDescription>
+                You have unsaved customer details that weren&apos;t created yet.{' '}
+                {universalResumeEnabled
+                  ? 'They follow this admin login, so you can continue on another phone.'
+                  : 'They are saved on this phone only until you create the customer.'}
+                {(addFormData.full_name?.trim() || addFormData.phone?.trim()) ? (
+                  <span className="block mt-2 font-medium text-foreground">
+                    {[addFormData.full_name?.trim(), addFormData.phone?.trim()].filter(Boolean).join(' · ')}
+                  </span>
+                ) : addFormData.email?.trim() || addFormData.visible_address?.trim() ? (
+                  <span className="block mt-2 font-medium text-foreground">
+                    {[addFormData.email?.trim(), addFormData.visible_address?.trim()].filter(Boolean).join(' · ')}
+                  </span>
+                ) : null}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+              <Button type="button" variant="outline" onClick={handleStartNewEntry} className="w-full sm:w-auto">
+                Start new
+              </Button>
+              <Button type="button" onClick={handleResumeDraft} className="w-full sm:w-auto">
+                Resume
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
         <DialogHeader className="shrink-0 space-y-0 border-b pb-4 text-left">
           <div className="mb-4 flex items-center justify-between gap-3">
             <DialogTitle className="text-lg font-semibold tracking-tight">
@@ -2901,9 +2885,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             )}
           </div>
         </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
-    </>
   );
 };
 
