@@ -243,6 +243,35 @@ function toLocalDateString(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Technician salary All Time starts when CRM payroll began. Jobs/revenue stay unbounded. */
+const ANALYTICS_SALARY_ALL_TIME_START = new Date(2025, 11, 1, 0, 0, 0, 0);
+
+function resolveAnalyticsSalaryRange(
+  period: PeriodOption,
+  startDate: Date | null,
+  endDate: Date | null
+): { startDate: Date; endDate: Date; startStr: string; endStr: string } | null {
+  if (startDate && endDate) {
+    return {
+      startDate,
+      endDate,
+      startStr: toLocalDateString(startDate),
+      endStr: toLocalDateString(endDate),
+    };
+  }
+  if (period !== 'all') return null;
+  const start = new Date(ANALYTICS_SALARY_ALL_TIME_START.getTime());
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  if (start > end) return null;
+  return {
+    startDate: start,
+    endDate: end,
+    startStr: toLocalDateString(start),
+    endStr: toLocalDateString(end),
+  };
+}
+
 // Helper function to format currency with commas and without .00 when it's zero
 const formatCurrency = (amount: number): string => {
   const formatted = amount.toLocaleString('en-IN', {
@@ -999,22 +1028,45 @@ const Analytics = () => {
 
         const dash = parseAnalyticsDashboardRpc(dashboardRes.data);
         if (!dashboardRes.error && dash) {
+          const salaryRange = resolveAnalyticsSalaryRange(period, startDate, endDate);
+          const salaryTotals = salaryRange
+            ? await loadAnalyticsSalaryTotals(
+                technicians,
+                salaryRange.startDate,
+                salaryRange.endDate,
+                period,
+                salaryRange.startStr,
+                salaryRange.endStr
+              )
+            : { totalSalaryDeductions: 0, totalSalaryIncludingAll: 0 };
           const leadSourceBreakdown = await loadLeadSourceBreakdownForPeriod(null, null);
           const payload = buildAnalyticsPayloadFromDashboard(dash, technicians, {
             ...expensePartial,
-            totalSalaryDeductions: 0,
-            totalSalaryIncludingAll: 0,
+            ...salaryTotals,
           }, { leadSourceBreakdown });
           setAnalytics(payload);
           writeAnalyticsSessionCache(cacheKey, payload);
           return;
         }
 
-        const [paymentsAllRes, jobsRes] = await Promise.all([
+        const salaryRange = resolveAnalyticsSalaryRange(period, startDate, endDate);
+        const [paymentsAllRes, jobsRes, salaryTotals] = await Promise.all([
           db.analyticsData.getAllTechnicianPayments(),
           db.jobs.getForAnalytics(),
+          salaryRange
+            ? loadAnalyticsSalaryTotals(
+                technicians,
+                salaryRange.startDate,
+                salaryRange.endDate,
+                period,
+                salaryRange.startStr,
+                salaryRange.endStr
+              )
+            : Promise.resolve({ totalSalaryDeductions: 0, totalSalaryIncludingAll: 0 }),
         ]);
         rangedPayments = paymentsAllRes.data || [];
+        totalSalaryDeductions = salaryTotals.totalSalaryDeductions;
+        totalSalaryIncludingAll = salaryTotals.totalSalaryIncludingAll;
 
         if (jobsRes.error || !jobsRes.data) {
           console.error('Error loading jobs for detailed analytics:', jobsRes.error);
@@ -3372,7 +3424,10 @@ const Analytics = () => {
                         </span>
                       </div>
                       <div className="flex justify-between gap-2 items-center min-w-0">
-                        <span className="text-gray-600 truncate">Total Salary (before advance):</span>
+                        <span className="text-gray-600 truncate">
+                          Total Salary (before advance)
+                          {period === 'all' ? ' from Dec 2025' : ''}:
+                        </span>
                         <span className="font-semibold text-red-600 shrink-0 tabular-nums">
                           ₹ {formatCurrency(Math.max(0, analytics.totalSalaryDeductions ?? 0))}
                           {analytics.totalSalaryIncludingAll != null &&
@@ -3450,7 +3505,10 @@ const Analytics = () => {
                     </span>
                   </div>
                   <div className="flex justify-between gap-2 items-center min-w-0">
-                    <span className="text-gray-600 truncate">Total salary (before advance):</span>
+                    <span className="text-gray-600 truncate">
+                      Total salary (before advance)
+                      {period === 'all' ? ' from Dec 2025' : ''}:
+                    </span>
                     <span className="font-semibold text-slate-800 shrink-0 tabular-nums">
                       ₹ {formatCurrency(Math.max(0, analytics.totalSalaryDeductions ?? 0))}
                       {analytics.totalSalaryIncludingAll != null &&
