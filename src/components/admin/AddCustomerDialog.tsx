@@ -49,7 +49,9 @@ import { Capacitor } from '@capacitor/core';
 import {
   clearAddCustomerDraft,
   draftHasData,
+  flushAddCustomerDraft,
   loadAddCustomerDraft,
+  loadAddCustomerDraftMerged,
   persistAddCustomerDraft,
 } from '@/lib/addCustomerDraft';
 import {
@@ -77,8 +79,8 @@ export interface JobAssignedToTechnicianPayload {
   agreedCost?: string;
 }
 
-// Keep unsaved Add Customer input in localStorage so closing the dialog (or a refresh)
-// doesn't lose what was typed. Cleared once the customer is created.
+// Keep unsaved Add Customer input locally and on the signed-in admin account
+// so another phone with the same login can resume. Cleared once the customer is created.
 const createDefaultAddFormData = () => ({
   full_name: '',
   phone: '',
@@ -261,6 +263,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [isWaitingForPhotos, setIsWaitingForPhotos] = useState(false);
   const addFormDataRef = useRef(addFormData);
   addFormDataRef.current = addFormData;
+  const step5JobDataRef = useRef(step5JobData);
+  step5JobDataRef.current = step5JobData;
+  const currentStepRef = useRef(currentStep);
+  currentStepRef.current = currentStep;
+  const shouldCreateJobRef = useRef(shouldCreateJob);
+  shouldCreateJobRef.current = shouldCreateJob;
+  const mergedDraftRef = useRef<ReturnType<typeof loadAddCustomerDraft>>(initialDraftRef.current);
   const fullNameInputRef = useRef<HTMLInputElement>(null);
   /** Focus name only on first landing on step 1 for this open — not when tapping Previous. */
   const didInitialStepOneFocusRef = useRef(false);
@@ -378,11 +387,21 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     setShowResumePrompt(false);
     clipboardAutofillEnabledRef.current = false;
 
+    const localDraft = loadAddCustomerDraft();
+    if (draftHasData(localDraft) && localDraft) {
+      mergedDraftRef.current = localDraft;
+      applyDraftToForm(localDraft);
+      clipboardAutofillEnabledRef.current = false;
+      setShowResumePrompt(true);
+      setOpenGateReady(true);
+    }
+
     let cancelled = false;
     void (async () => {
-      const draft = loadAddCustomerDraft();
-      const hasDraft = draftHasData(draft);
+      const draft = await loadAddCustomerDraftMerged();
       if (cancelled) return;
+      mergedDraftRef.current = draft;
+      const hasDraft = draftHasData(draft);
 
       if (hasDraft && draft) {
         applyDraftToForm(draft);
@@ -411,6 +430,20 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     if (!open || !openGateReady || showResumePrompt) return;
     persistAddCustomerDraft({ addFormData, step5JobData, currentStep, shouldCreateJob });
   }, [open, openGateReady, showResumePrompt, addFormData, step5JobData, currentStep, shouldCreateJob]);
+
+  // Flush the cloud copy when the dialog closes so the other phone sees it without waiting for debounce.
+  useEffect(() => {
+    if (!open) return;
+    return () => {
+      if (!openGateReadyRef.current || showResumePromptRef.current) return;
+      void flushAddCustomerDraft({
+        addFormData: addFormDataRef.current,
+        step5JobData: step5JobDataRef.current,
+        currentStep: currentStepRef.current,
+        shouldCreateJob: shouldCreateJobRef.current,
+      });
+    };
+  }, [open]);
 
   // Keep ref synced with the latest google_location so async handlers can read
   // the current value without re-running themselves on every keystroke.
@@ -452,7 +485,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   }, [open, shouldCreateJob, step5JobData.scheduled_date, addFormData.service_types]);
 
   const handleResumeDraft = () => {
-    const draft = loadAddCustomerDraft();
+    const draft = mergedDraftRef.current || loadAddCustomerDraft();
     autofilledRef.current = {};
     lastAutoClipFpRef.current = '';
     setHasAutofilledPhone(false);
@@ -473,6 +506,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const handleStartNewEntry = () => {
+    mergedDraftRef.current = null;
     clearAddCustomerDraft();
     resetToBlankCustomerForm();
     // Allow paste of whatever was copied in the last 15s onto this blank form.
@@ -1875,8 +1909,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         });
       }
 
-      // Customer created — discard the saved draft and reset the form.
-      clearAddCustomerDraft();
+    mergedDraftRef.current = null;
+    clearAddCustomerDraft();
       clearLocationFetchState();
       resetFlatHouseNo();
       autofilledRef.current = {};
@@ -1904,6 +1938,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   return (
     <>
+    <Dialog open={Boolean(open && !openGateReady)} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xs" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle className="sr-only">Checking saved entry</DialogTitle>
+        </DialogHeader>
+        <div className="flex items-center gap-3 py-1 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+          Checking saved entry on this login…
+        </div>
+      </DialogContent>
+    </Dialog>
     {/* Separate popup (not inside Add Customer) — choose before the form opens. */}
     <AlertDialog
       open={Boolean(open && showResumePrompt)}
@@ -1916,7 +1961,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         <AlertDialogHeader>
           <AlertDialogTitle>Resume previous entry?</AlertDialogTitle>
           <AlertDialogDescription>
-            You have unsaved customer details from before that weren&apos;t created yet.
+            You have unsaved customer details that weren&apos;t created yet. They follow this admin login, so you can continue on another phone.
             {(addFormData.full_name?.trim() || addFormData.phone?.trim()) ? (
               <span className="block mt-2 font-medium text-foreground">
                 {[addFormData.full_name?.trim(), addFormData.phone?.trim()].filter(Boolean).join(' · ')}

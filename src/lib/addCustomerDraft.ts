@@ -1,6 +1,10 @@
+import { chromeStorage } from '@/lib/storage';
+
 const ADD_CUSTOMER_DRAFT_KEY = 'add_customer_draft_v1';
+const REMOTE_DEBOUNCE_MS = 800;
 
 export type AddCustomerDraft = {
+  savedAt?: number;
   addFormData?: {
     full_name?: string;
     phone?: string;
@@ -20,41 +24,240 @@ export type AddCustomerDraft = {
   shouldCreateJob?: boolean;
 };
 
+type DraftTombstone = { _cleared: true; savedAt: number };
+type RemotePayload = AddCustomerDraft | DraftTombstone;
+
+function isTestEnv(): boolean {
+  return import.meta.env.MODE === 'test';
+}
+
+function isMissingTableError(err: { message?: string; code?: string } | null | undefined): boolean {
+  if (!err) return false;
+  const msg = (err.message || '').toLowerCase();
+  return (
+    err.code === '42P01' ||
+    err.code === 'PGRST205' ||
+    msg.includes('does not exist') ||
+    msg.includes('schema cache') ||
+    msg.includes('add_customer_drafts')
+  );
+}
+
+function isTombstone(payload: unknown): payload is DraftTombstone {
+  return Boolean(
+    payload &&
+      typeof payload === 'object' &&
+      !Array.isArray(payload) &&
+      (payload as DraftTombstone)._cleared === true
+  );
+}
+
+function asDraft(raw: unknown): AddCustomerDraft | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || isTombstone(raw)) return null;
+  return raw as AddCustomerDraft;
+}
+
+let remoteUnavailable = false;
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingRemote: RemotePayload | null = null;
+
+function cancelRemoteDebounce() {
+  if (debounceTimer != null) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+}
+
+async function draftsApi() {
+  const { db } = await import('./supabase');
+  return db.addCustomerDrafts;
+}
+
+function stamp(payload: AddCustomerDraft): AddCustomerDraft {
+  return { ...payload, savedAt: Date.now() };
+}
+
+function makeTombstone(): DraftTombstone {
+  return { _cleared: true, savedAt: Date.now() };
+}
+
+function savedAtMs(draft: { savedAt?: number } | null | undefined, fallbackIso?: string): number {
+  const n = Number(draft?.savedAt);
+  if (Number.isFinite(n) && n > 0) return n;
+  if (fallbackIso) {
+    const fromIso = Date.parse(fallbackIso);
+    if (Number.isFinite(fromIso)) return fromIso;
+  }
+  return 0;
+}
+
 export function loadAddCustomerDraft(): AddCustomerDraft | null {
   try {
-    const raw = localStorage.getItem(ADD_CUSTOMER_DRAFT_KEY);
+    const raw = chromeStorage.getItem(ADD_CUSTOMER_DRAFT_KEY);
     return raw ? (JSON.parse(raw) as AddCustomerDraft) : null;
   } catch {
     return null;
   }
 }
 
-export function clearAddCustomerDraft(): void {
+function saveAddCustomerDraft(payload: AddCustomerDraft): void {
   try {
-    localStorage.removeItem(ADD_CUSTOMER_DRAFT_KEY);
+    chromeStorage.setItem(ADD_CUSTOMER_DRAFT_KEY, JSON.stringify(payload));
   } catch {
     /* ignore */
   }
 }
 
-export function saveAddCustomerDraft(payload: AddCustomerDraft): void {
+function clearLocalCache(): void {
   try {
-    localStorage.setItem(ADD_CUSTOMER_DRAFT_KEY, JSON.stringify(payload));
+    chromeStorage.removeItem(ADD_CUSTOMER_DRAFT_KEY);
   } catch {
     /* ignore */
   }
+}
+
+export function clearAddCustomerDraft(): void {
+  clearLocalCache();
+  scheduleRemote(makeTombstone(), { immediate: true });
 }
 
 /**
  * Persist a draft only when it has resume-worthy data; otherwise remove it
  * so clearing autofill / emptying the form does not leave a stale Resume prompt.
+ * Local cache is immediate; the cloud copy is debounced so typing is not a write per keystroke.
  */
 export function persistAddCustomerDraft(payload: AddCustomerDraft): void {
   if (draftHasData(payload)) {
-    saveAddCustomerDraft(payload);
+    const stamped = stamp(payload);
+    saveAddCustomerDraft(stamped);
+    scheduleRemote(stamped);
   } else {
-    clearAddCustomerDraft();
+    clearLocalCache();
+    scheduleRemote(makeTombstone());
   }
+}
+
+/** Push the latest local/cloud op now (dialog close, Start new, successful create). */
+export async function flushAddCustomerDraft(payload?: AddCustomerDraft): Promise<void> {
+  if (payload) {
+    if (draftHasData(payload)) {
+      const stamped = stamp(payload);
+      saveAddCustomerDraft(stamped);
+      pendingRemote = stamped;
+    } else {
+      clearLocalCache();
+      pendingRemote = makeTombstone();
+    }
+  }
+  await flushAddCustomerDraftRemote();
+}
+
+function scheduleRemote(next: RemotePayload, options?: { immediate?: boolean }): void {
+  pendingRemote = next;
+  if (isTestEnv()) return;
+  cancelRemoteDebounce();
+  if (options?.immediate) {
+    void flushAddCustomerDraftRemote();
+    return;
+  }
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null;
+    void flushAddCustomerDraftRemote();
+  }, REMOTE_DEBOUNCE_MS);
+}
+
+async function flushAddCustomerDraftRemote(): Promise<void> {
+  if (isTestEnv() || remoteUnavailable) {
+    pendingRemote = null;
+    return;
+  }
+  cancelRemoteDebounce();
+  const job = pendingRemote;
+  pendingRemote = null;
+  if (!job) return;
+  try {
+    const api = await draftsApi();
+    const { error } = await api.upsert(job);
+    if (isMissingTableError(error)) {
+      remoteUnavailable = true;
+    }
+  } catch {
+    /* offline / not signed in — keep local cache */
+  }
+}
+
+/**
+ * Local cache plus the signed-in admin's cloud row. Newer savedAt wins.
+ * A cloud "cleared" marker beats a stale cache on another phone after Start new / create.
+ */
+export async function loadAddCustomerDraftMerged(): Promise<AddCustomerDraft | null> {
+  const local = loadAddCustomerDraft();
+  const localHas = draftHasData(local);
+  if (isTestEnv() || remoteUnavailable) {
+    return local;
+  }
+
+  let remoteRaw: unknown = null;
+  let remoteUpdatedAt: string | undefined;
+  let remoteFetchOk = false;
+  try {
+    const api = await draftsApi();
+    const { data, error } = await api.load();
+    if (isMissingTableError(error)) {
+      remoteUnavailable = true;
+      return local;
+    }
+    if (!error) {
+      remoteFetchOk = true;
+      remoteRaw = data?.payload ?? null;
+      remoteUpdatedAt = typeof data?.updated_at === 'string' ? data.updated_at : undefined;
+    }
+  } catch {
+    /* use local */
+  }
+
+  if (!remoteFetchOk) return local;
+
+  if (isTombstone(remoteRaw)) {
+    const tombTs = savedAtMs(remoteRaw);
+    const localTs = savedAtMs(local);
+    if (localHas && local && localTs > tombTs) {
+      const cached = local.savedAt ? local : stamp(local);
+      saveAddCustomerDraft(cached);
+      pendingRemote = cached;
+      void flushAddCustomerDraftRemote();
+      return cached;
+    }
+    clearLocalCache();
+    return null;
+  }
+
+  const remote = asDraft(remoteRaw);
+  const remoteHas = draftHasData(remote);
+
+  if (!remoteHas) {
+    // No cloud row yet — first sync of a phone-only draft.
+    if (localHas && local) {
+      const cached = local.savedAt ? local : stamp(local);
+      saveAddCustomerDraft(cached);
+      pendingRemote = cached;
+      void flushAddCustomerDraftRemote();
+      return cached;
+    }
+    return local;
+  }
+
+  const localTs = savedAtMs(local);
+  const remoteTs = savedAtMs(remote, remoteUpdatedAt);
+  const winner = localHas && localTs > remoteTs ? local : remote;
+  if (!winner) return null;
+  const cached = winner.savedAt ? winner : stamp(winner);
+  saveAddCustomerDraft(cached);
+  if (winner === local && localHas && localTs > remoteTs) {
+    pendingRemote = cached;
+    void flushAddCustomerDraftRemote();
+  }
+  return cached;
 }
 
 /**

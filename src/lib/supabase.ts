@@ -6679,6 +6679,43 @@ export const db = {
     },
   },
 
+  // Unfinished Add Customer form — one row per signed-in admin (follows them across phones).
+  addCustomerDrafts: {
+    _table() {
+      return (supabase as any).from('add_customer_drafts');
+    },
+
+    async load() {
+      const { data: sessionData } = await supabase.auth.getUser();
+      const userId = sessionData?.user?.id;
+      if (!userId) return { data: null, error: new Error('Not authenticated') };
+      const { data, error } = await this._table()
+        .select('payload, updated_at')
+        .eq('user_id', userId)
+        .maybeSingle();
+      return { data, error };
+    },
+
+    async upsert(payload: unknown) {
+      const { data: sessionData } = await supabase.auth.getUser();
+      const userId = sessionData?.user?.id;
+      if (!userId) return { error: new Error('Not authenticated') };
+      const { error } = await this._table().upsert(
+        { user_id: userId, payload },
+        { onConflict: 'user_id' }
+      );
+      return { error };
+    },
+
+    async remove() {
+      const { data: sessionData } = await supabase.auth.getUser();
+      const userId = sessionData?.user?.id;
+      if (!userId) return { error: null };
+      const { error } = await this._table().delete().eq('user_id', userId);
+      return { error };
+    },
+  },
+
   // Inventory operations
   inventory: {
     async getAll() {

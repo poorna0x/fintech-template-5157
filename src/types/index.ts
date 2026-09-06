@@ -611,6 +611,22 @@ export interface Database {
           updated_at: string;
         }>;
       };
+      add_customer_drafts: {
+        Row: {
+          user_id: string;
+          payload: any;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          payload: any;
+          updated_at?: string;
+        };
+        Update: Partial<{
+          payload: any;
+          updated_at: string;
+        }>;
+      };
       amount_trackers: {
         Row: {
           id: string;
