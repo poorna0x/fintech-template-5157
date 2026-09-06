@@ -1086,13 +1086,8 @@ function clipVisibleAddress(value: string): string {
 export function visibleAddressFromMapsPlaceName(
   placeName: string | null | undefined
 ): string | null {
-  const raw = String(placeName || '').trim();
-  if (!raw || raw.length < 3) return null;
-  const primary = raw.split(',')[0].trim();
-  if (!primary || primary.length < 3) return null;
-  if (/^-?\d/.test(primary)) return null;
-  if (/^[\d\s\-+()]+$/.test(primary)) return null;
-  if (isGenericGeoLocality(primary)) return null;
+  const primary = mapsPlaceLabelForStreetAddress(placeName);
+  if (!primary) return null;
   return clipVisibleAddress(primary);
 }
 
@@ -1100,13 +1095,15 @@ export function visibleAddressFromMapsPlaceName(
 export function mapsPlaceLabelForStreetAddress(
   placeName: string | null | undefined
 ): string | null {
-  const raw = String(placeName || '').trim();
+  // Strip Plus Codes first so "2QG7+J9F Assetz Marq 1.0 apartments" keeps the society name.
+  const raw = removePlusCode(String(placeName || '')).trim();
   if (!raw) return null;
 
   let primary = raw.split('|')[0].split(',')[0].trim();
   primary = primary.replace(/\s*[-–|]\s*Google Maps.*$/i, '').trim();
   if (!primary || primary.length < 3) return null;
-  if (/^-?\d/.test(primary)) return null;
+  if (/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?/.test(primary)) return null;
+  if (/^-?\d/.test(primary) && !/[a-zA-Z]/.test(primary)) return null;
   if (/^[\d\s\-+()]+$/.test(primary)) return null;
   if (isGenericGeoLocality(primary)) return null;
   return primary;

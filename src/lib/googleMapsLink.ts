@@ -1,3 +1,5 @@
+import { removePlusCode } from '@/lib/maps';
+
 export interface GoogleMapsResolvedLink {
   expandedUrl: string;
   latitude?: number;
@@ -567,7 +569,7 @@ function deriveMapsPlaceName(opts: {
     opts.shareText ? extractPlaceHintFromShareText(opts.shareText) : null,
   ].filter((c): c is string => typeof c === 'string' && c.trim().length > 0);
   for (const candidate of candidates) {
-    const primary = candidate.split(',')[0].trim();
+    const primary = removePlusCode(candidate).split(',')[0].trim();
     if (primary.length >= 3 && !/^-?\d/.test(primary)) return primary;
   }
   return undefined;
@@ -634,7 +636,7 @@ export async function resolveGoogleMapsInputToCoords(
       const geocoded = await geocodeFromPlaceHints(placeHints, accessToken);
       if (geocoded) {
         coords = { latitude: geocoded.geocoded.latitude, longitude: geocoded.geocoded.longitude };
-        const placeHintUsed = geocoded.hint.split(',')[0];
+        const placeHintUsed = removePlusCode(geocoded.hint).split(',')[0];
         return {
           ok: true,
           coords,
@@ -666,7 +668,7 @@ export async function resolveGoogleMapsInputToCoords(
     const geocoded = await geocodeFromPlaceHints(placeHints, accessToken);
     if (geocoded) {
       coords = { latitude: geocoded.geocoded.latitude, longitude: geocoded.geocoded.longitude };
-      const placeHintUsed = geocoded.hint.split(',')[0];
+      const placeHintUsed = removePlusCode(geocoded.hint).split(',')[0];
       return {
         ok: true,
         coords,
