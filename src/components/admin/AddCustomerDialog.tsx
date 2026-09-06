@@ -1957,9 +1957,20 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         if (!o) setShowResumePrompt(false);
       }}
     >
-      <AlertDialogContent className="!w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md p-5 sm:p-6">
+      <AlertDialogContent className="relative !w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md p-5 sm:p-6">
+        <button
+          type="button"
+          className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground active:bg-muted/60 focus:outline-none focus-visible:ring-0 touch-manipulation [-webkit-tap-highlight-color:transparent] sm:right-4 sm:top-4 sm:h-9 sm:w-9"
+          aria-label="Close"
+          onClick={() => {
+            setShowResumePrompt(false);
+            onOpenChange(false);
+          }}
+        >
+          <X className="h-5 w-5" />
+        </button>
         <AlertDialogHeader>
-          <AlertDialogTitle>Resume previous entry?</AlertDialogTitle>
+          <AlertDialogTitle className="pr-10">Resume previous entry?</AlertDialogTitle>
           <AlertDialogDescription>
             You have unsaved customer details that weren&apos;t created yet. They follow this admin login, so you can continue on another phone.
             {(addFormData.full_name?.trim() || addFormData.phone?.trim()) ? (
