@@ -16,6 +16,7 @@ import {
   fetchLiveBookingBannerEnabled,
   readLiveBookingBannerEnabledCached,
 } from '@/lib/liveBookingBannerSettings';
+import { fetchAddCustomerUniversalResumeEnabled } from '@/lib/addCustomerUniversalResumeSettings';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -419,6 +420,7 @@ const AdminDashboard = () => {
     void fetchLiveBookingBannerEnabled().then(({ enabled }) => {
       if (!cancelled) setLiveBookingBannerEnabled(enabled);
     });
+    void fetchAddCustomerUniversalResumeEnabled();
     const onChanged = (event: Event) => {
       const detail = (event as CustomEvent<{ enabled: boolean }>).detail;
       if (detail && typeof detail.enabled === 'boolean') {

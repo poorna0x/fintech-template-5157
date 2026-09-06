@@ -1,4 +1,5 @@
 import { chromeStorage } from '@/lib/storage';
+import { readAddCustomerUniversalResumeCached } from '@/lib/addCustomerUniversalResumeSettings';
 
 const ADD_CUSTOMER_DRAFT_KEY = 'add_customer_draft_v1';
 const REMOTE_DEBOUNCE_MS = 800;
@@ -152,9 +153,14 @@ export async function flushAddCustomerDraft(payload?: AddCustomerDraft): Promise
   await flushAddCustomerDraftRemote();
 }
 
+function cloudDraftSyncEnabled(): boolean {
+  if (isTestEnv()) return false;
+  return readAddCustomerUniversalResumeCached();
+}
+
 function scheduleRemote(next: RemotePayload, options?: { immediate?: boolean }): void {
   pendingRemote = next;
-  if (isTestEnv()) return;
+  if (isTestEnv() || !cloudDraftSyncEnabled()) return;
   cancelRemoteDebounce();
   if (options?.immediate) {
     void flushAddCustomerDraftRemote();
@@ -167,7 +173,7 @@ function scheduleRemote(next: RemotePayload, options?: { immediate?: boolean }):
 }
 
 async function flushAddCustomerDraftRemote(): Promise<void> {
-  if (isTestEnv() || remoteUnavailable) {
+  if (isTestEnv() || remoteUnavailable || !cloudDraftSyncEnabled()) {
     pendingRemote = null;
     return;
   }
@@ -193,7 +199,7 @@ async function flushAddCustomerDraftRemote(): Promise<void> {
 export async function loadAddCustomerDraftMerged(): Promise<AddCustomerDraft | null> {
   const local = loadAddCustomerDraft();
   const localHas = draftHasData(local);
-  if (isTestEnv() || remoteUnavailable) {
+  if (isTestEnv() || remoteUnavailable || !cloudDraftSyncEnabled()) {
     return local;
   }
 

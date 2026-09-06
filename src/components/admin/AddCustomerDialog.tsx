@@ -55,6 +55,10 @@ import {
   persistAddCustomerDraft,
 } from '@/lib/addCustomerDraft';
 import {
+  ADD_CUSTOMER_UNIVERSAL_RESUME_CHANGED_EVENT,
+  readAddCustomerUniversalResumeCached,
+} from '@/lib/addCustomerUniversalResumeSettings';
+import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
   filterBrandSuggestions,
@@ -214,6 +218,21 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [duplicateFoundOnBlur, setDuplicateFoundOnBlur] = useState<Customer | null>(null);
   // When the dialog opens with a saved (uncreated) draft, ask whether to resume or start fresh.
   const [showResumePrompt, setShowResumePrompt] = useState(false);
+  const [universalResumeEnabled, setUniversalResumeEnabled] = useState(
+    readAddCustomerUniversalResumeCached
+  );
+  useEffect(() => {
+    const onChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled: boolean }>).detail;
+      if (detail && typeof detail.enabled === 'boolean') {
+        setUniversalResumeEnabled(detail.enabled);
+      } else {
+        setUniversalResumeEnabled(readAddCustomerUniversalResumeCached());
+      }
+    };
+    window.addEventListener(ADD_CUSTOMER_UNIVERSAL_RESUME_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(ADD_CUSTOMER_UNIVERSAL_RESUME_CHANGED_EVENT, onChanged);
+  }, []);
   /** False until open-time draft vs fresh-clipboard decision finishes. */
   const [openGateReady, setOpenGateReady] = useState(false);
   const wasOpenRef = useRef(false);
@@ -233,7 +252,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       } else {
         showResumePromptRef.current = false;
         setShowResumePrompt(false);
-        setOpenGateReady(false);
+        setOpenGateReady(!readAddCustomerUniversalResumeCached());
       }
     } else {
       showResumePromptRef.current = false;
@@ -423,6 +442,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       applyDraftToForm(localDraft);
     } else {
       resetToBlankCustomerForm();
+    }
+
+    const cloudSync = readAddCustomerUniversalResumeCached();
+    if (!cloudSync) {
+      clipboardAutofillEnabledRef.current = !openedWithLocalDraft;
+      setOpenGateReady(true);
+      return;
     }
 
     let cancelled = false;
@@ -2005,7 +2031,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         <AlertDialogHeader>
           <AlertDialogTitle className="pr-10">Resume previous entry?</AlertDialogTitle>
           <AlertDialogDescription>
-            You have unsaved customer details that weren&apos;t created yet. They follow this admin login, so you can continue on another phone.
+            You have unsaved customer details that weren&apos;t created yet.{' '}
+            {universalResumeEnabled
+              ? 'They follow this admin login, so you can continue on another phone.'
+              : 'They are saved on this phone only until you create the customer.'}
             {(addFormData.full_name?.trim() || addFormData.phone?.trim()) ? (
               <span className="block mt-2 font-medium text-foreground">
                 {[addFormData.full_name?.trim(), addFormData.phone?.trim()].filter(Boolean).join(' · ')}

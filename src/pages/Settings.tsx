@@ -44,7 +44,8 @@ import {
   Star,
   Sparkles,
   ChevronDown,
-  Megaphone
+  Megaphone,
+  UserPlus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -116,6 +117,11 @@ import {
   fetchLiveBookingBannerEnabled,
   saveLiveBookingBannerEnabled,
 } from '@/lib/liveBookingBannerSettings';
+import {
+  fetchAddCustomerUniversalResumeEnabled,
+  readAddCustomerUniversalResumeCached,
+  saveAddCustomerUniversalResumeEnabled,
+} from '@/lib/addCustomerUniversalResumeSettings';
 import { fetchOfficeLocation, saveOfficeLocation } from '@/lib/officeLocationSettings';
 import {
   extractCoordinatesFromGoogleMapsLink,
@@ -359,6 +365,10 @@ const Settings = () => {
   const [pdfCompressionSaving, setPdfCompressionSaving] = useState(false);
   const [liveBookingBannerEnabled, setLiveBookingBannerEnabled] = useState(true);
   const [liveBookingBannerSaving, setLiveBookingBannerSaving] = useState(false);
+  const [addCustomerUniversalResume, setAddCustomerUniversalResume] = useState(
+    readAddCustomerUniversalResumeCached
+  );
+  const [addCustomerUniversalResumeSaving, setAddCustomerUniversalResumeSaving] = useState(false);
   const [officeMapsUrl, setOfficeMapsUrl] = useState('');
   const [officeLatLng, setOfficeLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [officeSaving, setOfficeSaving] = useState(false);
@@ -706,6 +716,9 @@ const Settings = () => {
     void fetchLiveBookingBannerEnabled().then(({ enabled }) => {
       if (!cancelled) setLiveBookingBannerEnabled(enabled);
     });
+    void fetchAddCustomerUniversalResumeEnabled().then(({ enabled }) => {
+      if (!cancelled) setAddCustomerUniversalResume(enabled);
+    });
     void fetchOfficeLocation().then(({ office }) => {
       if (cancelled || !office) return;
       setOfficeLatLng({ lat: office.lat, lng: office.lng });
@@ -787,6 +800,27 @@ const Settings = () => {
       );
     } finally {
       setLiveBookingBannerSaving(false);
+    }
+  };
+
+  const handleAddCustomerUniversalResumeToggle = async (enabled: boolean) => {
+    const previous = addCustomerUniversalResume;
+    setAddCustomerUniversalResume(enabled);
+    setAddCustomerUniversalResumeSaving(true);
+    try {
+      const result = await saveAddCustomerUniversalResumeEnabled(enabled);
+      if (!result.ok) {
+        setAddCustomerUniversalResume(previous);
+        toast.error(result.error || 'Could not save Add Customer resume setting');
+        return;
+      }
+      toast.success(
+        enabled
+          ? 'Add Customer drafts follow this login to other phones'
+          : 'Add Customer drafts stay on this phone only'
+      );
+    } finally {
+      setAddCustomerUniversalResumeSaving(false);
     }
   };
 
@@ -3834,7 +3868,7 @@ const Settings = () => {
                 Dashboard Settings
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                Dashboard display, live booking banner, PDF compression, and job WhatsApp preferences
+                Dashboard display, live booking banner, Add Customer resume, PDF compression, and job WhatsApp preferences
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 space-y-3">
@@ -3901,6 +3935,32 @@ const Settings = () => {
                   disabled={liveBookingBannerSaving}
                   onCheckedChange={(v) => void handleLiveBookingBannerToggle(v)}
                   aria-label="Live booking banner"
+                  className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
+                />
+              </div>
+              ) : null}
+
+              {!isManager ? (
+              <div
+                id="add-customer-universal-resume"
+                className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700"
+              >
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2 flex items-center gap-2">
+                    <UserPlus className="w-4 h-4 shrink-0" />
+                    Add Customer resume on other phones
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
+                    When on, an unfinished Add Customer form follows this admin login to another
+                    phone. When off, Add Customer opens immediately and the draft stays on this
+                    device only.
+                  </p>
+                </div>
+                <Switch
+                  checked={addCustomerUniversalResume}
+                  disabled={addCustomerUniversalResumeSaving}
+                  onCheckedChange={(v) => void handleAddCustomerUniversalResumeToggle(v)}
+                  aria-label="Add Customer resume on other phones"
                   className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>
