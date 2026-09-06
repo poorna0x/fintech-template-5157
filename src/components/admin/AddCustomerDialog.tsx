@@ -326,6 +326,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   useEffect(() => {
     if (!open || currentStep !== 1 || showResumePrompt || !openGateReady) return;
     if (didInitialStepOneFocusRef.current) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+      didInitialStepOneFocusRef.current = true;
+      return;
+    }
     didInitialStepOneFocusRef.current = true;
     const timer = window.setTimeout(focusStepOneName, 150);
     return () => window.clearTimeout(timer);
@@ -371,7 +376,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     googleLocationRef.current = '';
   }, [clearLocationFetchState]);
 
-  // On open: unfinished draft always asks Resume / Start new (even if clipboard is fresh).
+  // On open: show the form immediately (no waiting spinner). Cloud draft is checked
+  // in the background; Resume only appears if the form is still empty.
   // Fresh clipboard pastes only when there is no draft, or after Start new.
   useEffect(() => {
     if (!open) {
@@ -388,12 +394,16 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     clipboardAutofillEnabledRef.current = false;
 
     const localDraft = loadAddCustomerDraft();
-    if (draftHasData(localDraft) && localDraft) {
+    const openedWithLocalDraft = Boolean(draftHasData(localDraft) && localDraft);
+    if (openedWithLocalDraft && localDraft) {
       mergedDraftRef.current = localDraft;
       applyDraftToForm(localDraft);
       clipboardAutofillEnabledRef.current = false;
       setShowResumePrompt(true);
       setOpenGateReady(true);
+    } else {
+      resetToBlankCustomerForm();
+      setShowResumePrompt(false);
     }
 
     let cancelled = false;
@@ -402,8 +412,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       if (cancelled) return;
       mergedDraftRef.current = draft;
       const hasDraft = draftHasData(draft);
+      const typedWhileWaiting = !openedWithLocalDraft && draftHasData(addFormDataRef.current);
 
       if (hasDraft && draft) {
+        if (typedWhileWaiting) {
+          setOpenGateReady(true);
+          return;
+        }
         applyDraftToForm(draft);
         clipboardAutofillEnabledRef.current = false;
         setShowResumePrompt(true);
@@ -411,7 +426,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         return;
       }
 
-      // No resume-worthy draft: clean slate, then allow clipboard autofill.
+      if (typedWhileWaiting) {
+        clipboardAutofillEnabledRef.current = false;
+        setShowResumePrompt(false);
+        setOpenGateReady(true);
+        return;
+      }
+
       resetToBlankCustomerForm();
       clipboardAutofillEnabledRef.current = true;
       setShowResumePrompt(false);
@@ -435,13 +456,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   useEffect(() => {
     if (!open) return;
     return () => {
-      if (!openGateReadyRef.current || showResumePromptRef.current) return;
-      void flushAddCustomerDraft({
+      if (showResumePromptRef.current) return;
+      const snapshot = {
         addFormData: addFormDataRef.current,
         step5JobData: step5JobDataRef.current,
         currentStep: currentStepRef.current,
         shouldCreateJob: shouldCreateJobRef.current,
-      });
+      };
+      // Still waiting on cloud: only flush if they already typed, so we do not
+      // tombstone another phone's draft by closing an empty form too fast.
+      if (!openGateReadyRef.current && !draftHasData(snapshot)) return;
+      void flushAddCustomerDraft(snapshot);
     };
   }, [open]);
 
@@ -1938,17 +1963,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   return (
     <>
-    <Dialog open={Boolean(open && !openGateReady)} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xs" aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle className="sr-only">Checking saved entry</DialogTitle>
-        </DialogHeader>
-        <div className="flex items-center gap-3 py-1 text-sm text-muted-foreground">
-          <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
-          Checking saved entry on this login…
-        </div>
-      </DialogContent>
-    </Dialog>
     {/* Separate popup (not inside Add Customer) — choose before the form opens. */}
     <AlertDialog
       open={Boolean(open && showResumePrompt)}
@@ -1996,7 +2010,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     </AlertDialog>
 
     <Dialog
-      open={Boolean(open && openGateReady && !showResumePrompt)}
+      open={Boolean(open && !showResumePrompt)}
       onOpenChange={onOpenChange}
     >
       <DialogContent
