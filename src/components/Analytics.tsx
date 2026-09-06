@@ -11,7 +11,7 @@ import {
   isJobCompletedInRange,
   resolveJobBillingAmount,
 } from '@/lib/jobAnalytics';
-import { getTotalSalaryForCalendarMonth, getTechnicianMonthlyBaseSalary } from '@/lib/technicianSalaryForPeriod';
+import { getTotalSalaryForCalendarMonth, getTechnicianMonthlyBaseSalary, TECHNICIAN_SALARY_PAYROLL_START } from '@/lib/technicianSalaryForPeriod';
 import { technicianAccountStatusSuffix } from '@/lib/technicianAccountStatus';
 import { toast } from 'sonner';
 import {
@@ -243,26 +243,26 @@ function toLocalDateString(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-/** Technician salary All Time starts when CRM payroll began. Jobs/revenue stay unbounded. */
-const ANALYTICS_SALARY_ALL_TIME_START = new Date(2025, 11, 1, 0, 0, 0, 0);
-
+/** Technician salary All Time / any range before CRM payroll: floor at Dec 2025. Jobs/revenue stay unbounded. */
 function resolveAnalyticsSalaryRange(
   period: PeriodOption,
   startDate: Date | null,
   endDate: Date | null
 ): { startDate: Date; endDate: Date; startStr: string; endStr: string } | null {
+  const floor = new Date(TECHNICIAN_SALARY_PAYROLL_START.getTime());
+  let start: Date;
+  let end: Date;
   if (startDate && endDate) {
-    return {
-      startDate,
-      endDate,
-      startStr: toLocalDateString(startDate),
-      endStr: toLocalDateString(endDate),
-    };
+    start = new Date(startDate.getTime());
+    end = new Date(endDate.getTime());
+  } else if (period === 'all') {
+    start = new Date(floor.getTime());
+    end = new Date();
+    end.setHours(23, 59, 59, 999);
+  } else {
+    return null;
   }
-  if (period !== 'all') return null;
-  const start = new Date(ANALYTICS_SALARY_ALL_TIME_START.getTime());
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
+  if (start < floor) start = floor;
   if (start > end) return null;
   return {
     startDate: start,
@@ -929,14 +929,17 @@ const Analytics = () => {
 
         const dash = parseAnalyticsDashboardRpc(dashboardRes.data);
         if (!dashboardRes.error && dash) {
-          const salaryTotals = await loadAnalyticsSalaryTotals(
-            technicians,
-            startDate,
-            endDate,
-            period,
-            startStr,
-            endStr
-          );
+          const salaryRange = resolveAnalyticsSalaryRange(period, startDate, endDate);
+          const salaryTotals = salaryRange
+            ? await loadAnalyticsSalaryTotals(
+                technicians,
+                salaryRange.startDate,
+                salaryRange.endDate,
+                period,
+                salaryRange.startStr,
+                salaryRange.endStr
+              )
+            : { totalSalaryDeductions: 0, totalSalaryIncludingAll: 0 };
           const leadSourceBreakdown = await loadLeadSourceBreakdownForPeriod(startDate, endDate);
           const payload = buildAnalyticsPayloadFromDashboard(dash, technicians, {
             ...expensePartial,
@@ -947,10 +950,20 @@ const Analytics = () => {
           return;
         }
 
+        const salaryRange = resolveAnalyticsSalaryRange(period, startDate, endDate);
         const [paymentsInRangeRes, jobsInRangeResult, salaryTotals] = await Promise.all([
           db.analyticsData.getAllTechnicianPayments({ startISO, endISO }),
           db.jobs.getForAnalyticsInRange(startDate, endDate),
-          loadAnalyticsSalaryTotals(technicians, startDate, endDate, period, startStr, endStr),
+          salaryRange
+            ? loadAnalyticsSalaryTotals(
+                technicians,
+                salaryRange.startDate,
+                salaryRange.endDate,
+                period,
+                salaryRange.startStr,
+                salaryRange.endStr
+              )
+            : Promise.resolve({ totalSalaryDeductions: 0, totalSalaryIncludingAll: 0 }),
         ]);
         rangedPayments = paymentsInRangeRes.data || [];
         totalSalaryDeductions = salaryTotals.totalSalaryDeductions;

@@ -9,6 +9,9 @@ const BILLING_SLAB_COMMISSION_EFFECTIVE_MONTH = '2026-04';
 const LEGACY_SALARY_EFFECTIVE_MONTH = '1900-01';
 const LEGACY_BASE_SALARY = 8000;
 
+/** CRM payroll start — Analytics salary must not count months before this. */
+export const TECHNICIAN_SALARY_PAYROLL_START = new Date(2025, 11, 1, 0, 0, 0, 0);
+
 export interface TechnicianSalaryHistoryEntry {
   amount: number;
   effectiveFrom: string; // YYYY-MM
