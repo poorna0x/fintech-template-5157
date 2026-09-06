@@ -217,12 +217,33 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   /** False until open-time draft vs fresh-clipboard decision finishes. */
   const [openGateReady, setOpenGateReady] = useState(false);
   const wasOpenRef = useRef(false);
-  /** Live dialog flags — autofill must not toast after close (stale listeners / in-flight reads). */
   const dialogOpenRef = useRef(open);
   const showResumePromptRef = useRef(showResumePrompt);
   const openGateReadyRef = useRef(openGateReady);
+  /** Tracks `open` so we can set resume on the same render the dialog is requested — never mount the form first. */
+  const [openCycle, setOpenCycle] = useState(false);
+  if (open !== openCycle) {
+    setOpenCycle(open);
+    if (open) {
+      const local = loadAddCustomerDraft();
+      if (draftHasData(local) && local) {
+        showResumePromptRef.current = true;
+        setShowResumePrompt(true);
+        setOpenGateReady(true);
+      } else {
+        showResumePromptRef.current = false;
+        setShowResumePrompt(false);
+        setOpenGateReady(false);
+      }
+    } else {
+      showResumePromptRef.current = false;
+      setShowResumePrompt(false);
+      setOpenGateReady(false);
+    }
+  } else {
+    showResumePromptRef.current = showResumePrompt;
+  }
   dialogOpenRef.current = open;
-  showResumePromptRef.current = showResumePrompt;
   openGateReadyRef.current = openGateReady;
   const locationManuallyEditedRef = useRef(false);
   // Mirrors addFormData.google_location for race-safe reads across async awaits
@@ -376,21 +397,23 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     googleLocationRef.current = '';
   }, [clearLocationFetchState]);
 
-  // On open: show the form immediately (no waiting spinner). Cloud draft is checked
-  // in the background; Resume only appears if the form is still empty.
-  // Fresh clipboard pastes only when there is no draft, or after Start new.
+  const showResumePromptNow = (next: boolean) => {
+    showResumePromptRef.current = next;
+    setShowResumePrompt(next);
+  };
+
+  // On open: form shows immediately when there is no local draft (no spinner).
+  // If this phone already has a draft, Resume is selected during render so the form
+  // Dialog never mounts-then-unmounts (that was calling onOpenChange(false) and
+  // leaving a transparent overlay with no dialog).
   useEffect(() => {
     if (!open) {
-      setShowResumePrompt(false);
-      setOpenGateReady(false);
       clipboardAutofillEnabledRef.current = false;
       wasOpenRef.current = false;
       return;
     }
     if (wasOpenRef.current) return;
     wasOpenRef.current = true;
-    setOpenGateReady(false);
-    setShowResumePrompt(false);
     clipboardAutofillEnabledRef.current = false;
 
     const localDraft = loadAddCustomerDraft();
@@ -398,12 +421,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     if (openedWithLocalDraft && localDraft) {
       mergedDraftRef.current = localDraft;
       applyDraftToForm(localDraft);
-      clipboardAutofillEnabledRef.current = false;
-      setShowResumePrompt(true);
-      setOpenGateReady(true);
     } else {
       resetToBlankCustomerForm();
-      setShowResumePrompt(false);
     }
 
     let cancelled = false;
@@ -421,21 +440,21 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         }
         applyDraftToForm(draft);
         clipboardAutofillEnabledRef.current = false;
-        setShowResumePrompt(true);
+        showResumePromptNow(true);
         setOpenGateReady(true);
         return;
       }
 
       if (typedWhileWaiting) {
         clipboardAutofillEnabledRef.current = false;
-        setShowResumePrompt(false);
+        showResumePromptNow(false);
         setOpenGateReady(true);
         return;
       }
 
       resetToBlankCustomerForm();
       clipboardAutofillEnabledRef.current = true;
-      setShowResumePrompt(false);
+      showResumePromptNow(false);
       setOpenGateReady(true);
     })();
 
@@ -516,7 +535,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     setHasAutofilledPhone(false);
     clipboardAutofillEnabledRef.current = false;
     if (draft) applyDraftToForm(draft);
-    setShowResumePrompt(false);
+    showResumePromptNow(false);
   };
 
   const applyFlatHousePrefix = (rawFlat?: string) => {
@@ -536,7 +555,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     resetToBlankCustomerForm();
     // Allow paste of whatever was copied in the last 15s onto this blank form.
     clipboardAutofillEnabledRef.current = true;
-    setShowResumePrompt(false);
+    showResumePromptNow(false);
   };
 
   const cleanPhoneNumber = (phone: string): string => {
@@ -1968,7 +1987,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       open={Boolean(open && showResumePrompt)}
       onOpenChange={(o) => {
         // Dismiss without choosing = keep the draft already loaded (same as Resume).
-        if (!o) setShowResumePrompt(false);
+        if (!o) showResumePromptNow(false);
       }}
     >
       <AlertDialogContent className="relative !w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md p-5 sm:p-6">
@@ -1977,7 +1996,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground active:bg-muted/60 focus:outline-none focus-visible:ring-0 touch-manipulation [-webkit-tap-highlight-color:transparent] sm:right-4 sm:top-4 sm:h-9 sm:w-9"
           aria-label="Close"
           onClick={() => {
-            setShowResumePrompt(false);
+            showResumePromptNow(false);
             onOpenChange(false);
           }}
         >
@@ -2011,7 +2030,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
     <Dialog
       open={Boolean(open && !showResumePrompt)}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => {
+        // Hiding the form to show Resume is not a dismiss — forwarding false
+        // closed the parent modal and left a transparent overlay.
+        if (!next && showResumePromptRef.current) return;
+        onOpenChange(next);
+      }}
     >
       <DialogContent
         dismissible={false}
