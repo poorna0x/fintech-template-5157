@@ -23,6 +23,7 @@ export type AddCustomerDraft = {
   step5JobData?: Record<string, unknown>;
   currentStep?: number;
   shouldCreateJob?: boolean;
+  existingCustomerId?: string;
 };
 
 type DraftTombstone = { _cleared: true; savedAt: number };

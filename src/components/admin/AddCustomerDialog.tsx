@@ -215,6 +215,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   /** Which service row owns the open suggestion list (RO / SOFTENER). */
   const [suggestForService, setSuggestForService] = useState<string | null>(null);
   const [duplicateFoundOnBlur, setDuplicateFoundOnBlur] = useState<Customer | null>(null);
+  const [showExistingPrompt, setShowExistingPrompt] = useState(false);
+  const [pendingExistingCustomer, setPendingExistingCustomer] = useState<Customer | null>(null);
+  const [existingCustomerId, setExistingCustomerId] = useState<string | null>(
+    () =>
+      typeof initialDraftRef.current?.existingCustomerId === 'string'
+        ? initialDraftRef.current.existingCustomerId
+        : null
+  );
   // When the dialog opens with a saved (uncreated) draft, ask whether to resume or start fresh.
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const [universalResumeEnabled, setUniversalResumeEnabled] = useState(
@@ -237,6 +245,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const wasOpenRef = useRef(false);
   const dialogOpenRef = useRef(open);
   const showResumePromptRef = useRef(showResumePrompt);
+  const showExistingPromptRef = useRef(showExistingPrompt);
   const openGateReadyRef = useRef(openGateReady);
   /** Tracks `open` so we can set resume on the same render the dialog is requested — never mount the form first. */
   const [openCycle, setOpenCycle] = useState(false);
@@ -256,10 +265,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     } else {
       showResumePromptRef.current = false;
       setShowResumePrompt(false);
+      showExistingPromptRef.current = false;
+      setShowExistingPrompt(false);
       setOpenGateReady(false);
     }
   } else {
     showResumePromptRef.current = showResumePrompt;
+    showExistingPromptRef.current = showExistingPrompt;
   }
   dialogOpenRef.current = open;
   openGateReadyRef.current = openGateReady;
@@ -308,6 +320,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   currentStepRef.current = currentStep;
   const shouldCreateJobRef = useRef(shouldCreateJob);
   shouldCreateJobRef.current = shouldCreateJob;
+  const existingCustomerIdRef = useRef(existingCustomerId);
+  existingCustomerIdRef.current = existingCustomerId;
   const mergedDraftRef = useRef<ReturnType<typeof loadAddCustomerDraft>>(initialDraftRef.current);
   const fullNameInputRef = useRef<HTMLInputElement>(null);
   /** Focus name only on first landing on step 1 for this open — not when tapping Previous. */
@@ -363,7 +377,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   }, [open, clearLocationFetchState]);
 
   useEffect(() => {
-    if (!open || currentStep !== 1 || showResumePrompt || !openGateReady) return;
+    if (!open || currentStep !== 1 || showResumePrompt || showExistingPrompt || !openGateReady) return;
     if (didInitialStepOneFocusRef.current) return;
     const active = document.activeElement;
     if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
@@ -373,7 +387,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     didInitialStepOneFocusRef.current = true;
     const timer = window.setTimeout(focusStepOneName, 150);
     return () => window.clearTimeout(timer);
-  }, [open, currentStep, showResumePrompt, openGateReady, focusStepOneName]);
+  }, [open, currentStep, showResumePrompt, showExistingPrompt, openGateReady, focusStepOneName]);
 
   const resetFlatHouseNo = () => {
     setFlatHouseNo('');
@@ -388,6 +402,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     setStep5JobData({ ...createDefaultStep5JobData(), ...(draft.step5JobData || {}) });
     if (typeof draft.currentStep === 'number') setCurrentStep(clampAddCustomerStep(draft.currentStep));
     if (typeof draft.shouldCreateJob === 'boolean') setShouldCreateJob(draft.shouldCreateJob);
+    setExistingCustomerId(
+      typeof draft.existingCustomerId === 'string' && draft.existingCustomerId
+        ? draft.existingCustomerId
+        : null
+    );
     const draftLink = String(resumed.google_location || '').trim();
     googleLocationRef.current = draftLink;
     mapsShareTextRef.current = draftLink;
@@ -411,6 +430,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     setCurrentStep(1);
     setFormErrors({});
     setDuplicateFoundOnBlur(null);
+    setShowExistingPrompt(false);
+    setPendingExistingCustomer(null);
+    setExistingCustomerId(null);
     setShouldCreateJob(true);
     googleLocationRef.current = '';
   }, [clearLocationFetchState]);
@@ -493,8 +515,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // Empty / cleared forms remove the draft so Resume does not come back after X clear.
   useEffect(() => {
     if (!open || !openGateReady || showResumePrompt) return;
-    persistAddCustomerDraft({ addFormData, step5JobData, currentStep, shouldCreateJob });
-  }, [open, openGateReady, showResumePrompt, addFormData, step5JobData, currentStep, shouldCreateJob]);
+    persistAddCustomerDraft({ addFormData, step5JobData, currentStep, shouldCreateJob, existingCustomerId });
+  }, [open, openGateReady, showResumePrompt, addFormData, step5JobData, currentStep, shouldCreateJob, existingCustomerId]);
 
   // Flush the cloud copy when the dialog closes so the other phone sees it without waiting for debounce.
   useEffect(() => {
@@ -506,6 +528,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         step5JobData: step5JobDataRef.current,
         currentStep: currentStepRef.current,
         shouldCreateJob: shouldCreateJobRef.current,
+        existingCustomerId: existingCustomerIdRef.current || undefined,
       };
       // Still waiting on cloud: only flush if they already typed, so we do not
       // tombstone another phone's draft by closing an empty form too fast.
@@ -581,6 +604,23 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     // Allow paste of whatever was copied in the last 15s onto this blank form.
     clipboardAutofillEnabledRef.current = true;
     showResumePromptNow(false);
+  };
+
+  const handleConfirmUpdateExisting = () => {
+    const existing = pendingExistingCustomer;
+    if (!existing?.id) {
+      setShowExistingPrompt(false);
+      return;
+    }
+    setExistingCustomerId(existing.id);
+    setPendingExistingCustomer(null);
+    setShowExistingPrompt(false);
+    setCurrentStep(2);
+  };
+
+  const handleCancelUpdateExisting = () => {
+    setShowExistingPrompt(false);
+    setPendingExistingCustomer(null);
   };
 
   const cleanPhoneNumber = (phone: string): string => {
@@ -688,22 +728,27 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     }
     if (!validateStep(currentStep)) return;
     if (currentStep === 1) {
+      const rememberExisting = (existing: Customer) => {
+        if (existingCustomerIdRef.current === existing.id) return false;
+        setDuplicateFoundOnBlur(existing);
+        setPendingExistingCustomer(existing);
+        setShowExistingPrompt(true);
+        return true;
+      };
       if (onCheckExistingCustomer) {
         const existing = await onCheckExistingCustomer(addFormData.phone, addFormData.email);
-        if (existing) {
-          setDuplicateFoundOnBlur(existing);
-          onExistingCustomerFound?.(existing);
-          return;
+        if (existing && rememberExisting(existing)) return;
+        if (!existing) {
+          setDuplicateFoundOnBlur(null);
+          setExistingCustomerId(null);
         }
-        setDuplicateFoundOnBlur(null);
       } else {
         const existing = checkExistingCustomer(addFormData.phone, addFormData.email);
-        if (existing && onExistingCustomerFound) {
-          setDuplicateFoundOnBlur(existing);
-          onExistingCustomerFound(existing);
-          return;
+        if (existing && rememberExisting(existing)) return;
+        if (!existing) {
+          setDuplicateFoundOnBlur(null);
+          setExistingCustomerId(null);
         }
-        setDuplicateFoundOnBlur(null);
       }
     }
     const goingTo = Math.min(currentStep + 1, ADD_CUSTOMER_STEPS.length);
@@ -823,10 +868,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       step5JobData,
       currentStep,
       shouldCreateJob,
+      existingCustomerId: existingCustomerIdRef.current || undefined,
     });
     // Keep lastAutoClipFpRef so the same clipboard item is not re-applied after X.
     setHasAutofilledPhone(false);
     setDuplicateFoundOnBlur(null);
+    setExistingCustomerId(null);
     if (formErrors.phone) {
       setFormErrors((prevErr) => ({ ...prevErr, phone: '' }));
     }
@@ -1129,7 +1176,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   const tryAutoFillFromRecentClipboard = useCallback(async () => {
     const dialogIsOpen = () =>
-      dialogOpenRef.current && !showResumePromptRef.current && openGateReadyRef.current;
+      dialogOpenRef.current &&
+      !showResumePromptRef.current &&
+      !showExistingPromptRef.current &&
+      openGateReadyRef.current;
 
     if (!dialogIsOpen() || !clipboardAutofillEnabledRef.current || autoFillInFlightRef.current) {
       return;
@@ -1217,7 +1267,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!open || showResumePrompt || !openGateReady) return;
+    if (!open || showResumePrompt || showExistingPrompt || !openGateReady) return;
 
     void tryAutoFillFromRecentClipboard();
 
@@ -1262,7 +1312,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       document.removeEventListener('visibilitychange', onVisibility);
       removeAppListener?.();
     };
-  }, [open, showResumePrompt, openGateReady, tryAutoFillFromRecentClipboard]);
+  }, [open, showResumePrompt, showExistingPrompt, openGateReady, tryAutoFillFromRecentClipboard]);
 
   const fetchAddressFromGoogleLocation = async () => {
     // Prevent overlapping runs (double-clicks, accidental Enter while busy).
@@ -1666,10 +1716,23 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         ...(allPhotos.length > 0 ? { photos: allPhotos } : {}),
       };
 
-      let { data: newCustomer, error } = await db.customers.create(customerData);
+      const existingId = existingCustomerIdRef.current;
+      let newCustomer: any = null;
+      let error: { message?: string } | null = null;
+      if (existingId) {
+        const { customer_id: _cid, customer_since: _since, ...updatePayload } = customerData;
+        const updated = await db.customers.update(existingId, updatePayload);
+        newCustomer = updated.data;
+        error = updated.error;
+      } else {
+        const created = await db.customers.create(customerData);
+        newCustomer = created.data;
+        error = created.error;
+      }
+      const didUpdateExisting = Boolean(existingId);
       // Idle JWT refreshes / brief network blips can drop the INSERT response while the row
       // still landed in Postgres. Treat a matching phone created in the last 90s as success.
-      if (error || !newCustomer) {
+      if (!didUpdateExisting && (error || !newCustomer)) {
         const fallbackPhone = customerData.phone;
         if (fallbackPhone) {
           try {
@@ -1927,8 +1990,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       // Show combined toast message
       if (shouldCreateJob && newJob) {
         const jobNumber = (newJob as any).job_number || (newJob as any).jobNumber || 'N/A';
+        const customerLabel = newCustomer.customer_id || newCustomer.customerId;
+        const verb = didUpdateExisting ? 'updated' : 'created';
         if (scheduleAsFollowUp) {
-          toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created and follow-up scheduled for Job ${jobNumber}`);
+          toast.success(`Customer ${customerLabel} ${verb} and follow-up scheduled for Job ${jobNumber}`);
         } else {
           const assignedTech = step5JobData.assigned_technician_id
             ? technicians.find((t) => t.id === step5JobData.assigned_technician_id)
@@ -1936,13 +2001,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           const techName = assignedTech
             ? ` and assigned to ${assignedTech.full_name || assignedTech.fullName || 'technician'}`
             : '';
-          toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} and Job ${jobNumber} created${techName}!`);
+          toast.success(`Customer ${customerLabel} ${verb} and Job ${jobNumber} created${techName}!`);
         }
       } else if (shouldCreateJob && jobError) {
-        toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
+        toast.success(
+          `Customer ${newCustomer.customer_id || newCustomer.customerId} ${didUpdateExisting ? 'updated' : 'created'} successfully!`
+        );
         toast.error('Failed to create job. Please create it manually.');
       } else {
-        toast.success(`Customer ${newCustomer.customer_id || newCustomer.customerId} created successfully!`);
+        toast.success(
+          `Customer ${newCustomer.customer_id || newCustomer.customerId} ${didUpdateExisting ? 'updated' : 'created'} successfully!`
+        );
       }
 
       if (
@@ -1989,6 +2058,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       setCurrentStep(1);
       setFormErrors({});
       setDuplicateFoundOnBlur(null);
+      setShowExistingPrompt(false);
+      setPendingExistingCustomer(null);
+      setExistingCustomerId(null);
       setShouldCreateJob(true); // Reset to true (default)
       setStep5JobData(createDefaultStep5JobData());
       setLeadCostExpanded(false);
@@ -1998,7 +2070,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       // Call onCustomerCreated with the new customer so parent can append to list (e.g. when no job created)
       await onCustomerCreated(newCustomer ?? undefined);
     } catch (error) {
-      toast.error('Failed to create customer');
+      toast.error(existingCustomerIdRef.current ? 'Failed to update customer' : 'Failed to create customer');
     } finally {
       setIsCreating(false);
       setIsWaitingForPhotos(false);
@@ -2011,7 +2083,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         dismissible={false}
         hideCloseButton
         className={cn(
-          showResumePrompt
+          showResumePrompt || showExistingPrompt
             ? 'w-[calc(100vw-2rem)] max-w-md p-5 sm:p-6'
             : 'w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col'
         )}
@@ -2050,6 +2122,56 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               </Button>
               <Button type="button" onClick={handleResumeDraft} className="w-full sm:w-auto">
                 Resume
+              </Button>
+            </DialogFooter>
+          </>
+        ) : showExistingPrompt ? (
+          <>
+            <button
+              type="button"
+              className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground active:bg-muted/60 focus:outline-none focus-visible:ring-0 touch-manipulation [-webkit-tap-highlight-color:transparent] sm:right-4 sm:top-4 sm:h-9 sm:w-9"
+              aria-label="Close"
+              onClick={handleCancelUpdateExisting}
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <DialogHeader>
+              <DialogTitle className="pr-10">Customer already exists</DialogTitle>
+              <DialogDescription>
+                A customer with this phone number or email already exists.
+                <span className="mt-3 block space-y-1 font-medium text-foreground">
+                  <span className="block">
+                    ID:{' '}
+                    {(pendingExistingCustomer as { customer_id?: string; customerId?: string } | null)
+                      ?.customer_id ||
+                      (pendingExistingCustomer as { customerId?: string } | null)?.customerId ||
+                      '—'}
+                  </span>
+                  <span className="block">
+                    Name:{' '}
+                    {(pendingExistingCustomer as { full_name?: string; fullName?: string } | null)
+                      ?.full_name ||
+                      (pendingExistingCustomer as { fullName?: string } | null)?.fullName ||
+                      '—'}
+                  </span>
+                  <span className="block">Phone: {pendingExistingCustomer?.phone || '—'}</span>
+                  <span className="block">Email: {pendingExistingCustomer?.email || '—'}</span>
+                </span>
+                <span className="mt-3 block">
+                  Continue and update this existing customer with the new information?
+                </span>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+              <Button type="button" variant="outline" onClick={handleCancelUpdateExisting} className="w-full sm:w-auto">
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmUpdateExisting}
+                className="w-full sm:w-auto bg-orange-600 hover:bg-orange-700"
+              >
+                Continue & Update
               </Button>
             </DialogFooter>
           </>
@@ -2156,7 +2278,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     <Input
                       id="add_phone"
                       value={addFormData.phone}
-                      onChange={(e) => { handlePhoneChange(e.target.value); setDuplicateFoundOnBlur(null); }}
+                      onChange={(e) => {
+                        handlePhoneChange(e.target.value);
+                        setDuplicateFoundOnBlur(null);
+                        setExistingCustomerId(null);
+                      }}
                       placeholder="Enter 10-digit phone number"
                       autoComplete="tel"
                       inputMode="tel"
@@ -2213,7 +2339,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   id="add_email"
                   type="email"
                   value={addFormData.email}
-                  onChange={(e) => { handleAddFormChange('email', e.target.value); setDuplicateFoundOnBlur(null); }}
+                  onChange={(e) => {
+                    handleAddFormChange('email', e.target.value);
+                    setDuplicateFoundOnBlur(null);
+                    setExistingCustomerId(null);
+                  }}
                   placeholder="Enter email address"
                   autoComplete="email"
                   className={`text-sm ${formErrors.email ? 'border-red-500' : ''}`}
@@ -2874,12 +3004,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 {isCreating ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    {isWaitingForPhotos ? 'Uploading photos...' : 'Creating...'}
+                    {isWaitingForPhotos ? 'Uploading photos...' : existingCustomerId ? 'Saving...' : 'Creating...'}
                   </div>
                 ) : shouldCreateJob ? (
-                  'Create & Schedule'
+                  existingCustomerId ? 'Update & Schedule' : 'Create & Schedule'
                 ) : (
-                  'Create Customer'
+                  existingCustomerId ? 'Update Customer' : 'Create Customer'
                 )}
               </Button>
             )}

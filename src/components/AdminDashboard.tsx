@@ -345,7 +345,6 @@ import WhatsAppDialog from './admin/WhatsAppDialog';
 import { AdminScreenLoader, AdminInlineLoader } from './admin/AdminLoaders';
 import { markNativeBootReady } from '@/lib/nativeBootReady';
 import { AdminDeleteConfirmDialogs } from './admin/AdminDeleteConfirmDialogs';
-import { AdminOverrideExistingCustomerDialog } from './admin/AdminOverrideExistingCustomerDialog';
 import AmcInfoDialog from './admin/AmcInfoDialog';
 import MoveToOngoingDialog from './admin/MoveToOngoingDialog';
 import CompleteTechnicianSelectDialog from './admin/CompleteTechnicianSelectDialog';
@@ -3354,11 +3353,6 @@ const AdminDashboard = () => {
     } finally {
       setIsCreating(false);
     }
-  };
-
-  const handleCancelOverride = () => {
-    setOverrideDialogOpen(false);
-    setExistingCustomer(null);
   };
 
   // Job creation functions
@@ -7254,25 +7248,6 @@ const AdminDashboard = () => {
         }}
         onJobAssignedToTechnician={notifyWhatsAppAfterCreateAssign}
         onCheckExistingCustomer={checkExistingCustomer}
-        onExistingCustomerFound={(customer) => {
-          setExistingCustomer(customer);
-          setOverrideDialogOpen(true);
-        }}
-      />
-
-      <AdminOverrideExistingCustomerDialog
-        open={overrideDialogOpen}
-        onOpenChange={setOverrideDialogOpen}
-        existingCustomer={existingCustomer}
-        onCancel={() => {
-          handleCancelOverride();
-          closeAdminModal();
-        }}
-        onConfirmUpdate={() => {
-          setShouldUpdateExisting(true);
-          setOverrideDialogOpen(false);
-          setCurrentStep(2);
-        }}
       />
 
       {/* Legacy Add Customer Dialog - REMOVED - Now using AddCustomerDialog component */}
