@@ -23,6 +23,41 @@ function validLatLng(lat, lng) {
   );
 }
 
+const LEADING_PLUS_CODE = /^([A-Z0-9]{2,8})(?:\+|\s+)([A-Z0-9]{2,3})\b/i;
+
+function distinctivePlaceTokens(query) {
+  const stop = new Set([
+    'apartments',
+    'apartment',
+    'bengaluru',
+    'bangalore',
+    'karnataka',
+    'india',
+    'road',
+    'main',
+    'layout',
+    'phase',
+    'nagar',
+    'cross',
+    'street',
+    'near',
+    'the',
+    'and',
+  ]);
+  return String(query || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 4 && !stop.has(t) && !/^\d+$/.test(t));
+}
+
+function nominatimLooksLikeQuery(query, displayName) {
+  const tokens = distinctivePlaceTokens(query).slice(0, 3);
+  if (tokens.length === 0) return true;
+  const d = String(displayName || '').toLowerCase();
+  const hits = tokens.filter((t) => d.includes(t));
+  return hits.length >= Math.min(2, tokens.length);
+}
+
 function preferIndiaPair(pairs) {
   if (!pairs.length) return null;
   const india = pairs.filter(
@@ -34,7 +69,7 @@ function preferIndiaPair(pairs) {
 async function geocodePlaceNameNominatim(placeName) {
   if (!placeName) return null;
   const queries = [placeName];
-  const withoutPlus = String(placeName).replace(/^[A-Z0-9]{4,}\+[A-Z0-9]{2,}\s*/i, '').trim();
+  const withoutPlus = String(placeName).replace(/^[A-Z0-9]{4,}(?:\+|\s+)[A-Z0-9]{2,}\s*/i, '').trim();
   if (withoutPlus && withoutPlus !== placeName) queries.push(withoutPlus);
 
   for (const q of queries) {
@@ -52,7 +87,12 @@ async function geocodePlaceNameNominatim(placeName) {
         const data = await response.json();
         const lat = parseFloat(data?.[0]?.lat);
         const lng = parseFloat(data?.[0]?.lon);
-        if (validLatLng(lat, lng)) return { latitude: lat, longitude: lng };
+        if (
+          validLatLng(lat, lng) &&
+          nominatimLooksLikeQuery(q, data?.[0]?.display_name)
+        ) {
+          return { latitude: lat, longitude: lng };
+        }
       } catch {
         /* try next */
       }
@@ -61,57 +101,106 @@ async function geocodePlaceNameNominatim(placeName) {
   return null;
 }
 
+/** Named Maps shares often start with a Plus Code (e.g. "2QG7+J9F Assetz Marq 1.0 apartments"). */
+function placeNameGeocodeQueries(placeName) {
+  const raw = String(placeName || '').trim();
+  if (!raw) return [];
+  const queries = [];
+  const add = (q) => {
+    const t = String(q || '').replace(/\s+/g, ' ').trim();
+    if (t && !queries.includes(t)) queries.push(t);
+  };
+  const plus = raw.match(LEADING_PLUS_CODE);
+  const withoutPlus = raw.replace(/^[A-Z0-9]{2,8}(?:\+|\s+)[A-Z0-9]{2,3}\s*,?\s*/i, '').trim();
+  // Local Plus Codes (2QG7+J9F) are city-relative and can pin downtown. Prefer name + locality.
+  if (withoutPlus) {
+    add(withoutPlus);
+    const first = withoutPlus.split(',')[0];
+    if (first && first !== withoutPlus) add(`${first}, Bengaluru, Karnataka, India`);
+  }
+  if (plus) {
+    const locality =
+      withoutPlus.split(',').slice(1).join(',').trim() || 'Bengaluru, Karnataka, India';
+    add(`${plus[1]}+${plus[2]}, ${locality}`);
+  }
+  add(raw);
+  return queries;
+}
+
+function googleApiDenied(status) {
+  return status === 'REQUEST_DENIED' || status === 'OVER_QUERY_LIMIT';
+}
+
 /** Geocode a named place when the short link has no !3d/!4d coordinates. */
 async function geocodePlaceNameWithGoogle(placeName) {
   if (!placeName) return null;
   const apiKey = getGoogleMapsServerKey();
+  const queries = placeNameGeocodeQueries(placeName);
+  let googleDenied = false;
   if (apiKey) {
-    try {
-      const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
-      url.searchParams.set('address', placeName);
-      url.searchParams.set('region', 'in');
-      url.searchParams.set('key', apiKey);
-      const response = await fetch(url.toString(), {
-        headers: {
-          Referer: 'https://hydrogenro.com/',
-          'User-Agent': 'HydrogenRO-CRM/1.0',
-        },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.status === 'OK' && data.results?.[0]?.geometry?.location) {
-          const { lat, lng } = data.results[0].geometry.location;
-          if (validLatLng(lat, lng)) return { latitude: lat, longitude: lng };
+    for (const query of queries) {
+      try {
+        const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+        url.searchParams.set('address', query);
+        url.searchParams.set('region', 'in');
+        url.searchParams.set('key', apiKey);
+        const response = await fetch(url.toString(), {
+          headers: {
+            Referer: 'https://hydrogenro.com/',
+            'User-Agent': 'HydrogenRO-CRM/1.0',
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (googleApiDenied(data.status)) {
+            googleDenied = true;
+            break;
+          }
+          if (data.status === 'OK' && data.results?.[0]?.geometry?.location) {
+            const { lat, lng } = data.results[0].geometry.location;
+            if (validLatLng(lat, lng)) return { latitude: lat, longitude: lng };
+          }
         }
+      } catch {
+        /* try Places */
       }
-    } catch {
-      /* try Places / Nominatim */
-    }
-    try {
-      const url = new URL('https://maps.googleapis.com/maps/api/place/findplacefromtext/json');
-      url.searchParams.set('input', placeName);
-      url.searchParams.set('inputtype', 'textquery');
-      url.searchParams.set('fields', 'geometry,name');
-      url.searchParams.set('region', 'in');
-      url.searchParams.set('key', apiKey);
-      const response = await fetch(url.toString(), {
-        headers: {
-          Referer: 'https://hydrogenro.com/',
-          'User-Agent': 'HydrogenRO-CRM/1.0',
-        },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        const loc = data?.candidates?.[0]?.geometry?.location;
-        if (loc && validLatLng(loc.lat, loc.lng)) {
-          return { latitude: loc.lat, longitude: loc.lng };
+      if (googleDenied) break;
+      try {
+        const url = new URL('https://maps.googleapis.com/maps/api/place/findplacefromtext/json');
+        url.searchParams.set('input', query);
+        url.searchParams.set('inputtype', 'textquery');
+        url.searchParams.set('fields', 'geometry,name');
+        url.searchParams.set('region', 'in');
+        url.searchParams.set('key', apiKey);
+        const response = await fetch(url.toString(), {
+          headers: {
+            Referer: 'https://hydrogenro.com/',
+            'User-Agent': 'HydrogenRO-CRM/1.0',
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (googleApiDenied(data.status)) {
+            googleDenied = true;
+            break;
+          }
+          const loc = data?.candidates?.[0]?.geometry?.location;
+          if (loc && validLatLng(loc.lat, loc.lng)) {
+            return { latitude: loc.lat, longitude: loc.lng };
+          }
         }
+      } catch {
+        /* next query */
       }
-    } catch {
-      /* Nominatim */
     }
   }
-  return geocodePlaceNameNominatim(placeName);
+  if (!googleDenied) {
+    for (const query of queries) {
+      const nominatim = await geocodePlaceNameNominatim(query);
+      if (nominatim) return nominatim;
+    }
+  }
+  return null;
 }
 
 const USER_AGENTS = [
@@ -183,6 +272,25 @@ function sanitizeUrl(input) {
   return String(input || '')
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .trim();
+}
+
+/**
+ * Maps path uses + for spaces, but Plus Codes encode + as %2B (or a real + after decode).
+ * Do not turn 2QG7+J9F into "2QG7 J9F".
+ */
+function decodeMapsPlaceSlug(slug) {
+  const s = String(slug || '');
+  const protect = s
+    .replace(/%2B/gi, '\uE000')
+    .replace(/^([A-Z0-9]{2,8})\+([A-Z0-9]{2,3})\b/i, (_, a, b) => `${a}\uE000${b}`);
+  const spaced = protect.replace(/\+/g, ' ');
+  let decoded = spaced;
+  try {
+    decoded = decodeURIComponent(spaced);
+  } catch {
+    /* keep spaced */
+  }
+  return decoded.replace(/\uE000/g, '+').replace(/\s+/g, ' ').trim();
 }
 
 function normalizeUrlForParsing(url) {
@@ -291,6 +399,11 @@ function isUsefulPlaceName(name) {
   if (/^(google maps|before you continue|consent|welcome to google)$/i.test(n)) return false;
   if (/[{}\[\]<>]|new Set|function\(|pda=|https?:/i.test(n)) return false;
   return /[a-zA-Z\u00C0-\u024F\u0900-\u097F]/.test(n);
+}
+
+/** `/place/12.97,77.59` is a pin. `/place/2QG7+J9F Assetz Marq…` is a named share (Plus Code). */
+function isCoordinatePlaceSlug(raw) {
+  return /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?/.test(String(raw || '').trim());
 }
 
 function extractPlaceNameFromHtml(html) {
@@ -557,7 +670,7 @@ async function followRedirects(startUrl) {
             ? `https://www.google.com/maps?q=${lastFollowMeta.coords.latitude},${lastFollowMeta.coords.longitude}`
             : automatic;
         }
-        if (!isShortMapsUrl(automatic) && extractPlaceNameFromUrl(automatic)) return automatic;
+        if (!isShortMapsUrl(automatic) && /\/maps\/place\//i.test(automatic)) return automatic;
       } catch {
         // try next strategy
       }
@@ -570,7 +683,7 @@ async function followRedirects(startUrl) {
             ? `https://www.google.com/maps?q=${lastFollowMeta.coords.latitude},${lastFollowMeta.coords.longitude}`
             : manual;
         }
-        if (!isShortMapsUrl(manual) && extractPlaceNameFromUrl(manual)) return manual;
+        if (!isShortMapsUrl(manual) && /\/maps\/place\//i.test(manual)) return manual;
       } catch {
         // try next strategy
       }
@@ -582,18 +695,21 @@ async function followRedirects(startUrl) {
 
 function extractPlaceNameFromUrl(url) {
   try {
-    const parsed = normalizeUrlForParsing(url);
-    const placeMatch = parsed.match(/\/place\/([^/@?]+)/);
+    const rawUrl = sanitizeUrl(url);
+    const placeMatch =
+      rawUrl.match(/\/place\/([^/@?]+)/) ||
+      normalizeUrlForParsing(rawUrl).match(/\/place\/([^/@?]+)/);
     if (placeMatch) {
-      const raw = decodeURIComponent(placeMatch[1].replace(/\+/g, ' ')).trim();
-      if (raw && !/^-?\d/.test(raw) && isUsefulPlaceName(raw)) return raw;
+      const raw = decodeMapsPlaceSlug(placeMatch[1]);
+      if (raw && !isCoordinatePlaceSlug(raw) && isUsefulPlaceName(raw)) return raw;
     }
     try {
+      const parsed = normalizeUrlForParsing(rawUrl);
       const u = new URL(parsed);
       const q = u.searchParams.get('q') || u.searchParams.get('query');
       if (q) {
-        const cleaned = decodeURIComponent(String(q).replace(/\+/g, ' ')).trim();
-        if (!/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(cleaned) && isUsefulPlaceName(cleaned)) {
+        const cleaned = decodeMapsPlaceSlug(String(q));
+        if (!isCoordinatePlaceSlug(cleaned) && isUsefulPlaceName(cleaned)) {
           return cleaned;
         }
       }
@@ -822,6 +938,8 @@ exports.handler = async (event) => {
 exports.extractCoordinatesFromUrl = extractCoordinatesFromUrl;
 exports.extractMapsUrlFromText = extractMapsUrlFromText;
 exports.extractPlaceHintFromShareText = extractPlaceHintFromShareText;
+exports.extractPlaceNameFromUrl = extractPlaceNameFromUrl;
+exports.placeNameGeocodeQueries = placeNameGeocodeQueries;
 exports.isShortMapsUrl = isShortMapsUrl;
 exports.followRedirects = followRedirects;
 exports.resolveMapsShareToCoords = resolveMapsShareToCoords;

@@ -76,16 +76,36 @@ export function extractPlaceHintFromShareText(text: string): string | null {
 }
 
 /**
+ * Maps path uses + for spaces, but Plus Codes encode + as %2B (or a real + after decode).
+ */
+function decodeMapsPlaceSlug(slug: string): string {
+  const protect = String(slug || '')
+    .replace(/%2B/gi, '\uE000')
+    .replace(/^([A-Z0-9]{2,8})\+([A-Z0-9]{2,3})\b/i, (_, a, b) => `${a}\uE000${b}`);
+  const spaced = protect.replace(/\+/g, ' ');
+  let decoded = spaced;
+  try {
+    decoded = decodeURIComponent(spaced);
+  } catch {
+    /* keep spaced */
+  }
+  return decoded.replace(/\uE000/g, '+').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Place name from an expanded /place/Name,.../ Google Maps URL.
  */
 export function extractPlaceNameFromMapsUrl(url: string): string | null {
   try {
-    const value = normalizeUrlForParsing(url);
-    const match = value.match(/\/place\/([^/@?]+)/);
+    const rawUrl = sanitizeGoogleMapsInput(url);
+    const match =
+      rawUrl.match(/\/place\/([^/@?]+)/) ||
+      normalizeUrlForParsing(rawUrl).match(/\/place\/([^/@?]+)/);
     if (!match) return null;
 
-    const raw = decodeURIComponent(match[1].replace(/\+/g, ' ')).trim();
-    if (!raw || /^-?\d/.test(raw)) return null;
+    const raw = decodeMapsPlaceSlug(match[1]);
+    // Plus Codes often start with a digit (2QG7+J9F …). Only skip real lat,lng slugs.
+    if (!raw || /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?/.test(raw)) return null;
 
     const primary = raw.split(',')[0].trim();
     if (!primary || primary.length < 3) return null;
@@ -453,22 +473,54 @@ export async function geocodePlaceHintWithGoogleMapsJs(
 
   return new Promise((resolve) => {
     const geocoder = new window.google.maps.Geocoder();
+    let settled = false;
+    const finish = (value: GeocodedPlaceHint | null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = window.setTimeout(() => finish(null), 5000);
     geocoder.geocode({ address: q, region: 'in' }, (results, status) => {
       if (status === window.google.maps.GeocoderStatus.OK && results?.[0]?.geometry?.location) {
         const loc = results[0].geometry.location;
-        resolve({
+        finish({
           latitude: loc.lat(),
           longitude: loc.lng(),
           address: results[0].formatted_address || q,
         });
       } else {
-        resolve(null);
+        finish(null);
       }
     });
   });
 }
 
 /** Try client Google geocoder first, then staff server geocode. */
+function expandPlaceHintQueries(hints: string[]): string[] {
+  const queries: string[] = [];
+  const add = (q: string) => {
+    const t = q.replace(/\s+/g, ' ').trim();
+    if (t && !queries.includes(t)) queries.push(t);
+  };
+  for (const hint of hints) {
+    const withoutPlus = hint.replace(/^[A-Z0-9]{2,8}(?:\+|\s+)[A-Z0-9]{2,3}\s*,?\s*/i, '').trim();
+    const plus = hint.match(/^([A-Z0-9]{2,8})(?:\+|\s+)([A-Z0-9]{2,3})\b/i);
+    if (withoutPlus) {
+      add(withoutPlus);
+      const first = withoutPlus.split(',')[0];
+      if (first && first !== withoutPlus) add(`${first}, Bengaluru, Karnataka, India`);
+    }
+    if (plus) {
+      const locality =
+        withoutPlus.split(',').slice(1).join(',').trim() || 'Bengaluru, Karnataka, India';
+      add(`${plus[1]}+${plus[2]}, ${locality}`);
+    }
+    add(hint);
+  }
+  return queries;
+}
+
 export async function geocodeFromPlaceHints(
   hints: string[],
   accessToken: string | null
@@ -477,7 +529,7 @@ export async function geocodeFromPlaceHints(
     typeof window !== 'undefined' &&
     /localhost|127\.0\.0\.1/i.test(window.location.hostname);
 
-  for (const hint of hints) {
+  for (const hint of expandPlaceHintQueries(hints)) {
     if (!mapsJsBlocked) {
       const fromClient = await geocodePlaceHintWithGoogleMapsJs(hint);
       if (fromClient) return { geocoded: fromClient, hint };
