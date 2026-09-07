@@ -412,7 +412,6 @@ const TechnicianPayments = () => {
       setCommissionPeriod({ start: startDate, end: endDate });
       const techsResult = await db.technicians.getAll(100, {
         activeRosterOnly: true,
-        includeSuspended: true,
       });
       if (techsResult.error) throw techsResult.error;
       setTechnicians(techsResult.data || []);

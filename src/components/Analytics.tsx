@@ -12,7 +12,7 @@ import {
   resolveJobBillingAmount,
 } from '@/lib/jobAnalytics';
 import { getTotalSalaryForCalendarMonth, getTechnicianMonthlyBaseSalary, TECHNICIAN_SALARY_PAYROLL_START } from '@/lib/technicianSalaryForPeriod';
-import { technicianAccountStatusSuffix } from '@/lib/technicianAccountStatus';
+import { technicianAccountStatusSuffix, isSalaryListedTechnician } from '@/lib/technicianAccountStatus';
 import { toast } from 'sonner';
 import {
   BarChart3,
@@ -614,6 +614,7 @@ async function loadAnalyticsSalaryTotals(
   startStr: string,
   endStr: string
 ): Promise<{ totalSalaryDeductions: number; totalSalaryIncludingAll: number }> {
+  const salaryTechnicians = (technicians || []).filter(isSalaryListedTechnician);
   const usePaymentsSalary =
     (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') &&
     startDate &&
@@ -638,7 +639,7 @@ async function loadAnalyticsSalaryTotals(
       const result = await getTotalSalaryForCalendarMonth(
         startDate.getFullYear(),
         startDate.getMonth() + 1,
-        { technicians }
+        { technicians: salaryTechnicians }
       );
       return {
         totalSalaryDeductions: result.totalSalaryBeforeAdvance,
@@ -650,7 +651,7 @@ async function loadAnalyticsSalaryTotals(
     }
   }
 
-  if (technicians.length === 0 || !startDate || !endDate) {
+  if (salaryTechnicians.length === 0 || !startDate || !endDate) {
     return { totalSalaryDeductions: 0, totalSalaryIncludingAll: 0 };
   }
 
@@ -688,7 +689,7 @@ async function loadAnalyticsSalaryTotals(
 
     let totalSalaryPaid = 0;
     let totalSalaryIncludingAll = 0;
-    technicians.forEach((tech: any) => {
+    salaryTechnicians.forEach((tech: any) => {
       const techId = tech.id;
       const employeeId = tech.employee_id ?? tech.employeeId ?? '';
       const baseSalary = getProRatedBaseSalary(tech, startDate, endDate);

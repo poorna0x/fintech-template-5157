@@ -3,6 +3,7 @@
  * Analytics uses salary before advance (adjusted base + commission + extra).
  */
 import { db, supabase } from '@/lib/supabase';
+import { isSalaryListedTechnician } from '@/lib/technicianAccountStatus';
 
 const EXCLUDED_EMPLOYEE_ID = 'TECH851703400'; // Excluded from Total Salary / profit (same as Analytics)
 const BILLING_SLAB_COMMISSION_EFFECTIVE_MONTH = '2026-04';
@@ -259,7 +260,7 @@ export async function getTotalSalaryForCalendarMonth(
     .gte('end_time', startDate.toISOString())
     .lte('end_time', endDate.toISOString());
 
-  const allTechnicians = techniciansResult.data || [];
+  const allTechnicians = (techniciansResult.data || []).filter(isSalaryListedTechnician);
   const payments = paymentsData || [];
   const extraCommissions = extraCommissionsData || [];
   const holidays = holidaysData || [];

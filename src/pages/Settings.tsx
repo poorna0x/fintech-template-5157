@@ -3758,7 +3758,7 @@ const Settings = () => {
                       Technician Management
                     </CardTitle>
                   <CardDescription className="text-sm mt-1">
-                      Use Edit → account status. Inactive staff stay in the database but are hidden from assignments, maps, Technician Payments, and salary totals. Suspended cannot log in; they are listed in a collapsed section below.
+                      Use Edit → account status. Inactive and Suspended stay in the database but are hidden from assignments, maps, Technician Payments, and salary totals. Suspended also cannot log in; they are listed in a collapsed section below.
                     </CardDescription>
                   </div>
                 {!isManager ? (
@@ -3795,7 +3795,7 @@ const Settings = () => {
                           Suspended ({suspendedTechniciansList.length})
                         </h3>
                         <p className="text-xs text-muted-foreground">
-                          Cannot log in. Still on salary and assignment lists until you set Inactive.
+                          Cannot log in. Hidden from assignments, maps, and salary until you set Active.
                         </p>
                       </div>
                       <ChevronDown
@@ -4342,11 +4342,11 @@ const Settings = () => {
                       <SelectContent>
                         <SelectItem value="ACTIVE">Active — roster, payments & salary lists, can log in</SelectItem>
                         <SelectItem value="INACTIVE">Inactive — hidden from roster, maps, and salary/payment screens</SelectItem>
-                        <SelectItem value="SUSPENDED">Suspended — cannot log in; adjust in roster filters as needed</SelectItem>
+                        <SelectItem value="SUSPENDED">Suspended — cannot log in; hidden from roster, maps, and salary</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      Inactive keeps all job and payment history; change back to Active to show them in Technician Payments again.
+                      Inactive and Suspended keep job history. Set Active again to show them on Technician Payments and salary totals.
                     </p>
                   </div>
                   {selectedTechnician?.id ? (

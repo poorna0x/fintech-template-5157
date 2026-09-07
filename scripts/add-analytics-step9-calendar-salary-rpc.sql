@@ -221,6 +221,7 @@ BEGIN
   FOR tech IN
     SELECT t.id, t.employee_id, t.salary
     FROM public.technicians t
+    WHERE coalesce(t.account_status, 'ACTIVE') = 'ACTIVE'
     ORDER BY t.created_at DESC
   LOOP
     monthly_base := public.analytics_technician_monthly_base_salary(tech.salary, month_key, 8000);

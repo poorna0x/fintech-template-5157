@@ -4100,8 +4100,8 @@ export const db = {
 
     /**
      * Admin list including `salary` — uses `get_technicians_for_admin` SECURITY DEFINER RPC.
-     * @param activeRosterOnly When true, Active only (Suspended hidden). Set includeSuspended to also keep Suspended for salary screens.
-     * @param includeSuspended With activeRosterOnly, keep Suspended (hide Inactive only).
+     * @param activeRosterOnly When true, Active only (Suspended and Inactive hidden).
+     * @param includeSuspended Ignored — salary screens are Active-only (same as roster).
      */
     async getAll(limit?: number, options?: { activeRosterOnly?: boolean; includeSuspended?: boolean }) {
       const activeOnly = options?.activeRosterOnly === true;

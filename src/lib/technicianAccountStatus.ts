@@ -17,11 +17,11 @@ export function isActiveTechnicianAccount(
   return technicianAccountStatus(tech) === 'ACTIVE';
 }
 
-/** Salary / payments lists — hide Inactive, keep Suspended so history still calculates. */
+/** Salary / payments lists — Active only. Suspended and Inactive are hidden. */
 export function isSalaryListedTechnician(
   tech: { account_status?: unknown } | null | undefined
 ): boolean {
-  return technicianAccountStatus(tech) !== 'INACTIVE';
+  return technicianAccountStatus(tech) === 'ACTIVE';
 }
 
 export function technicianAccountStatusSuffix(
