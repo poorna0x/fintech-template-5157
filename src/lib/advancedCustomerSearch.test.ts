@@ -3,6 +3,7 @@ import {
   billAmountOrClause,
   clampNearRadiusKm,
   customerServiceTypeOrClause,
+  formatNearbyDistanceLabel,
   formatNearRadiusLabel,
   jobServiceTypeOrClause,
   parseNearRadiusKm,
@@ -32,6 +33,14 @@ describe('formatNearRadiusLabel', () => {
     expect(formatNearRadiusLabel(0.05)).toBe('50 m');
     expect(formatNearRadiusLabel(0.2)).toBe('200 m');
     expect(formatNearRadiusLabel(2)).toBe('2 km');
+  });
+});
+
+describe('formatNearbyDistanceLabel', () => {
+  it('uses metres below 1 km and km at or above', () => {
+    expect(formatNearbyDistanceLabel(0)).toBe('0 m');
+    expect(formatNearbyDistanceLabel(0.08)).toBe('80 m');
+    expect(formatNearbyDistanceLabel(2)).toBe('2 km');
   });
 });
 

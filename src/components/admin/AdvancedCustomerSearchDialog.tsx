@@ -45,6 +45,7 @@ import {
   MAX_NEAR_RADIUS_KM,
   NEAR_RADIUS_PRESETS_KM,
   clampNearRadiusKm,
+  formatNearbyDistanceLabel,
   formatNearRadiusLabel,
   isNearRadiusDraft,
   parseNearRadiusKm,
@@ -76,6 +77,7 @@ const EMPTY_FILTERS: AdvancedSearchFilters = {
   freeText: '',
   brandContains: '',
   brandSource: 'either',
+  modelContains: '',
   locationContains: '',
   nearMapsLink: '',
   nearRadiusKm: DEFAULT_NEAR_RADIUS_KM,
@@ -88,6 +90,7 @@ const EMPTY_FILTERS: AdvancedSearchFilters = {
   hasAMC: '',
   lastServiceFrom: '',
   lastServiceTo: '',
+  neverServiced: '',
   createdSinceFrom: '',
   createdSinceTo: '',
   serviceSubType: '',
@@ -100,6 +103,67 @@ const EMPTY_FILTERS: AdvancedSearchFilters = {
   sort: 'last_service_desc',
   limit: 200,
 };
+
+const FILTERS_STORAGE_KEY = 'hro-adv-customer-search-v2';
+
+function searchFingerprint(filters: AdvancedSearchFilters): string {
+  const { nearLat: _lat, nearLng: _lng, ...rest } = filters;
+  return JSON.stringify(rest);
+}
+
+function loadPersistedFilters(): AdvancedSearchFilters {
+  try {
+    const raw = sessionStorage.getItem(FILTERS_STORAGE_KEY);
+    if (!raw) return { ...EMPTY_FILTERS };
+    const parsed = JSON.parse(raw) as Partial<AdvancedSearchFilters>;
+    const brandSource =
+      parsed.brandSource === 'customer' || parsed.brandSource === 'jobs' ? parsed.brandSource : 'either';
+    const sort =
+      parsed.sort === 'created_desc' ||
+      parsed.sort === 'name_asc' ||
+      parsed.sort === 'distance_asc' ||
+      parsed.sort === 'last_service_desc'
+        ? parsed.sort
+        : 'last_service_desc';
+    const limit =
+      typeof parsed.limit === 'number' && Number.isFinite(parsed.limit)
+        ? Math.min(Math.max(Math.round(parsed.limit), 1), 500)
+        : 200;
+    return {
+      ...EMPTY_FILTERS,
+      ...parsed,
+      brandSource,
+      sort,
+      limit,
+      neverServiced: parsed.neverServiced === 'yes' ? 'yes' : '',
+      nearLat: null,
+      nearLng: null,
+    };
+  } catch {
+    return { ...EMPTY_FILTERS };
+  }
+}
+
+function moreFiltersActive(f: AdvancedSearchFilters): boolean {
+  return Boolean(
+    f.status ||
+      f.hasPrefilter ||
+      f.hasGoogleReview ||
+      f.serviceSubType ||
+      f.leadSource ||
+      f.completedByTechnicianId ||
+      (f.billMin !== '' && f.billMin != null) ||
+      (f.billMax !== '' && f.billMax != null) ||
+      (f.tdsMin !== '' && f.tdsMin != null) ||
+      (f.tdsMax !== '' && f.tdsMax != null) ||
+      f.lastServiceFrom ||
+      f.lastServiceTo ||
+      f.neverServiced === 'yes' ||
+      f.createdSinceFrom ||
+      f.createdSinceTo ||
+      (f.limit != null && f.limit !== 200)
+  );
+}
 
 /** Fallback if catalog cache is empty (pre-migration / offline). */
 const FALLBACK_LEAD_SOURCES = [...LEGACY_LEAD_SOURCE_LABELS];
@@ -169,7 +233,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   onOpenChange,
 }) => {
   const navigate = useNavigate();
-  const [filters, setFilters] = useState<AdvancedSearchFilters>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<AdvancedSearchFilters>(loadPersistedFilters);
   const { sources, subTypes } = useLeadCatalog();
   const leadSourceOptions = useMemo(() => {
     const labels = sources.length
@@ -191,8 +255,9 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   }, [subTypes, filters.serviceSubType]);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [lastSearchFingerprint, setLastSearchFingerprint] = useState<string | null>(null);
   const [results, setResults] = useState<AdvancedSearchRow[]>([]);
-  const [showMore, setShowMore] = useState(false);
+  const [showMore, setShowMore] = useState(() => moreFiltersActive(loadPersistedFilters()));
   const [technicians, setTechnicians] = useState<TechOption[]>([]);
   const [technicianRows, setTechnicianRows] = useState<TechRow[]>([]);
   const [techsLoaded, setTechsLoaded] = useState(false);
@@ -272,10 +337,30 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     setFilters(EMPTY_FILTERS);
     setResults([]);
     setHasSearched(false);
+    setLastSearchFingerprint(null);
     setPage(1);
     setNearResolvedLabel(null);
     setRadiusKmDraft(null);
+    setShowMore(false);
+    try {
+      sessionStorage.removeItem(FILTERS_STORAGE_KEY);
+    } catch {
+      /* ignore quota / private mode */
+    }
   };
+
+  useEffect(() => {
+    try {
+      const toStore: AdvancedSearchFilters = {
+        ...filters,
+        nearLat: null,
+        nearLng: null,
+      };
+      sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(toStore));
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [filters]);
 
   const handleSearch = async () => {
     let committedRadiusKm = DEFAULT_NEAR_RADIUS_KM;
@@ -363,6 +448,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
         if (data.length === 0) toast.info('No customers matched these filters');
       }
       setHasSearched(true);
+      setLastSearchFingerprint(searchFingerprint(searchFilters));
       setPage(1);
       scrollToResultsAfterSearchRef.current = true;
     } catch (err) {
@@ -471,6 +557,10 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     return `${sliceStart + 1}–${sliceEnd} of ${totalResults}`;
   }, [hasSearched, totalResults, sliceStart, sliceEnd]);
 
+  const resultsStale = Boolean(
+    hasSearched && lastSearchFingerprint && lastSearchFingerprint !== searchFingerprint(filters)
+  );
+
   const activeChips = useMemo(() => {
     const chips: { key: string; label: string; clear: () => void }[] = [];
     const clearKey = <K extends keyof AdvancedSearchFilters>(key: K, empty: AdvancedSearchFilters[K]) => {
@@ -492,6 +582,13 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           clearKey('brandContains', '');
           clearKey('brandSource', 'either');
         },
+      });
+    }
+    if (filters.modelContains?.trim()) {
+      chips.push({
+        key: 'model',
+        label: `Model: ${filters.modelContains.trim()}`,
+        clear: () => clearKey('modelContains', ''),
       });
     }
     if (filters.locationContains?.trim()) {
@@ -534,6 +631,13 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
         key: 'amc',
         label: filters.hasAMC === 'yes' ? 'AMC yes' : 'AMC no',
         clear: () => clearKey('hasAMC', ''),
+      });
+    }
+    if (filters.neverServiced === 'yes') {
+      chips.push({
+        key: 'never',
+        label: 'Never serviced',
+        clear: () => clearKey('neverServiced', ''),
       });
     }
     if (filters.status) {
@@ -643,6 +747,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     if (filters.tdsMin !== '' && filters.tdsMin != null) n += 1;
     if (filters.tdsMax !== '' && filters.tdsMax != null) n += 1;
     if (filters.lastServiceFrom || filters.lastServiceTo) n += 1;
+    if (filters.neverServiced === 'yes') n += 1;
     if (filters.createdSinceFrom || filters.createdSinceTo) n += 1;
     if (filters.limit != null && filters.limit !== 200) n += 1;
     return n;
@@ -681,7 +786,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
             Advanced search
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Combine filters to find customers. Paste a Maps link for nearby search.
+            Combine filters to find customers. Filters stay until Reset or you close the tab.
           </DialogDescription>
         </DialogHeader>
 
@@ -700,7 +805,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
             <div className="flex flex-col sm:flex-row gap-2">
               <Input
                 id="adv_free"
-                placeholder="Name, phone, customer ID, email…"
+                placeholder="Name, phone, ID, area, model, GST…"
                 value={filters.freeText ?? ''}
                 onChange={(e) => update('freeText', e.target.value)}
                 onKeyDown={(e) => {
@@ -721,7 +826,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                   ) : (
                     <Search className="w-4 h-4 mr-2" />
                   )}
-                  {isResolvingNear ? 'Resolving…' : isSearching ? 'Searching…' : 'Search'}
+                  {isResolvingNear ? 'Resolving…' : isSearching ? 'Searching…' : resultsStale ? 'Update' : 'Search'}
                 </Button>
                 <Button
                   type="button"
@@ -754,6 +859,12 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
               </div>
             )}
 
+            {resultsStale && (
+              <p className="text-[11px] text-amber-700 dark:text-amber-400 -mt-2">
+                Filters changed — tap Update to search again.
+              </p>
+            )}
+
             {/* Core filters */}
             <section className="space-y-3">
               <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -766,6 +877,9 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                     placeholder="e.g. livpure"
                     value={filters.brandContains ?? ''}
                     onChange={(e) => update('brandContains', e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleSearch();
+                    }}
                     className="h-9"
                   />
                 </Field>
@@ -786,12 +900,28 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                     </SelectContent>
                   </Select>
                 </Field>
+                <Field label="Model">
+                  <Input
+                    id="adv_model"
+                    placeholder="e.g. Grand Plus"
+                    value={filters.modelContains ?? ''}
+                    onChange={(e) => update('modelContains', e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleSearch();
+                    }}
+                    className="h-9"
+                    title="Matches customer model, second site, or past jobs"
+                  />
+                </Field>
                 <Field label="Area / location">
                   <Input
                     id="adv_location"
                     placeholder="Kasavanahalli, Haralur"
                     value={filters.locationContains ?? ''}
                     onChange={(e) => update('locationContains', e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleSearch();
+                    }}
                     className="h-9"
                     title="Comma-separated areas are OR-matched"
                   />
@@ -1179,7 +1309,10 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                     <DatePicker
                       className="w-full"
                       value={filters.lastServiceFrom || undefined}
-                      onChange={(v) => update('lastServiceFrom', v || '')}
+                      onChange={(v) => {
+                        update('lastServiceFrom', v || '');
+                        if (v) update('neverServiced', '');
+                      }}
                       placeholder="Any"
                     />
                   </Field>
@@ -1187,9 +1320,37 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                     <DatePicker
                       className="w-full"
                       value={filters.lastServiceTo || undefined}
-                      onChange={(v) => update('lastServiceTo', v || '')}
+                      onChange={(v) => {
+                        update('lastServiceTo', v || '');
+                        if (v) update('neverServiced', '');
+                      }}
                       placeholder="Any"
                     />
+                  </Field>
+                  <Field label="Never serviced">
+                    <Select
+                      value={filters.neverServiced || 'any'}
+                      onValueChange={(v) => {
+                        if (v === 'yes') {
+                          setFilters((prev) => ({
+                            ...prev,
+                            neverServiced: 'yes',
+                            lastServiceFrom: '',
+                            lastServiceTo: '',
+                          }));
+                        } else {
+                          update('neverServiced', '');
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="any">Any</SelectItem>
+                        <SelectItem value="yes">Yes</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </Field>
                   <Field label="Customer since from">
                     <DatePicker
@@ -1520,7 +1681,7 @@ const ResultRow: React.FC<ResultRowProps> = ({
             )}
             {typeof row.distance_km === 'number' && Number.isFinite(row.distance_km) && (
               <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal">
-                {`${Math.round(row.distance_km * 1000).toLocaleString('en-IN')} m`}
+                {formatNearbyDistanceLabel(row.distance_km)}
                 {row.matched_site === 'alternate' ? ' · alt' : ''}
               </Badge>
             )}

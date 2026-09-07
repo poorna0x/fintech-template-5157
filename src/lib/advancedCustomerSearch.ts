@@ -14,8 +14,9 @@ import { escapeForLike, normalizePhoneForSearch } from './utils';
 
 /**
  * Slim column set returned to the dialog. Trimmed aggressively to keep response
- * bytes low — fields used only for filtering (notes, customer_since) live
- * server-side and don't need to come back.
+ * bytes low — notes / GST stay server-side (free-text still matches them).
+ * `customer_since` + `created_at` are needed so Newest customer sort works after
+ * id-chunk merges (PostgREST can ORDER BY unselected columns, the client cannot).
  */
 const SLIM_COLS = [
   'id',
@@ -29,19 +30,22 @@ const SLIM_COLS = [
   'brand',
   'model',
   'last_service_date',
+  'customer_since',
+  'created_at',
   'status',
   'has_prefilter',
   'has_google_review',
   'raw_water_tds',
-  // gst_number omitted — search list is egress-tight; load full/document row when needed
 ].join(', ');
 
 export type AdvancedSearchFilters = {
-  /** Free-text matched against id / name / phone / email / notes. */
+  /** Free-text matched against id / name / phone / email / notes / address / brand / model / GST. */
   freeText?: string;
   brandContains?: string;
   /** Where to look for brand matches. Default 'either'. */
   brandSource?: 'customer' | 'jobs' | 'either';
+  /** Model on the customer profile or past jobs (OR). */
+  modelContains?: string;
   /** Comma- or newline-separated tokens. Each token OR-matched across visible_address + address fields. */
   locationContains?: string;
   serviceType?: 'RO' | 'SOFTENER' | '';
@@ -54,6 +58,8 @@ export type AdvancedSearchFilters = {
   lastServiceFrom?: string;
   /** YYYY-MM-DD inclusive */
   lastServiceTo?: string;
+  /** Customers with no last_service_date after job-history enrich. */
+  neverServiced?: 'yes' | '';
   /** YYYY-MM-DD inclusive */
   createdSinceFrom?: string;
   /** YYYY-MM-DD inclusive */
@@ -98,6 +104,8 @@ export type AdvancedSearchRow = {
   brand: string | null;
   model: string | null;
   last_service_date: string | null;
+  customer_since: string | null;
+  created_at: string | null;
   status: string | null;
   has_prefilter: boolean | null;
   has_google_review: boolean | null;
@@ -115,7 +123,7 @@ const ID_IN_CHUNK = 100;
 const FETCH_PAGE_SIZE = 1000;
 const MAX_JOB_LOOKUP_ROWS = 20_000;
 const MAX_LOCATION_TOKENS = 12;
-const MAX_OR_PARTS = 48;
+const MAX_OR_PARTS = 60;
 
 export const DEFAULT_NEAR_RADIUS_KM = 2;
 export const MAX_NEAR_RADIUS_KM = 50;
@@ -151,6 +159,22 @@ export function formatNearRadiusLabel(km: number): string {
     ? String(rounded)
     : String(rounded).replace(/\.?0+$/, '');
   return `${text} km`;
+}
+
+/** Distance badge on a result row (0 m, 80 m, 2 km). */
+export function formatNearbyDistanceLabel(km: number): string {
+  if (!Number.isFinite(km) || km <= 0) return '0 m';
+  if (km < 1) return `${Math.round(km * 1000).toLocaleString('en-IN')} m`;
+  return formatNearRadiusLabel(km);
+}
+
+function customerBrandOrClause(brand: string): string {
+  const e = escapeForLike(brand);
+  return `brand.ilike.%${e}%,alternate_brand.ilike.%${e}%`;
+}
+
+function newestCustomerStamp(row: AdvancedSearchRow): string {
+  return row.created_at || row.customer_since || '';
 }
 
 export function isNearRadiusDraft(raw: string): boolean {
@@ -276,9 +300,11 @@ function sortRows(rows: AdvancedSearchRow[], sort: AdvancedSearchFilters['sort']
     return;
   }
   if (mode === 'created_desc') {
-    rows.sort((a, b) => (b as { created_at?: string }).created_at?.localeCompare(
-      (a as { created_at?: string }).created_at ?? ''
-    ) ?? 0);
+    rows.sort((a, b) => {
+      const cmp = newestCustomerStamp(b).localeCompare(newestCustomerStamp(a));
+      if (cmp !== 0) return cmp;
+      return (a.full_name ?? '').localeCompare(b.full_name ?? '', 'en', { sensitivity: 'base' });
+    });
     return;
   }
   if (mode === 'name_asc') {
@@ -506,6 +532,29 @@ async function fetchCustomerIdsForProfileServiceType(
   return ids;
 }
 
+async function fetchCustomerIdsForModelContains(model: string): Promise<Set<string>> {
+  const e = escapeForLike(model);
+  const [profile, fromJobs] = await Promise.all([
+    paginateJobCustomerIds((from, to) =>
+      supabase
+        .from('customers')
+        .select('id')
+        .or(`model.ilike.%${e}%,alternate_model.ilike.%${e}%`)
+        .range(from, to)
+    ),
+    paginateJobCustomerIds((from, to) =>
+      supabase.from('jobs').select('customer_id').ilike('model', `%${e}%`).range(from, to)
+    ),
+  ]);
+  if (profile.error) {
+    console.warn('[advancedCustomerSearch] customer-model fetch failed', profile.error);
+  }
+  if (fromJobs.error) {
+    console.warn('[advancedCustomerSearch] job-model fetch failed', fromJobs.error);
+  }
+  return unionSets(profile.ids, fromJobs.ids);
+}
+
 /** Customers (within base job set) whose profile brand matches — for brand "either" + technician, etc. */
 async function fetchCustomerIdsWithProfileBrand(
   baseJobIds: Set<string>,
@@ -513,14 +562,13 @@ async function fetchCustomerIdsWithProfileBrand(
 ): Promise<Set<string>> {
   const ids = Array.from(baseJobIds);
   if (ids.length === 0) return new Set();
-  const e = escapeForLike(brand);
   const out = new Set<string>();
   for (const chunk of chunkArray(ids, ID_IN_CHUNK)) {
     const { data, error } = await supabase
       .from('customers')
       .select('id')
       .in('id', chunk)
-      .ilike('brand', `%${e}%`)
+      .or(customerBrandOrClause(brand))
       .limit(ID_IN_CHUNK);
     if (error) {
       console.warn('[advancedCustomerSearch] customer-brand fetch failed', error);
@@ -628,6 +676,16 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
       `alternate_phone.ilike.%${e}%`,
       `email.ilike.%${e}%`,
       `notes.ilike.%${e}%`,
+      `visible_address.ilike.%${e}%`,
+      `alternate_visible_address.ilike.%${e}%`,
+      `address->>street.ilike.%${e}%`,
+      `address->>area.ilike.%${e}%`,
+      `address->>city.ilike.%${e}%`,
+      `brand.ilike.%${e}%`,
+      `model.ilike.%${e}%`,
+      `alternate_brand.ilike.%${e}%`,
+      `alternate_model.ilike.%${e}%`,
+      `gst_number.ilike.%${e}%`,
     ];
     const norm = normalizePhoneForSearch(free);
     if (norm.length >= 10) {
@@ -642,6 +700,7 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
       const tokenE = escapeForLike(token);
       return [
         `visible_address.ilike.%${tokenE}%`,
+        `alternate_visible_address.ilike.%${tokenE}%`,
         `address->>street.ilike.%${tokenE}%`,
         `address->>area.ilike.%${tokenE}%`,
         `address->>city.ilike.%${tokenE}%`,
@@ -655,10 +714,8 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
     q = q.or(orParts.join(','));
   }
 
-  if (opts.brandProfileMatch && opts.brand) {
-    q = q.ilike('brand', `%${escapeForLike(opts.brand)}%`);
-  } else if (opts.brand && opts.brandSource === 'customer') {
-    q = q.ilike('brand', `%${escapeForLike(opts.brand)}%`);
+  if ((opts.brandProfileMatch && opts.brand) || (opts.brand && opts.brandSource === 'customer')) {
+    q = q.or(customerBrandOrClause(opts.brand));
   }
 
   if (filters.serviceType && !opts.jobIdSet) {
@@ -680,8 +737,12 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
     q = q.in('id', list);
   }
 
-  if (filters.lastServiceFrom) q = q.gte('last_service_date', filters.lastServiceFrom);
-  if (filters.lastServiceTo) q = q.lte('last_service_date', filters.lastServiceTo);
+  if (filters.neverServiced === 'yes') {
+    q = q.is('last_service_date', null);
+  } else {
+    if (filters.lastServiceFrom) q = q.gte('last_service_date', filters.lastServiceFrom);
+    if (filters.lastServiceTo) q = q.lte('last_service_date', filters.lastServiceTo);
+  }
   if (filters.createdSinceFrom) q = q.gte('customer_since', filters.createdSinceFrom);
   if (filters.createdSinceTo) q = q.lte('customer_since', filters.createdSinceTo);
 
@@ -761,6 +822,7 @@ export async function advancedCustomerSearch(
     const limit = Math.min(Math.max(filters.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
     const brandSource = filters.brandSource ?? 'either';
     const brand = (filters.brandContains ?? '').trim();
+    const modelNeedle = (filters.modelContains ?? '').trim();
     const jobBrandValue =
       brand && (brandSource === 'jobs' || brandSource === 'either') ? brand : null;
     const restrictive = hasRestrictiveJobFilter(filters);
@@ -771,18 +833,24 @@ export async function advancedCustomerSearch(
     let activeAMCIds: Set<string>;
     let nearbyById: Map<string, { distance_km: number; matched_site: string | null }> | null =
       null;
+    let modelIds: Set<string> | null = null;
 
     const nearbyPromise = near
       ? fetchNearbyCustomerDistances(near.lat, near.lng, near.radiusKm, MAX_LIMIT)
       : Promise.resolve(null);
+    const modelPromise = modelNeedle
+      ? fetchCustomerIdsForModelContains(modelNeedle)
+      : Promise.resolve(null);
 
     if (brand && brandSource === 'either' && restrictive) {
-      const [baseJobIds, jobBrandIds, amcIds, nearby] = await Promise.all([
+      const [baseJobIds, jobBrandIds, amcIds, nearby, modelHit] = await Promise.all([
         fetchCustomerIdsForJobFilters(filters, jobBrandValue, { applyJobBrand: false }),
         fetchCustomerIdsForJobFilters(filters, jobBrandValue),
         needsAmcSet ? fetchActiveAMCCustomerIds() : Promise.resolve(new Set<string>()),
         nearbyPromise,
+        modelPromise,
       ]);
+      modelIds = modelHit;
       if (nearby) {
         if (!nearby.ok) return { data: [], error: { message: nearby.error } };
         nearbyById = nearby.byId;
@@ -795,11 +863,13 @@ export async function advancedCustomerSearch(
       jobIdSet = unionSets(jobBrandIds, profileBrandIds);
       activeAMCIds = amcIds;
     } else {
-      const [fetchedJobIds, amcIds, nearby] = await Promise.all([
+      const [fetchedJobIds, amcIds, nearby, modelHit] = await Promise.all([
         fetchCustomerIdsForJobFilters(filters, jobBrandValue),
         needsAmcSet ? fetchActiveAMCCustomerIds() : Promise.resolve(new Set<string>()),
         nearbyPromise,
+        modelPromise,
       ]);
+      modelIds = modelHit;
       if (nearby) {
         if (!nearby.ok) return { data: [], error: { message: nearby.error } };
         nearbyById = nearby.byId;
@@ -812,6 +882,9 @@ export async function advancedCustomerSearch(
     if (filters.hasAMC === 'yes' && activeAMCIds.size === 0) {
       return { data: [], error: null };
     }
+    if (modelNeedle && modelIds && modelIds.size === 0) {
+      return { data: [], error: null };
+    }
 
     const brandFoldedIntoOr = brandSource === 'either' && !!brand && !restrictive;
     let restrictFromJobs =
@@ -819,6 +892,9 @@ export async function advancedCustomerSearch(
 
     if (nearbyById) {
       restrictFromJobs = intersectIdLists(restrictFromJobs, Array.from(nearbyById.keys()));
+    }
+    if (modelIds) {
+      restrictFromJobs = intersectIdLists(restrictFromJobs, Array.from(modelIds));
     }
 
     if (restrictFromJobs && restrictFromJobs.length === 0) {
@@ -843,11 +919,9 @@ export async function advancedCustomerSearch(
 
     if (brandFoldedIntoOr && brand) {
       const jobIds = jobIdSet ? Array.from(jobIdSet) : [];
-      const restrictProfile = nearbyById
-        ? intersectIdLists(null, Array.from(nearbyById.keys()))
-        : null;
-      const restrictJobBrand = nearbyById
-        ? intersectIdLists(jobIds.length > 0 ? jobIds : null, Array.from(nearbyById.keys()))
+      const restrictProfile = restrictFromJobs;
+      const restrictJobBrand = restrictFromJobs
+        ? intersectIdLists(jobIds.length > 0 ? jobIds : null, restrictFromJobs)
         : jobIds.length > 0
           ? jobIds
           : [];
@@ -887,6 +961,9 @@ export async function advancedCustomerSearch(
     }
 
     await enrichLastServiceDates(allRows);
+    if (filters.neverServiced === 'yes') {
+      allRows = allRows.filter((r) => !r.last_service_date);
+    }
     sortRows(allRows, effectiveSort);
     allRows = allRows.slice(0, limit);
 

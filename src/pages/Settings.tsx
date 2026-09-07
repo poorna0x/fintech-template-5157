@@ -2970,7 +2970,7 @@ const Settings = () => {
           {/* Advanced customer search */}
           <SettingsActionCard
             title="Advanced customer search"
-            description='Combine brand, location, service type, AMC, last service date, and more to find customers — like "Livpure in Kasavanahalli or Haralur".'
+            description='Combine brand, model, area, nearby Maps pin, AMC, never serviced, and more — like "Livpure Grand in Kasavanahalli".'
             icon={<Users />}
             actions={
               <Button
