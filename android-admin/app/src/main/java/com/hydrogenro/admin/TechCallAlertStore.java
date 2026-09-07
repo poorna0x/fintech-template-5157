@@ -39,9 +39,18 @@ final class TechCallAlertStore {
         else if (missed) kind = "missed_call";
 
         try {
+            long callAt = 0L;
+            try {
+                String callAtRaw = str(data.get("callAt"));
+                if (!callAtRaw.isEmpty()) callAt = Long.parseLong(callAtRaw);
+            } catch (Exception ignored) {
+                callAt = 0L;
+            }
+            long savedAt = callAt > 1_000_000_000_000L ? callAt : System.currentTimeMillis();
+
             JSONObject next = new JSONObject();
             next.put("phone", phone);
-            next.put("at", System.currentTimeMillis());
+            next.put("at", savedAt);
             next.put("kind", kind);
             putOpt(next, "techName", data.get("techName"));
             putOpt(next, "customerId", data.get("customerId"));
@@ -56,8 +65,8 @@ final class TechCallAlertStore {
             for (int i = 0; i < arr.length() && out.length() < MAX; i++) {
                 JSONObject row = arr.optJSONObject(i);
                 if (row == null) continue;
-                long at = row.optLong("at", 0L);
-                if (at <= 0 || now - at > TTL_MS) continue;
+                long rowAt = row.optLong("at", 0L);
+                if (rowAt <= 0 || now - rowAt > TTL_MS) continue;
                 // Drop older rows for the same phone (keep newest only).
                 if (phone.equals(row.optString("phone", ""))) continue;
                 out.put(row);

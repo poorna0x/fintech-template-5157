@@ -1,5 +1,6 @@
 package com.hydrogenro.admin;
 
+import android.os.Build;
 import android.os.Bundle;
 import android.content.Intent;
 import android.view.View;
@@ -18,6 +19,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Cold open: splash logo → same-size boot overlay + bounce → login/dashboard.
+ * Keep the WebView renderer warm in the background so Home → reopen does not
+ * reload hydrogenro.com (Android otherwise kills Chromium after a few minutes).
  */
 public class MainActivity extends BridgeActivity {
     private static final long BOOT_LOADER_MAX_MS = 20_000L;
@@ -49,11 +52,13 @@ public class MainActivity extends BridgeActivity {
             new WebViewListener() {
                 @Override
                 public void onPageCommitVisible(WebView view, String url) {
+                    keepWebViewWarm(view);
                     beginReadyWatch();
                 }
 
                 @Override
                 public void onPageLoaded(WebView webView) {
+                    keepWebViewWarm(webView);
                     beginReadyWatch();
                 }
 
@@ -67,6 +72,7 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         NotificationChannels.ensureAll(this);
 
+        keepWebViewWarm(webViewOrNull());
         attachBootLoader();
         releaseSplashWhenBootDrawn();
         deliverExpenseReviewIfNeeded(getIntent());
@@ -74,12 +80,16 @@ public class MainActivity extends BridgeActivity {
         getWindow()
             .getDecorView()
             .postDelayed(this::dismissBootLoader, BOOT_LOADER_MAX_MS);
+        getWindow()
+            .getDecorView()
+            .postDelayed(this::maybePromptBatteryUnrestricted, 8_000L);
     }
 
     @Override
     public void onResume() {
         inForeground = true;
         super.onResume();
+        keepWebViewWarm(webViewOrNull());
     }
 
     @Override
@@ -254,6 +264,86 @@ public class MainActivity extends BridgeActivity {
             return getBridge() != null ? getBridge().getWebView() : null;
         } catch (Exception ignored) {
             return null;
+        }
+    }
+
+    /**
+     * Chromium otherwise marks the renderer "waived" when Admin is not visible,
+     * then kills it under memory pressure. Next tap cold-loads hydrogenro.com.
+     */
+    private void keepWebViewWarm(WebView webView) {
+        if (webView == null) return;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        try {
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+        } catch (Throwable ignored) {
+            /* */
+        }
+    }
+
+    /**
+     * OEM battery savers freeze the WebView after a few minutes in the background.
+     * Ask once to ignore optimizations (same idea as the technician app).
+     */
+    private void maybePromptBatteryUnrestricted() {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
+            android.os.PowerManager pm =
+                (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null && pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+
+            android.content.SharedPreferences prefs =
+                getSharedPreferences("hro_admin_prefs", MODE_PRIVATE);
+            if (prefs.getBoolean("battery_unrestricted_prompted", false)) return;
+            prefs.edit().putBoolean("battery_unrestricted_prompted", true).apply();
+
+            String mfr = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase();
+            boolean aggressiveOem =
+                mfr.contains("xiaomi")
+                    || mfr.contains("redmi")
+                    || mfr.contains("vivo")
+                    || mfr.contains("oppo")
+                    || mfr.contains("realme")
+                    || mfr.contains("samsung")
+                    || mfr.contains("oneplus");
+            String message = aggressiveOem
+                ? "This phone may close Admin after a few minutes in the background, "
+                    + "so reopen shows a loading screen. Tap Allow, then also set this app to "
+                    + "Unrestricted / Never sleeping in Battery settings if the option exists."
+                : "Allow unrestricted battery so Admin stays in memory when you switch apps, "
+                    + "instead of reloading the site every time you come back.";
+
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Keep Admin ready")
+                .setMessage(message)
+                .setPositiveButton(
+                    "Allow",
+                    (d, w) -> {
+                        try {
+                            startActivity(
+                                new Intent(
+                                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    android.net.Uri.parse("package:" + getPackageName())
+                                )
+                            );
+                        } catch (Exception e) {
+                            try {
+                                startActivity(
+                                    new Intent(
+                                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                            } catch (Exception e2) {
+                                android.util.Log.w(
+                                    "HRO-Admin",
+                                    "Open battery settings failed: " + e2.getMessage());
+                            }
+                        }
+                    }
+                )
+                .setNegativeButton("Not now", null)
+                .setCancelable(true)
+                .show();
+        } catch (Exception e) {
+            android.util.Log.w("HRO-Admin", "Battery prompt failed: " + e.getMessage());
         }
     }
 

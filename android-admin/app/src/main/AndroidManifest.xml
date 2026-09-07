@@ -7,13 +7,15 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/AppTheme">
+        android:theme="@style/AppTheme"
+        android:hardwareAccelerated="true">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:alwaysRetainTaskState="true"
             android:windowSoftInputMode="adjustNothing"
             android:exported="true">
             <intent-filter>
@@ -111,6 +113,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Fingerprint / face unlock (Admin app lock) -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Keep Admin from being put to sleep so reopen does not reload the site -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Caller lookup: detect ringing + read the incoming number
          (Android 9+ only includes the number when READ_CALL_LOG is granted) -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
