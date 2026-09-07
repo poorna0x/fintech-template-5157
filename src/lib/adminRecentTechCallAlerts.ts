@@ -140,7 +140,11 @@ export function rememberAdminTechCallFromPush(
   const customerId = String(raw.customerId || '').trim() || undefined;
   const fromNumber = String(raw.fromNumber || '').trim() || undefined;
   const companyPhone = String(raw.companyPhone || '').trim() || undefined;
-  const at = Date.now();
+  const callAtRaw = Number(raw.callAt);
+  const at =
+    Number.isFinite(callAtRaw) && callAtRaw > 1_000_000_000_000
+      ? Math.floor(callAtRaw)
+      : Date.now();
 
   const next: AdminRecentTechCall = {
     phone,

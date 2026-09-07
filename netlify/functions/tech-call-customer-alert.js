@@ -43,6 +43,34 @@ function softThrottle() {
   };
 }
 
+function resolveCallAtMs(callAt, callId) {
+  if (Number.isFinite(callAt) && callAt > 1_000_000_000_000) return Math.floor(callAt);
+  const m = String(callId || '').match(/:(\d{13,})$/);
+  if (m) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > 1_000_000_000_000) return Math.floor(n);
+  }
+  return 0;
+}
+
+/** e.g. "1:18 pm" in IST — the actual ring/spoke time, not when the delayed push arrived. */
+function formatCallClockIst(ms) {
+  if (!Number.isFinite(ms) || ms < 1_000_000_000_000) return '';
+  try {
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+      .format(new Date(ms))
+      .replace(/\u202f/g, ' ')
+      .toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 async function resolveAdminCallTokens(db) {
   const callTokens = await getAdminFcmTokens(db, 'customer_calls');
   if (callTokens.length > 0) return callTokens;
@@ -151,23 +179,28 @@ async function processOneAlert(db, opts) {
   }
 
   const techName = tech?.full_name || 'Technician';
+  const callAtMs = resolveCallAtMs(callAt, callId);
+  const clock = formatCallClockIst(callAtMs);
+  const timeKind = missed || isAdminDevice ? 'received' : 'spoke';
+  const timeBit = clock ? ` · ${clock}` : '';
+  const timeLine = clock ? ` · ${timeKind} ${clock}` : '';
   let title;
   let color;
   if (isAdminDevice) {
-    title = 'Missed call from customer';
+    title = `Missed call from customer${timeBit}`;
     color = '#DC2626';
   } else if (missed) {
-    title = `${techName} missed a customer call`;
+    title = `${techName} missed a customer call${timeBit}`;
     color = '#DC2626';
   } else {
-    title = `${techName} got a call from a customer`;
+    title = `${techName} got a call from a customer${timeBit}`;
     color = '#0369A1';
   }
 
   const messaging = await getMessaging(db);
   // Data-only so admin APK onMessageReceived runs while closed/killed and can
   // save the caller number + show the tray itself (notification+data would not).
-  const bodyText = `${customer.full_name} (${phone}) — tap to open customer`;
+  const bodyText = `${customer.full_name} (${phone})${timeLine}`;
   const tag = `tech_call_${technicianId || 'admin'}_${phone}${missed ? '_missed' : ''}`;
   const res = await messaging.sendEachForMulticast({
     tokens,
@@ -184,6 +217,7 @@ async function processOneAlert(db, opts) {
       channelId: 'job_alerts_v2',
       ...(technicianId ? { technicianId: String(technicianId) } : {}),
       ...(callId ? { callId: String(callId) } : {}),
+      ...(callAtMs > 0 ? { callAt: String(callAtMs) } : {}),
       ...(catchup ? { catchup: 'true' } : {}),
     },
     android: {
