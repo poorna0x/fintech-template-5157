@@ -181,9 +181,8 @@ async function processOneAlert(db, opts) {
   const techName = tech?.full_name || 'Technician';
   const callAtMs = resolveCallAtMs(callAt, callId);
   const clock = formatCallClockIst(callAtMs);
-  const timeKind = missed || isAdminDevice ? 'received' : 'spoke';
-  const timeBit = clock ? ` · ${clock}` : '';
-  const timeLine = clock ? ` · ${timeKind} ${clock}` : '';
+  // Clock only — never talk duration (CallLog length is unreliable).
+  const timeBit = clock ? ` · at ${clock}` : '';
   let title;
   let color;
   if (isAdminDevice) {
@@ -200,7 +199,7 @@ async function processOneAlert(db, opts) {
   const messaging = await getMessaging(db);
   // Data-only so admin APK onMessageReceived runs while closed/killed and can
   // save the caller number + show the tray itself (notification+data would not).
-  const bodyText = `${customer.full_name} (${phone})${timeLine}`;
+  const bodyText = `${customer.full_name} (${phone})${timeBit}`;
   const tag = `tech_call_${technicianId || 'admin'}_${phone}${missed ? '_missed' : ''}`;
   const res = await messaging.sendEachForMulticast({
     tokens,
