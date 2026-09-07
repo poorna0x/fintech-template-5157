@@ -288,6 +288,9 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   const scrollBodyRef = useRef<HTMLDivElement>(null);
   const resultsAnchorRef = useRef<HTMLElement>(null);
   const scrollToResultsAfterSearchRef = useRef(false);
+  const searchGenRef = useRef(0);
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
 
   /** Load slim technician list once. Used by both the "Completed by" filter and the Report dialog. */
   const ensureTechniciansLoaded = async (): Promise<TechRow[]> => {
@@ -334,6 +337,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   };
 
   const handleReset = () => {
+    searchGenRef.current += 1;
     setFilters(EMPTY_FILTERS);
     setResults([]);
     setHasSearched(false);
@@ -362,9 +366,16 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     }
   }, [filters]);
 
-  const handleSearch = async () => {
+  const handleSearch = async (opts?: { radiusKm?: number }) => {
+    const filters = filtersRef.current;
+    const gen = ++searchGenRef.current;
+
     let committedRadiusKm = DEFAULT_NEAR_RADIUS_KM;
-    if (radiusKmDraft != null) {
+    if (typeof opts?.radiusKm === 'number' && Number.isFinite(opts.radiusKm)) {
+      committedRadiusKm = clampNearRadiusKm(opts.radiusKm);
+      update('nearRadiusKm', committedRadiusKm);
+      setRadiusKmDraft(null);
+    } else if (radiusKmDraft != null) {
       const parsed = parseNearRadiusKm(radiusKmDraft);
       committedRadiusKm = clampNearRadiusKm(
         parsed != null ? parsed : DEFAULT_NEAR_RADIUS_KM
@@ -388,23 +399,53 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
 
       const mapsPaste = (filters.nearMapsLink ?? '').trim();
       if (mapsPaste) {
-        const mapsUrl = extractMapsUrlFromText(mapsPaste) || mapsPaste;
-        if (!isGoogleMapsUrl(mapsUrl)) {
-          toast.error('Paste a valid Google Maps link (maps.app.goo.gl or google.com/maps)');
-          setIsSearching(false);
-          return;
+        const existingLat = filters.nearLat;
+        const existingLng = filters.nearLng;
+        const canReusePin =
+          existingLat != null &&
+          existingLng != null &&
+          Number.isFinite(existingLat) &&
+          Number.isFinite(existingLng);
+
+        let resolvedLat = existingLat;
+        let resolvedLng = existingLng;
+        let placeLabel: string | null = null;
+        let didExpandShortLink = false;
+
+        if (canReusePin) {
+          resolvedLat = existingLat;
+          resolvedLng = existingLng;
+        } else {
+          const mapsUrl = extractMapsUrlFromText(mapsPaste) || mapsPaste;
+          if (!isGoogleMapsUrl(mapsUrl)) {
+            toast.error('Paste a valid Google Maps link (maps.app.goo.gl or google.com/maps)');
+            setIsSearching(false);
+            return;
+          }
+
+          setIsResolvingNear(true);
+          const token = await resolveSupabaseAccessTokenForApi();
+          if (gen !== searchGenRef.current) return;
+          const resolved = await resolveGoogleMapsInputToCoords(mapsUrl, {
+            shareText: mapsPaste,
+            accessToken: token,
+          });
+          if (gen !== searchGenRef.current) return;
+          setIsResolvingNear(false);
+
+          if (!resolved.ok) {
+            toast.error(resolved.error || 'Could not resolve that Maps link');
+            setIsSearching(false);
+            return;
+          }
+
+          resolvedLat = resolved.coords.latitude;
+          resolvedLng = resolved.coords.longitude;
+          placeLabel = resolved.placeHintUsed || null;
+          didExpandShortLink = Boolean(resolved.didExpandShortLink);
         }
 
-        setIsResolvingNear(true);
-        const token = await resolveSupabaseAccessTokenForApi();
-        const resolved = await resolveGoogleMapsInputToCoords(mapsUrl, {
-          shareText: mapsPaste,
-          accessToken: token,
-        });
-        setIsResolvingNear(false);
-
-        if (!resolved.ok) {
-          toast.error(resolved.error || 'Could not resolve that Maps link');
+        if (resolvedLat == null || resolvedLng == null) {
           setIsSearching(false);
           return;
         }
@@ -413,8 +454,8 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
 
         searchFilters = {
           ...searchFilters,
-          nearLat: resolved.coords.latitude,
-          nearLng: resolved.coords.longitude,
+          nearLat: resolvedLat,
+          nearLng: resolvedLng,
           nearRadiusKm: radiusKm,
           sort:
             filters.sort === 'last_service_desc' || !filters.sort
@@ -423,15 +464,18 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
         };
 
         const label =
-          resolved.placeHintUsed ||
-          `${resolved.coords.latitude.toFixed(5)}, ${resolved.coords.longitude.toFixed(5)}`;
+          placeLabel ||
+          (canReusePin
+            ? nearResolvedLabel?.split(' · within ')[0] ||
+              `${resolvedLat.toFixed(5)}, ${resolvedLng.toFixed(5)}`
+            : `${resolvedLat.toFixed(5)}, ${resolvedLng.toFixed(5)}`);
         setNearResolvedLabel(
-          `${label} · within ${formatNearRadiusLabel(radiusKm)}${resolved.didExpandShortLink ? ' (short link resolved)' : ''}`
+          `${label} · within ${formatNearRadiusLabel(radiusKm)}${didExpandShortLink ? ' (short link resolved)' : ''}`
         );
         setFilters((prev) => ({
           ...prev,
-          nearLat: resolved.coords.latitude,
-          nearLng: resolved.coords.longitude,
+          nearLat: resolvedLat,
+          nearLng: resolvedLng,
           nearRadiusKm: radiusKm,
         }));
         setRadiusKmDraft(null);
@@ -440,6 +484,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
       }
 
       const { data, error } = await advancedCustomerSearch(searchFilters);
+      if (gen !== searchGenRef.current) return;
       if (error) {
         toast.error(error.message || 'Search failed');
         setResults([]);
@@ -452,15 +497,23 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
       setPage(1);
       scrollToResultsAfterSearchRef.current = true;
     } catch (err) {
+      if (gen !== searchGenRef.current) return;
       toast.error(err instanceof Error ? err.message : 'Search failed');
       setResults([]);
       setHasSearched(true);
       setPage(1);
       scrollToResultsAfterSearchRef.current = true;
     } finally {
-      setIsResolvingNear(false);
-      setIsSearching(false);
+      if (gen === searchGenRef.current) {
+        setIsResolvingNear(false);
+        setIsSearching(false);
+      }
     }
+  };
+
+  const searchNearbyAfterRadiusChange = (radiusKm: number) => {
+    if (!(filtersRef.current.nearMapsLink ?? '').trim()) return;
+    void handleSearch({ radiusKm });
   };
 
   const handleCopyPhone = async (phone: string | null) => {
@@ -1033,6 +1086,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                       update('nearRadiusKm', Math.min(parsed, MAX_NEAR_RADIUS_KM));
                     }}
                     onBlur={() => {
+                      const hadDraft = radiusKmDraft != null;
                       const parsed =
                         radiusKmDraft != null
                           ? parseNearRadiusKm(radiusKmDraft)
@@ -1046,6 +1100,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                       );
                       update('nearRadiusKm', clamped);
                       setRadiusKmDraft(null);
+                      if (hadDraft) searchNearbyAfterRadiusChange(clamped);
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') void handleSearch();
@@ -1068,8 +1123,14 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                       key={km}
                       type="button"
                       onClick={() => {
+                        const alreadyActive =
+                          (typeof filters.nearRadiusKm === 'number'
+                            ? filters.nearRadiusKm
+                            : DEFAULT_NEAR_RADIUS_KM) === km && radiusKmDraft == null;
                         update('nearRadiusKm', km);
                         setRadiusKmDraft(null);
+                        if (alreadyActive && hasSearched) return;
+                        searchNearbyAfterRadiusChange(km);
                       }}
                       className={cn(
                         'rounded-md px-2 py-0.5 text-[11px] border transition-colors cursor-pointer',
