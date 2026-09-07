@@ -11,7 +11,7 @@
 import { supabase } from './supabaseClient';
 import { completedJobLeadSourceContainVariants } from './adminUtils';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
-import { tokenizeLocationQuery } from './locationSearch';
+import { tokenizeLocationQuery, isHouseNumberToken } from './locationSearch';
 
 /**
  * Slim column set returned to the dialog. Trimmed aggressively to keep response
@@ -124,7 +124,7 @@ const DEFAULT_LIMIT = 200;
 const ID_IN_CHUNK = 100;
 const FETCH_PAGE_SIZE = 1000;
 const MAX_JOB_LOOKUP_ROWS = 20_000;
-const MAX_OR_PARTS = 80;
+const MAX_OR_PARTS = 96;
 
 export const DEFAULT_NEAR_RADIUS_KM = 2;
 export const MAX_NEAR_RADIUS_KM = 50;
@@ -656,6 +656,25 @@ type CustomerQueryOptions = {
   limit: number;
 };
 
+function addressMatchOrParts(tokenE: string): string[] {
+  return [
+    `visible_address.ilike.%${tokenE}%`,
+    `alternate_visible_address.ilike.%${tokenE}%`,
+    `address->>street.ilike.%${tokenE}%`,
+    `address->>area.ilike.%${tokenE}%`,
+    `address->>city.ilike.%${tokenE}%`,
+    `address->>landmark.ilike.%${tokenE}%`,
+    `address->>pincode.ilike.%${tokenE}%`,
+    `address->>houseNumber.ilike.%${tokenE}%`,
+    `address->>fullAddress.ilike.%${tokenE}%`,
+    `alternate_address->>street.ilike.%${tokenE}%`,
+    `alternate_address->>area.ilike.%${tokenE}%`,
+    `alternate_address->>landmark.ilike.%${tokenE}%`,
+    `alternate_address->>houseNumber.ilike.%${tokenE}%`,
+    `alternate_address->>fullAddress.ilike.%${tokenE}%`,
+  ];
+}
+
 function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: CustomerQueryOptions) {
   const { filters } = opts;
 
@@ -665,45 +684,33 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
     const orParts = [
       `customer_id.ilike.%${e}%`,
       `full_name.ilike.%${e}%`,
-      `phone.ilike.%${e}%`,
-      `alternate_phone.ilike.%${e}%`,
       `email.ilike.%${e}%`,
       `notes.ilike.%${e}%`,
-      `visible_address.ilike.%${e}%`,
-      `alternate_visible_address.ilike.%${e}%`,
-      `address->>street.ilike.%${e}%`,
-      `address->>area.ilike.%${e}%`,
-      `address->>city.ilike.%${e}%`,
       `brand.ilike.%${e}%`,
       `model.ilike.%${e}%`,
       `alternate_brand.ilike.%${e}%`,
       `alternate_model.ilike.%${e}%`,
       `gst_number.ilike.%${e}%`,
+      ...addressMatchOrParts(e),
     ];
-    const norm = normalizePhoneForSearch(free);
-    if (norm.length >= 10) {
-      orParts.push(`phone.ilike.%${norm}%`, `alternate_phone.ilike.%${norm}%`);
+    const houseLike = isHouseNumberToken(free.toLowerCase()) || /^\d{2,5}$/.test(free);
+    if (!houseLike) {
+      orParts.push(`phone.ilike.%${e}%`, `alternate_phone.ilike.%${e}%`);
+      const norm = normalizePhoneForSearch(free);
+      if (norm.length >= 10) {
+        orParts.push(`phone.ilike.%${norm}%`, `alternate_phone.ilike.%${norm}%`);
+      }
+    }
+    const extraLoc = tokenizeLocationQuery(free).filter((t) => t !== free.toLowerCase());
+    for (const token of extraLoc.slice(0, 4)) {
+      orParts.push(...addressMatchOrParts(escapeForLike(token)));
     }
     q = q.or(orParts.join(','));
   }
 
   const locTokens = tokenizeLocationQuery(filters.locationContains ?? '');
   if (locTokens.length > 0) {
-    const orParts = locTokens.flatMap((token) => {
-      const tokenE = escapeForLike(token);
-      return [
-        `visible_address.ilike.%${tokenE}%`,
-        `alternate_visible_address.ilike.%${tokenE}%`,
-        `address->>street.ilike.%${tokenE}%`,
-        `address->>area.ilike.%${tokenE}%`,
-        `address->>city.ilike.%${tokenE}%`,
-        `address->>landmark.ilike.%${tokenE}%`,
-        `address->>pincode.ilike.%${tokenE}%`,
-        `alternate_address->>street.ilike.%${tokenE}%`,
-        `alternate_address->>area.ilike.%${tokenE}%`,
-        `alternate_address->>landmark.ilike.%${tokenE}%`,
-      ];
-    });
+    const orParts = locTokens.flatMap((token) => addressMatchOrParts(escapeForLike(token)));
     if (orParts.length > MAX_OR_PARTS) {
       throw new Error(
         `Too many location terms (${locTokens.length}) — use fewer area names`

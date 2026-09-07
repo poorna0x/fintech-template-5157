@@ -858,7 +858,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
             <div className="flex flex-col sm:flex-row gap-2">
               <Input
                 id="adv_free"
-                placeholder="Name, phone, ID, area, model, GST…"
+                placeholder="Name, phone, ID, flat/house no, area, model…"
                 value={filters.freeText ?? ''}
                 onChange={(e) => update('freeText', e.target.value)}
                 onKeyDown={(e) => {
@@ -969,7 +969,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                 <Field label="Area / location">
                   <Input
                     id="adv_location"
-                    placeholder="Kasavanahalli Haralur — close spelling is ok"
+                    placeholder="123, Kasavanahalli — flat no. is ok"
                     value={filters.locationContains ?? ''}
                     onChange={(e) => update('locationContains', e.target.value)}
                     onKeyDown={(e) => {

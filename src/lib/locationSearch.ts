@@ -57,29 +57,50 @@ const LOCATION_STOPWORDS = new Set([
 ]);
 
 function locationPrefix(token: string): string | null {
-  if (token.length < 6 || /^\d+$/.test(token) || /\s/.test(token)) return null;
+  if (token.length < 6 || /^\d+$/.test(token) || /\s/.test(token) || /[\/\-]/.test(token)) return null;
   const prefixLen = token.length <= 7 ? token.length - 1 : Math.min(8, token.length - 2);
   if (prefixLen < 4 || prefixLen >= token.length) return null;
   return token.slice(0, prefixLen);
 }
 
+/** Flat / house tokens: 123, 12A, B204, 12/3, 10-2. Skips 1-digit noise and 6-digit pincodes. */
+export function isHouseNumberToken(token: string): boolean {
+  const t = token.trim().toLowerCase();
+  if (!t || /^\d{6}$/.test(t)) return false;
+  if (/^\d{2,5}$/.test(t)) return true;
+  if (/^\d{1,5}[a-z]$/.test(t)) return true;
+  if (/^[a-z]\d{1,5}[a-z]?$/.test(t)) return true;
+  if (/^\d{1,4}[\/\-]\d{1,4}[a-z]?$/.test(t)) return true;
+  if (/^[a-z][\/\-]\d{1,5}$/.test(t)) return true;
+  return false;
+}
+
 /**
  * Expand a typed area string into OR-match tokens.
  * "Kasavanahalli main road Haralur" → kasavanahalli, kasavana, haralur, haralu
+ * "123 Haralur" keeps 123 as a flat/house token.
  */
 export function tokenizeLocationQuery(input: string): string[] {
   const collapsed = input.trim().toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
   if (!collapsed) return [];
 
   const raw = collapsed
-    .split(/[^a-z0-9]+/)
-    .map((t) => t.trim())
+    .split(/[^a-z0-9\/\-]+/)
+    .map((t) => t.replace(/^\/+|\/+$/g, '').replace(/^-+|-+$/g, '').trim())
     .filter(Boolean);
 
   const meaningful: string[] = [];
   for (const t of raw) {
     if (LOCATION_STOPWORDS.has(t)) continue;
-    if (/^\d+$/.test(t) && t.length !== 6) continue;
+    if (/^\d{6}$/.test(t)) {
+      meaningful.push(t);
+      continue;
+    }
+    if (isHouseNumberToken(t)) {
+      meaningful.push(t);
+      continue;
+    }
+    if (/^\d+$/.test(t)) continue;
     if (t.length < 3) continue;
     meaningful.push(t);
   }
