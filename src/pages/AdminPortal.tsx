@@ -12,6 +12,7 @@ import {
   stopAdminBiometricLockController,
 } from '@/lib/adminBiometricLock';
 import { WhatsAppAdminNotifier } from '@/components/admin/WhatsAppAdminNotifier';
+import { SettingsCommandPalette } from '@/components/admin/SettingsSearch';
 import { unlockWhatsAppAlertSound } from '@/lib/whatsappAlertSound';
 import {
   deliverAdminIncomingCallSearch,
@@ -272,6 +273,7 @@ export default function AdminPortal() {
   return (
     <>
       {shell}
+      <SettingsCommandPalette />
       <WhatsAppAdminNotifier />
       <AdminBiometricLockScreen />
     </>

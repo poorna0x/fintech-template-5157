@@ -146,7 +146,6 @@ import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
 import { scrollToSettingsSection } from '@/lib/settingsSectionScroll';
-import { SETTINGS_SECTIONS } from '@/lib/settingsSections';
 import {
   buildSettingsSearch,
   parseSettingsUrl,
@@ -670,8 +669,6 @@ const Settings = () => {
 
     const section = parsed.section;
     if (!section) return;
-
-    if (!(section in SETTINGS_SECTIONS)) return;
 
     return scrollToSettingsSection(section, {
       onComplete: () => {
@@ -2763,7 +2760,7 @@ const Settings = () => {
             </div>
 
             <div className="order-3 w-full sm:order-none sm:ml-auto sm:w-auto">
-              <SettingsSearch isManager={isManager} openPanel={openSettingsPanel} />
+              <SettingsSearch />
             </div>
 
             <div className="ml-auto flex items-center sm:ml-0">

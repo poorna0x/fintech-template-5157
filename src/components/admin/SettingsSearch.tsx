@@ -48,7 +48,18 @@ import {
 } from '@/components/ui/command';
 import { WhatsAppLogo } from '@/components/whatsapp/WhatsAppLogo';
 import { scrollToSettingsSection } from '@/lib/settingsSectionScroll';
-import type { SettingsPanelSlug } from '@/lib/settingsUrl';
+import {
+  buildSettingsSearch,
+  settingsLocation,
+  settingsPanelPath,
+  type SettingsPanelSlug,
+} from '@/lib/settingsUrl';
+import { useAdminRole } from '@/lib/useAdminRole';
+import {
+  isManagerBlockedSettingsPanel,
+  MANAGER_RESTRICTED_TITLE,
+} from '@/lib/managerAccess';
+import { toast } from 'sonner';
 
 type SearchDestination =
   | { type: 'panel'; panel: SettingsPanelSlug; action?: string }
@@ -171,13 +182,34 @@ function ResultIcon({ icon }: { icon: SearchIcon }) {
   );
 }
 
-type SettingsSearchProps = {
-  isManager: boolean;
-  openPanel: (panel: SettingsPanelSlug, options?: { action?: string }) => void;
-};
+export const OPEN_SETTINGS_SEARCH_EVENT = 'hro-open-settings-search';
 
-export function SettingsSearch({ isManager, openPanel }: SettingsSearchProps) {
+export function requestOpenSettingsSearch() {
+  window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_SEARCH_EVENT));
+}
+
+export function SettingsSearch() {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => requestOpenSettingsSearch()}
+      className="h-10 w-full justify-start gap-2 border-border/80 bg-background/80 px-3 text-muted-foreground shadow-sm transition-colors hover:bg-muted/60 hover:text-foreground sm:w-72"
+      aria-label="Search settings"
+    >
+      <Search className="h-4 w-4 shrink-0" />
+      <span className="truncate">Search settings…</span>
+      <span className="ml-auto hidden items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:flex">
+        <span className="text-xs">⌘</span>K
+      </span>
+    </Button>
+  );
+}
+
+/** Cmd+K palette for Settings tools — mounted once on the admin portal (home + Settings). */
+export function SettingsCommandPalette() {
   const navigate = useNavigate();
+  const { isManager } = useAdminRole();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const items = useMemo(
@@ -205,27 +237,43 @@ export function SettingsSearch({ isManager, openPanel }: SettingsSearchProps) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.repeat) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setOpen((current) => !current);
       }
     };
+    const onOpen = () => setOpen(true);
     document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    window.addEventListener(OPEN_SETTINGS_SEARCH_EVENT, onOpen);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener(OPEN_SETTINGS_SEARCH_EVENT, onOpen);
+    };
   }, []);
 
   const selectItem = (item: SettingsSearchItem) => {
     setOpen(false);
     const target = item.destination;
-    if (target.type === 'panel') {
-      openPanel(target.panel, { action: target.action });
-      return;
-    }
     if (target.type === 'route') {
       navigate(target.path);
       return;
     }
-    requestAnimationFrame(() => scrollToSettingsSection(target.section));
+    if (target.type === 'panel') {
+      if (isManager && isManagerBlockedSettingsPanel(target.panel)) {
+        toast.error(MANAGER_RESTRICTED_TITLE);
+        return;
+      }
+      navigate(settingsPanelPath(target.panel, { action: target.action }));
+      return;
+    }
+    if (window.location.pathname.startsWith('/settings')) {
+      requestAnimationFrame(() => scrollToSettingsSection(target.section));
+      return;
+    }
+    navigate(
+      settingsLocation(buildSettingsSearch({ clearPanel: true, section: target.section }))
+    );
   };
 
   const renderItem = (item: SettingsSearchItem) => (
@@ -247,81 +295,65 @@ export function SettingsSearch({ isManager, openPanel }: SettingsSearchProps) {
   );
 
   return (
-    <>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => setOpen(true)}
-        className="h-10 w-full justify-start gap-2 border-border/80 bg-background/80 px-3 text-muted-foreground shadow-sm transition-colors hover:bg-muted/60 hover:text-foreground sm:w-72"
-        aria-label="Search settings"
-      >
-        <Search className="h-4 w-4 shrink-0" />
-        <span className="truncate">Search settings…</span>
-        <span className="ml-auto hidden items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:flex">
-          <span className="text-xs">⌘</span>K
-        </span>
-      </Button>
-
-      <CommandDialog
-        open={open}
-        onOpenChange={setOpen}
-        shouldFilter={false}
-        title="Search settings"
-        description="Type to find any settings panel, tool or section, then press Enter to open it."
-      >
-        <div className="border-b bg-gradient-to-r from-blue-50/80 to-cyan-50/60 px-4 py-3 dark:from-blue-950/30 dark:to-cyan-950/20">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <ShieldCheck className="h-4 w-4 text-blue-600" />
-            Find a setting
+    <CommandDialog
+      open={open}
+      onOpenChange={setOpen}
+      shouldFilter={false}
+      title="Search settings"
+      description="Type to find any settings panel, tool or section, then press Enter to open it."
+    >
+      <div className="border-b bg-gradient-to-r from-blue-50/80 to-cyan-50/60 px-4 py-3 dark:from-blue-950/30 dark:to-cyan-950/20">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <ShieldCheck className="h-4 w-4 text-blue-600" />
+          Find a setting
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Search tools, controls, documents, payments, or communication.
+        </p>
+      </div>
+      <CommandInput
+        value={query}
+        onValueChange={setQuery}
+        placeholder="Try “WhatsApp”, “technician”, “PDF”…"
+        aria-label="Search all settings"
+      />
+      <CommandList className="max-h-[min(60vh,480px)] p-1">
+        <CommandEmpty>
+          <div className="px-4 py-3">
+            <Search className="mx-auto mb-2 h-6 w-6 text-muted-foreground/60" />
+            <p className="font-medium">No matching setting</p>
+            <p className="mt-1 text-xs text-muted-foreground">Try a shorter name or a related word.</p>
           </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Search tools, controls, documents, payments, or communication.
-          </p>
-        </div>
-        <CommandInput
-          value={query}
-          onValueChange={setQuery}
-          placeholder="Try “WhatsApp”, “technician”, “PDF”…"
-          aria-label="Search all settings"
-        />
-        <CommandList className="max-h-[min(60vh,480px)] p-1">
-          <CommandEmpty>
-            <div className="px-4 py-3">
-              <Search className="mx-auto mb-2 h-6 w-6 text-muted-foreground/60" />
-              <p className="font-medium">No matching setting</p>
-              <p className="mt-1 text-xs text-muted-foreground">Try a shorter name or a related word.</p>
-            </div>
-          </CommandEmpty>
-          {query.trim() ? (
-            rankedItems.length ? (
-              <CommandGroup heading="Best matches">
-                {rankedItems.map(renderItem)}
+        </CommandEmpty>
+        {query.trim() ? (
+          rankedItems.length ? (
+            <CommandGroup heading="Best matches">
+              {rankedItems.map(renderItem)}
+            </CommandGroup>
+          ) : null
+        ) : (
+          GROUPS.map((group) => {
+            const groupItems = items.filter((item) => item.group === group);
+            if (groupItems.length === 0) return null;
+            return (
+              <CommandGroup key={group} heading={group}>
+                {groupItems.map(renderItem)}
               </CommandGroup>
-            ) : null
-          ) : (
-            GROUPS.map((group) => {
-              const groupItems = items.filter((item) => item.group === group);
-              if (groupItems.length === 0) return null;
-              return (
-                <CommandGroup key={group} heading={group}>
-                  {groupItems.map(renderItem)}
-                </CommandGroup>
-              );
-            })
-          )}
-        </CommandList>
-        <div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
-          <span>
-            {query.trim()
-              ? `${rankedItems.length} match${rankedItems.length === 1 ? '' : 'es'}`
-              : `${items.length} searchable settings`}
-          </span>
-          <span className="flex items-center gap-1">
-            <MapPin className="h-3 w-3" />
-            Opens the exact place
-          </span>
-        </div>
-      </CommandDialog>
-    </>
+            );
+          })
+        )}
+      </CommandList>
+      <div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+        <span>
+          {query.trim()
+            ? `${rankedItems.length} match${rankedItems.length === 1 ? '' : 'es'}`
+            : `${items.length} searchable settings`}
+        </span>
+        <span className="flex items-center gap-1">
+          <MapPin className="h-3 w-3" />
+          Opens the exact place
+        </span>
+      </div>
+    </CommandDialog>
   );
 }

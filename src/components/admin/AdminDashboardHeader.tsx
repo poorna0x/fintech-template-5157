@@ -35,6 +35,7 @@ import { hapticTap } from '@/lib/haptics';
 import { focusAndroidInputWithoutScroll } from '@/lib/isNativeApp';
 import { settingsPath } from '@/lib/settingsSections';
 import { settingsPanelPath } from '@/lib/settingsUrl';
+import { requestOpenSettingsSearch } from '@/components/admin/SettingsSearch';
 import { useWhatsAppChatCount } from '@/lib/whatsappInboxActivity';
 import { cn } from '@/lib/utils';
 import { WhatsAppLogo, WhatsAppUnreadBadge } from '@/components/whatsapp/WhatsAppLogo';
@@ -173,7 +174,7 @@ export function AdminDashboardHeader({
               <Button
                 variant="outline"
                 className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                title="Settings"
+                title="Settings — ⌘K searches settings from this page"
                 onClick={() => {
                   hapticTap();
                   navigate('/settings');
@@ -209,6 +210,19 @@ export function AdminDashboardHeader({
                   align="start"
                   className="w-52 data-[state=closed]:duration-75 data-[state=open]:duration-100 max-sm:data-[state=closed]:animate-none"
                 >
+                  <DropdownMenuItem
+                    onClick={() => {
+                      hapticTap();
+                      onToolsMenuOpenChange(false);
+                      requestOpenSettingsSearch();
+                    }}
+                  >
+                    <Search className="w-4 h-4 mr-2" />
+                    Search settings
+                    <span className="ml-auto hidden text-[10px] text-muted-foreground sm:inline">
+                      ⌘K
+                    </span>
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onOpenAdminTool('recent-accounts')}>
                     <Clock className="w-4 h-4 mr-2" />
                     Recent Accounts
