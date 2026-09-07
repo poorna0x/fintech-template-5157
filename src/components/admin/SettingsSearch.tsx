@@ -60,6 +60,7 @@ import {
   MANAGER_RESTRICTED_TITLE,
 } from '@/lib/managerAccess';
 import { toast } from 'sonner';
+import { scoreSettingsMatch } from '@/lib/settingsSearchMatch';
 
 type SearchDestination =
   | { type: 'panel'; panel: SettingsPanelSlug; action?: string }
@@ -141,30 +142,6 @@ const GROUPS: SettingsSearchItem['group'][] = [
   'Payments & documents',
   'App & data',
 ];
-
-function scoreSettingsMatch(item: SettingsSearchItem, rawQuery: string): number {
-  const query = rawQuery.trim().toLowerCase();
-  if (!query) return 1;
-
-  const label = item.label.toLowerCase();
-  const description = item.description.toLowerCase();
-  const keywords = item.keywords.toLowerCase();
-  const id = item.id.toLowerCase().replace(/-/g, ' ');
-  const labelWords = label.split(/[^a-z0-9]+/).filter(Boolean);
-  const keywordWords = keywords.split(/[^a-z0-9]+/).filter(Boolean);
-
-  if (label === query || id === query) return 1000;
-  if (label.startsWith(query)) return 900;
-  if (labelWords.some((word) => word === query)) return 850;
-  if (labelWords.some((word) => word.startsWith(query))) return 800;
-  if (id.startsWith(query) || id.includes(` ${query}`)) return 750;
-  if (label.includes(query)) return 700;
-  if (keywordWords.some((word) => word === query)) return 650;
-  if (keywordWords.some((word) => word.startsWith(query))) return 600;
-  if (keywords.includes(query)) return 500;
-  if (description.includes(query)) return 400;
-  return 0;
-}
 
 function ResultIcon({ icon }: { icon: SearchIcon }) {
   if (icon === 'whatsapp') {
@@ -314,7 +291,7 @@ export function SettingsCommandPalette() {
       <CommandInput
         value={query}
         onValueChange={setQuery}
-        placeholder="Try “WhatsApp”, “technician”, “PDF”…"
+        placeholder="Typos are ok — try WhatsApp, technician…"
         aria-label="Search all settings"
       />
       <CommandList className="max-h-[min(60vh,480px)] p-1">
