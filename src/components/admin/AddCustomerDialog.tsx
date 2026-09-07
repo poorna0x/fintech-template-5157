@@ -13,6 +13,7 @@ import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { Download, Loader2, ChevronDown, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, composeFetchAddressFromGeocode, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
+import { filterLocationSuggestions } from '@/lib/locationSearch';
 import {
   isLeadSourceAllowCustomText,
   isLeadSourceRequiresOtp,
@@ -918,14 +919,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const filteredAddressSuggestions = useMemo(() => {
-    if (!addFormData.visible_address || addFormData.visible_address.trim().length === 0) {
-      return [];
-    }
-    const searchTerm = addFormData.visible_address.toLowerCase();
-    const uniqueAreas = [...new Set(bangaloreAreas)];
-    return uniqueAreas.filter(area => 
-      area.toLowerCase().includes(searchTerm)
-    ).slice(0, 12);
+    return filterLocationSuggestions(addFormData.visible_address || '', bangaloreAreas, 12);
   }, [addFormData.visible_address]);
 
   const loadGoogleMapsScript = (): Promise<void> => {

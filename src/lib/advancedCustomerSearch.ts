@@ -11,6 +11,7 @@
 import { supabase } from './supabaseClient';
 import { completedJobLeadSourceContainVariants } from './adminUtils';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
+import { tokenizeLocationQuery } from './locationSearch';
 
 /**
  * Slim column set returned to the dialog. Trimmed aggressively to keep response
@@ -46,7 +47,8 @@ export type AdvancedSearchFilters = {
   brandSource?: 'customer' | 'jobs' | 'either';
   /** Model on the customer profile or past jobs (OR). */
   modelContains?: string;
-  /** Comma- or newline-separated tokens. Each token OR-matched across visible_address + address fields. */
+  /** Comma- or space-separated areas. Tokens are OR-matched; filler words (road, layout)
+   * are ignored and long names also match a short prefix so a near-miss spelling still hits. */
   locationContains?: string;
   serviceType?: 'RO' | 'SOFTENER' | '';
   status?: 'ACTIVE' | 'INACTIVE' | 'BLOCKED' | '';
@@ -122,8 +124,7 @@ const DEFAULT_LIMIT = 200;
 const ID_IN_CHUNK = 100;
 const FETCH_PAGE_SIZE = 1000;
 const MAX_JOB_LOOKUP_ROWS = 20_000;
-const MAX_LOCATION_TOKENS = 12;
-const MAX_OR_PARTS = 60;
+const MAX_OR_PARTS = 80;
 
 export const DEFAULT_NEAR_RADIUS_KM = 2;
 export const MAX_NEAR_RADIUS_KM = 50;
@@ -239,14 +240,6 @@ function formatSearchError(error: unknown): string {
     return 'Network error — check your connection and try again';
   }
   return msg || 'Search failed';
-}
-
-function tokenize(input: string): string[] {
-  return input
-    .split(/[,\n]+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length >= 2)
-    .slice(0, MAX_LOCATION_TOKENS);
 }
 
 function billBounds(filters: AdvancedSearchFilters) {
@@ -694,7 +687,7 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
     q = q.or(orParts.join(','));
   }
 
-  const locTokens = tokenize(filters.locationContains ?? '');
+  const locTokens = tokenizeLocationQuery(filters.locationContains ?? '');
   if (locTokens.length > 0) {
     const orParts = locTokens.flatMap((token) => {
       const tokenE = escapeForLike(token);
@@ -704,11 +697,16 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
         `address->>street.ilike.%${tokenE}%`,
         `address->>area.ilike.%${tokenE}%`,
         `address->>city.ilike.%${tokenE}%`,
+        `address->>landmark.ilike.%${tokenE}%`,
+        `address->>pincode.ilike.%${tokenE}%`,
+        `alternate_address->>street.ilike.%${tokenE}%`,
+        `alternate_address->>area.ilike.%${tokenE}%`,
+        `alternate_address->>landmark.ilike.%${tokenE}%`,
       ];
     });
     if (orParts.length > MAX_OR_PARTS) {
       throw new Error(
-        `Too many location terms (${locTokens.length}) — use at most ${MAX_LOCATION_TOKENS} areas`
+        `Too many location terms (${locTokens.length}) — use fewer area names`
       );
     }
     q = q.or(orParts.join(','));

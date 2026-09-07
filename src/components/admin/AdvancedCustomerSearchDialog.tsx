@@ -916,14 +916,14 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                 <Field label="Area / location">
                   <Input
                     id="adv_location"
-                    placeholder="Kasavanahalli, Haralur"
+                    placeholder="Kasavanahalli Haralur — close spelling is ok"
                     value={filters.locationContains ?? ''}
                     onChange={(e) => update('locationContains', e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') void handleSearch();
                     }}
                     className="h-9"
-                    title="Comma-separated areas are OR-matched"
+                    title="Spaces or commas: any area matches. Extra words like road/layout are ignored. A slightly wrong spelling still hits."
                   />
                 </Field>
                 <Field label="Service type">

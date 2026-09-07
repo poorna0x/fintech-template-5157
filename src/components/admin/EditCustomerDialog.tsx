@@ -13,6 +13,7 @@ import { MapPin, Download, ExternalLink, Trash2, X } from 'lucide-react';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { MANAGER_RESTRICTED_TITLE } from '@/lib/managerAccess';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, nextVisibleAddressFromMapsFetch, composeFetchAddressFromGeocode, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
+import { filterLocationSuggestions } from '@/lib/locationSearch';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { hasAlternateLocation, getAlternateAddress, getAlternateLocation, getJobServiceSite } from '@/lib/customer-locations';
@@ -233,14 +234,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   const mapsShareTextRef = useRef('');
 
   const filteredAddressSuggestions = useMemo(() => {
-    if (!editFormData?.visible_address || editFormData.visible_address.trim().length === 0) {
-      return [];
-    }
-    const searchTerm = editFormData.visible_address.toLowerCase();
-    const uniqueAreas = [...new Set(bangaloreAreas)];
-    return uniqueAreas.filter(area => 
-      area.toLowerCase().includes(searchTerm)
-    ).slice(0, 12);
+    return filterLocationSuggestions(editFormData?.visible_address || '', bangaloreAreas, 12);
   }, [editFormData?.visible_address]);
 
   const buildGoogleLocationFromCustomer = (customerToUse: any, prefix: 'primary' | 'secondary') => {
