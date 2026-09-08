@@ -483,10 +483,10 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     group: 'common',
     instant: true,
     text: (ctx) => {
-      const info = brandInfo(ctx);
       const fromLabel =
         ctx.brand === 'elevenro' ? 'Eleven RO' : 'Water Filter Service';
-      return `Hi ${cleanName(ctx)}, this is a message from ${fromLabel}. We received your incoming call and could not answer. We will return your call to continue your water purifier service. Reply here if you need to add any details. Or call us on ${info.phone.split('&')[0].trim()}.`;
+      // Same Call us line for both brands (Eleven …3311).
+      return `Hi ${cleanName(ctx)}, this is a message from ${fromLabel}. We received your incoming call and could not answer. We will return your call to continue your water purifier service. Reply here if you need to add any details. Or call us on 9880693311.`;
     },
   },
   {

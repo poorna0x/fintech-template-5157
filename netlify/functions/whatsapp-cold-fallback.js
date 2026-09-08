@@ -446,16 +446,21 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(VISIT, [name, 'your upcoming service visit']);
   }
 
-  if (/^missed_call_callback_(ero|hro)_cta(_v6|_v5|_v4|_v3|_v2)?$/i.test(primaryName) || /^svc_missed_call(_v3|_v2)?$/i.test(primaryName)) {
+  if (/^missed_call_callback_(ero|hro)_cta(_v7|_v6|_v5|_v4|_v3|_v2)?$/i.test(primaryName) || /^svc_missed_call(_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : /_ero/.test(primaryName) ? 'ero' : null;
-    if (suffix && /callback/.test(primaryName) && /_v6$/i.test(primaryName)) {
+    if (suffix && /callback/.test(primaryName) && /_v7$/i.test(primaryName)) {
+      push(`missed_call_callback_${suffix}_cta_v6`, bodyParams.slice(0, 2).map(String));
+      push(`missed_call_callback_${suffix}_cta_v5`, bodyParams.slice(0, 2).map(String));
+      push(`missed_call_callback_${suffix}_cta_v4`, [name]);
+    } else if (suffix && /callback/.test(primaryName) && /_v6$/i.test(primaryName)) {
+      push(`missed_call_callback_${suffix}_cta_v7`, bodyParams.slice(0, 2).map(String));
       push(`missed_call_callback_${suffix}_cta_v5`, bodyParams.slice(0, 2).map(String));
       push(`missed_call_callback_${suffix}_cta_v4`, [name]);
     } else if (suffix && /callback/.test(primaryName) && /_v5$/i.test(primaryName)) {
-      push(`missed_call_callback_${suffix}_cta_v6`, bodyParams.slice(0, 2).map(String));
+      push(`missed_call_callback_${suffix}_cta_v7`, bodyParams.slice(0, 2).map(String));
       push(`missed_call_callback_${suffix}_cta_v4`, [name]);
-    } else if (suffix && /callback/.test(primaryName) && !/_v6$/i.test(primaryName) && !/_v5$/i.test(primaryName) && !/_v4$/i.test(primaryName)) {
-      push(`missed_call_callback_${suffix}_cta_v6`, bodyParams.slice(0, 2).map(String));
+    } else if (suffix && /callback/.test(primaryName) && !/_v7$/i.test(primaryName) && !/_v6$/i.test(primaryName) && !/_v5$/i.test(primaryName) && !/_v4$/i.test(primaryName)) {
+      push(`missed_call_callback_${suffix}_cta_v7`, bodyParams.slice(0, 2).map(String));
       push(`missed_call_callback_${suffix}_cta_v5`, bodyParams.slice(0, 2).map(String));
       push(`missed_call_callback_${suffix}_cta_v4`, [name]);
     }

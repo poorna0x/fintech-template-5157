@@ -180,6 +180,16 @@ const RECOMMENDED = [
     hint: 'Missed call — received inbound call, will return it ({{1}} name)',
   },
   {
+    name: 'missed_call_callback_ero_cta_v7',
+    language: 'en',
+    hint: 'Missed call Eleven RO v7 UTILITY (from Eleven RO + Call us …3311)',
+  },
+  {
+    name: 'missed_call_callback_hro_cta_v7',
+    language: 'en',
+    hint: 'Missed call v7 UTILITY (from Water Filter Service + Call us …3311)',
+  },
+  {
     name: 'missed_call_callback_ero_cta_v6',
     language: 'en',
     hint: 'Missed call Eleven RO v6 UTILITY (from Eleven RO + Call us + last service date)',

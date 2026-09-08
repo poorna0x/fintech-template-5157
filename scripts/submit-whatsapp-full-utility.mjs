@@ -16,6 +16,7 @@
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-received
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-missed-call-v5
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-missed-call-v6
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-missed-call-v7
  */
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -995,15 +996,15 @@ function buildMissedCallCallbackV5Templates() {
 }
 
 /**
- * v6: Hydrogen uses “Water Filter Service” (no Hydrogen RO name); Eleven stays Eleven RO.
+ * v6/v7: Hydrogen uses “Water Filter Service” (no Hydrogen RO name); Eleven stays Eleven RO.
+ * Call us for both brands → Eleven line (…3311).
  */
 function buildMissedCallCallbackV6Templates() {
   const out = [];
   for (const [suffix] of Object.entries(LETTER_BRANDS)) {
-    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
     const fromLabel = suffix === 'hro' ? 'Water Filter Service' : 'Eleven RO';
     out.push({
-      callPhone,
+      callPhone: CALL_PHONE_ELEVEN,
       lockCategory: true,
       name: `missed_call_callback_${suffix}_cta_v6`,
       body: [
@@ -1018,9 +1019,18 @@ function buildMissedCallCallbackV6Templates() {
   return out;
 }
 
+/** Same copy as v6; new name after Meta delete-pending on v6. */
+function buildMissedCallCallbackV7Templates() {
+  return buildMissedCallCallbackV6Templates().map((t) => ({
+    ...t,
+    name: String(t.name).replace(/_v6$/, '_v7'),
+  }));
+}
+
 const MISSED_CALL_CALLBACK_V4_TEMPLATES = buildMissedCallCallbackV4Templates();
 const MISSED_CALL_CALLBACK_V5_TEMPLATES = buildMissedCallCallbackV5Templates();
 const MISSED_CALL_CALLBACK_V6_TEMPLATES = buildMissedCallCallbackV6Templates();
+const MISSED_CALL_CALLBACK_V7_TEMPLATES = buildMissedCallCallbackV7Templates();
 
 function letterFooterBlock(brand, callPhone) {
   const chatUrl = `https://wa.me/${String(callPhone || brand.phone).replace(/\D/g, '')}`;
@@ -2557,6 +2567,9 @@ function collectAllTemplatePreviewEntries() {
   for (const t of MISSED_CALL_CALLBACK_V6_TEMPLATES) {
     push('Missed call v6', t, missedCallCallbackV4Payload);
   }
+  for (const t of MISSED_CALL_CALLBACK_V7_TEMPLATES) {
+    push('Missed call v7', t, missedCallCallbackV4Payload);
+  }
   for (const t of SERVICE_DUE_CTA_TEMPLATES) push('Service due CTA', t, bookingPayload);
   for (const t of BOOKING_STATUS_V2_TEMPLATES) push('Booking confirm / cancel v2', t, bookingPayload);
   for (const t of JOB_DONE_V2_TEMPLATES) push('Job done v2', t, jobDonePayload);
@@ -2862,6 +2875,14 @@ async function main() {
     queue.push({ label: t.name, payload: missedCallCallbackV4Payload(t) });
   }
   for (const t of MISSED_CALL_CALLBACK_V6_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: missedCallCallbackV4Payload(t) });
+  }
+  for (const t of MISSED_CALL_CALLBACK_V7_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
       console.log(`SKIP ${t.name} — ${skip}`);
@@ -3292,6 +3313,14 @@ async function main() {
   const onlyMissedCallV6 = process.argv.includes('--only-missed-call-v6');
   if (onlyMissedCallV6) {
     const keep = new Set(MISSED_CALL_CALLBACK_V6_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyMissedCallV7 = process.argv.includes('--only-missed-call-v7');
+  if (onlyMissedCallV7) {
+    const keep = new Set(MISSED_CALL_CALLBACK_V7_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

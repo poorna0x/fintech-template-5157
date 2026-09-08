@@ -2,7 +2,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { resolveBookingCta } from '@/lib/whatsappBookingCtaTemplates';
-import { brandContactLines, brandExistingCustomerBookLines, brandLetterClosingLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { brandContactLines, brandExistingCustomerBookLines, brandLetterClosingLines, brandPrimaryVoicePhone, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import {
   waBrandBookingUrl,
   waBrandWebsiteUrl,
@@ -199,6 +199,8 @@ export function buildCallingWhatsAppMessage(
     case 'missed_call': {
       const fromLabel =
         documentBrand === 'elevenro' ? 'Eleven RO' : 'Water Filter Service';
+      // Same Call us line for both brands (Eleven …3311).
+      const callUs = brandPrimaryVoicePhone('elevenro').display;
       return [
         `Hi ${name}, 👋`,
         '',
@@ -206,7 +208,7 @@ export function buildCallingWhatsAppMessage(
         '',
         'Please reply here to request a callback and we will call you back shortly.',
         '',
-        waLabeledValue('📞', 'Call us', info.phone),
+        waLabeledValue('📞', 'Call us', callUs),
         `💬 Reply on this chat`,
         '',
         brandFooter(documentBrand),

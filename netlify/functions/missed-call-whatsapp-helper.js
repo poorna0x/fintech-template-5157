@@ -28,6 +28,8 @@ const MISSED_CALL_TEMPLATE_NAMES = [
   'missed_call_callback_hro_cta_v5',
   'missed_call_callback_ero_cta_v6',
   'missed_call_callback_hro_cta_v6',
+  'missed_call_callback_ero_cta_v7',
+  'missed_call_callback_hro_cta_v7',
 ];
 
 function brandSuffix(brand) {
@@ -154,7 +156,7 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
 
     const facts = await loadMissedCallFacts(db, phone, opts);
     const name = facts.customerName || 'there';
-    const templateName = `missed_call_callback_${brandSuffix(facts.brand)}_cta_v6`;
+    const templateName = `missed_call_callback_${brandSuffix(facts.brand)}_cta_v7`;
     const bodyParams = [name, facts.lastServiceDate];
 
     const { accessToken, phoneNumberId } = await getWhatsAppCredentials(db);

@@ -328,7 +328,9 @@ export function WhatsAppQuickRepliesBar({
       approvedTemplateNames.has('missed_call_callback_ero_cta_v5') ||
       approvedTemplateNames.has('missed_call_callback_hro_cta_v5') ||
       approvedTemplateNames.has('missed_call_callback_ero_cta_v6') ||
-      approvedTemplateNames.has('missed_call_callback_hro_cta_v6');
+      approvedTemplateNames.has('missed_call_callback_hro_cta_v6') ||
+      approvedTemplateNames.has('missed_call_callback_ero_cta_v7') ||
+      approvedTemplateNames.has('missed_call_callback_hro_cta_v7');
     if (!ok) {
       onPickTemplate?.(payload);
       return;
@@ -441,7 +443,9 @@ export function WhatsAppQuickRepliesBar({
     approvedTemplateNames.has('missed_call_callback_ero_cta_v5') ||
     approvedTemplateNames.has('missed_call_callback_hro_cta_v5') ||
     approvedTemplateNames.has('missed_call_callback_ero_cta_v6') ||
-    approvedTemplateNames.has('missed_call_callback_hro_cta_v6');
+    approvedTemplateNames.has('missed_call_callback_hro_cta_v6') ||
+    approvedTemplateNames.has('missed_call_callback_ero_cta_v7') ||
+    approvedTemplateNames.has('missed_call_callback_hro_cta_v7');
 
   const showBookVisit =
     !approvedTemplateNames?.size ||

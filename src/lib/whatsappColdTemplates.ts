@@ -234,9 +234,9 @@ export const WA_COLD = {
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
-  /** Customer missed-called us — callback (missed_call_callback_*_cta_v6). */
+  /** Customer missed-called us — callback (missed_call_callback_*_cta_v7). */
   missed_call: {
-    name: 'missed_call_callback_hro_cta_v6',
+    name: 'missed_call_callback_hro_cta_v7',
     language: 'en',
     bodyParams: (customerName: string, lastServiceDate?: string) => [
       cleanName(customerName),
@@ -644,8 +644,8 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   crm_update_details: 'CRM update → visit reminder',
   book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta_v3 → v2 → v1)',
   book_new_customer: 'Unregistered number (unregistered_number_service_*_cta)',
-  missed_call: 'Missed call (missed_call_callback_*_cta_v6)',
-  missed_call_book: 'Missed call (missed_call_callback_*_cta_v6)',
+  missed_call: 'Missed call (missed_call_callback_*_cta_v7)',
+  missed_call_book: 'Missed call (missed_call_callback_*_cta_v7)',
   reschedule_visit: 'Reschedule (reschedule_visit_*_cta)',
   visit_cancelled: 'Visit cancelled (svc_booking_cancelled_letter_*_v5 no BOOK → v3 → svc_visit_cancelled_*)',
   parts_ready: 'Parts ready (svc_parts_ready)',
