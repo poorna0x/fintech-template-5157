@@ -42,6 +42,20 @@ function createOrphanCustomerPlaceholder(fallbackCustomerId: string): Customer {
   } as Customer;
 }
 
+/** Unique customers embedded on jobs — used so Ongoing can paint before the customers effect runs. */
+export function deriveCustomersFromJobs(jobsList: Job[]): Customer[] {
+  const seen = new Set<string>();
+  const list: Customer[] = [];
+  for (const job of jobsList) {
+    const raw = (job as any).customer || job.customer;
+    if (!raw?.id) continue;
+    if (seen.has(raw.id)) continue;
+    seen.add(raw.id);
+    list.push(transformCustomerData(raw));
+  }
+  return list;
+}
+
 export function buildCustomersWithJobs(
   baseCustomers: Customer[],
   jobs: Job[]

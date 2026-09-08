@@ -92,6 +92,7 @@ import {
 } from '@/lib/adminDashboardDateHelpers';
 import {
   buildCustomersWithJobs,
+  deriveCustomersFromJobs,
   getFilteredCustomersForDashboard,
   resolveDisplayedCustomers,
 } from '@/lib/adminDashboardCustomerFilters';
@@ -394,10 +395,13 @@ const AdminDashboard = () => {
     ? ((initialDashboardCache.jobs as Job[]) ?? [])
     : ((getModuleOngoingJobsSnapshot() as Job[]) ?? []);
   const restoredJobs = getModuleJobsForUiRestore(savedUi) as Job[];
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [jobs, setJobs] = useState<Job[]>(() =>
-    restoredJobs.length > 0 ? restoredJobs : initialOngoingJobs
+  const seedJobs =
+    restoredJobs.length > 0 ? restoredJobs : initialOngoingJobs;
+  // Derive customers on the same tick as cached jobs so Ongoing does not flash empty on refresh.
+  const [customers, setCustomers] = useState<Customer[]>(() =>
+    deriveCustomersFromJobs(seedJobs)
   );
+  const [jobs, setJobs] = useState<Job[]>(() => seedJobs);
   const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
   const [followUpDisplaySettings, setFollowUpDisplaySettings] = useState(
     readFollowUpDisplaySettings
@@ -2457,18 +2461,6 @@ const AdminDashboard = () => {
   }, [isInitialLoad, statusFilter, jobs]);
 
   // Derive customers from loaded jobs only (no full customer load)
-  const deriveCustomersFromJobs = (jobsList: Job[]) => {
-    const seen = new Set<string>();
-    const list: Customer[] = [];
-    for (const job of jobsList) {
-      const raw = (job as any).customer || job.customer;
-      if (!raw?.id) continue;
-      if (seen.has(raw.id)) continue;
-      seen.add(raw.id);
-      list.push(transformCustomerData(raw));
-    }
-    return list;
-  };
   useEffect(() => {
     setCustomers((prev) => {
       const derived = deriveCustomersFromJobs(jobs);
@@ -6307,13 +6299,19 @@ const AdminDashboard = () => {
     });
   };
 
-  // When user has searched, use API results (find any customer in DB); otherwise use derived list (customers with jobs)
-  const baseCustomers = searchTerm.trim() ? (searchResults ?? []) : customers;
+  // When user has searched, use API results (find any customer in DB); otherwise use derived list (customers with jobs).
+  // Fall back to an in-render derive when jobs already landed but the customers effect has not run yet —
+  // otherwise Ongoing flashes the empty-state icon on refresh.
+  const customersForJobList =
+    customers.length > 0 || jobs.length === 0
+      ? customers
+      : deriveCustomersFromJobs(jobs);
+  const baseCustomers = searchTerm.trim() ? (searchResults ?? []) : customersForJobList;
 
   // Filter data based on search term when NOT using API search (empty search = use all derived customers)
   const filteredCustomers = searchTerm.trim()
     ? baseCustomers
-    : customers;
+    : customersForJobList;
 
   const doesCompletedJobMatchFilters = useCallback((job: any): boolean => {
     return completedJobMatchesDashboardClientFilters(job, {
@@ -6740,11 +6738,12 @@ const AdminDashboard = () => {
   const listSyncActive = isJobsListRefreshing || isResumeListSyncing;
   const ongoingTabHasStaleJobs =
     statusFilter === 'ONGOING' && jobs.length > 0 && !jobsMatchOngoingTab(jobs);
-  // Show loader only when there is nothing to display yet; cached Completed/Follow-up open instantly.
+  // Show loader when the list is empty and still syncing — including Ongoing with no rows yet
+  // (otherwise “No ongoing jobs” flashes on refresh before the fetch lands).
   const showJobsListLoader =
     listSyncActive &&
     displayedCustomers.length === 0 &&
-    (statusFilter !== 'ONGOING' || ongoingTabHasStaleJobs);
+    (statusFilter !== 'ONGOING' || ongoingTabHasStaleJobs || jobs.length === 0);
   const jobsListRefreshLabel =
     statusFilter === 'RESCHEDULED'
       ? 'follow-up'
