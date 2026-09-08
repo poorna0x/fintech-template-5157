@@ -169,15 +169,34 @@ export function haversineKm(
 }
 
 /**
+ * Open Location Code alphabet. Do not use A–Z: Maps URLs encode spaces as `+`,
+ * so "Krishna+Mystiq" would otherwise match as a fake code and leave "tiq".
+ */
+export const OLC_CHARS = '23456789CFGHJMPQRVWX';
+
+function olcPlusTokenRe(flags: string): RegExp {
+  return new RegExp(`([${OLC_CHARS}]{4,8})\\+([${OLC_CHARS}]{2,3})`, flags);
+}
+
+/** Protect real Plus Codes, then turn remaining `+` into spaces (Maps place slugs). */
+export function plusesToSpacesPreservingOlc(value: string): string {
+  if (!value) return '';
+  const protectedStr = value.replace(olcPlusTokenRe('gi'), (_, a, b) => `${a}\uE000${b}`);
+  return protectedStr.replace(/\+/g, ' ').replace(/\uE000/g, '+');
+}
+
+/**
  * Remove Google Plus Codes from address string.
  * Plus codes look like "VM99+4P" / "VJVJ+8XW" and should not appear in Full Address.
  */
 export const removePlusCode = (address: string): string => {
   if (!address) return '';
-  // Match patterns like "VM99+4P", "VJVJ+8XW, Address", "3Q5F+23 Place", etc.
-  // Global Plus Codes: 2–8 chars, +, 2–3 chars (local/compound forms vary).
-  const plusCodePattern = /\s*[A-Z0-9]{2,8}\+[A-Z0-9]{2,3}\s*,?\s*/gi;
-  return address
+  const spaced = plusesToSpacesPreservingOlc(address);
+  const plusCodePattern = new RegExp(
+    `\\s*[${OLC_CHARS}]{4,8}\\+[${OLC_CHARS}]{2,3}\\s*,?\\s*`,
+    'gi'
+  );
+  return spaced
     .replace(plusCodePattern, ' ')
     .replace(/^[,\s]+|[,\s]+$/g, '')
     .replace(/\s{2,}/g, ' ')

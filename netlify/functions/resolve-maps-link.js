@@ -23,7 +23,18 @@ function validLatLng(lat, lng) {
   );
 }
 
-const LEADING_PLUS_CODE = /^([A-Z0-9]{2,8})(?:\+|\s+)([A-Z0-9]{2,3})\b/i;
+const OLC_CHARS = '23456789CFGHJMPQRVWX';
+const LEADING_PLUS_CODE = new RegExp(
+  `^([${OLC_CHARS}]{4,8})(?:\\+|\\s+)([${OLC_CHARS}]{2,3})\\b`,
+  'i'
+);
+
+function plusesToSpacesPreservingOlc(value) {
+  if (!value) return '';
+  const token = new RegExp(`([${OLC_CHARS}]{4,8})\\+([${OLC_CHARS}]{2,3})`, 'gi');
+  const protectedStr = String(value).replace(token, (_, a, b) => `${a}\uE000${b}`);
+  return protectedStr.replace(/\+/g, ' ').replace(/\uE000/g, '+');
+}
 
 function distinctivePlaceTokens(query) {
   const stop = new Set([
@@ -111,7 +122,9 @@ function placeNameGeocodeQueries(placeName) {
     if (t && !queries.includes(t)) queries.push(t);
   };
   const plus = raw.match(LEADING_PLUS_CODE);
-  const withoutPlus = raw.replace(/^[A-Z0-9]{2,8}(?:\+|\s+)[A-Z0-9]{2,3}\s*,?\s*/i, '').trim();
+  const withoutPlus = raw
+    .replace(new RegExp(`^[${OLC_CHARS}]{4,8}(?:\\+|\\s+)[${OLC_CHARS}]{2,3}\\s*,?\\s*`, 'i'), '')
+    .trim();
   // Local Plus Codes (2QG7+J9F) are city-relative and can pin downtown. Prefer name + locality.
   if (withoutPlus) {
     add(withoutPlus);
@@ -279,18 +292,14 @@ function sanitizeUrl(input) {
  * Do not turn 2QG7+J9F into "2QG7 J9F".
  */
 function decodeMapsPlaceSlug(slug) {
-  const s = String(slug || '');
-  const protect = s
-    .replace(/%2B/gi, '\uE000')
-    .replace(/^([A-Z0-9]{2,8})\+([A-Z0-9]{2,3})\b/i, (_, a, b) => `${a}\uE000${b}`);
-  const spaced = protect.replace(/\+/g, ' ');
-  let decoded = spaced;
+  const s = plusesToSpacesPreservingOlc(String(slug || '').replace(/%2B/gi, '+'));
+  let decoded = s;
   try {
-    decoded = decodeURIComponent(spaced);
+    decoded = decodeURIComponent(s);
   } catch {
     /* keep spaced */
   }
-  return decoded.replace(/\uE000/g, '+').replace(/\s+/g, ' ').trim();
+  return decoded.replace(/\s+/g, ' ').trim();
 }
 
 function normalizeUrlForParsing(url) {

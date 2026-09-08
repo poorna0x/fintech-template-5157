@@ -1,4 +1,4 @@
-import { removePlusCode } from '@/lib/maps';
+import { removePlusCode, plusesToSpacesPreservingOlc, OLC_CHARS } from '@/lib/maps';
 
 export interface GoogleMapsResolvedLink {
   expandedUrl: string;
@@ -81,17 +81,16 @@ export function extractPlaceHintFromShareText(text: string): string | null {
  * Maps path uses + for spaces, but Plus Codes encode + as %2B (or a real + after decode).
  */
 function decodeMapsPlaceSlug(slug: string): string {
-  const protect = String(slug || '')
-    .replace(/%2B/gi, '\uE000')
-    .replace(/^([A-Z0-9]{2,8})\+([A-Z0-9]{2,3})\b/i, (_, a, b) => `${a}\uE000${b}`);
-  const spaced = protect.replace(/\+/g, ' ');
-  let decoded = spaced;
+  const protect = plusesToSpacesPreservingOlc(
+    String(slug || '').replace(/%2B/gi, '+')
+  );
+  let decoded = protect;
   try {
-    decoded = decodeURIComponent(spaced);
+    decoded = decodeURIComponent(protect);
   } catch {
     /* keep spaced */
   }
-  return decoded.replace(/\uE000/g, '+').replace(/\s+/g, ' ').trim();
+  return decoded.replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -506,8 +505,12 @@ function expandPlaceHintQueries(hints: string[]): string[] {
     if (t && !queries.includes(t)) queries.push(t);
   };
   for (const hint of hints) {
-    const withoutPlus = hint.replace(/^[A-Z0-9]{2,8}(?:\+|\s+)[A-Z0-9]{2,3}\s*,?\s*/i, '').trim();
-    const plus = hint.match(/^([A-Z0-9]{2,8})(?:\+|\s+)([A-Z0-9]{2,3})\b/i);
+    const withoutPlus = hint
+      .replace(new RegExp(`^[${OLC_CHARS}]{4,8}(?:\\+|\\s+)[${OLC_CHARS}]{2,3}\\s*,?\\s*`, 'i'), '')
+      .trim();
+    const plus = hint.match(
+      new RegExp(`^([${OLC_CHARS}]{4,8})(?:\\+|\\s+)([${OLC_CHARS}]{2,3})\\b`, 'i')
+    );
     if (withoutPlus) {
       add(withoutPlus);
       const first = withoutPlus.split(',')[0];
