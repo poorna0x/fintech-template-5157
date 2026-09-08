@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { plusesToSpacesPreservingOlc, removePlusCode } from './maps';
+import { plusesToSpacesPreservingOlc, removePlusCode, restAfterLeadingOlcPlusCode } from './maps';
 import { extractPlaceNameFromMapsUrl } from './googleMapsLink';
-import { mapsPlaceLabelForStreetAddress } from './adminUtils';
+import { extractPlaceFromPlusCodeAddress, mapsPlaceLabelForStreetAddress } from './adminUtils';
 
 describe('removePlusCode', () => {
   it('does not chop Krishna Mystiq down to tiq', () => {
@@ -15,6 +15,14 @@ describe('removePlusCode', () => {
       'Assetz Marq 1.0 apartments'
     );
     expect(removePlusCode('VM99+4P, Bengaluru')).toBe('Bengaluru');
+  });
+
+  it('does not treat Krishna Mystiq as a Plus Code line', () => {
+    expect(restAfterLeadingOlcPlusCode('Krishna+Mystiq Bengaluru')).toBeNull();
+    expect(extractPlaceFromPlusCodeAddress('Krishna+Mystiq, Basapura, Bengaluru')).toBeNull();
+    expect(restAfterLeadingOlcPlusCode('3Q5F+23 Amanidoddakere, India')).toBe(
+      'Amanidoddakere, India'
+    );
   });
 });
 

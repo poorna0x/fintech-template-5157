@@ -7,7 +7,7 @@ import {
   readCustomerEquipmentSlot,
 } from '@/lib/equipment-suggestions';
 import { isLeadSourceRequiresOtp, normalizeWebsiteLeadBrandLabel } from '@/lib/leadCatalog';
-import { removePlusCode } from '@/lib/maps';
+import { removePlusCode, restAfterLeadingOlcPlusCode } from '@/lib/maps';
 
 /** Technician employee id used for zero-commission (office) completions. */
 export const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
@@ -1259,10 +1259,9 @@ function joinGoogleComponentText(components: GoogleAddressComponentLike[]): stri
  */
 export function extractPlaceFromPlusCodeAddress(formatted: string): string | null {
   if (!formatted?.trim()) return null;
-  const m = formatted.trim().match(/^[A-Z0-9]{2,}\+[A-Z0-9]{2,}\s+(.+)$/i);
-  if (!m) return null;
-
-  const parts = m[1]
+  const rest = restAfterLeadingOlcPlusCode(formatted);
+  if (!rest) return null;
+  const parts = rest
     .split(',')
     .map((p) => p.trim())
     .filter(Boolean);

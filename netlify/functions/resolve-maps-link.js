@@ -80,7 +80,9 @@ function preferIndiaPair(pairs) {
 async function geocodePlaceNameNominatim(placeName) {
   if (!placeName) return null;
   const queries = [placeName];
-  const withoutPlus = String(placeName).replace(/^[A-Z0-9]{4,}(?:\+|\s+)[A-Z0-9]{2,}\s*/i, '').trim();
+  const withoutPlus = String(placeName)
+    .replace(new RegExp(`^[${OLC_CHARS}]{4,8}(?:\\+|\\s+)[${OLC_CHARS}]{2,3}\\s*`, 'i'), '')
+    .trim();
   if (withoutPlus && withoutPlus !== placeName) queries.push(withoutPlus);
 
   for (const q of queries) {

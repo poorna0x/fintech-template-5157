@@ -185,6 +185,14 @@ export function plusesToSpacesPreservingOlc(value: string): string {
   return protectedStr.replace(/\+/g, ' ').replace(/\uE000/g, '+');
 }
 
+/** Text after a leading Open Location Code, or null if this is not a Plus Code line. */
+export function restAfterLeadingOlcPlusCode(formatted: string): string | null {
+  const m = String(formatted || '')
+    .trim()
+    .match(new RegExp(`^[${OLC_CHARS}]{4,8}\\+[${OLC_CHARS}]{2,3}\\s+(.+)$`, 'i'));
+  return m?.[1]?.trim() || null;
+}
+
 /**
  * Remove Google Plus Codes from address string.
  * Plus codes look like "VM99+4P" / "VJVJ+8XW" and should not appear in Full Address.

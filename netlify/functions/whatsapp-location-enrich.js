@@ -88,7 +88,9 @@ function shortFromComponents(components) {
 
 function shortFromPlusCode(formatted) {
   if (!formatted?.trim()) return null;
-  const m = formatted.trim().match(/^[A-Z0-9]{2,}\+[A-Z0-9]{2,}\s+(.+)$/i);
+  const m = formatted
+    .trim()
+    .match(/^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}\s+(.+)$/i);
   if (!m) return null;
   const parts = m[1]
     .split(',')
