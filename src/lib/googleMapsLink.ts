@@ -63,12 +63,15 @@ export function extractPlaceHintFromShareText(text: string): string | null {
     .map((line) => line.trim())
     .filter((line) => line.length > 2 && !line.startsWith('http'));
 
-  const candidates = lines.filter(
-    (line) =>
-      !/^[\d\s\-+()]+$/.test(line) &&
-      !/^maps\.app\.goo\.gl/i.test(line) &&
-      line.length <= 200
-  );
+  const candidates = lines
+    .map((line) => plusesToSpacesPreservingOlc(line).replace(/\s+/g, ' ').trim())
+    .filter(
+      (line) =>
+        line.length > 2 &&
+        !/^[\d\s\-+()]+$/.test(line) &&
+        !/^maps\.app\.goo\.gl/i.test(line) &&
+        line.length <= 200
+    );
 
   if (candidates.length === 0) return null;
 
@@ -505,21 +508,28 @@ function expandPlaceHintQueries(hints: string[]): string[] {
     if (t && !queries.includes(t)) queries.push(t);
   };
   for (const hint of hints) {
-    const withoutPlus = hint
-      .replace(new RegExp(`^[${OLC_CHARS}]{4,8}(?:\\+|\\s+)[${OLC_CHARS}]{2,3}\\s*,?\\s*`, 'i'), '')
-      .trim();
     const plus = hint.match(
       new RegExp(`^([${OLC_CHARS}]{4,8})(?:\\+|\\s+)([${OLC_CHARS}]{2,3})\\b`, 'i')
     );
+    const plusIsOlc = Boolean(plus && /[2-9]/.test(`${plus[1]}${plus[2]}`));
+    const withoutPlus = plusIsOlc
+      ? hint
+          .replace(
+            new RegExp(`^[${OLC_CHARS}]{4,8}(?:\\+|\\s+)[${OLC_CHARS}]{2,3}\\s*,?\\s*`, 'i'),
+            ''
+          )
+          .trim()
+      : hint.trim();
+    const olcPlus = plusIsOlc ? plus : null;
     if (withoutPlus) {
       add(withoutPlus);
       const first = withoutPlus.split(',')[0];
       if (first && first !== withoutPlus) add(`${first}, Bengaluru, Karnataka, India`);
     }
-    if (plus) {
+    if (olcPlus) {
       const locality =
         withoutPlus.split(',').slice(1).join(',').trim() || 'Bengaluru, Karnataka, India';
-      add(`${plus[1]}+${plus[2]}, ${locality}`);
+      add(`${olcPlus[1]}+${olcPlus[2]}, ${locality}`);
     }
     add(hint);
   }
@@ -573,7 +583,14 @@ function deriveMapsPlaceName(opts: {
   ].filter((c): c is string => typeof c === 'string' && c.trim().length > 0);
   for (const candidate of candidates) {
     const primary = removePlusCode(candidate).split(',')[0].trim();
-    if (primary.length >= 3 && !/^-?\d/.test(primary)) return primary;
+    // Keep names like "9th Cross Residency" (digit start + letters). Reject pure coords/numbers.
+    if (
+      primary.length >= 3 &&
+      /[a-zA-Z\u00C0-\u024F\u0900-\u097F]/.test(primary) &&
+      !/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?/.test(primary)
+    ) {
+      return primary;
+    }
   }
   return undefined;
 }

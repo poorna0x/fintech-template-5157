@@ -24,6 +24,11 @@ function validLatLng(lat, lng) {
 }
 
 const OLC_CHARS = '23456789CFGHJMPQRVWX';
+
+function isLikelyOlcPair(before, after) {
+  return /[2-9]/.test(`${before || ''}${after || ''}`);
+}
+
 const LEADING_PLUS_CODE = new RegExp(
   `^([${OLC_CHARS}]{4,8})(?:\\+|\\s+)([${OLC_CHARS}]{2,3})\\b`,
   'i'
@@ -32,7 +37,9 @@ const LEADING_PLUS_CODE = new RegExp(
 function plusesToSpacesPreservingOlc(value) {
   if (!value) return '';
   const token = new RegExp(`([${OLC_CHARS}]{4,8})\\+([${OLC_CHARS}]{2,3})`, 'gi');
-  const protectedStr = String(value).replace(token, (_, a, b) => `${a}\uE000${b}`);
+  const protectedStr = String(value).replace(token, (full, a, b) =>
+    isLikelyOlcPair(a, b) ? `${a}\uE000${b}` : full
+  );
   return protectedStr.replace(/\+/g, ' ').replace(/\uE000/g, '+');
 }
 
@@ -80,9 +87,16 @@ function preferIndiaPair(pairs) {
 async function geocodePlaceNameNominatim(placeName) {
   if (!placeName) return null;
   const queries = [placeName];
-  const withoutPlus = String(placeName)
-    .replace(new RegExp(`^[${OLC_CHARS}]{4,8}(?:\\+|\\s+)[${OLC_CHARS}]{2,3}\\s*`, 'i'), '')
-    .trim();
+  const plus = String(placeName).match(LEADING_PLUS_CODE);
+  const withoutPlus =
+    plus && isLikelyOlcPair(plus[1], plus[2])
+      ? String(placeName)
+          .replace(
+            new RegExp(`^[${OLC_CHARS}]{4,8}(?:\\+|\\s+)[${OLC_CHARS}]{2,3}\\s*`, 'i'),
+            ''
+          )
+          .trim()
+      : '';
   if (withoutPlus && withoutPlus !== placeName) queries.push(withoutPlus);
 
   for (const q of queries) {
@@ -124,16 +138,24 @@ function placeNameGeocodeQueries(placeName) {
     if (t && !queries.includes(t)) queries.push(t);
   };
   const plus = raw.match(LEADING_PLUS_CODE);
-  const withoutPlus = raw
-    .replace(new RegExp(`^[${OLC_CHARS}]{4,8}(?:\\+|\\s+)[${OLC_CHARS}]{2,3}\\s*,?\\s*`, 'i'), '')
-    .trim();
+  const plusIsOlc = Boolean(plus && isLikelyOlcPair(plus[1], plus[2]));
+  const withoutPlus = plusIsOlc
+    ? raw
+        .replace(
+          new RegExp(`^[${OLC_CHARS}]{4,8}(?:\\+|\\s+)[${OLC_CHARS}]{2,3}\\s*,?\\s*`, 'i'),
+          ''
+        )
+        .trim()
+    : raw;
   // Local Plus Codes (2QG7+J9F) are city-relative and can pin downtown. Prefer name + locality.
-  if (withoutPlus) {
+  if (withoutPlus && withoutPlus !== raw) {
     add(withoutPlus);
     const first = withoutPlus.split(',')[0];
     if (first && first !== withoutPlus) add(`${first}, Bengaluru, Karnataka, India`);
+  } else if (withoutPlus && !plusIsOlc) {
+    add(withoutPlus);
   }
-  if (plus) {
+  if (plusIsOlc) {
     const locality =
       withoutPlus.split(',').slice(1).join(',').trim() || 'Bengaluru, Karnataka, India';
     add(`${plus[1]}+${plus[2]}, ${locality}`);

@@ -90,9 +90,9 @@ function shortFromPlusCode(formatted) {
   if (!formatted?.trim()) return null;
   const m = formatted
     .trim()
-    .match(/^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}\s+(.+)$/i);
-  if (!m) return null;
-  const parts = m[1]
+    .match(/^([23456789CFGHJMPQRVWX]{4,8})\+([23456789CFGHJMPQRVWX]{2,3})(?:\s+|\s*,\s*)(.+)$/i);
+  if (!m || !/[2-9]/.test(`${m[1]}${m[2]}`)) return null;
+  const parts = m[3]
     .split(',')
     .map((p) => p.trim())
     .filter(Boolean);

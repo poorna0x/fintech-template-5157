@@ -174,6 +174,11 @@ export function haversineKm(
  */
 export const OLC_CHARS = '23456789CFGHJMPQRVWX';
 
+/** Real Plus Codes always include a digit (2–9). Letter-only tokens like CHMP+QR are place names. */
+export function isLikelyOlcPair(before: string, after: string): boolean {
+  return /[2-9]/.test(`${before || ''}${after || ''}`);
+}
+
 function olcPlusTokenRe(flags: string): RegExp {
   return new RegExp(`([${OLC_CHARS}]{4,8})\\+([${OLC_CHARS}]{2,3})`, flags);
 }
@@ -181,16 +186,24 @@ function olcPlusTokenRe(flags: string): RegExp {
 /** Protect real Plus Codes, then turn remaining `+` into spaces (Maps place slugs). */
 export function plusesToSpacesPreservingOlc(value: string): string {
   if (!value) return '';
-  const protectedStr = value.replace(olcPlusTokenRe('gi'), (_, a, b) => `${a}\uE000${b}`);
+  const protectedStr = value.replace(olcPlusTokenRe('gi'), (full, a, b) =>
+    isLikelyOlcPair(a, b) ? `${a}\uE000${b}` : full
+  );
   return protectedStr.replace(/\+/g, ' ').replace(/\uE000/g, '+');
 }
 
-/** Text after a leading Open Location Code, or null if this is not a Plus Code line. */
+/** Rest after a leading Open Location Code, or null if this is not a Plus Code line. */
 export function restAfterLeadingOlcPlusCode(formatted: string): string | null {
   const m = String(formatted || '')
     .trim()
-    .match(new RegExp(`^[${OLC_CHARS}]{4,8}\\+[${OLC_CHARS}]{2,3}\\s+(.+)$`, 'i'));
-  return m?.[1]?.trim() || null;
+    .match(
+      new RegExp(
+        `^([${OLC_CHARS}]{4,8})\\+([${OLC_CHARS}]{2,3})(?:\\s+|\\s*,\\s*)(.+)$`,
+        'i'
+      )
+    );
+  if (!m || !isLikelyOlcPair(m[1], m[2])) return null;
+  return m[3]?.trim() || null;
 }
 
 /**
@@ -201,11 +214,11 @@ export const removePlusCode = (address: string): string => {
   if (!address) return '';
   const spaced = plusesToSpacesPreservingOlc(address);
   const plusCodePattern = new RegExp(
-    `\\s*[${OLC_CHARS}]{4,8}\\+[${OLC_CHARS}]{2,3}\\s*,?\\s*`,
+    `\\s*([${OLC_CHARS}]{4,8})\\+([${OLC_CHARS}]{2,3})\\s*,?\\s*`,
     'gi'
   );
   return spaced
-    .replace(plusCodePattern, ' ')
+    .replace(plusCodePattern, (full, a, b) => (isLikelyOlcPair(a, b) ? ' ' : full))
     .replace(/^[,\s]+|[,\s]+$/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
