@@ -484,8 +484,9 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     instant: true,
     text: (ctx) => {
       const info = brandInfo(ctx);
-      const label = getDocumentBrandLabel(ctx.brand || 'hydrogenro');
-      return `Hi ${cleanName(ctx)}, this is ${label}. We received your incoming call and could not answer. We will return your call to continue your water purifier service. Reply here if you need to add any details. Or call us on ${info.phone.split('&')[0].trim()}.`;
+      const fromLabel =
+        ctx.brand === 'elevenro' ? 'Eleven RO' : 'Water Filter Service';
+      return `Hi ${cleanName(ctx)}, this is a message from ${fromLabel}. We received your incoming call and could not answer. We will return your call to continue your water purifier service. Reply here if you need to add any details. Or call us on ${info.phone.split('&')[0].trim()}.`;
     },
   },
   {

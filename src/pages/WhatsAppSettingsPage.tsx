@@ -330,7 +330,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           />
           <ToggleRow
             label="Auto-send missed-call callback"
-            description="When a customer missed-calls an admin or technician phone, send a branded callback WhatsApp (we will get back to you + Call us). Uses last served brand, or Eleven RO if none. Includes last service date. Deduped for 6 hours. Requires Calling ON."
+            description="When a customer missed-calls an admin or technician phone, send a callback WhatsApp (from Water Filter Service for Hydrogen customers, Eleven RO for Eleven; last service date + Call us). Deduped for 6 hours. Requires Calling ON."
             checked={settings.auto_send_missed_call_whatsapp}
             disabled={!settings.enabled || !settings.allow_calling}
             onCheckedChange={(v) => patch('auto_send_missed_call_whatsapp', v)}

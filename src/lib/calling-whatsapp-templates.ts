@@ -196,11 +196,13 @@ export function buildCallingWhatsAppMessage(
       ].join('\n');
     }
 
-    case 'missed_call':
+    case 'missed_call': {
+      const fromLabel =
+        documentBrand === 'elevenro' ? 'Eleven RO' : 'Water Filter Service';
       return [
         `Hi ${name}, 👋`,
         '',
-        'Sorry we missed your call — our team was busy.',
+        `Sorry we missed your call — this is a message from ${fromLabel}.`,
         '',
         'Please reply here to request a callback and we will call you back shortly.',
         '',
@@ -209,6 +211,7 @@ export function buildCallingWhatsAppMessage(
         '',
         brandFooter(documentBrand),
       ].join('\n');
+    }
 
     case 'follow_up':
       return [

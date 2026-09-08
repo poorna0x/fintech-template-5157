@@ -58,7 +58,7 @@ export function bookingCtaTemplateName(kind: BookingCtaKind, brand: DocumentBran
     return `existing_service_schedule_${suffix}_cta_v3`;
   }
   if (kind === 'missed_call_book') {
-    return `missed_call_callback_${suffix}_cta_v5`;
+    return `missed_call_callback_${suffix}_cta_v6`;
   }
   if (kind === 'book_new_customer') {
     return `unregistered_number_service_${suffix}_cta_v2`;
@@ -105,15 +105,18 @@ export function bookingCtaBody(
         sampleParams: ['there'],
         bodyParams: (customerName: string) => [cleanName(customerName) || 'there'],
       };
-    case 'missed_call_book':
+    case 'missed_call_book': {
+      // Hydrogen: no brand name on missed-call (Water Filter Service). Eleven: Eleven RO.
+      const fromLabel = brand === 'elevenro' ? 'Eleven RO' : 'Water Filter Service';
       return {
-        text: `Hi {{1}}, this is ${label}. Sorry we missed your call. We will get back to you shortly. Last service date: {{2}}. Tap Call us if you need us now, or reply on this chat.`,
+        text: `Hi {{1}}, this is a message from ${fromLabel}. Sorry we missed your call. We will get back to you shortly. Last service date: {{2}}. Tap Call us if you need us now, or reply on this chat.`,
         sampleParams: ['Rahul', '12 Aug 2026'],
         bodyParams: (customerName: string, lastServiceDate?: string) => [
           cleanName(customerName),
           String(lastServiceDate || '').trim() || 'not on file yet',
         ],
       };
+    }
     case 'reschedule_visit':
       return {
         text: `Hi {{1}}, your ${label} visit is set for {{2}}. To reschedule, reply on this chat or use Call / Book online below.`,
