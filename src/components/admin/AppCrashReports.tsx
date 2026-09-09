@@ -166,7 +166,7 @@ function formatCachedAt(at: number | null): string | null {
   }
 }
 
-/** Settings section — load on demand (Refresh) to avoid egress every Settings open. */
+/** Settings section — load on demand (Load) to avoid egress every Settings open. */
 export function AppCrashReports() {
   const cachedMeta = readCrashCacheMeta();
   const [crashes, setCrashes] = useState<AppCrashRow[]>(() => readCrashCache() ?? []);
@@ -250,11 +250,11 @@ export function AppCrashReports() {
               </CardTitle>
               {cachedLabel ? (
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Last loaded {cachedLabel} — tap Refresh for latest
+                  Last loaded {cachedLabel} — tap Load for latest
                 </p>
               ) : (
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Not loaded yet — tap Refresh when you want to check
+                  Not loaded yet — tap Load when you want to check
                 </p>
               )}
             </div>
@@ -274,7 +274,7 @@ export function AppCrashReports() {
                 disabled={loading}
               >
                 <RefreshCw className={`w-3.5 h-3.5 sm:mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refresh</span>
+                <span className="hidden sm:inline">Load</span>
               </Button>
             </div>
           </div>
@@ -284,7 +284,7 @@ export function AppCrashReports() {
             <div className="text-center py-3 text-muted-foreground text-xs">Loading…</div>
           ) : !hasLoaded ? (
             <div className="text-center py-3 text-muted-foreground text-xs">
-              Tap Refresh to load crash and warning reports.
+              Tap Load to load crash and warning reports.
             </div>
           ) : crashes.length === 0 ? (
             <div className="text-center py-3 text-muted-foreground text-xs">

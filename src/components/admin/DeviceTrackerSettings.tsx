@@ -445,7 +445,7 @@ export function DeviceTrackerSettings() {
               </CardTitle>
               <CardDescription className="text-sm mt-1">
                 {sectionOpen
-                  ? 'Every admin and technician phone — rename, mute all push, or turn individual types on/off (WhatsApp inbox, job status, calls, cash check, etc.). List is cached for this session; tap Refresh when someone registers a new phone.'
+                  ? 'Every admin and technician phone — rename, mute all push, or turn individual types on/off (WhatsApp inbox, job status, calls, cash check, etc.). List is cached for this session; tap Load when someone registers a new phone.'
                   : 'Admin and technician phones — push types, WhatsApp, calls. Tap to open.'}
               </CardDescription>
             </button>
@@ -461,7 +461,7 @@ export function DeviceTrackerSettings() {
               disabled={loading}
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
+              Load
             </Button>
           </div>
         </CardHeader>
