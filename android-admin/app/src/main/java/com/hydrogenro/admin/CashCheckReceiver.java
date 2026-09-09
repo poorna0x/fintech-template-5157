@@ -155,6 +155,7 @@ public class CashCheckReceiver extends BroadcastReceiver {
         final PendingResult pendingResult = goAsync();
         new Thread(() -> {
             boolean ok = false;
+            boolean pushSent = true;
             HttpURLConnection conn = null;
             try {
                 String payload = "{\"technicianId\":\"" + technicianId + "\"," +
@@ -171,8 +172,24 @@ public class CashCheckReceiver extends BroadcastReceiver {
                 try (OutputStream os = conn.getOutputStream()) {
                     os.write(payload.getBytes(StandardCharsets.UTF_8));
                 }
-                ok = conn.getResponseCode() == 200;
-                if (!ok) Log.w(TAG, "Cash check reply rejected: HTTP " + conn.getResponseCode());
+                int code = conn.getResponseCode();
+                ok = code == 200;
+                if (!ok) {
+                    Log.w(TAG, "Cash check reply rejected: HTTP " + code);
+                } else if (!isYes) {
+                    // Parse {"sent":true/false,...} so we don't claim a tech push that never left.
+                    try {
+                        java.io.InputStream in = conn.getInputStream();
+                        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+                        byte[] chunk = new byte[256];
+                        int n;
+                        while ((n = in.read(chunk)) > 0) buf.write(chunk, 0, n);
+                        String bodyJson = buf.toString(StandardCharsets.UTF_8.name());
+                        if (bodyJson.contains("\"sent\":false")) pushSent = false;
+                    } catch (Exception parseErr) {
+                        Log.w(TAG, "Cash check reply body parse skipped", parseErr);
+                    }
+                }
             } catch (Exception e) {
                 Log.w(TAG, "Cash check reply failed", e);
             } finally {
@@ -184,10 +201,15 @@ public class CashCheckReceiver extends BroadcastReceiver {
                     showResult(context, notificationId,
                         "Cash from " + fTechName + " marked received \u2713",
                         COLOR_OK, true);
-                } else {
+                } else if (pushSent) {
                     showResult(context, notificationId,
                         "Reminder sent to " + fTechName + " to hand over \u20B9" + amount + " \u2713",
                         COLOR_REMINDED, true);
+                } else {
+                    // Morning follow-up is still queued even if the tech phone is offline.
+                    showResult(context, notificationId,
+                        "Queued for morning. Couldn't reach " + fTechName + " now \u2014 check their app login.",
+                        COLOR_ASK, false);
                 }
             } else {
                 showResult(context, notificationId,
