@@ -11,7 +11,6 @@ import {
   Receipt,
   Calendar,
   Filter,
-  RefreshCw,
   ChevronDown,
   X,
 } from 'lucide-react';
@@ -536,34 +535,13 @@ export default function GSTInvoicesPage({ onSubScreenChange }: GSTInvoicesPagePr
 
   return (
     <div className="mx-auto max-w-6xl space-y-3 p-2 sm:p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">GST Invoices</h1>
-          <p className="text-xs text-slate-500 sm:text-sm">
-            {totalCount} invoice{totalCount === 1 ? '' : 's'}
-            {filterType !== 'ALL' ? ` · ${filterType}` : ''}
-            {dateFilterSummary ? ` · ${dateFilterSummary}` : ''}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => loadInvoices()}
-          disabled={loading}
-          className="h-8 shrink-0 gap-1.5 px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm"
-          size="sm"
-        >
-          {loading ? (
-            <>
-              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-600 border-t-transparent" />
-              Loading…
-            </>
-          ) : (
-            <>
-              <RefreshCw className="h-3.5 w-3.5" />
-              Refresh
-            </>
-          )}
-        </Button>
+      <div className="min-w-0">
+        <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">GST Invoices</h1>
+        <p className="text-xs text-slate-500 sm:text-sm">
+          {totalCount} invoice{totalCount === 1 ? '' : 's'}
+          {filterType !== 'ALL' ? ` · ${filterType}` : ''}
+          {dateFilterSummary ? ` · ${dateFilterSummary}` : ''}
+        </p>
       </div>
 
       {/* Search + quick filters — compact */}
