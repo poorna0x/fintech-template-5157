@@ -53,8 +53,11 @@ exports.handler = async (event) => {
   if (!verifyCashCheckSig(technicianId, date, amount, sig)) {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Bad signature' }) };
   }
-  // Night ask may be answered after midnight; morning ask uses yesterday's date.
-  if (date !== istDateLabel(0) && date !== istDateLabel(-1)) {
+  // Allow tonight's ask (today), morning follow-up (yesterday), and older unpaid
+  // rows the morning cron re-asks for up to 7 days.
+  const allowedDates = new Set();
+  for (let d = 0; d >= -7; d -= 1) allowedDates.add(istDateLabel(d));
+  if (!allowedDates.has(date)) {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Expired' }) };
   }
 
@@ -85,6 +88,7 @@ exports.handler = async (event) => {
   }
 
   // No = still unpaid — queue morning admin/tech follow-up + remind tech now.
+  // Must succeed: without this row, morning-cash-reminder never fires.
   try {
     const { error: upsertErr } = await db.from('technician_cash_pending').upsert(
       {
@@ -97,10 +101,20 @@ exports.handler = async (event) => {
       { onConflict: 'technician_id,cash_date' }
     );
     if (upsertErr) {
-      console.warn('[cash-check-response] pending upsert failed:', upsertErr.message);
+      console.error('[cash-check-response] pending upsert failed:', upsertErr.message);
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({ error: 'Could not queue morning follow-up', detail: upsertErr.message }),
+      };
     }
   } catch (err) {
-    console.warn('[cash-check-response] pending upsert error:', err?.message || err);
+    console.error('[cash-check-response] pending upsert error:', err?.message || err);
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: 'Could not queue morning follow-up' }),
+    };
   }
 
   try {
@@ -113,15 +127,33 @@ exports.handler = async (event) => {
       amountInr,
       { forYesterday }
     );
+    // Pending is queued even if the phone is offline — morning cron still runs.
     if (tokens === 0) {
-      return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ sent: false, queued: true, reason: 'no_token' }),
+      };
     }
     if (sent === 0) {
-      return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'stale_token' }) };
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ sent: false, queued: true, reason: 'stale_token' }),
+      };
     }
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: true, devices: sent }) };
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ sent: true, queued: true, devices: sent }),
+    };
   } catch (err) {
     console.error('[cash-check-response] send failed', err?.message || err);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Push send failed' }) };
+    // Morning still queued — do not fail the whole No reply.
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ sent: false, queued: true, reason: 'push_failed' }),
+    };
   }
 };

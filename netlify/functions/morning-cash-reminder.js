@@ -46,13 +46,19 @@ exports.handler = async (event) => {
   });
 
   const yesterday = istYesterdayLabel();
+  const weekAgo = (() => {
+    const ist = new Date(Date.now() + IST_OFFSET_MS - 7 * 24 * 60 * 60 * 1000);
+    return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
+  })();
 
-  // Pending rows for yesterday's collection that haven't had the morning nudge.
+  // Any unpaid cash still queued (admin said No). Include older dates so a
+  // morning "No" (which resets morning_sent_at) is asked again the next day.
   const { data: rows, error } = await db
     .from('technician_cash_pending')
     .select('id,technician_id,amount_inr,cash_date')
-    .eq('cash_date', yesterday)
-    .is('morning_sent_at', null);
+    .is('morning_sent_at', null)
+    .gte('cash_date', weekAgo)
+    .lte('cash_date', yesterday);
 
   if (error) {
     // Table may not exist yet — run scripts/add-technician-cash-pending.sql.
@@ -84,7 +90,9 @@ exports.handler = async (event) => {
     const amountInr = Math.round(Number(row.amount_inr) || 0);
     if (amountInr <= 0) continue;
     const amount = String(amountInr);
+    const cashDate = String(row.cash_date || yesterday).slice(0, 10);
     const techName = nameById.get(row.technician_id) || 'Technician';
+    const isYesterday = cashDate === yesterday;
 
     // 1) Remind the technician.
     try {
@@ -110,11 +118,12 @@ exports.handler = async (event) => {
       );
     }
 
-    // 2) Ask admins Yes/No about yesterday's remaining cash.
+    // 2) Ask admins Yes/No about remaining cash (signed for that cash_date).
     if (adminTokens.length > 0) {
       try {
-        const sig = signCashCheck(row.technician_id, yesterday, amount, hmac.secret);
+        const sig = signCashCheck(row.technician_id, cashDate, amount, hmac.secret);
         const rupees = amount.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        const whenLabel = isYesterday ? 'yesterday' : cashDate;
         const res = await messaging.sendEachForMulticast({
           tokens: adminTokens,
           data: {
@@ -122,11 +131,11 @@ exports.handler = async (event) => {
             technicianId: row.technician_id,
             techName,
             amount,
-            date: yesterday,
+            date: cashDate,
             sig,
             replyUrl,
-            title: `Yesterday's cash — ${techName}`,
-            body: `${techName} still owes ₹${rupees} from yesterday. Has he handed it over?`,
+            title: `Cash still due — ${techName}`,
+            body: `${techName} still owes ₹${rupees} from ${whenLabel}. Has he handed it over?`,
           },
           android: { priority: 'high' },
         });
