@@ -23,7 +23,7 @@ export const STANDARD_SERVICE_DOCUMENT_TERMS: readonly string[] = [
 
 export const OPTIONAL_WARRANTY_DOCUMENT_TERMS: readonly string[] = [
   'The purifier is covered by a 1 Year Onsite Warranty against manufacturing defects from the date of installation.',
-  'Warranty is valid only when installation is carried out by an authorized ELEVEN RO technician.',
+  'Warranty is valid only when installation is carried out by an authorized technician.',
   'Consumables including filters, cartridges, UV lamp, mineral cartridge, and RO membrane (unless specifically covered) are not covered under warranty.',
   'Warranty does not cover physical damage, misuse, negligence, voltage fluctuations, dry run, insect infestation, fire, flood, lightning, or other natural disasters.',
   'Warranty becomes void if the product is repaired, modified, or serviced by any unauthorized person.',
