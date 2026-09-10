@@ -2720,7 +2720,7 @@ const Analytics = () => {
       {/* Lead source performance trend - load on demand */}
       <AnalyticsLoadSection
         title="Lead source performance trend"
-        description="Compare Direct call, Website (HydrogenRO / ElevenRO), Google-Leads, and other sources across months, weeks, or custom timelines. Filter by company brand, compare any two months, or compare two date ranges."
+        description="RO jobs across both brands — Direct call, Website (HydrogenRO / ElevenRO), Google-Leads, and more. Pick a timeline, focus on one lead source, or compare months and date ranges."
         icon={<PhoneForwarded />}
         loadLabel="Open lead-source trend"
         loadingLabel="Opening…"

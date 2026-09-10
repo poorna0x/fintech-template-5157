@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
   Select,
@@ -20,7 +21,6 @@ import {
   Loader2,
   Minus,
   Phone,
-  RefreshCw,
   TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -45,7 +45,10 @@ import {
 import { toast } from 'sonner';
 
 const ALL = '__all__';
-const PREFS_KEY = 'hydrogenro-analytics-lead-source-trend-prefs';
+/** Always both brands; RO jobs only (product choice). */
+const FIXED_SERVICE_BRAND: string | null = null;
+const FIXED_SERVICE_TYPE = 'RO';
+const PREFS_KEY = 'hydrogenro-analytics-lead-source-trend-prefs-v2';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 type Prefs = {
@@ -53,12 +56,28 @@ type Prefs = {
   customMonth: string;
   customStart: string;
   customEnd: string;
-  serviceBrand: string;
-  serviceType: string;
   metric: LeadSourceTrendMetric;
+  leadSourceKey: string;
+  granularityOverride: 'auto' | 'month' | 'week' | 'day';
 };
 
 const cache = new Map<string, { at: number; payload: LeadSourceTrendPayload }>();
+
+/** Local calendar YYYY-MM-DD — never use toISOString() (UTC shift). */
+function toLocalDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function parseLocalDateKey(key: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return null;
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setHours(0, 0, 0, 0);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
 
 function loadPrefs(): Prefs | null {
   try {
@@ -82,7 +101,8 @@ function Delta({ value, suffix = '' }: { value: number; suffix?: string }) {
   if (!Number.isFinite(value) || value === 0) {
     return (
       <span className="inline-flex items-center gap-0.5 text-muted-foreground text-xs">
-        <Minus className="h-3 w-3" />0{suffix}
+        <Minus className="h-3 w-3" />
+        0{suffix === '₹' ? '' : suffix}
       </span>
     );
   }
@@ -101,6 +121,23 @@ function Delta({ value, suffix = '' }: { value: number; suffix?: string }) {
   );
 }
 
+function FilterField({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={cn('space-y-1.5 min-w-0', className)}>
+      <Label className="text-[11px] font-medium text-slate-500">{label}</Label>
+      {children}
+    </div>
+  );
+}
+
 type AnalyticsLeadSourceTrendProps = {
   initialRange?: { startDate: Date | null; endDate: Date | null };
 };
@@ -108,13 +145,12 @@ type AnalyticsLeadSourceTrendProps = {
 export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTrendProps) {
   const isMobile = useIsMobile();
   const [prefsReady, setPrefsReady] = useState(false);
-  const [timelinePreset, setTimelinePreset] = useState<TrendTimelinePreset>('12m');
+  const [timelinePreset, setTimelinePreset] = useState<TrendTimelinePreset>('this_month');
   const [customMonth, setCustomMonth] = useState('');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-  const [serviceBrand, setServiceBrand] = useState(ALL);
-  const [serviceType, setServiceType] = useState(ALL);
   const [metric, setMetric] = useState<LeadSourceTrendMetric>('jobs');
+  const [leadSourceKey, setLeadSourceKey] = useState(ALL);
   const [granularityOverride, setGranularityOverride] = useState<'auto' | 'month' | 'week' | 'day'>(
     'auto'
   );
@@ -135,28 +171,59 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
 
   const activeRange = useMemo(() => {
     if (timelinePreset === 'custom_month') {
-      return resolveTrendTimelineRange('custom_month', undefined, undefined, customMonth || undefined);
+      return resolveTrendTimelineRange(
+        'custom_month',
+        undefined,
+        undefined,
+        customMonth || undefined
+      );
     }
-    if (timelinePreset === 'custom' && customStart && customEnd) {
-      return resolveTrendTimelineRange('custom', customStart, customEnd);
+    if (timelinePreset === 'custom') {
+      if (customStart && customEnd) {
+        let start = parseLocalDateKey(customStart);
+        let end = parseLocalDateKey(customEnd);
+        if (start && end) {
+          if (start.getTime() > end.getTime()) {
+            const tmp = start;
+            start = end;
+            end = tmp;
+          }
+          end = new Date(end);
+          end.setHours(23, 59, 59, 999);
+          return { startDate: start, endDate: end };
+        }
+      }
+      // Incomplete custom → fall back to this month so the chart still loads.
+      return resolveTrendTimelineRange('this_month');
     }
     return resolveTrendTimelineRange(timelinePreset);
   }, [timelinePreset, customMonth, customStart, customEnd]);
 
+  const rangeLabel = useMemo(() => {
+    const a = toLocalDateKey(activeRange.startDate);
+    const b = toLocalDateKey(activeRange.endDate);
+    const fmt = (key: string) => {
+      const d = parseLocalDateKey(key);
+      if (!d) return key;
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
+    return `${fmt(a)} – ${fmt(b)}`;
+  }, [activeRange]);
+
   useEffect(() => {
     const saved = loadPrefs();
     if (saved) {
-      setTimelinePreset(saved.timelinePreset || '12m');
+      setTimelinePreset(saved.timelinePreset || 'this_month');
       setCustomMonth(saved.customMonth || '');
       setCustomStart(saved.customStart || '');
       setCustomEnd(saved.customEnd || '');
-      setServiceBrand(saved.serviceBrand || ALL);
-      setServiceType(saved.serviceType || ALL);
       setMetric(saved.metric === 'revenue' ? 'revenue' : 'jobs');
+      setLeadSourceKey(saved.leadSourceKey || ALL);
+      setGranularityOverride(saved.granularityOverride || 'auto');
     } else if (initialRange?.startDate && initialRange?.endDate) {
       setTimelinePreset('custom');
-      setCustomStart(initialRange.startDate.toISOString().slice(0, 10));
-      setCustomEnd(initialRange.endDate.toISOString().slice(0, 10));
+      setCustomStart(toLocalDateKey(initialRange.startDate));
+      setCustomEnd(toLocalDateKey(initialRange.endDate));
     }
     setPrefsReady(true);
   }, []);
@@ -168,9 +235,9 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
       customMonth,
       customStart,
       customEnd,
-      serviceBrand,
-      serviceType,
       metric,
+      leadSourceKey,
+      granularityOverride,
     });
   }, [
     prefsReady,
@@ -178,85 +245,113 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
     customMonth,
     customStart,
     customEnd,
-    serviceBrand,
-    serviceType,
     metric,
+    leadSourceKey,
+    granularityOverride,
   ]);
+
+  useEffect(() => {
+    if (timelinePreset === 'custom_month' && !customMonth) {
+      const now = new Date();
+      setCustomMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+    }
+  }, [timelinePreset, customMonth]);
 
   const granularity = useMemo(() => {
     if (granularityOverride !== 'auto') return granularityOverride;
     return pickTrendGranularity(activeRange.startDate, activeRange.endDate);
   }, [granularityOverride, activeRange]);
 
-  const fetchTrend = useCallback(
-    async (force = false) => {
-      const brand = serviceBrand === ALL ? null : serviceBrand;
-      const st = serviceType === ALL ? null : serviceType;
-      const cacheKey = [
-        activeRange.startDate.toISOString(),
-        activeRange.endDate.toISOString(),
+  const fetchTrend = useCallback(async () => {
+    const cacheKey = [
+      activeRange.startDate.toISOString(),
+      activeRange.endDate.toISOString(),
+      granularity,
+      FIXED_SERVICE_TYPE,
+      'both',
+    ].join('|');
+    const hit = cache.get(cacheKey);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+      setPayload(hit.payload);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data, error } = await db.analyticsPaginated.getLeadSourceTrend({
+        startDate: activeRange.startDate,
+        endDate: activeRange.endDate,
         granularity,
-        brand || '',
-        st || '',
-      ].join('|');
-      if (!force) {
-        const hit = cache.get(cacheKey);
-        if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-          setPayload(hit.payload);
-          setLoading(false);
-          return;
-        }
-      }
-      setLoading(true);
-      try {
-        const { data, error } = await db.analyticsPaginated.getLeadSourceTrend({
-          startDate: activeRange.startDate,
-          endDate: activeRange.endDate,
-          granularity,
-          serviceBrand: brand,
-          serviceType: st,
-        });
-        if (error) throw error;
-        const parsed = parseLeadSourceTrendRpc(data);
-        if (!parsed) throw new Error('Empty lead-source trend response');
-        cache.set(cacheKey, { at: Date.now(), payload: parsed });
-        setPayload(parsed);
-        setMonthA((prev) => prev || parsed.monthCatalog[0]?.periodKey || '');
-        setMonthB((prev) => prev || parsed.monthCatalog[1]?.periodKey || '');
-      } catch (err) {
-        console.error('[lead-source-trend]', err);
-        toast.error(
-          err instanceof Error && /not authorized|permission|42501/i.test(err.message)
-            ? 'Not authorized for lead-source trend'
-            : 'Could not load lead-source trend. Run scripts/add-analytics-lead-source-trend-rpc.sql in Supabase if this is the first time.'
-        );
-        setPayload(null);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [activeRange, granularity, serviceBrand, serviceType]
-  );
+        serviceBrand: FIXED_SERVICE_BRAND,
+        serviceType: FIXED_SERVICE_TYPE,
+      });
+      if (error) throw error;
+      const parsed = parseLeadSourceTrendRpc(data);
+      if (!parsed) throw new Error('Empty lead-source trend response');
+      cache.set(cacheKey, { at: Date.now(), payload: parsed });
+      setPayload(parsed);
+      setMonthA((prev) => prev || parsed.monthCatalog[0]?.periodKey || '');
+      setMonthB((prev) => prev || parsed.monthCatalog[1]?.periodKey || '');
+      // Drop stale lead-source pick if it vanished in this range.
+      setLeadSourceKey((prev) => {
+        if (prev === ALL) return prev;
+        return parsed.sources.some((s) => s.key === prev) ? prev : ALL;
+      });
+    } catch (err) {
+      console.error('[lead-source-trend]', err);
+      toast.error(
+        err instanceof Error && /not authorized|permission|42501/i.test(err.message)
+          ? 'Not authorized for lead-source trend'
+          : 'Could not load lead-source trend. Run scripts/add-analytics-lead-source-trend-rpc.sql in Supabase if this is the first time.'
+      );
+      setPayload(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeRange, granularity]);
 
   useEffect(() => {
     if (!prefsReady) return;
     void fetchTrend();
   }, [prefsReady, fetchTrend]);
 
-  const seriesMeta = useMemo(
-    () => pickLeadSourceTrendSeriesKeys(payload?.sources || [], 8),
-    [payload?.sources]
-  );
+  const filteredSources = useMemo(() => {
+    const sources = payload?.sources || [];
+    if (leadSourceKey === ALL) return sources;
+    return sources.filter((s) => s.key === leadSourceKey);
+  }, [payload?.sources, leadSourceKey]);
+
+  const filteredPeriods = useMemo(() => {
+    const periods = payload?.periods || [];
+    if (leadSourceKey === ALL) return periods;
+    return periods.map((p) => {
+      const sources = p.sources.filter((s) => s.key === leadSourceKey);
+      const jobs = sources.reduce((n, s) => n + s.jobs, 0);
+      const revenue = sources.reduce((n, s) => n + s.revenue, 0);
+      return { ...p, sources, jobs, revenue };
+    });
+  }, [payload?.periods, leadSourceKey]);
+
+  const seriesMeta = useMemo(() => {
+    if (leadSourceKey !== ALL && filteredSources[0]) {
+      return {
+        keys: [filteredSources[0].key],
+        labels: { [filteredSources[0].key]: filteredSources[0].label },
+        otherKey: null as string | null,
+      };
+    }
+    return pickLeadSourceTrendSeriesKeys(filteredSources, 8);
+  }, [filteredSources, leadSourceKey]);
 
   const chartRows = useMemo(
     () =>
       buildLeadSourceTrendChartRows(
-        payload?.periods || [],
+        filteredPeriods,
         seriesMeta.keys,
         seriesMeta.otherKey,
         metric
       ),
-    [payload?.periods, seriesMeta, metric]
+    [filteredPeriods, seriesMeta, metric]
   );
 
   const chartConfig = useMemo(() => {
@@ -270,14 +365,33 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
     return cfg;
   }, [seriesMeta]);
 
+  const filteredSummary = useMemo(() => {
+    const jobs = filteredSources.reduce((n, s) => n + s.jobs, 0);
+    const revenue = filteredSources.reduce((n, s) => n + s.revenue, 0);
+    return { jobs, revenue, sourceCount: filteredSources.length };
+  }, [filteredSources]);
+
   const catalogByKey = useMemo(() => {
     const m = new Map<string, LeadSourceTrendPeriodRow>();
-    for (const row of payload?.monthCatalog || []) m.set(row.periodKey, row);
+    for (const row of payload?.monthCatalog || []) {
+      if (leadSourceKey === ALL) {
+        m.set(row.periodKey, row);
+        continue;
+      }
+      const sources = row.sources.filter((s) => s.key === leadSourceKey);
+      m.set(row.periodKey, {
+        ...row,
+        sources,
+        jobs: sources.reduce((n, s) => n + s.jobs, 0),
+        revenue: sources.reduce((n, s) => n + s.revenue, 0),
+      });
+    }
     return m;
-  }, [payload?.monthCatalog]);
+  }, [payload?.monthCatalog, leadSourceKey]);
 
   const monthCompareRows = useMemo(
-    () => compareLeadSourceMonths(catalogByKey.get(monthA) || null, catalogByKey.get(monthB) || null),
+    () =>
+      compareLeadSourceMonths(catalogByKey.get(monthA) || null, catalogByKey.get(monthB) || null),
     [catalogByKey, monthA, monthB]
   );
 
@@ -286,17 +400,19 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
       toast.error('Pick both date ranges.');
       return;
     }
-    const aStart = new Date(rangeAStart + 'T00:00:00');
-    const aEnd = new Date(rangeAEnd + 'T23:59:59.999');
-    const bStart = new Date(rangeBStart + 'T00:00:00');
-    const bEnd = new Date(rangeBEnd + 'T23:59:59.999');
-    if (Number.isNaN(aStart.getTime()) || Number.isNaN(aEnd.getTime()) || Number.isNaN(bStart.getTime()) || Number.isNaN(bEnd.getTime())) {
+    const aStart = parseLocalDateKey(rangeAStart);
+    const aEndRaw = parseLocalDateKey(rangeAEnd);
+    const bStart = parseLocalDateKey(rangeBStart);
+    const bEndRaw = parseLocalDateKey(rangeBEnd);
+    if (!aStart || !aEndRaw || !bStart || !bEndRaw) {
       toast.error('Invalid dates.');
       return;
     }
+    const aEnd = new Date(aEndRaw);
+    aEnd.setHours(23, 59, 59, 999);
+    const bEnd = new Date(bEndRaw);
+    bEnd.setHours(23, 59, 59, 999);
     setRangeLoading(true);
-    const brand = serviceBrand === ALL ? null : serviceBrand;
-    const st = serviceType === ALL ? null : serviceType;
     try {
       const granA = pickTrendGranularity(aStart, aEnd);
       const granB = pickTrendGranularity(bStart, bEnd);
@@ -305,15 +421,15 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
           startDate: aStart,
           endDate: aEnd,
           granularity: granA,
-          serviceBrand: brand,
-          serviceType: st,
+          serviceBrand: FIXED_SERVICE_BRAND,
+          serviceType: FIXED_SERVICE_TYPE,
         }),
         db.analyticsPaginated.getLeadSourceTrend({
           startDate: bStart,
           endDate: bEnd,
           granularity: granB,
-          serviceBrand: brand,
-          serviceType: st,
+          serviceBrand: FIXED_SERVICE_BRAND,
+          serviceType: FIXED_SERVICE_TYPE,
         }),
       ]);
       if (resA.error) throw resA.error;
@@ -326,29 +442,28 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
     } finally {
       setRangeLoading(false);
     }
-  }, [rangeAStart, rangeAEnd, rangeBStart, rangeBEnd, serviceBrand, serviceType]);
+  }, [rangeAStart, rangeAEnd, rangeBStart, rangeBEnd]);
 
-  const rangeCompareRows = useMemo(() => {
-    const fakeA: LeadSourceTrendPeriodRow | null = rangeA
-      ? {
-          periodKey: 'a',
-          label: 'A',
-          jobs: rangeA.summary.jobs,
-          revenue: rangeA.summary.revenue,
-          sources: rangeA.sources,
-        }
-      : null;
-    const fakeB: LeadSourceTrendPeriodRow | null = rangeB
-      ? {
-          periodKey: 'b',
-          label: 'B',
-          jobs: rangeB.summary.jobs,
-          revenue: rangeB.summary.revenue,
-          sources: rangeB.sources,
-        }
-      : null;
-    return compareLeadSourceMonths(fakeA, fakeB);
-  }, [rangeA, rangeB]);
+  const filterPayloadSources = useCallback(
+    (p: LeadSourceTrendPayload | null): LeadSourceTrendPeriodRow | null => {
+      if (!p) return null;
+      const sources =
+        leadSourceKey === ALL ? p.sources : p.sources.filter((s) => s.key === leadSourceKey);
+      return {
+        periodKey: 'x',
+        label: 'x',
+        jobs: sources.reduce((n, s) => n + s.jobs, 0),
+        revenue: sources.reduce((n, s) => n + s.revenue, 0),
+        sources,
+      };
+    },
+    [leadSourceKey]
+  );
+
+  const rangeCompareRows = useMemo(
+    () => compareLeadSourceMonths(filterPayloadSources(rangeA), filterPayloadSources(rangeB)),
+    [rangeA, rangeB, filterPayloadSources]
+  );
 
   const glanceCards = useMemo(() => {
     const sources = payload?.sources || [];
@@ -361,6 +476,7 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
     const sum = (rows: typeof sources) => ({
       jobs: rows.reduce((n, r) => n + r.jobs, 0),
       revenue: rows.reduce((n, r) => n + r.revenue, 0),
+      keys: rows.map((r) => r.key),
     });
     return [
       { title: 'Direct call', icon: Phone, ...sum(direct) },
@@ -370,126 +486,127 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
     ];
   }, [payload?.sources]);
 
+  const selectedSourceLabel =
+    leadSourceKey === ALL
+      ? 'All lead sources'
+      : payload?.sources.find((s) => s.key === leadSourceKey)?.label || 'Selected source';
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-        <div className="space-y-1 min-w-[9rem]">
-          <Label className="text-xs text-muted-foreground">Timeline</Label>
-          <Select
-            value={timelinePreset}
-            onValueChange={(v) => setTimelinePreset(v as TrendTimelinePreset)}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="this_month">This month</SelectItem>
-              <SelectItem value="last_month">Last month</SelectItem>
-              <SelectItem value="custom_month">Custom month</SelectItem>
-              <SelectItem value="6m">Last 6 months</SelectItem>
-              <SelectItem value="12m">Last 12 months</SelectItem>
-              <SelectItem value="24m">Last 24 months</SelectItem>
-              <SelectItem value="ytd">Year to date</SelectItem>
-              <SelectItem value="custom">Custom range</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {timelinePreset === 'custom_month' ? (
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Month</Label>
-            <input
-              type="month"
-              className="h-9 rounded-md border px-2 text-sm bg-background"
-              value={customMonth}
-              onChange={(e) => setCustomMonth(e.target.value)}
-            />
+    <div className="space-y-4 min-w-0">
+      <div className="rounded-xl border border-slate-200/80 bg-gradient-to-b from-slate-50 to-white p-3 sm:p-4 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-900">RO · both brands</p>
+            <p className="text-xs text-slate-500 truncate">{rangeLabel}</p>
           </div>
-        ) : null}
-        {timelinePreset === 'custom' ? (
-          <>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">From</Label>
-              <DatePicker
-                value={customStart}
-                onChange={(v) => setCustomStart(v || '')}
-                className="h-9"
+          {loading ? (
+            <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Updating…
+            </span>
+          ) : null}
+        </div>
+
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <FilterField label="Timeline">
+            <Select
+              value={timelinePreset}
+              onValueChange={(v) => setTimelinePreset(v as TrendTimelinePreset)}
+            >
+              <SelectTrigger className="h-9 bg-white border-slate-200">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="this_month">This month</SelectItem>
+                <SelectItem value="last_month">Last month</SelectItem>
+                <SelectItem value="custom_month">Custom month</SelectItem>
+                <SelectItem value="6m">Last 6 months</SelectItem>
+                <SelectItem value="12m">Last 12 months</SelectItem>
+                <SelectItem value="24m">Last 24 months</SelectItem>
+                <SelectItem value="ytd">Year to date</SelectItem>
+                <SelectItem value="custom">Custom range</SelectItem>
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          {timelinePreset === 'custom_month' ? (
+            <FilterField label="Month">
+              <Input
+                type="month"
+                value={customMonth}
+                onChange={(e) => setCustomMonth(e.target.value)}
+                max={toLocalDateKey(new Date()).slice(0, 7)}
+                className="h-9 bg-white border-slate-200"
               />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">To</Label>
-              <DatePicker value={customEnd} onChange={(v) => setCustomEnd(v || '')} className="h-9" />
-            </div>
-          </>
-        ) : null}
-        <div className="space-y-1 min-w-[8.5rem]">
-          <Label className="text-xs text-muted-foreground">Company brand</Label>
-          <Select value={serviceBrand} onValueChange={setServiceBrand}>
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All</SelectItem>
-              <SelectItem value="hydrogenro">HydrogenRO</SelectItem>
-              <SelectItem value="elevenro">ElevenRO</SelectItem>
-            </SelectContent>
-          </Select>
+            </FilterField>
+          ) : null}
+
+          {timelinePreset === 'custom' ? (
+            <>
+              <FilterField label="From">
+                <DatePicker
+                  value={customStart}
+                  onChange={(v) => setCustomStart(v || '')}
+                  placeholder="Start"
+                  className="h-9 w-full bg-white"
+                />
+              </FilterField>
+              <FilterField label="To">
+                <DatePicker
+                  value={customEnd}
+                  onChange={(v) => setCustomEnd(v || '')}
+                  placeholder="End"
+                  className="h-9 w-full bg-white"
+                />
+              </FilterField>
+            </>
+          ) : null}
+
+          <FilterField label="Lead source">
+            <Select value={leadSourceKey} onValueChange={setLeadSourceKey}>
+              <SelectTrigger className="h-9 bg-white border-slate-200">
+                <SelectValue placeholder="All sources" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All sources</SelectItem>
+                {(payload?.sources || []).map((s) => (
+                  <SelectItem key={s.key} value={s.key}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          <FilterField label="Metric">
+            <Select value={metric} onValueChange={(v) => setMetric(v as LeadSourceTrendMetric)}>
+              <SelectTrigger className="h-9 bg-white border-slate-200">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="jobs">Jobs</SelectItem>
+                <SelectItem value="revenue">Revenue</SelectItem>
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          <FilterField label="Buckets">
+            <Select
+              value={granularityOverride}
+              onValueChange={(v) => setGranularityOverride(v as typeof granularityOverride)}
+            >
+              <SelectTrigger className="h-9 bg-white border-slate-200">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto</SelectItem>
+                <SelectItem value="month">Month</SelectItem>
+                <SelectItem value="week">Week</SelectItem>
+                <SelectItem value="day">Day</SelectItem>
+              </SelectContent>
+            </Select>
+          </FilterField>
         </div>
-        <div className="space-y-1 min-w-[8rem]">
-          <Label className="text-xs text-muted-foreground">Category</Label>
-          <Select value={serviceType} onValueChange={setServiceType}>
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All</SelectItem>
-              <SelectItem value="RO">RO</SelectItem>
-              <SelectItem value="SOFTENER">Softener</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1 min-w-[7.5rem]">
-          <Label className="text-xs text-muted-foreground">Metric</Label>
-          <Select value={metric} onValueChange={(v) => setMetric(v as LeadSourceTrendMetric)}>
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="jobs">Jobs</SelectItem>
-              <SelectItem value="revenue">Revenue</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1 min-w-[7.5rem]">
-          <Label className="text-xs text-muted-foreground">Buckets</Label>
-          <Select
-            value={granularityOverride}
-            onValueChange={(v) => setGranularityOverride(v as typeof granularityOverride)}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">Auto</SelectItem>
-              <SelectItem value="month">Month</SelectItem>
-              <SelectItem value="week">Week</SelectItem>
-              <SelectItem value="day">Day</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-9 gap-1.5"
-          onClick={() => {
-            cache.clear();
-            void fetchTrend(true);
-          }}
-          disabled={loading}
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Refresh
-        </Button>
       </div>
 
       {loading && !payload ? (
@@ -503,7 +620,7 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
         </p>
       ) : (
         <Tabs defaultValue="timeline" className="space-y-3">
-          <TabsList className="grid w-full grid-cols-3 h-auto">
+          <TabsList className="grid w-full grid-cols-3 h-auto p-1 bg-slate-100/80">
             <TabsTrigger value="timeline" className="gap-1 text-xs sm:text-sm">
               <TrendingUp className="h-3.5 w-3.5" />
               Timeline
@@ -520,37 +637,62 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
 
           <TabsContent value="timeline" className="space-y-3">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-              {glanceCards.map((card) => (
-                <div
-                  key={card.title}
-                  className="rounded-lg border bg-card px-3 py-2.5 space-y-0.5"
-                >
-                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    {card.icon ? <card.icon className="h-3 w-3" /> : null}
-                    {card.title}
-                  </div>
-                  <div className="text-base font-semibold tabular-nums">{card.jobs} jobs</div>
-                  <div className="text-xs text-muted-foreground tabular-nums">
-                    {formatInrCompact(card.revenue)}
-                  </div>
-                </div>
-              ))}
+              {glanceCards.map((card) => {
+                const active =
+                  leadSourceKey === ALL || card.keys.some((k) => k === leadSourceKey);
+                return (
+                  <button
+                    key={card.title}
+                    type="button"
+                    onClick={() => {
+                      if (card.keys.length === 1) {
+                        setLeadSourceKey((prev) =>
+                          prev === card.keys[0] ? ALL : card.keys[0]
+                        );
+                      } else if (card.keys.length > 1) {
+                        setLeadSourceKey((prev) =>
+                          card.keys.includes(prev) ? ALL : card.keys[0]
+                        );
+                      }
+                    }}
+                    className={cn(
+                      'rounded-xl border px-3 py-2.5 space-y-0.5 text-left transition-colors',
+                      active
+                        ? 'border-sky-200 bg-sky-50/60 shadow-sm'
+                        : 'border-slate-200/80 bg-white opacity-55 hover:opacity-80'
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                      {card.icon ? <card.icon className="h-3 w-3" /> : null}
+                      {card.title}
+                    </div>
+                    <div className="text-base font-semibold tabular-nums text-slate-900">
+                      {card.jobs} jobs
+                    </div>
+                    <div className="text-xs text-slate-500 tabular-nums">
+                      {formatInrCompact(card.revenue)}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="rounded-lg border bg-card p-2 sm:p-3">
+            <div className="rounded-xl border border-slate-200/80 bg-white p-2.5 sm:p-3 shadow-sm">
               <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2 px-1">
                 <div>
-                  <p className="text-sm font-medium">
-                    {metric === 'jobs' ? 'Jobs' : 'Revenue'} by lead source
+                  <p className="text-sm font-medium text-slate-900">
+                    {metric === 'jobs' ? 'Jobs' : 'Revenue'} · {selectedSourceLabel}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {payload.summary.jobs} jobs · {formatInrCompact(payload.summary.revenue)} ·{' '}
-                    {payload.summary.sourceCount} sources · {granularity} buckets
+                  <p className="text-xs text-slate-500">
+                    {filteredSummary.jobs} jobs · {formatInrCompact(filteredSummary.revenue)} ·{' '}
+                    {granularity} buckets
                   </p>
                 </div>
               </div>
-              {chartRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No completed jobs.</p>
+              {chartRows.length === 0 || filteredSummary.jobs === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No completed RO jobs for this selection.
+                </p>
               ) : (
                 <ChartContainer config={chartConfig} className="h-[280px] w-full aspect-auto">
                   <BarChart data={chartRows} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
@@ -569,7 +711,9 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                       width={metric === 'revenue' ? 52 : 36}
                       fontSize={11}
                       tickFormatter={(v) =>
-                        metric === 'revenue' ? formatInrCompact(Number(v)).replace('₹', '') : String(v)
+                        metric === 'revenue'
+                          ? formatInrCompact(Number(v)).replace('₹', '')
+                          : String(v)
                       }
                     />
                     <ChartTooltip
@@ -579,7 +723,10 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                           <div className="rounded-md border bg-background px-2.5 py-1.5 text-xs shadow-md space-y-1">
                             <div className="font-medium">{label}</div>
                             {tipPayload.map((entry) => (
-                              <div key={String(entry.dataKey)} className="flex justify-between gap-4">
+                              <div
+                                key={String(entry.dataKey)}
+                                className="flex justify-between gap-4"
+                              >
                                 <span className="text-muted-foreground">{entry.name}</span>
                                 <span className="font-medium tabular-nums">
                                   {metric === 'revenue'
@@ -592,15 +739,18 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                         );
                       }}
                     />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {leadSourceKey === ALL ? (
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                    ) : null}
                     {seriesMeta.keys.map((key, i) => (
                       <Bar
                         key={key}
                         dataKey={key}
                         name={seriesMeta.labels[key] || key}
-                        stackId="lead"
+                        stackId={leadSourceKey === ALL ? 'lead' : undefined}
                         fill={leadSourceTrendColor(i)}
-                        radius={i === seriesMeta.keys.length - 1 ? [2, 2, 0, 0] : 0}
+                        radius={[3, 3, 0, 0]}
+                        maxBarSize={leadSourceKey === ALL ? 36 : 48}
                       />
                     ))}
                   </BarChart>
@@ -608,10 +758,10 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
               )}
             </div>
 
-            <div className="rounded-lg border overflow-x-auto">
+            <div className="rounded-xl border border-slate-200/80 overflow-x-auto bg-white shadow-sm">
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="bg-slate-50/80">
                     <TableHead>Lead source</TableHead>
                     <TableHead className="text-right">Jobs</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
@@ -620,27 +770,39 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(payload.sources || []).map((row) => {
-                    const share =
-                      payload.summary.jobs > 0
-                        ? Math.round((row.jobs / payload.summary.jobs) * 1000) / 10
-                        : 0;
-                    return (
-                      <TableRow key={row.key}>
-                        <TableCell className="font-medium">{row.label}</TableCell>
-                        <TableCell className="text-right tabular-nums">{row.jobs}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatInrCompact(row.revenue)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {formatInrCompact(row.avgBill || 0)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {share}%
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {filteredSources.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        No sources in this range.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredSources.map((row) => {
+                      const baseJobs = payload.summary.jobs || 1;
+                      const share = Math.round((row.jobs / baseJobs) * 1000) / 10;
+                      return (
+                        <TableRow
+                          key={row.key}
+                          className="cursor-pointer hover:bg-sky-50/50"
+                          onClick={() =>
+                            setLeadSourceKey((prev) => (prev === row.key ? ALL : row.key))
+                          }
+                        >
+                          <TableCell className="font-medium">{row.label}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.jobs}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatInrCompact(row.revenue)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatInrCompact(row.avgBill || 0)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                            {share}%
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -648,10 +810,9 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
 
           <TabsContent value="months" className="space-y-3">
             <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
-              <div className="space-y-1 flex-1">
-                <Label className="text-xs text-muted-foreground">Month A</Label>
+              <FilterField label="Month A" className="flex-1">
                 <Select value={monthA} onValueChange={setMonthA}>
-                  <SelectTrigger className="h-9">
+                  <SelectTrigger className="h-9 bg-white">
                     <SelectValue placeholder="Pick month" />
                   </SelectTrigger>
                   <SelectContent>
@@ -662,11 +823,10 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-1 flex-1">
-                <Label className="text-xs text-muted-foreground">Month B</Label>
+              </FilterField>
+              <FilterField label="Month B" className="flex-1">
                 <Select value={monthB} onValueChange={setMonthB}>
-                  <SelectTrigger className="h-9">
+                  <SelectTrigger className="h-9 bg-white">
                     <SelectValue placeholder="Pick month" />
                   </SelectTrigger>
                   <SelectContent>
@@ -677,12 +837,12 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </FilterField>
             </div>
-            <div className="rounded-lg border overflow-x-auto">
+            <div className="rounded-xl border overflow-x-auto bg-white shadow-sm">
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="bg-slate-50/80">
                     <TableHead>Lead source</TableHead>
                     <TableHead className="text-right">A jobs</TableHead>
                     <TableHead className="text-right">B jobs</TableHead>
@@ -727,33 +887,37 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
 
           <TabsContent value="ranges" className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="rounded-lg border p-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Range A</p>
+              <div className="rounded-xl border bg-white p-3 space-y-2 shadow-sm">
+                <p className="text-xs font-medium text-slate-500">Range A</p>
                 <div className="flex gap-2">
                   <DatePicker
                     value={rangeAStart}
                     onChange={(v) => setRangeAStart(v || '')}
                     className="h-9 flex-1"
+                    placeholder="Start"
                   />
                   <DatePicker
                     value={rangeAEnd}
                     onChange={(v) => setRangeAEnd(v || '')}
                     className="h-9 flex-1"
+                    placeholder="End"
                   />
                 </div>
               </div>
-              <div className="rounded-lg border p-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Range B</p>
+              <div className="rounded-xl border bg-white p-3 space-y-2 shadow-sm">
+                <p className="text-xs font-medium text-slate-500">Range B</p>
                 <div className="flex gap-2">
                   <DatePicker
                     value={rangeBStart}
                     onChange={(v) => setRangeBStart(v || '')}
                     className="h-9 flex-1"
+                    placeholder="Start"
                   />
                   <DatePicker
                     value={rangeBEnd}
                     onChange={(v) => setRangeBEnd(v || '')}
                     className="h-9 flex-1"
+                    placeholder="End"
                   />
                 </div>
               </div>
@@ -774,26 +938,30 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
             </Button>
             {(rangeA || rangeB) && (
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-lg border px-3 py-2">
+                <div className="rounded-xl border px-3 py-2 bg-white shadow-sm">
                   <div className="text-xs text-muted-foreground">Range A</div>
-                  <div className="font-semibold tabular-nums">{rangeA?.summary.jobs ?? 0} jobs</div>
+                  <div className="font-semibold tabular-nums">
+                    {filterPayloadSources(rangeA)?.jobs ?? 0} jobs
+                  </div>
                   <div className="text-xs text-muted-foreground">
-                    {formatInrCompact(rangeA?.summary.revenue ?? 0)}
+                    {formatInrCompact(filterPayloadSources(rangeA)?.revenue ?? 0)}
                   </div>
                 </div>
-                <div className="rounded-lg border px-3 py-2">
+                <div className="rounded-xl border px-3 py-2 bg-white shadow-sm">
                   <div className="text-xs text-muted-foreground">Range B</div>
-                  <div className="font-semibold tabular-nums">{rangeB?.summary.jobs ?? 0} jobs</div>
+                  <div className="font-semibold tabular-nums">
+                    {filterPayloadSources(rangeB)?.jobs ?? 0} jobs
+                  </div>
                   <div className="text-xs text-muted-foreground">
-                    {formatInrCompact(rangeB?.summary.revenue ?? 0)}
+                    {formatInrCompact(filterPayloadSources(rangeB)?.revenue ?? 0)}
                   </div>
                 </div>
               </div>
             )}
-            <div className="rounded-lg border overflow-x-auto">
+            <div className="rounded-xl border overflow-x-auto bg-white shadow-sm">
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="bg-slate-50/80">
                     <TableHead>Lead source</TableHead>
                     <TableHead className="text-right">A jobs</TableHead>
                     <TableHead className="text-right">B jobs</TableHead>

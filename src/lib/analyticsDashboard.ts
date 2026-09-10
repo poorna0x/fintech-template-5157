@@ -664,10 +664,27 @@ export function resolveTrendTimelineRange(
   }
 
   if (preset === 'custom' && customStart && customEnd) {
-    const start = new Date(customStart);
+    const parseKey = (key: string) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+        const [y, m, d] = key.split('-').map(Number);
+        return new Date(y, m - 1, d);
+      }
+      return new Date(key);
+    };
+    const start = parseKey(customStart);
     start.setHours(0, 0, 0, 0);
-    const end = new Date(customEnd);
+    const end = parseKey(customEnd);
     end.setHours(23, 59, 59, 999);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      const fallbackStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      fallbackStart.setHours(0, 0, 0, 0);
+      const fallbackEnd = new Date();
+      fallbackEnd.setHours(23, 59, 59, 999);
+      return { startDate: fallbackStart, endDate: fallbackEnd };
+    }
+    if (start.getTime() > end.getTime()) {
+      return { startDate: end, endDate: start };
+    }
     return { startDate: start, endDate: end };
   }
 
