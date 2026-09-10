@@ -187,17 +187,6 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
     return resolveTrendTimelineRange(timelinePreset);
   }, [timelinePreset, customMonth, customStart, customEnd]);
 
-  const rangeLabel = useMemo(() => {
-    const a = toLocalDateKey(activeRange.startDate);
-    const b = toLocalDateKey(activeRange.endDate);
-    const fmt = (key: string) => {
-      const d = parseLocalDateKey(key);
-      if (!d) return key;
-      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-    };
-    return `${fmt(a)} – ${fmt(b)}`;
-  }, [activeRange]);
-
   useEffect(() => {
     const saved = loadPrefs();
     if (saved) {
@@ -538,12 +527,6 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
               </div>
             </>
           ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-          <span className="text-[11px] text-muted-foreground">
-            RO · both brands
-            {loading ? ' · updating…' : ` · ${rangeLabel}`}
-          </span>
         </div>
       </div>
 
