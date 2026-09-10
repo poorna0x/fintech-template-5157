@@ -71,6 +71,7 @@ import {
   AnalyticsTrendGraph,
   buildTrendFilterOptions,
 } from '@/components/admin/AnalyticsTrendGraph';
+import { AnalyticsLeadSourceTrend } from '@/components/admin/AnalyticsLeadSourceTrend';
 
 interface AnalyticsData {
   totalJobs: number;
@@ -738,6 +739,7 @@ const Analytics = () => {
   const [brandPerPage, setBrandPerPage] = useState(10);
   const [brandsLoaded, setBrandsLoaded] = useState(false);
   const [trendGraphLoaded, setTrendGraphLoaded] = useState(false);
+  const [leadSourceTrendLoaded, setLeadSourceTrendLoaded] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
@@ -2711,6 +2713,28 @@ const Analytics = () => {
               endDate: getDateRange().endDate,
             }}
             analyticsPeriod={trendAnalyticsPeriod}
+          />
+        ) : null}
+      </AnalyticsLoadSection>
+
+      {/* Lead source performance trend - load on demand */}
+      <AnalyticsLoadSection
+        title="Lead source performance trend"
+        description="Compare Direct call, Website (HydrogenRO / ElevenRO), Google-Leads, and other sources across months, weeks, or custom timelines. Filter by company brand, compare any two months, or compare two date ranges."
+        icon={<PhoneForwarded />}
+        loadLabel="Open lead-source trend"
+        loadingLabel="Opening…"
+        onLoad={() => setLeadSourceTrendLoaded(true)}
+        loaded={leadSourceTrendLoaded}
+        keepActionVisible
+        emptyHint="Load the lead-source trend to see how each channel performs over time — jobs, revenue, and brand mix at a glance."
+      >
+        {analytics ? (
+          <AnalyticsLeadSourceTrend
+            initialRange={{
+              startDate: getDateRange().startDate,
+              endDate: getDateRange().endDate,
+            }}
           />
         ) : null}
       </AnalyticsLoadSection>

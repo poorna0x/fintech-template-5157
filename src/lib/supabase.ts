@@ -8635,6 +8635,22 @@ export const db = {
       });
       return { data, error };
     },
+    async getLeadSourceTrend(opts: {
+      startDate: Date;
+      endDate: Date;
+      granularity?: 'month' | 'week' | 'day';
+      serviceType?: string | null;
+      serviceBrand?: string | null;
+    }) {
+      const { data, error } = await supabase.rpc('get_analytics_lead_source_trend', {
+        p_start: opts.startDate.toISOString(),
+        p_end: opts.endDate.toISOString(),
+        p_granularity: opts.granularity ?? 'month',
+        p_service_type: opts.serviceType ?? null,
+        p_service_brand: opts.serviceBrand ?? null,
+      });
+      return { data, error };
+    },
   },
 
   /** Admin Settings — sent email log (Hostinger SMTP + open pixel). Slim columns, head count. */
