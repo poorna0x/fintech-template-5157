@@ -13,7 +13,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
-import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart as ReLineChart, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Legend, XAxis, YAxis } from 'recharts';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -83,23 +83,6 @@ function parseLocalDateKey(key: string): Date | null {
   const dt = new Date(y, m - 1, d);
   dt.setHours(0, 0, 0, 0);
   return Number.isNaN(dt.getTime()) ? null : dt;
-}
-
-/**
- * All-sources + daily buckets is unreadable (many stacked colors).
- * Prefer month/week for overview; day only when focusing one source.
- */
-function pickLeadSourceGranularity(
-  startDate: Date,
-  endDate: Date,
-  focusingOneSource: boolean
-): 'month' | 'week' | 'day' {
-  if (!focusingOneSource) {
-    const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    if (days <= 21) return 'week';
-    return 'month';
-  }
-  return pickTrendGranularity(startDate, endDate);
 }
 
 function loadPrefs(): Prefs | null {
@@ -251,16 +234,10 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
     }
   }, [timelinePreset, customMonth]);
 
-  const focusingOneSource = leadSourceKey !== ALL;
-
   const granularity = useMemo(() => {
     if (granularityOverride !== 'auto') return granularityOverride;
-    return pickLeadSourceGranularity(
-      activeRange.startDate,
-      activeRange.endDate,
-      focusingOneSource
-    );
-  }, [granularityOverride, activeRange, focusingOneSource]);
+    return pickTrendGranularity(activeRange.startDate, activeRange.endDate);
+  }, [granularityOverride, activeRange]);
 
   const fetchTrend = useCallback(async () => {
     const cacheKey = [
@@ -340,7 +317,7 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
         otherKey: null as string | null,
       };
     }
-    return pickLeadSourceTrendSeriesKeys(filteredSources, 5);
+    return pickLeadSourceTrendSeriesKeys(filteredSources, 8);
   }, [filteredSources, leadSourceKey]);
 
   const chartRows = useMemo(
@@ -574,7 +551,7 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
           value={granularityOverride}
           onValueChange={(v) => setGranularityOverride(v as typeof granularityOverride)}
           options={[
-            { value: 'auto', label: focusingOneSource ? 'Auto' : 'Auto (month/week)' },
+            { value: 'auto', label: 'Auto' },
             { value: 'month', label: 'Monthly' },
             { value: 'week', label: 'Weekly' },
             { value: 'day', label: 'Daily' },
@@ -582,9 +559,7 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
         />
         <div className="space-y-1.5 flex flex-col justify-end">
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            {focusingOneSource
-              ? 'Single-source bars. Switch Lead source to All for trend lines.'
-              : 'All sources: top 5 as lines by month/week (daily stacks stay off in Auto).'}
+            Showing completed RO jobs for HydrogenRO and ElevenRO together.
           </p>
         </div>
       </div>
@@ -662,6 +637,9 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                     {granularity === 'day' ? 'Daily' : granularity === 'week' ? 'Weekly' : 'Monthly'}{' '}
                     {metric === 'jobs' ? 'jobs' : 'revenue'} · {selectedSourceLabel}
                   </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Tap a glance card or table row to focus one lead source
+                  </p>
                 </div>
                 <p className="text-[11px] sm:text-xs text-muted-foreground shrink-0">
                   {toLocalDateKey(activeRange.startDate)} → {toLocalDateKey(activeRange.endDate)}
@@ -677,42 +655,46 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                   config={chartConfig}
                   className="aspect-[5/4] sm:aspect-[16/10] md:aspect-[2.2/1] w-full min-h-[220px] sm:min-h-[280px] -mx-1 sm:mx-0"
                 >
-                  {focusingOneSource ? (
-                    <BarChart data={chartRows} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
-                      <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="label"
-                        tickLine={false}
-                        axisLine={false}
-                        tickMargin={6}
-                        fontSize={isMobile ? 10 : 11}
-                        interval={isMobile ? 'preserveStartEnd' : 0}
-                      />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        width={metric === 'revenue' ? 52 : 36}
-                        fontSize={11}
-                        tickFormatter={(v) =>
-                          metric === 'revenue'
-                            ? formatInrCompact(Number(v)).replace('₹', '')
-                            : String(v)
-                        }
-                      />
-                      <ChartTooltip
-                        content={({ active, payload: tipPayload, label }) => {
-                          if (!active || !tipPayload?.length) return null;
-                          const rows = tipPayload.filter((e) => Number(e.value) > 0);
-                          if (!rows.length) return null;
-                          return (
-                            <div className="rounded-xl border bg-background/95 backdrop-blur px-3 py-2.5 shadow-lg text-xs min-w-[160px]">
-                              <p className="font-semibold text-foreground mb-2">{label}</p>
-                              {rows.map((entry) => (
+                  <BarChart data={chartRows} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={6}
+                      fontSize={isMobile ? 10 : 11}
+                      interval={isMobile ? 'preserveStartEnd' : 0}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      width={metric === 'revenue' ? 52 : 36}
+                      fontSize={11}
+                      tickFormatter={(v) =>
+                        metric === 'revenue'
+                          ? formatInrCompact(Number(v)).replace('₹', '')
+                          : String(v)
+                      }
+                    />
+                    <ChartTooltip
+                      content={({ active, payload: tipPayload, label }) => {
+                        if (!active || !tipPayload?.length) return null;
+                        return (
+                          <div className="rounded-xl border bg-background/95 backdrop-blur px-3 py-2.5 shadow-lg text-xs min-w-[180px]">
+                            <p className="font-semibold text-foreground mb-2">{label}</p>
+                            <div className="space-y-1.5">
+                              {tipPayload.map((entry) => (
                                 <div
                                   key={String(entry.dataKey)}
-                                  className="flex justify-between gap-4"
+                                  className="flex items-center justify-between gap-4"
                                 >
-                                  <span className="text-muted-foreground">{entry.name}</span>
+                                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                                    <span
+                                      className="h-2 w-2 shrink-0 rounded-full"
+                                      style={{ background: String(entry.color || '#0ea5e9') }}
+                                    />
+                                    {entry.name}
+                                  </span>
                                   <span className="font-medium tabular-nums">
                                     {metric === 'revenue'
                                       ? formatInrCompact(Number(entry.value) || 0)
@@ -721,92 +703,23 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                                 </div>
                               ))}
                             </div>
-                          );
-                        }}
+                          </div>
+                        );
+                      }}
+                    />
+                    {leadSourceKey === ALL ? <Legend wrapperStyle={{ fontSize: 11 }} /> : null}
+                    {seriesMeta.keys.map((key, i) => (
+                      <Bar
+                        key={key}
+                        dataKey={key}
+                        name={seriesMeta.labels[key] || key}
+                        stackId={leadSourceKey === ALL ? 'lead' : undefined}
+                        fill={leadSourceTrendColor(i)}
+                        radius={[3, 3, 0, 0]}
+                        maxBarSize={leadSourceKey === ALL ? 36 : 48}
                       />
-                      {seriesMeta.keys.map((key, i) => (
-                        <Bar
-                          key={key}
-                          dataKey={key}
-                          name={seriesMeta.labels[key] || key}
-                          fill={leadSourceTrendColor(i)}
-                          radius={[3, 3, 0, 0]}
-                          maxBarSize={48}
-                        />
-                      ))}
-                    </BarChart>
-                  ) : (
-                    <ReLineChart data={chartRows} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
-                      <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="label"
-                        tickLine={false}
-                        axisLine={false}
-                        tickMargin={6}
-                        fontSize={isMobile ? 10 : 11}
-                        interval={isMobile ? 'preserveStartEnd' : 0}
-                      />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        width={metric === 'revenue' ? 52 : 36}
-                        fontSize={11}
-                        tickFormatter={(v) =>
-                          metric === 'revenue'
-                            ? formatInrCompact(Number(v)).replace('₹', '')
-                            : String(v)
-                        }
-                      />
-                      <ChartTooltip
-                        content={({ active, payload: tipPayload, label }) => {
-                          if (!active || !tipPayload?.length) return null;
-                          const rows = tipPayload
-                            .filter((e) => Number(e.value) > 0)
-                            .sort((a, b) => Number(b.value) - Number(a.value));
-                          if (!rows.length) return null;
-                          return (
-                            <div className="rounded-xl border bg-background/95 backdrop-blur px-3 py-2.5 shadow-lg text-xs min-w-[180px]">
-                              <p className="font-semibold text-foreground mb-2">{label}</p>
-                              <div className="space-y-1.5">
-                                {rows.map((entry) => (
-                                  <div
-                                    key={String(entry.dataKey)}
-                                    className="flex items-center justify-between gap-4"
-                                  >
-                                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                                      <span
-                                        className="h-2 w-2 shrink-0 rounded-full"
-                                        style={{ background: String(entry.color || '#0ea5e9') }}
-                                      />
-                                      {entry.name}
-                                    </span>
-                                    <span className="font-medium tabular-nums">
-                                      {metric === 'revenue'
-                                        ? formatInrCompact(Number(entry.value) || 0)
-                                        : Number(entry.value) || 0}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      {seriesMeta.keys.map((key, i) => (
-                        <Line
-                          key={key}
-                          type="monotone"
-                          dataKey={key}
-                          name={seriesMeta.labels[key] || key}
-                          stroke={leadSourceTrendColor(i)}
-                          strokeWidth={2.25}
-                          dot={{ r: isMobile ? 2 : 3 }}
-                          activeDot={{ r: 5 }}
-                        />
-                      ))}
-                    </ReLineChart>
-                  )}
+                    ))}
+                  </BarChart>
                 </ChartContainer>
               )}
 
