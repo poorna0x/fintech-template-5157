@@ -1375,7 +1375,7 @@ export function AnalyticsTrendGraph({
   );
 }
 
-function FilterSelect({
+export function TrendFilterSelect({
   label,
   value,
   onValueChange,
@@ -1405,6 +1405,10 @@ function FilterSelect({
       </Select>
     </div>
   );
+}
+
+function FilterSelect(props: Parameters<typeof TrendFilterSelect>[0]) {
+  return <TrendFilterSelect {...props} />;
 }
 
 function WeekdayPatternPanel({ rows }: { rows: WeekdayPatternRow[] }) {
@@ -1846,7 +1850,7 @@ function RankedInsightList({
   );
 }
 
-function StatCard({ title, value, sub, icon }: { title: string; value: string; sub?: React.ReactNode; icon?: React.ReactNode }) {
+export function TrendStatCard({ title, value, sub, icon }: { title: string; value: string; sub?: React.ReactNode; icon?: React.ReactNode }) {
   return (
     <div className="rounded-xl border bg-gradient-to-br from-background to-sky-50/40 px-3 py-3 sm:px-4 sm:py-3.5 shadow-sm min-w-0">
       <div className="flex items-center justify-between gap-2">
@@ -1857,6 +1861,10 @@ function StatCard({ title, value, sub, icon }: { title: string; value: string; s
       {sub ? <div className="text-[11px] sm:text-xs text-muted-foreground mt-1 leading-relaxed">{sub}</div> : null}
     </div>
   );
+}
+
+function StatCard(props: Parameters<typeof TrendStatCard>[0]) {
+  return <TrendStatCard {...props} />;
 }
 
 function CompareDeltaCard({

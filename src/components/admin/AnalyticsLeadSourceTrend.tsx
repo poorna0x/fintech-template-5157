@@ -17,7 +17,9 @@ import { Bar, BarChart, CartesianGrid, Legend, XAxis, YAxis } from 'recharts';
 import {
   ArrowDownRight,
   ArrowUpRight,
+  CalendarRange,
   GitCompare,
+  LineChart,
   Loader2,
   Minus,
   Phone,
@@ -42,6 +44,10 @@ import {
   type LeadSourceTrendPayload,
   type LeadSourceTrendPeriodRow,
 } from '@/lib/analyticsLeadSourceTrend';
+import {
+  TrendFilterSelect,
+  TrendStatCard,
+} from '@/components/admin/AnalyticsTrendGraph';
 import { toast } from 'sonner';
 
 const ALL = '__all__';
@@ -101,8 +107,7 @@ function Delta({ value, suffix = '' }: { value: number; suffix?: string }) {
   if (!Number.isFinite(value) || value === 0) {
     return (
       <span className="inline-flex items-center gap-0.5 text-muted-foreground text-xs">
-        <Minus className="h-3 w-3" />
-        0{suffix === '₹' ? '' : suffix}
+        <Minus className="w-3 h-3" /> —
       </span>
     );
   }
@@ -114,27 +119,10 @@ function Delta({ value, suffix = '' }: { value: number; suffix?: string }) {
         up ? 'text-emerald-600' : 'text-red-600'
       )}
     >
-      {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+      {up ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
       {up ? '+' : ''}
       {suffix === '₹' ? formatInrCompact(value) : `${value}${suffix}`}
     </span>
-  );
-}
-
-function FilterField({
-  label,
-  className,
-  children,
-}: {
-  label: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className={cn('space-y-1.5 min-w-0', className)}>
-      <Label className="text-[11px] font-medium text-slate-500">{label}</Label>
-      {children}
-    </div>
   );
 }
 
@@ -491,152 +479,138 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
       ? 'All lead sources'
       : payload?.sources.find((s) => s.key === leadSourceKey)?.label || 'Selected source';
 
+  const leadSourceOptions = [
+    { value: ALL, label: 'All sources' },
+    ...(payload?.sources || []).map((s) => ({ value: s.key, label: s.label })),
+  ];
+
   return (
-    <div className="space-y-4 min-w-0">
-      <div className="rounded-xl border border-slate-200/80 bg-gradient-to-b from-slate-50 to-white p-3 sm:p-4 shadow-sm space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-900">RO · both brands</p>
-            <p className="text-xs text-slate-500 truncate">{rangeLabel}</p>
-          </div>
-          {loading ? (
-            <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Updating…
-            </span>
-          ) : null}
-        </div>
-
-        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 lg:grid-cols-4 gap-2.5">
-          <FilterField label="Timeline">
-            <Select
-              value={timelinePreset}
-              onValueChange={(v) => setTimelinePreset(v as TrendTimelinePreset)}
-            >
-              <SelectTrigger className="h-9 bg-white border-slate-200">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="this_month">This month</SelectItem>
-                <SelectItem value="last_month">Last month</SelectItem>
-                <SelectItem value="custom_month">Custom month</SelectItem>
-                <SelectItem value="6m">Last 6 months</SelectItem>
-                <SelectItem value="12m">Last 12 months</SelectItem>
-                <SelectItem value="24m">Last 24 months</SelectItem>
-                <SelectItem value="ytd">Year to date</SelectItem>
-                <SelectItem value="custom">Custom range</SelectItem>
-              </SelectContent>
-            </Select>
-          </FilterField>
-
+    <div className="space-y-4 sm:space-y-5 min-w-0 max-w-full overflow-x-hidden">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between min-w-0">
+        <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:flex sm:flex-wrap sm:items-end gap-2 w-full min-w-0">
+          <TrendFilterSelect
+            label="Timeline"
+            value={timelinePreset}
+            onValueChange={(v) => setTimelinePreset(v as TrendTimelinePreset)}
+            className="w-full min-w-0 sm:w-[150px]"
+            options={[
+              { value: 'this_month', label: 'This month' },
+              { value: 'last_month', label: 'Last month' },
+              { value: 'custom_month', label: 'Custom month' },
+              { value: '6m', label: 'Last 6 months' },
+              { value: '12m', label: 'Last 12 months' },
+              { value: '24m', label: 'Last 24 months' },
+              { value: 'ytd', label: 'Year to date' },
+              { value: 'custom', label: 'Custom range' },
+            ]}
+          />
           {timelinePreset === 'custom_month' ? (
-            <FilterField label="Month">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Month</Label>
               <Input
                 type="month"
                 value={customMonth}
                 onChange={(e) => setCustomMonth(e.target.value)}
                 max={toLocalDateKey(new Date()).slice(0, 7)}
-                className="h-9 bg-white border-slate-200"
+                className="w-full sm:w-[150px] h-9"
               />
-            </FilterField>
+            </div>
           ) : null}
-
           {timelinePreset === 'custom' ? (
             <>
-              <FilterField label="From">
+              <div className="space-y-1.5 min-w-0">
+                <Label className="text-xs text-muted-foreground">From</Label>
                 <DatePicker
                   value={customStart}
-                  onChange={(v) => setCustomStart(v || '')}
+                  onChange={(v) => v && setCustomStart(v)}
                   placeholder="Start"
-                  className="h-9 w-full bg-white"
+                  className="w-full sm:w-[140px]"
                 />
-              </FilterField>
-              <FilterField label="To">
+              </div>
+              <div className="space-y-1.5 min-w-0">
+                <Label className="text-xs text-muted-foreground">To</Label>
                 <DatePicker
                   value={customEnd}
-                  onChange={(v) => setCustomEnd(v || '')}
+                  onChange={(v) => v && setCustomEnd(v)}
                   placeholder="End"
-                  className="h-9 w-full bg-white"
+                  className="w-full sm:w-[140px]"
                 />
-              </FilterField>
+              </div>
             </>
           ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <span className="text-[11px] text-muted-foreground">
+            RO · both brands
+            {loading ? ' · updating…' : ` · ${rangeLabel}`}
+          </span>
+        </div>
+      </div>
 
-          <FilterField label="Lead source">
-            <Select value={leadSourceKey} onValueChange={setLeadSourceKey}>
-              <SelectTrigger className="h-9 bg-white border-slate-200">
-                <SelectValue placeholder="All sources" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All sources</SelectItem>
-                {(payload?.sources || []).map((s) => (
-                  <SelectItem key={s.key} value={s.key}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FilterField>
-
-          <FilterField label="Metric">
-            <Select value={metric} onValueChange={(v) => setMetric(v as LeadSourceTrendMetric)}>
-              <SelectTrigger className="h-9 bg-white border-slate-200">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="jobs">Jobs</SelectItem>
-                <SelectItem value="revenue">Revenue</SelectItem>
-              </SelectContent>
-            </Select>
-          </FilterField>
-
-          <FilterField label="Buckets">
-            <Select
-              value={granularityOverride}
-              onValueChange={(v) => setGranularityOverride(v as typeof granularityOverride)}
-            >
-              <SelectTrigger className="h-9 bg-white border-slate-200">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto</SelectItem>
-                <SelectItem value="month">Month</SelectItem>
-                <SelectItem value="week">Week</SelectItem>
-                <SelectItem value="day">Day</SelectItem>
-              </SelectContent>
-            </Select>
-          </FilterField>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 rounded-xl border bg-muted/20 p-4">
+        <TrendFilterSelect
+          label="Lead source"
+          value={leadSourceKey}
+          onValueChange={setLeadSourceKey}
+          options={leadSourceOptions}
+        />
+        <TrendFilterSelect
+          label="Chart"
+          value={metric}
+          onValueChange={(v) => setMetric(v as LeadSourceTrendMetric)}
+          options={[
+            { value: 'jobs', label: 'Jobs' },
+            { value: 'revenue', label: 'Revenue' },
+          ]}
+        />
+        <TrendFilterSelect
+          label="Granularity"
+          value={granularityOverride}
+          onValueChange={(v) => setGranularityOverride(v as typeof granularityOverride)}
+          options={[
+            { value: 'auto', label: 'Auto' },
+            { value: 'month', label: 'Monthly' },
+            { value: 'week', label: 'Weekly' },
+            { value: 'day', label: 'Daily' },
+          ]}
+        />
+        <div className="space-y-1.5 flex flex-col justify-end">
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            Showing completed RO jobs for HydrogenRO and ElevenRO together.
+          </p>
         </div>
       </div>
 
       {loading && !payload ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
+        <div className="flex items-center justify-center gap-2 py-20 text-sm text-muted-foreground rounded-xl border border-dashed">
+          <Loader2 className="w-5 h-5 animate-spin" />
           Loading lead-source trend…
         </div>
       ) : !payload ? (
-        <p className="text-sm text-muted-foreground text-center py-10 border border-dashed rounded-lg">
-          No lead-source trend data for this period.
-        </p>
+        <div className="rounded-xl border border-dashed py-14 text-center text-sm text-muted-foreground">
+          No completed RO jobs for this selection.
+        </div>
       ) : (
-        <Tabs defaultValue="timeline" className="space-y-3">
-          <TabsList className="grid w-full grid-cols-3 h-auto p-1 bg-slate-100/80">
-            <TabsTrigger value="timeline" className="gap-1 text-xs sm:text-sm">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Timeline
+        <Tabs defaultValue="timeline" className="w-full">
+          <TabsList className="grid w-full grid-cols-3 h-auto p-1 gap-1">
+            <TabsTrigger value="timeline" className="gap-1 text-[11px] sm:text-sm py-2 px-1 sm:px-3">
+              <LineChart className="w-4 h-4 shrink-0" />
+              <span className="truncate">Timeline</span>
             </TabsTrigger>
-            <TabsTrigger value="months" className="gap-1 text-xs sm:text-sm">
-              <GitCompare className="h-3.5 w-3.5" />
-              Compare months
+            <TabsTrigger value="months" className="gap-1 text-[11px] sm:text-sm py-2 px-1 sm:px-3">
+              <CalendarRange className="w-4 h-4 shrink-0" />
+              <span className="truncate sm:hidden">Months</span>
+              <span className="truncate hidden sm:inline">Compare months</span>
             </TabsTrigger>
-            <TabsTrigger value="ranges" className="gap-1 text-xs sm:text-sm">
-              <GitCompare className="h-3.5 w-3.5" />
-              Compare ranges
+            <TabsTrigger value="ranges" className="gap-1 text-[11px] sm:text-sm py-2 px-1 sm:px-3">
+              <GitCompare className="w-4 h-4 shrink-0" />
+              <span className="truncate sm:hidden">Ranges</span>
+              <span className="truncate hidden sm:inline">Compare ranges</span>
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="timeline" className="space-y-3">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <TabsContent value="timeline" className="mt-4 space-y-4">
+            <div className="grid grid-cols-1 min-[400px]:grid-cols-2 lg:grid-cols-4 gap-3">
               {glanceCards.map((card) => {
                 const active =
                   leadSourceKey === ALL || card.keys.some((k) => k === leadSourceKey);
@@ -646,55 +620,58 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                     type="button"
                     onClick={() => {
                       if (card.keys.length === 1) {
-                        setLeadSourceKey((prev) =>
-                          prev === card.keys[0] ? ALL : card.keys[0]
-                        );
+                        setLeadSourceKey((prev) => (prev === card.keys[0] ? ALL : card.keys[0]));
                       } else if (card.keys.length > 1) {
-                        setLeadSourceKey((prev) =>
-                          card.keys.includes(prev) ? ALL : card.keys[0]
-                        );
+                        setLeadSourceKey((prev) => (card.keys.includes(prev) ? ALL : card.keys[0]));
                       }
                     }}
                     className={cn(
-                      'rounded-xl border px-3 py-2.5 space-y-0.5 text-left transition-colors',
-                      active
-                        ? 'border-sky-200 bg-sky-50/60 shadow-sm'
-                        : 'border-slate-200/80 bg-white opacity-55 hover:opacity-80'
+                      'text-left rounded-xl transition-opacity',
+                      !active && 'opacity-55 hover:opacity-80'
                     )}
                   >
-                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                      {card.icon ? <card.icon className="h-3 w-3" /> : null}
-                      {card.title}
-                    </div>
-                    <div className="text-base font-semibold tabular-nums text-slate-900">
-                      {card.jobs} jobs
-                    </div>
-                    <div className="text-xs text-slate-500 tabular-nums">
-                      {formatInrCompact(card.revenue)}
-                    </div>
+                    <TrendStatCard
+                      title={card.title}
+                      value={`${card.jobs} jobs`}
+                      icon={
+                        card.icon ? (
+                          <card.icon className="w-4 h-4 text-sky-600" />
+                        ) : (
+                          <TrendingUp className="w-4 h-4 text-sky-600" />
+                        )
+                      }
+                      sub={formatInrCompact(card.revenue)}
+                    />
                   </button>
                 );
               })}
             </div>
 
-            <div className="rounded-xl border border-slate-200/80 bg-white p-2.5 sm:p-3 shadow-sm">
-              <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2 px-1">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">
-                    {metric === 'jobs' ? 'Jobs' : 'Revenue'} · {selectedSourceLabel}
+            <div className="rounded-2xl border bg-gradient-to-b from-sky-50/80 to-background p-3 sm:p-5 shadow-sm min-w-0 overflow-hidden">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between mb-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    {granularity === 'day' ? 'Daily' : granularity === 'week' ? 'Weekly' : 'Monthly'}{' '}
+                    {metric === 'jobs' ? 'jobs' : 'revenue'} · {selectedSourceLabel}
                   </p>
-                  <p className="text-xs text-slate-500">
-                    {filteredSummary.jobs} jobs · {formatInrCompact(filteredSummary.revenue)} ·{' '}
-                    {granularity} buckets
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Tap a glance card or table row to focus one lead source
                   </p>
                 </div>
-              </div>
-              {chartRows.length === 0 || filteredSummary.jobs === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No completed RO jobs for this selection.
+                <p className="text-[11px] sm:text-xs text-muted-foreground shrink-0">
+                  {toLocalDateKey(activeRange.startDate)} → {toLocalDateKey(activeRange.endDate)}
                 </p>
+              </div>
+
+              {chartRows.length === 0 || filteredSummary.jobs === 0 ? (
+                <div className="rounded-xl border border-dashed py-14 text-center text-sm text-muted-foreground bg-background/60">
+                  No completed RO jobs for this selection.
+                </div>
               ) : (
-                <ChartContainer config={chartConfig} className="h-[280px] w-full aspect-auto">
+                <ChartContainer
+                  config={chartConfig}
+                  className="aspect-[5/4] sm:aspect-[16/10] md:aspect-[2.2/1] w-full min-h-[220px] sm:min-h-[280px] -mx-1 sm:mx-0"
+                >
                   <BarChart data={chartRows} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
                     <CartesianGrid vertical={false} strokeDasharray="3 3" />
                     <XAxis
@@ -720,28 +697,34 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                       content={({ active, payload: tipPayload, label }) => {
                         if (!active || !tipPayload?.length) return null;
                         return (
-                          <div className="rounded-md border bg-background px-2.5 py-1.5 text-xs shadow-md space-y-1">
-                            <div className="font-medium">{label}</div>
-                            {tipPayload.map((entry) => (
-                              <div
-                                key={String(entry.dataKey)}
-                                className="flex justify-between gap-4"
-                              >
-                                <span className="text-muted-foreground">{entry.name}</span>
-                                <span className="font-medium tabular-nums">
-                                  {metric === 'revenue'
-                                    ? formatInrCompact(Number(entry.value) || 0)
-                                    : Number(entry.value) || 0}
-                                </span>
-                              </div>
-                            ))}
+                          <div className="rounded-xl border bg-background/95 backdrop-blur px-3 py-2.5 shadow-lg text-xs min-w-[180px]">
+                            <p className="font-semibold text-foreground mb-2">{label}</p>
+                            <div className="space-y-1.5">
+                              {tipPayload.map((entry) => (
+                                <div
+                                  key={String(entry.dataKey)}
+                                  className="flex items-center justify-between gap-4"
+                                >
+                                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                                    <span
+                                      className="h-2 w-2 shrink-0 rounded-full"
+                                      style={{ background: String(entry.color || '#0ea5e9') }}
+                                    />
+                                    {entry.name}
+                                  </span>
+                                  <span className="font-medium tabular-nums">
+                                    {metric === 'revenue'
+                                      ? formatInrCompact(Number(entry.value) || 0)
+                                      : Number(entry.value) || 0}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         );
                       }}
                     />
-                    {leadSourceKey === ALL ? (
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                    ) : null}
+                    {leadSourceKey === ALL ? <Legend wrapperStyle={{ fontSize: 11 }} /> : null}
                     {seriesMeta.keys.map((key, i) => (
                       <Bar
                         key={key}
@@ -756,17 +739,23 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                   </BarChart>
                 </ChartContainer>
               )}
+
+              <p className="text-[11px] text-muted-foreground mt-3">
+                {filteredSummary.jobs} jobs · {formatInrCompact(filteredSummary.revenue)} ·{' '}
+                {filteredSummary.sourceCount} source
+                {filteredSummary.sourceCount === 1 ? '' : 's'}
+              </p>
             </div>
 
-            <div className="rounded-xl border border-slate-200/80 overflow-x-auto bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-xl border -mx-1 sm:mx-0">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-slate-50/80">
+                  <TableRow>
                     <TableHead>Lead source</TableHead>
                     <TableHead className="text-right">Jobs</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
-                    <TableHead className="text-right">Avg bill</TableHead>
-                    <TableHead className="text-right">Share</TableHead>
+                    <TableHead className="text-right hidden sm:table-cell">Avg bill</TableHead>
+                    <TableHead className="text-right hidden md:table-cell">Share</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -783,20 +772,20 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                       return (
                         <TableRow
                           key={row.key}
-                          className="cursor-pointer hover:bg-sky-50/50"
+                          className="cursor-pointer hover:bg-muted/40"
                           onClick={() =>
                             setLeadSourceKey((prev) => (prev === row.key ? ALL : row.key))
                           }
                         >
                           <TableCell className="font-medium">{row.label}</TableCell>
                           <TableCell className="text-right tabular-nums">{row.jobs}</TableCell>
-                          <TableCell className="text-right tabular-nums">
+                          <TableCell className="text-right tabular-nums text-emerald-700 whitespace-nowrap">
                             {formatInrCompact(row.revenue)}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums">
+                          <TableCell className="text-right tabular-nums hidden sm:table-cell">
                             {formatInrCompact(row.avgBill || 0)}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums text-muted-foreground">
+                          <TableCell className="text-right tabular-nums text-muted-foreground hidden md:table-cell">
                             {share}%
                           </TableCell>
                         </TableRow>
@@ -808,41 +797,31 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
             </div>
           </TabsContent>
 
-          <TabsContent value="months" className="space-y-3">
-            <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
-              <FilterField label="Month A" className="flex-1">
-                <Select value={monthA} onValueChange={setMonthA}>
-                  <SelectTrigger className="h-9 bg-white">
-                    <SelectValue placeholder="Pick month" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(payload.monthCatalog || []).map((m) => (
-                      <SelectItem key={m.periodKey} value={m.periodKey}>
-                        {m.label} · {m.jobs} jobs
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FilterField>
-              <FilterField label="Month B" className="flex-1">
-                <Select value={monthB} onValueChange={setMonthB}>
-                  <SelectTrigger className="h-9 bg-white">
-                    <SelectValue placeholder="Pick month" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(payload.monthCatalog || []).map((m) => (
-                      <SelectItem key={m.periodKey} value={m.periodKey}>
-                        {m.label} · {m.jobs} jobs
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FilterField>
+          <TabsContent value="months" className="mt-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <TrendFilterSelect
+                label="Month A"
+                value={monthA}
+                onValueChange={setMonthA}
+                options={(payload.monthCatalog || []).map((m) => ({
+                  value: m.periodKey,
+                  label: `${m.label} · ${m.jobs} jobs`,
+                }))}
+              />
+              <TrendFilterSelect
+                label="Month B"
+                value={monthB}
+                onValueChange={setMonthB}
+                options={(payload.monthCatalog || []).map((m) => ({
+                  value: m.periodKey,
+                  label: `${m.label} · ${m.jobs} jobs`,
+                }))}
+              />
             </div>
-            <div className="rounded-xl border overflow-x-auto bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-xl border -mx-1 sm:mx-0">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-slate-50/80">
+                  <TableRow>
                     <TableHead>Lead source</TableHead>
                     <TableHead className="text-right">A jobs</TableHead>
                     <TableHead className="text-right">B jobs</TableHead>
@@ -868,10 +847,10 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                         <TableCell className="text-right">
                           <Delta value={row.jobsDelta} />
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-right tabular-nums text-emerald-700">
                           {formatInrCompact(row.aRevenue)}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-right tabular-nums text-emerald-700">
                           {formatInrCompact(row.bRevenue)}
                         </TableCell>
                         <TableCell className="text-right">
@@ -885,40 +864,48 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
             </div>
           </TabsContent>
 
-          <TabsContent value="ranges" className="space-y-3">
+          <TabsContent value="ranges" className="mt-4 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="rounded-xl border bg-white p-3 space-y-2 shadow-sm">
-                <p className="text-xs font-medium text-slate-500">Range A</p>
-                <div className="flex gap-2">
-                  <DatePicker
-                    value={rangeAStart}
-                    onChange={(v) => setRangeAStart(v || '')}
-                    className="h-9 flex-1"
-                    placeholder="Start"
-                  />
-                  <DatePicker
-                    value={rangeAEnd}
-                    onChange={(v) => setRangeAEnd(v || '')}
-                    className="h-9 flex-1"
-                    placeholder="End"
-                  />
+              <div className="rounded-xl border p-4 space-y-3 bg-muted/10">
+                <p className="text-sm font-semibold">Range A</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Start</Label>
+                    <DatePicker
+                      value={rangeAStart}
+                      onChange={(v) => v && setRangeAStart(v)}
+                      placeholder="Start"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">End</Label>
+                    <DatePicker
+                      value={rangeAEnd}
+                      onChange={(v) => v && setRangeAEnd(v)}
+                      placeholder="End"
+                    />
+                  </div>
                 </div>
               </div>
-              <div className="rounded-xl border bg-white p-3 space-y-2 shadow-sm">
-                <p className="text-xs font-medium text-slate-500">Range B</p>
-                <div className="flex gap-2">
-                  <DatePicker
-                    value={rangeBStart}
-                    onChange={(v) => setRangeBStart(v || '')}
-                    className="h-9 flex-1"
-                    placeholder="Start"
-                  />
-                  <DatePicker
-                    value={rangeBEnd}
-                    onChange={(v) => setRangeBEnd(v || '')}
-                    className="h-9 flex-1"
-                    placeholder="End"
-                  />
+              <div className="rounded-xl border p-4 space-y-3 bg-muted/10">
+                <p className="text-sm font-semibold">Range B</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Start</Label>
+                    <DatePicker
+                      value={rangeBStart}
+                      onChange={(v) => v && setRangeBStart(v)}
+                      placeholder="Start"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">End</Label>
+                    <DatePicker
+                      value={rangeBEnd}
+                      onChange={(v) => v && setRangeBEnd(v)}
+                      placeholder="End"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -930,38 +917,32 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
               className="gap-1.5"
             >
               {rangeLoading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <GitCompare className="h-3.5 w-3.5" />
+                <GitCompare className="w-3.5 h-3.5" />
               )}
               Compare ranges
             </Button>
             {(rangeA || rangeB) && (
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-xl border px-3 py-2 bg-white shadow-sm">
-                  <div className="text-xs text-muted-foreground">Range A</div>
-                  <div className="font-semibold tabular-nums">
-                    {filterPayloadSources(rangeA)?.jobs ?? 0} jobs
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatInrCompact(filterPayloadSources(rangeA)?.revenue ?? 0)}
-                  </div>
-                </div>
-                <div className="rounded-xl border px-3 py-2 bg-white shadow-sm">
-                  <div className="text-xs text-muted-foreground">Range B</div>
-                  <div className="font-semibold tabular-nums">
-                    {filterPayloadSources(rangeB)?.jobs ?? 0} jobs
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {formatInrCompact(filterPayloadSources(rangeB)?.revenue ?? 0)}
-                  </div>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <TrendStatCard
+                  title="Range A"
+                  value={`${filterPayloadSources(rangeA)?.jobs ?? 0} jobs`}
+                  sub={formatInrCompact(filterPayloadSources(rangeA)?.revenue ?? 0)}
+                  icon={<LineChart className="w-4 h-4 text-orange-500" />}
+                />
+                <TrendStatCard
+                  title="Range B"
+                  value={`${filterPayloadSources(rangeB)?.jobs ?? 0} jobs`}
+                  sub={formatInrCompact(filterPayloadSources(rangeB)?.revenue ?? 0)}
+                  icon={<LineChart className="w-4 h-4 text-sky-600" />}
+                />
               </div>
             )}
-            <div className="rounded-xl border overflow-x-auto bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-xl border -mx-1 sm:mx-0">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-slate-50/80">
+                  <TableRow>
                     <TableHead>Lead source</TableHead>
                     <TableHead className="text-right">A jobs</TableHead>
                     <TableHead className="text-right">B jobs</TableHead>
@@ -987,10 +968,10 @@ export function AnalyticsLeadSourceTrend({ initialRange }: AnalyticsLeadSourceTr
                         <TableCell className="text-right">
                           <Delta value={row.jobsDelta} />
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-right tabular-nums text-emerald-700">
                           {formatInrCompact(row.aRevenue)}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-right tabular-nums text-emerald-700">
                           {formatInrCompact(row.bRevenue)}
                         </TableCell>
                         <TableCell className="text-right">
