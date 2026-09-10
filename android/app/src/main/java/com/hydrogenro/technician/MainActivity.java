@@ -1,6 +1,12 @@
 package com.hydrogenro.technician;
 
+import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -22,16 +28,24 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Also tunes the Capacitor WebView so Cloudflare Turnstile can complete
  * (third-party cookies + DOM storage per Cloudflare mobile docs), and injects
  * a native FCM token fallback when the Capacitor push plugin event is missed.
+ *
+ * Offline chrome-error pages stay stuck after data returns — we watch the
+ * network and reload https://…/technician automatically.
  */
 public class MainActivity extends BridgeActivity {
+    private static final String TAG = "HRO-Main";
     private static final long BOOT_LOADER_MAX_MS = 20_000L;
     private static final long READY_POLL_MS = 200L;
     private static final int READY_POLL_MAX = 80;
+    private static final long AUTO_RELOAD_COOLDOWN_MS = 2_500L;
 
     private View bootLoader;
     private final AtomicBoolean pageReady = new AtomicBoolean(false);
     private final AtomicBoolean watchingReady = new AtomicBoolean(false);
     private final AtomicBoolean bootUiReady = new AtomicBoolean(false);
+    private final AtomicBoolean needsReloadWhenOnline = new AtomicBoolean(false);
+    private volatile long lastAutoReloadAtMs = 0L;
+    private ConnectivityManager.NetworkCallback networkCallback;
     private volatile String cachedFcmToken = null;
 
     @Override
@@ -48,6 +62,7 @@ public class MainActivity extends BridgeActivity {
             new WebViewListener() {
                 @Override
                 public void onPageCommitVisible(WebView view, String url) {
+                    markAppPageLoadedIfHttps(view);
                     hardenWebViewForTurnstile(view);
                     injectNativeFcmToken(view);
                     beginReadyWatch();
@@ -55,6 +70,7 @@ public class MainActivity extends BridgeActivity {
 
                 @Override
                 public void onPageLoaded(WebView webView) {
+                    markAppPageLoadedIfHttps(webView);
                     hardenWebViewForTurnstile(webView);
                     injectNativeFcmToken(webView);
                     beginReadyWatch();
@@ -63,6 +79,9 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public void onReceivedError(WebView webView) {
                     dismissBootLoader();
+                    // Capacitor fires for any resource error — only arm reload for
+                    // the stuck "Webpage not available" chrome-error document.
+                    webView.post(() -> maybeArmOfflineReload(webView));
                 }
             }
         );
@@ -74,6 +93,7 @@ public class MainActivity extends BridgeActivity {
         hardenWebViewForTurnstile(webViewOrNull());
         fetchNativeFcmToken();
         requestCallAlertPermissions();
+        registerNetworkReloadWatcher();
 
         attachBootLoader();
         releaseSplashWhenBootDrawn();
@@ -88,6 +108,148 @@ public class MainActivity extends BridgeActivity {
         getWindow()
             .getDecorView()
             .postDelayed(this::maybePromptBatteryUnrestricted, 8_000L);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Backup path if NetworkCallback was missed while backgrounded.
+        tryReloadIfOnline();
+    }
+
+    @Override
+    public void onDestroy() {
+        unregisterNetworkReloadWatcher();
+        super.onDestroy();
+    }
+
+    /**
+     * After a cold-open offline error, reload the Capacitor server URL once
+     * the phone has a validated internet connection again.
+     */
+    private void registerNetworkReloadWatcher() {
+        if (networkCallback != null) return;
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return;
+        networkCallback =
+            new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    // Validation often lags a beat after the link is up.
+                    getWindow().getDecorView().post(MainActivity.this::tryReloadIfOnline);
+                    getWindow()
+                        .getDecorView()
+                        .postDelayed(MainActivity.this::tryReloadIfOnline, 1_200L);
+                }
+
+                @Override
+                public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
+                    if (caps != null
+                        && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                        tryReloadIfOnline();
+                    }
+                }
+            };
+        try {
+            NetworkRequest req =
+                new NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build();
+            cm.registerNetworkCallback(req, networkCallback);
+        } catch (Exception e) {
+            android.util.Log.w(TAG, "Network reload watcher failed: " + e.getMessage());
+            networkCallback = null;
+        }
+    }
+
+    private void unregisterNetworkReloadWatcher() {
+        if (networkCallback == null) return;
+        try {
+            ConnectivityManager cm =
+                (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null) cm.unregisterNetworkCallback(networkCallback);
+        } catch (Exception ignored) {
+            /* already unregistered */
+        }
+        networkCallback = null;
+    }
+
+    private void maybeArmOfflineReload(WebView webView) {
+        if (webView == null) return;
+        if (looksLikeOfflineErrorPage(webView)) {
+            needsReloadWhenOnline.set(true);
+            tryReloadIfOnline();
+        }
+    }
+
+    private static boolean looksLikeOfflineErrorPage(WebView webView) {
+        String url = webView.getUrl();
+        if (url != null) {
+            String lower = url.toLowerCase();
+            if (lower.startsWith("chrome-error://")
+                || lower.startsWith("data:")
+                || lower.equals("about:blank")) {
+                return true;
+            }
+        }
+        String title = webView.getTitle();
+        if (title == null) return false;
+        String t = title.toLowerCase();
+        return t.contains("webpage not available")
+            || t.contains("web page not available")
+            || t.contains("err_internet")
+            || t.contains("err_name_not_resolved")
+            || t.contains("err_connection")
+            || t.contains("no internet");
+    }
+
+    private void markAppPageLoadedIfHttps(WebView webView) {
+        if (webView == null) return;
+        String url = webView.getUrl();
+        if (url != null && url.startsWith("https://")) {
+            needsReloadWhenOnline.set(false);
+        }
+    }
+
+    private boolean isNetworkUsable() {
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return false;
+        Network net = cm.getActiveNetwork();
+        if (net == null) return false;
+        NetworkCapabilities caps = cm.getNetworkCapabilities(net);
+        if (caps == null) return false;
+        if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return false;
+        // Prefer validated, but allow plain INTERNET so we retry while DNS catches up.
+        return true;
+    }
+
+    private void tryReloadIfOnline() {
+        if (!needsReloadWhenOnline.get()) return;
+        if (!isNetworkUsable()) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastAutoReloadAtMs < AUTO_RELOAD_COOLDOWN_MS) return;
+        lastAutoReloadAtMs = now;
+
+        runOnUiThread(
+            () -> {
+                if (!needsReloadWhenOnline.get()) return;
+                WebView wv = webViewOrNull();
+                if (wv == null) return;
+                String appUrl = null;
+                try {
+                    if (getBridge() != null) appUrl = getBridge().getAppUrl();
+                } catch (Exception ignored) {
+                    /* bridge not ready */
+                }
+                android.util.Log.i(TAG, "Network restored — reloading app WebView");
+                if (appUrl != null && !appUrl.isEmpty()) {
+                    wv.loadUrl(appUrl);
+                } else {
+                    wv.reload();
+                }
+            }
+        );
     }
 
     /**

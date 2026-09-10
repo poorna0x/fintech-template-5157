@@ -88,6 +88,7 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Job / customer photos: WebView getUserMedia + file input capture -->
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Gallery pick (image/* file input) on Android 13+ -->

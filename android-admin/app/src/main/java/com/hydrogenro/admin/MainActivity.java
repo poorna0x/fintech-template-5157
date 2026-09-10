@@ -1,7 +1,13 @@
 package com.hydrogenro.admin;
 
-import android.os.Bundle;
+import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -18,16 +24,23 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Cold open: splash logo → same-size boot overlay + bounce → login/dashboard.
+ * Offline chrome-error pages stay stuck after data returns — we watch the
+ * network and reload https://…/admin automatically.
  */
 public class MainActivity extends BridgeActivity {
+    private static final String TAG = "HroAdminMain";
     private static final long BOOT_LOADER_MAX_MS = 20_000L;
     private static final long READY_POLL_MS = 200L;
     private static final int READY_POLL_MAX = 80;
+    private static final long AUTO_RELOAD_COOLDOWN_MS = 2_500L;
 
     private View bootLoader;
     private final AtomicBoolean pageReady = new AtomicBoolean(false);
     private final AtomicBoolean watchingReady = new AtomicBoolean(false);
     private final AtomicBoolean bootUiReady = new AtomicBoolean(false);
+    private final AtomicBoolean needsReloadWhenOnline = new AtomicBoolean(false);
+    private volatile long lastAutoReloadAtMs = 0L;
+    private ConnectivityManager.NetworkCallback networkCallback;
     private static volatile boolean inForeground = false;
 
     static boolean isInForeground() {
@@ -49,23 +62,27 @@ public class MainActivity extends BridgeActivity {
             new WebViewListener() {
                 @Override
                 public void onPageCommitVisible(WebView view, String url) {
+                    markAppPageLoadedIfHttps(view);
                     beginReadyWatch();
                 }
 
                 @Override
                 public void onPageLoaded(WebView webView) {
+                    markAppPageLoadedIfHttps(webView);
                     beginReadyWatch();
                 }
 
                 @Override
                 public void onReceivedError(WebView webView) {
                     dismissBootLoader();
+                    webView.post(() -> maybeArmOfflineReload(webView));
                 }
             }
         );
 
         super.onCreate(savedInstanceState);
         NotificationChannels.ensureAll(this);
+        registerNetworkReloadWatcher();
 
         attachBootLoader();
         releaseSplashWhenBootDrawn();
@@ -80,6 +97,7 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         inForeground = true;
         super.onResume();
+        tryReloadIfOnline();
     }
 
     @Override
@@ -87,6 +105,133 @@ public class MainActivity extends BridgeActivity {
         inForeground = false;
         DevicePrefsPlugin.clearViewingWhatsAppPhone(this);
         super.onPause();
+    }
+
+    @Override
+    public void onDestroy() {
+        unregisterNetworkReloadWatcher();
+        super.onDestroy();
+    }
+
+    private void registerNetworkReloadWatcher() {
+        if (networkCallback != null) return;
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return;
+        networkCallback =
+            new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    getWindow().getDecorView().post(MainActivity.this::tryReloadIfOnline);
+                    getWindow()
+                        .getDecorView()
+                        .postDelayed(MainActivity.this::tryReloadIfOnline, 1_200L);
+                }
+
+                @Override
+                public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
+                    if (caps != null
+                        && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                        tryReloadIfOnline();
+                    }
+                }
+            };
+        try {
+            NetworkRequest req =
+                new NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build();
+            cm.registerNetworkCallback(req, networkCallback);
+        } catch (Exception e) {
+            android.util.Log.w(TAG, "Network reload watcher failed: " + e.getMessage());
+            networkCallback = null;
+        }
+    }
+
+    private void unregisterNetworkReloadWatcher() {
+        if (networkCallback == null) return;
+        try {
+            ConnectivityManager cm =
+                (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null) cm.unregisterNetworkCallback(networkCallback);
+        } catch (Exception ignored) {
+            /* already unregistered */
+        }
+        networkCallback = null;
+    }
+
+    private void maybeArmOfflineReload(WebView webView) {
+        if (webView == null) return;
+        if (looksLikeOfflineErrorPage(webView)) {
+            needsReloadWhenOnline.set(true);
+            tryReloadIfOnline();
+        }
+    }
+
+    private static boolean looksLikeOfflineErrorPage(WebView webView) {
+        String url = webView.getUrl();
+        if (url != null) {
+            String lower = url.toLowerCase();
+            if (lower.startsWith("chrome-error://")
+                || lower.startsWith("data:")
+                || lower.equals("about:blank")) {
+                return true;
+            }
+        }
+        String title = webView.getTitle();
+        if (title == null) return false;
+        String t = title.toLowerCase();
+        return t.contains("webpage not available")
+            || t.contains("web page not available")
+            || t.contains("err_internet")
+            || t.contains("err_name_not_resolved")
+            || t.contains("err_connection")
+            || t.contains("no internet");
+    }
+
+    private void markAppPageLoadedIfHttps(WebView webView) {
+        if (webView == null) return;
+        String url = webView.getUrl();
+        if (url != null && url.startsWith("https://")) {
+            needsReloadWhenOnline.set(false);
+        }
+    }
+
+    private boolean isNetworkUsable() {
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return false;
+        Network net = cm.getActiveNetwork();
+        if (net == null) return false;
+        NetworkCapabilities caps = cm.getNetworkCapabilities(net);
+        return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+    }
+
+    private void tryReloadIfOnline() {
+        if (!needsReloadWhenOnline.get()) return;
+        if (!isNetworkUsable()) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastAutoReloadAtMs < AUTO_RELOAD_COOLDOWN_MS) return;
+        lastAutoReloadAtMs = now;
+
+        runOnUiThread(
+            () -> {
+                if (!needsReloadWhenOnline.get()) return;
+                WebView wv = webViewOrNull();
+                if (wv == null) return;
+                String appUrl = null;
+                try {
+                    if (getBridge() != null) appUrl = getBridge().getAppUrl();
+                } catch (Exception ignored) {
+                    /* bridge not ready */
+                }
+                android.util.Log.i(TAG, "Network restored — reloading app WebView");
+                if (appUrl != null && !appUrl.isEmpty()) {
+                    wv.loadUrl(appUrl);
+                } else {
+                    wv.reload();
+                }
+            }
+        );
     }
 
     @Override
