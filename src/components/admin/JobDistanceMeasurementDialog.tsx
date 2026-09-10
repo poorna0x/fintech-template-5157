@@ -142,7 +142,7 @@ export default function JobDistanceMeasurementDialog({
                               </div>
                             ) : item.distance ? (
                               <div className="flex flex-wrap items-center gap-4">
-                                {item.distanceValue !== undefined && item.distanceValue <= 1000 ? (
+                                {item.distanceValue !== undefined && item.distanceValue <= 200 ? (
                                   <div className="flex items-center gap-2">
                                     <MapPin className="h-4 w-4 text-green-600" />
                                     <span className="font-medium text-green-600">
