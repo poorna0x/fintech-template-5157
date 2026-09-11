@@ -302,7 +302,16 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   // Find assigned technician
   const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
   const assignedTechnician = technicians.find(t => t.id === assignedTechnicianId) || null;
-  const useOfficeParts = isOfficeCompletedJob(job) || !assignedTechnician;
+  // Spare parts / bag top-up belong to who completed — not every team member / not always the lead.
+  const partsTechnician =
+    (completedBy
+      ? technicians.find((t: any) => {
+          const tid = String(t.id || '').trim();
+          const emp = String(t.employee_id || t.employeeId || '').trim();
+          return tid === completedBy || (emp && emp === completedBy);
+        })
+      : null) || assignedTechnician;
+  const useOfficeParts = isOfficeCompletedJob(job) || !partsTechnician;
   const messageSent = requirements.some((r: any) => {
     if (r && typeof r === 'object') {
       return r.message_sent === true || r.message_sent === 'true';
@@ -1068,7 +1077,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
       </Dialog>
       
       {/* Parts Used Dialog */}
-      {!useOfficeParts && assignedTechnician && (
+      {!useOfficeParts && partsTechnician && (
         <JobPartsUsedDialog
           open={partsUsedDialogOpen}
           onOpenChange={(open) => {
@@ -1079,7 +1088,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             }
           }}
           job={job}
-          technician={assignedTechnician}
+          technician={partsTechnician}
         />
       )}
 

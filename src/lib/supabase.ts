@@ -7497,6 +7497,26 @@ export const db = {
       return { data, error };
     },
 
+    /** Parts on specific jobs (for top-up by completer — ignore stale technician_id stamps). */
+    async getByJobIdsForTopUp(jobIds: string[]) {
+      if (!jobIds?.length) return { data: [] as any[], error: null };
+      const { data, error } = await supabase
+        .from('job_parts_used')
+        .select(`
+          id,
+          job_id,
+          technician_id,
+          inventory_id,
+          custom_name,
+          quantity_used,
+          created_at,
+          inventory:inventory(id, product_name, full_name, code)
+        `)
+        .in('job_id', jobIds)
+        .order('created_at', { ascending: false });
+      return { data: data || [], error };
+    },
+
     /**
      * Spare parts logged (job_parts_used) within a date range, joined with inventory
      * info — for on-demand Spare Parts analytics. Pass null dates for "all time".
@@ -7584,18 +7604,25 @@ export const db = {
           .maybeSingle();
         if (fetchErr || !existing) return { data: null, error: error };
         const mergedQty = Number(existing.quantity_used) + Number(part.quantity_used);
-        return this.update(existing.id, { quantity_used: mergedQty });
+        // Re-stamp to the technician adding now (completer), so top-up is not stuck on the lead.
+        return this.update(existing.id, {
+          quantity_used: mergedQty,
+          technician_id: part.technician_id,
+        });
       }
 
       return { data, error };
     },
 
-    async update(id: string, updates: { quantity_used?: number; price_at_time_of_use?: number }) {
+    async update(
+      id: string,
+      updates: { quantity_used?: number; price_at_time_of_use?: number; technician_id?: string }
+    ) {
       const { data, error } = await supabase
         .from('job_parts_used')
         .update(updates)
         .eq('id', id)
-        .select('id, quantity_used, inventory_id, source, custom_name, price_at_time_of_use')
+        .select('id, quantity_used, inventory_id, source, custom_name, price_at_time_of_use, technician_id')
         .single();
       
       return { data, error };

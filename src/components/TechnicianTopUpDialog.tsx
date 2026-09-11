@@ -27,6 +27,15 @@ export interface TechnicianTopUpDialogProps {
 const toDateKey = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+/** Top-up / bag replenishment is for who completed the job — not every team member. */
+const jobCompletedByTechnician = (job: any, technicianId: string): boolean => {
+  const completedBy = String(job?.completed_by || job?.completedBy || '').trim();
+  const assigned = String(job?.assigned_technician_id || job?.assignedTechnicianId || '').trim();
+  if (completedBy) return completedBy === technicianId;
+  // Legacy rows without completed_by: only the lead, never helpers on team_members.
+  return assigned === technicianId;
+};
+
 type TopUpItem = {
   inventory_id: string;
   quantity_used: number;
@@ -98,16 +107,14 @@ const TechnicianTopUpDialog: React.FC<TechnicianTopUpDialogProps> = ({
       inventoryCache.clear('main_inventory');
       try {
         await loadMainInventory();
-        const [jobsResult, partsResult] = await Promise.all([
-          db.jobs.getByTechnicianId(technicianId),
-          db.jobPartsUsed.getByTechnician(technicianId),
-        ]);
+        const jobsResult = await db.jobs.getByTechnicianId(technicianId);
         const jobs = jobsResult.data || [];
-        const allPartsUsed = (partsResult.data || []) as any[];
         if (jobsResult.error) throw jobsResult.error;
-        if (partsResult.error) throw partsResult.error;
 
-        const completedJobs = (jobs as any[]).filter((j: any) => j.status === 'COMPLETED');
+        // Team jobs appear in getByTechnicianId for helpers — only count jobs THIS tech completed.
+        const completedJobs = (jobs as any[]).filter(
+          (j: any) => j.status === 'COMPLETED' && jobCompletedByTechnician(j, technicianId)
+        );
         let lastWorkingDayKey: string | null = null;
         completedJobs.forEach((job: any) => {
           const dateStr = job.completed_at || job.end_time;
@@ -120,6 +127,22 @@ const TechnicianTopUpDialog: React.FC<TechnicianTopUpDialogProps> = ({
           onOpenChange(false);
           return;
         }
+
+        const jobsOnLastDay = completedJobs.filter((job: any) => {
+          const dateStr = job.completed_at || job.end_time;
+          if (!dateStr) return false;
+          return toDateKey(new Date(dateStr)) === lastWorkingDayKey;
+        });
+        const jobIds = jobsOnLastDay.map((j: any) => String(j.id)).filter(Boolean);
+        const jobById = new Map(jobsOnLastDay.map((j: any) => [String(j.id), j]));
+
+        const partsResult = await db.jobPartsUsed.getByJobIdsForTopUp(jobIds);
+        if (partsResult.error) throw partsResult.error;
+        // Attach job (for hide flags / labels) — parts may still have old lead technician_id stamps.
+        const allPartsUsed = (partsResult.data || []).map((part: any) => ({
+          ...part,
+          job: jobById.get(String(part.job_id)) || null,
+        }));
 
         const getJob = (p: any) => unwrap(p.job);
         const getPartJobDayKey = (part: any): string | null => {

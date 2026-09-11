@@ -64,6 +64,15 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   job,
   technician
 }) => {
+  // Prefer job.completed_by so admin/team jobs stamp the completer, not always the lead.
+  const partsOwnerId = useMemo(() => {
+    const completedBy = String((job as any)?.completed_by || (job as any)?.completedBy || '').trim();
+    const techId = String(technician?.id || '').trim();
+    if (completedBy && techId && completedBy === techId) return techId;
+    if (completedBy) return completedBy;
+    return techId;
+  }, [job, technician?.id]);
+
   const [technicianInventory, setTechnicianInventory] = useState<TechnicianInventoryItem[]>([]);
   const [partsUsed, setPartsUsed] = useState<JobPartUsed[]>([]);
   const [addPartDialogOpen, setAddPartDialogOpen] = useState(false);
@@ -535,7 +544,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     try {
       const { data: newPart, error } = await db.jobPartsUsed.create({
         job_id: job.id,
-        technician_id: technician.id,
+        technician_id: partsOwnerId || technician.id,
         inventory_id: null,
         custom_name: name,
         quantity_used: qty,
@@ -648,14 +657,17 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         );
         if (existing) {
           const newQty = existing.quantity_used + qty;
-          await db.jobPartsUsed.update(existing.id, { quantity_used: newQty });
+          await db.jobPartsUsed.update(existing.id, {
+            quantity_used: newQty,
+            technician_id: partsOwnerId || technician.id,
+          });
           workingParts = workingParts.map(p =>
             p.id === existing.id ? { ...p, quantity_used: newQty, price_at_time_of_use: existing.price_at_time_of_use ?? price } : p
           );
         } else {
           const { data: newPart, error: createErr } = await db.jobPartsUsed.create({
             job_id: job.id,
-            technician_id: technician.id,
+            technician_id: partsOwnerId || technician.id,
             inventory_id: inventoryId,
             quantity_used: qty,
             price_at_time_of_use: price,
@@ -802,7 +814,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             const newQuantity = existingPart.quantity_used + 1;
             const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(
               existingPart.id,
-              { quantity_used: newQuantity }
+              { quantity_used: newQuantity, technician_id: partsOwnerId || technician.id }
             );
             if (updateError) throw updateError;
             nextParts = partsUsed.map(p =>
@@ -814,7 +826,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           } else {
             const { data: newPart, error: createError } = await db.jobPartsUsed.create({
               job_id: job.id,
-              technician_id: technician.id,
+              technician_id: partsOwnerId || technician.id,
               inventory_id: inventoryId,
               quantity_used: 1,
               price_at_time_of_use: currentPrice ?? 0,
@@ -860,7 +872,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         try {
           const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(
             existingPart.id,
-            { quantity_used: newQuantity }
+            { quantity_used: newQuantity, technician_id: partsOwnerId || technician.id }
           );
           if (updateError) throw updateError;
 
@@ -893,7 +905,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         try {
           const { data: newPart, error: createError } = await db.jobPartsUsed.create({
             job_id: job.id,
-            technician_id: technician.id,
+            technician_id: partsOwnerId || technician.id,
             inventory_id: inventoryId,
             quantity_used: 1,
             price_at_time_of_use: currentPrice ?? 0,
