@@ -114,16 +114,6 @@ export default function JobDistanceMeasurementDialog({
           <p className="text-sm text-muted-foreground pt-1">
             Driving distance from this technician&apos;s last location to this job. Use custom distance
             below to compare other stops or open a route in Google Maps.
-            {onRefreshLiveLocation ? (
-              <>
-                {' '}
-                Press <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-medium">Shift</kbd>
-                +
-                <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-medium">R</kbd>
-                {' '}
-                for their latest live location.
-              </>
-            ) : null}
           </p>
         </DialogHeader>
 
