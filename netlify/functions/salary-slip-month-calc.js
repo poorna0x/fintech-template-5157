@@ -502,7 +502,7 @@ async function loadMonthSalaryBreakdowns(db, opts) {
     db
       .from('jobs')
       .select(
-        'id, assigned_technician_id, end_time, completed_at, actual_cost, payment_amount'
+        'id, assigned_technician_id, completed_by, end_time, completed_at, actual_cost, payment_amount'
       )
       .eq('status', 'COMPLETED')
       .not('end_time', 'is', null)

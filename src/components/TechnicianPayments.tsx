@@ -520,7 +520,7 @@ const TechnicianPayments = () => {
         db.technicianAdvances.getAll(undefined, periodStartStr, periodEndStr),
         db.technicianExtraCommissions.getAll(undefined, periodStartStr, periodEndStr),
         db.technicianHolidays.getAll(undefined, periodStartStr, periodEndStr),
-        supabase.from('jobs').select('id, assigned_technician_id, end_time, completed_at, actual_cost, payment_amount')
+        supabase.from('jobs').select('id, assigned_technician_id, completed_by, end_time, completed_at, actual_cost, payment_amount')
           .eq('status', 'COMPLETED').not('end_time', 'is', null)
           .gte('end_time', startDate.toISOString()).lte('end_time', endDate.toISOString())
       ]);
