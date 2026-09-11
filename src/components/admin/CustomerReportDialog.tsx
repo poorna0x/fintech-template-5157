@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, type MutableRefObject } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +36,11 @@ interface CustomerReportDialogProps {
   onNavigateToCompletedJob?: (customer: Customer, job: Job) => void;
   /** When photo viewer is open above this dialog, ignore outside clicks/Escape on the report. */
   photoViewerOpen?: boolean;
+  /**
+   * Set true before closing the report for photo viewer suspend.
+   * Keeps loaded jobs so closing the photo does not refetch the report.
+   */
+  preserveDataRef?: MutableRefObject<boolean>;
 }
 
 const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
@@ -47,22 +52,29 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   onBillPhotosClick,
   onNavigateToCompletedJob,
   photoViewerOpen = false,
+  preserveDataRef,
 }) => {
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
   const [reviewRatings, setReviewRatings] = useState<Record<string, number>>({});
   const [deletedJobEvents, setDeletedJobEvents] = useState<CustomerJobDeleteEvent[]>([]);
+  const loadedCustomerIdRef = useRef<string | null>(null);
 
   const customerId = customer?.id;
 
   useEffect(() => {
     if (!open) {
+      // Photo viewer temporarily hides the report — keep jobs so reopen is instant.
+      if (preserveDataRef?.current) return;
+      loadedCustomerIdRef.current = null;
       setCustomerReportJobs([]);
       setReviewRatings({});
       setDeletedJobEvents([]);
       return;
     }
     if (!customerId) return;
+    // Already loaded for this customer (including resume after photo).
+    if (loadedCustomerIdRef.current === customerId) return;
 
     let cancelled = false;
     const loadCustomerReportJobs = async () => {
@@ -77,6 +89,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
           console.error('Error loading customer report jobs:', error);
         } else {
           setCustomerReportJobs(data || []);
+          loadedCustomerIdRef.current = customerId;
           const ids = (data || []).map((j: { id?: string }) => String(j.id || '')).filter(Boolean);
           if (ids.length) {
             const ratings = await fetchSubmittedJobReviewRatingsByJobIds(ids);
@@ -107,7 +120,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [open, customerId]);
+  }, [open, customerId, preserveDataRef]);
 
   if (!customer) return null;
 

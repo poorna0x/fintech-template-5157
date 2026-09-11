@@ -532,6 +532,7 @@ export function SettingsPendingPaymentsDialogV2({
   const [reportOpening, setReportOpening] = useState(false);
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
   const {
+    suspendedRef: reportPhotoSuspendRef,
     openSuspendedViewer,
     closeSuspendedViewer,
     ignoreParentDismissWhileSuspended,
@@ -1801,6 +1802,7 @@ export function SettingsPendingPaymentsDialogV2({
           <CustomerReportDialog
             open={reportDialogOpen}
             photoViewerOpen={reportPhotoViewerOpen}
+            preserveDataRef={reportPhotoSuspendRef}
             onOpenChange={(o) => {
               if (!o && ignoreParentDismissWhileSuspended()) return;
               setReportDialogOpen(o);

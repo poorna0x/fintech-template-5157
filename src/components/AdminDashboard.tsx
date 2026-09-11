@@ -7905,6 +7905,7 @@ const AdminDashboard = () => {
       <CustomerReportDialog
         open={customerReportDialogOpen}
         photoViewerOpen={reportPhotoViewerOpen}
+        preserveDataRef={reportPhotoSuspendRef}
         onOpenChange={bindAdminModalDismiss('report', () => {
           if (reportPhotoSuspendRef.current) return;
           setCustomerReportDialogOpen(false);
@@ -7967,8 +7968,11 @@ const AdminDashboard = () => {
           setReportViewerPhoto(null);
           setReportViewerBillPhotos(null);
           if (reportPhotoSuspendRef.current) {
-            reportPhotoSuspendRef.current = false;
+            // Keep preserve flag until after reopen so report skips refetch.
             setCustomerReportDialogOpen(true);
+            window.setTimeout(() => {
+              reportPhotoSuspendRef.current = false;
+            }, 0);
           }
         }}
         selectedPhoto={reportViewerPhoto}
@@ -8008,8 +8012,10 @@ const AdminDashboard = () => {
           setReportViewerPhoto(null);
           setReportViewerBillPhotos(null);
           if (reportPhotoSuspendRef.current) {
-            reportPhotoSuspendRef.current = false;
             setCustomerReportDialogOpen(true);
+            window.setTimeout(() => {
+              reportPhotoSuspendRef.current = false;
+            }, 0);
           }
         }}
       />

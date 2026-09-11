@@ -242,6 +242,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [reportSelectedPhoto, setReportSelectedPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
   const [reportSelectedBillPhotos, setReportSelectedBillPhotos] = useState<string[] | null>(null);
   const {
+    suspendedRef: reportPhotoSuspendRef,
     openSuspendedViewer,
     closeSuspendedViewer,
     ignoreParentDismissWhileSuspended,
@@ -1568,10 +1569,11 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       )}
 
       {/* Customer Report Dialog — suspend while photo viewer open for pinch/zoom */}
-      {customerReportDialogOpen && (
+      {selectedCustomerForReport && (
         <CustomerReportDialog
           open={customerReportDialogOpen}
           photoViewerOpen={reportPhotoViewerOpen}
+          preserveDataRef={reportPhotoSuspendRef}
           customer={selectedCustomerForReport}
           technicians={technicians}
           onOpenChange={(open) => {

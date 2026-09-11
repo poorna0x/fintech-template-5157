@@ -16,13 +16,17 @@ export function useSuspendDialogForPhotoViewer() {
   const closeSuspendedViewer = useCallback((reopenParent: () => void, clearViewer: () => void) => {
     clearViewer();
     if (!suspendedRef.current) return;
-    suspendedRef.current = false;
+    // Keep suspendedRef true until parent has reopened so report can skip refetch.
     reopenParent();
+    window.setTimeout(() => {
+      suspendedRef.current = false;
+    }, 0);
   }, []);
 
   const ignoreParentDismissWhileSuspended = useCallback(() => suspendedRef.current, []);
 
   return {
+    suspendedRef,
     openSuspendedViewer,
     closeSuspendedViewer,
     ignoreParentDismissWhileSuspended,
