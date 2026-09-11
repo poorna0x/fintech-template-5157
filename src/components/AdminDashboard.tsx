@@ -2000,12 +2000,13 @@ const AdminDashboard = () => {
   );
 
   const amcAutoCreateAttemptedRef = useRef(false);
-  const followUpPromoteDayRef = useRef<string | null>(null);
+  /** Last promote attempt (ms). Was once-per-calendar-day and skipped later opens in Admin APK. */
+  const followUpPromoteAtRef = useRef(0);
 
   const scheduleFollowUpPromotion = useCallback(
     () =>
       scheduleAdminFollowUpPromotion({
-        followUpPromoteDayRef,
+        followUpPromoteAtRef,
         statusFilter,
         currentPage,
         loadFilteredJobs,
@@ -2548,10 +2549,14 @@ const AdminDashboard = () => {
       // Denied / All: clear the previous tab's jobs so they don't flash before the fetch lands.
       setJobs([]);
     }
+    // Opening Follow-up tab re-runs promote (throttled) so due jobs don't stay stuck after first open.
+    if (statusFilter === 'FOLLOW_UP' || statusFilter === 'RESCHEDULED') {
+      scheduleFollowUpPromotion();
+    }
     loadFilteredJobs(statusFilter, page);
     // Refresh counts when filter changes
       loadJobCounts();
-  }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad, getJobsListCacheKey, tabCachesStale]);
+  }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad, getJobsListCacheKey, tabCachesStale, scheduleFollowUpPromotion]);
 
   const previousFollowUpDisplaySettingsRef = useRef(followUpDisplaySettings);
   useEffect(() => {

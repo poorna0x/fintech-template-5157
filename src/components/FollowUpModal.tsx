@@ -71,7 +71,7 @@ export default function FollowUpModal({
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [selectedParentFollowUp, setSelectedParentFollowUp] = useState<string | null>(null);
   const [rescheduleFollowUpId, setRescheduleFollowUpId] = useState<string | null>(null);
-  const [autoMoveToOngoingOnDate, setAutoMoveToOngoingOnDate] = useState(false);
+  const [autoMoveToOngoingOnDate, setAutoMoveToOngoingOnDate] = useState(true);
   const [addAmcReminder, setAddAmcReminder] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const reasonInputRef = useRef<HTMLInputElement>(null);
@@ -102,7 +102,12 @@ export default function FollowUpModal({
       setReason(initialDraft?.followUpReason || '');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
-      setAutoMoveToOngoingOnDate(hasAutoMoveToOngoingOnDate((job as any).requirements));
+      // Default ON; if this job already has an explicit auto-move preference, keep it.
+      const reqs = (job as any).requirements;
+      const hasKey =
+        Array.isArray(reqs) &&
+        reqs.some((r: any) => r && Object.prototype.hasOwnProperty.call(r, 'auto_move_to_ongoing_on_date'));
+      setAutoMoveToOngoingOnDate(hasKey ? hasAutoMoveToOngoingOnDate(reqs) : true);
       setAddAmcReminder(
         typeof initialDraft?.addAmcReminder === 'boolean'
           ? initialDraft.addAmcReminder
@@ -112,7 +117,7 @@ export default function FollowUpModal({
       setExistingFollowUps([]);
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
-      setAutoMoveToOngoingOnDate(false);
+      setAutoMoveToOngoingOnDate(true);
       setAddAmcReminder(false);
     }
   }, [isOpen, job, initialDraft]);
@@ -276,7 +281,7 @@ export default function FollowUpModal({
       setReason('');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
-      setAutoMoveToOngoingOnDate(false);
+      setAutoMoveToOngoingOnDate(true);
       setAddAmcReminder(false);
       
       // Reload follow-ups
@@ -506,7 +511,7 @@ export default function FollowUpModal({
                       Auto move to Ongoing on follow-up day
                     </Label>
                     <p className="text-xs text-muted-foreground leading-snug">
-                      When checked, this job moves to Ongoing as unassigned on the follow-up date when you open admin.
+                      When checked, this job moves to Ongoing as unassigned on the follow-up date (checked when you open admin or the Follow-up tab).
                     </p>
                   </div>
                 </div>

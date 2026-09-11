@@ -10,29 +10,39 @@ import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
 import { db, supabase } from '@/lib/supabase';
 import type { Job } from '@/types';
 
+/** Re-check often enough that a follow-up set after first open still promotes (Admin APK keeps SPA state). */
+const FOLLOW_UP_PROMOTE_THROTTLE_MS = 45_000;
+
 export function scheduleAdminFollowUpPromotion(ctx: {
-  followUpPromoteDayRef: MutableRefObject<string | null>;
+  followUpPromoteAtRef: MutableRefObject<number>;
   statusFilter: AdminStatusFilter;
   currentPage: number;
   loadFilteredJobs: LoadFilteredJobsFn;
   setAllFollowUpJobs: Dispatch<SetStateAction<Job[]>>;
 }) {
+  const now = Date.now();
+  if (now - ctx.followUpPromoteAtRef.current < FOLLOW_UP_PROMOTE_THROTTLE_MS) return;
+  ctx.followUpPromoteAtRef.current = now;
+
   const today = getTodayLocalDate();
-  if (ctx.followUpPromoteDayRef.current === today) return;
-  ctx.followUpPromoteDayRef.current = today;
 
   supabase.auth
     .getSession()
     .then(({ data: { session } }) => {
       if (!session) {
-        ctx.followUpPromoteDayRef.current = null;
+        ctx.followUpPromoteAtRef.current = 0;
         return;
       }
       db.jobs.promoteDueFollowUpsToOngoing(today).then((result) => {
         if (result.error) {
           console.error('Error promoting due follow-up jobs:', result.error);
-          ctx.followUpPromoteDayRef.current = null;
+          ctx.followUpPromoteAtRef.current = 0;
           return;
+        }
+        if (result.failed && result.failed > 0) {
+          console.error('Some follow-up promotions failed:', result.failed, result.errors);
+          // Allow retry soon when updates failed (e.g. transient RLS/session).
+          ctx.followUpPromoteAtRef.current = 0;
         }
         if (result.promoted > 0) {
           toast.success(
@@ -51,7 +61,7 @@ export function scheduleAdminFollowUpPromotion(ctx: {
       });
     })
     .catch(() => {
-      ctx.followUpPromoteDayRef.current = null;
+      ctx.followUpPromoteAtRef.current = 0;
     });
 }
 

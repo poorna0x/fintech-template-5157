@@ -3503,24 +3503,40 @@ export const db = {
         .in('status', ['FOLLOW_UP', 'RESCHEDULED'])
         .not('follow_up_date', 'is', null)
         .lte('follow_up_date', today)
-        .limit(100);
+        // Newest due first so today's opted-in jobs aren't dropped behind old AMC follow-ups.
+        .order('follow_up_date', { ascending: false })
+        .limit(200);
 
-      if (error) return { promoted: 0, jobIds: [] as string[], error };
-      if (!data?.length) return { promoted: 0, jobIds: [] as string[], error: null };
+      if (error) return { promoted: 0, failed: 0, jobIds: [] as string[], errors: [] as string[], error };
+      if (!data?.length) {
+        return { promoted: 0, failed: 0, jobIds: [] as string[], errors: [] as string[], error: null };
+      }
 
       const jobIds: string[] = [];
+      const errors: string[] = [];
       for (const row of data) {
         const patch = buildPromoteFollowUpJobPatch(row);
         if (!patch) continue;
         const { error: updateError } = await supabase.from('jobs').update(patch).eq('id', row.id);
-        if (!updateError) jobIds.push(row.id);
+        if (!updateError) {
+          jobIds.push(row.id);
+        } else {
+          errors.push(`${row.id}: ${updateError.message}`);
+          console.error('promoteDueFollowUpsToOngoing update failed', row.id, updateError);
+        }
       }
 
       if (jobIds.length > 0) {
         cacheInvalidate('job_counts_v1');
       }
 
-      return { promoted: jobIds.length, jobIds, error: null };
+      return {
+        promoted: jobIds.length,
+        failed: errors.length,
+        jobIds,
+        errors,
+        error: null,
+      };
     },
 
     /** Analytics only: selective columns. Omit `limit` to fetch every job (paginated). Pass `limit` for capped on-demand reports. */

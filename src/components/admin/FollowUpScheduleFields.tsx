@@ -111,7 +111,7 @@ export function FollowUpScheduleFields({
             Auto move to Ongoing on follow-up day
           </Label>
           <p className="text-xs leading-snug text-muted-foreground">
-            When checked, this job moves to Ongoing as unassigned on the follow-up date when you open admin.
+            When checked, this job moves to Ongoing as unassigned on the follow-up date (checked when you open admin or the Follow-up tab).
           </p>
         </div>
       </div>
