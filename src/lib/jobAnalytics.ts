@@ -17,7 +17,27 @@ export type JobBillingFields = JobCompletionFields & {
   actual_cost?: number | string | null;
   payment_method?: string | null;
   requirements?: unknown;
+  completed_by?: string | null;
+  completedBy?: string | null;
+  assigned_technician_id?: string | null;
+  assignedTechnicianId?: string | null;
 };
+
+/**
+ * Who owns billing / commission for a completed job.
+ * Prefer completer (team helper who finished), else lead assignee — never all team_members.
+ */
+export function resolveJobBillingTechnicianId(job: {
+  completed_by?: string | null;
+  completedBy?: string | null;
+  assigned_technician_id?: string | null;
+  assignedTechnicianId?: string | null;
+}): string | null {
+  const completedBy = String(job.completed_by || job.completedBy || '').trim();
+  if (completedBy) return completedBy;
+  const assigned = String(job.assigned_technician_id || job.assignedTechnicianId || '').trim();
+  return assigned || null;
+}
 
 /** Prefer end_time, then completed_at — same as analytics_job_completed_at(). */
 export function getJobCompletedAt(job: JobCompletionFields): Date | null {

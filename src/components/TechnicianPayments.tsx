@@ -14,6 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { resolveJobBillingTechnicianId } from '@/lib/jobAnalytics';
 import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download, Users as UsersIcon, Filter, Loader2 } from 'lucide-react';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
@@ -581,7 +582,7 @@ const TechnicianPayments = () => {
           return d >= monthStartStr && d <= monthEndStr;
         });
         const techCompletedJobsForCommission = completedJobsData.filter((j: any) => {
-          if (j.assigned_technician_id !== techId) return false;
+          if (resolveJobBillingTechnicianId(j) !== techId) return false;
           const completionDate = j.end_time || j.completed_at;
           if (!completionDate) return false;
           const d = formatDateString(new Date(completionDate));
@@ -589,8 +590,9 @@ const TechnicianPayments = () => {
         });
 
         let totalCommission = techPaymentsForCommission.reduce((sum: number, payment: TechnicianPayment) => sum + (payment.commission_amount || 0), 0);
-        const jobsWithPayments = new Set(techPaymentsForCommission.map((p: TechnicianPayment) => p.job_id));
-        const jobsWithoutPayments = techCompletedJobsForCommission.filter((j: any) => !jobsWithPayments.has(j.id));
+        // Any payment row for the job (even another tech) means no fallback 10% — avoids double-pay on team jobs.
+        const jobsWithAnyPayment = new Set(paymentsData.map((p: TechnicianPayment) => p.job_id));
+        const jobsWithoutPayments = techCompletedJobsForCommission.filter((j: any) => !jobsWithAnyPayment.has(j.id));
         totalCommission += jobsWithoutPayments.reduce((sum: number, job: any) => {
           const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
           return sum + (billAmount * 0.10);
@@ -725,11 +727,13 @@ const TechnicianPayments = () => {
 
         const techPayments = paymentsData.filter((p: TechnicianPayment) => p.technician_id === techId);
         const techPaymentsForCommission = paymentsData.filter((p: TechnicianPayment) => p.technician_id === techId);
-        const techCompletedJobsForCommission = completedJobsData.filter((j: any) => j.assigned_technician_id === techId);
+        const techCompletedJobsForCommission = completedJobsData.filter(
+          (j: any) => resolveJobBillingTechnicianId(j) === techId
+        );
 
         let totalCommission = techPaymentsForCommission.reduce((sum: number, payment: TechnicianPayment) => sum + (payment.commission_amount || 0), 0);
-        const jobsWithPayments = new Set(techPaymentsForCommission.map((p: TechnicianPayment) => p.job_id));
-        const jobsWithoutPayments = techCompletedJobsForCommission.filter((j: any) => !jobsWithPayments.has(j.id));
+        const jobsWithAnyPayment = new Set(paymentsData.map((p: TechnicianPayment) => p.job_id));
+        const jobsWithoutPayments = techCompletedJobsForCommission.filter((j: any) => !jobsWithAnyPayment.has(j.id));
         totalCommission += jobsWithoutPayments.reduce((sum: number, job: any) => {
           const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
           return sum + (billAmount * 0.10);
@@ -764,7 +768,9 @@ const TechnicianPayments = () => {
           billingSlabCommission;
 
         const techHolidays = holidaysData.filter((h: TechnicianHoliday) => h.technician_id === techId);
-        const techCompletedJobs = completedJobsData.filter((j: any) => j.assigned_technician_id === techId);
+        const techCompletedJobs = completedJobsData.filter(
+          (j: any) => resolveJobBillingTechnicianId(j) === techId
+        );
         const datesWithJobs = new Set<string>();
         const dailyBillingForHolidays = new Map<string, number>();
         techCompletedJobs.forEach((job: any) => {

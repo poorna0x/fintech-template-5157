@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   isJobCompletedInRange,
   resolveJobBillingAmount,
+  resolveJobBillingTechnicianId,
   resolveJobPaymentBreakdown,
 } from '@/lib/jobAnalytics';
 import { getLeadSourceFromJob, normalizeLeadType } from '@/lib/adminUtils';
@@ -170,14 +171,21 @@ const BillingStats = () => {
       const jobs = (data || []).filter((job: any) =>
         isJobCompletedInRange(job, startDate, endDate)
       );
+
+      // Names for completer when completed_by ≠ assigned (team jobs).
+      const { data: techRows } = await db.technicians.getList(500, { activeRosterOnly: false });
+      const techById = new Map<string, { full_name?: string; fullName?: string; employee_id?: string; employeeId?: string }>();
+      (techRows || []).forEach((t: any) => {
+        if (t?.id) techById.set(String(t.id), t);
+      });
       
-      // Group by technician
+      // Group by technician (completer, else assignee — not every team member)
       const techTotals: Record<string, TechnicianBilling> = {};
       const qrTotals: Record<string, QRCodeBilling> = {};
       const leadTotals: Record<string, LeadTypeBilling> = {};
       
       jobs.forEach((job: any) => {
-        const techId = job.assigned_technician_id;
+        const techId = resolveJobBillingTechnicianId(job);
         const paymentMethod = job.payment_method || 'OTHER';
         const { total: amount, cash: cashAmount, qr: qrAmount, other: otherAmount } =
           resolveJobPaymentBreakdown(job);
@@ -185,10 +193,23 @@ const BillingStats = () => {
         // Technician billing
         if (techId) {
           if (!techTotals[techId]) {
+            const fromList = techById.get(techId);
+            const fromEmbed =
+              job.assigned_technician_id === techId || job.technician?.id === techId
+                ? job.technician
+                : null;
             techTotals[techId] = {
               technicianId: techId,
-              technicianName: job.technician?.full_name || 'Unknown',
-              employeeId: job.technician?.employee_id || '',
+              technicianName:
+                fromList?.full_name ||
+                fromList?.fullName ||
+                fromEmbed?.full_name ||
+                'Unknown',
+              employeeId:
+                fromList?.employee_id ||
+                fromList?.employeeId ||
+                fromEmbed?.employee_id ||
+                '',
               totalBilling: 0,
               cashAmount: 0,
               qrAmount: 0,

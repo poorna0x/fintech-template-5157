@@ -199,16 +199,18 @@ function buildSingleMonthSalaryBreakdown(opts) {
 
   const techPayments = payments.filter((p) => p.technician_id === techId);
   const techCompletedJobsForCommission = completedJobs.filter(
-    (j) => j.assigned_technician_id === techId
+    (j) =>
+      String(j.completed_by || '').trim() === techId ||
+      (!String(j.completed_by || '').trim() && j.assigned_technician_id === techId)
   );
 
   let totalCommission = techPayments.reduce(
     (sum, payment) => sum + (payment.commission_amount || 0),
     0
   );
-  const jobsWithPayments = new Set(techPayments.map((p) => p.job_id));
+  const jobsWithAnyPayment = new Set(payments.map((p) => p.job_id));
   const jobsWithoutPayments = techCompletedJobsForCommission.filter(
-    (j) => !jobsWithPayments.has(j.id)
+    (j) => !jobsWithAnyPayment.has(j.id)
   );
   totalCommission += jobsWithoutPayments.reduce((sum, job) => {
     const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);

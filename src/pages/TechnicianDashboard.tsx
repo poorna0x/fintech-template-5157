@@ -1284,8 +1284,7 @@ const TechnicianDashboard = () => {
 
   /**
    * Fetch the technician's own completed jobs for a given month so they can
-   * see the total billing they generated. Only counts jobs assigned to them
-   * (matches admin-side billing total in TechnicianPayments).
+   * see the total billing they generated. Credits completer (else assignee).
    */
   const loadBillingForMonth = useCallback(async (monthDate: Date) => {
     const technicianId = user?.technicianId;
@@ -1299,9 +1298,9 @@ const TechnicianDashboard = () => {
       const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1);
       const { data, error } = await supabase
         .from('jobs')
-        .select('id,actual_cost,payment_amount')
-        .eq('assigned_technician_id', technicianId)
+        .select('id,actual_cost,payment_amount,assigned_technician_id,completed_by')
         .eq('status', 'COMPLETED')
+        .or(`completed_by.eq.${technicianId},assigned_technician_id.eq.${technicianId}`)
         .gte('completed_at', monthStart.toISOString())
         .lt('completed_at', monthEnd.toISOString())
         .limit(500);
@@ -1310,7 +1309,11 @@ const TechnicianDashboard = () => {
         console.error('Error loading billing for month:', error);
         setBillingJobs([]);
       } else {
-        setBillingJobs(data || []);
+        const mine = (data || []).filter((j: any) => {
+          const credit = String(j.completed_by || '').trim() || String(j.assigned_technician_id || '').trim();
+          return credit === technicianId;
+        });
+        setBillingJobs(mine);
       }
     } catch (e) {
       console.error('Error loading billing for month:', e);
@@ -5664,11 +5667,14 @@ const TechnicianDashboard = () => {
         const reqsForRetry = stripCompletionDraftMarkers(
           parseJobRequirementsArray(latestForRetry?.requirements)
         );
+        const completerTechnicianId = user?.technicianId || user?.id || null;
         const phaseBRetry = {
           status: 'COMPLETED' as const,
           end_time: new Date().toISOString(),
           completed_at: new Date().toISOString(),
-          completed_by: user?.id || user?.technicianId || null,
+          completed_by: completerTechnicianId,
+          // Team jobs: billing/commission follow assignee — stamp completer so lead is not credited.
+          assigned_technician_id: completerTechnicianId,
           requirements: JSON.stringify(reqsForRetry),
           raw_water_tds: rawWaterTdsForJobComplete(isSoftenerService(), rawWaterTds),
         };
@@ -5755,12 +5761,15 @@ const TechnicianDashboard = () => {
           }
         }
         
+        const completerTechnicianId = user?.technicianId || user?.id || null;
         const updateData: any = {
           status: 'COMPLETED',
           end_time: new Date().toISOString(),
           completion_notes: completionNotes.trim(),
-          completed_by: user?.id || user?.technicianId || null,
+          completed_by: completerTechnicianId,
           completed_at: new Date().toISOString(),
+          // Team jobs: move assignee to who completed so Billing/Payments credit one tech only.
+          assigned_technician_id: completerTechnicianId,
           service_brand: serviceBrand,
           actual_cost: Number.isFinite(parsedBill) ? parsedBill : 0,
           payment_amount: paymentAmount,
@@ -6111,12 +6120,14 @@ const TechnicianDashboard = () => {
           /* never let bookkeeping break submit */
         }
 
+        const completerTechnicianId = user?.technicianId || user?.id || null;
         const reqsForPhaseB = stripCompletionDraftMarkers(requirementsBeforeDraft);
         const phaseBData = {
           status: 'COMPLETED' as const,
           end_time: new Date().toISOString(),
           completed_at: new Date().toISOString(),
-          completed_by: user?.id || user?.technicianId || null,
+          completed_by: completerTechnicianId,
+          assigned_technician_id: completerTechnicianId,
           requirements: JSON.stringify(reqsForPhaseB),
           raw_water_tds: rawWaterTdsForJobComplete(isSoftenerService(), rawWaterTds),
         };

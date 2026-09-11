@@ -3672,6 +3672,7 @@ export const db = {
             payment_method,
             status,
             assigned_technician_id,
+            completed_by,
             lead_cost,
             parts_cost_total,
             completed_at,
