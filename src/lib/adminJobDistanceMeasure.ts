@@ -41,6 +41,7 @@ export type AdminJobDistanceMeasureCtx = {
   setDistanceMeasurementDialogOpen: Dispatch<SetStateAction<boolean>>;
   setTechnicianDistances: Dispatch<SetStateAction<JobTechnicianDistanceRow[]>>;
   setIsCalculatingDistances: Dispatch<SetStateAction<boolean>>;
+  setIsRefreshingLiveLocation?: Dispatch<SetStateAction<boolean>>;
 };
 
 export async function resolveAdminJobCoordsForMeasure(
@@ -520,7 +521,7 @@ export async function openAdminJobDistanceMeasure(
 
 /**
  * Shift+R on measure-distance: ping the assigned tech for a live fix, then recalculate.
- * Loader only — no map widget.
+ * Loader only — no map widget. Does not run on normal open.
  */
 export async function refreshAdminJobDistanceLiveLocation(ctx: AdminJobDistanceMeasureCtx) {
   const job = ctx.selectedJobForDistance;
@@ -535,6 +536,7 @@ export async function refreshAdminJobDistanceLiveLocation(ctx: AdminJobDistanceM
     return;
   }
 
+  ctx.setIsRefreshingLiveLocation?.(true);
   ctx.setIsCalculatingDistances(true);
   ctx.setTechnicianDistances((prev) =>
     prev.map((row) =>
@@ -560,9 +562,12 @@ export async function refreshAdminJobDistanceLiveLocation(ctx: AdminJobDistanceM
       toast.dismiss(loadingId);
       toast.warning('No fresh fix yet — recalculating with last known location…');
     }
+    // Normal distance calc copy from here (not “Getting latest…”).
+    ctx.setIsRefreshingLiveLocation?.(false);
     await openAdminJobDistanceMeasure(job, ctx);
   } catch (e: any) {
     toast.dismiss(loadingId);
+    ctx.setIsRefreshingLiveLocation?.(false);
     ctx.setIsCalculatingDistances(false);
     toast.error(e?.message || 'Failed to refresh technician location');
   }

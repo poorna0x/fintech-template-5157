@@ -1083,6 +1083,7 @@ const AdminDashboard = () => {
   const [selectedJobForDistance, setSelectedJobForDistance] = useState<Job | null>(null);
   const [technicianDistances, setTechnicianDistances] = useState<JobTechnicianDistanceRow[]>([]);
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false);
+  const [isRefreshingLiveLocation, setIsRefreshingLiveLocation] = useState(false);
   /** Manual pair: technician (`__tech__`) or job id — driving distance only when user clicks Calculate */
   const [customDistanceFromId, setCustomDistanceFromId] = useState<string>('');
   const [customDistanceToId, setCustomDistanceToId] = useState<string>('');
@@ -5618,6 +5619,7 @@ const AdminDashboard = () => {
       setDistanceMeasurementDialogOpen,
       setTechnicianDistances,
       setIsCalculatingDistances,
+      setIsRefreshingLiveLocation,
     }),
     [
       technicians,
@@ -8272,11 +8274,13 @@ const AdminDashboard = () => {
           if (!open) {
             setIsLoadingCustomDistance(false);
             setIsOpeningCustomDistanceMaps(false);
+            setIsRefreshingLiveLocation(false);
           }
         }}
         selectedJob={selectedJobForDistance}
         technicianDistances={technicianDistances}
         isCalculatingDistances={isCalculatingDistances}
+        isRefreshingLiveLocation={isRefreshingLiveLocation}
         measureStopOptions={getMeasureStopSelectOptions()}
         customDistanceFromId={customDistanceFromId}
         customDistanceToId={customDistanceToId}

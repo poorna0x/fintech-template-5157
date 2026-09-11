@@ -43,6 +43,8 @@ type JobDistanceMeasurementDialogProps = {
   selectedJob: Job | null;
   technicianDistances: JobTechnicianDistanceRow[];
   isCalculatingDistances: boolean;
+  /** True only while Shift+R live GPS refresh is in progress. */
+  isRefreshingLiveLocation?: boolean;
   measureStopOptions: MeasureStopOption[];
   customDistanceFromId: string;
   customDistanceToId: string;
@@ -53,7 +55,7 @@ type JobDistanceMeasurementDialogProps = {
   customDistanceResult: JobCustomDistanceResult | null;
   onCalculateCustomDistance: () => void;
   onOpenCustomDistanceInMaps: () => void;
-  /** Shift+R — ping assigned tech for live GPS, then recalculate (loader only). */
+  /** Shift+R while dialog is open — ping assigned tech for live GPS, then recalculate. */
   onRefreshLiveLocation?: () => void;
 };
 
@@ -63,6 +65,7 @@ export default function JobDistanceMeasurementDialog({
   selectedJob,
   technicianDistances,
   isCalculatingDistances,
+  isRefreshingLiveLocation = false,
   measureStopOptions,
   customDistanceFromId,
   customDistanceToId,
@@ -75,8 +78,9 @@ export default function JobDistanceMeasurementDialog({
   onOpenCustomDistanceInMaps,
   onRefreshLiveLocation,
 }: JobDistanceMeasurementDialogProps) {
+  const busy = isCalculatingDistances || isRefreshingLiveLocation;
   const customDistanceDisabled =
-    isCalculatingDistances ||
+    busy ||
     isLoadingCustomDistance ||
     isOpeningCustomDistanceMaps ||
     !customDistanceFromId ||
@@ -92,12 +96,12 @@ export default function JobDistanceMeasurementDialog({
       const tag = target?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) return;
       e.preventDefault();
-      if (isCalculatingDistances) return;
+      if (busy) return;
       onRefreshLiveLocation();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onRefreshLiveLocation, isCalculatingDistances]);
+  }, [open, onRefreshLiveLocation, busy]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -124,10 +128,14 @@ export default function JobDistanceMeasurementDialog({
         </DialogHeader>
 
         <div className="mt-4 min-w-0">
-          {isCalculatingDistances ? (
+          {isCalculatingDistances || isRefreshingLiveLocation ? (
             <div className="flex flex-col items-center justify-center gap-2 py-8">
               <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
-              <span className="text-gray-600">Getting location / calculating…</span>
+              <span className="text-gray-600">
+                {isRefreshingLiveLocation
+                  ? 'Getting latest location…'
+                  : 'Calculating distances...'}
+              </span>
             </div>
           ) : technicianDistances.length === 0 ? (
             <div className="text-center py-8 text-gray-500">No technicians found</div>
@@ -263,7 +271,7 @@ export default function JobDistanceMeasurementDialog({
               <Select
                 value={customDistanceFromId}
                 onValueChange={onCustomDistanceFromChange}
-                disabled={!selectedJob || isCalculatingDistances}
+                disabled={!selectedJob || busy}
               >
                 <SelectTrigger id="measure-from" className="w-full max-w-full">
                   <SelectValue placeholder="Choose start" />
@@ -282,7 +290,7 @@ export default function JobDistanceMeasurementDialog({
               <Select
                 value={customDistanceToId}
                 onValueChange={onCustomDistanceToChange}
-                disabled={!selectedJob || isCalculatingDistances}
+                disabled={!selectedJob || busy}
               >
                 <SelectTrigger id="measure-to" className="w-full max-w-full">
                   <SelectValue placeholder="Choose end" />
