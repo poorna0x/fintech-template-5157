@@ -351,7 +351,7 @@ export async function openAdminJobDistanceMeasure(
     durationValue: number
   ) => {
     let estimatedArrival: string | undefined;
-    if (techLocation?.lastUpdated && durationValue > 0 && distanceValue > 200) {
+    if (techLocation?.lastUpdated && durationValue > 0 && distanceValue > 700) {
       try {
         const lastUpdatedDate = new Date(techLocation.lastUpdated);
         estimatedArrival = formatTime12Hour(
