@@ -149,6 +149,9 @@ export function buildPromoteFollowUpJobPatch(jobRow: {
 
   if (requirements.length > 0) {
     patch.requirements = requirements;
+  } else {
+    // Clear flag-only requirements so auto_move doesn't linger after promote.
+    patch.requirements = [];
   }
 
   return patch;

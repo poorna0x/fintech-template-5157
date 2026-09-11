@@ -4517,6 +4517,7 @@ const TechnicianDashboard = () => {
 
   const handleFollowUpSubmit = async (jobId: string, followUpData: {
     followUpDate: string;
+    followUpTime?: string;
     followUpReason: string;
     parentFollowUpId?: string;
     rescheduleFollowUpId?: string;
@@ -4538,6 +4539,7 @@ const TechnicianDashboard = () => {
       const { error: jobError } = await db.jobs.update(jobId, {
         status: 'FOLLOW_UP',
         follow_up_date: followUpData.followUpDate,
+        follow_up_time: followUpData.followUpTime || null,
         follow_up_notes: followUpData.followUpReason || '',
         follow_up_scheduled_by: user?.id || null,
         follow_up_scheduled_at: new Date().toISOString(),
@@ -4555,7 +4557,8 @@ const TechnicianDashboard = () => {
         const { error: rescheduleError } = await supabase
           .from('follow_ups')
           .update({
-            scheduled_date: followUpData.followUpDate,
+            follow_up_date: followUpData.followUpDate,
+            follow_up_time: followUpData.followUpTime || null,
             reason: followUpData.followUpReason,
             updated_at: new Date().toISOString()
           })
@@ -4572,7 +4575,8 @@ const TechnicianDashboard = () => {
           .from('follow_ups')
           .insert({
             job_id: jobId,
-            scheduled_date: followUpData.followUpDate,
+            follow_up_date: followUpData.followUpDate,
+            follow_up_time: followUpData.followUpTime || null,
             reason: followUpData.followUpReason,
             parent_follow_up_id: followUpData.parentFollowUpId || null,
             scheduled_by: user?.id || null,
@@ -4593,6 +4597,8 @@ const TechnicianDashboard = () => {
               ...job, 
               status: 'FOLLOW_UP',
               followUpDate: followUpData.followUpDate,
+              followUpTime: followUpData.followUpTime || null,
+              follow_up_time: followUpData.followUpTime || null,
               followUpNotes: followUpData.followUpReason || '',
               followUpScheduledBy: user?.id || 'technician',
               followUpScheduledAt: new Date().toISOString(),
@@ -4612,9 +4618,9 @@ const TechnicianDashboard = () => {
   };
 
   const handleMoveToOngoing = (job: Job) => {
-    // Set default values to current date and time
+    // Set default values to current date and time (local calendar, not UTC)
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const currentHour = now.getHours();
     
     // Determine time slot based on current time
