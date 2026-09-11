@@ -546,7 +546,6 @@ export async function refreshAdminJobDistanceLiveLocation(ctx: AdminJobDistanceM
     )
   );
 
-  const loadingId = toast.loading('Getting latest technician location…');
   try {
     const fix = await requestTechnicianFreshLocation(techId);
     if (fix) {
@@ -556,17 +555,11 @@ export async function refreshAdminJobDistanceLiveLocation(ctx: AdminJobDistanceM
         fix.longitude,
         fix.accuracy
       );
-      toast.dismiss(loadingId);
-      toast.success('Live location updated — recalculating…');
-    } else {
-      toast.dismiss(loadingId);
-      toast.warning('No fresh fix yet — recalculating with last known location…');
     }
     // Normal distance calc copy from here (not “Getting latest…”).
     ctx.setIsRefreshingLiveLocation?.(false);
     await openAdminJobDistanceMeasure(job, ctx);
   } catch (e: any) {
-    toast.dismiss(loadingId);
     ctx.setIsRefreshingLiveLocation?.(false);
     ctx.setIsCalculatingDistances(false);
     toast.error(e?.message || 'Failed to refresh technician location');
