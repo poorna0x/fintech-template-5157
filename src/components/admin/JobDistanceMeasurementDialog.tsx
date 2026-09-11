@@ -53,6 +53,8 @@ type JobDistanceMeasurementDialogProps = {
   customDistanceResult: JobCustomDistanceResult | null;
   onCalculateCustomDistance: () => void;
   onOpenCustomDistanceInMaps: () => void;
+  /** Shift+R — ping assigned tech for live GPS, then recalculate (loader only). */
+  onRefreshLiveLocation?: () => void;
 };
 
 export default function JobDistanceMeasurementDialog({
@@ -71,6 +73,7 @@ export default function JobDistanceMeasurementDialog({
   customDistanceResult,
   onCalculateCustomDistance,
   onOpenCustomDistanceInMaps,
+  onRefreshLiveLocation,
 }: JobDistanceMeasurementDialogProps) {
   const customDistanceDisabled =
     isCalculatingDistances ||
@@ -79,6 +82,22 @@ export default function JobDistanceMeasurementDialog({
     !customDistanceFromId ||
     !customDistanceToId ||
     customDistanceFromId === customDistanceToId;
+
+  React.useEffect(() => {
+    if (!open || !onRefreshLiveLocation) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.shiftKey) return;
+      if (e.key !== 'R' && e.key !== 'r') return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) return;
+      e.preventDefault();
+      if (isCalculatingDistances) return;
+      onRefreshLiveLocation();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onRefreshLiveLocation, isCalculatingDistances]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,14 +110,24 @@ export default function JobDistanceMeasurementDialog({
           <p className="text-sm text-muted-foreground pt-1">
             Driving distance from this technician&apos;s last location to this job. Use custom distance
             below to compare other stops or open a route in Google Maps.
+            {onRefreshLiveLocation ? (
+              <>
+                {' '}
+                Press <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-medium">Shift</kbd>
+                +
+                <kbd className="rounded border bg-muted px-1.5 py-0.5 text-xs font-medium">R</kbd>
+                {' '}
+                for their latest live location.
+              </>
+            ) : null}
           </p>
         </DialogHeader>
 
         <div className="mt-4 min-w-0">
           {isCalculatingDistances ? (
-            <div className="flex items-center justify-center py-8">
-              <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-              <span className="text-gray-600">Calculating distances...</span>
+            <div className="flex flex-col items-center justify-center gap-2 py-8">
+              <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
+              <span className="text-gray-600">Getting location / calculating…</span>
             </div>
           ) : technicianDistances.length === 0 ? (
             <div className="text-center py-8 text-gray-500">No technicians found</div>

@@ -162,6 +162,7 @@ import {
   getAdminMeasureStopSelectOptions,
   openAdminCustomDistanceInGoogleMaps,
   openAdminJobDistanceMeasure,
+  refreshAdminJobDistanceLiveLocation,
   type AdminJobDistanceMeasureCtx,
 } from '@/lib/adminJobDistanceMeasure';
 import { runAdminDashboardSessionBootstrap } from '@/lib/adminDashboardSessionBootstrap';
@@ -5632,6 +5633,11 @@ const AdminDashboard = () => {
     [jobDistanceMeasureCtx]
   );
 
+  const handleRefreshMeasureLiveLocation = useCallback(
+    () => refreshAdminJobDistanceLiveLocation(jobDistanceMeasureCtx),
+    [jobDistanceMeasureCtx]
+  );
+
   const calculateCustomDistanceBetweenStops = useCallback(
     () => calculateAdminCustomDistanceBetweenStops(jobDistanceMeasureCtx),
     [jobDistanceMeasureCtx]
@@ -8281,6 +8287,7 @@ const AdminDashboard = () => {
         customDistanceResult={customDistanceResult}
         onCalculateCustomDistance={() => void calculateCustomDistanceBetweenStops()}
         onOpenCustomDistanceInMaps={() => void openCustomDistanceInGoogleMaps()}
+        onRefreshLiveLocation={() => void handleRefreshMeasureLiveLocation()}
       />
 
     </div>

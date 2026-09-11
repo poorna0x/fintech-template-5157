@@ -14,6 +14,10 @@ import {
   formatRouteStopLabel,
   formatTime12Hour,
 } from '@/lib/adminRouteMeasureHelpers';
+import {
+  mirrorLiveFixToTechnicianCurrentLocation,
+  requestTechnicianFreshLocation,
+} from '@/lib/adminTechLiveLocationRefresh';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 import type {
@@ -511,6 +515,56 @@ export async function openAdminJobDistanceMeasure(
       // ignore
     }
     toast.error(`Failed to calculate distances: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Shift+R on measure-distance: ping the assigned tech for a live fix, then recalculate.
+ * Loader only — no map widget.
+ */
+export async function refreshAdminJobDistanceLiveLocation(ctx: AdminJobDistanceMeasureCtx) {
+  const job = ctx.selectedJobForDistance;
+  if (!job) {
+    toast.error('Open measure distance on a job first.');
+    return;
+  }
+  const techId =
+    String((job as any).assigned_technician_id || (job as any).assignedTechnicianId || '').trim();
+  if (!techId) {
+    toast.error('No technician assigned to this job.');
+    return;
+  }
+
+  ctx.setIsCalculatingDistances(true);
+  ctx.setTechnicianDistances((prev) =>
+    prev.map((row) =>
+      row.technician.id === techId || row.isAssigned
+        ? { ...row, isCalculating: true, distance: '', duration: '' }
+        : row
+    )
+  );
+
+  const loadingId = toast.loading('Getting latest technician location…');
+  try {
+    const fix = await requestTechnicianFreshLocation(techId);
+    if (fix) {
+      await mirrorLiveFixToTechnicianCurrentLocation(
+        techId,
+        fix.latitude,
+        fix.longitude,
+        fix.accuracy
+      );
+      toast.dismiss(loadingId);
+      toast.success('Live location updated — recalculating…');
+    } else {
+      toast.dismiss(loadingId);
+      toast.warning('No fresh fix yet — recalculating with last known location…');
+    }
+    await openAdminJobDistanceMeasure(job, ctx);
+  } catch (e: any) {
+    toast.dismiss(loadingId);
+    ctx.setIsCalculatingDistances(false);
+    toast.error(e?.message || 'Failed to refresh technician location');
   }
 }
 
