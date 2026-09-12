@@ -134,17 +134,21 @@ const PayUpi = () => {
 
   const rawQr = shortLink?.qrCodeUrl || params.get('qr') || '';
   const qrCodeUrl = rawQr && rawQr !== '[object Object]' ? rawQr.trim() : '';
-
-  const dynamicParam = params.get('dyn') ?? params.get('dynamic');
-  const isDynamicUpi =
-    shortLink?.dynamicUpiEnabled !== undefined
-      ? Boolean(shortLink.dynamicUpiEnabled)
-      : dynamicParam !== null
-        ? dynamicParam !== '0' && dynamicParam !== 'false'
-        : !qrCodeUrl;
+  const staticImgRef = useRef<HTMLImageElement>(null);
 
   const validUpi = isValidUpiId(pa);
   const hasStaticQr = Boolean(qrCodeUrl);
+
+  const dynamicParam = params.get('dyn') ?? params.get('dynamic');
+  const isDynamicUpi =
+    !validUpi && hasStaticQr
+      ? false
+      : shortLink?.dynamicUpiEnabled !== undefined
+        ? Boolean(shortLink.dynamicUpiEnabled)
+        : dynamicParam !== null
+          ? dynamicParam !== '0' && dynamicParam !== 'false'
+          : !qrCodeUrl;
+
   const valid = isDynamicUpi ? validUpi : validUpi || hasStaticQr;
   const brandLabel = getDocumentBrandLabel(brand);
 
@@ -223,6 +227,14 @@ const PayUpi = () => {
     return `${safeBrand}-upi-pay${amt}.${ext}`;
   }, [brand, am, isDynamicUpi]);
 
+  useEffect(() => {
+    if (!isDynamicUpi && qrCodeUrl) {
+      if (staticImgRef.current?.complete && staticImgRef.current.naturalWidth > 0) {
+        setQrReady(true);
+      }
+    }
+  }, [isDynamicUpi, qrCodeUrl]);
+
   const handleCopy = async (field: 'upi' | 'phone', value: string) => {
     setCopyError(false);
     const ok = await copyText(value);
@@ -243,10 +255,28 @@ const PayUpi = () => {
       }
       const res = await fetch(fetchUrl);
       if (res.ok) return await res.blob();
-      return null;
     } catch {
-      return null;
+      // Fallback to canvas
     }
+    try {
+      const img = staticImgRef.current;
+      if (img && img.naturalWidth > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const blob = await new Promise<Blob | null>((resolve) =>
+            canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.95)
+          );
+          if (blob) return blob;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+    return null;
   };
 
   const handleDownloadQr = async () => {
@@ -462,10 +492,13 @@ const PayUpi = () => {
               />
             ) : qrCodeUrl ? (
               <img
+                ref={staticImgRef}
+                crossOrigin="anonymous"
                 src={qrCodeUrl}
                 alt="UPI payment QR"
-                className="max-h-[220px] max-w-[220px] object-contain rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm"
+                className="max-h-[240px] max-w-[240px] object-contain rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm"
                 onLoad={() => setQrReady(true)}
+                onError={() => setQrReady(false)}
               />
             ) : (
               <div className="flex h-[120px] w-full max-w-[260px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center">
@@ -483,7 +516,9 @@ const PayUpi = () => {
             {isDynamicUpi
               ? 'Open any UPI app and scan this QR — amount and payee fill in automatically.'
               : qrCodeUrl
-                ? 'Open any UPI app (GPay, PhonePe, Paytm, etc.) and scan this QR to complete the payment.'
+                ? amountLabel
+                  ? `Open any UPI app (GPay, PhonePe, Paytm, etc.), scan this QR, and enter ${amountLabel} to complete the payment.`
+                  : 'Open any UPI app (GPay, PhonePe, Paytm, etc.) and scan this QR to complete the payment.'
                 : 'Copy the UPI ID or phone number above to complete the payment in your UPI app.'}
           </p>
 

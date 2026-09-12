@@ -242,7 +242,34 @@ export default function QuickUpiQrGenerator() {
   };
 
   const downloadQr = async () => {
-    if (!selectedAccount || !qrAmount || downloading) return;
+    if (!selectedAccount || downloading) return;
+    if (selectedAccount.dynamicUpiEnabled === false) {
+      if (!selectedAccount.qrCodeUrl) {
+        toast.error('No QR image uploaded for this account');
+        return;
+      }
+      setDownloading(true);
+      try {
+        let fetchUrl = selectedAccount.qrCodeUrl;
+        if (selectedAccount.qrCodeUrl.includes('res.cloudinary.com') && /\.webp($|\?)/i.test(selectedAccount.qrCodeUrl)) {
+          fetchUrl = selectedAccount.qrCodeUrl.replace(/\.webp($|\?)/i, '.jpg$1');
+        }
+        const res = await fetch(fetchUrl);
+        if (!res.ok) throw new Error('Fetch failed');
+        const blob = await res.blob();
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${brand}-static-qr.jpg`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      } catch {
+        window.open(selectedAccount.qrCodeUrl, '_blank');
+      } finally {
+        setDownloading(false);
+      }
+      return;
+    }
+    if (!qrAmount) return;
     setDownloading(true);
     try {
       const generated = await generateUpiQrPngBase64(
@@ -291,7 +318,7 @@ export default function QuickUpiQrGenerator() {
               <SelectContent>
                 {accounts.map((account) => (
                   <SelectItem key={account.id} value={account.id}>
-                    {account.label} · {account.upiId}
+                    {account.label} {account.dynamicUpiEnabled === false ? '(Static QR)' : account.upiId ? `· ${account.upiId}` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -479,17 +506,33 @@ export default function QuickUpiQrGenerator() {
         </div>
 
         <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-3">
-          {selectedAccount && qrAmount ? (
-            <DynamicUpiQrDisplay
-              key={`${selectedAccount.id}-${qrAmount}-${brand}`}
-              upiId={selectedAccount.upiId}
-              payeeName={selectedAccount.payeeName || selectedAccount.label}
-              phone={selectedAccount.phone}
-              amount={qrAmount}
-              note={paymentNote}
-              label={selectedAccount.label}
-              size={230}
-            />
+          {selectedAccount && (qrAmount || selectedAccount.dynamicUpiEnabled === false) ? (
+            selectedAccount.dynamicUpiEnabled === false && selectedAccount.qrCodeUrl ? (
+              <div className="flex flex-col items-center gap-2">
+                <img
+                  src={selectedAccount.qrCodeUrl}
+                  alt={selectedAccount.label}
+                  className="max-h-56 max-w-56 rounded-lg border bg-white p-2 object-contain shadow-sm"
+                />
+                <span className="text-xs text-muted-foreground font-medium">Static QR Standee / Scanner</span>
+              </div>
+            ) : qrAmount ? (
+              <DynamicUpiQrDisplay
+                key={`${selectedAccount.id}-${qrAmount}-${brand}`}
+                upiId={selectedAccount.upiId}
+                payeeName={selectedAccount.payeeName || selectedAccount.label}
+                phone={selectedAccount.phone}
+                amount={qrAmount}
+                note={paymentNote}
+                label={selectedAccount.label}
+                size={230}
+              />
+            ) : (
+              <div className="px-4 text-center text-sm text-muted-foreground">
+                <QrCode className="mx-auto mb-2 h-9 w-9 opacity-50" />
+                Enter an amount to generate the dynamic QR.
+              </div>
+            )
           ) : (
             <div className="px-4 text-center text-sm text-muted-foreground">
               <QrCode className="mx-auto mb-2 h-9 w-9 opacity-50" />
