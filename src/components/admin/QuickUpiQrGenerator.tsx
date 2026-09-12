@@ -506,16 +506,23 @@ export default function QuickUpiQrGenerator() {
         </div>
 
         <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-3">
-          {selectedAccount && (qrAmount || selectedAccount.dynamicUpiEnabled === false) ? (
-            selectedAccount.dynamicUpiEnabled === false && selectedAccount.qrCodeUrl ? (
-              <div className="flex flex-col items-center gap-2">
-                <img
-                  src={selectedAccount.qrCodeUrl}
-                  alt={selectedAccount.label}
-                  className="max-h-56 max-w-56 rounded-lg border bg-white p-2 object-contain shadow-sm"
-                />
-                <span className="text-xs text-muted-foreground font-medium">Static QR Standee / Scanner</span>
-              </div>
+          {selectedAccount ? (
+            selectedAccount.dynamicUpiEnabled === false ? (
+              selectedAccount.qrCodeUrl ? (
+                <div className="flex flex-col items-center gap-2">
+                  <img
+                    src={selectedAccount.qrCodeUrl}
+                    alt={selectedAccount.label}
+                    className="max-h-56 max-w-56 rounded-lg border bg-white p-2 object-contain shadow-sm"
+                  />
+                  <span className="text-xs text-muted-foreground font-medium">Static QR Standee / Scanner</span>
+                </div>
+              ) : (
+                <div className="px-4 text-center text-sm text-amber-700">
+                  <QrCode className="mx-auto mb-2 h-9 w-9 opacity-50" />
+                  Dynamic UPI is disabled for this account, but no static QR photo is uploaded.
+                </div>
+              )
             ) : qrAmount ? (
               <DynamicUpiQrDisplay
                 key={`${selectedAccount.id}-${qrAmount}-${brand}`}
