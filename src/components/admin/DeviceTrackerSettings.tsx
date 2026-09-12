@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Smartphone, RefreshCw, Trash2, Bell, PhoneCall, ChevronDown, ChevronUp } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { Smartphone, RefreshCw, Trash2, Bell, PhoneCall, ChevronDown, ChevronUp, MonitorSmartphone } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,10 +44,15 @@ import {
   writeDeviceTrackerCache,
 } from '@/lib/deviceTracker';
 import { syncDevicePrefsToNative } from '@/lib/devicePrefs';
-import { getThisAdminDeviceToken, updateCachedAdminCallAlerts } from '@/lib/adminPush';
+import {
+  enableAdminWebPush,
+  getThisAdminDeviceToken,
+  isAdminWebPushRegisteredLocally,
+  updateCachedAdminCallAlerts,
+} from '@/lib/adminPush';
 import { getThisTechnicianDeviceToken, updateCachedTechnicianCallAlerts } from '@/lib/technicianPush';
 import { syncDeviceCallPrefsPush } from '@/lib/syncDeviceCallPrefs';
-
+import { isPWAMode } from '@/lib/pwa';
 type Tab = 'admin' | 'technician';
 
 interface DeviceCardProps {
@@ -58,6 +64,9 @@ interface DeviceCardProps {
   updatedAt: string;
   pushEnabled: boolean;
   callAlertsEnabled: boolean;
+  /** Hide call-detect (native-only) for browser / PWA tokens. */
+  showCallDetect?: boolean;
+  platformLabel?: string | null;
   pushPrefs: AdminPushPrefs | TechPushPrefs;
   saving: boolean;
   onSaveName: (name: string) => void;
@@ -76,6 +85,8 @@ function DeviceCard({
   updatedAt,
   pushEnabled,
   callAlertsEnabled,
+  showCallDetect = true,
+  platformLabel,
   pushPrefs,
   saving,
   onSaveName,
@@ -117,6 +128,14 @@ function DeviceCard({
           />
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>{ownerLabel}</span>
+            {platformLabel ? (
+              <>
+                <span>·</span>
+                <Badge variant="secondary" className="text-[10px] font-normal">
+                  {platformLabel}
+                </Badge>
+              </>
+            ) : null}
             {deviceModel ? (
               <>
                 <span>·</span>
@@ -139,7 +158,7 @@ function DeviceCard({
               {enabledCount}/{totalCount} types on
             </Badge>
           ) : null}
-          {!callAlertsEnabled ? (
+          {showCallDetect && !callAlertsEnabled ? (
             <Badge variant="outline" className="text-[10px] text-muted-foreground">
               Call detect off
             </Badge>
@@ -158,7 +177,7 @@ function DeviceCard({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className={`grid gap-3 ${showCallDetect ? 'sm:grid-cols-2' : ''}`}>
         <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
           <div className="min-w-0 space-y-0.5">
             <Label className="text-sm font-medium flex items-center gap-1.5">
@@ -166,30 +185,32 @@ function DeviceCard({
               All push notifications
             </Label>
             <p className="text-xs text-muted-foreground leading-snug">
-              Master switch — turns off every push type on this phone.
+              Master switch — turns off every push type on this device.
             </p>
           </div>
           <Switch checked={pushEnabled} disabled={saving} onCheckedChange={onTogglePush} />
         </div>
 
-        <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
-          <div className="min-w-0 space-y-0.5">
-            <Label className="text-sm font-medium flex items-center gap-1.5">
-              <PhoneCall className="w-3.5 h-3.5" />
-              Detect calls on this phone
-            </Label>
-            <p className="text-xs text-muted-foreground leading-snug">
-              {kind === 'admin'
-                ? 'Whether this phone listens for rings (publish to shared search + report missed). Does not stop receiving call pushes — use “Customer call alerts” / “Wrong company-line calls” below for that.'
-                : 'Whether this phone reports customer rings and wrong-line outbound calls to admins. Off = this handset stops both detections.'}
-            </p>
+        {showCallDetect ? (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
+            <div className="min-w-0 space-y-0.5">
+              <Label className="text-sm font-medium flex items-center gap-1.5">
+                <PhoneCall className="w-3.5 h-3.5" />
+                Detect calls on this phone
+              </Label>
+              <p className="text-xs text-muted-foreground leading-snug">
+                {kind === 'admin'
+                  ? 'Whether this phone listens for rings (publish to shared search + report missed). Does not stop receiving call pushes — use “Customer call alerts” / “Wrong company-line calls” below for that.'
+                  : 'Whether this phone reports customer rings and wrong-line outbound calls to admins. Off = this handset stops both detections.'}
+              </p>
+            </div>
+            <Switch
+              checked={callAlertsEnabled}
+              disabled={saving}
+              onCheckedChange={onToggleCallAlerts}
+            />
           </div>
-          <Switch
-            checked={callAlertsEnabled}
-            disabled={saving}
-            onCheckedChange={onToggleCallAlerts}
-          />
-        </div>
+        ) : null}
       </div>
 
       <div className="rounded-md border border-border">
@@ -240,12 +261,15 @@ export function DeviceTrackerSettings() {
   const [sectionOpen, setSectionOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('admin');
   const [loading, setLoading] = useState(false);
+  const [enablingWebPush, setEnablingWebPush] = useState(false);
   const [adminDevices, setAdminDevices] = useState<AdminDeviceRow[]>(() => readDeviceTrackerCache()?.adminDevices ?? []);
   const [techDevices, setTechDevices] = useState<TechnicianDeviceRow[]>(() => readDeviceTrackerCache()?.techDevices ?? []);
   const [savingToken, setSavingToken] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{ kind: Tab; token: string; name: string } | null>(
     null
   );
+  const showWebPushEnable =
+    !Capacitor.isNativePlatform() && typeof window !== 'undefined' && 'Notification' in window;
 
   const applyDevices = useCallback((admins: AdminDeviceRow[], techs: TechnicianDeviceRow[]) => {
     setAdminDevices(admins);
@@ -280,6 +304,25 @@ export function DeviceTrackerSettings() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const handleEnableWebPush = async () => {
+    setEnablingWebPush(true);
+    try {
+      const result = await enableAdminWebPush();
+      if (result.ok) {
+        toast.success(
+          isPWAMode()
+            ? 'Browser / Home Screen notifications enabled for this device'
+            : 'Browser notifications enabled — this device appears below'
+        );
+        await refresh({ force: true });
+      } else {
+        toast.error(result.message);
+      }
+    } finally {
+      setEnablingWebPush(false);
+    }
+  };
 
   const patchAdmin = async (
     token: string,
@@ -445,8 +488,8 @@ export function DeviceTrackerSettings() {
               </CardTitle>
               <CardDescription className="text-sm mt-1">
                 {sectionOpen
-                  ? 'Every admin and technician phone — rename, mute all push, or turn individual types on/off (WhatsApp inbox, job status, calls, cash check, etc.). List is cached for this session; tap Load when someone registers a new phone.'
-                  : 'Admin and technician phones — push types, WhatsApp, calls. Tap to open.'}
+                  ? 'Every admin phone, Home Screen PWA, and technician phone — rename, mute all push, or turn individual types on/off. List is cached for this session; tap Load when someone registers a new device.'
+                  : 'Admin and technician devices — push types, WhatsApp, calls. Tap to open.'}
               </CardDescription>
             </button>
             <Button
@@ -475,7 +518,7 @@ export function DeviceTrackerSettings() {
               className="flex-1 sm:flex-none"
               onClick={() => setTab('admin')}
             >
-              Admin phones ({adminDevices.length})
+              Admin ({adminDevices.length})
             </Button>
             <Button
               type="button"
@@ -488,12 +531,42 @@ export function DeviceTrackerSettings() {
             </Button>
           </div>
 
+          {tab === 'admin' && showWebPushEnable ? (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-3">
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-sm font-medium flex items-center gap-1.5">
+                  <MonitorSmartphone className="w-4 h-4 shrink-0" />
+                  This browser / Home Screen
+                </p>
+                <p className="text-xs text-muted-foreground leading-snug">
+                  {isAdminWebPushRegisteredLocally()
+                    ? 'Already registered here — mute or change types on the card below (same as phones).'
+                    : 'Enable push on this Mac/PC or iPhone Home Screen app. iPhone: Add to Home Screen first, then open from that icon.'}
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                className="shrink-0"
+                disabled={enablingWebPush}
+                onClick={() => void handleEnableWebPush()}
+              >
+                {enablingWebPush ? (
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Bell className="w-4 h-4 mr-2" />
+                )}
+                {isAdminWebPushRegisteredLocally() ? 'Refresh registration' : 'Enable notifications'}
+              </Button>
+            </div>
+          ) : null}
+
           {loading && adminDevices.length === 0 && techDevices.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground text-sm">Loading devices…</div>
           ) : devices.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground text-sm">
               {tab === 'admin'
-                ? 'No admin phones registered yet. Open the HRO Admin app on a phone and allow notifications.'
+                ? 'No admin devices yet. Open the HRO Admin app on a phone, or tap Enable notifications above for this browser / Home Screen.'
                 : 'No technician phones registered yet. Technicians need to open the HRO Technician app while logged in.'}
             </div>
           ) : tab === 'admin' ? (
@@ -509,6 +582,8 @@ export function DeviceTrackerSettings() {
                   updatedAt={device.updated_at}
                   pushEnabled={device.push_enabled}
                   callAlertsEnabled={device.call_alerts_enabled}
+                  showCallDetect={device.platform !== 'web'}
+                  platformLabel={device.platform === 'web' ? 'Browser / PWA' : 'Android app'}
                   pushPrefs={device.push_prefs}
                   saving={isSaving(device.token)}
                   onSaveName={(name) => void patchAdmin(device.token, { display_name: name }, 'Name saved')}
@@ -516,7 +591,7 @@ export function DeviceTrackerSettings() {
                     void patchAdmin(
                       device.token,
                       { push_enabled: enabled },
-                      enabled ? 'Push enabled' : 'All push muted on this phone'
+                      enabled ? 'Push enabled' : 'All push muted on this device'
                     )
                   }
                   onToggleCallAlerts={(enabled) =>

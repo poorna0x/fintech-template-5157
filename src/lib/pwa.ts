@@ -9,6 +9,8 @@ interface RegisterOptions {
   swUrl: string;
   scope: string;
   label: string;
+  /** When true, register even in Vite DEV (needed for local Admin web push). */
+  allowInDev?: boolean;
 }
 
 const registrationPromises = new Map<string, Promise<ServiceWorkerRegistration | null>>();
@@ -53,8 +55,8 @@ if (typeof window !== 'undefined') {
   initGlobalInstallPromptHandler();
 }
 
-const registerPWA = ({ swUrl, scope, label }: RegisterOptions) => {
-  if (import.meta.env.DEV) {
+const registerPWA = ({ swUrl, scope, label, allowInDev }: RegisterOptions) => {
+  if (import.meta.env.DEV && !allowInDev) {
     return Promise.resolve(null);
   }
 
@@ -155,8 +157,22 @@ export const registerAdminPWA = () => {
     swUrl: '/admin-sw.js',
     scope: '/admin/',
     label: 'Admin PWA',
+    // Local web-push needs an active SW; admin SW does not precache HTML.
+    allowInDev: true,
   });
 };
+
+/** Awaitable Admin SW registration (for FCM web getToken). */
+export async function ensureAdminServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+  if (!('serviceWorker' in navigator)) return null;
+  try {
+    const existing = await navigator.serviceWorker.getRegistration('/admin/');
+    if (existing) return existing;
+  } catch {
+    /* fall through */
+  }
+  return registerAdminPWA();
+}
 
 let whereManifestObjectUrl: string | null = null;
 

@@ -35,14 +35,13 @@ function viewingPhoneFromActivity(): string | null {
   return digits || null;
 }
 
-/** Native prefs + this device's FCM row only (desktop must not mute Admin phones). */
+/** Native prefs + this device's FCM row only (desktop/PWA + Admin APK). */
 async function syncViewingWhatsAppPresence(phone: string | null): Promise<void> {
   const next = phone ? String(phone).replace(/\D/g, '') : '';
   const normalized = next || null;
   if (lastSyncedViewingPhone === normalized) return;
   lastSyncedViewingPhone = normalized;
   void setNativeViewingWhatsAppPhone(normalized);
-  if (!Capacitor.isNativePlatform()) return;
   try {
     const { data } = await supabase.auth.getSession();
     const userId = data.session?.user?.id;

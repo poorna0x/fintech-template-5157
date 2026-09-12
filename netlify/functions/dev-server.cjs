@@ -248,6 +248,9 @@ const server = http.createServer((req, res) => {
     handler = loadFn('tech-office-status');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-tray-clear-push')) {
     handler = whatsappTrayClearPush;
+  } else if (req.url.startsWith('/.netlify/functions/admin-web-push-config')) {
+    delete require.cache[require.resolve('./admin-auth-guard')];
+    handler = loadFn('admin-web-push-config');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-inbox-apply-to-customer')) {
     delete require.cache[require.resolve('./resolve-maps-link')];
     delete require.cache[require.resolve('./whatsapp-location-enrich')];

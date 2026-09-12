@@ -6,6 +6,8 @@ import {
   normalizeTechPushPrefs,
 } from '@/lib/pushNotificationPrefs';
 
+export type AdminPushPlatform = 'android' | 'web';
+
 export interface DeviceRow {
   token: string;
   display_name: string | null;
@@ -14,6 +16,7 @@ export interface DeviceRow {
   call_alerts_enabled: boolean;
   push_prefs: AdminPushPrefs | TechPushPrefs;
   updated_at: string;
+  platform?: AdminPushPlatform | string | null;
 }
 
 export interface AdminDeviceRow extends DeviceRow {
@@ -36,7 +39,10 @@ export type TechnicianDevicePatch = Partial<
   Pick<TechnicianDeviceRow, 'display_name' | 'push_enabled' | 'call_alerts_enabled' | 'push_prefs'>
 >;
 
-const DEVICE_COLUMNS =
+const ADMIN_DEVICE_COLUMNS =
+  'token,display_name,device_model,push_enabled,call_alerts_enabled,push_prefs,updated_at,platform';
+
+const TECH_DEVICE_COLUMNS =
   'token,display_name,device_model,push_enabled,call_alerts_enabled,push_prefs,updated_at';
 
 const DEVICE_TRACKER_CACHE_KEY = 'hro_device_tracker_cache_v1';
@@ -133,10 +139,19 @@ export function registrationDeviceName(
 }
 
 export async function loadAdminDevices(): Promise<AdminDeviceRow[]> {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('admin_push_tokens')
-    .select(`${DEVICE_COLUMNS},user_id`)
+    .select(`${ADMIN_DEVICE_COLUMNS},user_id`)
     .order('updated_at', { ascending: false });
+  // Older DBs before platform column.
+  if (error && String(error.message || '').toLowerCase().includes('platform')) {
+    const retry = await supabase
+      .from('admin_push_tokens')
+      .select(`${TECH_DEVICE_COLUMNS},user_id`)
+      .order('updated_at', { ascending: false });
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) throw error;
 
   const rows = (data || []) as AdminDeviceRow[];
@@ -145,6 +160,7 @@ export async function loadAdminDevices(): Promise<AdminDeviceRow[]> {
 
   return rows.map((row, i) => ({
     ...row,
+    platform: row.platform === 'web' ? 'web' : 'android',
     push_enabled: row.push_enabled !== false,
     call_alerts_enabled: row.call_alerts_enabled !== false,
     push_prefs: normalizeAdminPushPrefs(row.push_prefs),
@@ -156,7 +172,7 @@ export async function loadAdminDevices(): Promise<AdminDeviceRow[]> {
 export async function loadTechnicianDevices(): Promise<TechnicianDeviceRow[]> {
   const { data, error } = await supabase
     .from('technician_push_tokens')
-    .select(`${DEVICE_COLUMNS},technician_id`)
+    .select(`${TECH_DEVICE_COLUMNS},technician_id`)
     .order('updated_at', { ascending: false });
   if (error) throw error;
 

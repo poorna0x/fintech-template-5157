@@ -1,16 +1,54 @@
-const STATIC_CACHE = 'admin-static-v6';
-const RUNTIME_CACHE = 'admin-runtime-v6';
+const STATIC_CACHE = 'admin-static-v7';
+const RUNTIME_CACHE = 'admin-runtime-v7';
 
 /** Do not precache HTML — cached index.html keeps old /assets/* hashes and breaks after deploy. */
 const PRECACHE_URLS = [];
+
+/** Public Firebase web config (same project as Admin APK FCM). Not a secret. */
+const FIREBASE_WEB_CONFIG = {
+  apiKey: 'AIzaSyCI7rzGrVWoiu5RYJHEfCn0GdzM6Zy_dKo',
+  authDomain: 'hydrogenro-otp.firebaseapp.com',
+  projectId: 'hydrogenro-otp',
+  messagingSenderId: '449481461674',
+  appId: '1:449481461674:web:9dd16bfe8de5d4d42325d3',
+};
+
+try {
+  importScripts(
+    'https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js',
+    'https://www.gstatic.com/firebasejs/12.14.0/firebase-messaging-compat.js'
+  );
+  firebase.initializeApp(FIREBASE_WEB_CONFIG);
+  const messaging = firebase.messaging();
+  // Data-only payloads (rare) — notification+data payloads are shown by the browser/FCM.
+  messaging.onBackgroundMessage((payload) => {
+    const title =
+      (payload.notification && payload.notification.title) ||
+      (payload.data && (payload.data.title || payload.data.Title)) ||
+      'Hydrogen RO';
+    const body =
+      (payload.notification && payload.notification.body) ||
+      (payload.data && (payload.data.body || payload.data.Body || payload.data.message)) ||
+      '';
+    const data = payload.data || {};
+    return self.registration.showNotification(title, {
+      body,
+      icon: '/favicon-32x32.png',
+      badge: '/favicon-32x32.png',
+      data,
+    });
+  });
+} catch (err) {
+  console.warn('[Admin PWA] Firebase messaging SW init skipped:', err);
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then(async (cache) => {
       await Promise.all(
         PRECACHE_URLS.map((url) =>
-          cache.add(url).catch((err) => {
-            console.warn('[Admin PWA] Precache skipped:', url, err);
+          cache.add(url).catch((addErr) => {
+            console.warn('[Admin PWA] Precache skipped:', url, addErr);
           })
         )
       );
@@ -35,6 +73,33 @@ self.addEventListener('activate', (event) => {
       .then(() => {
         console.log('[Admin PWA] Service worker activated');
       })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
+  event.waitUntil(
+    (async () => {
+      const all = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+      for (const client of all) {
+        if (client.url && client.url.includes('/admin') && 'focus' in client) {
+          try {
+            client.postMessage({ type: 'ADMIN_PUSH_CLICK', data });
+          } catch {
+            /* ignore */
+          }
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow('/admin');
+      }
+      return undefined;
+    })()
   );
 });
 
