@@ -68,8 +68,8 @@ function buildTemplatePayload(to, templateName, languageCode, bodyParams, header
 function templateUsesDynamicPayNowUrl(name) {
   const n = String(name || '');
   return (
-    /svc_balance_due_letter_(ero|hro)_(img_v?\d*|v(?:[4-9]|10))$/i.test(n) ||
-    /svc_balance_due_letter_(ero|hro)_img_/i.test(n) ||
+    /svc_balance_due_letter_(ero|hro|wfs)_(img_v?\d*|v(?:[4-9]|10|\d+))$/i.test(n) ||
+    /svc_balance_due_letter_(ero|hro|wfs)_img_/i.test(n) ||
     /svc_payment_overdue_notice_(ero|hro)_v\d+$/i.test(n)
   );
 }
@@ -191,6 +191,20 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
     push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
     push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
+    push('svc_balance_due', [name, amount]);
+  }
+
+  // Balance-due WFS (Water Filter Service) IMAGE header -> WFS text letter -> ERO img v5 -> ERO v9 -> svc_balance_due
+  if (/^svc_balance_due_letter_wfs_img_/i.test(primaryName)) {
+    const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
+    const imgHeaders = Array.isArray(headerComponents) ? headerComponents : [];
+    push('svc_balance_due_letter_wfs_v1', bodyParams.slice(0, 4).map(String));
+    push('svc_balance_due_letter_ero_img_v5', bodyParams.slice(0, 4).map(String), imgHeaders);
+    push('svc_balance_due_letter_ero_v9', bodyParams.slice(0, 4).map(String));
+    push('svc_balance_due', [name, amount]);
+  } else if (/^svc_balance_due_letter_wfs_/i.test(primaryName)) {
+    const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
+    push('svc_balance_due_letter_ero_v9', bodyParams.slice(0, 4).map(String));
     push('svc_balance_due', [name, amount]);
   }
 

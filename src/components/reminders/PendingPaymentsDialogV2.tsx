@@ -962,7 +962,7 @@ export function SettingsPendingPaymentsDialogV2({
   };
 
   const brandForCustomer = (customerId: string | null | undefined): DocumentBrand =>
-    normalizeDocumentBrand(customerId ? brandByCustomerId[customerId] : null) || 'hydrogenro';
+    resolvePendingPaymentMessageBrand(customerId ? brandByCustomerId[customerId] : null);
 
   const syncUpiAccountsFromStorage = async () => {
     const { accounts: next } = await fetchUpiPaymentAccounts();

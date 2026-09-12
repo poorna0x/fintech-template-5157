@@ -224,6 +224,7 @@ import {
 } from '@/lib/save-amc-contract';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
 import { normalizeDocumentBrand, getDocumentBrandLabel, type DocumentBrand } from '@/lib/service-brands';
+import { resolvePendingPaymentMessageBrand } from '@/lib/pendingPaymentReminder';
 import { getTechnicianIdCardUrl } from '@/lib/technician-id-card';
 import type { Customer } from '@/types';
 import TechnicianCustomerUpdateDialog, {
@@ -9905,7 +9906,7 @@ const TechnicianDashboard = () => {
                             }
                             return parseMoneyAmount(billAmount) || 0;
                           })()}
-                          brand={normalizeDocumentBrand(serviceBrand) || 'hydrogenro'}
+                          brand={resolvePendingPaymentMessageBrand(serviceBrand)}
                           customerPhone={
                             (selectedJobForComplete?.customer as { phone?: string } | undefined)
                               ?.phone ||

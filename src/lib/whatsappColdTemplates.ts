@@ -21,8 +21,8 @@ export const WA_COLD = {
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
   pending_payment: {
-    /** Prefer resolvePendingPaymentLetterTemplateName / Image — HRO v7 is default alias target. */
-    name: 'svc_balance_due_letter_hro_v9',
+    /** Prefer resolvePendingPaymentLetterTemplateName / Image — ERO is default alias target. */
+    name: 'svc_balance_due_letter_ero_v9',
     language: 'en',
     /** {{1}}=name, {{2}}=amount, {{3}}=due, {{4}}=invoice/job */
     bodyParams: (
@@ -39,7 +39,7 @@ export const WA_COLD = {
   },
   /** Due + 1 day overdue notice — prior arrangements void; advance non-refundable. */
   payment_overdue: {
-    name: 'svc_payment_overdue_notice_hro_v3',
+    name: 'svc_payment_overdue_notice_ero_v3',
     language: 'en',
     /** {{1}}=name, {{2}}=amount, {{3}}=due, {{4}}=invoice/job */
     bodyParams: (

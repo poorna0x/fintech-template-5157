@@ -13,6 +13,7 @@ import {
   buildPendingPaymentLetterBodyParams,
   pendingPaymentTemplateFallbackNames,
   resolvePendingPaymentLetterTemplateName,
+  resolvePendingPaymentMessageBrand,
   resolvePendingPaymentOverdueTemplateName,
 } from '@/lib/pendingPaymentReminder';
 import { waBrandBookingUrl, waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
@@ -763,10 +764,10 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_balance_due',
     label: 'Balance due',
     group: 'payment',
-    templateName: 'svc_balance_due_letter_hro_v9',
+    templateName: 'svc_balance_due_letter_ero_v9',
     language: 'en',
     resolveTemplateName: (ctx) =>
-      resolvePendingPaymentLetterTemplateName(ctx.brand || 'hydrogenro', { withPayButton: true }),
+      resolvePendingPaymentLetterTemplateName(resolvePendingPaymentMessageBrand(ctx.brand), { withPayButton: true }),
     bodyParams: (ctx) =>
       buildPendingPaymentLetterBodyParams(
         cleanName(ctx),
@@ -780,12 +781,10 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_payment_overdue',
     label: 'Payment overdue',
     group: 'payment',
-    templateName: 'svc_payment_overdue_notice_hro_v3',
+    templateName: 'svc_payment_overdue_notice_ero_v3',
     language: 'en',
     resolveTemplateName: (ctx) =>
-      resolvePendingPaymentOverdueTemplateName(
-        (ctx.brand === 'elevenro' ? 'elevenro' : 'hydrogenro') as 'hydrogenro' | 'elevenro'
-      ),
+      resolvePendingPaymentOverdueTemplateName(resolvePendingPaymentMessageBrand(ctx.brand)),
     bodyParams: (ctx) =>
       buildPendingPaymentLetterBodyParams(
         cleanName(ctx),

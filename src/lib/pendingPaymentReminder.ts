@@ -73,9 +73,13 @@ export function formatPendingPaymentDueLabel(dueDateYmd: string | null | undefin
   }
 }
 
-/** Resolve brand for pending-payment WhatsApp (defaults to Hydrogen RO when unknown). */
+/** Resolve brand for pending-payment WhatsApp (defaults to Eleven RO; never Hydrogen RO). */
 export function resolvePendingPaymentMessageBrand(value: unknown): DocumentBrand {
-  return normalizeDocumentBrand(value) || 'hydrogenro';
+  const brand = normalizeDocumentBrand(value);
+  if (!brand || brand === 'hydrogenro') {
+    return 'elevenro';
+  }
+  return brand;
 }
 
 export type PendingPaymentWhatsAppUpiOptions = {
@@ -104,32 +108,37 @@ export function resolvePendingPaymentLetterTemplateName(
   brand: DocumentBrand,
   opts?: { withPayButton?: boolean; withReview?: boolean }
 ): string {
+  const resolved = resolvePendingPaymentMessageBrand(brand);
   if (opts?.withPayButton && opts?.withReview) {
-    return resolveBrandLetterTemplateName('balance_due', brand, 'v10');
+    return resolveBrandLetterTemplateName('balance_due', resolved, 'v10');
   }
   if (opts?.withPayButton) {
-    return resolveBrandLetterTemplateName('balance_due', brand, 'v9');
+    return resolveBrandLetterTemplateName('balance_due', resolved, 'v9');
   }
-  return resolveBrandLetterTemplateName('balance_due', brand, 'v3');
+  return resolveBrandLetterTemplateName('balance_due', resolved, 'v3');
 }
 
 /** IMAGE header lean QR — no Call/Email/Website in body. */
 export function resolvePendingPaymentLetterImageTemplateName(brand: DocumentBrand): string {
-  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  const suffix = resolved === 'elevenro' ? 'ero' : 'hro';
   return `svc_balance_due_letter_${suffix}_img_v5`;
 }
 
 export function resolvePendingPaymentLetterImageTemplateFallbackName(brand: DocumentBrand): string {
-  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  const suffix = resolved === 'elevenro' ? 'ero' : 'hro';
   return `svc_balance_due_letter_${suffix}_img_v4`;
 }
 
 export function resolvePendingPaymentLetterTemplateFallbackName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('balance_due', brand, 'v8');
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  return resolveBrandLetterTemplateName('balance_due', resolved, 'v8');
 }
 
 export function resolvePendingPaymentLetterTemplateLegacyName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('balance_due', brand, 'v1');
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  return resolveBrandLetterTemplateName('balance_due', resolved, 'v1');
 }
 
 /** Approved-name candidates for inbox quick-reply filter (image → letter → short). */
@@ -267,7 +276,8 @@ export function isPendingPaymentPastDueForOverdueNotice(
 
 /** Cold overdue notice — Call us + Pay now. Fallback: balance-due letter via cold-fallback. */
 export function resolvePendingPaymentOverdueTemplateName(brand: DocumentBrand): string {
-  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  const suffix = resolved === 'elevenro' ? 'ero' : 'hro';
   return `svc_payment_overdue_notice_${suffix}_v3`;
 }
 

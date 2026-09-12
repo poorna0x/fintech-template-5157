@@ -12,6 +12,7 @@ import {
   resolvePendingPaymentLetterImageTemplateFallbackName,
   resolvePendingPaymentLetterImageTemplateName,
   resolvePendingPaymentLetterTemplateName,
+  resolvePendingPaymentMessageBrand,
 } from '@/lib/pendingPaymentReminder';
 import {
   sendAdminWhatsAppMedia,
@@ -76,7 +77,7 @@ export async function sendPayQrWhatsApp(
     return { ok: false, error: 'UPI ID is missing or invalid, and no QR image provided' };
   }
 
-  const brand = input.brand === 'elevenro' ? 'elevenro' : 'hydrogenro';
+  const brand = resolvePendingPaymentMessageBrand(input.brand);
   const payeeName =
     String(input.payeeName || '').trim() || getDocumentBrandLabel(brand);
   const note = String(input.note || input.customerName || payeeName)

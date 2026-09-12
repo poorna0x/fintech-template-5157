@@ -1739,6 +1739,54 @@ function buildBalanceDueLetterImgV5Templates() {
 const BALANCE_DUE_LETTER_IMG_V5_TEMPLATES = buildBalanceDueLetterImgV5Templates();
 
 /**
+ * Balance-due letter / image with "Water Filter Service" (no Hydrogen RO name).
+ * Call us: 9880693311 · Website / Pay now: elevenro.com.
+ */
+function buildBalanceDueLetterWfsTemplates() {
+  return [
+    {
+      callPhone: CALL_PHONE_ELEVEN,
+      websiteUrl: 'https://elevenro.com',
+      payUrl: 'https://elevenro.com/p/{{1}}',
+      name: 'svc_balance_due_letter_wfs_v1',
+      body: [
+        'Hi {{1}}, 👋',
+        'This is an update from Water Filter Service regarding your pending payment for water purifier service. 💧',
+        '',
+        '💰 Amount pending: INR {{2}}',
+        '📅 Due date: {{3}}',
+        '🧾 Invoice / Job: {{4}}',
+        '',
+        '💳 Tap Pay now below or reply on this chat if you have already paid.',
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    },
+    {
+      callPhone: CALL_PHONE_ELEVEN,
+      websiteUrl: 'https://elevenro.com',
+      payUrl: 'https://elevenro.com/p/{{1}}',
+      imageHeader: true,
+      name: 'svc_balance_due_letter_wfs_img_v1',
+      body: [
+        'Hi {{1}}, 👋',
+        'Pending payment for your water purifier service — Water Filter Service. 💧',
+        '',
+        '💰 Amount: INR {{2}}',
+        '📅 Due: {{3}}',
+        '🧾 Ref: {{4}}',
+        '',
+        '📱 Scan the QR above, or tap Pay now below.',
+        '',
+        'Reply on this chat if you have already paid.',
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    },
+  ];
+}
+
+const BALANCE_DUE_LETTER_WFS_TEMPLATES = buildBalanceDueLetterWfsTemplates();
+
+/**
  * Payment overdue — still unpaid after due date (customer delayed / not clearing).
  * Prior promise / warranty / agreements void; advance will not be returned.
  * Buttons: Call us + Pay now.
@@ -2641,6 +2689,15 @@ function collectAllTemplatePreviewEntries() {
       balanceDueLetterImagePayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
     );
   }
+  for (const t of BALANCE_DUE_LETTER_WFS_TEMPLATES) {
+    if (t.imageHeader) {
+      push('Balance due letter WFS IMAGE (Pay now)', t, (x) =>
+        balanceDueLetterImagePayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
+      );
+    } else {
+      push('Balance due letter WFS (Pay now)', t, balanceDueLetterPayload);
+    }
+  }
   for (const t of TECH_CUSTOMER_PHOTO_TEMPLATES) {
     push('Technician customer photo IMAGE', t, (x) =>
       techCustomerPhotoPayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
@@ -3102,6 +3159,19 @@ async function main() {
       payload: await balanceDueLetterImagePayload(t, doSubmit ? token : ''),
     });
   }
+  for (const t of BALANCE_DUE_LETTER_WFS_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({
+      label: t.name,
+      payload: t.imageHeader
+        ? await balanceDueLetterImagePayload(t, doSubmit ? token : '')
+        : balanceDueLetterPayload(t),
+    });
+  }
   for (const t of TECH_CUSTOMER_PHOTO_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
@@ -3450,6 +3520,14 @@ async function main() {
       ...BALANCE_DUE_LETTER_V9_TEMPLATES.map((t) => t.name),
       ...BALANCE_DUE_LETTER_IMG_V5_TEMPLATES.map((t) => t.name),
     ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyBalanceDueWfs = process.argv.includes('--only-balance-due-wfs');
+  if (onlyBalanceDueWfs) {
+    const keep = new Set(BALANCE_DUE_LETTER_WFS_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }
