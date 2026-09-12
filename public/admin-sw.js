@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'admin-static-v8';
-const RUNTIME_CACHE = 'admin-runtime-v8';
+const STATIC_CACHE = 'admin-static-v9';
+const RUNTIME_CACHE = 'admin-runtime-v9';
 
 /** Do not precache HTML — cached index.html keeps old /assets/* hashes and breaks after deploy. */
 const PRECACHE_URLS = [];
@@ -43,6 +43,8 @@ try {
       body,
       icon: '/favicon-32x32.png',
       badge: '/favicon-32x32.png',
+      tag: data.tag ? String(data.tag) : undefined,
+      renotify: Boolean(data.tag),
       data,
     });
   });

@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'technician-static-v6';
-const RUNTIME_CACHE = 'technician-runtime-v6';
+const STATIC_CACHE = 'technician-static-v7';
+const RUNTIME_CACHE = 'technician-runtime-v7';
 
 /** Do not precache HTML — cached login shell breaks Turnstile/ALTCHA and stale /assets/* hashes. */
 const PRECACHE_URLS = [];
@@ -22,6 +22,13 @@ try {
   const messaging = firebase.messaging();
   messaging.onBackgroundMessage((payload) => {
     const data = (payload && payload.data) || {};
+    const type = String(data.type || '').trim();
+    if (type === 'clear_notifications') {
+      const tag = data.tag ? String(data.tag) : undefined;
+      return self.registration.getNotifications(tag ? { tag } : undefined).then((list) => {
+        list.forEach((n) => n.close());
+      });
+    }
     const title =
       (payload.notification && payload.notification.title) ||
       data.msgTitle ||
@@ -43,6 +50,8 @@ try {
       body,
       icon: '/favicon-32x32.png',
       badge: '/favicon-32x32.png',
+      tag: data.tag ? String(data.tag) : undefined,
+      renotify: Boolean(data.tag),
       data,
     });
   });

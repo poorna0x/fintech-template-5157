@@ -156,6 +156,9 @@ function adaptAdminMessageForWeb(message) {
     data.Body ||
     data.message ||
     'Open admin app';
+  const tag = data.tag ? String(data.tag).slice(0, 32) : undefined;
+  const safeTopic = tag ? tag.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) : undefined;
+
   return {
     token: message.token,
     data,
@@ -164,7 +167,18 @@ function adaptAdminMessageForWeb(message) {
       body: String(body || ' ').slice(0, 240),
     },
     webpush: {
-      headers: { Urgency: 'high' },
+      headers: {
+        Urgency: 'high',
+        TTL: '86400',
+        ...(safeTopic ? { Topic: safeTopic } : {}),
+      },
+      notification: {
+        title: String(title).slice(0, 120),
+        body: String(body || ' ').slice(0, 240),
+        icon: '/favicon-32x32.png',
+        badge: '/favicon-32x32.png',
+        ...(tag ? { tag, renotify: true } : {}),
+      },
       fcmOptions: { link: `${siteBaseUrl()}/admin` },
     },
   };
@@ -385,6 +399,14 @@ function messageHasNotification(message) {
   return Boolean(message?.notification?.title || message?.notification?.body);
 }
 
+function shouldSkipTechnicianWebPush(data) {
+  const type = String(data?.type || '').trim();
+  if (type === 'clear_notifications') return true;
+  if (type === 'location_ping') return true;
+  if (data?.silent === '1' || data?.silent === 'true') return true;
+  return false;
+}
+
 /**
  * Browser / iOS Home Screen needs a visible `notification` (+ webpush link).
  * Android APK stays on data-only so native Java can build Reply actions.
@@ -399,6 +421,9 @@ function adaptTechnicianMessageForWeb(message) {
     data.body ||
     data.message ||
     'Open technician app';
+  const tag = data.tag ? String(data.tag).slice(0, 32) : undefined;
+  const safeTopic = tag ? tag.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) : undefined;
+
   return {
     token: message.token,
     data,
@@ -407,7 +432,18 @@ function adaptTechnicianMessageForWeb(message) {
       body: String(body || ' ').slice(0, 240),
     },
     webpush: {
-      headers: { Urgency: 'high' },
+      headers: {
+        Urgency: 'high',
+        TTL: '86400',
+        ...(safeTopic ? { Topic: safeTopic } : {}),
+      },
+      notification: {
+        title: String(title).slice(0, 120),
+        body: String(body || ' ').slice(0, 240),
+        icon: '/favicon-32x32.png',
+        badge: '/favicon-32x32.png',
+        ...(tag ? { tag, renotify: true } : {}),
+      },
       fcmOptions: { link: `${siteBaseUrl()}/technician` },
     },
   };
@@ -509,7 +545,13 @@ async function sendToTechnicianDevicesMany(
         errorCount += 1;
         continue;
       }
-      if (isWeb) payload = adaptTechnicianMessageForWeb(payload);
+      if (isWeb) {
+        if (shouldSkipTechnicianWebPush(payload.data)) {
+          deviceOk = true;
+          continue;
+        }
+        payload = adaptTechnicianMessageForWeb(payload);
+      }
       const result = await sendFcmWithRetry(messaging, payload);
       if (result.ok) {
         deviceOk = true;
@@ -568,4 +610,8 @@ module.exports = {
   TECH_PUSH_CATEGORIES,
   DEFAULT_ADMIN_PREFS,
   DEFAULT_TECH_PREFS,
+  adaptTechnicianMessageForWeb,
+  adaptAdminMessageForWeb,
+  shouldSkipTechnicianWebPush,
+  shouldSkipAdminWebPush,
 };

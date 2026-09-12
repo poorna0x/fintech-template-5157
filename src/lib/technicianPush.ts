@@ -10,9 +10,12 @@ import { supabase } from '@/lib/supabase';
 import { registrationDeviceName } from '@/lib/deviceTracker';
 import { getNativeDeviceLabel, syncDevicePrefsToNative, syncCompanyPhoneToNative } from '@/lib/devicePrefs';
 import { normalizeTechPushPrefs } from '@/lib/pushNotificationPrefs';
+import { toast } from 'sonner';
 
 let listenersAttached = false;
 let nativeListenerAttached = false;
+let webMessageListenerAttached = false;
+let swClickListenerAttached = false;
 let activeTechnicianId: string | null = null;
 let lastToken: string | null = null;
 let lastPersistedKey: string | null = null;
@@ -370,6 +373,8 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
 
   // Browser / iOS Home Screen: soft-refresh existing web registration only.
   if (!Capacitor.isNativePlatform()) {
+    attachWebClickListener();
+    void attachWebForegroundListener();
     const cached = readPersist();
     if (cached?.platform === 'web' && cached.token && cached.technicianId === technicianId) {
       void enableTechnicianWebPush(technicianId);
@@ -532,11 +537,110 @@ async function fetchWebVapidKey(): Promise<string | null> {
   return FIREBASE_WEB_VAPID_PUBLIC_KEY || null;
 }
 
+function attachWebClickListener(): void {
+  if (!swClickListenerAttached && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    swClickListenerAttached = true;
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      const msg = event.data as { type?: string; data?: Record<string, unknown> } | null;
+      if (msg?.type === 'TECH_PUSH_CLICK') {
+        if (typeof window !== 'undefined') {
+          window.focus();
+          window.dispatchEvent(
+            new CustomEvent('tech-push-clicked', { detail: msg.data || {} })
+          );
+        }
+      }
+    });
+  }
+}
+
+async function attachWebForegroundListener(): Promise<void> {
+  if (webMessageListenerAttached) return;
+  const { isFirebaseConfigured, getFirebaseApp } = await import('@/lib/firebase');
+  if (!isFirebaseConfigured()) return;
+  try {
+    const { getMessaging, onMessage, isSupported } = await import('firebase/messaging');
+    if (!(await isSupported())) return;
+    const messaging = getMessaging(getFirebaseApp());
+    webMessageListenerAttached = true;
+    onMessage(messaging, (payload) => {
+      const data = (payload.data || {}) as Record<string, unknown>;
+      const title =
+        payload.notification?.title ||
+        String(data.msgTitle || data.title || '').trim() ||
+        'Hydrogen RO';
+      const body =
+        payload.notification?.body ||
+        String(data.msgBody || data.body || data.message || '').trim() ||
+        '';
+
+      // 1. In-app toast so technician sees it immediately if looking at the app
+      if (body) {
+        toast.info(title, {
+          description: body,
+          duration: 9000,
+        });
+      } else {
+        toast.info(title, { duration: 9000 });
+      }
+
+      // 2. Play alert sound
+      try {
+        const audio = new Audio('/whatsapp-alert.wav');
+        audio.play().catch(() => {});
+      } catch {
+        /* audio restrictions */
+      }
+
+      // 3. Vibrate device
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        try {
+          navigator.vibrate([200, 100, 200]);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      // 4. Try browser system notification
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try {
+          const n = new Notification(title, {
+            body,
+            icon: '/favicon-32x32.png',
+            tag: data.tag ? String(data.tag) : undefined,
+            data,
+          });
+          n.onclick = () => {
+            window.focus();
+            n.close();
+          };
+        } catch {
+          /* ignore */
+        }
+      }
+
+      // 5. Notify any listening UI components
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('tech-push-received', { detail: { ...data, title, body } })
+        );
+      }
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
 /** True when this browser already has a tech web push registration cached. */
 export function isTechnicianWebPushRegisteredLocally(): boolean {
   if (Capacitor.isNativePlatform()) return false;
   const c = readPersist();
-  return Boolean(c?.platform === 'web' && c.token);
+  const has = Boolean(c?.platform === 'web' && c.token);
+  if (has) {
+    attachWebClickListener();
+    void attachWebForegroundListener();
+  }
+  return has;
 }
 
 /**
@@ -658,6 +762,8 @@ export async function enableTechnicianWebPush(
         message: 'Got a token but could not save it. Try again in a moment.',
       };
     }
+    attachWebClickListener();
+    void attachWebForegroundListener();
     return { ok: true, token };
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Failed to enable web push';
