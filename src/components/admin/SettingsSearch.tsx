@@ -244,7 +244,7 @@ export function SettingsCommandPalette() {
       navigate(settingsPanelPath(target.panel, { action: target.action }));
       return;
     }
-    if (window.location.pathname.startsWith('/settings')) {
+    if (window.location.pathname.includes('/settings')) {
       requestAnimationFrame(() => scrollToSettingsSection(target.section));
       return;
     }

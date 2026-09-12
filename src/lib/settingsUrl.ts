@@ -1,4 +1,10 @@
-/** Full-screen overlays and dialogs on /settings (mobile back / swipe-back). */
+/** Canonical Settings path — must stay under `/admin` so iOS Home Screen PWA
+ *  (manifest/SW scope `/admin`) keeps PushManager and can request notification permission.
+ *  Legacy `/settings` redirects here.
+ */
+export const SETTINGS_PATH = '/admin/settings';
+
+/** Full-screen overlays and dialogs on Settings (mobile back / swipe-back). */
 export const SETTINGS_PANELS = [
   'calling',
   'whatsapp-inbox',
@@ -38,6 +44,16 @@ export function isSettingsPanelSlug(value: string | null): value is SettingsPane
   return Boolean(value && (SETTINGS_PANELS as readonly string[]).includes(value));
 }
 
+/** True for `/admin/settings` and legacy `/settings` (during redirect). */
+export function isSettingsPath(pathname: string): boolean {
+  return (
+    pathname === SETTINGS_PATH ||
+    pathname.startsWith(`${SETTINGS_PATH}/`) ||
+    pathname === '/settings' ||
+    pathname.startsWith('/settings/')
+  );
+}
+
 export type ParsedSettingsUrl = {
   panel: SettingsPanelSlug | null;
   panelId: string | null;
@@ -45,7 +61,7 @@ export type ParsedSettingsUrl = {
   section: string | null;
 };
 
-/** Parse /settings query — legacy `section=calling&action=open` maps to panel calling. */
+/** Parse Settings query — legacy `section=calling&action=open` maps to panel calling. */
 export function parseSettingsUrl(search: string): ParsedSettingsUrl {
   const sp = new URLSearchParams(search);
   const section = sp.get('section');
@@ -106,7 +122,7 @@ export function buildSettingsSearch(patch: SettingsSearchPatch, currentSearch = 
 
 export function settingsLocation(search: string): { pathname: string; search: string } {
   const normalized = search.startsWith('?') ? search : search ? `?${search}` : '';
-  return { pathname: '/settings', search: normalized };
+  return { pathname: SETTINGS_PATH, search: normalized };
 }
 
 export function settingsPanelPath(
@@ -116,5 +132,5 @@ export function settingsPanelPath(
   const qs = new URLSearchParams({ panel });
   if (options?.id) qs.set('id', options.id);
   if (options?.action) qs.set('action', options.action);
-  return `/settings?${qs.toString()}`;
+  return `${SETTINGS_PATH}?${qs.toString()}`;
 }

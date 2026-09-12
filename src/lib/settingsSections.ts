@@ -19,14 +19,14 @@ export function settingsSectionElementId(section: string): string {
   return `section-${section}`;
 }
 
-/** Build `/settings?section=…` (optional `action` for post-scroll UI). */
+/** Build Settings `?section=…` (optional `action` for post-scroll UI). */
 export function settingsPath(section: SettingsSectionId, action?: string): string {
   if (section === 'calling' && action === 'open') {
     return settingsPanelPath('calling');
   }
   const qs = new URLSearchParams({ section });
   if (action) qs.set('action', action);
-  return `/settings?${qs.toString()}`;
+  return `/admin/settings?${qs.toString()}`;
 }
 
 export { settingsPanelPath, type SettingsPanelSlug };

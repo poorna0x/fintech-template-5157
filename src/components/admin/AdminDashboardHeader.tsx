@@ -177,7 +177,7 @@ export function AdminDashboardHeader({
                 title="Settings — ⌘K searches settings from this page"
                 onClick={() => {
                   hapticTap();
-                  navigate('/settings');
+                  navigate('/admin/settings');
                 }}
               >
                 <Settings className="w-4 h-4" />

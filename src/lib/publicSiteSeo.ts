@@ -140,6 +140,7 @@ export const NO_INDEX_PREFIXES = [
   '/admin',
   '/dashboard',
   '/search',
+  '/admin/settings',
   '/settings',
   '/calling',
   '/product-verify/',

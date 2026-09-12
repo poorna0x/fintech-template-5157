@@ -541,7 +541,7 @@ export function DeviceTrackerSettings() {
                 <p className="text-xs text-muted-foreground leading-snug">
                   {isAdminWebPushRegisteredLocally()
                     ? 'Already registered here — mute or change types on the card below (same as phones).'
-                    : 'Enable push on this Mac/PC or iPhone Home Screen app. iPhone: Add to Home Screen first, then open from that icon.'}
+                    : 'Enable push on this Mac/PC or iPhone Home Screen app. iPhone: open HRO Admin from the Home Screen icon (not Safari), then tap Enable — iOS will ask for notification permission.'}
                 </p>
               </div>
               <Button

@@ -99,6 +99,12 @@ function PlainPortalSuspenseLoader() {
   );
 }
 
+/** Old `/settings` bookmarks → `/admin/settings` (keeps iOS PWA inside scope `/admin`). */
+function LegacySettingsRedirect() {
+  const { search, hash } = useLocation();
+  return <Navigate to={`/admin/settings${search}${hash}`} replace />;
+}
+
 /**
  * Branded logo loader only on the first portal Suspense in this page load
  * (cold enter). Later lazy navigations stay plain so Settings / email preview
@@ -241,12 +247,13 @@ const App = () => (
                   <Route path="/book" element={<Booking />} />
                   <Route path="/admin/login" element={<Navigate to="/admin" replace />} />
                   <Route path="/admin" element={<AdminPortal />} />
+                  <Route path="/admin/settings" element={<AdminPortal />} />
                   <Route path="/admin/email-preview" element={<EmailPreviewRedirect />} />
                   <Route path="/admin/whatsapp-preview" element={<WhatsAppPreviewRedirect />} />
-                  <Route path="/settings" element={<AdminPortal />} />
+                  <Route path="/settings" element={<LegacySettingsRedirect />} />
                   <Route
                     path="/calling"
-                    element={<Navigate to="/settings?section=calling&action=open" replace />}
+                    element={<Navigate to="/admin/settings?section=calling&action=open" replace />}
                   />
                   <Route path="/technician/login" element={<TechnicianLogin />} />
                   <Route path="/technician" element={<TechnicianDashboard />} />

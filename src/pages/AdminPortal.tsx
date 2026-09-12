@@ -19,12 +19,13 @@ import {
   hasAdminIncomingCallSearchHandler,
 } from '@/lib/adminIncomingCallBridge';
 import { adminDashboardLocation, buildAdminDashboardSearch } from '@/lib/adminDashboardUrl';
+import { isSettingsPath } from '@/lib/settingsUrl';
 
 const adminDashboardImport = () => import('@/components/AdminDashboard');
 const settingsImport = () => import('./Settings');
 
 /**
- * /admin and /settings entry. Only one heavy shell mounts at a time; dashboard tab
+ * /admin and /admin/settings entry. Only one heavy shell mounts at a time; dashboard tab
  * state is restored from adminDashboardCache on remount when returning from Settings.
  *
  * Security note: the dashboard chunk (and the admin-data chunk it pulls in) MUST stay
@@ -36,7 +37,7 @@ const settingsImport = () => import('./Settings');
 export default function AdminPortal() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const onSettings = pathname.startsWith('/settings');
+  const onSettings = isSettingsPath(pathname);
   const onSettingsRef = useRef(onSettings);
   onSettingsRef.current = onSettings;
   const { user, isAdmin, authInitializing } = useAuth();

@@ -672,7 +672,7 @@ const Settings = () => {
 
     return scrollToSettingsSection(section, {
       onComplete: () => {
-        navigate('/settings', { replace: true });
+        navigate('/admin/settings', { replace: true });
       },
     });
   }, [location.search, navigate]);

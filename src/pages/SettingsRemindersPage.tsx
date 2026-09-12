@@ -179,7 +179,7 @@ export default function SettingsRemindersPage() {
           variant="ghost"
           size="sm"
           className="gap-2 -ml-2"
-          onClick={() => navigate('/settings')}
+          onClick={() => navigate('/admin/settings')}
         >
           <ArrowLeft className="h-4 w-4" />
           Back to Settings

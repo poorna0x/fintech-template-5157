@@ -75,7 +75,9 @@ function collapseTechnicianDeepLink(): boolean {
 /** Settings / calling under admin scope → /admin */
 function collapseSettingsDeepLink(): boolean {
   const { pathname } = window.location;
-  if (!pathname.startsWith('/settings') && !pathname.startsWith('/calling')) {
+  const onSettings =
+    pathname.startsWith('/admin/settings') || pathname.startsWith('/settings');
+  if (!onSettings && !pathname.startsWith('/calling')) {
     return false;
   }
   window.history.pushState({}, '', '/admin');
@@ -86,7 +88,9 @@ function collapseSettingsDeepLink(): boolean {
 /** WhatsApp inbox list (no overlay/chat) exits to dashboard home. */
 function collapseWhatsAppInboxToHome(): boolean {
   const { pathname, search } = window.location;
-  if (!pathname.startsWith('/settings')) return false;
+  const onSettings =
+    pathname.startsWith('/admin/settings') || pathname.startsWith('/settings');
+  if (!onSettings) return false;
   const panel = new URLSearchParams(search).get('panel');
   if (panel !== 'whatsapp-inbox') return false;
   window.history.pushState({}, '', '/admin');
