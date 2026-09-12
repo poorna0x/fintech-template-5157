@@ -113,9 +113,6 @@ import {
 } from '@/lib/qrCodeManager';
 import DynamicUpiQrDisplay from '@/components/DynamicUpiQrDisplay';
 import ShareQrLinkPanel, { SHARE_QR_LINK_VALUE } from '@/components/job/ShareQrLinkPanel';
-import { type UpiPaymentAccount, fetchUpiPaymentAccounts } from '@/lib/upiPaymentAccounts';
-import { sendPayQrWhatsApp } from '@/lib/whatsappPayQrShare';
-import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
@@ -761,15 +758,6 @@ const TechnicianDashboard = () => {
   const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
   /** When Select QR = Share QR Link, which Dynamic UPI common QR to use. */
   const [shareLinkUpiQrId, setShareLinkUpiQrId] = useState<string>('');
-  const [upiAccounts, setUpiAccounts] = useState<UpiPaymentAccount[]>([]);
-
-  useEffect(() => {
-    void fetchUpiPaymentAccounts().then(({ accounts }) => {
-      if (accounts && accounts.length > 0) {
-        setUpiAccounts(accounts);
-      }
-    });
-  }, []);
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [allCommonQrCodes, setAllCommonQrCodes] = useState<CommonQrCode[]>([]); // Store all QR codes
   const [technicians, setTechnicians] = useState<any[]>([]);
@@ -780,8 +768,6 @@ const TechnicianDashboard = () => {
   const [selectedQrCodeUrlState, setSelectedQrCodeUrlState] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [waitingPayQrPhoto, setWaitingPayQrPhoto] = useState(false);
-  const [directQrWaPhone, setDirectQrWaPhone] = useState<string>('');
-  const [directQrSending, setDirectQrSending] = useState(false);
   const [partialCashAmount, setPartialCashAmount] = useState<string>('');
   const [partialOnlineAmount, setPartialOnlineAmount] = useState<string>('');
   const [pendingPaidTodayEnabled, setPendingPaidTodayEnabled] = useState(false);
@@ -1635,16 +1621,12 @@ const TechnicianDashboard = () => {
       try {
         // Always fetch this technician by id: getAll(100) only returns the newest 100 rows, so older techs
         // were missing from the roster and got no common_qr_code_ids / visible_qr_codes (looked "unassigned").
-        const [commonResult, allTechniciansResult, technicianCommonQrResult, meResult, upiResult] = await Promise.all([
+        const [commonResult, allTechniciansResult, technicianCommonQrResult, meResult] = await Promise.all([
           db.commonQrCodes.getAll(),
           db.technicians.getRosterForTechnicianApp(),
           db.technicianCommonQr.getAll(),
           db.technicians.getById(technicianId),
-          fetchUpiPaymentAccounts().catch(() => ({ accounts: [] as UpiPaymentAccount[] })),
         ]);
-        if (upiResult?.accounts) {
-          setUpiAccounts(upiResult.accounts);
-        }
 
         let allCommonQrCodesData: CommonQrCode[] = [];
         if (commonResult.data) {
@@ -5967,15 +5949,6 @@ const TechnicianDashboard = () => {
               qrPhotos.payee_name = selectedQr.payeeName || selectedQr.name;
               if (selectedQr.phone) qrPhotos.phone = selectedQr.phone;
             }
-          } else if (effectiveQrId.startsWith('upi_')) {
-            const upiId = effectiveQrId.replace('upi_', '');
-            const selectedUpi = upiAccounts.find((a) => a.id === upiId);
-            if (selectedUpi && selectedUpi.dynamicUpiEnabled && selectedUpi.upiId) {
-              qrPhotos.dynamic_upi = true;
-              qrPhotos.upi_id = selectedUpi.upiId;
-              qrPhotos.payee_name = selectedUpi.payeeName || selectedUpi.label;
-              if (selectedUpi.phone) qrPhotos.phone = selectedUpi.phone;
-            }
           } else if (effectiveQrId.startsWith('technician_')) {
             const techId = effectiveQrId.replace('technician_', '');
             const selectedTech =
@@ -9804,15 +9777,6 @@ const TechnicianDashboard = () => {
                               setShareLinkUpiQrId('');
                               setSelectedQrCodeUrlState('');
                               setSelectedQrCodeName('');
-                            } else if (value.startsWith('upi_')) {
-                              setShareLinkUpiQrId('');
-                              qrType = 'common';
-                              const upiId = value.replace('upi_', '');
-                              const selectedUpi = upiAccounts.find((a) => a.id === upiId);
-                              if (selectedUpi) {
-                                qrUrl = selectedUpi.qrCodeUrl || '';
-                                qrName = selectedUpi.label;
-                              }
                             } else if (value.startsWith('common_')) {
                               setShareLinkUpiQrId('');
                               qrType = 'common';
@@ -9848,7 +9812,6 @@ const TechnicianDashboard = () => {
                           </SelectTrigger>
                           <SelectContent className="!z-[100]">
                             {commonQrCodes.length === 0 &&
-                            upiAccounts.length === 0 &&
                             technicians.filter((t) => technicianHasPaymentQr(t as any)).length ===
                               0 ? (
                               <SelectItem value="no-qr" disabled>
@@ -9856,17 +9819,6 @@ const TechnicianDashboard = () => {
                               </SelectItem>
                             ) : (
                               <>
-                                {/* UPI Payment Accounts Section */}
-                                {upiAccounts.length > 0 && (
-                                  <>
-                                    {upiAccounts.map((a) => (
-                                      <SelectItem key={`upi_${a.id}`} value={`upi_${a.id}`}>
-                                        {a.label}
-                                      </SelectItem>
-                                    ))}
-                                  </>
-                                )}
-
                                 {/* Common QR Codes Section */}
                                 {commonQrCodes.length > 0 && (
                                   <>
@@ -9887,7 +9839,7 @@ const TechnicianDashboard = () => {
                             </SelectItem>
                                   ))}
                                 <SelectItem value={SHARE_QR_LINK_VALUE}>
-                                  Send pay QR on WhatsApp (customer not on site)
+                                  Send pay QR on WhatsApp
                                 </SelectItem>
                               </>
                             )}
@@ -9897,28 +9849,8 @@ const TechnicianDashboard = () => {
 
                       {selectedQrCodeId === SHARE_QR_LINK_VALUE ? (
                         <ShareQrLinkPanel
-                          commonQrCodes={
-                            commonQrCodes.length > 0
-                              ? commonQrCodes
-                              : allCommonQrCodes.length > 0
-                                ? allCommonQrCodes
-                                : commonQrCodesForTechnician
-                          }
-                          upiAccounts={upiAccounts}
-                          technicians={
-                            (() => {
-                              const tid = user?.technicianId || user?.id;
-                              const pool =
-                                technicians.length > 0
-                                  ? technicians
-                                  : allTechnicians.length > 0
-                                    ? allTechnicians
-                                    : [];
-                              if (!tid) return pool;
-                              const me = pool.find((t) => String(t.id) === String(tid));
-                              return me ? ([me] as TechnicianQrPickerRow[]) : pool;
-                            })()
-                          }
+                          commonQrCodes={commonQrCodes}
+                          technicians={technicians}
                           currentTechnicianId={user?.technicianId || user?.id || null}
                           selectedUpiQrId={shareLinkUpiQrId}
                           onSelectUpiQrId={(id) => {
@@ -9936,16 +9868,6 @@ const TechnicianDashboard = () => {
                                 setSelectedQrCodeUrlState(
                                   String((selectedTech as any).qrCode || '')
                                 );
-                              }
-                              return;
-                            }
-                            if (id.startsWith('upi_')) {
-                              const upiId = id.replace('upi_', '');
-                              const selectedUpi = upiAccounts.find((a) => a.id === upiId);
-                              if (selectedUpi) {
-                                setQrCodeType('common');
-                                setSelectedQrCodeName(selectedUpi.label);
-                                setSelectedQrCodeUrlState(selectedUpi.qrCodeUrl || '');
                               }
                               return;
                             }
@@ -10031,71 +9953,7 @@ const TechnicianDashboard = () => {
                             QR Code - Show to Customer
                           </p>
                           <div className="flex justify-center">
-                            {selectedQrCodeId.startsWith('upi_') ? (() => {
-                              const upiId = selectedQrCodeId.replace('upi_', '');
-                              const selectedUpi = upiAccounts.find(a => a.id === upiId);
-                              if (!selectedUpi) {
-                                return (
-                                  <div className="text-center p-4">
-                                    <p className="text-sm text-red-500">UPI account not found</p>
-                                  </div>
-                                );
-                              }
-                              const onlineAmt = (() => {
-                                if (
-                                  paymentMode === 'PARTIAL' ||
-                                  (paymentMode === 'PENDING_PAYMENT' &&
-                                    pendingPaidTodayMode === 'PARTIAL')
-                                ) {
-                                  return parseMoneyAmount(partialOnlineAmount);
-                                }
-                                if (
-                                  paymentMode === 'PENDING_PAYMENT' &&
-                                  pendingPaidTodayMode === 'ONLINE'
-                                ) {
-                                  const paid = parseMoneyAmount(pendingPaidTodayAmount);
-                                  return Number.isFinite(paid) && paid > 0
-                                    ? paid
-                                    : parseMoneyAmount(billAmount);
-                                }
-                                return parseMoneyAmount(billAmount);
-                              })();
-                              if (selectedUpi.dynamicUpiEnabled && selectedUpi.upiId) {
-                                return (
-                                  <DynamicUpiQrDisplay
-                                    upiId={selectedUpi.upiId}
-                                    payeeName={selectedUpi.payeeName || selectedUpi.label}
-                                    amount={onlineAmt}
-                                    note={selectedJobForComplete?.customerName || selectedUpi.label}
-                                    phone={selectedUpi.phone}
-                                    label={selectedUpi.label}
-                                    fallbackImageUrl={selectedUpi.qrCodeUrl}
-                                  />
-                                );
-                              }
-                              if (!selectedUpi.qrCodeUrl) {
-                                return (
-                                  <div className="text-center p-4 bg-amber-50 rounded-lg border border-amber-200">
-                                    <p className="text-sm text-amber-800">
-                                      No static QR photo uploaded for this account. Upload a QR photo in Settings → UPI Payment Accounts or enable Dynamic UPI.
-                                    </p>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <div className="text-center">
-                                  <p className="text-sm font-medium mb-3 text-gray-700">{selectedUpi.label}</p>
-                                  <img 
-                                    src={appendQrCacheBust(selectedUpi.qrCodeUrl, qrAssetsVersion)} 
-                                    alt={selectedUpi.label}
-                                    className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
-                                    onError={() => {
-                                      console.error('Failed to load UPI QR code:', selectedUpi.qrCodeUrl);
-                                    }}
-                                  />
-                                </div>
-                              );
-                            })() : selectedQrCodeId.startsWith('common_') ? (() => {
+                            {selectedQrCodeId.startsWith('common_') ? (() => {
                               const qrId = selectedQrCodeId.replace('common_', '');
                               const selectedQr =
                                 commonQrCodes.find(qr => qr.id === qrId) ||
@@ -10228,230 +10086,6 @@ const TechnicianDashboard = () => {
                               );
                             })() : null}
                           </div>
-
-                          {/* Send displayed QR directly to Customer on WhatsApp */}
-                          {(() => {
-                            let upiId = '';
-                            let payeeName = '';
-                            let upiPhone: string | undefined = undefined;
-                            let qrImageUrl: string | undefined = undefined;
-                            let isDynamic = false;
-                            let isFound = false;
-
-                            if (selectedQrCodeId.startsWith('upi_')) {
-                              const a = upiAccounts.find((x) => x.id === selectedQrCodeId.replace('upi_', ''));
-                              if (a) {
-                                isFound = true;
-                                upiId = a.upiId || '';
-                                payeeName = a.payeeName || a.label;
-                                upiPhone = a.phone || undefined;
-                                qrImageUrl = a.qrCodeUrl || undefined;
-                                isDynamic = a.dynamicUpiEnabled === true && Boolean(a.upiId?.trim());
-                              }
-                            } else if (selectedQrCodeId.startsWith('common_')) {
-                              const qrId = selectedQrCodeId.replace('common_', '');
-                              const qr =
-                                commonQrCodes.find((x) => x.id === qrId) ||
-                                allCommonQrCodes.find((x) => x.id === qrId) ||
-                                commonQrCodesForTechnician.find((x) => x.id === qrId);
-                              if (qr) {
-                                isFound = true;
-                                upiId = qr.upiId || '';
-                                payeeName = qr.payeeName || qr.name;
-                                upiPhone = qr.phone || undefined;
-                                qrImageUrl = qr.qrCodeUrl || undefined;
-                                isDynamic = isDynamicUpiQr(qr);
-                              }
-                            } else if (selectedQrCodeId.startsWith('technician_')) {
-                              const techId = selectedQrCodeId.replace('technician_', '');
-                              const tech =
-                                technicians.find((t) => t.id === techId) ||
-                                allTechnicians.find((t) => t.id === techId);
-                              if (tech && technicianHasPaymentQr(tech as any)) {
-                                isFound = true;
-                                upiId = (tech as any).upiId || '';
-                                payeeName = (tech as any).payeeName || tech.fullName;
-                                upiPhone = (tech as any).upiPhone || undefined;
-                                qrImageUrl = String((tech as any).qrCode || '').trim() || undefined;
-                                isDynamic = isDynamicUpiTechnician(tech as any);
-                              }
-                            }
-
-                            if (!isFound) return null;
-                            const isStaticPhoto = !isDynamic && Boolean(qrImageUrl);
-                            const customerPhoneForWa =
-                              (selectedJobForComplete?.customer as { phone?: string } | undefined)?.phone ||
-                              completeJobCustomerDoc?.phone ||
-                              (selectedJobForComplete?.customer as { alternatePhone?: string; alternate_phone?: string } | undefined)?.alternatePhone ||
-                              (selectedJobForComplete?.customer as { alternate_phone?: string } | undefined)?.alternate_phone ||
-                              (selectedJobForComplete as { customerPhone?: string } | null)?.customerPhone ||
-                              '';
-                            const effectivePhone = (directQrWaPhone || customerPhoneForWa).trim();
-
-                            const handleSendDisplayedQr = async () => {
-                              const phone = String(effectivePhone).replace(/\D/g, '').slice(-10);
-                              if (!phone || phone.length < 10) {
-                                toast.error('Enter a valid 10-digit WhatsApp number');
-                                return;
-                              }
-                              const onlineAmt = (() => {
-                                if (
-                                  paymentMode === 'PARTIAL' ||
-                                  (paymentMode === 'PENDING_PAYMENT' && pendingPaidTodayMode === 'PARTIAL')
-                                ) {
-                                  return parseMoneyAmount(partialOnlineAmount);
-                                }
-                                if (paymentMode === 'PENDING_PAYMENT' && pendingPaidTodayMode === 'ONLINE') {
-                                  const paid = parseMoneyAmount(pendingPaidTodayAmount);
-                                  return Number.isFinite(paid) && paid > 0 ? paid : parseMoneyAmount(billAmount);
-                                }
-                                return parseMoneyAmount(billAmount);
-                              })();
-                              if (!Number.isFinite(onlineAmt) || onlineAmt <= 0) {
-                                toast.error('Enter a valid bill/online amount first');
-                                return;
-                              }
-
-                              const brand = normalizeDocumentBrand(serviceBrand) || 'hydrogenro';
-                              const cName =
-                                selectedJobForComplete?.customerName ||
-                                (selectedJobForComplete?.customer as any)?.fullName ||
-                                (selectedJobForComplete?.customer as any)?.full_name ||
-                                completeJobCustomerDoc?.fullName ||
-                                'there';
-                              const jRef =
-                                selectedJobForComplete?.jobNumber ||
-                                selectedJobForComplete?.customerName ||
-                                'your service visit';
-
-                              setDirectQrSending(true);
-                              try {
-                                if (!whatsappCloudApiOn) {
-                                  const { openWhatsAppMeDeepLink } = await import('@/lib/sendAdminWhatsAppApi');
-                                  const { buildPendingPaymentWhatsAppMessage } = await import('@/lib/pendingPaymentReminder');
-                                  const { createUpiPayShortLink, resolveUpiPaySiteOrigin, buildUpiPayShortHttpsLink } = await import('@/lib/upiPaymentAccounts');
-                                  let payLink: string | null = null;
-                                  if (upiId || qrImageUrl) {
-                                    const code = await createUpiPayShortLink({
-                                      upiId,
-                                      payeeName,
-                                      amount: onlineAmt,
-                                      note: jRef,
-                                      phone: upiPhone,
-                                      brand,
-                                      qrCodeUrl: qrImageUrl,
-                                      dynamicUpiEnabled: isDynamic,
-                                    });
-                                    const origin = resolveUpiPaySiteOrigin(brand);
-                                    payLink = code ? buildUpiPayShortHttpsLink(origin, code) : null;
-                                  }
-                                  const text = buildPendingPaymentWhatsAppMessage(
-                                    cName,
-                                    onlineAmt,
-                                    null,
-                                    brand,
-                                    {
-                                      label: payeeName,
-                                      upiId,
-                                      phone: upiPhone,
-                                      httpsLink: payLink || undefined,
-                                    },
-                                    jRef,
-                                    { withQrImage: Boolean(qrImageUrl) }
-                                  );
-                                  openWhatsAppMeDeepLink(phone, text);
-                                  toast.success('Opened WhatsApp on phone');
-                                  payQrWatchUntilRef.current = Date.now() + 30 * 60 * 1000;
-                                  setWaitingPayQrPhoto(true);
-                                  setCompleteJobStep(5);
-                                  return;
-                                }
-
-                                const res = await sendPayQrWhatsApp({
-                                  to: phone,
-                                  amount: onlineAmt,
-                                  brand,
-                                  upiId,
-                                  payeeName,
-                                  paymentPhone: upiPhone,
-                                  customerName: cName,
-                                  customerId:
-                                    completeJobCustomerDoc?.id ||
-                                    (selectedJobForComplete as any)?.customerId ||
-                                    null,
-                                  note: jRef,
-                                  jobRef: jRef,
-                                  jobId: selectedJobForComplete?.id || null,
-                                  watchPhotos: true,
-                                  source: 'pending_payment',
-                                  staticQrUrl: qrImageUrl,
-                                  dynamicUpi: isDynamic,
-                                });
-
-                                if (!res.ok) {
-                                  toast.error(res.error || 'Could not send QR on WhatsApp');
-                                  return;
-                                }
-
-                                toast.success(
-                                  isDynamic
-                                    ? 'Dynamic UPI QR sent to customer on WhatsApp!'
-                                    : 'Static QR photo sent to customer on WhatsApp!'
-                                );
-                                payQrWatchUntilRef.current = Date.now() + 30 * 60 * 1000;
-                                setWaitingPayQrPhoto(true);
-                                setCompleteJobStep(5);
-                              } catch (err) {
-                                console.error('[sendDisplayedQr]', err);
-                                toast.error('Failed to send QR on WhatsApp');
-                              } finally {
-                                setDirectQrSending(false);
-                              }
-                            };
-
-                            return (
-                              <div className="mt-4 pt-3 border-t border-primary/20 space-y-2">
-                                <div className="space-y-1">
-                                  <Label className="text-xs text-gray-700 font-medium">
-                                    Send {isStaticPhoto ? 'Static QR Photo' : 'Payment QR'} on WhatsApp
-                                  </Label>
-                                  <div className="flex gap-2">
-                                    <Input
-                                      type="tel"
-                                      value={directQrWaPhone || customerPhoneForWa}
-                                      onChange={(e) => setDirectQrWaPhone(e.target.value)}
-                                      placeholder="10-digit mobile"
-                                      className="h-10 bg-white text-xs flex-1 rounded-lg"
-                                    />
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      className="h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 shrink-0 rounded-lg flex items-center gap-1.5"
-                                      disabled={directQrSending}
-                                      onClick={() => void handleSendDisplayedQr()}
-                                    >
-                                      {directQrSending ? (
-                                        <>
-                                          <Loader2 className="h-4 w-4 animate-spin" />
-                                          <span>Sending…</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <WhatsAppIcon className="h-4 w-4" />
-                                          <span>Send on WhatsApp</span>
-                                        </>
-                                      )}
-                                    </Button>
-                                  </div>
-                                </div>
-                                <p className="text-[11px] text-gray-600">
-                                  {isStaticPhoto
-                                    ? 'Customer not in front of you? Tap to send this static QR photo + Pay link directly to their WhatsApp.'
-                                    : 'Customer not in front of you? Tap to send this live UPI QR with amount directly to their WhatsApp.'}
-                                </p>
-                              </div>
-                            );
-                          })()}
                         </div>
                     )}
 

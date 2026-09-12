@@ -22,10 +22,8 @@ import {
 import {
   buildUpiPayShortHttpsLink,
   createUpiPayShortLink,
-  fetchUpiPaymentAccounts,
   normalizePaymentPhone,
   resolveUpiPaySiteOrigin,
-  type UpiPaymentAccount,
 } from '@/lib/upiPaymentAccounts';
 import { sendPayQrWhatsApp } from '@/lib/whatsappPayQrShare';
 import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
@@ -46,8 +44,6 @@ type ShareUpiOption = {
 
 type ShareQrLinkPanelProps = {
   commonQrCodes: CommonQrCode[];
-  /** Configured UPI Payment Accounts from Settings (optional). */
-  upiAccounts?: UpiPaymentAccount[];
   /** Technician personal Dynamic UPI options (optional). */
   technicians?: TechnicianQrPickerRow[];
   /** When set, only this technician's personal Dynamic UPI is listed (not every roster tech). */
@@ -93,12 +89,11 @@ export function buildTechSharePayMessage(input: {
 }
 
 /**
- * After choosing "Share QR Link" in Select QR Code: pick which Dynamic UPI
- * account to use, then send the pay QR (Cloud API image template) on WhatsApp.
+ * After choosing "Share QR Link" in Select QR Code: pick which allowed QR
+ * to use, then send the pay QR (Cloud API image template) on WhatsApp.
  */
 export default function ShareQrLinkPanel({
-  commonQrCodes,
-  upiAccounts: upiAccountsProp,
+  commonQrCodes = [],
   technicians = [],
   currentTechnicianId,
   selectedUpiQrId,
@@ -116,37 +111,13 @@ export default function ShareQrLinkPanel({
   const { cloudApiOn } = useWhatsAppCloudApiGate('pending_payment');
   const [sharing, setSharing] = useState(false);
   const [waPhone, setWaPhone] = useState(() => String(customerPhone || '').trim());
-  const [localUpiAccounts, setLocalUpiAccounts] = useState<UpiPaymentAccount[]>(
-    () => upiAccountsProp || []
-  );
-
-  useEffect(() => {
-    if (upiAccountsProp && upiAccountsProp.length > 0) {
-      setLocalUpiAccounts(upiAccountsProp);
-      return;
-    }
-    void fetchUpiPaymentAccounts().then(({ accounts }) => {
-      setLocalUpiAccounts(accounts);
-    });
-  }, [upiAccountsProp]);
 
   useEffect(() => {
     setWaPhone(String(customerPhone || '').trim());
   }, [customerPhone]);
 
   const dynamicOptions = useMemo((): ShareUpiOption[] => {
-    const fromUpi: ShareUpiOption[] = localUpiAccounts
-      .filter((a) => (a.dynamicUpiEnabled && Boolean(a.upiId?.trim())) || Boolean(a.qrCodeUrl?.trim()))
-      .map((a) => ({
-        key: `upi_${a.id}`,
-        name: a.label,
-        upiId: a.upiId || '',
-        payeeName: a.payeeName || a.label,
-        phone: a.phone,
-        imageUrl: a.qrCodeUrl,
-        dynamicUpiEnabled: a.dynamicUpiEnabled === true && Boolean(a.upiId?.trim()),
-      }));
-    const fromCommon: ShareUpiOption[] = commonQrCodes
+    const fromCommon: ShareUpiOption[] = (commonQrCodes || [])
       .filter((qr) => isDynamicUpiQr(qr) || Boolean(qr.qrCodeUrl?.trim()))
       .map((qr) => ({
         key: `common_${qr.id}`,
@@ -159,9 +130,9 @@ export default function ShareQrLinkPanel({
       }));
     const techPool =
       currentTechnicianId && String(currentTechnicianId).trim()
-        ? technicians.filter((t) => String(t.id) === String(currentTechnicianId))
-        : technicians;
-    const fromTech: ShareUpiOption[] = (techPool.length > 0 ? techPool : technicians)
+        ? (technicians || []).filter((t) => String(t.id) === String(currentTechnicianId))
+        : technicians || [];
+    const fromTech: ShareUpiOption[] = (techPool.length > 0 ? techPool : technicians || [])
       .filter((t) => isDynamicUpiTechnician(t) || Boolean(t.qrCode?.trim()))
       .map((t) => ({
         key: `technician_${t.id}`,
@@ -172,8 +143,8 @@ export default function ShareQrLinkPanel({
         imageUrl: t.qrCode,
         dynamicUpiEnabled: isDynamicUpiTechnician(t),
       }));
-    return [...fromUpi, ...fromCommon, ...fromTech];
-  }, [localUpiAccounts, commonQrCodes, technicians, currentTechnicianId]);
+    return [...fromCommon, ...fromTech];
+  }, [commonQrCodes, technicians, currentTechnicianId]);
 
   const selectedQr = useMemo(
     () => dynamicOptions.find((q) => q.key === selectedUpiQrId) || null,
@@ -190,13 +161,12 @@ export default function ShareQrLinkPanel({
     }
     if (
       selectedUpiQrId.startsWith('common_') ||
-      selectedUpiQrId.startsWith('technician_') ||
-      selectedUpiQrId.startsWith('upi_')
+      selectedUpiQrId.startsWith('technician_')
     ) {
       return;
     }
     const legacy = dynamicOptions.find(
-      (o) => o.key === `common_${selectedUpiQrId}` || o.key === `upi_${selectedUpiQrId}`
+      (o) => o.key === `common_${selectedUpiQrId}`
     );
     if (legacy) onSelectUpiQrId(legacy.key);
   }, [selectedUpiQrId, dynamicOptions, onSelectUpiQrId]);
@@ -294,8 +264,7 @@ export default function ShareQrLinkPanel({
       <div>
         <p className="text-sm font-semibold text-emerald-950">Send pay QR on WhatsApp</p>
         <p className="mt-0.5 text-xs leading-relaxed text-emerald-800/85">
-          Customer not on site? Pick the UPI account and send the QR + Pay now button from the
-          business WhatsApp. You can change the number below.
+          Pick the QR and send the pay QR + Pay link from the business WhatsApp. You can change the number below.
         </p>
       </div>
 
@@ -303,7 +272,7 @@ export default function ShareQrLinkPanel({
         <Label className="text-sm">Which UPI / QR? *</Label>
         {dynamicOptions.length === 0 ? (
           <p className="mt-1 text-xs text-amber-800">
-            No payment QR or UPI accounts available. Upload a QR code photo or add a UPI account in Settings.
+            No payment QR available for this account. Upload a QR code photo or enable Dynamic UPI in Settings.
           </p>
         ) : (
           <Select value={selectedUpiQrId || undefined} onValueChange={onSelectUpiQrId}>
