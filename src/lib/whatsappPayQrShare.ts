@@ -125,6 +125,7 @@ export async function sendPayQrWhatsApp(
     }
   }
 
+  // When dynamic UPI is disabled (or as fallback), load and use the stored static QR image photo
   if (!headerImage && staticQrUrl) {
     const loaded = await fetchImageUrlAsBase64(staticQrUrl);
     if (loaded?.base64) {
@@ -145,29 +146,13 @@ export async function sendPayQrWhatsApp(
     }
   }
 
-  // If dynamic UPI is disabled and no static photo is uploaded, but UPI ID exists:
-  // Generate a static QR code (without amount embedded) so customer can scan and type amount
-  if (!headerImage && hasValidUpiId) {
-    const qr = await generateUpiQrPngBase64({
-      upiId,
-      payeeName,
-      note,
-      phone: payPhone,
-      brand,
-    });
-    if (qr?.base64) {
-      headerImage = {
-        imageBase64: qr.base64,
-        filename: qr.filename || 'upi-qr.png',
-        mimeType: qr.mimeType || 'image/png',
-      };
-    }
-  }
-
   if (!payLink && !headerImage) {
     return {
       ok: false,
-      error: 'Could not create pay link or QR image — verify UPI ID or uploaded QR',
+      error:
+        input.dynamicUpi === false
+          ? 'No static QR photo found for this account. Upload a QR photo in Settings or enable Dynamic UPI.'
+          : 'Could not create pay link or QR image — verify UPI ID or uploaded QR',
     };
   }
 
