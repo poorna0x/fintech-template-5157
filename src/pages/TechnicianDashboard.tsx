@@ -12174,11 +12174,12 @@ const TechnicianDashboard = () => {
       {/* Expanded Common QR - tap/click any Common QR to open large */}
       <Dialog open={!!expandedCommonQr} onOpenChange={(open) => !open && setExpandedCommonQr(null)}>
         <DialogContent className="max-w-sm overflow-hidden p-6">
+          <DialogHeader>
+            <DialogTitle className="text-center text-lg">{expandedCommonQr?.name || 'QR Code'}</DialogTitle>
+            <DialogDescription className="sr-only">Expanded QR Code</DialogDescription>
+          </DialogHeader>
           {expandedCommonQr && (
             <>
-              <DialogHeader>
-                <DialogTitle className="text-center text-lg">{expandedCommonQr.name}</DialogTitle>
-              </DialogHeader>
               <div className="flex flex-col items-center gap-4 py-2">
                 <div className="rounded-xl border-2 border-border bg-white p-4 shadow-inner">
                   <img

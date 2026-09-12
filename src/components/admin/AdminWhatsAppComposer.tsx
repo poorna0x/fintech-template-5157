@@ -10,7 +10,7 @@ import { applyEmailSourceForCustomer, resolveCustomerSendBrand } from '@/lib/adm
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -1566,6 +1566,8 @@ export default function AdminWhatsAppComposerDialog({
         hideCloseButton
         className="max-w-[100vw] sm:max-w-[98vw] w-full h-[100dvh] sm:h-[96vh] max-h-[100dvh] sm:max-h-[96vh] p-0 gap-0 overflow-hidden flex flex-col rounded-none sm:rounded-lg"
       >
+        <DialogTitle className="sr-only">WhatsApp Composer</DialogTitle>
+        <DialogDescription className="sr-only">Compose and send WhatsApp message</DialogDescription>
         {open ? (
           <AdminWhatsAppComposerPanel
             key={`${initialCustomerId ?? 'blank'}-${initialTemplate}`}

@@ -2176,6 +2176,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             <DialogTitle className="text-lg font-semibold tracking-tight">
               Add New Customer
             </DialogTitle>
+            <DialogDescription className="sr-only">Enter new customer details</DialogDescription>
             <Button
               type="button"
               variant="ghost"
