@@ -513,10 +513,6 @@ const PayUpi = () => {
             <p className="mt-2 text-xs leading-relaxed text-sky-800">{actionHint}</p>
           ) : null}
         </div>
-          {actionHint ? (
-            <p className="mt-2 text-xs leading-relaxed text-sky-800">{actionHint}</p>
-          ) : null}
-        </div>
 
         <p className="mt-3 px-1 text-center text-xs leading-relaxed text-slate-500 sm:mt-4 sm:text-sm">
           Or copy the UPI ID / phone number above and paste it in your UPI app.
