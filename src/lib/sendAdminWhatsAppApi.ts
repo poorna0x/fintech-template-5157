@@ -429,7 +429,10 @@ export async function sendAdminWhatsAppDocument(
 export type SendAdminWhatsAppMediaOptions = {
   to: string;
   /** Raw base64 or data-URL base64 */
-  fileBase64: string;
+  fileBase64?: string;
+  /** Public https link fallback (Cloudinary / Supabase storage URL) */
+  link?: string;
+  mediaUrl?: string;
   filename: string;
   mimeType: string;
   caption?: string;
@@ -447,12 +450,13 @@ export async function sendAdminWhatsAppMedia(
 ): Promise<AdminWhatsAppSendResult> {
   const to = String(options.to || '').trim();
   const fileBase64 = String(options.fileBase64 || '').trim();
+  const link = String(options.link || options.mediaUrl || '').trim();
   const filename = String(options.filename || 'file').trim() || 'file';
   const mimeType = String(options.mimeType || '').trim() || 'application/octet-stream';
   const caption = String(options.caption || '').trim();
 
   if (!to) return { ok: false, error: 'Phone required' };
-  if (!fileBase64) return { ok: false, error: 'File required' };
+  if (!fileBase64 && !link) return { ok: false, error: 'File or media URL required' };
 
   const accessToken = await resolveSupabaseAccessTokenForApi();
   if (!accessToken) {
@@ -473,7 +477,8 @@ export async function sendAdminWhatsAppMedia(
       body: JSON.stringify({
         to,
         type,
-        fileBase64,
+        ...(fileBase64 ? { fileBase64 } : {}),
+        ...(link ? { link, mediaUrl: link } : {}),
         filename,
         mimeType,
         ...(caption ? { caption } : {}),
@@ -632,9 +637,11 @@ export type SendAdminWhatsAppTemplateOptions = {
   } | null;
   /** For IMAGE-header templates — attach JPEG/PNG (e.g. UPI QR) in the same cold send. */
   headerImage?: {
-    imageBase64: string;
+    imageBase64?: string;
     filename?: string;
     mimeType?: string;
+    link?: string;
+    mediaUrl?: string;
   } | null;
   signal?: AbortSignal;
 };
@@ -654,6 +661,10 @@ export async function sendAdminWhatsAppTemplate(
 
   try {
     throwIfAborted(options.signal);
+    const headerImgObj = options.headerImage;
+    const hasHeaderImage = Boolean(
+      headerImgObj?.imageBase64 || headerImgObj?.link || headerImgObj?.mediaUrl
+    );
     const res = await fetch('/.netlify/functions/whatsapp-send', {
       method: 'POST',
       headers: {
@@ -677,12 +688,15 @@ export async function sendAdminWhatsAppTemplate(
               },
             }
           : {}),
-        ...(options.headerImage?.imageBase64
+        ...(hasHeaderImage && headerImgObj
           ? {
               headerImage: {
-                imageBase64: options.headerImage.imageBase64,
-                filename: options.headerImage.filename || 'image.jpg',
-                mimeType: options.headerImage.mimeType || 'image/jpeg',
+                ...(headerImgObj.imageBase64 ? { imageBase64: headerImgObj.imageBase64 } : {}),
+                ...(headerImgObj.link || headerImgObj.mediaUrl
+                  ? { link: headerImgObj.link || headerImgObj.mediaUrl }
+                  : {}),
+                filename: headerImgObj.filename || 'image.jpg',
+                mimeType: headerImgObj.mimeType || 'image/jpeg',
               },
             }
           : {}),

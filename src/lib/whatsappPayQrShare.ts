@@ -100,7 +100,12 @@ export async function sendPayQrWhatsApp(
     payLink = code ? buildUpiPayShortHttpsLink(origin, code) : null;
   }
 
-  let headerImage: { imageBase64: string; filename: string; mimeType: string } | null = null;
+  let headerImage: {
+    imageBase64?: string;
+    filename: string;
+    mimeType: string;
+    link?: string;
+  } | null = null;
 
   if (input.dynamicUpi !== false && hasValidUpiId) {
     const qr = await generateUpiQrPngBase64({
@@ -127,6 +132,34 @@ export async function sendPayQrWhatsApp(
         imageBase64: loaded.base64,
         filename: loaded.filename || 'payment-qr.jpg',
         mimeType: loaded.mimeType || 'image/jpeg',
+        link: staticQrUrl,
+      };
+    } else {
+      // Fallback: use direct URL so server / Meta Cloud API fetches image directly
+      headerImage = {
+        imageBase64: '',
+        filename: 'payment-qr.jpg',
+        mimeType: 'image/jpeg',
+        link: staticQrUrl,
+      };
+    }
+  }
+
+  // If dynamic UPI is disabled and no static photo is uploaded, but UPI ID exists:
+  // Generate a static QR code (without amount embedded) so customer can scan and type amount
+  if (!headerImage && hasValidUpiId) {
+    const qr = await generateUpiQrPngBase64({
+      upiId,
+      payeeName,
+      note,
+      phone: payPhone,
+      brand,
+    });
+    if (qr?.base64) {
+      headerImage = {
+        imageBase64: qr.base64,
+        filename: qr.filename || 'upi-qr.png',
+        mimeType: qr.mimeType || 'image/png',
       };
     }
   }
@@ -167,7 +200,9 @@ export async function sendPayQrWhatsApp(
     );
     return sendAdminWhatsAppMedia({
       to,
-      fileBase64: headerImage.imageBase64,
+      fileBase64: headerImage.imageBase64 || undefined,
+      link: headerImage.link || staticQrUrl || undefined,
+      mediaUrl: headerImage.link || staticQrUrl || undefined,
       filename: headerImage.filename,
       mimeType: headerImage.mimeType,
       caption,
@@ -202,7 +237,12 @@ export async function sendPayQrWhatsApp(
         languageCode: 'en',
         bodyParams,
         buttonUrlParams,
-        headerImage,
+        headerImage: {
+          imageBase64: headerImage.imageBase64,
+          filename: headerImage.filename,
+          mimeType: headerImage.mimeType,
+          link: headerImage.link || staticQrUrl || undefined,
+        },
         customerId: input.customerId,
         customerName,
         source,

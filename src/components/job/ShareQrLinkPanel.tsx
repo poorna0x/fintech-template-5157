@@ -136,7 +136,7 @@ export default function ShareQrLinkPanel({
 
   const dynamicOptions = useMemo((): ShareUpiOption[] => {
     const fromUpi: ShareUpiOption[] = localUpiAccounts
-      .filter((a) => (a.dynamicUpiEnabled && Boolean(a.upiId?.trim())) || Boolean(a.qrCodeUrl?.trim()))
+      .filter((a) => Boolean(a.qrCodeUrl?.trim()) || (a.dynamicUpiEnabled && Boolean(a.upiId?.trim())) || Boolean(a.upiId?.trim()))
       .map((a) => ({
         key: `upi_${a.id}`,
         name: a.label,
@@ -147,7 +147,7 @@ export default function ShareQrLinkPanel({
         dynamicUpiEnabled: a.dynamicUpiEnabled === true && Boolean(a.upiId?.trim()),
       }));
     const fromCommon: ShareUpiOption[] = commonQrCodes
-      .filter((qr) => isDynamicUpiQr(qr) || Boolean(qr.qrCodeUrl?.trim()))
+      .filter((qr) => isDynamicUpiQr(qr) || Boolean(qr.qrCodeUrl?.trim()) || Boolean(qr.upiId?.trim()))
       .map((qr) => ({
         key: `common_${qr.id}`,
         name: qr.name,
@@ -161,8 +161,8 @@ export default function ShareQrLinkPanel({
       currentTechnicianId && String(currentTechnicianId).trim()
         ? technicians.filter((t) => String(t.id) === String(currentTechnicianId))
         : technicians;
-    const fromTech: ShareUpiOption[] = techPool
-      .filter((t) => isDynamicUpiTechnician(t) || Boolean(t.qrCode?.trim()))
+    const fromTech: ShareUpiOption[] = (techPool.length > 0 ? techPool : technicians)
+      .filter((t) => isDynamicUpiTechnician(t) || Boolean(t.qrCode?.trim()) || Boolean(t.upiId?.trim()))
       .map((t) => ({
         key: `technician_${t.id}`,
         name: `${t.fullName}'s QR`,
@@ -303,7 +303,7 @@ export default function ShareQrLinkPanel({
         <Label className="text-sm">Which UPI / QR? *</Label>
         {dynamicOptions.length === 0 ? (
           <p className="mt-1 text-xs text-amber-800">
-            No UPI accounts or QR images available. Add a QR code or enable Dynamic UPI in Settings.
+            No payment QR or UPI accounts available. Upload a QR code photo or add a UPI account in Settings.
           </p>
         ) : (
           <Select value={selectedUpiQrId || undefined} onValueChange={onSelectUpiQrId}>
@@ -315,7 +315,11 @@ export default function ShareQrLinkPanel({
                 <SelectItem key={qr.key} value={qr.key}>
                   {qr.name}
                   {qr.upiId ? ` · ${qr.upiId}` : ''}
-                  {qr.dynamicUpiEnabled ? ' (Dynamic)' : ' (Static QR)'}
+                  {qr.dynamicUpiEnabled
+                    ? ' (Dynamic UPI)'
+                    : qr.imageUrl
+                      ? ' (Static QR Photo)'
+                      : ' (Static QR)'}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -358,7 +362,11 @@ export default function ShareQrLinkPanel({
           ) : null}
           <p>
             <span className="text-slate-500">Mode:</span>{' '}
-            {selectedQr.dynamicUpiEnabled ? 'Dynamic UPI (amount embedded)' : 'Static QR photo'}
+            {selectedQr.dynamicUpiEnabled
+              ? 'Dynamic UPI (amount embedded)'
+              : selectedQr.imageUrl
+                ? 'Static QR photo'
+                : 'Static UPI QR (customer enters amount)'}
           </p>
           {Number.isFinite(amount) && amount > 0 ? (
             <p>

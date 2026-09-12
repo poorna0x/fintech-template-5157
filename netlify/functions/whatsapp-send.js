@@ -460,7 +460,7 @@ exports.handler = async (event) => {
     persist.msg_type = 'interactive';
     persist.body = `${text}\n\n[Pay now → ${ctaUrl}]`;
   } else if (type === 'document' || type === 'pdf' || type === 'image') {
-    let link = String(body.link || body.pdfUrl || body.url || '').trim();
+    let link = String(body.link || body.pdfUrl || body.url || body.mediaUrl || '').trim();
     let mediaId = String(body.mediaId || body.documentId || body.imageId || '').trim();
     const caption = String(body.caption || '').trim();
     const mimeHint = String(body.mimeType || body.mime || '').trim();
@@ -672,9 +672,9 @@ exports.handler = async (event) => {
       persist.media_mime = 'application/pdf';
       persist.filename = filename;
       persist.media_url = persistMediaUrl(link, mediaId);
-    } else if (headerImgB64 || headerImg?.mediaId || headerImg?.link) {
+    } else if (headerImgB64 || headerImg?.mediaId || headerImg?.link || headerImg?.mediaUrl) {
       let mediaId = String(headerImg?.mediaId || '').trim();
-      let link = String(headerImg?.link || headerImg?.url || '').trim();
+      let link = String(headerImg?.link || headerImg?.url || headerImg?.mediaUrl || '').trim();
       let filename =
         String(headerImg?.filename || body.filename || 'image.jpg').trim() || 'image.jpg';
       let mime = String(headerImg?.mimeType || headerImg?.mime || 'image/jpeg').trim() || 'image/jpeg';
