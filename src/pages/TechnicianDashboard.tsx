@@ -6125,7 +6125,6 @@ const TechnicianDashboard = () => {
           /* never let bookkeeping break submit */
         }
 
-        const completerTechnicianId = user?.technicianId || user?.id || null;
         const reqsForPhaseB = stripCompletionDraftMarkers(requirementsBeforeDraft);
         const phaseBData = {
           status: 'COMPLETED' as const,
