@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS public.upi_payment_accounts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   label text NOT NULL,
-  upi_id text NOT NULL,
+  upi_id text NOT NULL DEFAULT '',
   payee_name text NOT NULL DEFAULT '',
   phone text NOT NULL DEFAULT '',
   qr_code_url text NOT NULL DEFAULT '',
@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS public.upi_payment_accounts (
 -- Upgrade existing table if columns don't exist yet
 ALTER TABLE public.upi_payment_accounts
   ADD COLUMN IF NOT EXISTS qr_code_url text NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS dynamic_upi_enabled boolean NOT NULL DEFAULT false;
+  ADD COLUMN IF NOT EXISTS dynamic_upi_enabled boolean NOT NULL DEFAULT false,
+  ALTER COLUMN upi_id SET DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_upi_payment_accounts_created
   ON public.upi_payment_accounts (created_at DESC);
