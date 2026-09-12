@@ -1324,11 +1324,14 @@ export const db = {
       return { ...created, isWalkIn: false as const };
     },
     
-    async getById(id: string) {
+    async getById(id: string | unknown) {
+      if (!id || typeof id !== 'string' || !id.trim() || id.trim() === '[object Object]') {
+        return { data: null, error: null };
+      }
       let { data, error } = await supabase
         .from('customers')
         .select(CUSTOMER_ROW_COLUMNS)
-        .eq('id', id)
+        .eq('id', id.trim())
         .single();
 
       if (error && isMissingDualSiteColumnError(error)) {
@@ -7956,12 +7959,14 @@ export const db = {
     },
 
     /** Single reminder row for Settings deep-links (excludes pending-payment title). */
-    async getById(id: string) {
-      if (!id) return { data: null, error: null };
+    async getById(id: string | unknown) {
+      if (!id || typeof id !== 'string' || !id.trim() || id.trim() === '[object Object]') {
+        return { data: null, error: null };
+      }
       const { data, error } = await supabase
         .from('reminders')
         .select(REMINDER_ROW_COLUMNS)
-        .eq('id', id)
+        .eq('id', id.trim())
         .neq('title', PENDING_PAYMENT_REMINDER_TITLE)
         .maybeSingle();
       return { data: (data as Reminder | null) ?? null, error };

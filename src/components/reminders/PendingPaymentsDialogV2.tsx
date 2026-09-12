@@ -1265,8 +1265,12 @@ export function SettingsPendingPaymentsDialogV2({
   );
 
   const load = async (
-    focusId?: string | null
+    focusId?: string | null | unknown
   ): Promise<{ list: PendingPaymentReminder[]; brands: Record<string, DocumentBrand | null> }> => {
+    const validFocusId =
+      typeof focusId === 'string' && focusId.trim() && focusId.trim() !== '[object Object]'
+        ? focusId.trim()
+        : null;
     setLoading(true);
     let result: PendingPaymentReminder[] = [];
     let brandMap: Record<string, DocumentBrand | null> = {};
@@ -1296,11 +1300,11 @@ export function SettingsPendingPaymentsDialogV2({
         };
       }) as PendingPaymentReminder[];
 
-      if (focusId && !list.some((r) => r.id === focusId)) {
+      if (validFocusId && !list.some((r) => r.id === validFocusId)) {
         const { data: oneRow, error: oneErr } = await supabase
           .from('reminders')
           .select(REMINDER_ROW_COLUMNS)
-          .eq('id', focusId)
+          .eq('id', validFocusId)
           .maybeSingle();
         if (!oneErr && oneRow) {
           const parsed = parsePendingPaymentReminderNotes(oneRow.notes);
@@ -1629,7 +1633,7 @@ export function SettingsPendingPaymentsDialogV2({
         <div className="flex-1 min-h-0 overflow-y-auto">
           {!loaded ? (
             <div className="flex flex-col gap-3">
-              <Button onClick={load} disabled={loading} className="w-full sm:w-auto min-h-9">
+              <Button onClick={() => void load()} disabled={loading} className="w-full sm:w-auto min-h-9">
                 {loading ? 'Loading...' : 'Load pending payments'}
               </Button>
               <Button onClick={handleOpenAdd} variant="outline" disabled={loading} className="w-full sm:w-auto min-h-9">
@@ -1647,7 +1651,7 @@ export function SettingsPendingPaymentsDialogV2({
                 <Plus className="w-4 h-4 mr-2" />
                 Add pending payment
               </Button>
-              <Button variant="outline" onClick={load} disabled={loading} className="w-full sm:w-auto min-h-9">
+              <Button variant="outline" onClick={() => void load()} disabled={loading} className="w-full sm:w-auto min-h-9">
                 {loading ? 'Refreshing...' : 'Refresh'}
               </Button>
             </div>
@@ -1675,7 +1679,7 @@ export function SettingsPendingPaymentsDialogV2({
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={load}
+                  onClick={() => void load()}
                   disabled={loading}
                   size="icon"
                   className="h-10 w-10 shrink-0"
@@ -2022,6 +2026,16 @@ export function SettingsPendingPaymentsDialogV2({
           }}
         >
           <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <WhatsAppIcon className="w-5 h-5 text-green-600" />
+                Payment received — WhatsApp
+              </DialogTitle>
+              <DialogDescription>
+                Send a short thank-you message confirming the received amount.
+              </DialogDescription>
+            </DialogHeader>
+
             {postCompleteWhatsappTarget && postCompleteCustomerLabel && (
               <>
                 {(() => {
@@ -2033,16 +2047,6 @@ export function SettingsPendingPaymentsDialogV2({
 
                   return (
                     <>
-                      <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                          <WhatsAppIcon className="w-5 h-5 text-green-600" />
-                          Payment received — WhatsApp
-                        </DialogTitle>
-                        <DialogDescription>
-                          Send a short thank-you message confirming the received amount.
-                        </DialogDescription>
-                      </DialogHeader>
-
                       <div className="py-4 space-y-3">
                         <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                           <div className="text-sm text-gray-700">
@@ -2194,6 +2198,17 @@ export function SettingsPendingPaymentsDialogV2({
           }}
         >
           <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <WhatsAppIcon className="w-5 h-5 text-green-600" />
+                Notify via WhatsApp
+              </DialogTitle>
+              <DialogDescription>
+                {whatsappUseOverdueNotice
+                  ? 'Overdue notice: promises / warranty / agreements no longer valid; advance not returned. Reply here for help.'
+                  : 'Message includes amount due, due date, and UPI pay link when enabled.'}
+              </DialogDescription>
+            </DialogHeader>
             {whatsappTarget && (
               <>
                 {(() => {
@@ -2270,18 +2285,6 @@ export function SettingsPendingPaymentsDialogV2({
 
                   return (
                     <>
-                      <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                          <WhatsAppIcon className="w-5 h-5 text-green-600" />
-                          Notify via WhatsApp
-                        </DialogTitle>
-                        <DialogDescription>
-                          {sendOverdue
-                            ? 'Overdue notice: promises / warranty / agreements no longer valid; advance not returned. Reply here for help.'
-                            : 'Message includes amount due, due date, and UPI pay link when enabled.'}
-                        </DialogDescription>
-                      </DialogHeader>
-
                       <div className="py-4 space-y-3">
                         <div className="bg-gray-50 dark:bg-muted/40 rounded-lg p-4 space-y-2">
                           <div className="text-sm text-foreground">
@@ -2667,6 +2670,15 @@ export function SettingsPendingPaymentsDialogV2({
           }}
         >
           <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <PhoneCall className="w-5 h-5 text-blue-600" />
+                Call customer
+              </DialogTitle>
+              <DialogDescription>
+                Choose which number to call (if you have both primary and alternate).
+              </DialogDescription>
+            </DialogHeader>
             {callTarget && (
               <>
                 {(() => {
@@ -2677,16 +2689,6 @@ export function SettingsPendingPaymentsDialogV2({
 
                   return (
                     <>
-                      <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                          <PhoneCall className="w-5 h-5 text-blue-600" />
-                          Call customer
-                        </DialogTitle>
-                        <DialogDescription>
-                          Choose which number to call (if you have both primary and alternate).
-                        </DialogDescription>
-                      </DialogHeader>
-
                       <div className="py-4 space-y-3">
                         <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                           <div className="text-sm text-gray-700">
