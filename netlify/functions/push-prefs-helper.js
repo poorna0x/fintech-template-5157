@@ -118,6 +118,148 @@ async function pruneAdminFcmTokens(db, staleTokens) {
   }
 }
 
+async function getAdminTokenPlatforms(db, tokens) {
+  const map = new Map();
+  const list = [...new Set((tokens || []).filter(Boolean))];
+  if (list.length === 0) return map;
+  try {
+    const { data: rows } = await db
+      .from('admin_push_tokens')
+      .select('token, platform')
+      .in('token', list);
+    for (const r of rows || []) {
+      if (!r?.token) continue;
+      map.set(r.token, r.platform === 'web' ? 'web' : 'android');
+    }
+  } catch (e) {
+    console.warn('[fcm-helper] admin platform lookup failed:', e?.message || e);
+  }
+  return map;
+}
+
+/**
+ * Browser / iOS Home Screen needs a visible `notification` (+ webpush link).
+ * Android APK stays on the original payload (data-only Reply UI, tray clear, etc.).
+ */
+function adaptAdminMessageForWeb(message) {
+  const data = stringifyFcmData(message.data);
+  const title =
+    message.notification?.title ||
+    data.msgTitle ||
+    data.title ||
+    data.Title ||
+    'Hydrogen RO';
+  const body =
+    message.notification?.body ||
+    data.msgBody ||
+    data.body ||
+    data.Body ||
+    data.message ||
+    'Open admin app';
+  return {
+    token: message.token,
+    data,
+    notification: {
+      title: String(title).slice(0, 120),
+      body: String(body || ' ').slice(0, 240),
+    },
+    webpush: {
+      headers: { Urgency: 'high' },
+      fcmOptions: { link: `${siteBaseUrl()}/admin` },
+    },
+  };
+}
+
+function shouldSkipAdminWebPush(opts) {
+  if (opts?.skipWeb || opts?.silentWeb) return true;
+  const data = opts?.data || {};
+  const type = String(data.type || '');
+  if (type === 'whatsapp_tray_clear') return true;
+  if (data.silent === '1' || data.silent === 'true') return true;
+  return false;
+}
+
+/**
+ * Fan-out one FCM payload to admin tokens. Splits android vs web so APKs keep
+ * data-only/Reply behavior while PWA/iOS get a visible notification.
+ *
+ * @returns {{ successCount: number, failureCount: number, stale: string[] }}
+ */
+async function sendAdminMulticast(db, messaging, opts = {}) {
+  const tokens = [...new Set((opts.tokens || []).filter(Boolean))];
+  if (tokens.length === 0) {
+    return { successCount: 0, failureCount: 0, stale: [] };
+  }
+
+  const platformByToken = await getAdminTokenPlatforms(db, tokens);
+  const webTokens = tokens.filter((t) => platformByToken.get(t) === 'web');
+  const androidTokens = tokens.filter((t) => platformByToken.get(t) !== 'web');
+
+  let successCount = 0;
+  let failureCount = 0;
+  const stale = [];
+  /** @type {Map<string, { success: boolean, error?: unknown }>} */
+  const resultByToken = new Map();
+
+  const data = opts.data ? stringifyFcmData(opts.data) : undefined;
+  const androidPayload = {
+    tokens: androidTokens,
+    ...(opts.notification ? { notification: opts.notification } : {}),
+    ...(data ? { data } : {}),
+    ...(opts.android ? { android: opts.android } : {}),
+    ...(opts.apns ? { apns: opts.apns } : {}),
+  };
+
+  if (androidTokens.length > 0) {
+    const res = await messaging.sendEachForMulticast(androidPayload);
+    (res.responses || []).forEach((r, i) => {
+      const token = androidTokens[i];
+      resultByToken.set(token, r);
+      if (r.success) successCount += 1;
+      else {
+        failureCount += 1;
+        if (isStaleTokenError(r.error)) stale.push(token);
+      }
+    });
+  }
+
+  if (!shouldSkipAdminWebPush(opts) && webTokens.length > 0) {
+    for (const token of webTokens) {
+      const adapted = adaptAdminMessageForWeb({
+        token,
+        notification: opts.notification,
+        data,
+      });
+      const result = await sendFcmWithRetry(messaging, adapted);
+      if (result.ok) {
+        successCount += 1;
+        resultByToken.set(token, { success: true });
+      } else {
+        failureCount += 1;
+        resultByToken.set(token, { success: false, error: result.err });
+        if (result.stale) stale.push(token);
+      }
+    }
+  } else if (webTokens.length > 0) {
+    // Skipped web (silent / tray clear) — count as delivered so callers don't prune.
+    for (const token of webTokens) {
+      successCount += 1;
+      resultByToken.set(token, { success: true });
+    }
+  }
+
+  if (stale.length > 0) {
+    await pruneAdminFcmTokens(db, stale);
+  }
+
+  // Keep response order aligned with the original `tokens` array for callers.
+  const responses = tokens.map(
+    (t) => resultByToken.get(t) || { success: false, error: new Error('not_sent') }
+  );
+
+  return { successCount, failureCount, stale, responses };
+}
+
 async function getTechnicianFcmTokens(db, technicianId, category = null) {
   const tokens = new Set();
   const knownDeviceTokens = new Set();
@@ -412,6 +554,7 @@ async function sendToTechnicianDevices(db, messaging, technicianId, buildMessage
 module.exports = {
   getAdminFcmTokens,
   pruneAdminFcmTokens,
+  sendAdminMulticast,
   getTechnicianFcmTokens,
   pruneTechnicianFcmTokens,
   sendToTechnicianDevices,

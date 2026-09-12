@@ -13,7 +13,7 @@ const {
 } = require('./rate-limiter');
 const {
   getMessaging,
-  getAdminFcmTokens,
+  getAdminFcmTokens, sendAdminMulticast,
   pruneAdminFcmTokens,
   sendToTechnicianDevices,
   isStaleTokenError,
@@ -100,7 +100,7 @@ async function sendJobReviewNotifications(db, token, opts = {}) {
     const messaging = await getMessaging(db);
     const tokens = [...new Set(await getAdminFcmTokens(db, 'job_status'))];
     if (tokens.length > 0) {
-      const res = await messaging.sendEachForMulticast({
+      const res = await sendAdminMulticast(db, messaging, {
         tokens,
         notification: { title, body: message },
         data: {

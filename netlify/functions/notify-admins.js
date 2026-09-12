@@ -5,7 +5,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
-const { getMessaging, isStaleTokenError, sendToTechnicianDevices, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, sendToTechnicianDevices, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens } = require('./fcm-helper');
 const { notifyAdminsOtpEntered } = require('./admin-otp-notify');
 
 const COLOR_EN_ROUTE = '#2563EB'; // blue — on the way
@@ -385,7 +385,7 @@ exports.handler = async (event) => {
         ? { completedDate: formatIstDateYmd() }
         : {}),
     };
-    const res = await messaging.sendEachForMulticast({
+    const res = await sendAdminMulticast(db, messaging, {
       tokens,
       notification: { title, body: message },
       data,

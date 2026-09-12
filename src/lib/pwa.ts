@@ -1,4 +1,4 @@
-import { ensureTechnicianSwUpdated } from './pwaSwMigration';
+import { ensureTechnicianSwUpdated, ensureAdminSwUpdated } from './pwaSwMigration';
 import {
   buildWhereWebManifest,
   saveWherePwaToken,
@@ -194,25 +194,38 @@ export const registerAdminPWA = () => {
     console.log('[PWA] Admin manifest link set to /admin-manifest.json');
   }
   
-  return registerPWA({
+  const registration = registerPWA({
     swUrl: '/admin-sw.js',
-    scope: '/admin/',
+    // Match /admin and /admin/... (trailing slash would miss /admin and break iOS getToken).
+    scope: '/admin',
     label: 'Admin PWA',
     // Local web-push needs an active SW; admin SW does not precache HTML.
     allowInDev: true,
   });
+
+  void registration.then(() => {
+    ensureAdminSwUpdated();
+  });
+
+  return registration;
 };
 
 /** Awaitable Admin SW registration (for FCM web getToken). */
 export async function ensureAdminServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null;
   try {
-    const existing = await navigator.serviceWorker.getRegistration('/admin/');
-    if (existing) return existing;
+    const existing = await navigator.serviceWorker.getRegistration('/admin');
+    if (existing?.active) return existing;
+    if (existing) {
+      await waitForServiceWorkerActive(existing);
+      return existing;
+    }
   } catch {
     /* fall through */
   }
-  return registerAdminPWA();
+  const reg = await registerAdminPWA();
+  if (reg) await waitForServiceWorkerActive(reg);
+  return reg;
 }
 
 let whereManifestObjectUrl: string | null = null;

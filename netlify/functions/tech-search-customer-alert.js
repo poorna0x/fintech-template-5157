@@ -8,7 +8,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
-const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens } = require('./fcm-helper');
 const { checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
 
 exports.handler = async (event) => {
@@ -83,7 +83,7 @@ exports.handler = async (event) => {
 
   try {
     const messaging = await getMessaging(db);
-    const res = await messaging.sendEachForMulticast({
+    const res = await sendAdminMulticast(db, messaging, {
       tokens,
       notification: {
         title: `${techName} searched customers`,

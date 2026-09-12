@@ -8,6 +8,7 @@ const {
   getMessaging,
   isStaleTokenError,
   getAdminFcmTokens,
+  sendAdminMulticast,
   pruneAdminFcmTokens,
 } = require('./fcm-helper');
 const { verifyTechPushAckToken } = require('./tech-push-ack-token');
@@ -107,40 +108,31 @@ exports.handler = async (event) => {
 
   try {
     const messaging = await getMessaging(db);
-    const results = await Promise.allSettled(
-      tokens.map((token) =>
-        messaging.send({
-          token,
-          data: {
-            type,
-            msgTitle: title.slice(0, 120),
-            msgBody: msgBody.slice(0, 300),
-            title: title.slice(0, 120),
-            body: msgBody.slice(0, 300),
-            techName,
-            technicianId,
-            source: String(source),
-            silent: silent ? '1' : '0',
-            // One tray slot per technician so two techs seeing a message don't overwrite each other.
-            tag: silent
-              ? `tech_push_dismissed_${technicianId || 'unknown'}`
-              : `tech_message_opened_${technicianId || 'unknown'}`,
-          },
-          android: { priority: 'high' },
-        })
-      )
-    );
-    const stale = [];
-    let sent = 0;
-    results.forEach((r, i) => {
-      if (r.status === 'fulfilled') sent += 1;
-      else if (isStaleTokenError(r.reason)) stale.push(tokens[i]);
-      else console.error('[submit-tech-push-ack] send failed', r.reason?.message || r.reason);
+    const res = await sendAdminMulticast(db, messaging, {
+      tokens,
+      data: {
+        type,
+        msgTitle: title.slice(0, 120),
+        msgBody: msgBody.slice(0, 300),
+        title: title.slice(0, 120),
+        body: msgBody.slice(0, 300),
+        techName,
+        technicianId,
+        source: String(source),
+        silent: silent ? '1' : '0',
+        // One tray slot per technician so two techs seeing a message don't overwrite each other.
+        tag: silent
+          ? `tech_push_dismissed_${technicianId || 'unknown'}`
+          : `tech_message_opened_${technicianId || 'unknown'}`,
+      },
+      android: { priority: 'high' },
+      silentWeb: Boolean(silent),
     });
-    if (stale.length) {
-      await pruneAdminFcmTokens(db, stale);
-    }
-    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, admins: sent }) };
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ ok: true, admins: res.successCount }),
+    };
   } catch (err) {
     console.error('[submit-tech-push-ack] failed', err?.message || err);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Push failed' }) };

@@ -3,7 +3,7 @@
 // "9 completed · ₹12,400 collected (₹4,300 cash) · 2 jobs still open"
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -107,7 +107,7 @@ exports.handler = async (event) => {
   const message = parts.join(' · ');
 
   const messaging = await getMessaging(db);
-  const res = await messaging.sendEachForMulticast({
+  const res = await sendAdminMulticast(db, messaging, {
     tokens,
     notification: { title, body: message },
     data: { type: 'day_summary' },

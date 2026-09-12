@@ -1,7 +1,7 @@
 // Best-effort FCM to all admin APK devices when a customer WhatsApp arrives.
 // Called from whatsapp-webhook after persisting inbound — soft-fail only.
 
-const { getMessaging, getAdminFcmTokens, pruneAdminFcmTokens, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens, isStaleTokenError } = require('./fcm-helper');
 
 const WA_GREEN = '#25D366';
 
@@ -75,7 +75,7 @@ async function pushWhatsAppInboundToAdmins(db, details) {
   const titleText = `WhatsApp · ${title}`;
 
   const messaging = await getMessaging(db);
-  const res = await messaging.sendEachForMulticast({
+  const res = await sendAdminMulticast(db, messaging, {
     tokens,
     notification: {
       title: titleText,
@@ -129,7 +129,7 @@ async function pushWhatsAppTrayClearToAdmins(db, phoneE164) {
   if (tokens.length === 0) return { sent: 0, reason: 'no_tokens' };
 
   const messaging = await getMessaging(db);
-  const res = await messaging.sendEachForMulticast({
+  const res = await sendAdminMulticast(db, messaging, {
     tokens,
     data: {
       type: 'whatsapp_tray_clear',

@@ -4,7 +4,7 @@
 // they know to double-check the day's parts entries.
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, getAdminFcmTokens, pruneAdminFcmTokens, sendToTechnicianDevices } = require('./fcm-helper');
+const { getMessaging, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens, sendToTechnicianDevices } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -101,7 +101,7 @@ exports.handler = async (event) => {
   const adminTokens = await getAdminFcmTokens(db, 'parts_reminder');
   if (adminTokens.length > 0) {
     const jobCount = (doneToday || []).length;
-    const res = await messaging.sendEachForMulticast({
+    const res = await sendAdminMulticast(db, messaging, {
       tokens: adminTokens,
       notification: {
         title: 'Check parts entries',

@@ -1,16 +1,18 @@
 /**
- * One-time reload after technician SW v6 so installed PWAs pick up FCM web push
- * handlers (msgTitle/msgBody) + network-first navigation. Safe no-op when already
- * migrated or in dev.
+ * One-time reload after SW bumps so installed PWAs pick up FCM web push
+ * handlers (msgTitle/msgBody) + network-first navigation. Safe no-op when
+ * already migrated or in dev.
  */
-const TECHNICIAN_SW_MIGRATION_KEY = 'hro-technician-sw-v6';
 
-export function ensureTechnicianSwUpdated(): void {
+function ensureSwUpdated(opts: {
+  migrationKey: string;
+  registrationScope: string;
+}): void {
   if (import.meta.env.DEV) return;
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
-  if (localStorage.getItem(TECHNICIAN_SW_MIGRATION_KEY)) return;
+  if (localStorage.getItem(opts.migrationKey)) return;
 
-  const markDone = () => localStorage.setItem(TECHNICIAN_SW_MIGRATION_KEY, '1');
+  const markDone = () => localStorage.setItem(opts.migrationKey, '1');
 
   const reloadOnce = () => {
     markDone();
@@ -19,7 +21,7 @@ export function ensureTechnicianSwUpdated(): void {
 
   void (async () => {
     try {
-      const reg = await navigator.serviceWorker.getRegistration('/technician');
+      const reg = await navigator.serviceWorker.getRegistration(opts.registrationScope);
       if (!reg) {
         markDone();
         return;
@@ -56,4 +58,21 @@ export function ensureTechnicianSwUpdated(): void {
       markDone();
     }
   })();
+}
+
+const TECHNICIAN_SW_MIGRATION_KEY = 'hro-technician-sw-v6';
+const ADMIN_SW_MIGRATION_KEY = 'hro-admin-sw-v8';
+
+export function ensureTechnicianSwUpdated(): void {
+  ensureSwUpdated({
+    migrationKey: TECHNICIAN_SW_MIGRATION_KEY,
+    registrationScope: '/technician',
+  });
+}
+
+export function ensureAdminSwUpdated(): void {
+  ensureSwUpdated({
+    migrationKey: ADMIN_SW_MIGRATION_KEY,
+    registrationScope: '/admin',
+  });
 }

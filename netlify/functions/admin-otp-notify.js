@@ -3,7 +3,7 @@
 
 const {
   getMessaging,
-  getAdminFcmTokens,
+  getAdminFcmTokens, sendAdminMulticast,
   pruneAdminFcmTokens,
   isStaleTokenError,
 } = require('./fcm-helper');
@@ -87,7 +87,7 @@ async function notifyAdminsOtpEntered(db, opts) {
 
   try {
     const messaging = await getMessaging(db);
-    const res = await messaging.sendEachForMulticast({
+    const res = await sendAdminMulticast(db, messaging, {
       tokens,
       notification: { title, body: message },
       data: {

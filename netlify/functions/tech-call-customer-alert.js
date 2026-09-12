@@ -14,7 +14,7 @@ const { createClient } = require('@supabase/supabase-js');
 const {
   getMessaging,
   isStaleTokenError,
-  getAdminFcmTokens,
+  getAdminFcmTokens, sendAdminMulticast,
   pruneAdminFcmTokens,
 } = require('./fcm-helper');
 const { checkRateLimit, checkRateLimitForKey } = require('./rate-limiter');
@@ -201,7 +201,7 @@ async function processOneAlert(db, opts) {
   // save the caller number + show the tray itself (notification+data would not).
   const bodyText = `${customer.full_name} (${phone})${timeBit}`;
   const tag = `tech_call_${technicianId || 'admin'}_${phone}${missed ? '_missed' : ''}`;
-  const res = await messaging.sendEachForMulticast({
+  const res = await sendAdminMulticast(db, messaging, {
     tokens,
     data: {
       type: 'tech_call',

@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'admin-static-v7';
-const RUNTIME_CACHE = 'admin-runtime-v7';
+const STATIC_CACHE = 'admin-static-v8';
+const RUNTIME_CACHE = 'admin-runtime-v8';
 
 /** Do not precache HTML — cached index.html keeps old /assets/* hashes and breaks after deploy. */
 const PRECACHE_URLS = [];
@@ -20,17 +20,25 @@ try {
   );
   firebase.initializeApp(FIREBASE_WEB_CONFIG);
   const messaging = firebase.messaging();
-  // Data-only payloads (rare) — notification+data payloads are shown by the browser/FCM.
   messaging.onBackgroundMessage((payload) => {
+    const data = (payload && payload.data) || {};
     const title =
       (payload.notification && payload.notification.title) ||
-      (payload.data && (payload.data.title || payload.data.Title)) ||
+      data.msgTitle ||
+      data.title ||
+      data.Title ||
       'Hydrogen RO';
     const body =
       (payload.notification && payload.notification.body) ||
-      (payload.data && (payload.data.body || payload.data.Body || payload.data.message)) ||
+      data.msgBody ||
+      data.body ||
+      data.Body ||
+      data.message ||
       '';
-    const data = payload.data || {};
+    // FCM already displayed a notification payload — avoid duplicate tray entry.
+    if (payload.notification && payload.notification.title) {
+      return undefined;
+    }
     return self.registration.showNotification(title, {
       body,
       icon: '/favicon-32x32.png',
@@ -74,6 +82,12 @@ self.addEventListener('activate', (event) => {
         console.log('[Admin PWA] Service worker activated');
       })
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    void self.skipWaiting();
+  }
 });
 
 self.addEventListener('notificationclick', (event) => {

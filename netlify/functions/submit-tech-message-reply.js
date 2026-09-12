@@ -4,7 +4,8 @@
 // as a data-only notification so admins can reply back inline.
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens,
+  sendAdminMulticast, pruneAdminFcmTokens } = require('./fcm-helper');
 const {
   makeOfficeMessageReplyToken,
   verifyOfficeMessageReplyToken,
@@ -131,39 +132,28 @@ exports.handler = async (event) => {
       originalBody,
       aboutFromToken
     );
-    const results = await Promise.allSettled(
-      tokens.map((token) =>
-        messaging.send({
-          token,
-          // Data-only: admin HroMessagingService shows notification + Reply.
-          data: {
-            type: 'tech_message_reply',
-            msgTitle: title,
-            msgBody,
-            title,
-            body: msgBody,
-            techName,
-            techPhoto,
-            technicianId,
-            replyToken: adminReplyToken,
-            replyUrl: `${siteUrl}/.netlify/functions/submit-admin-message-reply`,
-            tag: 'office_message_reply',
-          },
-          android: { priority: 'high' },
-        })
-      )
-    );
-    const stale = [];
-    let sent = 0;
-    results.forEach((r, i) => {
-      if (r.status === 'fulfilled') sent += 1;
-      else if (isStaleTokenError(r.reason)) stale.push(tokens[i]);
-      else console.error('[submit-tech-message-reply] send failed', r.reason?.message || r.reason);
+    const res = await sendAdminMulticast(db, messaging, {
+      tokens,
+      data: {
+        type: 'tech_message_reply',
+        msgTitle: title,
+        msgBody,
+        title,
+        body: msgBody,
+        techName,
+        techPhoto,
+        technicianId,
+        replyToken: adminReplyToken,
+        replyUrl: `${siteUrl}/.netlify/functions/submit-admin-message-reply`,
+        tag: 'office_message_reply',
+      },
+      android: { priority: 'high' },
     });
-    if (stale.length) {
-      await pruneAdminFcmTokens(db, stale);
-    }
-    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, admins: sent }) };
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ ok: true, admins: res.successCount }),
+    };
   } catch (err) {
     console.error('[submit-tech-message-reply] failed', err?.message || err);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Push failed' }) };

@@ -8,7 +8,7 @@
 // push payload — no state is stored anywhere.
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
 const { requireCashCheckSignSecret, signCashCheck } = require('./cash-check-hmac');
 
@@ -137,7 +137,7 @@ exports.handler = async (event) => {
 
     // Data-only push: the admin app's native HroMessagingService turns it
     // into a notification with Yes/No action buttons.
-    const res = await messaging.sendEachForMulticast({
+    const res = await sendAdminMulticast(db, messaging, {
       tokens: adminTokens,
       data: {
         type: 'cash_check',

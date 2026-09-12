@@ -4,6 +4,7 @@
 const {
   getAdminFcmTokens,
   pruneAdminFcmTokens,
+  sendAdminMulticast,
   getTechnicianFcmTokens,
   pruneTechnicianFcmTokens,
   sendToTechnicianDevices,
@@ -54,6 +55,7 @@ module.exports = {
   getMessaging,
   getAdminFcmTokens,
   pruneAdminFcmTokens,
+  sendAdminMulticast,
   getTechnicianFcmTokens,
   pruneTechnicianFcmTokens,
   sendToTechnicianDevices,

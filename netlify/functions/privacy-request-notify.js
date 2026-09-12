@@ -3,7 +3,7 @@
  */
 const {
   getMessaging,
-  getAdminFcmTokens,
+  getAdminFcmTokens, sendAdminMulticast,
   pruneAdminFcmTokens,
   isStaleTokenError,
 } = require('./fcm-helper');
@@ -33,7 +33,7 @@ async function notifyAdminsPrivacyRequest(db, details) {
     const body = `${who} · ${brand}${phone ? ` · ${phone}` : ''}`;
 
     const messaging = await getMessaging(db);
-    const res = await messaging.sendEachForMulticast({
+    const res = await sendAdminMulticast(db, messaging, {
       tokens,
       notification: { title, body },
       data: {

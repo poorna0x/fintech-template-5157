@@ -4,7 +4,7 @@
 // tap always deep-links into Settings on that customer.
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
 const { buildPendingPaymentWhatsAppForPush } = require('./pending-payment-whatsapp');
 
@@ -213,7 +213,7 @@ exports.handler = async (event) => {
         tag,
       };
 
-      const res = await messaging.sendEachForMulticast({
+      const res = await sendAdminMulticast(db, messaging, {
         tokens,
         data,
         android: { priority: 'high' },
@@ -239,7 +239,7 @@ exports.handler = async (event) => {
       tag,
     };
 
-    const res = await messaging.sendEachForMulticast({
+    const res = await sendAdminMulticast(db, messaging, {
       tokens,
       data,
       android: { priority: 'high' },

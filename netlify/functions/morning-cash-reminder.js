@@ -8,7 +8,7 @@ const { createClient } = require('@supabase/supabase-js');
 const {
   getMessaging,
   isStaleTokenError,
-  getAdminFcmTokens,
+  getAdminFcmTokens, sendAdminMulticast,
   pruneAdminFcmTokens,
 } = require('./fcm-helper');
 const { sendCashHandoverReminder } = require('./cash-handover-push');
@@ -124,7 +124,7 @@ exports.handler = async (event) => {
         const sig = signCashCheck(row.technician_id, cashDate, amount, hmac.secret);
         const rupees = amount.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         const whenLabel = isYesterday ? 'yesterday' : cashDate;
-        const res = await messaging.sendEachForMulticast({
+        const res = await sendAdminMulticast(db, messaging, {
           tokens: adminTokens,
           data: {
             type: 'cash_check',

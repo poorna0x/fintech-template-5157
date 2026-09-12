@@ -5,7 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const {
   getMessaging,
   isStaleTokenError,
-  getAdminFcmTokens,
+  getAdminFcmTokens, sendAdminMulticast,
   pruneAdminFcmTokens,
   sendToTechnicianDevices,
 } = require('./fcm-helper');
@@ -225,7 +225,7 @@ exports.handler = async (event) => {
 
     let adminSent = 0;
     if (adminTokens.length > 0) {
-      const res = await messaging.sendEachForMulticast({
+      const res = await sendAdminMulticast(db, messaging, {
         tokens: adminTokens,
         notification: { title, body: bodyText },
         data: dataPayload,

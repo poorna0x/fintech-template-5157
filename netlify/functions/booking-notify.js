@@ -13,7 +13,7 @@
 
 const nodemailer = require('nodemailer');
 const { getFixedFromAddress } = require('./email-guard');
-const { getMessaging, getAdminFcmTokens, pruneAdminFcmTokens, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens, isStaleTokenError } = require('./fcm-helper');
 
 // Default owner inbox; override per-environment with BOOKING_NOTIFY_EMAIL
 // (single address or comma-separated list).
@@ -116,7 +116,7 @@ async function pushBookingToAdmins(db, details = {}) {
     ];
 
     const messaging = await getMessaging(db);
-    const res = await messaging.sendEachForMulticast({
+    const res = await sendAdminMulticast(db, messaging, {
       tokens,
       notification: {
         title: isWhatsApp ? 'New WhatsApp booking' : 'New website booking',

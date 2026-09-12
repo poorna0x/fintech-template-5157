@@ -3,7 +3,7 @@
 // Auth: HMAC startToken from send-tech-push (no session).
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens } = require('./fcm-helper');
 const { verifyJobStartNudgeToken } = require('./job-start-nudge-token');
 
 const STARTABLE = new Set(['ASSIGNED', 'PENDING', 'EN_ROUTE']);
@@ -113,7 +113,7 @@ exports.handler = async (event) => {
     if (tokens.length) {
       try {
         const messaging = await getMessaging(db);
-        const res = await messaging.sendEachForMulticast({
+        const res = await sendAdminMulticast(db, messaging, {
           tokens,
           notification: { title, body: message },
           data: {

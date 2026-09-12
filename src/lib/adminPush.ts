@@ -172,6 +172,14 @@ async function saveToken(token: string, platform: 'android' | 'web'): Promise<vo
     const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
     const cached = readPersist();
     if (cached) writePersist({ ...cached, callAlertsEnabled, platform });
+    if (platform === 'web') {
+      await supabase
+        .from('admin_push_tokens')
+        .update({ platform: 'web' })
+        .eq('token', token)
+        .then(() => undefined)
+        .catch(() => undefined);
+    }
     if (platform === 'android') {
       await syncDevicePrefsToNative({ callAlertsEnabled });
     }
@@ -327,7 +335,20 @@ export async function enableAdminWebPush(): Promise<AdminWebPushStatus> {
     };
   }
 
-  if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) {
+  if (
+    typeof window === 'undefined' ||
+    !('Notification' in window) ||
+    !('serviceWorker' in navigator) ||
+    !('PushManager' in window)
+  ) {
+    if (isIosSafariFamily()) {
+      return {
+        ok: false,
+        reason: 'ios_not_installed',
+        message:
+          'On iPhone: Safari → Share → Add to Home Screen, open HRO Admin from that icon, then enable notifications here.',
+      };
+    }
     return {
       ok: false,
       reason: 'unsupported',
@@ -382,6 +403,11 @@ export async function enableAdminWebPush(): Promise<AdminWebPushStatus> {
       message: 'Could not register the Admin service worker.',
     };
   }
+  try {
+    await navigator.serviceWorker.ready;
+  } catch {
+    /* continue — getToken may still work with explicit registration */
+  }
 
   try {
     const { getMessaging, getToken, isSupported } = await import('firebase/messaging');
@@ -412,6 +438,7 @@ export async function enableAdminWebPush(): Promise<AdminWebPushStatus> {
     return { ok: true, token };
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Failed to enable web push';
+    console.warn('[admin-push] enableAdminWebPush failed', message);
     return { ok: false, reason: 'error', message };
   }
 }
