@@ -274,13 +274,14 @@ async function sendAdminMulticast(db, messaging, opts = {}) {
   return { successCount, failureCount, stale, responses };
 }
 
-async function getTechnicianFcmTokens(db, technicianId, category = null) {
+async function getTechnicianTokensWithPlatforms(db, technicianId, category = null) {
   const tokens = new Set();
   const knownDeviceTokens = new Set();
+  const platformByToken = new Map();
 
   const { data: rows, error: tableErr } = await db
     .from('technician_push_tokens')
-    .select('token, push_enabled, push_prefs')
+    .select('token, push_enabled, push_prefs, platform')
     .eq('technician_id', technicianId);
   if (tableErr) {
     console.warn('[fcm-helper] technician_push_tokens lookup failed:', tableErr.message);
@@ -288,6 +289,7 @@ async function getTechnicianFcmTokens(db, technicianId, category = null) {
   for (const r of rows || []) {
     if (!r.token) continue;
     knownDeviceTokens.add(r.token);
+    platformByToken.set(r.token, r.platform === 'web' ? 'web' : 'android');
     if (isPushEnabledRow(r) && isCategoryEnabled(r.push_prefs, category)) {
       tokens.add(r.token);
     }
@@ -296,7 +298,7 @@ async function getTechnicianFcmTokens(db, technicianId, category = null) {
   // Already have multi-device rows — do not add a second round-trip for the
   // legacy live_locations.fcm_token (it cannot bypass per-device mute anyway).
   if (knownDeviceTokens.size > 0) {
-    return [...tokens];
+    return { tokens: [...tokens], platformByToken };
   }
 
   const { data: legacy, error: legacyErr } = await db
@@ -312,9 +314,15 @@ async function getTechnicianFcmTokens(db, technicianId, category = null) {
   // already decided. Only fall back when the tech has no multi-device rows yet.
   if (legacy?.fcm_token && !knownDeviceTokens.has(legacy.fcm_token) && knownDeviceTokens.size === 0) {
     tokens.add(legacy.fcm_token);
+    platformByToken.set(legacy.fcm_token, 'android');
   }
 
-  return [...tokens];
+  return { tokens: [...tokens], platformByToken };
+}
+
+async function getTechnicianFcmTokens(db, technicianId, category = null) {
+  const { tokens } = await getTechnicianTokensWithPlatforms(db, technicianId, category);
+  return tokens;
 }
 
 /** Remove stale device tokens (FCM reported them dead) so we stop sending to them. */
@@ -450,20 +458,8 @@ function adaptTechnicianMessageForWeb(message) {
 }
 
 async function getTechnicianTokenPlatforms(db, technicianId) {
-  const map = new Map();
-  try {
-    const { data: rows } = await db
-      .from('technician_push_tokens')
-      .select('token, platform')
-      .eq('technician_id', technicianId);
-    for (const r of rows || []) {
-      if (!r?.token) continue;
-      map.set(r.token, r.platform === 'web' ? 'web' : 'android');
-    }
-  } catch (e) {
-    console.warn('[fcm-helper] platform lookup failed:', e?.message || e);
-  }
-  return map;
+  const { platformByToken } = await getTechnicianTokensWithPlatforms(db, technicianId, null);
+  return platformByToken;
 }
 
 /**
@@ -503,11 +499,13 @@ async function sendToTechnicianDevicesMany(
     console.warn('[fcm-helper] push_notifications_enabled check failed:', e?.message || e);
   }
 
-  const tokens = await getTechnicianFcmTokens(db, technicianId, category);
+  const { tokens, platformByToken } = await getTechnicianTokensWithPlatforms(
+    db,
+    technicianId,
+    category
+  );
   if (tokens.length === 0) return { sent: 0, tokens: 0 };
   if (list.length === 0) return { sent: 0, tokens: tokens.length, reason: 'no_payload' };
-
-  const platformByToken = await getTechnicianTokenPlatforms(db, technicianId);
 
   const stale = [];
   let sent = 0;

@@ -556,13 +556,19 @@ function attachWebClickListener(): void {
 
 async function attachWebForegroundListener(): Promise<void> {
   if (webMessageListenerAttached) return;
-  const { isFirebaseConfigured, getFirebaseApp } = await import('@/lib/firebase');
-  if (!isFirebaseConfigured()) return;
+  webMessageListenerAttached = true;
   try {
+    const { isFirebaseConfigured, getFirebaseApp } = await import('@/lib/firebase');
+    if (!isFirebaseConfigured()) {
+      webMessageListenerAttached = false;
+      return;
+    }
     const { getMessaging, onMessage, isSupported } = await import('firebase/messaging');
-    if (!(await isSupported())) return;
+    if (!(await isSupported())) {
+      webMessageListenerAttached = false;
+      return;
+    }
     const messaging = getMessaging(getFirebaseApp());
-    webMessageListenerAttached = true;
     onMessage(messaging, (payload) => {
       const data = (payload.data || {}) as Record<string, unknown>;
       const title =
@@ -627,7 +633,7 @@ async function attachWebForegroundListener(): Promise<void> {
       }
     });
   } catch {
-    /* best-effort */
+    webMessageListenerAttached = false;
   }
 }
 
@@ -635,12 +641,7 @@ async function attachWebForegroundListener(): Promise<void> {
 export function isTechnicianWebPushRegisteredLocally(): boolean {
   if (Capacitor.isNativePlatform()) return false;
   const c = readPersist();
-  const has = Boolean(c?.platform === 'web' && c.token);
-  if (has) {
-    attachWebClickListener();
-    void attachWebForegroundListener();
-  }
-  return has;
+  return Boolean(c?.platform === 'web' && c.token);
 }
 
 /**
