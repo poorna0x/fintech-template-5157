@@ -190,7 +190,7 @@ export default function UpiPaymentAccountsManager({
               className="flex items-start justify-between gap-3 rounded-lg border p-3 bg-card hover:bg-muted/30 transition-colors"
             >
               <div className="flex items-start gap-3 min-w-0 flex-1">
-                {a.qrCodeUrl ? (
+                {a.qrCodeUrl && a.qrCodeUrl !== '[object Object]' ? (
                   <img
                     src={a.qrCodeUrl}
                     alt={a.label}
@@ -306,7 +306,7 @@ export default function UpiPaymentAccountsManager({
 
           <div className="space-y-2">
             <Label>QR Code Image / Standee Photo</Label>
-            {qrCodeUrl ? (
+            {qrCodeUrl && qrCodeUrl !== '[object Object]' ? (
               <div className="relative inline-block border rounded-lg p-1 bg-background">
                 <img
                   src={qrCodeUrl}
@@ -326,7 +326,10 @@ export default function UpiPaymentAccountsManager({
               </div>
             ) : (
               <ImageUpload
-                onImagesChange={(images) => setQrCodeUrl(images[0] || '')}
+                onImagesChange={(images) => {
+                  const url = typeof images?.[0] === 'string' ? images[0].trim() : '';
+                  setQrCodeUrl(url && url !== '[object Object]' ? url : '');
+                }}
                 maxImages={1}
                 folder="common-qr-codes"
                 title=""

@@ -131,16 +131,21 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   }, [isUploading, onUploadStateChange]);
 
   const notifyParent = (images: UploadedImage[]) => {
-    onImagesChange(images.map((img) => img.url));
-    if (onCaptureSourcesChange) {
-      const sources: Record<string, PhotoCaptureSource> = {};
-      for (const img of images) {
-        if (img.captureSource && /^https?:\/\//i.test(img.url)) {
-          sources[img.url] = img.captureSource;
+    const urls = images.map((img) => img.url);
+    // Defer parent notification to microtask so parent setState is never called
+    // synchronously during a child component's render/reconciliation pass.
+    queueMicrotask(() => {
+      onImagesChange(urls);
+      if (onCaptureSourcesChange) {
+        const sources: Record<string, PhotoCaptureSource> = {};
+        for (const img of images) {
+          if (img.captureSource && /^https?:\/\//i.test(img.url)) {
+            sources[img.url] = img.captureSource;
+          }
         }
+        onCaptureSourcesChange(sources);
       }
-      onCaptureSourcesChange(sources);
-    }
+    });
   };
 
   const uploadWithRetry = async (file: File, folder: string, useSecondaryAccount: boolean) => {
@@ -311,11 +316,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               captureSource,
             };
 
-            setUploadedImages((prev) => {
-              const currentList = [...prev, nextImage];
-              notifyParent(currentList);
-              return currentList;
-            });
+            const currentList = [...uploadedImagesRef.current, nextImage];
+            uploadedImagesRef.current = currentList;
+            setUploadedImages(currentList);
+            notifyParent(currentList);
 
             toast.success('Photo uploaded', { duration: 3000 });
 
@@ -353,11 +357,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const handleRemoveImage = (imageId: string) => {
-    setUploadedImages((prev) => {
-      const updatedImages = prev.filter((img) => img.id !== imageId);
-      notifyParent(updatedImages);
-      return updatedImages;
-    });
+    const updatedImages = uploadedImagesRef.current.filter((img) => img.id !== imageId);
+    uploadedImagesRef.current = updatedImages;
+    setUploadedImages(updatedImages);
+    notifyParent(updatedImages);
   };
 
   const readFilesFromInput = (

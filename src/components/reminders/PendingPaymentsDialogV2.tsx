@@ -1121,7 +1121,11 @@ export function SettingsPendingPaymentsDialogV2({
     setWhatsappQrGenerating(true);
     void (async () => {
       try {
-        if (account.dynamicUpiEnabled === false && account.qrCodeUrl) {
+        if (
+          account.dynamicUpiEnabled === false &&
+          account.qrCodeUrl &&
+          account.qrCodeUrl !== '[object Object]'
+        ) {
           const loaded = await fetchImageUrlAsBase64(account.qrCodeUrl);
           if (cancelled) return;
           if (loaded) {
@@ -1155,7 +1159,7 @@ export function SettingsPendingPaymentsDialogV2({
         });
         if (cancelled) return;
         if (!png) {
-          if (account.qrCodeUrl) {
+          if (account.qrCodeUrl && account.qrCodeUrl !== '[object Object]') {
             const fallbackLoaded = await fetchImageUrlAsBase64(account.qrCodeUrl);
             if (fallbackLoaded && !cancelled) {
               const bytes = Uint8Array.from(atob(fallbackLoaded.base64), (c) => c.charCodeAt(0));

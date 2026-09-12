@@ -169,8 +169,12 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 export async function fetchImageUrlAsBase64(
   url: string
 ): Promise<{ base64: string; mimeType: string; filename: string } | null> {
-  const trimmed = String(url || '').trim();
-  if (!trimmed) return null;
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (!trimmed || trimmed === '[object Object]') return null;
+  if (!trimmed.startsWith('data:') && !trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    return null;
+  }
   try {
     if (trimmed.startsWith('data:')) {
       const match = trimmed.match(/^data:([^;]+);base64,(.+)$/);

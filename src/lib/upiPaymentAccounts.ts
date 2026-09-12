@@ -78,12 +78,13 @@ function rowFromDb(r: Record<string, unknown>): UpiPaymentAccount | null {
   const phone = normalizePaymentPhone(
     typeof r.phone === 'string' ? r.phone : ''
   );
-  const qrCodeUrl =
+  const rawQr =
     typeof r.qr_code_url === 'string'
       ? r.qr_code_url.trim()
       : typeof r.qrCodeUrl === 'string'
         ? r.qrCodeUrl.trim()
         : '';
+  const qrCodeUrl = rawQr && rawQr !== '[object Object]' ? rawQr : '';
   const dynamicUpiEnabled = Boolean(
     r.dynamic_upi_enabled ?? r.dynamicUpiEnabled ?? false
   );
@@ -173,6 +174,8 @@ async function migrateLocalToRemoteIfNeeded(): Promise<void> {
       upi_id: a.upiId,
       payee_name: a.payeeName || a.label,
       phone: a.phone || '',
+      qr_code_url: a.qrCodeUrl || '',
+      dynamic_upi_enabled: a.dynamicUpiEnabled || false,
     });
     if (insErr && isMissingTableError(insErr)) {
       remoteUnavailable = true;
@@ -194,7 +197,7 @@ export async function fetchUpiPaymentAccounts(): Promise<{
     await migrateLocalToRemoteIfNeeded();
     const { data, error } = await supabase
       .from('upi_payment_accounts' as any)
-      .select('id, label, upi_id, payee_name, phone, created_at')
+      .select('id, label, upi_id, payee_name, phone, qr_code_url, dynamic_upi_enabled, created_at')
       .order('created_at', { ascending: false })
       .limit(50);
     if (error) {
