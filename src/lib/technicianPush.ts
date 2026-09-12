@@ -29,6 +29,7 @@ type TechPushPersist = {
   token: string;
   technicianId: string;
   callAlertsEnabled: boolean;
+  platform?: 'android' | 'web';
 };
 
 type CompanyPhoneCache = {
@@ -163,7 +164,11 @@ async function waitForSession(maxMs = 8000): Promise<boolean> {
   return Boolean(data.session?.access_token);
 }
 
-async function saveToken(technicianId: string, token: string): Promise<boolean> {
+async function saveToken(
+  technicianId: string,
+  token: string,
+  platform: 'android' | 'web' = 'android'
+): Promise<boolean> {
   const key = persistKey(technicianId, token);
 
   const cached = readPersist();
@@ -181,15 +186,17 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
     const pushEnabled = prefsRow?.push_enabled !== false;
     const wrongLineReminderEnabled =
       normalizeTechPushPrefs(prefsRow?.push_prefs).wrong_line !== false;
-    writePersist({ ...cached, callAlertsEnabled });
-    await syncDevicePrefsToNative({
-      callAlertsEnabled,
-      pushEnabled,
-      wrongLineReminderEnabled,
-      fcmToken: token,
-      companyPhone: readCompanyPhoneCache()?.phone,
-    });
-    void syncCompanyPhoneOnce(technicianId);
+    writePersist({ ...cached, callAlertsEnabled, platform });
+    if (platform === 'android') {
+      await syncDevicePrefsToNative({
+        callAlertsEnabled,
+        pushEnabled,
+        wrongLineReminderEnabled,
+        fcmToken: token,
+        companyPhone: readCompanyPhoneCache()?.phone,
+      });
+      void syncCompanyPhoneOnce(technicianId);
+    }
     return true;
   }
 
@@ -205,29 +212,41 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
     return false;
   }
 
-  const deviceLabel = await getNativeDeviceLabel();
+  const deviceLabel =
+    platform === 'android' ? await getNativeDeviceLabel() : webTechnicianDeviceLabel();
   const prior = readPersist();
   const isNewToken = prior?.token !== token;
-  const patch: Record<string, string> = {};
+  const patch: Record<string, string> = { platform };
   if (deviceLabel) patch.device_model = deviceLabel;
   if (isNewToken || !prior) {
     patch.display_name = registrationDeviceName('technician', token, deviceLabel);
   }
-  if (Object.keys(patch).length > 0) {
-    await supabase.from('technician_push_tokens').update(patch).eq('token', token);
+  {
+    const { error: patchErr } = await supabase
+      .from('technician_push_tokens')
+      .update(patch)
+      .eq('token', token);
+    if (patchErr && String(patchErr.message || '').toLowerCase().includes('platform')) {
+      delete patch.platform;
+      if (Object.keys(patch).length > 0) {
+        await supabase.from('technician_push_tokens').update(patch).eq('token', token);
+      }
+    }
   }
 
-  const { data: locData } = await supabase
-    .from('technician_live_locations')
-    .update({ fcm_token: token })
-    .eq('technician_id', technicianId)
-    .select('technician_id');
-  if (!locData?.length) {
-    await supabase.from('technician_live_locations').insert({
-      technician_id: technicianId,
-      fcm_token: token,
-      is_tracking: false,
-    });
+  if (platform === 'android') {
+    const { data: locData } = await supabase
+      .from('technician_live_locations')
+      .update({ fcm_token: token })
+      .eq('technician_id', technicianId)
+      .select('technician_id');
+    if (!locData?.length) {
+      await supabase.from('technician_live_locations').insert({
+        technician_id: technicianId,
+        fcm_token: token,
+        is_tracking: false,
+      });
+    }
   }
 
   const { data: prefsRow } = await supabase
@@ -240,18 +259,20 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
   const pushEnabled = prefsRow?.push_enabled !== false;
   const wrongLineReminderEnabled =
     normalizeTechPushPrefs(prefsRow?.push_prefs).wrong_line !== false;
-  writePersist({ token, technicianId, callAlertsEnabled });
+  writePersist({ token, technicianId, callAlertsEnabled, platform });
   lastToken = token;
   lastPersistedKey = key;
   rememberTokenLocally(token);
-  await syncDevicePrefsToNative({
-    callAlertsEnabled,
-    pushEnabled,
-    wrongLineReminderEnabled,
-    fcmToken: token,
-    companyPhone: readCompanyPhoneCache()?.phone,
-  });
-  void syncCompanyPhoneOnce(technicianId);
+  if (platform === 'android') {
+    await syncDevicePrefsToNative({
+      callAlertsEnabled,
+      pushEnabled,
+      wrongLineReminderEnabled,
+      fcmToken: token,
+      companyPhone: readCompanyPhoneCache()?.phone,
+    });
+    void syncCompanyPhoneOnce(technicianId);
+  }
   return true;
 }
 
@@ -269,7 +290,8 @@ function trySaveAnyAvailableToken(technicianId: string): void {
 }
 
 export async function unregisterTechnicianPushToken(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
+  const cached = readPersist();
+  const platform = cached?.platform || (Capacitor.isNativePlatform() ? 'android' : 'web');
   const token = lastToken || readRememberedToken() || readNativeInjectedToken();
   lastToken = null;
   lastPersistedKey = null;
@@ -283,6 +305,17 @@ export async function unregisterTechnicianPushToken(): Promise<void> {
     delete window.__HRO_NATIVE_FCM_TOKEN;
   } catch {
     /* ignore */
+  }
+  if (platform === 'web' || !Capacitor.isNativePlatform()) {
+    try {
+      const { getMessaging, deleteToken, isSupported } = await import('firebase/messaging');
+      const { getFirebaseApp, isFirebaseConfigured } = await import('@/lib/firebase');
+      if (isFirebaseConfigured() && (await isSupported())) {
+        await deleteToken(getMessaging(getFirebaseApp())).catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
   }
   if (!token) return;
   try {
@@ -323,8 +356,17 @@ function scheduleRetry(technicianId: string, pendingToken?: string | null): void
 }
 
 export async function registerTechnicianPushToken(technicianId: string): Promise<void> {
-  if (!Capacitor.isNativePlatform() || !technicianId) return;
+  if (!technicianId) return;
   activeTechnicianId = technicianId;
+
+  // Browser / iOS Home Screen: soft-refresh existing web registration only.
+  if (!Capacitor.isNativePlatform()) {
+    const cached = readPersist();
+    if (cached?.platform === 'web' && cached.token && cached.technicianId === technicianId) {
+      void enableTechnicianWebPush(technicianId);
+    }
+    return;
+  }
 
   if (!nativeListenerAttached && typeof window !== 'undefined') {
     nativeListenerAttached = true;
@@ -409,4 +451,198 @@ export function updateCachedTechnicianCallAlerts(enabled: boolean): void {
   const c = readPersist();
   if (!c) return;
   writePersist({ ...c, callAlertsEnabled: enabled });
+}
+
+function isIosSafariFamily(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const iOS = /iPad|iPhone|iPod/.test(ua);
+  const iPadOs = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  return iOS || iPadOs;
+}
+
+function webTechnicianDeviceLabel(): string {
+  const ua = navigator.userAgent || '';
+  const browser = /Edg\//.test(ua)
+    ? 'Edge'
+    : /Chrome\//.test(ua) && !/Edg\//.test(ua)
+      ? 'Chrome'
+      : /Firefox\//.test(ua)
+        ? 'Firefox'
+        : /Safari\//.test(ua)
+          ? 'Safari'
+          : 'Browser';
+  if (isIosSafariFamily()) return `${browser} · iPhone (Home Screen)`;
+  if (/Android/i.test(ua)) return `${browser} · Android`;
+  if (/Mac/i.test(ua)) return `${browser} · Mac`;
+  if (/Windows/i.test(ua)) return `${browser} · Windows`;
+  return `${browser} · Desktop`;
+}
+
+export type TechnicianWebPushStatus =
+  | { ok: true; token: string }
+  | {
+      ok: false;
+      reason:
+        | 'native_app'
+        | 'unsupported'
+        | 'ios_not_installed'
+        | 'permission_denied'
+        | 'vapid_missing'
+        | 'firebase_missing'
+        | 'sw_missing'
+        | 'error';
+      message: string;
+    };
+
+async function fetchWebVapidKey(): Promise<string | null> {
+  const fromEnv = String(import.meta.env.VITE_FIREBASE_VAPID_KEY || '').trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const accessToken = data?.session?.access_token;
+    if (!accessToken) return null;
+    const res = await fetch('/.netlify/functions/admin-web-push-config', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { configured?: boolean; vapidKey?: string };
+    const key = String(json.vapidKey || '').trim();
+    return json.configured && key ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when this browser already has a tech web push registration cached. */
+export function isTechnicianWebPushRegisteredLocally(): boolean {
+  if (Capacitor.isNativePlatform()) return false;
+  const c = readPersist();
+  return Boolean(c?.platform === 'web' && c.token);
+}
+
+/**
+ * Register this browser / Home Screen PWA for technician FCM web push.
+ * Appears in Device Tracker — mute / types work like the Android app.
+ */
+export async function enableTechnicianWebPush(
+  technicianId: string
+): Promise<TechnicianWebPushStatus> {
+  if (Capacitor.isNativePlatform()) {
+    return {
+      ok: false,
+      reason: 'native_app',
+      message: 'This device already uses the Technician app push channel.',
+    };
+  }
+  if (!technicianId) {
+    return { ok: false, reason: 'error', message: 'Not logged in as a technician.' };
+  }
+  if (
+    typeof window === 'undefined' ||
+    !('Notification' in window) ||
+    !('serviceWorker' in navigator) ||
+    !('PushManager' in window)
+  ) {
+    if (isIosSafariFamily()) {
+      return {
+        ok: false,
+        reason: 'ios_not_installed',
+        message:
+          'On iPhone: Safari → Share → Add to Home Screen, open HRO Technician from that icon, then enable notifications.',
+      };
+    }
+    return {
+      ok: false,
+      reason: 'unsupported',
+      message: 'This browser does not support web push.',
+    };
+  }
+
+  const { isPWAMode, ensureTechnicianServiceWorker } = await import('@/lib/pwa');
+  if (isIosSafariFamily() && !isPWAMode()) {
+    return {
+      ok: false,
+      reason: 'ios_not_installed',
+      message:
+        'On iPhone: Safari → Share → Add to Home Screen, open HRO Technician from that icon, then enable notifications.',
+    };
+  }
+
+  const { getFirebaseApp, isFirebaseConfigured } = await import('@/lib/firebase');
+  if (!isFirebaseConfigured()) {
+    return {
+      ok: false,
+      reason: 'firebase_missing',
+      message: 'Firebase web config is missing (VITE_FIREBASE_*).',
+    };
+  }
+
+  const vapidKey = await fetchWebVapidKey();
+  if (!vapidKey) {
+    return {
+      ok: false,
+      reason: 'vapid_missing',
+      message:
+        'Web push is not configured yet. Add the Firebase Web Push VAPID key (app_secrets or VITE_FIREBASE_VAPID_KEY).',
+    };
+  }
+
+  const permission =
+    Notification.permission === 'granted'
+      ? 'granted'
+      : await Notification.requestPermission();
+  if (permission !== 'granted') {
+    return {
+      ok: false,
+      reason: 'permission_denied',
+      message: 'Notification permission was denied. Enable it in iOS Settings → HRO Technician.',
+    };
+  }
+
+  const registration = await ensureTechnicianServiceWorker();
+  if (!registration) {
+    return {
+      ok: false,
+      reason: 'sw_missing',
+      message: 'Could not register the Technician service worker.',
+    };
+  }
+
+  try {
+    const { getMessaging, getToken, isSupported } = await import('firebase/messaging');
+    if (!(await isSupported())) {
+      return {
+        ok: false,
+        reason: 'unsupported',
+        message: 'Firebase messaging is not supported in this browser.',
+      };
+    }
+    const messaging = getMessaging(getFirebaseApp());
+    const token = await getToken(messaging, {
+      vapidKey,
+      serviceWorkerRegistration: registration,
+    });
+    if (!token) {
+      return { ok: false, reason: 'error', message: 'No FCM web token returned.' };
+    }
+    activeTechnicianId = technicianId;
+    const ok = await saveToken(technicianId, token, 'web');
+    if (!ok) {
+      return {
+        ok: false,
+        reason: 'error',
+        message: 'Got a token but could not save it. Try again in a moment.',
+      };
+    }
+    return { ok: true, token };
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Failed to enable web push';
+    return { ok: false, reason: 'error', message };
+  }
 }

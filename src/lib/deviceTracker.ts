@@ -43,6 +43,9 @@ const ADMIN_DEVICE_COLUMNS =
   'token,display_name,device_model,push_enabled,call_alerts_enabled,push_prefs,updated_at,platform';
 
 const TECH_DEVICE_COLUMNS =
+  'token,display_name,device_model,push_enabled,call_alerts_enabled,push_prefs,updated_at,platform';
+
+const TECH_DEVICE_COLUMNS_LEGACY =
   'token,display_name,device_model,push_enabled,call_alerts_enabled,push_prefs,updated_at';
 
 const DEVICE_TRACKER_CACHE_KEY = 'hro_device_tracker_cache_v1';
@@ -147,7 +150,7 @@ export async function loadAdminDevices(): Promise<AdminDeviceRow[]> {
   if (error && String(error.message || '').toLowerCase().includes('platform')) {
     const retry = await supabase
       .from('admin_push_tokens')
-      .select(`${TECH_DEVICE_COLUMNS},user_id`)
+      .select(`${TECH_DEVICE_COLUMNS_LEGACY},user_id`)
       .order('updated_at', { ascending: false });
     data = retry.data;
     error = retry.error;
@@ -170,10 +173,18 @@ export async function loadAdminDevices(): Promise<AdminDeviceRow[]> {
 }
 
 export async function loadTechnicianDevices(): Promise<TechnicianDeviceRow[]> {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('technician_push_tokens')
     .select(`${TECH_DEVICE_COLUMNS},technician_id`)
     .order('updated_at', { ascending: false });
+  if (error && String(error.message || '').toLowerCase().includes('platform')) {
+    const retry = await supabase
+      .from('technician_push_tokens')
+      .select(`${TECH_DEVICE_COLUMNS_LEGACY},technician_id`)
+      .order('updated_at', { ascending: false });
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) throw error;
 
   const rows = (data || []) as TechnicianDeviceRow[];
@@ -192,6 +203,7 @@ export async function loadTechnicianDevices(): Promise<TechnicianDeviceRow[]> {
     const fallback = fallbackTechDeviceName(ownerName, idx, row.token);
     return {
       ...row,
+      platform: row.platform === 'web' ? 'web' : 'android',
       push_enabled: row.push_enabled !== false,
       call_alerts_enabled: row.call_alerts_enabled !== false,
       push_prefs: normalizeTechPushPrefs(row.push_prefs),

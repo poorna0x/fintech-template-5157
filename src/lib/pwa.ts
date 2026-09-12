@@ -125,6 +125,8 @@ export const registerTechnicianPWA = () => {
     swUrl: '/technician-sw.js',
     scope: '/technician',
     label: 'Technician PWA',
+    // Local web-push needs an active SW; tech SW does not precache HTML.
+    allowInDev: true,
   });
 
   void registration.then(() => {
@@ -133,6 +135,45 @@ export const registerTechnicianPWA = () => {
 
   return registration;
 };
+
+/** Awaitable Technician SW registration (for FCM web getToken). */
+export async function ensureTechnicianServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+  if (!('serviceWorker' in navigator)) return null;
+  try {
+    const existing = await navigator.serviceWorker.getRegistration('/technician');
+    if (existing?.active) return existing;
+    if (existing) {
+      await waitForServiceWorkerActive(existing);
+      return existing;
+    }
+  } catch {
+    /* fall through */
+  }
+  const reg = await registerTechnicianPWA();
+  if (reg) await waitForServiceWorkerActive(reg);
+  return reg;
+}
+
+async function waitForServiceWorkerActive(
+  registration: ServiceWorkerRegistration
+): Promise<void> {
+  if (registration.active) return;
+  const worker = registration.installing || registration.waiting;
+  if (!worker) return;
+  await new Promise<void>((resolve) => {
+    const onChange = () => {
+      if (worker.state === 'activated' || worker.state === 'redundant') {
+        worker.removeEventListener('statechange', onChange);
+        resolve();
+      }
+    };
+    worker.addEventListener('statechange', onChange);
+    if (worker.state === 'activated') {
+      worker.removeEventListener('statechange', onChange);
+      resolve();
+    }
+  });
+}
 
 export const registerAdminPWA = () => {
   // Enable PWA for admin pages

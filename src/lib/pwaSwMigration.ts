@@ -1,8 +1,8 @@
 /**
- * One-time reload after technician SW v4 so installed PWAs pick up network-first
- * navigation (fixes stale login shell). Safe no-op when already migrated or in dev.
+ * One-time reload after technician SW v5 so installed PWAs pick up FCM web push
+ * handlers + network-first navigation. Safe no-op when already migrated or in dev.
  */
-const TECHNICIAN_SW_MIGRATION_KEY = 'hro-technician-sw-v4';
+const TECHNICIAN_SW_MIGRATION_KEY = 'hro-technician-sw-v5';
 
 export function ensureTechnicianSwUpdated(): void {
   if (import.meta.env.DEV) return;

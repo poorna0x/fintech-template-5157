@@ -633,6 +633,8 @@ export function DeviceTrackerSettings() {
                   updatedAt={device.updated_at}
                   pushEnabled={device.push_enabled}
                   callAlertsEnabled={device.call_alerts_enabled}
+                  showCallDetect={device.platform !== 'web'}
+                  platformLabel={device.platform === 'web' ? 'Browser / PWA' : 'Android app'}
                   pushPrefs={device.push_prefs}
                   saving={isSaving(device.token)}
                   onSaveName={(name) => void patchTech(device.token, { display_name: name }, 'Name saved')}

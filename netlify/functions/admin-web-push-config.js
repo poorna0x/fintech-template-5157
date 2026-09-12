@@ -1,12 +1,39 @@
 /**
- * Public VAPID key for Admin PWA / browser FCM web push.
+ * Public VAPID key for Admin/Technician PWA / browser FCM web push.
  * Prefer app_secrets.firebase_web_vapid_key (no site rebuild); fallback env.
- * Auth: admin JWT. Returns only the public key (not a secret).
+ * Auth: any logged-in admin or technician JWT. Returns only the public key.
  */
 
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminBearer } = require('./admin-auth-guard');
+
+function readBearerToken(event) {
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+}
+
+/** Accept any valid Supabase session (admin or technician). VAPID key is public. */
+async function authorizeAnyLoggedInBearer(event, body) {
+  const admin = await authorizeAdminBearer(event, body);
+  if (admin.ok) return admin;
+
+  const token =
+    readBearerToken(event) ||
+    String(body?.accessToken || body?.access_token || '').trim();
+  if (!token) return { ok: false, error: 'Unauthorized' };
+
+  const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+  const anonKey = (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+  if (!supabaseUrl || !anonKey) return { ok: false, error: 'Server misconfigured' };
+
+  const userClient = createClient(supabaseUrl, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data: userData, error: userErr } = await userClient.auth.getUser(token);
+  if (userErr || !userData?.user?.id) return { ok: false, error: 'Unauthorized' };
+  return { ok: true, userId: userData.user.id };
+}
 
 async function resolveVapidKey(db) {
   const fromEnv = (
@@ -25,7 +52,6 @@ async function resolveVapidKey(db) {
       .maybeSingle();
     const raw = String(data?.value || '').trim();
     if (!raw) return null;
-    // Allow plain key or JSON { "vapidKey": "..." }
     if (raw.startsWith('{')) {
       try {
         const parsed = JSON.parse(raw);
@@ -64,7 +90,7 @@ exports.handler = async (event) => {
     }
   }
 
-  const auth = await authorizeAdminBearer(event, body);
+  const auth = await authorizeAnyLoggedInBearer(event, body);
   if (!auth.ok) {
     return { statusCode: 401, headers, body: JSON.stringify({ error: auth.error }) };
   }

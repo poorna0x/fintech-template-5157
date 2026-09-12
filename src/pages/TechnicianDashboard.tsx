@@ -87,6 +87,11 @@ import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
 import { registerTechnicianPWA, disablePWA, isPWAMode } from '@/lib/pwa';
+import { Capacitor } from '@capacitor/core';
+import {
+  enableTechnicianWebPush,
+  isTechnicianWebPushRegisteredLocally,
+} from '@/lib/technicianPush';
 import { markNativeBootReady } from '@/lib/nativeBootReady';
 import {
   cacheQrCodes,
@@ -6902,6 +6907,37 @@ const TechnicianDashboard = () => {
               <RefreshCw className="w-5 h-5 mr-3" />
               Reload App
             </Button>
+            {!Capacitor.isNativePlatform() ? (
+              <Button
+                variant="ghost"
+                className="justify-start h-12 px-4 text-base"
+                onClick={() => {
+                  setHeaderOptionsDialogOpen(false);
+                  const techId = user?.technicianId;
+                  if (!techId) {
+                    toast.error('Not logged in');
+                    return;
+                  }
+                  void (async () => {
+                    const result = await enableTechnicianWebPush(techId);
+                    if (result.ok) {
+                      toast.success(
+                        isPWAMode()
+                          ? 'Home Screen notifications enabled'
+                          : 'Browser notifications enabled'
+                      );
+                    } else {
+                      toast.error(result.message);
+                    }
+                  })();
+                }}
+              >
+                <Bell className="w-5 h-5 mr-3" />
+                {isTechnicianWebPushRegisteredLocally()
+                  ? 'Refresh notifications'
+                  : 'Enable notifications'}
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               className="justify-start h-12 px-4 text-base text-red-600 hover:text-red-700 hover:bg-red-50"
