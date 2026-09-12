@@ -17,7 +17,7 @@ export const DEFAULT_OFFICE_SALE_UPI_BRAND: DocumentBrand = 'elevenro';
 export type OfficeSaleUpiShareInput = {
   brand: DocumentBrand;
   amount: number;
-  upiId: string;
+  upiId?: string;
   payeeName?: string;
   /** UPI account payment phone (for iPhone fallback). */
   paymentPhone?: string;
@@ -25,13 +25,16 @@ export type OfficeSaleUpiShareInput = {
   customerName?: string;
   customerId?: string | null;
   note?: string;
+  staticQrUrl?: string | null;
+  dynamicUpi?: boolean;
 };
 
 export async function buildOfficeSaleUpiPayHttpsLink(
   input: OfficeSaleUpiShareInput
 ): Promise<string | null> {
   const upiId = String(input.upiId || '').trim();
-  if (!isValidUpiId(upiId)) return null;
+  const staticQr = String(input.staticQrUrl || '').trim();
+  if (!isValidUpiId(upiId) && !staticQr) return null;
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) return null;
 
@@ -44,6 +47,8 @@ export async function buildOfficeSaleUpiPayHttpsLink(
     note: String(input.note || 'Office sale').trim().slice(0, 80) || 'Office sale',
     phone: normalizePaymentPhone(input.paymentPhone || '') || undefined,
     brand: input.brand,
+    qrCodeUrl: staticQr || undefined,
+    dynamicUpiEnabled: input.dynamicUpi !== false,
   };
 
   const code = await createUpiPayShortLink(payInput);
@@ -61,7 +66,7 @@ export async function buildOfficeSaleUpiShareMessage(
     brandLabel,
     amount: input.amount,
     payeeName: input.payeeName,
-    upiId: input.upiId,
+    upiId: input.upiId || '',
     phone: normalizePaymentPhone(input.paymentPhone || ''),
     payLink,
   });
@@ -101,6 +106,8 @@ export async function shareOfficeSaleUpiOnWhatsApp(
     jobRef: 'office sale',
     watchPhotos: false,
     source: 'pending_payment',
+    staticQrUrl: input.staticQrUrl,
+    dynamicUpi: input.dynamicUpi,
   });
   if (!result.ok) {
     return { ok: false, error: result.error || 'Could not send pay QR on WhatsApp' };

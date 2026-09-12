@@ -64,6 +64,10 @@ import {
   DEFAULT_OFFICE_SALE_UPI_BRAND,
   shareOfficeSaleUpiOnWhatsApp,
 } from '@/lib/officeSaleUpiShare';
+import {
+  fetchUpiPaymentAccounts,
+  type UpiPaymentAccount,
+} from '@/lib/upiPaymentAccounts';
 
 interface DirectSaleDialogProps {
   open: boolean;
@@ -87,7 +91,7 @@ type BillPriceMode = 'normal' | 'set';
 type QrOption = {
   id: string;
   name: string;
-  kind: 'common' | 'technician';
+  kind: 'common' | 'technician' | 'upi';
   url: string;
   upiId?: string;
   payeeName?: string;
@@ -102,6 +106,7 @@ type QrOption = {
     qrCode?: string;
     dynamicUpiEnabled?: boolean;
   };
+  upiAccount?: UpiPaymentAccount;
 };
 
 type PendingBillDraft = {
@@ -116,6 +121,8 @@ type PendingBillDraft = {
   payeeName?: string;
   upiPaymentPhone?: string;
   upiShareBrand?: DocumentBrand;
+  staticQrUrl?: string | null;
+  dynamicUpi?: boolean;
 };
 
 const todayInputValue = (): string => {
@@ -252,10 +259,30 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     if (!open) return;
     let cancelled = false;
     setLoadingQr(true);
-    Promise.all([db.commonQrCodes.getAll(), db.technicians.getAll(100, { activeRosterOnly: true })])
-      .then(([qrRes, techRes]) => {
+    Promise.all([
+      db.commonQrCodes.getAll(),
+      db.technicians.getAll(100, { activeRosterOnly: true }),
+      fetchUpiPaymentAccounts().catch(() => ({ accounts: [] as UpiPaymentAccount[] })),
+    ])
+      .then(([qrRes, techRes, upiRes]) => {
         if (cancelled) return;
         const options: QrOption[] = [];
+        (upiRes?.accounts || []).forEach((acc) => {
+          const hasImage = Boolean(acc.qrCodeUrl);
+          const dynamic = acc.dynamicUpiEnabled !== false && Boolean(acc.upiId);
+          if (!hasImage && !dynamic) return;
+          options.push({
+            id: `upi_${acc.id}`,
+            name: acc.label || 'UPI Account',
+            kind: 'upi',
+            url: acc.qrCodeUrl || '',
+            upiId: acc.upiId,
+            payeeName: acc.payeeName || acc.label,
+            phone: acc.phone,
+            dynamicUpiEnabled: acc.dynamicUpiEnabled !== false,
+            upiAccount: acc,
+          });
+        });
         (qrRes?.data || []).forEach((row: any) => {
           const mapped = mapCommonQrRow(row);
           if (!mapped) return;
@@ -579,15 +606,18 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     paymentMode === 'PARTIAL' ? parseFloat(partialOnlineAmount) || 0 : amountNum || 0;
   const canShareUpiLink = Boolean(
     needsQr &&
-      selectedQr?.upiId &&
-      selectedQr.dynamicUpiEnabled &&
       onlineAmountForQr > 0 &&
-      digitsPhone(customerPhone).length === 10
+      digitsPhone(customerPhone).length === 10 &&
+      (selectedQr?.dynamicUpiEnabled !== false
+        ? Boolean(selectedQr?.upiId)
+        : Boolean(selectedQr?.url))
   );
 
   const shareUpiFromDraft = async (draft: PendingBillDraft, brand: DocumentBrand) => {
-    if (!draft.upiId || !draft.onlineAmount || draft.onlineAmount <= 0) {
-      toast.error('Online amount and UPI QR are required for a pay link');
+    const hasUpi =
+      draft.dynamicUpi !== false ? Boolean(draft.upiId) : Boolean(draft.staticQrUrl);
+    if (!hasUpi || !draft.onlineAmount || draft.onlineAmount <= 0) {
+      toast.error('Online amount and valid payment QR are required for a pay link');
       return false;
     }
     if (digitsPhone(draft.customerPhone).length !== 10) {
@@ -605,6 +635,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         customerPhone: draft.customerPhone,
         customerName: draft.customerName.trim() || undefined,
         note: draft.customerName.trim() || 'Office sale',
+        staticQrUrl: draft.staticQrUrl,
+        dynamicUpi: draft.dynamicUpi,
       });
       if (!result.ok) {
         toast.error(result.error || 'Could not send pay QR on WhatsApp');
@@ -618,8 +650,16 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   };
 
   const handleShareUpiLink = async () => {
-    if (!selectedQr?.upiId || onlineAmountForQr <= 0) {
-      toast.error('Select a Dynamic UPI QR and enter the online amount');
+    const hasUpi =
+      selectedQr?.dynamicUpiEnabled !== false
+        ? Boolean(selectedQr?.upiId)
+        : Boolean(selectedQr?.url);
+    if (!hasUpi || onlineAmountForQr <= 0) {
+      toast.error(
+        selectedQr?.dynamicUpiEnabled !== false
+          ? 'Select a Dynamic UPI QR and enter the online amount'
+          : 'Select a QR with an uploaded photo and enter the online amount'
+      );
       return;
     }
     await shareUpiFromDraft(
@@ -635,6 +675,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         payeeName: selectedQr.payeeName || selectedQr.name,
         upiPaymentPhone: selectedQr.phone,
         upiShareBrand,
+        staticQrUrl: selectedQr.url,
+        dynamicUpi: selectedQr.dynamicUpiEnabled !== false,
       },
       upiShareBrand
     );
@@ -865,13 +907,15 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         amount: amountNum,
         paymentMode,
         lines,
-        ...(needsQr && selectedQr?.upiId && onlineAmountForQr > 0
+        ...(needsQr && (selectedQr?.upiId || selectedQr?.url) && onlineAmountForQr > 0
           ? {
               onlineAmount: onlineAmountForQr,
               upiId: selectedQr.upiId,
               payeeName: selectedQr.payeeName || selectedQr.name,
               upiPaymentPhone: selectedQr.phone,
               upiShareBrand,
+              staticQrUrl: selectedQr.url,
+              dynamicUpi: selectedQr.dynamicUpiEnabled !== false,
             }
           : {}),
       };
@@ -908,8 +952,12 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     setEmailBrand(brand);
     const payLinkBrand =
       pendingBill.upiShareBrand ?? upiShareBrand ?? DEFAULT_OFFICE_SALE_UPI_BRAND;
+    const hasUpi =
+      pendingBill.dynamicUpi !== false
+        ? Boolean(pendingBill.upiId)
+        : Boolean(pendingBill.staticQrUrl);
     if (
-      pendingBill.upiId &&
+      hasUpi &&
       pendingBill.onlineAmount &&
       pendingBill.onlineAmount > 0 &&
       (pendingBill.paymentMode === 'ONLINE' || pendingBill.paymentMode === 'PARTIAL')
@@ -922,6 +970,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         paymentPhone: pendingBill.upiPaymentPhone,
         customerPhone: pendingBill.customerPhone,
         note: pendingBill.customerName.trim() || 'Office sale',
+        staticQrUrl: pendingBill.staticQrUrl,
+        dynamicUpi: pendingBill.dynamicUpi,
       });
       setWhatsappExtraLines(payBlock || '');
     } else {
@@ -941,7 +991,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   };
 
   const showPostSaleUpiShare = Boolean(
-    pendingBill?.upiId &&
+    (pendingBill?.dynamicUpi !== false ? pendingBill?.upiId : pendingBill?.staticQrUrl) &&
       pendingBill.onlineAmount &&
       pendingBill.onlineAmount > 0 &&
       digitsPhone(pendingBill.customerPhone).length === 10 &&
@@ -1511,7 +1561,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                         qrOptions.map((qr) => (
                           <SelectItem key={qr.id} value={qr.id}>
                             {qr.name}
-                            {qr.dynamicUpiEnabled ? ' · Dynamic UPI' : ''}
+                            {qr.dynamicUpiEnabled ? ' · Dynamic UPI' : qr.url ? ' · Static QR Photo' : ''}
                           </SelectItem>
                         ))
                       )}
@@ -1521,24 +1571,9 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
 
                 {selectedQr && (
                   <div className="rounded-lg border bg-primary/5 p-3 flex justify-center">
-                    {selectedQr.kind === 'common' &&
-                    selectedQr.commonQr &&
-                    isDynamicUpiQr(selectedQr.commonQr) ? (
+                    {selectedQr.dynamicUpiEnabled !== false && selectedQr.upiId ? (
                       <DynamicUpiQrDisplay
-                        upiId={selectedQr.upiId || ''}
-                        payeeName={selectedQr.payeeName || selectedQr.name}
-                        amount={onlineAmountForQr > 0 ? onlineAmountForQr : undefined}
-                        note={customerName.trim() || selectedQr.name}
-                        phone={selectedQr.phone}
-                        label={selectedQr.name}
-                        fallbackImageUrl={selectedQr.url}
-                        size={200}
-                      />
-                    ) : selectedQr.kind === 'technician' &&
-                      selectedQr.tech &&
-                      isDynamicUpiTechnician(selectedQr.tech as any) ? (
-                      <DynamicUpiQrDisplay
-                        upiId={selectedQr.upiId || ''}
+                        upiId={selectedQr.upiId}
                         payeeName={selectedQr.payeeName || selectedQr.name}
                         amount={onlineAmountForQr > 0 ? onlineAmountForQr : undefined}
                         note={customerName.trim() || selectedQr.name}
@@ -1564,7 +1599,10 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                   </div>
                 )}
 
-                {needsQr && selectedQr?.dynamicUpiEnabled ? (
+                {needsQr &&
+                (selectedQr?.dynamicUpiEnabled !== false
+                  ? Boolean(selectedQr?.upiId)
+                  : Boolean(selectedQr?.url)) ? (
                   <UpiShareBrandPicker value={upiShareBrand} onChange={setUpiShareBrand} />
                 ) : null}
 
@@ -1581,9 +1619,17 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                     ) : (
                       <WhatsAppIcon className="h-4 w-4" />
                     )}
-                    {sharingUpiLink ? 'Sending pay QR…' : 'Send pay QR on WhatsApp'}
+                    {sharingUpiLink
+                      ? 'Sending pay QR…'
+                      : selectedQr?.dynamicUpiEnabled === false
+                        ? 'Send Static QR Photo on WhatsApp'
+                        : 'Send pay QR on WhatsApp'}
                   </Button>
-                ) : cloudApiOn && needsQr && selectedQr?.dynamicUpiEnabled ? (
+                ) : cloudApiOn &&
+                  needsQr &&
+                  (selectedQr?.dynamicUpiEnabled !== false
+                    ? Boolean(selectedQr?.upiId)
+                    : Boolean(selectedQr?.url)) ? (
                   <p className="text-[11px] leading-relaxed text-muted-foreground">
                     Add customer phone (10 digits) to send the pay QR on WhatsApp.
                   </p>

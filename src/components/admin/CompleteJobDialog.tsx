@@ -12,6 +12,7 @@ import { Job, Technician } from '@/types';
 import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { CommonQrCode, isDynamicUpiQr, isDynamicUpiTechnician, technicianHasPaymentQr } from '@/lib/qrCodeManager';
+import { fetchUpiPaymentAccounts, type UpiPaymentAccount } from '@/lib/upiPaymentAccounts';
 import DynamicUpiQrDisplay from '@/components/DynamicUpiQrDisplay';
 import { useAuth } from '@/contexts/AuthContext';
 import { RefreshCw } from 'lucide-react';
@@ -150,6 +151,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [localCommonQrCodes, setLocalCommonQrCodes] = useState<CommonQrCode[]>(commonQrCodes);
+  const [upiAccounts, setUpiAccounts] = useState<UpiPaymentAccount[]>([]);
   const [isSubmittingJobCompletion, setIsSubmittingJobCompletion] = useState(false);
   const [isBillPhotosUploading, setIsBillPhotosUploading] = useState(false);
   const [isPaymentScreenshotUploading, setIsPaymentScreenshotUploading] = useState(false);
@@ -326,6 +328,21 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   useEffect(() => {
     setLocalCommonQrCodes(commonQrCodes);
   }, [commonQrCodes]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void fetchUpiPaymentAccounts()
+      .then(({ accounts }) => {
+        if (!cancelled) setUpiAccounts(accounts);
+      })
+      .catch(() => {
+        if (!cancelled) setUpiAccounts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const handleClose = () => {
     setCompleteJobStep(1);
@@ -613,6 +630,21 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
               if ((selectedTech as any).upiPhone) {
                 qrPhotos.phone = (selectedTech as any).upiPhone;
               }
+            }
+          }
+        } else if (finalSelectedQrCodeId.startsWith('upi_')) {
+          const upiAccountId = finalSelectedQrCodeId.replace('upi_', '');
+          const selectedAccount = upiAccounts.find((a) => a.id === upiAccountId);
+          if (selectedAccount) {
+            if (selectedAccount.qrCodeUrl) {
+              qrPhotos.selected_qr_code_url = selectedAccount.qrCodeUrl;
+            }
+            qrPhotos.selected_qr_code_name = selectedAccount.label || 'UPI Account';
+            if (selectedAccount.dynamicUpiEnabled !== false && selectedAccount.upiId) {
+              qrPhotos.dynamic_upi = true;
+              qrPhotos.upi_id = selectedAccount.upiId;
+              qrPhotos.payee_name = selectedAccount.payeeName || selectedAccount.label;
+              if (selectedAccount.phone) qrPhotos.phone = selectedAccount.phone;
             }
           }
         }
@@ -1685,6 +1717,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                             setQrCodeType('common');
                           } else if (value.startsWith('technician_')) {
                             setQrCodeType('technician');
+                          } else if (value.startsWith('upi_')) {
+                            setQrCodeType('upi');
                           }
                         }}
                       >
@@ -1693,6 +1727,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                         </SelectTrigger>
                         <SelectContent className="!z-[100]">
                           {localCommonQrCodes.length === 0 &&
+                          upiAccounts.length === 0 &&
                           technicians.filter((t) => technicianHasPaymentQr(t as any)).length ===
                             0 ? (
                             <SelectItem value="no-qr" disabled>
@@ -1700,6 +1735,20 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                             </SelectItem>
                           ) : (
                             <>
+                              {upiAccounts.length > 0 && (
+                                <>
+                                  {upiAccounts.map((acc) => (
+                                    <SelectItem key={`upi_${acc.id}`} value={`upi_${acc.id}`}>
+                                      {acc.label}
+                                      {acc.dynamicUpiEnabled !== false && acc.upiId
+                                        ? ' · Dynamic UPI'
+                                        : acc.qrCodeUrl
+                                          ? ' · Static QR Photo'
+                                          : ''}
+                                    </SelectItem>
+                                  ))}
+                                </>
+                              )}
                               {localCommonQrCodes.length > 0 && (
                                 <>
                                   {localCommonQrCodes.map((qr) => (
@@ -1860,6 +1909,76 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                                   className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-card p-3"
                                   onError={(e) => {
                                     console.error('Failed to load technician QR code:', (selectedTech as any).qrCode);
+                                  }}
+                                />
+                              </div>
+                            );
+                          })() : selectedQrCodeId.startsWith('upi_') ? (() => {
+                            const upiAccountId = selectedQrCodeId.replace('upi_', '');
+                            const selectedAccount = upiAccounts.find((a) => a.id === upiAccountId);
+                            if (!selectedAccount) {
+                              return (
+                                <div className="text-center p-4">
+                                  <p className="text-sm text-red-500">UPI Account not found</p>
+                                </div>
+                              );
+                            }
+                            const onlineAmt = (() => {
+                              if (paymentMode === 'PARTIAL') {
+                                return parseMoneyAmount(partialOnlineAmount);
+                              }
+                              if (
+                                paymentMode === 'PENDING_PAYMENT' &&
+                                pendingPaidTodayMode === 'PARTIAL'
+                              ) {
+                                return parseMoneyAmount(partialOnlineAmount);
+                              }
+                              if (
+                                paymentMode === 'PENDING_PAYMENT' &&
+                                pendingPaidTodayMode === 'ONLINE'
+                              ) {
+                                const paid = parseMoneyAmount(pendingPaidTodayAmount);
+                                return Number.isFinite(paid) && paid > 0
+                                  ? paid
+                                  : parseMoneyAmount(billAmount);
+                              }
+                              return parseMoneyAmount(billAmount);
+                            })();
+                            if (selectedAccount.dynamicUpiEnabled !== false && selectedAccount.upiId) {
+                              return (
+                                <DynamicUpiQrDisplay
+                                  upiId={selectedAccount.upiId}
+                                  payeeName={selectedAccount.payeeName || selectedAccount.label}
+                                  amount={onlineAmt}
+                                  note={
+                                    job?.customer?.fullName ||
+                                    (job?.customer as any)?.full_name ||
+                                    selectedAccount.label
+                                  }
+                                  phone={selectedAccount.phone}
+                                  label={selectedAccount.label}
+                                  fallbackImageUrl={selectedAccount.qrCodeUrl}
+                                />
+                              );
+                            }
+                            if (!selectedAccount.qrCodeUrl) {
+                              return (
+                                <div className="text-center p-4">
+                                  <p className="text-sm text-red-500">
+                                    No QR photo uploaded for this account in Settings
+                                  </p>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="text-center">
+                                <p className="text-sm font-medium mb-3 text-foreground/90">{selectedAccount.label}</p>
+                                <img 
+                                  src={selectedAccount.qrCodeUrl} 
+                                  alt={selectedAccount.label}
+                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-card p-3"
+                                  onError={() => {
+                                    console.error('Failed to load QR code:', selectedAccount.qrCodeUrl);
                                   }}
                                 />
                               </div>
