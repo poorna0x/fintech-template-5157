@@ -219,8 +219,9 @@ const PayUpi = () => {
     const safeBrand = brand === 'elevenro' ? 'elevenro' : 'hydrogen-ro';
     const amt =
       Number.isFinite(am) && am > 0 ? `-${am.toFixed(0)}` : '';
-    return `${safeBrand}-upi-pay${amt}.png`;
-  }, [brand, am]);
+    const ext = isDynamicUpi ? 'png' : 'jpg';
+    return `${safeBrand}-upi-pay${amt}.${ext}`;
+  }, [brand, am, isDynamicUpi]);
 
   const handleCopy = async (field: 'upi' | 'phone', value: string) => {
     setCopyError(false);
@@ -236,7 +237,11 @@ const PayUpi = () => {
   const getStaticQrBlob = async (): Promise<Blob | null> => {
     if (!qrCodeUrl) return null;
     try {
-      const res = await fetch(qrCodeUrl);
+      let fetchUrl = qrCodeUrl;
+      if (qrCodeUrl.includes('res.cloudinary.com') && /\.webp($|\?)/i.test(qrCodeUrl)) {
+        fetchUrl = qrCodeUrl.replace(/\.webp($|\?)/i, '.jpg$1');
+      }
+      const res = await fetch(fetchUrl);
       if (res.ok) return await res.blob();
       return null;
     } catch {

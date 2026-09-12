@@ -28,15 +28,16 @@ CREATE INDEX IF NOT EXISTS idx_upi_payment_accounts_created
 ALTER TABLE public.upi_payment_accounts ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS upi_payment_accounts_admin_select ON public.upi_payment_accounts;
+DROP POLICY IF EXISTS upi_payment_accounts_select_auth ON public.upi_payment_accounts;
 DROP POLICY IF EXISTS upi_payment_accounts_admin_insert ON public.upi_payment_accounts;
 DROP POLICY IF EXISTS upi_payment_accounts_admin_update ON public.upi_payment_accounts;
 DROP POLICY IF EXISTS upi_payment_accounts_admin_delete ON public.upi_payment_accounts;
 
-CREATE POLICY upi_payment_accounts_admin_select
+CREATE POLICY upi_payment_accounts_select_auth
   ON public.upi_payment_accounts
   FOR SELECT
   TO authenticated
-  USING (public.is_admin_user());
+  USING (true);
 
 CREATE POLICY upi_payment_accounts_admin_insert
   ON public.upi_payment_accounts

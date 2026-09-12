@@ -165,6 +165,39 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+async function convertWebpDataUrlToJpeg(
+  dataUrl: string
+): Promise<{ base64: string; mimeType: string; filename: string } | null> {
+  if (typeof document === 'undefined') return null;
+  try {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('Failed to load image for conversion'));
+      img.src = dataUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    const jpegData = canvas.toDataURL('image/jpeg', 0.95);
+    const match = jpegData.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return null;
+    return {
+      mimeType: 'image/jpeg',
+      base64: match[2],
+      filename: 'upi-qr.jpg',
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Fetch any remote image URL or parse data URL into base64 + mimeType for WhatsApp sending. */
 export async function fetchImageUrlAsBase64(
   url: string
@@ -180,6 +213,10 @@ export async function fetchImageUrlAsBase64(
       const match = trimmed.match(/^data:([^;]+);base64,(.+)$/);
       if (match) {
         const mimeType = match[1] || 'image/png';
+        if (mimeType === 'image/webp') {
+          const converted = await convertWebpDataUrlToJpeg(trimmed);
+          if (converted) return converted;
+        }
         const ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png';
         return {
           mimeType,
@@ -188,13 +225,23 @@ export async function fetchImageUrlAsBase64(
         };
       }
     }
-    const res = await fetch(trimmed);
+    let fetchUrl = trimmed;
+    // On Cloudinary, requesting .jpg dynamically transcodes WebP to JPEG server-side.
+    if (trimmed.includes('res.cloudinary.com') && /\.webp($|\?)/i.test(trimmed)) {
+      fetchUrl = trimmed.replace(/\.webp($|\?)/i, '.jpg$1');
+    }
+    const res = await fetch(fetchUrl);
     if (!res.ok) return null;
     const blob = await res.blob();
     const dataUrl = await blobToDataUrl(blob);
     const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
     if (!match) return null;
-    const mimeType = match[1] || blob.type || 'image/jpeg';
+    let mimeType = match[1] || blob.type || 'image/jpeg';
+    if (mimeType === 'image/webp') {
+      const converted = await convertWebpDataUrlToJpeg(dataUrl);
+      if (converted) return converted;
+      mimeType = 'image/jpeg';
+    }
     const ext = mimeType.includes('png') ? 'png' : 'jpg';
     return {
       mimeType,

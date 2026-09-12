@@ -113,6 +113,7 @@ import {
 } from '@/lib/qrCodeManager';
 import DynamicUpiQrDisplay from '@/components/DynamicUpiQrDisplay';
 import ShareQrLinkPanel, { SHARE_QR_LINK_VALUE } from '@/components/job/ShareQrLinkPanel';
+import { type UpiPaymentAccount, fetchUpiPaymentAccounts } from '@/lib/upiPaymentAccounts';
 import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
@@ -758,6 +759,15 @@ const TechnicianDashboard = () => {
   const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
   /** When Select QR = Share QR Link, which Dynamic UPI common QR to use. */
   const [shareLinkUpiQrId, setShareLinkUpiQrId] = useState<string>('');
+  const [upiAccounts, setUpiAccounts] = useState<UpiPaymentAccount[]>([]);
+
+  useEffect(() => {
+    void fetchUpiPaymentAccounts().then(({ accounts }) => {
+      if (accounts && accounts.length > 0) {
+        setUpiAccounts(accounts);
+      }
+    });
+  }, []);
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [allCommonQrCodes, setAllCommonQrCodes] = useState<CommonQrCode[]>([]); // Store all QR codes
   const [technicians, setTechnicians] = useState<any[]>([]);
@@ -1621,12 +1631,16 @@ const TechnicianDashboard = () => {
       try {
         // Always fetch this technician by id: getAll(100) only returns the newest 100 rows, so older techs
         // were missing from the roster and got no common_qr_code_ids / visible_qr_codes (looked "unassigned").
-        const [commonResult, allTechniciansResult, technicianCommonQrResult, meResult] = await Promise.all([
+        const [commonResult, allTechniciansResult, technicianCommonQrResult, meResult, upiResult] = await Promise.all([
           db.commonQrCodes.getAll(),
           db.technicians.getRosterForTechnicianApp(),
           db.technicianCommonQr.getAll(),
           db.technicians.getById(technicianId),
+          fetchUpiPaymentAccounts().catch(() => ({ accounts: [] as UpiPaymentAccount[] })),
         ]);
+        if (upiResult?.accounts) {
+          setUpiAccounts(upiResult.accounts);
+        }
 
         let allCommonQrCodesData: CommonQrCode[] = [];
         if (commonResult.data) {
@@ -5949,6 +5963,15 @@ const TechnicianDashboard = () => {
               qrPhotos.payee_name = selectedQr.payeeName || selectedQr.name;
               if (selectedQr.phone) qrPhotos.phone = selectedQr.phone;
             }
+          } else if (effectiveQrId.startsWith('upi_')) {
+            const upiId = effectiveQrId.replace('upi_', '');
+            const selectedUpi = upiAccounts.find((a) => a.id === upiId);
+            if (selectedUpi && selectedUpi.dynamicUpiEnabled && selectedUpi.upiId) {
+              qrPhotos.dynamic_upi = true;
+              qrPhotos.upi_id = selectedUpi.upiId;
+              qrPhotos.payee_name = selectedUpi.payeeName || selectedUpi.label;
+              if (selectedUpi.phone) qrPhotos.phone = selectedUpi.phone;
+            }
           } else if (effectiveQrId.startsWith('technician_')) {
             const techId = effectiveQrId.replace('technician_', '');
             const selectedTech =
@@ -9777,6 +9800,15 @@ const TechnicianDashboard = () => {
                               setShareLinkUpiQrId('');
                               setSelectedQrCodeUrlState('');
                               setSelectedQrCodeName('');
+                            } else if (value.startsWith('upi_')) {
+                              setShareLinkUpiQrId('');
+                              qrType = 'common';
+                              const upiId = value.replace('upi_', '');
+                              const selectedUpi = upiAccounts.find((a) => a.id === upiId);
+                              if (selectedUpi) {
+                                qrUrl = selectedUpi.qrCodeUrl || '';
+                                qrName = selectedUpi.label;
+                              }
                             } else if (value.startsWith('common_')) {
                               setShareLinkUpiQrId('');
                               qrType = 'common';
@@ -9811,8 +9843,8 @@ const TechnicianDashboard = () => {
                             <SelectValue placeholder="Select QR code" />
                           </SelectTrigger>
                           <SelectContent className="!z-[100]">
-                            {/* Common QR Codes - show by name */}
                             {commonQrCodes.length === 0 &&
+                            upiAccounts.length === 0 &&
                             technicians.filter((t) => technicianHasPaymentQr(t as any)).length ===
                               0 ? (
                               <SelectItem value="no-qr" disabled>
@@ -9820,6 +9852,17 @@ const TechnicianDashboard = () => {
                               </SelectItem>
                             ) : (
                               <>
+                                {/* UPI Payment Accounts Section */}
+                                {upiAccounts.length > 0 && (
+                                  <>
+                                    {upiAccounts.map((a) => (
+                                      <SelectItem key={`upi_${a.id}`} value={`upi_${a.id}`}>
+                                        {a.label}
+                                      </SelectItem>
+                                    ))}
+                                  </>
+                                )}
+
                                 {/* Common QR Codes Section */}
                                 {commonQrCodes.length > 0 && (
                                   <>
@@ -9839,11 +9882,9 @@ const TechnicianDashboard = () => {
                                       {tech.fullName}'s QR Code
                             </SelectItem>
                                   ))}
-                                {whatsappCloudApiOn ? (
                                 <SelectItem value={SHARE_QR_LINK_VALUE}>
                                   Send pay QR on WhatsApp (customer not on site)
                                 </SelectItem>
-                                ) : null}
                               </>
                             )}
                           </SelectContent>
@@ -9853,6 +9894,7 @@ const TechnicianDashboard = () => {
                       {selectedQrCodeId === SHARE_QR_LINK_VALUE ? (
                         <ShareQrLinkPanel
                           commonQrCodes={commonQrCodes}
+                          upiAccounts={upiAccounts}
                           technicians={
                             (() => {
                               const tid = user?.technicianId || user?.id;
@@ -9880,6 +9922,16 @@ const TechnicianDashboard = () => {
                                 setSelectedQrCodeUrlState(
                                   String((selectedTech as any).qrCode || '')
                                 );
+                              }
+                              return;
+                            }
+                            if (id.startsWith('upi_')) {
+                              const upiId = id.replace('upi_', '');
+                              const selectedUpi = upiAccounts.find((a) => a.id === upiId);
+                              if (selectedUpi) {
+                                setQrCodeType('common');
+                                setSelectedQrCodeName(selectedUpi.label);
+                                setSelectedQrCodeUrlState(selectedUpi.qrCodeUrl || '');
                               }
                               return;
                             }
@@ -9965,7 +10017,69 @@ const TechnicianDashboard = () => {
                             QR Code - Show to Customer
                           </p>
                           <div className="flex justify-center">
-                            {selectedQrCodeId.startsWith('common_') ? (() => {
+                            {selectedQrCodeId.startsWith('upi_') ? (() => {
+                              const upiId = selectedQrCodeId.replace('upi_', '');
+                              const selectedUpi = upiAccounts.find(a => a.id === upiId);
+                              if (!selectedUpi) {
+                                return (
+                                  <div className="text-center p-4">
+                                    <p className="text-sm text-red-500">UPI account not found</p>
+                                  </div>
+                                );
+                              }
+                              const onlineAmt = (() => {
+                                if (
+                                  paymentMode === 'PARTIAL' ||
+                                  (paymentMode === 'PENDING_PAYMENT' &&
+                                    pendingPaidTodayMode === 'PARTIAL')
+                                ) {
+                                  return parseMoneyAmount(partialOnlineAmount);
+                                }
+                                if (
+                                  paymentMode === 'PENDING_PAYMENT' &&
+                                  pendingPaidTodayMode === 'ONLINE'
+                                ) {
+                                  const paid = parseMoneyAmount(pendingPaidTodayAmount);
+                                  return Number.isFinite(paid) && paid > 0
+                                    ? paid
+                                    : parseMoneyAmount(billAmount);
+                                }
+                                return parseMoneyAmount(billAmount);
+                              })();
+                              if (selectedUpi.dynamicUpiEnabled && selectedUpi.upiId) {
+                                return (
+                                  <DynamicUpiQrDisplay
+                                    upiId={selectedUpi.upiId}
+                                    payeeName={selectedUpi.payeeName || selectedUpi.label}
+                                    amount={onlineAmt}
+                                    note={selectedJobForComplete?.customerName || selectedUpi.label}
+                                    phone={selectedUpi.phone}
+                                    label={selectedUpi.label}
+                                    fallbackImageUrl={selectedUpi.qrCodeUrl}
+                                  />
+                                );
+                              }
+                              if (!selectedUpi.qrCodeUrl) {
+                                return (
+                                  <div className="text-center p-4">
+                                    <p className="text-sm text-red-500">No QR image — enable Dynamic UPI or upload an image in Settings</p>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="text-center">
+                                  <p className="text-sm font-medium mb-3 text-gray-700">{selectedUpi.label}</p>
+                                  <img 
+                                    src={appendQrCacheBust(selectedUpi.qrCodeUrl, qrAssetsVersion)} 
+                                    alt={selectedUpi.label}
+                                    className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
+                                    onError={() => {
+                                      console.error('Failed to load UPI QR code:', selectedUpi.qrCodeUrl);
+                                    }}
+                                  />
+                                </div>
+                              );
+                            })() : selectedQrCodeId.startsWith('common_') ? (() => {
                               const qrId = selectedQrCodeId.replace('common_', '');
                               const selectedQr =
                                 commonQrCodes.find(qr => qr.id === qrId) ||

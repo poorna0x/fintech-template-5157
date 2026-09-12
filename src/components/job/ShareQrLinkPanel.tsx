@@ -19,7 +19,14 @@ import {
   isDynamicUpiTechnician,
   TechnicianQrPickerRow,
 } from '@/lib/qrCodeManager';
-import { normalizePaymentPhone } from '@/lib/upiPaymentAccounts';
+import {
+  buildUpiPayShortHttpsLink,
+  createUpiPayShortLink,
+  fetchUpiPaymentAccounts,
+  normalizePaymentPhone,
+  resolveUpiPaySiteOrigin,
+  type UpiPaymentAccount,
+} from '@/lib/upiPaymentAccounts';
 import { sendPayQrWhatsApp } from '@/lib/whatsappPayQrShare';
 import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
 import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
@@ -27,7 +34,7 @@ import { useWhatsAppCloudApiGate } from '@/hooks/useWhatsAppCloudApiGate';
 export const SHARE_QR_LINK_VALUE = 'share_qr_link';
 
 type ShareUpiOption = {
-  /** Prefixed id: common_<uuid> or technician_<uuid> */
+  /** Prefixed id: upi_<uuid>, common_<uuid> or technician_<uuid> */
   key: string;
   name: string;
   upiId: string;
@@ -39,6 +46,8 @@ type ShareUpiOption = {
 
 type ShareQrLinkPanelProps = {
   commonQrCodes: CommonQrCode[];
+  /** Configured UPI Payment Accounts from Settings (optional). */
+  upiAccounts?: UpiPaymentAccount[];
   /** Technician personal Dynamic UPI options (optional). */
   technicians?: TechnicianQrPickerRow[];
   /** When set, only this technician's personal Dynamic UPI is listed (not every roster tech). */
@@ -89,6 +98,7 @@ export function buildTechSharePayMessage(input: {
  */
 export default function ShareQrLinkPanel({
   commonQrCodes,
+  upiAccounts: upiAccountsProp,
   technicians = [],
   currentTechnicianId,
   selectedUpiQrId,
@@ -106,12 +116,36 @@ export default function ShareQrLinkPanel({
   const { cloudApiOn } = useWhatsAppCloudApiGate('pending_payment');
   const [sharing, setSharing] = useState(false);
   const [waPhone, setWaPhone] = useState(() => String(customerPhone || '').trim());
+  const [localUpiAccounts, setLocalUpiAccounts] = useState<UpiPaymentAccount[]>(
+    () => upiAccountsProp || []
+  );
+
+  useEffect(() => {
+    if (upiAccountsProp && upiAccountsProp.length > 0) {
+      setLocalUpiAccounts(upiAccountsProp);
+      return;
+    }
+    void fetchUpiPaymentAccounts().then(({ accounts }) => {
+      setLocalUpiAccounts(accounts);
+    });
+  }, [upiAccountsProp]);
 
   useEffect(() => {
     setWaPhone(String(customerPhone || '').trim());
   }, [customerPhone]);
 
   const dynamicOptions = useMemo((): ShareUpiOption[] => {
+    const fromUpi: ShareUpiOption[] = localUpiAccounts
+      .filter((a) => (a.dynamicUpiEnabled && Boolean(a.upiId?.trim())) || Boolean(a.qrCodeUrl?.trim()))
+      .map((a) => ({
+        key: `upi_${a.id}`,
+        name: a.label,
+        upiId: a.upiId || '',
+        payeeName: a.payeeName || a.label,
+        phone: a.phone,
+        imageUrl: a.qrCodeUrl,
+        dynamicUpiEnabled: a.dynamicUpiEnabled === true && Boolean(a.upiId?.trim()),
+      }));
     const fromCommon: ShareUpiOption[] = commonQrCodes
       .filter((qr) => isDynamicUpiQr(qr) || Boolean(qr.qrCodeUrl?.trim()))
       .map((qr) => ({
@@ -138,24 +172,32 @@ export default function ShareQrLinkPanel({
         imageUrl: t.qrCode,
         dynamicUpiEnabled: isDynamicUpiTechnician(t),
       }));
-    return [...fromCommon, ...fromTech];
-  }, [commonQrCodes, technicians, currentTechnicianId]);
+    return [...fromUpi, ...fromCommon, ...fromTech];
+  }, [localUpiAccounts, commonQrCodes, technicians, currentTechnicianId]);
 
   const selectedQr = useMemo(
     () => dynamicOptions.find((q) => q.key === selectedUpiQrId) || null,
     [dynamicOptions, selectedUpiQrId]
   );
 
-  // Migrate legacy bare common-QR UUIDs to prefixed keys.
+  // Migrate legacy bare common-QR UUIDs to prefixed keys or auto-pick first option.
   useEffect(() => {
-    if (!selectedUpiQrId) return;
+    if (!selectedUpiQrId) {
+      if (dynamicOptions.length > 0) {
+        onSelectUpiQrId(dynamicOptions[0].key);
+      }
+      return;
+    }
     if (
       selectedUpiQrId.startsWith('common_') ||
-      selectedUpiQrId.startsWith('technician_')
+      selectedUpiQrId.startsWith('technician_') ||
+      selectedUpiQrId.startsWith('upi_')
     ) {
       return;
     }
-    const legacy = dynamicOptions.find((o) => o.key === `common_${selectedUpiQrId}`);
+    const legacy = dynamicOptions.find(
+      (o) => o.key === `common_${selectedUpiQrId}` || o.key === `upi_${selectedUpiQrId}`
+    );
     if (legacy) onSelectUpiQrId(legacy.key);
   }, [selectedUpiQrId, dynamicOptions, onSelectUpiQrId]);
 
@@ -180,6 +222,21 @@ export default function ShareQrLinkPanel({
       if (!cloudApiOn) {
         const { openWhatsAppMeDeepLink } = await import('@/lib/sendAdminWhatsAppApi');
         const { buildPendingPaymentWhatsAppMessage } = await import('@/lib/pendingPaymentReminder');
+        let payLink: string | null = null;
+        if (selectedQr.upiId || selectedQr.imageUrl) {
+          const code = await createUpiPayShortLink({
+            upiId: selectedQr.upiId || '',
+            payeeName: selectedQr.payeeName || selectedQr.name,
+            amount: am,
+            note: note || customerName || selectedQr.name,
+            phone: selectedQr.phone,
+            brand,
+            qrCodeUrl: selectedQr.imageUrl || undefined,
+            dynamicUpiEnabled: selectedQr.dynamicUpiEnabled,
+          });
+          const origin = resolveUpiPaySiteOrigin(brand);
+          payLink = code ? buildUpiPayShortHttpsLink(origin, code) : null;
+        }
         const text = buildPendingPaymentWhatsAppMessage(
           customerName || 'there',
           am,
@@ -189,12 +246,14 @@ export default function ShareQrLinkPanel({
             label: selectedQr.name,
             upiId: selectedQr.upiId || '',
             phone: selectedQr.phone || undefined,
+            httpsLink: payLink || undefined,
           },
           jobRef || note || customerName || 'your service visit',
           { withQrImage: false }
         );
         openWhatsAppMeDeepLink(phone, text);
         toast.success('Opened phone WhatsApp (Cloud API is off)');
+        onShareSuccess?.();
         return;
       }
       const result = await sendPayQrWhatsApp({
