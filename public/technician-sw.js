@@ -1,5 +1,5 @@
-const STATIC_CACHE = 'technician-static-v5';
-const RUNTIME_CACHE = 'technician-runtime-v5';
+const STATIC_CACHE = 'technician-static-v6';
+const RUNTIME_CACHE = 'technician-runtime-v6';
 
 /** Do not precache HTML — cached login shell breaks Turnstile/ALTCHA and stale /assets/* hashes. */
 const PRECACHE_URLS = [];
@@ -21,15 +21,24 @@ try {
   firebase.initializeApp(FIREBASE_WEB_CONFIG);
   const messaging = firebase.messaging();
   messaging.onBackgroundMessage((payload) => {
+    const data = (payload && payload.data) || {};
     const title =
       (payload.notification && payload.notification.title) ||
-      (payload.data && (payload.data.title || payload.data.Title)) ||
+      data.msgTitle ||
+      data.title ||
+      data.Title ||
       'Hydrogen RO';
     const body =
       (payload.notification && payload.notification.body) ||
-      (payload.data && (payload.data.body || payload.data.Body || payload.data.message)) ||
+      data.msgBody ||
+      data.body ||
+      data.Body ||
+      data.message ||
       '';
-    const data = payload.data || {};
+    // If FCM already displayed a notification payload, skip duplicate tray entry.
+    if (payload.notification && payload.notification.title) {
+      return undefined;
+    }
     return self.registration.showNotification(title, {
       body,
       icon: '/favicon-32x32.png',

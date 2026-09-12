@@ -226,22 +226,26 @@ async function fetchWebVapidKey(): Promise<string | null> {
   try {
     const { data } = await supabase.auth.getSession();
     const accessToken = data?.session?.access_token;
-    if (!accessToken) return null;
-    const res = await fetch('/.netlify/functions/admin-web-push-config', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({}),
-    });
-    if (!res.ok) return null;
-    const json = (await res.json()) as { configured?: boolean; vapidKey?: string };
-    const key = String(json.vapidKey || '').trim();
-    return json.configured && key ? key : null;
+    if (accessToken) {
+      const res = await fetch('/.netlify/functions/admin-web-push-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { configured?: boolean; vapidKey?: string };
+        const key = String(json.vapidKey || '').trim();
+        if (json.configured && key) return key;
+      }
+    }
   } catch {
-    return null;
+    /* fall through */
   }
+  const { FIREBASE_WEB_VAPID_PUBLIC_KEY } = await import('@/lib/firebase');
+  return FIREBASE_WEB_VAPID_PUBLIC_KEY || null;
 }
 
 function attachWebClickAndForegroundListeners(): void {

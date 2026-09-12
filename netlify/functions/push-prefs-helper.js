@@ -222,10 +222,77 @@ async function sendFcmWithRetry(messaging, message, delayMs = 250) {
   }
 }
 
+function siteBaseUrl() {
+  return String(process.env.URL || process.env.DEPLOY_PRIME_URL || 'https://hydrogenro.com').replace(
+    /\/$/,
+    ''
+  );
+}
+
+function stringifyFcmData(data) {
+  const out = {};
+  if (!data || typeof data !== 'object') return out;
+  for (const [k, v] of Object.entries(data)) {
+    if (v === undefined || v === null) continue;
+    out[k] = typeof v === 'string' ? v : String(v);
+  }
+  return out;
+}
+
+function messageHasNotification(message) {
+  return Boolean(message?.notification?.title || message?.notification?.body);
+}
+
+/**
+ * Browser / iOS Home Screen needs a visible `notification` (+ webpush link).
+ * Android APK stays on data-only so native Java can build Reply actions.
+ */
+function adaptTechnicianMessageForWeb(message) {
+  const data = stringifyFcmData(message.data);
+  const title =
+    message.notification?.title || data.msgTitle || data.title || 'Hydrogen RO';
+  const body =
+    message.notification?.body ||
+    data.msgBody ||
+    data.body ||
+    data.message ||
+    'Open technician app';
+  return {
+    token: message.token,
+    data,
+    notification: {
+      title: String(title).slice(0, 120),
+      body: String(body || ' ').slice(0, 240),
+    },
+    webpush: {
+      headers: { Urgency: 'high' },
+      fcmOptions: { link: `${siteBaseUrl()}/technician` },
+    },
+  };
+}
+
+async function getTechnicianTokenPlatforms(db, technicianId) {
+  const map = new Map();
+  try {
+    const { data: rows } = await db
+      .from('technician_push_tokens')
+      .select('token, platform')
+      .eq('technician_id', technicianId);
+    for (const r of rows || []) {
+      if (!r?.token) continue;
+      map.set(r.token, r.platform === 'web' ? 'web' : 'android');
+    }
+  } catch (e) {
+    console.warn('[fcm-helper] platform lookup failed:', e?.message || e);
+  }
+  return map;
+}
+
 /**
  * Send one or more FCM payloads to every device of a technician.
  * Builders run sequentially per token (OS tray first, then data-only overlay)
  * so Samsung/Doze wakes on the visible notification before the overlay.
+ * Web/PWA tokens get a single visible notification payload (iOS cannot rely on data-only).
  */
 async function sendToTechnicianDevicesMany(
   db,
@@ -262,17 +329,46 @@ async function sendToTechnicianDevicesMany(
   if (tokens.length === 0) return { sent: 0, tokens: 0 };
   if (list.length === 0) return { sent: 0, tokens: tokens.length, reason: 'no_payload' };
 
+  const platformByToken = await getTechnicianTokenPlatforms(db, technicianId);
+
   const stale = [];
   let sent = 0;
   let errorCount = 0;
   let staleCount = 0;
 
   for (const token of tokens) {
+    const isWeb = platformByToken.get(token) === 'web';
+    let buildersForDevice = list;
+    if (isWeb) {
+      // One tray alert only — prefer an OS companion builder that already has notification.
+      let preferred = null;
+      for (const fn of list) {
+        try {
+          if (messageHasNotification(fn(token))) {
+            preferred = fn;
+            break;
+          }
+        } catch {
+          /* ignore builder probe errors */
+        }
+      }
+      buildersForDevice = [preferred || list[list.length - 1]];
+    }
+
     let deviceOk = false;
     let deviceStale = false;
-    for (let i = 0; i < list.length; i += 1) {
+    for (let i = 0; i < buildersForDevice.length; i += 1) {
       if (i > 0 && betweenMs > 0) await sleep(betweenMs);
-      const result = await sendFcmWithRetry(messaging, list[i](token));
+      let payload;
+      try {
+        payload = buildersForDevice[i](token);
+      } catch (e) {
+        console.error('[fcm-helper] builder failed', e?.message || e);
+        errorCount += 1;
+        continue;
+      }
+      if (isWeb) payload = adaptTechnicianMessageForWeb(payload);
+      const result = await sendFcmWithRetry(messaging, payload);
       if (result.ok) {
         deviceOk = true;
       } else if (result.stale) {

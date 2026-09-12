@@ -11,6 +11,14 @@ export const firebaseWebConfig = {
     '449481461674') as string,
 };
 
+/**
+ * Public Web Push certificate key (Firebase Console → Cloud Messaging).
+ * Safe to ship in the client; prefer env / app_secrets, this is last-resort so
+ * production PWAs work even when VITE_FIREBASE_VAPID_KEY was not baked into the build.
+ */
+export const FIREBASE_WEB_VAPID_PUBLIC_KEY =
+  'BHlqV8rh0W58tfjnkviBYNl_9eVoumVBv_rLVBn7HJ3GlNCWXwlpN9lRwcucmYp581jDJSKcVzE9RHV6HyYkRmE';
+
 /** True when Vite env has the minimum Firebase web config for Phone Auth / FCM web. */
 export function isFirebaseConfigured(): boolean {
   return Boolean(

@@ -187,6 +187,15 @@ async function saveToken(
     const wrongLineReminderEnabled =
       normalizeTechPushPrefs(prefsRow?.push_prefs).wrong_line !== false;
     writePersist({ ...cached, callAlertsEnabled, platform });
+    // Soft refresh can leave DB platform stuck on android — keep web rows marked.
+    if (platform === 'web') {
+      await supabase
+        .from('technician_push_tokens')
+        .update({ platform: 'web' })
+        .eq('token', token)
+        .then(() => undefined)
+        .catch(() => undefined);
+    }
     if (platform === 'android') {
       await syncDevicePrefsToNative({
         callAlertsEnabled,
@@ -501,22 +510,26 @@ async function fetchWebVapidKey(): Promise<string | null> {
   try {
     const { data } = await supabase.auth.getSession();
     const accessToken = data?.session?.access_token;
-    if (!accessToken) return null;
-    const res = await fetch('/.netlify/functions/admin-web-push-config', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({}),
-    });
-    if (!res.ok) return null;
-    const json = (await res.json()) as { configured?: boolean; vapidKey?: string };
-    const key = String(json.vapidKey || '').trim();
-    return json.configured && key ? key : null;
+    if (accessToken) {
+      const res = await fetch('/.netlify/functions/admin-web-push-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { configured?: boolean; vapidKey?: string };
+        const key = String(json.vapidKey || '').trim();
+        if (json.configured && key) return key;
+      }
+    }
   } catch {
-    return null;
+    /* fall through to public key */
   }
+  const { FIREBASE_WEB_VAPID_PUBLIC_KEY } = await import('@/lib/firebase');
+  return FIREBASE_WEB_VAPID_PUBLIC_KEY || null;
 }
 
 /** True when this browser already has a tech web push registration cached. */
@@ -613,6 +626,11 @@ export async function enableTechnicianWebPush(
       message: 'Could not register the Technician service worker.',
     };
   }
+  try {
+    await navigator.serviceWorker.ready;
+  } catch {
+    /* continue — getToken may still work with explicit registration */
+  }
 
   try {
     const { getMessaging, getToken, isSupported } = await import('firebase/messaging');
@@ -643,6 +661,7 @@ export async function enableTechnicianWebPush(
     return { ok: true, token };
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Failed to enable web push';
+    console.warn('[tech-push] enableTechnicianWebPush failed', message);
     return { ok: false, reason: 'error', message };
   }
 }
