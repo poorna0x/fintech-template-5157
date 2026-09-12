@@ -373,6 +373,8 @@ export type UpiPayLinkInput = {
   note?: string;
   phone?: string;
   brand?: 'hydrogenro' | 'elevenro' | string | null;
+  qrCodeUrl?: string;
+  dynamicUpiEnabled?: boolean;
 };
 
 /** Query string for upi://pay (QR payload; pa unencoded). */
@@ -437,14 +439,15 @@ export function buildUpiPayHttpsLink(
   origin: string,
   input: UpiPayLinkInput
 ): string | null {
-  const pa = normalizeUpiId(input.upiId);
-  if (!isValidUpiId(pa)) return null;
+  const pa = normalizeUpiId(input.upiId || '');
+  const qr = String(input.qrCodeUrl || '').trim();
+  if (!isValidUpiId(pa) && !qr) return null;
   const base = String(origin || '')
     .trim()
     .replace(/\/$/, '');
   if (!base) return null;
   const q = new URLSearchParams();
-  q.set('pa', pa);
+  if (pa) q.set('pa', pa);
   const pn = String(input.payeeName || '').trim().slice(0, 100);
   if (pn) q.set('pn', pn);
   const am = Number(input.amount);
@@ -458,6 +461,8 @@ export function buildUpiPayHttpsLink(
   if (ph) q.set('ph', ph);
   const brand = input.brand === 'elevenro' ? 'elevenro' : input.brand === 'hydrogenro' ? 'hydrogenro' : '';
   if (brand) q.set('brand', brand);
+  if (qr && qr !== '[object Object]') q.set('qr', qr);
+  if (input.dynamicUpiEnabled === false) q.set('dyn', '0');
   return `${base}/pay-upi?${q.toString()}`;
 }
 
@@ -487,18 +492,22 @@ export type UpiPayLinkRecord = {
   note: string;
   phone: string;
   brand: 'hydrogenro' | 'elevenro';
+  qrCodeUrl?: string;
+  dynamicUpiEnabled?: boolean;
 };
 
 const shortLinkCache = new Map<string, string>();
 
 function shortLinkCacheKey(input: UpiPayLinkInput): string {
   return [
-    normalizeUpiId(input.upiId),
+    normalizeUpiId(input.upiId || ''),
     String(input.payeeName || '').trim(),
     Number(input.amount) > 0 ? Number(input.amount).toFixed(2) : '',
     String(input.note || '').trim(),
     normalizePaymentPhone(input.phone || ''),
     input.brand === 'elevenro' ? 'elevenro' : 'hydrogenro',
+    String(input.qrCodeUrl || '').trim(),
+    input.dynamicUpiEnabled === false ? '0' : '1',
   ].join('|');
 }
 
@@ -506,13 +515,15 @@ function shortLinkCacheKey(input: UpiPayLinkInput): string {
 export async function createUpiPayShortLink(
   input: UpiPayLinkInput
 ): Promise<string | null> {
-  const pa = normalizeUpiId(input.upiId);
-  if (!isValidUpiId(pa)) return null;
+  const pa = normalizeUpiId(input.upiId || '');
+  const qr = String(input.qrCodeUrl || '').trim();
+  if (!isValidUpiId(pa) && !qr) return null;
   const cacheKey = shortLinkCacheKey(input);
   const cached = shortLinkCache.get(cacheKey);
   if (cached) return cached;
   const brand = input.brand === 'elevenro' ? 'elevenro' : 'hydrogenro';
   const am = Number(input.amount);
+  const dynamicUpi = input.dynamicUpiEnabled !== false;
   try {
     const { data, error } = await supabase.rpc('create_upi_pay_link', {
       p_upi_id: pa,
@@ -524,6 +535,8 @@ export async function createUpiPayShortLink(
         .slice(0, 80),
       p_phone: normalizePaymentPhone(input.phone || ''),
       p_brand: brand,
+      p_qr_code_url: qr,
+      p_dynamic_upi_enabled: dynamicUpi,
     });
     if (error) {
       console.warn('[upi] create_upi_pay_link failed', error.message);
@@ -555,7 +568,9 @@ export async function fetchUpiPayShortLink(code: string): Promise<UpiPayLinkReco
     if (!row || typeof row !== 'object') return null;
     const r = row as Record<string, unknown>;
     const upiId = normalizeUpiId(typeof r.upi_id === 'string' ? r.upi_id : '');
-    if (!isValidUpiId(upiId)) return null;
+    const rawQr = typeof r.qr_code_url === 'string' ? r.qr_code_url.trim() : '';
+    const qrCodeUrl = rawQr && rawQr !== '[object Object]' ? rawQr : '';
+    if (!isValidUpiId(upiId) && !qrCodeUrl) return null;
     const amountRaw = r.amount;
     const amount =
       typeof amountRaw === 'number'
@@ -563,6 +578,7 @@ export async function fetchUpiPayShortLink(code: string): Promise<UpiPayLinkReco
         : amountRaw != null && amountRaw !== ''
           ? Number(amountRaw)
           : null;
+    const dynamicUpiEnabled = r.dynamic_upi_enabled !== false;
     return {
       code: typeof r.code === 'string' ? r.code : c,
       upiId,
@@ -571,6 +587,8 @@ export async function fetchUpiPayShortLink(code: string): Promise<UpiPayLinkReco
       note: typeof r.note === 'string' ? r.note : '',
       phone: normalizePaymentPhone(typeof r.phone === 'string' ? r.phone : ''),
       brand: r.brand === 'elevenro' ? 'elevenro' : 'hydrogenro',
+      qrCodeUrl,
+      dynamicUpiEnabled,
     };
   } catch (e) {
     console.warn('[upi] get_upi_pay_link error', e);
@@ -595,19 +613,23 @@ export async function buildPendingPaymentUpiShare(
     brand?: 'hydrogenro' | 'elevenro' | string | null;
   } | null
 ): Promise<PendingPaymentUpiShare | null> {
-  if (!isValidUpiId(account.upiId)) return null;
+  const hasValidUpi = isValidUpiId(account.upiId);
+  const hasQrUrl = Boolean(account.qrCodeUrl && account.qrCodeUrl !== '[object Object]');
+  if (!hasValidUpi && !hasQrUrl) return null;
   const brand = options?.brand === 'elevenro' ? 'elevenro' : 'hydrogenro';
   const noteParts = ['Pending payment'];
   if (jobRef && String(jobRef).trim()) noteParts.push(String(jobRef).trim());
   const payInput: UpiPayLinkInput = {
-    upiId: account.upiId,
+    upiId: account.upiId || '',
     payeeName: account.payeeName || account.label,
     amount: amountPending,
     note: noteParts.join(' '),
     phone: account.phone || undefined,
     brand,
+    qrCodeUrl: account.qrCodeUrl || undefined,
+    dynamicUpiEnabled: account.dynamicUpiEnabled !== false,
   };
-  const deepLink = buildUpiPayDeepLink(payInput);
+  const deepLink = hasValidUpi ? buildUpiPayDeepLink(payInput) : null;
   const siteOrigin = resolveUpiPaySiteOrigin(brand, options?.origin);
   const code = await createUpiPayShortLink(payInput);
   const shortHttps = code ? buildUpiPayShortHttpsLink(siteOrigin, code) : null;

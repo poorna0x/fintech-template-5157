@@ -47,6 +47,7 @@ import {
   resolvePreferredUpiAccount,
 } from '@/lib/upiPaymentAccounts';
 import { generateUpiQrPngBase64 } from '@/lib/generateUpiQrPng';
+import { fetchImageUrlAsBase64 } from '@/lib/qrCodeManager';
 import {
   buildPendingPaymentLetterBodyParams,
   buildPendingPaymentLetterButtonUrlParams,
@@ -537,20 +538,31 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
               httpsLink: share.httpsLink,
             };
           }
-          const png = await generateUpiQrPngBase64({
-            upiId: account.upiId,
-            payeeName: account.payeeName || account.label,
-            amount: built.amountPendingValue,
-            note: ['Pending payment', built.jobNumber || ''].filter(Boolean).join(' '),
-            phone: account.phone || undefined,
-            brand: built.documentBrand,
-          });
-          if (png) {
-            headerImage = {
-              imageBase64: png.base64,
-              filename: png.filename,
-              mimeType: png.mimeType,
-            };
+          if (account.dynamicUpiEnabled !== false && account.upiId) {
+            const png = await generateUpiQrPngBase64({
+              upiId: account.upiId,
+              payeeName: account.payeeName || account.label,
+              amount: built.amountPendingValue,
+              note: ['Pending payment', built.jobNumber || ''].filter(Boolean).join(' '),
+              phone: account.phone || undefined,
+              brand: built.documentBrand,
+            });
+            if (png) {
+              headerImage = {
+                imageBase64: png.base64,
+                filename: png.filename,
+                mimeType: png.mimeType,
+              };
+            }
+          } else if (account.qrCodeUrl && account.qrCodeUrl !== '[object Object]') {
+            const loaded = await fetchImageUrlAsBase64(account.qrCodeUrl);
+            if (loaded?.base64) {
+              headerImage = {
+                imageBase64: loaded.base64,
+                filename: loaded.filename || 'payment-qr.jpg',
+                mimeType: loaded.mimeType || 'image/jpeg',
+              };
+            }
           }
         }
       } catch (err) {

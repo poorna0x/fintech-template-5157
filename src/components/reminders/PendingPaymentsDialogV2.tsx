@@ -1121,27 +1121,32 @@ export function SettingsPendingPaymentsDialogV2({
     setWhatsappQrGenerating(true);
     void (async () => {
       try {
-        if (
-          account.dynamicUpiEnabled === false &&
-          account.qrCodeUrl &&
-          account.qrCodeUrl !== '[object Object]'
-        ) {
-          const loaded = await fetchImageUrlAsBase64(account.qrCodeUrl);
-          if (cancelled) return;
-          if (loaded) {
-            const bytes = Uint8Array.from(atob(loaded.base64), (c) => c.charCodeAt(0));
-            const blob = new Blob([bytes], { type: loaded.mimeType });
-            setWhatsappAttachImage((prev) => {
-              if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
-              return {
-                base64: loaded.base64,
-                mimeType: loaded.mimeType,
-                filename: loaded.filename || 'payment-qr.jpg',
-                previewUrl: URL.createObjectURL(blob),
-              };
-            });
-            return;
+        // If Dynamic UPI is disabled, ONLY use the uploaded static QR photo — NEVER generate a dynamic QR!
+        if (account.dynamicUpiEnabled === false) {
+          if (account.qrCodeUrl && account.qrCodeUrl !== '[object Object]') {
+            const loaded = await fetchImageUrlAsBase64(account.qrCodeUrl);
+            if (cancelled) return;
+            if (loaded) {
+              const bytes = Uint8Array.from(atob(loaded.base64), (c) => c.charCodeAt(0));
+              const blob = new Blob([bytes], { type: loaded.mimeType });
+              setWhatsappAttachImage((prev) => {
+                if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+                return {
+                  base64: loaded.base64,
+                  mimeType: loaded.mimeType,
+                  filename: loaded.filename || 'payment-qr.jpg',
+                  previewUrl: URL.createObjectURL(blob),
+                };
+              });
+              return;
+            } else {
+              clearWhatsappAttachImage();
+              toast.error('Could not load static QR photo from account');
+            }
+          } else {
+            clearWhatsappAttachImage();
           }
+          return; // CRITICAL: Stop here! Dynamic UPI is disabled.
         }
 
         const amount = Number(whatsappTarget.amount_pending) || 0;
@@ -1176,6 +1181,7 @@ export function SettingsPendingPaymentsDialogV2({
               return;
             }
           }
+          clearWhatsappAttachImage();
           toast.message('Could not generate UPI QR — attach a photo manually if needed');
           return;
         }
@@ -2544,6 +2550,11 @@ export function SettingsPendingPaymentsDialogV2({
                                 Attach photo
                               </Button>
                             </div>
+                          ) : null}
+                          {!whatsappAttachImage && !whatsappQrGenerating && upiAccounts.find((a) => a.id === whatsappUpiAccountId)?.dynamicUpiEnabled === false && !upiAccounts.find((a) => a.id === whatsappUpiAccountId)?.qrCodeUrl ? (
+                            <p className="text-xs text-muted-foreground">
+                              Dynamic UPI is turned off for this account. Upload a static QR photo under Manage above, or click Attach photo.
+                            </p>
                           ) : null}
                           {whatsappAttachImage && whatsappQrMode === 'auto' ? (
                             <Button

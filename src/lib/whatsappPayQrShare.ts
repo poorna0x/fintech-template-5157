@@ -85,14 +85,16 @@ export async function sendPayQrWhatsApp(
   const payPhone = normalizePaymentPhone(input.paymentPhone || '') || undefined;
 
   let payLink: string | null = null;
-  if (hasValidUpiId) {
+  if (hasValidUpiId || staticQrUrl) {
     const code = await createUpiPayShortLink({
-      upiId,
+      upiId: hasValidUpiId ? upiId : '',
       payeeName,
       amount,
       note,
       phone: payPhone,
       brand,
+      qrCodeUrl: staticQrUrl || undefined,
+      dynamicUpiEnabled: input.dynamicUpi !== false,
     });
     const origin = resolveUpiPaySiteOrigin(brand);
     payLink = code ? buildUpiPayShortHttpsLink(origin, code) : null;

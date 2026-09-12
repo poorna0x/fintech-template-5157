@@ -221,6 +221,8 @@ export default function QuickUpiQrGenerator() {
         jobRef: 'payment request',
         watchPhotos: false,
         source: 'pending_payment',
+        staticQrUrl: selectedAccount.qrCodeUrl,
+        dynamicUpi: selectedAccount.dynamicUpiEnabled !== false,
       });
       if (!result.ok) {
         toast.error(result.error || 'Could not send payment QR');

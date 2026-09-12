@@ -131,7 +131,21 @@ const PayUpi = () => {
   const ph = normalizePaymentPhone(shortLink?.phone || params.get('ph') || '');
   const brand: DocumentBrand =
     normalizeDocumentBrand(shortLink?.brand || params.get('brand')) || defaultBrandFromHost();
-  const valid = isValidUpiId(pa);
+
+  const rawQr = shortLink?.qrCodeUrl || params.get('qr') || '';
+  const qrCodeUrl = rawQr && rawQr !== '[object Object]' ? rawQr.trim() : '';
+
+  const dynamicParam = params.get('dyn') ?? params.get('dynamic');
+  const isDynamicUpi =
+    shortLink?.dynamicUpiEnabled !== undefined
+      ? Boolean(shortLink.dynamicUpiEnabled)
+      : dynamicParam !== null
+        ? dynamicParam !== '0' && dynamicParam !== 'false'
+        : !qrCodeUrl;
+
+  const validUpi = isValidUpiId(pa);
+  const hasStaticQr = Boolean(qrCodeUrl);
+  const valid = isDynamicUpi ? validUpi : validUpi || hasStaticQr;
   const brandLabel = getDocumentBrandLabel(brand);
 
   const payInput = useMemo(
@@ -146,7 +160,10 @@ const PayUpi = () => {
     [pa, pn, am, tn, ph, brand]
   );
 
-  const upiLink = useMemo(() => (valid ? buildUpiPayDeepLink(payInput) : null), [valid, payInput]);
+  const upiLink = useMemo(
+    () => (isDynamicUpi && validUpi ? buildUpiPayDeepLink(payInput) : null),
+    [isDynamicUpi, validUpi, payInput]
+  );
 
   useEffect(() => {
     document.title = `Pay via UPI | ${brandLabel}`;
@@ -216,11 +233,27 @@ const PayUpi = () => {
     window.setTimeout(() => setCopiedField(null), 2200);
   };
 
+  const getStaticQrBlob = async (): Promise<Blob | null> => {
+    if (!qrCodeUrl) return null;
+    try {
+      const res = await fetch(qrCodeUrl);
+      if (res.ok) return await res.blob();
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleDownloadQr = async () => {
     setActionHint(null);
     setActionBusy('download');
     try {
-      const blob = await getQrPngBlob(qrInstanceRef.current);
+      let blob: Blob | null = null;
+      if (isDynamicUpi) {
+        blob = await getQrPngBlob(qrInstanceRef.current);
+      } else {
+        blob = await getStaticQrBlob();
+      }
       if (!blob) {
         setActionHint('QR isn’t ready yet — wait a moment and try again.');
         return;
@@ -241,7 +274,12 @@ const PayUpi = () => {
     setActionHint(null);
     setActionBusy('share');
     try {
-      const blob = await getQrPngBlob(qrInstanceRef.current);
+      let blob: Blob | null = null;
+      if (isDynamicUpi) {
+        blob = await getQrPngBlob(qrInstanceRef.current);
+      } else {
+        blob = await getStaticQrBlob();
+      }
       const payLink =
         typeof window !== 'undefined' ? window.location.href : '';
       const shareText = buildTechSharePayMessage({
@@ -255,7 +293,7 @@ const PayUpi = () => {
 
       if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
         if (blob) {
-          const file = new File([blob], qrFileName, { type: 'image/png' });
+          const file = new File([blob], qrFileName, { type: blob.type || 'image/png' });
           const payloadWithFile: ShareData = {
             files: [file],
             title: `Pay ${brandLabel}`,
@@ -320,7 +358,7 @@ const PayUpi = () => {
           <p className="mt-2 text-sm text-slate-600">
             {shortLinkMissing
               ? `This pay link is no longer available. Ask ${brandLabel} for a new payment message.`
-              : `This UPI link is missing a valid UPI ID. Ask ${brandLabel} for a new payment message.`}
+              : `This payment link is missing payment details. Ask ${brandLabel} for a new payment message.`}
           </p>
         </div>
       </div>
@@ -359,20 +397,22 @@ const PayUpi = () => {
               </div>
             ) : null}
 
-            <div className="flex items-start gap-3 px-4 py-2.5">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-slate-500">UPI ID</p>
-                <p className="mt-0.5 select-all break-all font-mono text-sm font-semibold text-slate-900">{pa}</p>
+            {pa ? (
+              <div className="flex items-start gap-3 px-4 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-slate-500">UPI ID</p>
+                  <p className="mt-0.5 select-all break-all font-mono text-sm font-semibold text-slate-900">{pa}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleCopy('upi', pa)}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  {copiedField === 'upi' ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copiedField === 'upi' ? 'Copied' : 'Copy'}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleCopy('upi', pa)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-              >
-                {copiedField === 'upi' ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                {copiedField === 'upi' ? 'Copied' : 'Copy'}
-              </button>
-            </div>
+            ) : null}
 
             {ph ? (
               <div className="flex items-start gap-3 px-4 py-2.5">
@@ -409,37 +449,65 @@ const PayUpi = () => {
         <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 text-center shadow-sm shadow-slate-200/60 sm:mt-4 sm:p-5">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scan to pay</p>
           <div className="mt-2.5 flex justify-center">
-            <div
-              ref={qrRef}
-              className="flex h-[176px] w-[176px] items-center justify-center bg-white"
-              aria-label="UPI payment QR code"
-            />
+            {isDynamicUpi ? (
+              <div
+                ref={qrRef}
+                className="flex h-[176px] w-[176px] items-center justify-center bg-white"
+                aria-label="UPI payment QR code"
+              />
+            ) : qrCodeUrl ? (
+              <img
+                src={qrCodeUrl}
+                alt="UPI payment QR"
+                className="max-h-[220px] max-w-[220px] object-contain rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm"
+                onLoad={() => setQrReady(true)}
+              />
+            ) : (
+              <div className="flex h-[120px] w-full max-w-[260px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center">
+                <p className="text-xs font-medium text-slate-700">QR code image not attached</p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Please pay directly using the UPI ID or phone number above.
+                </p>
+              </div>
+            )}
           </div>
-          {!qrReady ? <p className="mt-1.5 text-xs text-slate-400">Loading QR…</p> : null}
+          {!qrReady && (isDynamicUpi || qrCodeUrl) ? (
+            <p className="mt-1.5 text-xs text-slate-400">Loading QR…</p>
+          ) : null}
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            Open any UPI app and scan this QR — amount and payee fill in automatically.
+            {isDynamicUpi
+              ? 'Open any UPI app and scan this QR — amount and payee fill in automatically.'
+              : qrCodeUrl
+                ? 'Open any UPI app (GPay, PhonePe, Paytm, etc.) and scan this QR to complete the payment.'
+                : 'Copy the UPI ID or phone number above to complete the payment in your UPI app.'}
           </p>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={!qrReady || actionBusy !== null}
-              onClick={() => void handleDownloadQr()}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
-            >
-              <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              {actionBusy === 'download' ? 'Saving…' : 'Download QR'}
-            </button>
-            <button
-              type="button"
-              disabled={!qrReady || actionBusy !== null}
-              onClick={() => void handleShareWhatsApp()}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
-            >
-              <Share2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              {actionBusy === 'share' ? 'Opening…' : 'Share'}
-            </button>
-          </div>
+          {(isDynamicUpi || qrCodeUrl) ? (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={!qrReady || actionBusy !== null}
+                onClick={() => void handleDownloadQr()}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+              >
+                <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                {actionBusy === 'download' ? 'Saving…' : 'Download QR'}
+              </button>
+              <button
+                type="button"
+                disabled={!qrReady || actionBusy !== null}
+                onClick={() => void handleShareWhatsApp()}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+              >
+                <Share2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                {actionBusy === 'share' ? 'Opening…' : 'Share'}
+              </button>
+            </div>
+          ) : null}
+          {actionHint ? (
+            <p className="mt-2 text-xs leading-relaxed text-sky-800">{actionHint}</p>
+          ) : null}
+        </div>
           {actionHint ? (
             <p className="mt-2 text-xs leading-relaxed text-sky-800">{actionHint}</p>
           ) : null}
