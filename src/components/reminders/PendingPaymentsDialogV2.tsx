@@ -78,6 +78,7 @@ import {
   type UpiPaymentAccount,
 } from '@/lib/upiPaymentAccounts';
 import { generateUpiQrPngBase64 } from '@/lib/generateUpiQrPng';
+import { fetchImageUrlAsBase64 } from '@/lib/qrCodeManager';
 
 const PENDING_PAYMENT_TITLE = PENDING_PAYMENT_REMINDER_TITLE;
 const PAGE_SIZE = 20;
@@ -1107,7 +1108,7 @@ export function SettingsPendingPaymentsDialogV2({
     brandByCustomerId,
   ]);
 
-  /** Auto-generate dynamic UPI QR when Include UPI is on (manual upload / cleared skip). */
+  /** Auto-generate dynamic UPI QR or load static QR photo when Include UPI is on (manual upload / cleared skip). */
   useEffect(() => {
     if (!whatsappDialogOpen || !whatsappTarget) return;
     if (!whatsappIncludeUpi || whatsappQrMode !== 'auto') return;
@@ -1120,6 +1121,25 @@ export function SettingsPendingPaymentsDialogV2({
     setWhatsappQrGenerating(true);
     void (async () => {
       try {
+        if (account.dynamicUpiEnabled === false && account.qrCodeUrl) {
+          const loaded = await fetchImageUrlAsBase64(account.qrCodeUrl);
+          if (cancelled) return;
+          if (loaded) {
+            const bytes = Uint8Array.from(atob(loaded.base64), (c) => c.charCodeAt(0));
+            const blob = new Blob([bytes], { type: loaded.mimeType });
+            setWhatsappAttachImage((prev) => {
+              if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+              return {
+                base64: loaded.base64,
+                mimeType: loaded.mimeType,
+                filename: loaded.filename || 'payment-qr.jpg',
+                previewUrl: URL.createObjectURL(blob),
+              };
+            });
+            return;
+          }
+        }
+
         const amount = Number(whatsappTarget.amount_pending) || 0;
         const noteParts = ['Pending payment'];
         const jobRef = whatsappTarget.job_number || whatsappTarget.job_id;
@@ -1135,6 +1155,23 @@ export function SettingsPendingPaymentsDialogV2({
         });
         if (cancelled) return;
         if (!png) {
+          if (account.qrCodeUrl) {
+            const fallbackLoaded = await fetchImageUrlAsBase64(account.qrCodeUrl);
+            if (fallbackLoaded && !cancelled) {
+              const bytes = Uint8Array.from(atob(fallbackLoaded.base64), (c) => c.charCodeAt(0));
+              const blob = new Blob([bytes], { type: fallbackLoaded.mimeType });
+              setWhatsappAttachImage((prev) => {
+                if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+                return {
+                  base64: fallbackLoaded.base64,
+                  mimeType: fallbackLoaded.mimeType,
+                  filename: fallbackLoaded.filename || 'payment-qr.jpg',
+                  previewUrl: URL.createObjectURL(blob),
+                };
+              });
+              return;
+            }
+          }
           toast.message('Could not generate UPI QR — attach a photo manually if needed');
           return;
         }
@@ -2360,8 +2397,10 @@ export function SettingsPendingPaymentsDialogV2({
                                 <SelectContent>
                                   {upiAccounts.map((a) => (
                                     <SelectItem key={a.id} value={a.id}>
-                                      {a.label} — {a.upiId}
+                                      {a.label}
+                                      {a.upiId ? ` — ${a.upiId}` : ''}
                                       {a.phone ? ` · ${a.phone}` : ''}
+                                      {a.dynamicUpiEnabled ? ' (Dynamic)' : a.qrCodeUrl ? ' (Static QR)' : ''}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -2438,7 +2477,9 @@ export function SettingsPendingPaymentsDialogV2({
                           {whatsappQrGenerating && !whatsappAttachImage ? (
                             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                               <Loader2 className="h-4 w-4 animate-spin" />
-                              Generating dynamic UPI QR…
+                              {upiAccounts.find((a) => a.id === whatsappUpiAccountId)?.dynamicUpiEnabled === false
+                                ? 'Loading static QR photo…'
+                                : 'Generating dynamic UPI QR…'}
                             </div>
                           ) : null}
                           {whatsappAttachImage ? (
@@ -2452,7 +2493,9 @@ export function SettingsPendingPaymentsDialogV2({
                                 <p className="text-sm truncate">{whatsappAttachImage.filename}</p>
                                 <p className="text-xs text-muted-foreground">
                                   {whatsappQrMode === 'auto'
-                                    ? 'Dynamic QR (amount pre-filled) — sent as photo + caption'
+                                    ? upiAccounts.find((a) => a.id === whatsappUpiAccountId)?.dynamicUpiEnabled === false
+                                      ? 'Saved static QR photo — sent as photo + caption'
+                                      : 'Dynamic QR (amount pre-filled) — sent as photo + caption'
                                     : 'Attached photo — sent as photo + caption / IMAGE template'}
                                 </p>
                               </div>
@@ -2481,7 +2524,9 @@ export function SettingsPendingPaymentsDialogV2({
                                   onClick={() => setWhatsappQrMode('auto')}
                                 >
                                   <RefreshCw className="h-4 w-4" />
-                                  Generate dynamic QR
+                                  {upiAccounts.find((a) => a.id === whatsappUpiAccountId)?.dynamicUpiEnabled === false
+                                    ? 'Load account QR'
+                                    : 'Generate dynamic QR'}
                                 </Button>
                               ) : null}
                               <Button

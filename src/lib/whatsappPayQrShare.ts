@@ -3,6 +3,7 @@
  * Uses the approved balance-due IMAGE template (QR + Pay now).
  */
 import { generateUpiQrPngBase64 } from '@/lib/generateUpiQrPng';
+import { fetchImageUrlAsBase64 } from '@/lib/qrCodeManager';
 import {
   getLocalCalendarDateYmd,
   buildPendingPaymentLetterBodyParams,
@@ -33,7 +34,7 @@ export type SendPayQrWhatsAppInput = {
   to: string;
   amount: number;
   brand: DocumentBrand;
-  upiId: string;
+  upiId?: string;
   payeeName?: string | null;
   paymentPhone?: string | null;
   customerName?: string | null;
@@ -44,6 +45,10 @@ export type SendPayQrWhatsAppInput = {
   /** Technician share only — server records 30-min photo watch when JWT is a technician. */
   watchPhotos?: boolean;
   source?: WhatsAppSendSource;
+  /** Static QR image URL (uploaded standee / bank QR image) */
+  staticQrUrl?: string | null;
+  /** Whether to dynamically generate QR with amount. Defaults to true if upiId is valid and not explicitly false */
+  dynamicUpi?: boolean;
 };
 
 export type SendPayQrWhatsAppResult = {
@@ -59,14 +64,16 @@ export async function sendPayQrWhatsApp(
   const to = String(input.to || '').trim();
   const amount = Number(input.amount);
   const upiId = String(input.upiId || '').trim();
+  const staticQrUrl = String(input.staticQrUrl || '').trim();
   if (!to || to.replace(/\D/g, '').length < 10) {
     return { ok: false, error: 'Enter a valid WhatsApp number' };
   }
   if (!Number.isFinite(amount) || amount <= 0) {
     return { ok: false, error: 'Enter a valid amount' };
   }
-  if (!isValidUpiId(upiId)) {
-    return { ok: false, error: 'UPI ID is missing or invalid' };
+  const hasValidUpiId = isValidUpiId(upiId);
+  if (!hasValidUpiId && !staticQrUrl) {
+    return { ok: false, error: 'UPI ID is missing or invalid, and no QR image provided' };
   }
 
   const brand = input.brand === 'elevenro' ? 'elevenro' : 'hydrogenro';
@@ -77,38 +84,57 @@ export async function sendPayQrWhatsApp(
     .slice(0, 80);
   const payPhone = normalizePaymentPhone(input.paymentPhone || '') || undefined;
 
-  const code = await createUpiPayShortLink({
-    upiId,
-    payeeName,
-    amount,
-    note,
-    phone: payPhone,
-    brand,
-  });
-  const origin = resolveUpiPaySiteOrigin(brand);
-  const payLink = code ? buildUpiPayShortHttpsLink(origin, code) : null;
-  if (!payLink) {
-    return {
-      ok: false,
-      error: 'Could not create pay link — run the UPI pay-link SQL, or try again',
-    };
+  let payLink: string | null = null;
+  if (hasValidUpiId) {
+    const code = await createUpiPayShortLink({
+      upiId,
+      payeeName,
+      amount,
+      note,
+      phone: payPhone,
+      brand,
+    });
+    const origin = resolveUpiPaySiteOrigin(brand);
+    payLink = code ? buildUpiPayShortHttpsLink(origin, code) : null;
   }
 
-  const qr = await generateUpiQrPngBase64({
-    upiId,
-    payeeName,
-    amount,
-    note,
-    phone: payPhone,
-    brand,
-  });
-  const headerImage = qr?.base64
-    ? {
+  let headerImage: { imageBase64: string; filename: string; mimeType: string } | null = null;
+
+  if (input.dynamicUpi !== false && hasValidUpiId) {
+    const qr = await generateUpiQrPngBase64({
+      upiId,
+      payeeName,
+      amount,
+      note,
+      phone: payPhone,
+      brand,
+    });
+    if (qr?.base64) {
+      headerImage = {
         imageBase64: qr.base64,
         filename: qr.filename || 'upi-qr.png',
         mimeType: qr.mimeType || 'image/png',
-      }
-    : null;
+      };
+    }
+  }
+
+  if (!headerImage && staticQrUrl) {
+    const loaded = await fetchImageUrlAsBase64(staticQrUrl);
+    if (loaded?.base64) {
+      headerImage = {
+        imageBase64: loaded.base64,
+        filename: loaded.filename || 'payment-qr.jpg',
+        mimeType: loaded.mimeType || 'image/jpeg',
+      };
+    }
+  }
+
+  if (!payLink && !headerImage) {
+    return {
+      ok: false,
+      error: 'Could not create pay link or QR image — verify UPI ID or uploaded QR',
+    };
+  }
 
   const customerName = String(input.customerName || '').trim() || 'there';
   const dueYmd = getLocalCalendarDateYmd();
@@ -133,7 +159,7 @@ export async function sendPayQrWhatsApp(
       amount,
       dueYmd,
       brand,
-      { label: payeeName, upiId, phone: payPhone, httpsLink: payLink },
+      { label: payeeName, upiId, phone: payPhone, httpsLink: payLink || undefined },
       jobRef,
       { withQrImage: true, ctaButton: false }
     );

@@ -7,12 +7,19 @@ CREATE TABLE IF NOT EXISTS public.upi_payment_accounts (
   upi_id text NOT NULL,
   payee_name text NOT NULL DEFAULT '',
   phone text NOT NULL DEFAULT '',
+  qr_code_url text NOT NULL DEFAULT '',
+  dynamic_upi_enabled boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT upi_payment_accounts_label_len CHECK (char_length(label) <= 120),
   CONSTRAINT upi_payment_accounts_upi_len CHECK (char_length(upi_id) <= 120),
   CONSTRAINT upi_payment_accounts_phone_len CHECK (char_length(phone) <= 20)
 );
+
+-- Upgrade existing table if columns don't exist yet
+ALTER TABLE public.upi_payment_accounts
+  ADD COLUMN IF NOT EXISTS qr_code_url text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS dynamic_upi_enabled boolean NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS idx_upi_payment_accounts_created
   ON public.upi_payment_accounts (created_at DESC);

@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import ImageUpload from '@/components/ImageUpload';
+import { Loader2, Pencil, Plus, QrCode, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   deleteUpiPaymentAccount,
@@ -32,6 +35,8 @@ export default function UpiPaymentAccountsManager({
   const [upiId, setUpiId] = useState('');
   const [payeeName, setPayeeName] = useState('');
   const [phone, setPhone] = useState('');
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [dynamicUpiEnabled, setDynamicUpiEnabled] = useState(false);
   const [fromRemote, setFromRemote] = useState(false);
 
   const applyAccounts = (next: UpiPaymentAccount[], remote: boolean) => {
@@ -71,6 +76,8 @@ export default function UpiPaymentAccountsManager({
     setUpiId('');
     setPayeeName('');
     setPhone('');
+    setQrCodeUrl('');
+    setDynamicUpiEnabled(false);
   };
 
   const startAdd = () => {
@@ -80,6 +87,8 @@ export default function UpiPaymentAccountsManager({
     setUpiId('');
     setPayeeName('');
     setPhone('');
+    setQrCodeUrl('');
+    setDynamicUpiEnabled(false);
   };
 
   const startEdit = (a: UpiPaymentAccount) => {
@@ -89,6 +98,8 @@ export default function UpiPaymentAccountsManager({
     setUpiId(a.upiId);
     setPayeeName(a.payeeName);
     setPhone(a.phone || '');
+    setQrCodeUrl(a.qrCodeUrl || '');
+    setDynamicUpiEnabled(a.dynamicUpiEnabled ?? false);
   };
 
   const handleSave = async () => {
@@ -100,6 +111,8 @@ export default function UpiPaymentAccountsManager({
         upiId,
         payeeName: payeeName.trim() || label,
         phone,
+        qrCodeUrl,
+        dynamicUpiEnabled,
       });
       if (error || !account) {
         toast.error(error || 'Could not save UPI account');
@@ -137,7 +150,7 @@ export default function UpiPaymentAccountsManager({
       {!showForm && (
         <div className="flex items-start justify-between gap-2">
           <p className="text-xs text-muted-foreground">
-            UPI ID + payment phone for pending-payment WhatsApp.
+            UPI accounts and QR codes for pending-payment WhatsApp.
             {fromRemote
               ? ' Synced to the cloud (all admin devices).'
               : ' Saved on this device until the database table is set up.'}
@@ -165,7 +178,7 @@ export default function UpiPaymentAccountsManager({
 
       {!loading && accounts.length === 0 && !showForm ? (
         <p className="text-sm text-muted-foreground">
-          No UPI accounts yet. Add UPI ID and payment phone (e.g. Hydrogen RO @oksbi + 98869xxxxx).
+          No UPI accounts yet. Add UPI ID and payment phone, or upload a static QR standee photo.
         </p>
       ) : null}
 
@@ -174,16 +187,42 @@ export default function UpiPaymentAccountsManager({
           {accounts.map((a) => (
             <li
               key={a.id}
-              className="flex items-start justify-between gap-2 rounded-md border px-3 py-2"
+              className="flex items-start justify-between gap-3 rounded-lg border p-3 bg-card hover:bg-muted/30 transition-colors"
             >
-              <div className="min-w-0">
-                <div className="font-medium text-sm truncate">{a.label}</div>
-                <div className="text-xs font-mono text-muted-foreground truncate">{a.upiId}</div>
-                {a.phone ? (
-                  <div className="text-xs text-muted-foreground truncate">Phone: {a.phone}</div>
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                {a.qrCodeUrl ? (
+                  <img
+                    src={a.qrCodeUrl}
+                    alt={a.label}
+                    className="h-12 w-12 rounded-md object-cover border bg-muted shrink-0"
+                  />
                 ) : (
-                  <div className="text-xs text-amber-700 dark:text-amber-400">No payment phone</div>
+                  <div className="h-12 w-12 rounded-md border border-dashed flex items-center justify-center bg-muted/40 text-muted-foreground shrink-0">
+                    <QrCode className="h-5 w-5 opacity-60" />
+                  </div>
                 )}
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm truncate">{a.label}</span>
+                    {a.dynamicUpiEnabled ? (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-sky-300 bg-sky-50 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
+                        Dynamic UPI
+                      </Badge>
+                    ) : a.qrCodeUrl ? (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                        Static QR
+                      </Badge>
+                    ) : null}
+                  </div>
+                  {a.upiId ? (
+                    <div className="text-xs font-mono text-muted-foreground truncate">{a.upiId}</div>
+                  ) : null}
+                  {a.phone ? (
+                    <div className="text-xs text-muted-foreground truncate">Phone: {a.phone}</div>
+                  ) : (
+                    <div className="text-xs text-amber-700 dark:text-amber-400">No payment phone</div>
+                  )}
+                </div>
               </div>
               <div className="flex shrink-0 gap-1">
                 <Button
@@ -215,7 +254,7 @@ export default function UpiPaymentAccountsManager({
       ) : null}
 
       {showForm ? (
-        <div className="space-y-3 rounded-md border p-3 bg-muted/30">
+        <div className="space-y-4 rounded-lg border p-3.5 bg-muted/30">
           <div>
             <Label htmlFor="upi-acct-label">Label *</Label>
             <Input
@@ -223,11 +262,32 @@ export default function UpiPaymentAccountsManager({
               className="mt-1"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Hydrogen RO HDFC"
+              placeholder="e.g. Hydrogen RO HDFC / Office Standee"
             />
           </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border bg-card p-3">
+            <div className="space-y-0.5 pr-2">
+              <Label htmlFor="dynamic-upi-toggle" className="text-sm font-medium cursor-pointer">
+                Dynamic UPI QR
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {dynamicUpiEnabled
+                  ? 'Generates dynamic QR with customer bill amount embedded for every WhatsApp send.'
+                  : 'Sends the uploaded static QR photo (standee/GPay/PhonePe scanner) on WhatsApp.'}
+              </p>
+            </div>
+            <Switch
+              id="dynamic-upi-toggle"
+              checked={dynamicUpiEnabled}
+              onCheckedChange={setDynamicUpiEnabled}
+            />
+          </div>
+
           <div>
-            <Label htmlFor="upi-acct-id">UPI ID *</Label>
+            <Label htmlFor="upi-acct-id">
+              UPI ID {dynamicUpiEnabled ? '*' : '(optional if QR photo is uploaded)'}
+            </Label>
             <Input
               id="upi-acct-id"
               className="mt-1 font-mono text-sm"
@@ -237,7 +297,46 @@ export default function UpiPaymentAccountsManager({
               autoCapitalize="none"
               autoCorrect="off"
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              {dynamicUpiEnabled
+                ? 'Required to generate the dynamic QR and short payment link.'
+                : 'If provided, a short pay link & button will also be included alongside the static QR photo.'}
+            </p>
           </div>
+
+          <div className="space-y-2">
+            <Label>QR Code Image / Standee Photo</Label>
+            {qrCodeUrl ? (
+              <div className="relative inline-block border rounded-lg p-1 bg-background">
+                <img
+                  src={qrCodeUrl}
+                  alt="QR Code Preview"
+                  className="h-28 w-28 object-contain rounded"
+                />
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="icon"
+                  className="absolute -top-2 -right-2 h-6 w-6 rounded-full shadow"
+                  onClick={() => setQrCodeUrl('')}
+                  title="Remove image"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            ) : (
+              <ImageUpload
+                onImagesChange={(images) => setQrCodeUrl(images[0] || '')}
+                maxImages={1}
+                folder="common-qr-codes"
+                title=""
+                description="Upload static QR code standee or scanner photo"
+                maxWidth={1000}
+                quality={0.85}
+              />
+            )}
+          </div>
+
           <div>
             <Label htmlFor="upi-acct-phone">Payment phone</Label>
             <Input
@@ -253,6 +352,7 @@ export default function UpiPaymentAccountsManager({
               Shown in WhatsApp so iPhone users can pay to this number if the UPI link does not open.
             </p>
           </div>
+
           <div>
             <Label htmlFor="upi-acct-payee">Payee name (optional)</Label>
             <Input
@@ -263,7 +363,8 @@ export default function UpiPaymentAccountsManager({
               placeholder="Shown in GPay / PhonePe — defaults to label"
             />
           </div>
-          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+
+          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
             <Button type="button" variant="outline" onClick={resetForm} disabled={saving}>
               Cancel
             </Button>

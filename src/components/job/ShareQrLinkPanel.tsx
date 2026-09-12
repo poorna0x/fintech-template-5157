@@ -34,6 +34,7 @@ type ShareUpiOption = {
   payeeName?: string;
   phone?: string;
   imageUrl?: string;
+  dynamicUpiEnabled: boolean;
 };
 
 type ShareQrLinkPanelProps = {
@@ -112,7 +113,7 @@ export default function ShareQrLinkPanel({
 
   const dynamicOptions = useMemo((): ShareUpiOption[] => {
     const fromCommon: ShareUpiOption[] = commonQrCodes
-      .filter((qr) => isDynamicUpiQr(qr))
+      .filter((qr) => isDynamicUpiQr(qr) || Boolean(qr.qrCodeUrl?.trim()))
       .map((qr) => ({
         key: `common_${qr.id}`,
         name: qr.name,
@@ -120,13 +121,14 @@ export default function ShareQrLinkPanel({
         payeeName: qr.payeeName || qr.name,
         phone: qr.phone,
         imageUrl: qr.qrCodeUrl,
+        dynamicUpiEnabled: isDynamicUpiQr(qr),
       }));
     const techPool =
       currentTechnicianId && String(currentTechnicianId).trim()
         ? technicians.filter((t) => String(t.id) === String(currentTechnicianId))
         : technicians;
     const fromTech: ShareUpiOption[] = techPool
-      .filter((t) => isDynamicUpiTechnician(t))
+      .filter((t) => isDynamicUpiTechnician(t) || Boolean(t.qrCode?.trim()))
       .map((t) => ({
         key: `technician_${t.id}`,
         name: `${t.fullName}'s QR`,
@@ -134,6 +136,7 @@ export default function ShareQrLinkPanel({
         payeeName: t.payeeName || t.fullName,
         phone: t.upiPhone,
         imageUrl: t.qrCode,
+        dynamicUpiEnabled: isDynamicUpiTechnician(t),
       }));
     return [...fromCommon, ...fromTech];
   }, [commonQrCodes, technicians, currentTechnicianId]);
@@ -208,6 +211,8 @@ export default function ShareQrLinkPanel({
         jobId,
         watchPhotos: true,
         source: 'pending_payment',
+        staticQrUrl: selectedQr.imageUrl,
+        dynamicUpi: selectedQr.dynamicUpiEnabled,
       });
       if (!result.ok) {
         toast.error(result.error || 'Could not send pay QR on WhatsApp');
@@ -239,19 +244,19 @@ export default function ShareQrLinkPanel({
         <Label className="text-sm">Which UPI / QR? *</Label>
         {dynamicOptions.length === 0 ? (
           <p className="mt-1 text-xs text-amber-800">
-            No Dynamic UPI accounts available. Enable Dynamic UPI on a common QR or
-            technician QR in Settings.
+            No UPI accounts or QR images available. Add a QR code or enable Dynamic UPI in Settings.
           </p>
         ) : (
           <Select value={selectedUpiQrId || undefined} onValueChange={onSelectUpiQrId}>
             <SelectTrigger className="mt-1 h-11 rounded-xl bg-white">
-              <SelectValue placeholder="Select UPI account" />
+              <SelectValue placeholder="Select UPI account / QR" />
             </SelectTrigger>
             <SelectContent className="!z-[110]">
               {dynamicOptions.map((qr) => (
                 <SelectItem key={qr.key} value={qr.key}>
                   {qr.name}
                   {qr.upiId ? ` · ${qr.upiId}` : ''}
+                  {qr.dynamicUpiEnabled ? ' (Dynamic)' : ' (Static QR)'}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -282,14 +287,20 @@ export default function ShareQrLinkPanel({
           <p>
             <span className="text-slate-500">Payee:</span> {selectedQr.payeeName || selectedQr.name}
           </p>
-          <p>
-            <span className="text-slate-500">UPI ID:</span> {selectedQr.upiId}
-          </p>
+          {selectedQr.upiId ? (
+            <p>
+              <span className="text-slate-500">UPI ID:</span> {selectedQr.upiId}
+            </p>
+          ) : null}
           {selectedQr.phone ? (
             <p>
               <span className="text-slate-500">UPI phone:</span> {selectedQr.phone}
             </p>
           ) : null}
+          <p>
+            <span className="text-slate-500">Mode:</span>{' '}
+            {selectedQr.dynamicUpiEnabled ? 'Dynamic UPI (amount embedded)' : 'Static QR photo'}
+          </p>
           {Number.isFinite(amount) && amount > 0 ? (
             <p>
               <span className="text-slate-500">Amount:</span> ₹

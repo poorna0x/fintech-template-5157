@@ -165,6 +165,44 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+/** Fetch any remote image URL or parse data URL into base64 + mimeType for WhatsApp sending. */
+export async function fetchImageUrlAsBase64(
+  url: string
+): Promise<{ base64: string; mimeType: string; filename: string } | null> {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return null;
+  try {
+    if (trimmed.startsWith('data:')) {
+      const match = trimmed.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        const mimeType = match[1] || 'image/png';
+        const ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png';
+        return {
+          mimeType,
+          base64: match[2],
+          filename: `upi-qr.${ext}`,
+        };
+      }
+    }
+    const res = await fetch(trimmed);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const dataUrl = await blobToDataUrl(blob);
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return null;
+    const mimeType = match[1] || blob.type || 'image/jpeg';
+    const ext = mimeType.includes('png') ? 'png' : 'jpg';
+    return {
+      mimeType,
+      base64: match[2],
+      filename: `upi-qr.${ext}`,
+    };
+  } catch (err) {
+    console.warn('[fetchImageUrlAsBase64] failed to load image', trimmed, err);
+    return null;
+  }
+}
+
 /** Cached data URLs keyed by technician_common_qr id (current assignments only). */
 export function getTechnicianCommonQrImageCache(technicianId: string): Record<string, string> {
   if (typeof window === 'undefined' || !technicianId) return {};

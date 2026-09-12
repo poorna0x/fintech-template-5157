@@ -12,6 +12,10 @@ export type UpiPaymentAccount = {
   payeeName: string;
   /** Phone number customers can pay to (UPI to mobile / call). */
   phone: string;
+  /** Static QR image URL (uploaded photo) */
+  qrCodeUrl?: string;
+  /** When true, generates dynamic UPI QR with amount embedded. When false, sends static QR photo */
+  dynamicUpiEnabled?: boolean;
 };
 
 const CACHE_KEY = 'hro_upi_payment_accounts_v2';
@@ -74,8 +78,17 @@ function rowFromDb(r: Record<string, unknown>): UpiPaymentAccount | null {
   const phone = normalizePaymentPhone(
     typeof r.phone === 'string' ? r.phone : ''
   );
-  if (!id || !label || !upiId) return null;
-  return { id, label, upiId, payeeName, phone };
+  const qrCodeUrl =
+    typeof r.qr_code_url === 'string'
+      ? r.qr_code_url.trim()
+      : typeof r.qrCodeUrl === 'string'
+        ? r.qrCodeUrl.trim()
+        : '';
+  const dynamicUpiEnabled = Boolean(
+    r.dynamic_upi_enabled ?? r.dynamicUpiEnabled ?? false
+  );
+  if (!id || !label || (!upiId && !qrCodeUrl)) return null;
+  return { id, label, upiId, payeeName, phone, qrCodeUrl, dynamicUpiEnabled };
 }
 
 function parseCachedList(raw: string | null): UpiPaymentAccount[] {
@@ -201,16 +214,27 @@ export async function fetchUpiPaymentAccounts(): Promise<{
 export async function upsertUpiPaymentAccount(input: {
   id?: string;
   label: string;
-  upiId: string;
+  upiId?: string;
   payeeName?: string;
   phone?: string;
+  qrCodeUrl?: string;
+  dynamicUpiEnabled?: boolean;
 }): Promise<{ account: UpiPaymentAccount | null; error: string | null; fromRemote: boolean }> {
   const label = String(input.label || '').trim();
-  const upiId = normalizeUpiId(input.upiId);
+  const upiId = normalizeUpiId(input.upiId || '');
   const payeeName = String(input.payeeName || label).trim() || label;
   const phone = normalizePaymentPhone(input.phone || '');
+  const qrCodeUrl = String(input.qrCodeUrl || '').trim();
+  const dynamicUpiEnabled = input.dynamicUpiEnabled === true;
+
   if (!label) return { account: null, error: 'Enter a label (e.g. Hydrogen RO HDFC).', fromRemote: false };
-  if (!isValidUpiId(upiId)) {
+  if (dynamicUpiEnabled && !isValidUpiId(upiId)) {
+    return { account: null, error: 'Enter a valid UPI ID (e.g. business@oksbi) to enable Dynamic UPI.', fromRemote: false };
+  }
+  if (!dynamicUpiEnabled && !upiId && !qrCodeUrl) {
+    return { account: null, error: 'Provide a valid UPI ID or upload a QR code image.', fromRemote: false };
+  }
+  if (upiId && !isValidUpiId(upiId)) {
     return { account: null, error: 'Enter a valid UPI ID (e.g. business@oksbi).', fromRemote: false };
   }
   if (phone && !isValidPaymentPhone(phone)) {
@@ -222,7 +246,15 @@ export async function upsertUpiPaymentAccount(input: {
   }
 
   const id = input.id?.trim() || newId();
-  const account: UpiPaymentAccount = { id, label, upiId, payeeName, phone };
+  const account: UpiPaymentAccount = {
+    id,
+    label,
+    upiId,
+    payeeName,
+    phone,
+    qrCodeUrl,
+    dynamicUpiEnabled,
+  };
 
   if (!remoteUnavailable) {
     const payload = {
@@ -231,11 +263,28 @@ export async function upsertUpiPaymentAccount(input: {
       upi_id: upiId,
       payee_name: payeeName,
       phone,
+      qr_code_url: qrCodeUrl,
+      dynamic_upi_enabled: dynamicUpiEnabled,
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from('upi_payment_accounts' as any).upsert(payload, {
+    let { error } = await supabase.from('upi_payment_accounts' as any).upsert(payload, {
       onConflict: 'id',
     });
+    if (error && (error.message?.includes('qr_code_url') || error.message?.includes('dynamic_upi_enabled') || error.message?.includes('column'))) {
+      // Retry without new columns if user hasn't run the ALTER TABLE SQL yet
+      const fallbackPayload = {
+        id,
+        label,
+        upi_id: upiId,
+        payee_name: payeeName,
+        phone,
+        updated_at: new Date().toISOString(),
+      };
+      const res = await supabase.from('upi_payment_accounts' as any).upsert(fallbackPayload, {
+        onConflict: 'id',
+      });
+      error = res.error;
+    }
     if (!error) {
       const list = readLocalCache();
       const idx = list.findIndex((a) => a.id === id);
