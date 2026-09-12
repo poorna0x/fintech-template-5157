@@ -46,7 +46,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { forceLightSelectContentClass, forceLightThemeClass } from '@/lib/force-light-theme';
 
-import { ZERO_COMMISSION_EMPLOYEE_ID } from '@/lib/adminUtils';
+import { isZeroCommissionCompletedJob } from '@/lib/adminCompletedJobProfit';
 
 function formatSentAt(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', {
@@ -262,17 +262,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
     }
   }
   const completedBy = String((job as any).completed_by || (job as any).completedBy || '').trim();
-  const zeroCommissionTechnician = technicians.find((tech: any) => {
-    const technicianId = String(tech.id || '').trim();
-    const employeeId = String(tech.employee_id || tech.employeeId || '').trim();
-    return (
-      employeeId === ZERO_COMMISSION_EMPLOYEE_ID &&
-      (completedBy === technicianId || completedBy === employeeId)
-    );
-  });
-  const hasZeroCommission =
-    completedBy === ZERO_COMMISSION_EMPLOYEE_ID ||
-    Boolean(zeroCommissionTechnician);
+  const hasZeroCommission = isZeroCommissionCompletedJob(job, technicians, []);
   const commission10 = hasZeroCommission ? 0 : billAmount * 0.1;
   const sparePartsCostDisplay =
     officePartsOverride != null
@@ -538,7 +528,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                     ₹{profit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                   <span className="text-xs text-gray-500 ml-1">
-                    (Amount − spare parts ₹{sparePartsCostDisplay.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − lead ₹{leadCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − 10% commission ₹{commission10.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                    (Amount − spare parts ₹{sparePartsCostDisplay.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − lead ₹{leadCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{hasZeroCommission ? ' − commission ₹0.00' : ` − 10% commission ₹${commission10.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`})
                   </span>
                 </>
               ) : (

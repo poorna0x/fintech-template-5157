@@ -14,6 +14,7 @@ import {
   resolveJobPaymentBreakdown,
 } from '@/lib/jobAnalytics';
 import { getLeadSourceFromJob, normalizeLeadType } from '@/lib/adminUtils';
+import { isZeroCommissionCompletedJob } from '@/lib/adminCompletedJobProfit';
 
 interface QRCodeBilling {
   qrCodeName: string;
@@ -277,14 +278,18 @@ const BillingStats = () => {
       setQrCodeBilling(Object.values(qrTotals));
       setLeadTypeBilling(Object.values(leadTotals));
 
-      // Summary: revenue - (10% commission + spare parts + lead cost) = profit
+      // Summary: revenue - (commission + spare parts + lead cost) = profit
       const revenue = jobs.reduce(
         (sum: number, j: any) => sum + resolveJobBillingAmount(j.payment_amount, j.actual_cost),
         0
       );
       const leadCost = jobs.reduce((sum: number, j: any) => sum + (Number(j.lead_cost) || 0), 0);
       const sparePartsCost = jobs.reduce((sum: number, j: any) => sum + (Number(j.parts_cost_total) || 0), 0);
-      const commission10 = revenue * 0.1;
+      const commission10 = jobs.reduce((sum: number, j: any) => {
+        if (isZeroCommissionCompletedJob(j, (techRows || []) as any[], [])) return sum;
+        const amt = resolveJobBillingAmount(j.payment_amount, j.actual_cost);
+        return sum + amt * 0.1;
+      }, 0);
       const profit = revenue - commission10 - sparePartsCost - leadCost;
       setSummary({ revenue, leadCost, sparePartsCost, commission10, profit, completedJobs: jobs.length });
     } catch (error: any) {

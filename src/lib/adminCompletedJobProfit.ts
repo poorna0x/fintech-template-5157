@@ -1,17 +1,20 @@
 import { getTodayLocalDate } from '@/lib/adminDashboardDateHelpers';
-import { parseJobRequirements, ZERO_COMMISSION_EMPLOYEE_ID } from '@/lib/adminUtils';
+import { isOfficeCompletedJob, parseJobRequirements, ZERO_COMMISSION_EMPLOYEE_ID } from '@/lib/adminUtils';
 import type { Technician } from '@/types';
 
 export function isZeroCommissionCompletedJob(
   job: any,
   technicians: Technician[],
-  techniciansForReports: Technician[]
+  techniciansForReports: Technician[] = []
 ): boolean {
+  if (isOfficeCompletedJob(job)) return true;
   const completedBy = String(job?.completed_by || job?.completedBy || '').trim();
+  if (completedBy.toLowerCase() === 'office' || completedBy.toLowerCase() === 'admin') return true;
   if (completedBy === ZERO_COMMISSION_EMPLOYEE_ID) return true;
 
-  const technicianPool = techniciansForReports.length > 0 ? techniciansForReports : technicians;
-  return technicianPool.some((tech: any) => {
+  const technicianPool =
+    techniciansForReports && techniciansForReports.length > 0 ? techniciansForReports : technicians;
+  return (technicianPool || []).some((tech: any) => {
     const technicianId = String(tech.id || '').trim();
     const employeeId = String(tech.employee_id || tech.employeeId || '').trim();
     return (

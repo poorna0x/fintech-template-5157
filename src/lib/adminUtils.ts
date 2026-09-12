@@ -531,12 +531,22 @@ export const parseJobRequirements = (reqData: any): any[] => {
 /**
  * True when a job was completed by the office (no field technician). Marked via a
  * `{ completed_by_office: true }` entry in the job's requirements JSON, since the
- * `completed_by` column is a uuid and can't hold a sentinel string.
+ * `completed_by` column is a uuid and can't hold a sentinel string, or direct office sales.
  */
 export const isOfficeCompletedJob = (job: any): boolean => {
   if (!job) return false;
+  const c = String(job?.completed_by || job?.completedBy || '').trim().toLowerCase();
+  if (c === 'office' || c === 'admin') return true;
+  const subType = String(job?.service_sub_type || job?.serviceSubType || '').trim().toLowerCase();
+  if (subType === 'direct sale') return true;
   const reqs = parseJobRequirements((job as any).requirements ?? job.requirements);
-  return reqs.some((r: any) => r?.completed_by_office === true);
+  return reqs.some(
+    (r: any) =>
+      r?.completed_by_office === true ||
+      r?.completed_by_office === 'true' ||
+      r?.completed_by === 'office' ||
+      r?.completed_by === 'admin'
+  );
 };
 
 export interface OfficeJobPart {
