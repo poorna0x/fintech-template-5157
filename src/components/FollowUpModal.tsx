@@ -11,7 +11,7 @@ import { X, Calendar as CalendarIcon, Plus, CheckCircle2 } from 'lucide-react';
 import { Job } from '@/types';
 import { supabase, FOLLOW_UP_ROW_COLUMNS } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { hasAutoMoveToOngoingOnDate } from '@/lib/followUpToOngoing';
+import { resolveAutoMoveToOngoingOnDate } from '@/lib/followUpToOngoing';
 import { nextPresetAppointmentTime } from '@/lib/adminAppointmentTimes';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import { SUGGESTED_FOLLOW_UP_REASONS } from '@/lib/followUpReasons';
@@ -71,7 +71,7 @@ export default function FollowUpModal({
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [selectedParentFollowUp, setSelectedParentFollowUp] = useState<string | null>(null);
   const [rescheduleFollowUpId, setRescheduleFollowUpId] = useState<string | null>(null);
-  const [autoMoveToOngoingOnDate, setAutoMoveToOngoingOnDate] = useState(true);
+  const [autoMoveToOngoingOnDate, setAutoMoveToOngoingOnDate] = useState(false);
   const [addAmcReminder, setAddAmcReminder] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const reasonInputRef = useRef<HTMLInputElement>(null);
@@ -86,7 +86,16 @@ export default function FollowUpModal({
     );
   }, [reason]);
 
-  // Reset form when modal opens/closes
+  // Reset form only when the modal opens or the job/draft identity changes — not on every
+  // parent re-render (new job object reference), which was re-checking auto-move after uncheck.
+  const draftInitKey = initialDraft
+    ? [
+        initialDraft.followUpDate || '',
+        initialDraft.followUpTime || '',
+        initialDraft.followUpReason || '',
+        String(initialDraft.addAmcReminder ?? ''),
+      ].join('|')
+    : '';
   useEffect(() => {
     if (isOpen && job) {
       // Reset form fields
@@ -102,12 +111,8 @@ export default function FollowUpModal({
       setReason(initialDraft?.followUpReason || '');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
-      // Default ON; if this job already has an explicit auto-move preference, keep it.
-      const reqs = (job as any).requirements;
-      const hasKey =
-        Array.isArray(reqs) &&
-        reqs.some((r: any) => r && Object.prototype.hasOwnProperty.call(r, 'auto_move_to_ongoing_on_date'));
-      setAutoMoveToOngoingOnDate(hasKey ? hasAutoMoveToOngoingOnDate(reqs) : true);
+      // Default OFF; honor explicit true/false already saved on the job.
+      setAutoMoveToOngoingOnDate(resolveAutoMoveToOngoingOnDate((job as any).requirements, false));
       setAddAmcReminder(
         typeof initialDraft?.addAmcReminder === 'boolean'
           ? initialDraft.addAmcReminder
@@ -117,10 +122,11 @@ export default function FollowUpModal({
       setExistingFollowUps([]);
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
-      setAutoMoveToOngoingOnDate(true);
+      setAutoMoveToOngoingOnDate(false);
       setAddAmcReminder(false);
     }
-  }, [isOpen, job, initialDraft]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally job.id + draft key only
+  }, [isOpen, job?.id, draftInitKey]);
 
   const loadFollowUps = async () => {
     if (!job) return;
@@ -281,7 +287,7 @@ export default function FollowUpModal({
       setReason('');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
-      setAutoMoveToOngoingOnDate(true);
+      setAutoMoveToOngoingOnDate(false);
       setAddAmcReminder(false);
       
       // Reload follow-ups

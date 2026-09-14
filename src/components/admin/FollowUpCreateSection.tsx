@@ -33,7 +33,7 @@ export function FollowUpCreateSection({
   };
 
   return (
-    <Collapsible open={enabled} onOpenChange={handleToggle}>
+    <Collapsible open={enabled}>
       <div
         className={cn(
           'rounded-lg border transition-colors',

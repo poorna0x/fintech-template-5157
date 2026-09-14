@@ -197,7 +197,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     followUpDate: getIstCalendarDate(),
     followUpTime: nextPresetAppointmentTime(),
     followUpReason: '',
-    autoMoveToOngoingOnDate: true,
+    autoMoveToOngoingOnDate: false,
     addAmcReminder: false,
   });
   const [addFormData, setAddFormData] = useState(() => ({

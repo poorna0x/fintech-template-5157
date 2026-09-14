@@ -100,7 +100,7 @@ function emptyFollowUpSchedule(): FollowUpScheduleValue {
     followUpDate: getIstCalendarDate(),
     followUpTime: nextPresetAppointmentTime(),
     followUpReason: '',
-    autoMoveToOngoingOnDate: true,
+    autoMoveToOngoingOnDate: false,
     addAmcReminder: false,
   };
 }

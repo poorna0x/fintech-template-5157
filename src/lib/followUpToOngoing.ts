@@ -80,6 +80,28 @@ export function hasAutoMoveToOngoingOnDate(requirements: unknown): boolean {
   );
 }
 
+/** True when requirements already store an explicit auto-move preference (true or false). */
+export function hasExplicitAutoMoveToOngoingOnDate(requirements: unknown): boolean {
+  return parseRequirements(requirements).some(
+    (r) =>
+      r &&
+      Object.prototype.hasOwnProperty.call(r, AUTO_MOVE_TO_ONGOING_ON_DATE_KEY)
+  );
+}
+
+/**
+ * Checkbox value for the follow-up form.
+ * - Explicit true/false in requirements wins.
+ * - Missing key defaults to OFF.
+ */
+export function resolveAutoMoveToOngoingOnDate(
+  requirements: unknown,
+  defaultValue = false
+): boolean {
+  if (!hasExplicitAutoMoveToOngoingOnDate(requirements)) return defaultValue;
+  return hasAutoMoveToOngoingOnDate(requirements);
+}
+
 export function applyAutoMoveToOngoingOnDateFlag(
   requirements: unknown,
   enabled: boolean
@@ -87,11 +109,8 @@ export function applyAutoMoveToOngoingOnDateFlag(
   const reqs = parseRequirements(requirements);
   const next = reqs.length ? [...reqs] : [{}];
   const first = { ...(next[0] as Record<string, unknown>) };
-  if (enabled) {
-    first[AUTO_MOVE_TO_ONGOING_ON_DATE_KEY] = true;
-  } else {
-    delete first[AUTO_MOVE_TO_ONGOING_ON_DATE_KEY];
-  }
+  // Persist false explicitly so reopening follow-up keeps the user's choice (default is OFF).
+  first[AUTO_MOVE_TO_ONGOING_ON_DATE_KEY] = enabled === true;
   next[0] = first;
   return next;
 }
