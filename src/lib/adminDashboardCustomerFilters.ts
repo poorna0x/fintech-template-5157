@@ -48,10 +48,30 @@ export function deriveCustomersFromJobs(jobsList: Job[]): Customer[] {
   const list: Customer[] = [];
   for (const job of jobsList) {
     const raw = (job as any).customer || job.customer;
-    if (!raw?.id) continue;
-    if (seen.has(raw.id)) continue;
-    seen.add(raw.id);
-    list.push(transformCustomerData(raw));
+    const customerId =
+      raw?.id ||
+      (job as any).customer_id ||
+      job.customerId ||
+      (job as any).customerId ||
+      null;
+    if (!customerId || seen.has(String(customerId))) continue;
+    seen.add(String(customerId));
+    if (raw?.id) {
+      list.push(transformCustomerData(raw));
+      continue;
+    }
+    // Slim/cached job rows sometimes omit the embedded customer — keep a stub so the
+    // Ongoing list does not flash empty while the next fetch hydrates full rows.
+    list.push(
+      transformCustomerData({
+        id: String(customerId),
+        full_name:
+          (job as any).customerName ||
+          (job as any).customer_name ||
+          'Customer',
+        phone: (job as any).customerPhone || (job as any).customer_phone || '',
+      })
+    );
   }
   return list;
 }
