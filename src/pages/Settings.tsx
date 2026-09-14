@@ -455,6 +455,7 @@ const Settings = () => {
     techQr: false,
     productQr: false,
   });
+  const commonQrLastFetchedAtRef = useRef(0);
   const todosSectionRef = useRef<HTMLDivElement | null>(null);
   const trackersSectionRef = useRef<HTMLDivElement | null>(null);
   const commonQrSectionRef = useRef<HTMLDivElement | null>(null);
@@ -2060,6 +2061,22 @@ const Settings = () => {
   };
 
   const ensureSettingsSectionLoaded = useCallback((key: SettingsLazySection) => {
+    // Common payment QRs are shared across admin phones — soft-refresh from DB
+    // (paint cache first). Min interval avoids spam from observers / panel opens.
+    if (key === 'commonQr') {
+      const cached = getCachedQrCodes();
+      if (cached) {
+        setCommonQrCodes(cached);
+      }
+      const now = Date.now();
+      if (!settingsLazyStartedRef.current.commonQr || now - commonQrLastFetchedAtRef.current > 30_000) {
+        commonQrLastFetchedAtRef.current = now;
+        void loadCommonQrCodes();
+      }
+      settingsLazyStartedRef.current.commonQr = true;
+      return;
+    }
+
     if (settingsLazyStartedRef.current[key]) return;
     settingsLazyStartedRef.current[key] = true;
 
@@ -2069,15 +2086,6 @@ const Settings = () => {
     }
     if (key === 'trackers') {
       void loadAmountTrackers();
-      return;
-    }
-    if (key === 'commonQr') {
-      const cached = getCachedQrCodes();
-      if (cached) {
-        setCommonQrCodes(cached);
-        return;
-      }
-      void loadCommonQrCodes();
       return;
     }
     if (key === 'techQr') {

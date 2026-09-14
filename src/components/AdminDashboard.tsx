@@ -467,13 +467,9 @@ const AdminDashboard = () => {
   techniciansRef.current = technicians;
   // Slim technician list for historical displays (Completed By, reports, etc.). Includes INACTIVE.
   const [techniciansForReports, setTechniciansForReports] = useState<any[]>([]);
-  const [loading, setLoading] = useState(
-    () =>
-      !getModuleDashboardSessionReady() &&
-      !initialDashboardCache &&
-      restoredJobs.length === 0 &&
-      initialOngoingJobs.length === 0
-  );
+  const [loading, setLoading] = useState(() => seedJobs.length === 0);
+  /** False until the first Ongoing fetch finishes (or we already painted seeded jobs). */
+  const [ongoingListSettled, setOngoingListSettled] = useState(() => seedJobs.length > 0);
   /** After idle resume / cross-device drift, skip instant tab cache until the next fetch lands. */
   const [tabCachesStale, setTabCachesStale] = useState(false);
   const [isResumeListSyncing, setIsResumeListSyncing] = useState(false);
@@ -1612,10 +1608,11 @@ const AdminDashboard = () => {
       console.log('Loading QR codes in AdminDashboard...', force ? '(force refresh)' : '');
 
       const cachedCommon = getCachedQrCodes();
+      // Instant paint from cache, but always soft-refresh from DB so QRs added on
+      // another phone/admin appear here (cache alone can stay stale for weeks).
       if (!force && cachedCommon && cachedCommon.length > 0) {
-        console.log('Using cached QR codes:', cachedCommon.length, 'items');
+        console.log('Using cached QR codes (soft-refreshing):', cachedCommon.length, 'items');
             setCommonQrCodes(cachedCommon);
-        return;
         }
 
       console.log('Fetching QR codes from database...');
@@ -1643,6 +1640,7 @@ const AdminDashboard = () => {
       } else {
         console.log('No QR codes found');
         setCommonQrCodes([]);
+        cacheQrCodes([]);
         }
       } catch (error) {
         console.error('Error loading QR codes:', error);
@@ -1662,18 +1660,12 @@ const AdminDashboard = () => {
   //   loadQrCodes();
   // }, [loadQrCodes]);
 
-  // Reload QR codes when page becomes visible only if cache is expired (e.g., when returning from Settings)
+  // Reload QR codes when page becomes visible (soft-refresh — shared admin list)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // Check if cache is expired before reloading
-        const cachedCommon = getCachedQrCodes();
-        if (!cachedCommon || cachedCommon.length === 0) {
-          console.log('Page became visible, cache expired, reloading QR codes...');
-          loadQrCodes();
-        } else {
-          console.log('Page became visible, using cached QR codes');
-        }
+        console.log('Page became visible, soft-refreshing QR codes...');
+        loadQrCodes();
       }
     };
 
@@ -1804,34 +1796,41 @@ const AdminDashboard = () => {
   ]);
 
   const loadFilteredJobs = useCallback(
-    (
+    async (
       filter: typeof statusFilter,
       page: number = 1,
       opts?: { silent?: boolean; cacheOnly?: boolean }
-    ) =>
-      loadFilteredJobsForAdmin(filter, page, opts, {
-        pageSize,
-        deniedDateFilter,
-        completedDateFilter,
-        completedDatePreset,
-        completedRangeStartDate,
-        completedRangeEndDate,
-        completedLeadTypeFilter,
-        completedServiceSubTypeFilter,
-        completedByFilter,
-        hideAmcFollowUps: followUpDisplaySettings.hideAmcFollowUps,
-        loadJobsRequestRef,
-        jobsListCacheRef,
-        ongoingJobsSnapshotRef,
-        techniciansRef,
-        getJobsListCacheKey,
-        setJobs,
-        setLoading,
-        setTabCachesStale,
-        setTotalCount,
-        setTotalPages,
-        setCurrentPage,
-      }),
+    ) => {
+      try {
+        await loadFilteredJobsForAdmin(filter, page, opts, {
+          pageSize,
+          deniedDateFilter,
+          completedDateFilter,
+          completedDatePreset,
+          completedRangeStartDate,
+          completedRangeEndDate,
+          completedLeadTypeFilter,
+          completedServiceSubTypeFilter,
+          completedByFilter,
+          hideAmcFollowUps: followUpDisplaySettings.hideAmcFollowUps,
+          loadJobsRequestRef,
+          jobsListCacheRef,
+          ongoingJobsSnapshotRef,
+          techniciansRef,
+          getJobsListCacheKey,
+          setJobs,
+          setLoading,
+          setTabCachesStale,
+          setTotalCount,
+          setTotalPages,
+          setCurrentPage,
+        });
+      } finally {
+        if (filter === 'ONGOING' && opts?.cacheOnly !== true) {
+          setOngoingListSettled(true);
+        }
+      }
+    },
     [
       pageSize,
       getJobsListCacheKey,
@@ -2494,6 +2493,14 @@ const AdminDashboard = () => {
     });
   }, [jobs]);
 
+  // Snapshot / prefetch can paint Ongoing jobs without going through loadFilteredJobs —
+  // mark settled so we don't keep the loader after real rows are already on screen.
+  useEffect(() => {
+    if (statusFilter === 'ONGOING' && jobs.length > 0 && jobsMatchOngoingTab(jobs)) {
+      setOngoingListSettled(true);
+    }
+  }, [jobs, statusFilter]);
+
   // Recent Accounts: scoped fetch when dialog opens (large-scale pattern – no full customer load)
   useEffect(() => {
     if (!recentAccountsDialogOpen) return;
@@ -2541,11 +2548,14 @@ const AdminDashboard = () => {
             : (getModuleOngoingJobsSnapshot() as Job[]);
         if (snapshot.length > 0) {
           setJobs(snapshot);
+          setOngoingListSettled(true);
         } else if (!jobsMatchOngoingTab(jobs)) {
           setJobs([]);
+          setOngoingListSettled(false);
         }
       } else if (!jobsMatchOngoingTab(jobs)) {
         setJobs([]);
+        setOngoingListSettled(false);
       }
     } else if (filterChanged) {
       // Denied / All: clear the previous tab's jobs so they don't flash before the fetch lands.
@@ -6751,12 +6761,29 @@ const AdminDashboard = () => {
   const listSyncActive = isJobsListRefreshing || isResumeListSyncing;
   const ongoingTabHasStaleJobs =
     statusFilter === 'ONGOING' && jobs.length > 0 && !jobsMatchOngoingTab(jobs);
-  // Show loader when the list is empty and still syncing — including Ongoing with no rows yet
-  // (otherwise “No ongoing jobs” flashes on refresh before the fetch lands).
-  const showJobsListLoader =
-    listSyncActive &&
+
+  // Ongoing empty state: show ONLY when settled and there are no jobs to show.
+  // While loading / not settled → hide it (no flash).
+  const showOngoingEmptyState =
+    statusFilter === 'ONGOING' &&
+    ongoingListSettled &&
+    !loading &&
+    !isResumeListSyncing &&
     displayedCustomers.length === 0 &&
-    (statusFilter !== 'ONGOING' || ongoingTabHasStaleJobs || jobs.length === 0);
+    !searchTerm.trim() &&
+    (jobs.length === 0 || hasOngoingClientFilters);
+
+  // While waiting for Ongoing data, show a quiet loader — never the empty card.
+  const showJobsListLoader =
+    statusFilter === 'ONGOING'
+      ? displayedCustomers.length === 0 &&
+        !showOngoingEmptyState &&
+        !searchTerm.trim() &&
+        (loading || isResumeListSyncing || !ongoingListSettled)
+      : listSyncActive &&
+        displayedCustomers.length === 0 &&
+        (ongoingTabHasStaleJobs || jobs.length === 0);
+
   const jobsListRefreshLabel =
     statusFilter === 'RESCHEDULED'
       ? 'follow-up'
@@ -6766,12 +6793,7 @@ const AdminDashboard = () => {
           ? 'completed'
           : 'jobs';
 
-  const hideOngoingEmptyChrome =
-    statusFilter === 'ONGOING' &&
-    displayedCustomers.length === 0 &&
-    !searchTerm.trim() &&
-    !showJobsListLoader &&
-    !hasOngoingClientFilters;
+  const hideOngoingEmptyChrome = showOngoingEmptyState;
 
   // Auth gate handled by AdminPortal — dashboard mounts only when user is admin
   if (isDashboardBootstrapping) {
@@ -7118,40 +7140,38 @@ const AdminDashboard = () => {
           <div className="space-y-6" data-admin-customer-list>
             {showJobsListLoader ? (
               <AdminInlineLoader message={`Loading ${jobsListRefreshLabel} jobs...`} />
-            ) : displayedCustomers.length === 0 ? (
-              searchTerm.trim() ? (
-                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 px-4 py-12 text-center">
-                  <p className="text-sm text-gray-600">
-                    No customers found for <span className="font-medium">"{searchTerm}"</span>
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-3"
-                    onClick={handleClearSearch}
-                  >
-                    Clear search
-                  </Button>
-                </div>
-              ) : statusFilter === 'ONGOING' ? (
-                <OngoingJobsEmptyState />
-              ) : (
-                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 px-4 py-12 text-center">
-                  {statusFilter === 'COMPLETED' ? (
-                    <p className="text-sm text-gray-600">No completed jobs for the selected date or filters.</p>
-                  ) : statusFilter === 'RESCHEDULED' ? (
-                    <p className="text-sm text-gray-600">No follow-up jobs scheduled.</p>
-                  ) : statusFilter === 'CANCELLED' ? (
-                    <p className="text-sm text-gray-600">No denied jobs for the selected date.</p>
-                  ) : (
-                    <p className="text-sm text-gray-600">No jobs to show for this filter.</p>
-                  )}
-                </div>
-              )
-            ) : (
+            ) : displayedCustomers.length > 0 ? (
               <AdminDashboardListProvider data={adminListData} actionsRef={adminListActionsRef}>
                 <AdminCustomerJobsList />
               </AdminDashboardListProvider>
+            ) : searchTerm.trim() ? (
+              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 px-4 py-12 text-center">
+                <p className="text-sm text-gray-600">
+                  No customers found for <span className="font-medium">"{searchTerm}"</span>
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={handleClearSearch}
+                >
+                  Clear search
+                </Button>
+              </div>
+            ) : statusFilter === 'ONGOING' ? (
+              showOngoingEmptyState ? <OngoingJobsEmptyState /> : null
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 px-4 py-12 text-center">
+                {statusFilter === 'COMPLETED' ? (
+                  <p className="text-sm text-gray-600">No completed jobs for the selected date or filters.</p>
+                ) : statusFilter === 'RESCHEDULED' ? (
+                  <p className="text-sm text-gray-600">No follow-up jobs scheduled.</p>
+                ) : statusFilter === 'CANCELLED' ? (
+                  <p className="text-sm text-gray-600">No denied jobs for the selected date.</p>
+                ) : (
+                  <p className="text-sm text-gray-600">No jobs to show for this filter.</p>
+                )}
+              </div>
             )}
           </div>
 
