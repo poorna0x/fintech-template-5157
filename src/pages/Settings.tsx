@@ -2803,26 +2803,6 @@ const Settings = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         <div className="space-y-4 sm:space-y-6">
-          {!isManager ? (
-          <SettingsActionCard
-            sectionId="service-hubs"
-            title="Location hubs"
-            description="Search an area, set a coverage circle, and only those places can book on the website or WhatsApp"
-            icon={<MapPin className="w-5 h-5" />}
-            actions={
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
-                onClick={() => openSettingsPanel('service-hubs')}
-              >
-                <MapPin className="w-4 h-4 shrink-0" />
-                Manage hubs
-              </Button>
-            }
-          />
-          ) : null}
-
           {/* Technician Locations */}
           <Card id="section-technician-locations" className="scroll-mt-24">
             <CardHeader>
@@ -3344,6 +3324,26 @@ const Settings = () => {
               </div>
             }
           />
+
+          {!isManager ? (
+          <SettingsActionCard
+            sectionId="service-hubs"
+            title="Location hubs"
+            description="Draw the areas where website and WhatsApp booking is allowed. Drag the points to leave out streets you do not cover."
+            icon={<MapPin className="w-5 h-5" />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('service-hubs')}
+              >
+                <MapPin className="w-4 h-4 shrink-0" />
+                Open Location hubs
+              </Button>
+            }
+          />
+          ) : null}
 
           {/* Privacy / DSAR (both brands — shared backend) */}
           {!isManager ? (
