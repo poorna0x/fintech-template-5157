@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, LocateFixed, MapPin, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ensureGoogleMapsApi } from '@/lib/googleMapsLink';
-import { fetchGooglePlacePredictions } from '@/lib/googlePlacesSearch';
+import {
+  clearPlacesSessionToken,
+  fetchGooglePlacePredictions,
+  getOrCreatePlacesSessionToken,
+  MIN_PLACE_QUERY_LEN,
+  resolveGooglePlaceDetails,
+} from '@/lib/googlePlacesSearch';
 import {
   geolocationFailureMessage,
   getDeviceLocation,
@@ -13,6 +19,9 @@ import DraggableMap from '@/components/DraggableMap';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
 const DEFAULT_ZOOM = 18;
+const PLACE_SEARCH_DEBOUNCE_MS = 400;
+const GEOCODE_IDLE_MS = 900;
+const GEOCODE_MIN_MOVE_M = 120;
 
 export type BookingLocationValue = {
   address: string;
@@ -58,29 +67,6 @@ function hasCoords(coords?: { lat?: number; lng?: number } | null): boolean {
   );
 }
 
-function coordsFromPlaceGeometry(
-  place: google.maps.places.PlaceResult | null
-): { lat: number; lng: number } | null {
-  const loc = place?.geometry?.location;
-  if (loc && typeof loc.lat === 'function' && typeof loc.lng === 'function') {
-    const lat = loc.lat();
-    const lng = loc.lng();
-    if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
-      return { lat, lng };
-    }
-  }
-  const viewport = place?.geometry?.viewport;
-  if (viewport && typeof viewport.getCenter === 'function') {
-    const center = viewport.getCenter();
-    const lat = center.lat();
-    const lng = center.lng();
-    if (Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0)) {
-      return { lat, lng };
-    }
-  }
-  return null;
-}
-
 function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise((resolve) => {
     const timer = window.setTimeout(() => resolve(fallback), ms);
@@ -94,70 +80,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
         resolve(fallback);
       }
     );
-  });
-}
-
-function firstResolvedPin(
-  ...attempts: Promise<{ coords: { lat: number; lng: number }; address: string } | null>[]
-): Promise<{ coords: { lat: number; lng: number }; address: string } | null> {
-  return new Promise((resolve) => {
-    let pending = attempts.length;
-    let settled = false;
-    const finish = (
-      value: { coords: { lat: number; lng: number }; address: string } | null
-    ) => {
-      if (settled) return;
-      if (value?.coords) {
-        settled = true;
-        resolve(value);
-        return;
-      }
-      pending -= 1;
-      if (pending <= 0) {
-        settled = true;
-        resolve(null);
-      }
-    };
-    for (const attempt of attempts) {
-      attempt.then(finish, () => finish(null));
-    }
-  });
-}
-
-function pinFromGeocoderResults(
-  results: google.maps.GeocoderResult[] | null
-): { coords: { lat: number; lng: number }; address: string } | null {
-  const result = results?.[0];
-  const loc = result?.geometry?.location;
-  if (!loc || typeof loc.lat !== 'function') return null;
-  const coords = { lat: loc.lat(), lng: loc.lng() };
-  if (!hasCoords(coords)) return null;
-  return {
-    coords,
-    address: removePlusCode(result.formatted_address || ''),
-  };
-}
-
-function geocodeByPlaceId(
-  placeId: string
-): Promise<{ coords: { lat: number; lng: number }; address: string } | null> {
-  return new Promise((resolve) => {
-    if (!window.google?.maps?.Geocoder) {
-      resolve(null);
-      return;
-    }
-    try {
-      const geocoder = new window.google.maps.Geocoder();
-      geocoder.geocode({ placeId }, (results, status) => {
-        if (status === window.google.maps.GeocoderStatus.OK) {
-          resolve(pinFromGeocoderResults(results));
-          return;
-        }
-        resolve(null);
-      });
-    } catch {
-      resolve(null);
-    }
   });
 }
 
@@ -314,14 +236,16 @@ export default function BookingLocationPicker({
 
   const fetchPredictions = useCallback(async (input: string) => {
     const trimmed = input.trim();
-    if (trimmed.length < 2) {
+    if (trimmed.length < MIN_PLACE_QUERY_LEN) {
       setPredictions([]);
       setSearching(false);
       return;
     }
     setSearching(true);
     try {
-      const results = await fetchGooglePlacePredictions(trimmed);
+      await ensureGoogleMapsApi();
+      const token = getOrCreatePlacesSessionToken(sessionTokenRef);
+      const results = await fetchGooglePlacePredictions(trimmed, token);
       setPredictions(results);
     } catch {
       setPredictions([]);
@@ -335,21 +259,20 @@ export default function BookingLocationPicker({
     if (debounceRef.current != null) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       void fetchPredictions(value);
-    }, 220);
+    }, PLACE_SEARCH_DEBOUNCE_MS);
   };
 
   const paintPinLabel = (coords: { lat: number; lng: number }) => {
     const last = lastLabelLookupRef.current;
-    const minMoveMeters = 4;
     if (
       last &&
-      haversineKm(last.lat, last.lng, coords.lat, coords.lng) * 1000 < minMoveMeters
+      haversineKm(last.lat, last.lng, coords.lat, coords.lng) * 1000 < GEOCODE_MIN_MOVE_M
     ) {
       setGeocoding(false);
       return;
     }
 
-    const cacheKey = `${coords.lat.toFixed(5)},${coords.lng.toFixed(5)}`;
+    const cacheKey = `${coords.lat.toFixed(3)},${coords.lng.toFixed(3)}`;
     const cached = pinLabelCacheRef.current.get(cacheKey);
     if (cached) {
       lastLabelLookupRef.current = coords;
@@ -429,62 +352,26 @@ export default function BookingLocationPicker({
     paintPinLabel(coords);
   };
 
-  const detailsForPrediction = (
-    prediction: PlacePrediction
-  ): Promise<{ coords: { lat: number; lng: number }; address: string } | null> => {
-    return new Promise((resolve) => {
-      const host = placesHostRef.current || document.createElement('div');
-      if (!window.google?.maps?.places?.PlacesService) {
-        resolve(null);
-        return;
-      }
-      const service = new window.google.maps.places.PlacesService(host);
-      service.getDetails(
-        {
-          placeId: prediction.placeId,
-          fields: ['formatted_address', 'geometry'],
-          ...(sessionTokenRef.current ? { sessionToken: sessionTokenRef.current } : {}),
-        },
-        (place, status) => {
-          sessionTokenRef.current = null;
-          if (status !== window.google.maps.places.PlacesServiceStatus.OK) {
-            resolve(null);
-            return;
-          }
-          const coords = coordsFromPlaceGeometry(place);
-          if (!coords) {
-            resolve(null);
-            return;
-          }
-          resolve({
-            coords,
-            address: removePlusCode(place?.formatted_address || prediction.mainText),
-          });
-        }
-      );
-    });
-  };
-
   const handleSelectPlace = async (prediction: PlacePrediction) => {
     setResolvingPlace(true);
     setGeocoding(false);
     try {
-      await ensureGoogleMapsApi();
-      const pin = await withTimeout(
-        firstResolvedPin(geocodeByPlaceId(prediction.placeId), detailsForPrediction(prediction)),
-        5000,
-        null
-      );
-      if (!pin?.coords) {
+      const details = await resolveGooglePlaceDetails(prediction.placeId, {
+        sessionToken: sessionTokenRef.current,
+        fallbackName: prediction.mainText,
+        host: placesHostRef.current,
+      });
+      if (!details?.coords) {
         toast.error('Could not open that place. Try another search.');
         return;
       }
-      void applyCoords(pin.coords, {
-        address: pin.address || prediction.mainText,
+      void applyCoords(details.coords, {
+        address: details.address || prediction.mainText,
       });
     } catch {
       toast.error('Could not open that place. Try again.');
     } finally {
+      clearPlacesSessionToken(sessionTokenRef);
       setResolvingPlace(false);
       setGeocoding(false);
     }
@@ -524,7 +411,7 @@ export default function BookingLocationPicker({
     if (geocodeTimerRef.current != null) window.clearTimeout(geocodeTimerRef.current);
     geocodeTimerRef.current = window.setTimeout(() => {
       paintPinLabelRef.current(coords);
-    }, 40);
+    }, GEOCODE_IDLE_MS);
   }, []);
 
   const canSave =

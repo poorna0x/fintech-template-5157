@@ -28,8 +28,14 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { ensureGoogleMapsApi } from '@/lib/googleMapsLink';
-import { fetchGooglePlacePredictions } from '@/lib/googlePlacesSearch';
-import { haversineKm, removePlusCode } from '@/lib/maps';
+import {
+  clearPlacesSessionToken,
+  fetchGooglePlacePredictions,
+  getOrCreatePlacesSessionToken,
+  MIN_PLACE_QUERY_LEN,
+  resolveGooglePlaceDetails,
+} from '@/lib/googlePlacesSearch';
+import { haversineKm } from '@/lib/maps';
 import DraggableMap from '@/components/DraggableMap';
 import {
   clampHubRadiusKm,
@@ -67,36 +73,6 @@ type DraftHub = {
 type Props = {
   onBack: () => void;
 };
-
-function coordsFromPlaceGeometry(
-  place: google.maps.places.PlaceResult | null
-): { lat: number; lng: number } | null {
-  const loc = place?.geometry?.location;
-  if (!loc || typeof loc.lat !== 'function') return null;
-  const lat = loc.lat();
-  const lng = loc.lng();
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
-  return { lat, lng };
-}
-
-function hubNameFromGeocode(results: google.maps.GeocoderResult[] | null | undefined): {
-  name: string;
-  address: string;
-} {
-  const result = results?.[0];
-  const address = removePlusCode(result?.formatted_address || '');
-  const preferred =
-    result?.address_components?.find((c) =>
-      c.types.includes('neighborhood') ||
-      c.types.includes('sublocality_level_1') ||
-      c.types.includes('sublocality')
-    )?.long_name ||
-    result?.address_components?.find((c) => c.types.includes('locality'))?.long_name;
-  return {
-    name: (preferred || 'New hub').slice(0, 80),
-    address,
-  };
-}
 
 export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const [hubs, setHubs] = useState<BookingServiceHub[]>([]);
@@ -158,14 +134,16 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
 
   const fetchPredictions = useCallback(async (input: string) => {
     const trimmed = input.trim();
-    if (trimmed.length < 2) {
+    if (trimmed.length < MIN_PLACE_QUERY_LEN) {
       setPredictions([]);
       setSearching(false);
       return;
     }
     setSearching(true);
     try {
-      const results = await fetchGooglePlacePredictions(trimmed);
+      await ensureGoogleMapsApi();
+      const token = getOrCreatePlacesSessionToken(sessionTokenRef);
+      const results = await fetchGooglePlacePredictions(trimmed, token);
       setPredictions(results);
     } catch {
       setPredictions([]);
@@ -179,7 +157,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     if (debounceRef.current != null) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       void fetchPredictions(value);
-    }, 220);
+    }, 400);
   };
 
   const persistSelectedGeometry = useCallback(
@@ -202,29 +180,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     [selectedId]
   );
 
-  const relabelDraft = useCallback(async (lat: number, lng: number) => {
-    try {
-      await ensureGoogleMapsApi();
-      if (!window.google?.maps?.Geocoder) return;
-      const geocoder = new window.google.maps.Geocoder();
-      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-        const ok =
-          status === 'OK' ||
-          status === window.google.maps.GeocoderStatus.OK;
-        if (!ok) return;
-        const labeled = hubNameFromGeocode(results);
-        setDraft((prev) =>
-          prev && Math.abs(prev.lat - lat) < 1e-7 && Math.abs(prev.lng - lng) < 1e-7
-            ? { ...prev, name: labeled.name, address: labeled.address }
-            : prev
-        );
-      });
-    } catch {
-      /* keep current name */
-    }
-  }, []);
-
-  const placeDraftAt = useCallback(async (lat: number, lng: number) => {
+  const placeDraftAt = useCallback((lat: number, lng: number) => {
     setSelectedId(null);
     setDraft({
       name: 'New hub',
@@ -234,8 +190,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       radius_km: DEFAULT_HUB_RADIUS_KM,
       customer_note: '',
     });
-    await relabelDraft(lat, lng);
-  }, [relabelDraft]);
+  }, []);
 
   const paintMap = useCallback(() => {
     const map = mapRef.current;
@@ -308,7 +263,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             persistSelectedGeometry({ radius_km: km });
           }
         });
-        const applyCenter = (geocodeDraft: boolean) => {
+        const applyCenter = () => {
           const center = circle.getCenter();
           if (!center) return;
           const lat = center.lat();
@@ -317,14 +272,13 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           skipPaintRef.current = true;
           if (row.id === 'draft') {
             setDraft((prev) => (prev ? { ...prev, lat, lng } : prev));
-            if (geocodeDraft) void relabelDraft(lat, lng);
           } else {
             setHubs((prev) => prev.map((h) => (h.id === row.id ? { ...h, lat, lng } : h)));
             persistSelectedGeometry({ lat, lng });
           }
         };
-        circle.addListener('center_changed', () => applyCenter(false));
-        circle.addListener('dragend', () => applyCenter(true));
+        circle.addListener('center_changed', applyCenter);
+        circle.addListener('dragend', applyCenter);
       }
       if (row.id !== 'draft') {
         const selectThis = () => {
@@ -382,7 +336,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     } catch {
       /* ignore */
     }
-  }, [draftAnchor, hubs, persistSelectedGeometry, relabelDraft, selectedId]);
+  }, [draftAnchor, hubs, persistSelectedGeometry, selectedId]);
 
   onMapClickRef.current = (event) => {
     const latLng = event.latLng;
@@ -401,10 +355,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     const existing = draftRef.current;
     if (existing) {
       setDraft({ ...existing, lat, lng });
-      void relabelDraft(lat, lng);
       return;
     }
-    void placeDraftAt(lat, lng);
+    placeDraftAt(lat, lng);
   };
 
   const handleMapReady = useCallback(
@@ -443,42 +396,11 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const handleSelectPlace = async (prediction: PlacePrediction) => {
     setResolvingPlace(true);
     try {
-      await ensureGoogleMapsApi();
-      const host = placesHostRef.current || document.createElement('div');
-      const details = await new Promise<{ coords: { lat: number; lng: number }; address: string } | null>(
-        (resolve) => {
-          if (!window.google?.maps?.places?.PlacesService) {
-            resolve(null);
-            return;
-          }
-          const service = new window.google.maps.places.PlacesService(
-            mapRef.current || host
-          );
-          service.getDetails(
-            {
-              placeId: prediction.placeId,
-              fields: ['formatted_address', 'geometry', 'name'],
-              ...(sessionTokenRef.current ? { sessionToken: sessionTokenRef.current } : {}),
-            },
-            (place, status) => {
-              sessionTokenRef.current = null;
-              if (status !== window.google.maps.places.PlacesServiceStatus.OK) {
-                resolve(null);
-                return;
-              }
-              const coords = coordsFromPlaceGeometry(place);
-              if (!coords) {
-                resolve(null);
-                return;
-              }
-              resolve({
-                coords,
-                address: removePlusCode(place?.formatted_address || prediction.mainText),
-              });
-            }
-          );
-        }
-      );
+      const details = await resolveGooglePlaceDetails(prediction.placeId, {
+        sessionToken: sessionTokenRef.current,
+        fallbackName: prediction.mainText,
+        host: mapRef.current || placesHostRef.current,
+      });
       if (!details) {
         toast.error('Could not open that place. Try another search.');
         return;
@@ -493,7 +415,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       } else {
         setSelectedId(null);
         setDraft({
-          name: prediction.mainText.slice(0, 80),
+          name: (details.name || prediction.mainText).slice(0, 80),
           address: details.address,
           lat: details.coords.lat,
           lng: details.coords.lng,
@@ -506,6 +428,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     } catch {
       toast.error('Could not open that place. Try again.');
     } finally {
+      clearPlacesSessionToken(sessionTokenRef);
       setResolvingPlace(false);
     }
   };
