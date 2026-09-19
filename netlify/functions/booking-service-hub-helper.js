@@ -49,10 +49,18 @@ function coordsFromBookingRow(row) {
 }
 
 async function loadActiveHubs(admin) {
-  const { data, error } = await admin
+  let { data, error } = await admin
     .from('booking_service_hubs')
-    .select('id,name,lat,lng,radius_km,is_active')
+    .select('id,name,lat,lng,radius_km,is_active,customer_note')
     .eq('is_active', true);
+  if (error && String(error.message || '').toLowerCase().includes('customer_note')) {
+    const retry = await admin
+      .from('booking_service_hubs')
+      .select('id,name,lat,lng,radius_km,is_active')
+      .eq('is_active', true);
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) {
     if (isMissingTable(error.message)) {
       return { hubs: [], missingTable: true, error: null };
@@ -71,23 +79,48 @@ async function loadActiveHubs(admin) {
         lat,
         lng,
         radius_km: radius,
+        customer_note: String(row.customer_note || '').trim().slice(0, 240),
       };
     })
     .filter(Boolean);
   return { hubs, missingTable: false, error: null };
 }
 
-function formatOutOfArea(nearest) {
+const DEFAULT_OUT_OF_AREA_MESSAGE =
+  'We will not be able to come here. Please move the pin into a coverage area, or call us.';
+
+async function loadOutOfAreaMessage(admin) {
+  try {
+    const { data, error } = await admin
+      .from('booking_service_hub_settings')
+      .select('out_of_area_message')
+      .eq('id', 1)
+      .maybeSingle();
+    if (error || !data) return DEFAULT_OUT_OF_AREA_MESSAGE;
+    const custom = String(data.out_of_area_message || '').trim();
+    return custom || DEFAULT_OUT_OF_AREA_MESSAGE;
+  } catch {
+    return DEFAULT_OUT_OF_AREA_MESSAGE;
+  }
+}
+
+function formatHubsLabel(names) {
+  const clean = (names || []).map((n) => String(n || '').trim()).filter(Boolean);
+  if (clean.length === 0) return '';
+  if (clean.length === 1) return clean[0];
+  const last = clean[clean.length - 1];
+  return `${clean.slice(0, -1).join(', ')}, and ${last}`;
+}
+
+function formatOutOfArea(nearest, customMessage) {
   const names = (nearest || []).map((row) => row.name).filter(Boolean);
-  if (names.length === 0) {
-    return 'We do not currently serve this location.';
+  const hubsLabel = formatHubsLabel(names);
+  const custom = String(customMessage || '').trim();
+  if (custom) {
+    return custom.replaceAll('{hubs}', hubsLabel || 'our service areas');
   }
-  if (names.length === 1) {
-    return `We do not currently serve this location. We cover ${names[0]}.`;
-  }
-  const last = names[names.length - 1];
-  const head = names.slice(0, -1).join(', ');
-  return `We do not currently serve this location. We cover ${head}, and ${last}.`;
+  if (!hubsLabel) return DEFAULT_OUT_OF_AREA_MESSAGE;
+  return `We will not be able to come here. We cover ${hubsLabel} — move the pin into that area, or call us.`;
 }
 
 /**
@@ -123,11 +156,12 @@ async function assertLocationInServiceHub(admin, lat, lng) {
   }
 
   const nearest = ranked.slice(0, 3);
+  const customMessage = await loadOutOfAreaMessage(admin);
   return {
     ok: false,
     enforced: true,
     nearest,
-    message: formatOutOfArea(nearest),
+    message: formatOutOfArea(nearest, customMessage),
   };
 }
 

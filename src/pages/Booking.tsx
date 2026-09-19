@@ -48,8 +48,10 @@ import { useSecurity } from '@/contexts/SecurityContext';
 import BookingLocationPicker, { type BookingLocationValue } from '@/components/BookingLocationPicker';
 import { googleMapsPinUrl, hasValidMapCoordinates, removePlusCode } from '@/lib/maps';
 import {
+  DEFAULT_OUT_OF_AREA_MESSAGE,
   fetchBookingServiceHubs,
   formatOutOfServiceAreaMessage,
+  hubCustomerNote,
   matchPointToServiceHubs,
   type BookingServiceHub,
   type HubMatchResult,
@@ -138,6 +140,7 @@ const Booking: React.FC = () => {
   const [locationEditing, setLocationEditing] = useState(false);
   const [serviceHubs, setServiceHubs] = useState<BookingServiceHub[]>([]);
   const [hubMatch, setHubMatch] = useState<HubMatchResult>({ ok: true, enforced: false });
+  const [outOfAreaMessage, setOutOfAreaMessage] = useState(DEFAULT_OUT_OF_AREA_MESSAGE);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
@@ -603,6 +606,7 @@ const Booking: React.FC = () => {
     void fetchBookingServiceHubs().then((result) => {
       if (cancelled) return;
       setServiceHubs(result.hubs);
+      setOutOfAreaMessage(result.settings.out_of_area_message);
     });
     return () => {
       cancelled = true;
@@ -653,7 +657,7 @@ const Booking: React.FC = () => {
     setShowValidation(false);
     setLocationPickerOpen(false);
     if (!coverage.ok) {
-      toast.error(formatOutOfServiceAreaMessage(coverage));
+      toast.error(formatOutOfServiceAreaMessage(coverage, outOfAreaMessage));
       return;
     }
     setCurrentStep((step) => (step === 3 ? 4 : step));
@@ -1308,7 +1312,7 @@ const Booking: React.FC = () => {
         serviceHubs
       );
       if (!coverage.ok) {
-        throw new Error(formatOutOfServiceAreaMessage(coverage));
+        throw new Error(formatOutOfServiceAreaMessage(coverage, outOfAreaMessage));
       }
       if (
         formData.preferredTime === 'CUSTOM' &&
@@ -2345,6 +2349,16 @@ const Booking: React.FC = () => {
                   }}
                   onSave={handleLocationPickerSave}
                   onPinChange={handleLocationPinChange}
+                  coverageNotice={
+                    !hubMatch.ok
+                      ? {
+                          tone: 'block',
+                          message: formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage),
+                        }
+                      : hubCustomerNote(hubMatch)
+                        ? { tone: 'info', message: hubCustomerNote(hubMatch) }
+                        : null
+                  }
                 />
 
                 {showValidation && (!hasValidMapCoordinates(formData.coordinates) || !formData.address) ? (
@@ -2358,10 +2372,15 @@ const Booking: React.FC = () => {
                   </p>
                 ) : null}
                 {!hubMatch.ok ? (
-                  <Alert id="booking-hub-coverage" className="mt-3 border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                  <Alert id="booking-hub-coverage" className="mt-3 border-red-300 bg-red-50 text-red-950 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
                     <AlertDescription>
-                      {formatOutOfServiceAreaMessage(hubMatch)}
+                      <p className="font-semibold">We will not be able to come here</p>
+                      <p className="mt-1">{formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage)}</p>
                     </AlertDescription>
+                  </Alert>
+                ) : hubCustomerNote(hubMatch) ? (
+                  <Alert id="booking-hub-coverage" className="mt-3 border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                    <AlertDescription>{hubCustomerNote(hubMatch)}</AlertDescription>
                   </Alert>
                 ) : null}
               </div>

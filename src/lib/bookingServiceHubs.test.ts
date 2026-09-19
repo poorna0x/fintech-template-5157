@@ -13,6 +13,7 @@ function hub(partial: Partial<BookingServiceHub> & Pick<BookingServiceHub, 'id' 
     radius_km: 5,
     is_active: true,
     sort_order: 0,
+    customer_note: '',
     ...partial,
   };
 }
@@ -42,6 +43,8 @@ describe('matchPointToServiceHubs', () => {
     if (!result.ok) {
       expect(result.nearest.length).toBeGreaterThan(0);
       expect(formatOutOfServiceAreaMessage(result)).toMatch(/HSR Layout/);
+      expect(formatOutOfServiceAreaMessage(result)).toMatch(/not be able to come here/i);
+      expect(formatOutOfServiceAreaMessage(result, 'Sorry, too far from {hubs}.')).toMatch(/HSR Layout/);
     }
   });
 

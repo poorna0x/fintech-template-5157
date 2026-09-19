@@ -42,6 +42,7 @@ type BookingLocationPickerProps = {
   showCancel?: boolean;
   onCancelSearch?: () => void;
   onRequestSearch?: () => void;
+  coverageNotice?: { tone: 'block' | 'info'; message: string } | null;
 };
 
 function hasCoords(coords?: { lat?: number; lng?: number } | null): boolean {
@@ -203,6 +204,7 @@ export default function BookingLocationPicker({
   showCancel = false,
   onCancelSearch,
   onRequestSearch,
+  coverageNotice = null,
 }: BookingLocationPickerProps) {
   const [query, setQuery] = useState('');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
@@ -568,6 +570,7 @@ export default function BookingLocationPicker({
     houseFlat.trim().length > 0 &&
     hasCoords(centerLiveRef.current) &&
     Boolean(address.trim());
+  const coverageBlocked = coverageNotice?.tone === 'block';
 
   const handleSave = () => {
     const pin = readLivePin();
@@ -821,19 +824,38 @@ export default function BookingLocationPicker({
         className="mt-2.5 h-12 w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 dark:border-border dark:bg-background dark:text-foreground"
       />
 
+      {coverageNotice?.message ? (
+        <div
+          className={`mt-3 rounded-lg border px-3 py-2.5 text-sm ${
+            coverageNotice.tone === 'block'
+              ? 'border-red-300 bg-red-50 text-red-950 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100'
+              : 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100'
+          }`}
+        >
+          {coverageNotice.tone === 'block' ? (
+            <p className="font-semibold">We will not be able to come here</p>
+          ) : null}
+          <p className={coverageNotice.tone === 'block' ? 'mt-1' : ''}>{coverageNotice.message}</p>
+        </div>
+      ) : null}
+
       <button
         type="button"
         onClick={handleSave}
-        disabled={!canSave}
+        disabled={!canSave || coverageBlocked}
         className={`mt-3 flex h-12 w-full min-h-12 cursor-pointer items-center justify-center rounded-lg text-[15px] font-semibold transition-colors duration-200 ${
-          canSave
+          canSave && !coverageBlocked
             ? 'bg-sky-600 text-white hover:bg-sky-700'
             : 'cursor-not-allowed bg-neutral-200 text-white'
         }`}
       >
-        Save and proceed
+        {coverageBlocked ? 'Move the pin to continue' : 'Save and proceed'}
       </button>
-      {!canSave ? (
+      {coverageBlocked ? (
+        <p className="mt-2 pb-1 text-center text-xs text-neutral-500">
+          Search again or drag the pin into a coverage area.
+        </p>
+      ) : !canSave ? (
         <p className="mt-2 pb-1 text-center text-xs text-neutral-500">
           {!address.trim()
             ? 'Wait for the address, or move the map slightly.'

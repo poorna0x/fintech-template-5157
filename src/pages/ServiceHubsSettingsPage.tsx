@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,10 +34,14 @@ import {
   clampHubRadiusKm,
   createBookingServiceHub,
   DEFAULT_HUB_RADIUS_KM,
+  DEFAULT_OUT_OF_AREA_MESSAGE,
   deleteBookingServiceHub,
   fetchBookingServiceHubs,
+  MAX_CUSTOMER_NOTE_LEN,
   MAX_HUB_RADIUS_KM,
+  MAX_OUT_OF_AREA_MESSAGE_LEN,
   MIN_HUB_RADIUS_KM,
+  updateBookingHubSettings,
   updateBookingServiceHub,
   type BookingServiceHub,
 } from '@/lib/bookingServiceHubs';
@@ -55,6 +60,7 @@ type DraftHub = {
   lat: number;
   lng: number;
   radius_km: number;
+  customer_note: string;
 };
 
 type Props = {
@@ -80,6 +86,8 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const [draft, setDraft] = useState<DraftHub | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [outOfAreaMessage, setOutOfAreaMessage] = useState(DEFAULT_OUT_OF_AREA_MESSAGE);
+  const [missingMessagesTable, setMissingMessagesTable] = useState(false);
 
   const [query, setQuery] = useState('');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
@@ -105,6 +113,8 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       toast.error(result.error);
     }
     setHubs(result.hubs);
+    setOutOfAreaMessage(result.settings.out_of_area_message);
+    setMissingMessagesTable(result.missingSettingsTable);
     setLoading(false);
     if (!selectedId && result.hubs[0]) setSelectedId(result.hubs[0].id);
   }, [selectedId]);
@@ -356,6 +366,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           lat: details.coords.lat,
           lng: details.coords.lng,
           radius_km: DEFAULT_HUB_RADIUS_KM,
+          customer_note: '',
         });
       }
       setQuery('');
@@ -382,6 +393,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       lng: draft.lng,
       radius_km: draft.radius_km,
       sort_order: hubs.length,
+      customer_note: draft.customer_note,
     });
     setSaving(false);
     if (result.error || !result.hub) {
@@ -395,7 +407,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   };
 
   const handlePatchSelected = async (
-    patch: Partial<Pick<BookingServiceHub, 'name' | 'radius_km' | 'is_active'>>
+    patch: Partial<Pick<BookingServiceHub, 'name' | 'radius_km' | 'is_active' | 'customer_note'>>
   ) => {
     if (!selected) return;
     setSaving(true);
@@ -460,6 +472,12 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         <div className="px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
           Run <code className="rounded bg-muted px-1">scripts/add-booking-service-hubs.sql</code> in
           the Supabase SQL editor, then reopen this page.
+        </div>
+      ) : null}
+      {missingMessagesTable ? (
+        <div className="px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+          Run <code className="rounded bg-muted px-1">scripts/add-booking-service-hub-messages.sql</code> in
+          the Supabase SQL editor to save custom booking messages.
         </div>
       ) : null}
 
@@ -533,6 +551,45 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="space-y-3 border-b border-border bg-card px-4 py-3">
+          <Label htmlFor="out-of-area-message" className="text-sm font-medium">
+            Outside coverage message
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Shown on the website after they pin a location we cannot serve. They cannot go to the next
+            step until the pin is inside a hub. Optional: type {'{hubs}'} to list nearby areas.
+          </p>
+          <Textarea
+            id="out-of-area-message"
+            value={outOfAreaMessage}
+            maxLength={MAX_OUT_OF_AREA_MESSAGE_LEN}
+            rows={3}
+            onChange={(e) => setOutOfAreaMessage(e.target.value.slice(0, MAX_OUT_OF_AREA_MESSAGE_LEN))}
+            placeholder={DEFAULT_OUT_OF_AREA_MESSAGE}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-11 cursor-pointer"
+            disabled={saving}
+            onClick={() => {
+              void (async () => {
+                setSaving(true);
+                const result = await updateBookingHubSettings({ out_of_area_message: outOfAreaMessage });
+                setSaving(false);
+                if (result.error || !result.settings) {
+                  toast.error(result.error || 'Could not save message');
+                  return;
+                }
+                setOutOfAreaMessage(result.settings.out_of_area_message);
+                toast.success('Outside-coverage message saved');
+              })();
+            }}
+          >
+            Save message
+          </Button>
+        </div>
         {editor ? (
           <div className="space-y-3 border-b border-border bg-muted/30 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
@@ -587,6 +644,33 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                 }}
                 onValueCommit={([value]) => {
                   if (!draft && selected) void handlePatchSelected({ radius_km: value });
+                }}
+              />
+            </div>
+            <div>
+              <Label htmlFor="hub-note" className="text-sm font-medium">
+                Note for this area (optional)
+              </Label>
+              <p className="mb-2 mt-1 text-xs text-muted-foreground">
+                Shown when the pin is inside this hub. Example: “We may be a bit late in this area.”
+              </p>
+              <Textarea
+                id="hub-note"
+                value={draft ? draft.customer_note : selected?.customer_note || ''}
+                maxLength={MAX_CUSTOMER_NOTE_LEN}
+                rows={2}
+                placeholder="We may be a bit late in this area."
+                onChange={(e) => {
+                  const next = e.target.value.slice(0, MAX_CUSTOMER_NOTE_LEN);
+                  if (draft) setDraft({ ...draft, customer_note: next });
+                  else if (selected) {
+                    setHubs((prev) =>
+                      prev.map((h) => (h.id === selected.id ? { ...h, customer_note: next } : h))
+                    );
+                  }
+                }}
+                onBlur={(e) => {
+                  if (!draft && selected) void handlePatchSelected({ customer_note: e.target.value });
                 }}
               />
             </div>
