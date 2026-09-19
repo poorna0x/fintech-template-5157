@@ -187,7 +187,7 @@ async function resolvePlaceDetailsNew(
       fields: ['location', 'formattedAddress', 'displayName'],
     });
     const details = detailsFromPlace(place, fallbackName);
-    if (details) trackGoogleMapsUsage('places');
+    if (details) trackGoogleMapsUsage('places_details');
     return details;
   } catch {
     return null;

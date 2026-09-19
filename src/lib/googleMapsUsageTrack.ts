@@ -1,28 +1,54 @@
 import { supabase } from '@/lib/supabaseClient';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
-export type GoogleMapsSkuId = 'dynamic_maps' | 'places' | 'geocoding' | 'distance';
+export type GoogleMapsSkuId =
+  | 'dynamic_maps'
+  | 'places_autocomplete'
+  | 'places_details'
+  | 'places_find'
+  | 'geocoding'
+  | 'distance_matrix'
+  | 'places'
+  | 'distance';
 
-const SKUS: GoogleMapsSkuId[] = ['dynamic_maps', 'places', 'geocoding', 'distance'];
+const SKUS: Exclude<GoogleMapsSkuId, 'places' | 'distance'>[] = [
+  'dynamic_maps',
+  'places_autocomplete',
+  'places_details',
+  'places_find',
+  'geocoding',
+  'distance_matrix',
+];
 
-const pending: Record<GoogleMapsSkuId, number> = {
+const ALIASES: Record<string, (typeof SKUS)[number]> = {
+  places: 'places_details',
+  distance: 'distance_matrix',
+};
+
+const pending: Record<(typeof SKUS)[number], number> = {
   dynamic_maps: 0,
-  places: 0,
+  places_autocomplete: 0,
+  places_details: 0,
+  places_find: 0,
   geocoding: 0,
-  distance: 0,
+  distance_matrix: 0,
 };
 
 let flushTimer: number | null = null;
 let listenersBound = false;
 
-function isSku(value: string): value is GoogleMapsSkuId {
-  return SKUS.includes(value as GoogleMapsSkuId);
+function canonicalSku(value: string): (typeof SKUS)[number] | null {
+  const id = ALIASES[value] || value;
+  return SKUS.includes(id as (typeof SKUS)[number]) ? (id as (typeof SKUS)[number]) : null;
 }
 
 /** Queue a billed Maps call. Flushes in a batch so booking/CRM does not hit Supabase per keystroke. */
 export function trackGoogleMapsUsage(sku: GoogleMapsSkuId, count = 1) {
-  if (typeof window === 'undefined' || !isSku(sku)) return;
+  if (typeof window === 'undefined') return;
+  const id = canonicalSku(sku);
+  if (!id) return;
   const n = Math.min(40, Math.max(1, Math.floor(Number(count) || 1)));
-  pending[sku] += n;
+  pending[id] += n;
   bindFlushListeners();
   if (flushTimer != null) return;
   flushTimer = window.setTimeout(() => {
@@ -37,7 +63,7 @@ export async function flushGoogleMapsUsage() {
     window.clearTimeout(flushTimer);
     flushTimer = null;
   }
-  const counts: Partial<Record<GoogleMapsSkuId, number>> = {};
+  const counts: Partial<Record<(typeof SKUS)[number], number>> = {};
   for (const sku of SKUS) {
     if (pending[sku] > 0) {
       counts[sku] = Math.min(40, pending[sku]);
@@ -45,10 +71,23 @@ export async function flushGoogleMapsUsage() {
     }
   }
   if (!Object.keys(counts).length) return;
+
+  const { error } = await supabase.rpc('increment_google_maps_usage', { p_counts: counts });
+  if (!error) return;
+
   try {
-    await supabase.rpc('increment_google_maps_usage', { p_counts: counts });
+    const accessToken = await resolveSupabaseAccessTokenForApi();
+    if (!accessToken) return;
+    await fetch('/.netlify/functions/google-maps-usage', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ increment: counts }),
+    });
   } catch {
-    /* table/RPC not migrated yet — Storage still shows free caps */
+    /* public booking without SQL still no-ops */
   }
 }
 
@@ -138,7 +177,7 @@ export function installGoogleMapsUsagePatches() {
         const n = Math.max(1, (request.origins?.length || 1) * (request.destinations?.length || 1));
         if (typeof callback === 'function') {
           return origMatrix.call(this, request, (response, status) => {
-            if (matrixOk(status)) trackGoogleMapsUsage('distance', n);
+            if (matrixOk(status)) trackGoogleMapsUsage('distance_matrix', n);
             callback(response, status);
           });
         }
@@ -167,7 +206,7 @@ export function installGoogleMapsUsagePatches() {
       ) {
         if (typeof callback === 'function') {
           return origDetails.call(this, request, (result, status) => {
-            if (placesOk(status)) trackGoogleMapsUsage('places');
+            if (placesOk(status)) trackGoogleMapsUsage('places_details');
             callback(result, status);
           });
         }
@@ -197,7 +236,7 @@ export function installGoogleMapsUsagePatches() {
         const billedPerRequest = !request.sessionToken;
         if (typeof callback === 'function') {
           return origPred.call(this, request, (results, status) => {
-            if (billedPerRequest && placesOk(status)) trackGoogleMapsUsage('places');
+            if (billedPerRequest && placesOk(status)) trackGoogleMapsUsage('places_autocomplete');
             callback(results, status);
           });
         }
@@ -216,7 +255,7 @@ export function installGoogleMapsUsagePatches() {
     if (origGetPlace && !(origGetPlace as { __hro?: boolean }).__hro) {
       const wrapped = function getPlaceWithUsage(this: google.maps.places.Autocomplete) {
         const place = origGetPlace.call(this);
-        if (place?.place_id || place?.geometry) trackGoogleMapsUsage('places');
+        if (place?.place_id || place?.geometry) trackGoogleMapsUsage('places_details');
         return place;
       };
       (wrapped as { __hro?: boolean }).__hro = true;

@@ -17,41 +17,68 @@ const { getServiceSupabase } = require('./whatsapp-helper');
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const SCOPE = 'https://www.googleapis.com/auth/monitoring.read';
 const CONSOLE_METRICS = 'https://console.cloud.google.com/google/maps-apis/metrics';
+const COUNTERS_SECRET = 'google_maps_usage_counters';
+
+const SKU_ALIASES = {
+  places: 'places_details',
+  distance: 'distance_matrix',
+};
 
 const SKU_CATALOG = [
   {
     id: 'dynamic_maps',
-    label: 'Dynamic Maps',
-    hint: 'Each Maps JavaScript load (booking, hubs, spread, CRM pins)',
+    label: 'Maps JavaScript',
+    hint: 'Map shown on booking, hubs, spread, technician location, add/edit customer',
     freeCap: 10_000,
     usdPerThousand: 7,
     match: /maps-backend|maps\.googleapis\.com/i,
   },
   {
-    id: 'places',
-    label: 'Places',
-    hint: 'Autocomplete and place details when searching an address',
+    id: 'places_autocomplete',
+    label: 'Places Autocomplete',
+    hint: 'Address search as you type (website booking, hubs, add customer)',
     freeCap: 10_000,
     usdPerThousand: 2.83,
-    match: /places/i,
+    match: /places-backend/i,
+  },
+  {
+    id: 'places_details',
+    label: 'Places Details',
+    hint: 'Picking a suggested address (Place Details / Autocomplete getPlace)',
+    freeCap: 10_000,
+    usdPerThousand: 2.83,
+    match: /places\.googleapis\.com/i,
+  },
+  {
+    id: 'places_find',
+    label: 'Find Place',
+    hint: 'Pasted Google Maps links and WhatsApp place names',
+    freeCap: 10_000,
+    usdPerThousand: 5,
+    match: /findplace|place\.find/i,
   },
   {
     id: 'geocoding',
     label: 'Geocoding',
-    hint: 'Pin → address and pasted Maps links',
+    hint: 'GPS → address, pin reverse-geocode, Maps link coordinates',
     freeCap: 10_000,
     usdPerThousand: 5,
     match: /geocod/i,
   },
   {
-    id: 'distance',
-    label: 'Distance / Routes',
-    hint: 'Travel km and avoid-tolls lookups',
+    id: 'distance_matrix',
+    label: 'Distance Matrix',
+    hint: 'Travel km, avoid-tolls, assign-job distance, visit order',
     freeCap: 10_000,
     usdPerThousand: 5,
     match: /distance-matrix|routes\.googleapis/i,
   },
 ];
+
+function canonicalSku(id) {
+  const raw = String(id || '').trim();
+  return SKU_ALIASES[raw] || raw;
+}
 
 let cached = null;
 let cachedAt = 0;
@@ -156,6 +183,28 @@ function istMonthBounds() {
   };
 }
 
+function foldTracked(bySku) {
+  const out = {};
+  for (const [key, value] of Object.entries(bySku || {})) {
+    const id = canonicalSku(key);
+    if (!SKU_CATALOG.some((row) => row.id === id)) continue;
+    out[id] = (Number(out[id]) || 0) + Math.max(0, Number(value) || 0);
+  }
+  return out;
+}
+
+function parseCountsObject(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const id = canonicalSku(key);
+    if (!SKU_CATALOG.some((row) => row.id === id)) continue;
+    const n = Math.min(40, Math.max(0, Math.floor(Number(value) || 0)));
+    if (n > 0) out[id] = (out[id] || 0) + n;
+  }
+  return out;
+}
+
 function skuForService(service) {
   const name = String(service || '');
   return SKU_CATALOG.find((row) => row.match.test(name)) || null;
@@ -212,9 +261,10 @@ function rollupSkus(series) {
 }
 
 function mergeTrackedAndGoogle(trackedBySku, googleSkus) {
+  const folded = foldTracked(trackedBySku);
   const googleById = new Map((googleSkus || []).map((row) => [row.id, row]));
   const skus = emptySkus().map((row) => {
-    const tracked = Math.max(0, Number(trackedBySku?.[row.id]) || 0);
+    const tracked = Math.max(0, Number(folded[row.id]) || 0);
     const google = Math.max(0, Number(googleById.get(row.id)?.requests) || 0);
     return withFreeLimit({
       ...row,
@@ -270,44 +320,89 @@ async function listTimeSeries(projectId, token, filter, start, end) {
   return out;
 }
 
+async function loadSecretCounters(db, monthKey) {
+  const { data } = await db.from('app_secrets').select('value').eq('key', COUNTERS_SECRET).maybeSingle();
+  if (!data?.value) return {};
+  try {
+    const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+    return foldTracked(parsed?.[monthKey] || {});
+  } catch {
+    return {};
+  }
+}
+
+async function writeSecretCounters(db, monthKey, monthCounts) {
+  const { data } = await db.from('app_secrets').select('value').eq('key', COUNTERS_SECRET).maybeSingle();
+  let all = {};
+  try {
+    all = typeof data?.value === 'string' ? JSON.parse(data.value) : data?.value || {};
+  } catch {
+    all = {};
+  }
+  if (!all || typeof all !== 'object' || Array.isArray(all)) all = {};
+  all[monthKey] = foldTracked({ ...(all[monthKey] || {}), ...monthCounts });
+  const keys = Object.keys(all).sort();
+  while (keys.length > 4) {
+    delete all[keys.shift()];
+  }
+  await db.from('app_secrets').upsert({ key: COUNTERS_SECRET, value: JSON.stringify(all) }, { onConflict: 'key' });
+}
+
 async function loadTrackedUsage() {
   const db = getServiceSupabase();
   if (!db) return { available: false, bySku: {}, error: 'Supabase service role is not configured' };
   const monthKey = istMonthBounds().monthKey;
+  const secretCounts = await loadSecretCounters(db, monthKey).catch(() => ({}));
+
   const { data, error } = await db
     .from('google_maps_usage_counters')
     .select('sku, requests')
     .eq('month_key', monthKey);
+
+  const tableCounts = {};
+  if (!error) {
+    for (const row of data || []) {
+      if (row && row.sku) tableCounts[row.sku] = Math.max(0, Number(row.requests) || 0);
+    }
+  }
+
+  const bySku = foldTracked({ ...secretCounts });
+  for (const [id, n] of Object.entries(foldTracked(tableCounts))) {
+    bySku[id] = Math.max(Number(bySku[id]) || 0, n);
+  }
+
+  return {
+    available: true,
+    bySku,
+    tableOk: !error,
+  };
+}
+
+async function incrementGoogleMapsUsageCounts(rawCounts) {
+  const counts = parseCountsObject(rawCounts);
+  if (!Object.keys(counts).length) return { ok: true, incremented: 0 };
+  const db = getServiceSupabase();
+  if (!db) return { ok: false };
+  cached = null;
+  cachedAt = 0;
+  const { error } = await db.rpc('increment_google_maps_usage', { p_counts: counts });
   if (error) {
-    const missing = /does not exist|schema cache|google_maps_usage_counters/i.test(error.message || '');
-    return {
-      available: false,
-      bySku: {},
-      missing,
-      error: missing
-        ? 'Run scripts/add-google-maps-usage.sql in Supabase to count Maps calls against the 10k free caps'
-        : String(error.message || 'Could not load Maps usage counters').slice(0, 220),
-    };
+    const monthKey = istMonthBounds().monthKey;
+    const current = await loadSecretCounters(db, monthKey).catch(() => ({}));
+    const next = { ...current };
+    for (const [id, n] of Object.entries(counts)) {
+      next[id] = (Number(next[id]) || 0) + n;
+    }
+    await writeSecretCounters(db, monthKey, next);
   }
-  const bySku = {};
-  for (const row of data || []) {
-    if (row && row.sku) bySku[row.sku] = Math.max(0, Number(row.requests) || 0);
-  }
-  return { available: true, bySku };
+  return { ok: true, incremented: Object.values(counts).reduce((s, n) => s + n, 0) };
 }
 
 async function recordGoogleMapsUsage(sku, count = 1) {
+  const id = canonicalSku(sku);
   const n = Math.min(50, Math.max(1, Math.floor(Number(count) || 1)));
-  if (!SKU_CATALOG.some((row) => row.id === sku)) return;
-  try {
-    const db = getServiceSupabase();
-    if (!db) return;
-    cached = null;
-    cachedAt = 0;
-    await db.rpc('increment_google_maps_usage', { p_counts: { [sku]: n } });
-  } catch {
-    /* RPC missing until SQL is applied */
-  }
+  if (!SKU_CATALOG.some((row) => row.id === id)) return;
+  await incrementGoogleMapsUsageCounts({ [id]: n });
 }
 
 async function fetchMapsMonitoring(sa) {
@@ -364,7 +459,7 @@ async function buildGoogleMapsUsagePayload(force = false) {
     } catch (err) {
       googleError =
         err.status === 403
-          ? 'Cloud Monitoring is not readable yet (grant Monitoring Viewer). App counters still track the 10k free caps.'
+          ? 'Google Cloud Monitoring is optional. This card counts Maps calls from the CRM.'
           : String(err && err.message ? err.message : 'Cloud Monitoring failed').slice(0, 280);
     }
   }
@@ -372,15 +467,16 @@ async function buildGoogleMapsUsagePayload(force = false) {
   const merged = mergeTrackedAndGoogle(tracked.bySku, googleSkus);
   const payload = {
     ...base,
-    ok: tracked.available || merged.requests > 0 || Boolean(loaded.sa && !googleError),
-    configured: base.configured,
+    ok: true,
+    configured: true,
+    trackingAvailable: tracked.available,
     skus: merged.skus,
     other: googleOther,
     requests: merged.requests,
     estimatedUsd: merged.estimatedUsd,
     insideFree: merged.insideFree,
-    error: tracked.available ? undefined : tracked.error || googleError || loaded.error,
-    note: tracked.available ? googleError || undefined : undefined,
+    error: undefined,
+    note: googleError || undefined,
     generatedAt: new Date().toISOString(),
   };
 
@@ -392,9 +488,11 @@ async function buildGoogleMapsUsagePayload(force = false) {
 module.exports = {
   buildGoogleMapsUsagePayload,
   recordGoogleMapsUsage,
+  incrementGoogleMapsUsageCounts,
   SKU_CATALOG,
   rollupSkus,
   emptySkus,
   withFreeLimit,
   mergeTrackedAndGoogle,
+  canonicalSku,
 };

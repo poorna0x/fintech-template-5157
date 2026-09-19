@@ -8,13 +8,25 @@ CREATE TABLE IF NOT EXISTS public.google_maps_usage_counters (
   requests bigint NOT NULL DEFAULT 0,
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (month_key, sku),
-  CONSTRAINT google_maps_usage_counters_sku_chk
-    CHECK (sku IN ('dynamic_maps', 'places', 'geocoding', 'distance')),
   CONSTRAINT google_maps_usage_counters_month_chk
     CHECK (month_key ~ '^[0-9]{4}-[0-9]{2}$'),
   CONSTRAINT google_maps_usage_counters_requests_chk
     CHECK (requests >= 0)
 );
+
+ALTER TABLE public.google_maps_usage_counters DROP CONSTRAINT IF EXISTS google_maps_usage_counters_sku_chk;
+ALTER TABLE public.google_maps_usage_counters
+  ADD CONSTRAINT google_maps_usage_counters_sku_chk
+  CHECK (sku IN (
+    'dynamic_maps',
+    'places',
+    'places_autocomplete',
+    'places_details',
+    'places_find',
+    'geocoding',
+    'distance',
+    'distance_matrix'
+  ));
 
 ALTER TABLE public.google_maps_usage_counters ENABLE ROW LEVEL SECURITY;
 
@@ -38,6 +50,7 @@ AS $$
 DECLARE
   v_month text;
   v_sku text;
+  v_canon text;
   v_n integer;
 BEGIN
   IF p_counts IS NULL OR jsonb_typeof(p_counts) <> 'object' THEN
@@ -46,7 +59,16 @@ BEGIN
 
   v_month := to_char((now() AT TIME ZONE 'Asia/Kolkata'), 'YYYY-MM');
 
-  FOREACH v_sku IN ARRAY ARRAY['dynamic_maps', 'places', 'geocoding', 'distance']
+  FOREACH v_sku IN ARRAY ARRAY[
+    'dynamic_maps',
+    'places_autocomplete',
+    'places_details',
+    'places_find',
+    'geocoding',
+    'distance_matrix',
+    'places',
+    'distance'
+  ]
   LOOP
     BEGIN
       v_n := LEAST(40, GREATEST(0, COALESCE((p_counts ->> v_sku)::integer, 0)));
@@ -58,8 +80,14 @@ BEGIN
       CONTINUE;
     END IF;
 
+    v_canon := CASE v_sku
+      WHEN 'places' THEN 'places_details'
+      WHEN 'distance' THEN 'distance_matrix'
+      ELSE v_sku
+    END;
+
     INSERT INTO public.google_maps_usage_counters (month_key, sku, requests, updated_at)
-    VALUES (v_month, v_sku, v_n, now())
+    VALUES (v_month, v_canon, v_n, now())
     ON CONFLICT (month_key, sku)
     DO UPDATE SET
       requests = public.google_maps_usage_counters.requests + EXCLUDED.requests,

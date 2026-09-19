@@ -65,10 +65,12 @@ export default function GoogleMapsUsageSection() {
             {loading
               ? 'Loading Maps usage…'
               : data?.ok
-                ? allInside
-                  ? `${focus?.label || 'Maps'} this month · ${formatCount(remaining)} of 10,000 free left`
-                  : `${formatCount(focus?.billable)} over the 10,000 free cap · ~$${estimatedUsd.toFixed(2)}`
-                : data?.error || 'Run the Maps usage SQL so we can count calls against the 10,000 free caps'}
+                ? (focus?.requests || 0) === 0
+                  ? `All daily Maps APIs · IST ${data.monthKey || 'this month'} · 10,000 free each`
+                  : allInside
+                    ? `${focus?.label || 'Maps'} this month · ${formatCount(remaining)} of 10,000 free left`
+                    : `${formatCount(focus?.billable)} over the 10,000 free cap · ~$${estimatedUsd.toFixed(2)}`
+                : data?.error || 'Could not load Maps usage'}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -133,16 +135,9 @@ export default function GoogleMapsUsageSection() {
 
       {!loading && data?.ok ? (
         <p className="border-t px-4 py-2 text-[11px] text-muted-foreground">
-          Each SKU has its own 10,000 Essentials free calls this IST month. Booking maps, address search, pin
-          geocodes, and travel-km lookups are counted here.
-        </p>
-      ) : null}
-
-      {!loading && !data?.ok && !data?.trackingAvailable ? (
-        <p className="border-t px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-          Run <code className="rounded bg-muted px-1">scripts/add-google-maps-usage.sql</code> in Supabase so the CRM
-          can count Maps calls against the 10,000/month free caps. Dynamic Maps, Places, Geocoding, and Distance each
-          have a separate free allotment.
+          Daily APIs: Maps JavaScript, Places Autocomplete, Places Details, Find Place, Geocoding, and Distance
+          Matrix. Each has a 10,000 Essentials free cap this IST month. Counts start when you open a map, search an
+          address, paste a Maps link, or check travel km.
         </p>
       ) : null}
     </section>

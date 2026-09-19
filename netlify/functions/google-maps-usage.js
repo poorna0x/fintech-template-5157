@@ -12,7 +12,7 @@ const {
   checkRateLimitForKey,
   rateLimitResponseForKey,
 } = require('./rate-limiter');
-const { buildGoogleMapsUsagePayload } = require('./google-maps-usage-helper');
+const { buildGoogleMapsUsagePayload, incrementGoogleMapsUsageCounts } = require('./google-maps-usage-helper');
 
 function json(statusCode, headers, payload) {
   return {
@@ -67,10 +67,12 @@ exports.handler = async (event) => {
   }
 
   let refresh = false;
+  let increment = null;
   if (event.httpMethod === 'POST') {
     try {
       const body = JSON.parse(event.body || '{}');
       refresh = truthy(body.refresh);
+      if (body.increment && typeof body.increment === 'object') increment = body.increment;
     } catch {
       return json(400, headers, { ok: false, error: 'Invalid JSON' });
     }
@@ -79,8 +81,12 @@ exports.handler = async (event) => {
   }
 
   try {
+    if (increment) {
+      const result = await incrementGoogleMapsUsageCounts(increment);
+      return json(200, headers, { ok: Boolean(result.ok), incremented: result.incremented || 0 });
+    }
     const payload = await buildGoogleMapsUsagePayload(refresh);
-    return json(payload.ok ? 200 : payload.configured ? 503 : 200, headers, payload);
+    return json(200, headers, payload);
   } catch (err) {
     const message = err && err.message ? String(err.message).slice(0, 200) : 'Google Maps usage failed';
     return json(500, headers, { ok: false, error: message });

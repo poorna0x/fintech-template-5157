@@ -275,7 +275,7 @@ async function geocodePlaceNameWithGoogle(placeName) {
             loc.lng >= 68 &&
             loc.lng <= 98
           ) {
-            noteMapsUsage('places');
+            noteMapsUsage('places_find');
             return { latitude: loc.lat, longitude: loc.lng };
           }
         }
