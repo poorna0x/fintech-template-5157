@@ -2744,7 +2744,7 @@ const Analytics = () => {
 
       <AnalyticsLoadSection
         title="Customer spread map"
-        description="Starts with large pockets so every pin is included without flooding the map. Switch to Medium or Small for finer clusters. Color by density, billing, or top brand + model."
+        description="Starts with large pockets so every mapped customer is included. Switch to This period to match the date range, or Medium / Small for finer clusters. Color by density, billing, or top brand + model."
         icon={<MapIcon />}
         loadLabel="Open customer spread map"
         loadingLabel="Opening…"

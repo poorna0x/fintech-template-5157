@@ -14,10 +14,45 @@ AS $$
   END;
 $$;
 
+-- Short locality for a pocket: prefer address.area, then last useful comma part of visible address.
+-- Skips city/state/pincode so 6 km pockets are not titled with a full street.
+CREATE OR REPLACE FUNCTION public.analytics_spread_area_label(p_area text, p_visible text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT coalesce(
+    CASE
+      WHEN nullif(btrim(p_area), '') IS NULL THEN NULL
+      WHEN btrim(p_area) ~* '^(bengaluru|bangalore|karnataka|india|in)$' THEN NULL
+      ELSE btrim(p_area)
+    END,
+    (
+      SELECT btrim(x.part)
+      FROM unnest(string_to_array(replace(coalesce(p_visible, ''), '，', ','), ',')) WITH ORDINALITY AS x(part, ord)
+      WHERE btrim(x.part) <> ''
+        AND btrim(x.part) !~* '^(bengaluru|bangalore|karnataka|india|in)$'
+        AND btrim(x.part) !~* 'karnataka'
+        AND btrim(x.part) !~ '^[0-9]{3,6}$'
+        AND char_length(btrim(x.part)) BETWEEN 2 AND 48
+      ORDER BY x.ord DESC
+      LIMIT 1
+    ),
+    CASE
+      WHEN char_length(btrim(coalesce(p_visible, ''))) BETWEEN 2 AND 48 THEN btrim(p_visible)
+      ELSE NULL
+    END
+  );
+$$;
+
+DROP FUNCTION IF EXISTS public.get_analytics_customer_spread(timestamptz, timestamptz, numeric);
+DROP FUNCTION IF EXISTS public.get_analytics_customer_spread(timestamptz, timestamptz, numeric, boolean);
+
 CREATE OR REPLACE FUNCTION public.get_analytics_customer_spread(
   p_start timestamptz DEFAULT NULL,
   p_end timestamptz DEFAULT NULL,
-  p_cell_km numeric DEFAULT 6
+  p_cell_km numeric DEFAULT 6,
+  p_active_only boolean DEFAULT false
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -39,9 +74,7 @@ BEGIN
       SELECT
         c.id AS customer_id,
         coalesce(
-          nullif(btrim(c.visible_address), ''),
-          nullif(btrim(c.address->>'visible_address'), ''),
-          nullif(btrim(c.address->>'area'), ''),
+          public.analytics_spread_area_label(c.address->>'area', coalesce(c.visible_address, c.address->>'visible_address')),
           'Unknown'
         ) AS area_label,
         coalesce(
@@ -58,9 +91,10 @@ BEGIN
       SELECT
         c.id,
         coalesce(
-          nullif(btrim(c.alternate_visible_address), ''),
-          nullif(btrim(c.alternate_address->>'visible_address'), ''),
-          nullif(btrim(c.alternate_address->>'area'), ''),
+          public.analytics_spread_area_label(
+            c.alternate_address->>'area',
+            coalesce(c.alternate_visible_address, c.alternate_address->>'visible_address')
+          ),
           'Unknown'
         ),
         coalesce(
@@ -83,22 +117,6 @@ BEGIN
         AND lng BETWEEN -180 AND 180
         AND NOT (lat = 0 AND lng = 0)
     ),
-    pinned_grid AS (
-      SELECT
-        v.*,
-        round(v.lat / cell_deg) * cell_deg AS cell_lat,
-        round(v.lng / cell_deg) * cell_deg AS cell_lng
-      FROM valid_pinned v
-    ),
-    customer_cells AS (
-      SELECT
-        g.cell_lat,
-        g.cell_lng,
-        count(DISTINCT g.customer_id)::integer AS customers,
-        mode() WITHIN GROUP (ORDER BY g.area_label) AS area
-      FROM pinned_grid g
-      GROUP BY g.cell_lat, g.cell_lng
-    ),
     period_jobs AS (
       SELECT
         j.id,
@@ -107,7 +125,10 @@ BEGIN
         j.actual_cost,
         j.service_sub_type,
         j.brand,
-        j.model
+        j.model,
+        j.service_location,
+        j.service_address,
+        j.service_site
       FROM public.jobs j
       WHERE (
         p_start IS NULL AND p_end IS NULL
@@ -126,6 +147,24 @@ BEGIN
         )
       )
     ),
+    pinned_grid AS (
+      SELECT
+        v.*,
+        round(v.lat / cell_deg) * cell_deg AS cell_lat,
+        round(v.lng / cell_deg) * cell_deg AS cell_lng
+      FROM valid_pinned v
+      WHERE NOT coalesce(p_active_only, false)
+        OR v.customer_id IN (SELECT pj.customer_id FROM period_jobs pj WHERE pj.customer_id IS NOT NULL)
+    ),
+    customer_cells AS (
+      SELECT
+        g.cell_lat,
+        g.cell_lng,
+        count(DISTINCT g.customer_id)::integer AS customers,
+        mode() WITHIN GROUP (ORDER BY g.area_label) AS area
+      FROM pinned_grid g
+      GROUP BY g.cell_lat, g.cell_lng
+    ),
     located AS (
       SELECT
         j.id,
@@ -142,16 +181,81 @@ BEGIN
           nullif(btrim(concat_ws(' · ', x.brand_name, x.model_name)), ''),
           'Unknown'
         ) AS brand_label,
-        pg.cell_lat,
-        pg.cell_lng,
+        loc.cell_lat,
+        loc.cell_lng,
+        loc.area_label,
         c.raw_water_tds
       FROM period_jobs j
       JOIN public.customers c ON c.id = j.customer_id
-      JOIN pinned_grid pg ON pg.customer_id = c.id AND pg.is_primary
+      JOIN LATERAL (
+        SELECT
+          CASE
+            WHEN lower(coalesce(j.service_site, 'primary')) IN ('secondary', 'alternate', 'alt') THEN false
+            ELSE true
+          END AS want_primary
+      ) site ON true
+      LEFT JOIN LATERAL (
+        SELECT pg.cell_lat, pg.cell_lng, pg.area_label
+        FROM pinned_grid pg
+        WHERE pg.customer_id = j.customer_id
+        ORDER BY (pg.is_primary = site.want_primary) DESC, pg.is_primary DESC
+        LIMIT 1
+      ) pg ON true
+      JOIN LATERAL (
+        SELECT
+          coalesce(
+            public.analytics_json_coord(j.service_location, 'latitude'),
+            public.analytics_json_coord(j.service_location, 'lat')
+          ) AS job_lat,
+          coalesce(
+            public.analytics_json_coord(j.service_location, 'longitude'),
+            public.analytics_json_coord(j.service_location, 'lng')
+          ) AS job_lng
+      ) jl ON true
+      JOIN LATERAL (
+        SELECT
+          CASE
+            WHEN jl.job_lat IS NOT NULL AND jl.job_lng IS NOT NULL
+              AND jl.job_lat BETWEEN -90 AND 90
+              AND jl.job_lng BETWEEN -180 AND 180
+              AND NOT (jl.job_lat = 0 AND jl.job_lng = 0)
+            THEN round(jl.job_lat / cell_deg) * cell_deg
+            ELSE pg.cell_lat
+          END AS cell_lat,
+          CASE
+            WHEN jl.job_lat IS NOT NULL AND jl.job_lng IS NOT NULL
+              AND jl.job_lat BETWEEN -90 AND 90
+              AND jl.job_lng BETWEEN -180 AND 180
+              AND NOT (jl.job_lat = 0 AND jl.job_lng = 0)
+            THEN round(jl.job_lng / cell_deg) * cell_deg
+            ELSE pg.cell_lng
+          END AS cell_lng,
+          coalesce(
+            nullif(
+              public.analytics_spread_area_label(
+                j.service_address->>'area',
+                coalesce(j.service_address->>'visible_address', j.service_address->>'formatted_address')
+              ),
+              'Unknown'
+            ),
+            pg.area_label,
+            'Unknown'
+          ) AS area_label
+      ) loc ON loc.cell_lat IS NOT NULL AND loc.cell_lng IS NOT NULL
       CROSS JOIN LATERAL (
         SELECT
-          coalesce(nullif(btrim(j.brand), ''), nullif(btrim(c.brand), '')) AS brand_name,
-          coalesce(nullif(btrim(j.model), ''), nullif(btrim(c.model), '')) AS model_name
+          CASE
+            WHEN NOT site.want_primary THEN
+              coalesce(nullif(btrim(j.brand), ''), nullif(btrim(c.alternate_brand), ''), nullif(btrim(c.brand), ''))
+            ELSE
+              coalesce(nullif(btrim(j.brand), ''), nullif(btrim(c.brand), ''))
+          END AS brand_name,
+          CASE
+            WHEN NOT site.want_primary THEN
+              coalesce(nullif(btrim(j.model), ''), nullif(btrim(c.alternate_model), ''), nullif(btrim(c.model), ''))
+            ELSE
+              coalesce(nullif(btrim(j.model), ''), nullif(btrim(c.model), ''))
+          END AS model_name
       ) x
     ),
     brand_counts AS (
@@ -183,7 +287,8 @@ BEGIN
         sum(CASE WHEN public.analytics_is_installation(g.service_sub_type) THEN 1 ELSE 0 END)::integer AS installation,
         sum(CASE WHEN NOT public.analytics_is_installation(g.service_sub_type) THEN 1 ELSE 0 END)::integer AS service,
         sum(CASE WHEN g.raw_water_tds IS NOT NULL AND g.raw_water_tds > 0 THEN g.raw_water_tds ELSE 0 END)::numeric AS tds_sum,
-        sum(CASE WHEN g.raw_water_tds IS NOT NULL AND g.raw_water_tds > 0 THEN 1 ELSE 0 END)::integer AS tds_count
+        sum(CASE WHEN g.raw_water_tds IS NOT NULL AND g.raw_water_tds > 0 THEN 1 ELSE 0 END)::integer AS tds_count,
+        mode() WITHIN GROUP (ORDER BY g.area_label) AS area
       FROM located g
       GROUP BY g.cell_lat, g.cell_lng
     ),
@@ -204,14 +309,19 @@ BEGIN
       FROM brand_ranked
       GROUP BY cell_lat, cell_lng
     ),
+    cell_keys AS (
+      SELECT cell_lat, cell_lng FROM customer_cells
+      UNION
+      SELECT cell_lat, cell_lng FROM job_cells
+    ),
     ranked_cells AS (
       SELECT
-        cu.cell_lat,
-        cu.cell_lng,
-        cu.customers,
+        k.cell_lat,
+        k.cell_lng,
+        coalesce(cu.customers, 0)::integer AS customers,
         coalesce(jb.jobs, 0)::integer AS jobs,
         coalesce(jb.revenue, 0)::numeric AS revenue,
-        cu.area,
+        coalesce(nullif(cu.area, 'Unknown'), nullif(jb.area, 'Unknown'), cu.area, jb.area, 'Unknown') AS area,
         coalesce(jb.installation, 0)::integer AS installation,
         coalesce(jb.service, 0)::integer AS service,
         CASE WHEN coalesce(jb.jobs, 0) > 0 THEN round(jb.revenue / jb.jobs, 0) ELSE 0 END AS avg_bill,
@@ -223,15 +333,20 @@ BEGIN
           WHEN coalesce(jb.jobs, 0) > 0 THEN round((coalesce(cb.top_brand_jobs, 0)::numeric / jb.jobs) * 100, 0)
           ELSE 0
         END AS top_brand_share
-      FROM customer_cells cu
-      LEFT JOIN job_cells jb ON jb.cell_lat = cu.cell_lat AND jb.cell_lng = cu.cell_lng
-      LEFT JOIN cell_brands cb ON cb.cell_lat = cu.cell_lat AND cb.cell_lng = cu.cell_lng
+      FROM cell_keys k
+      LEFT JOIN customer_cells cu ON cu.cell_lat = k.cell_lat AND cu.cell_lng = k.cell_lng
+      LEFT JOIN job_cells jb ON jb.cell_lat = k.cell_lat AND jb.cell_lng = k.cell_lng
+      LEFT JOIN cell_brands cb ON cb.cell_lat = k.cell_lat AND cb.cell_lng = k.cell_lng
     )
     SELECT jsonb_build_object(
       'cell_km', round((cell_deg * 111.32)::numeric, 2),
       'jobs_total', (SELECT count(*)::integer FROM period_jobs),
       'jobs_with_pin', (SELECT count(*)::integer FROM located),
-      'customers_with_pin', (SELECT count(DISTINCT customer_id)::integer FROM valid_pinned),
+      'customers_total', CASE
+        WHEN coalesce(p_active_only, false) THEN (SELECT count(DISTINCT customer_id)::integer FROM period_jobs)
+        ELSE (SELECT count(*)::integer FROM public.customers)
+      END,
+      'customers_with_pin', (SELECT count(DISTINCT customer_id)::integer FROM pinned_grid),
       'cells', coalesce((
         SELECT jsonb_agg(
           jsonb_build_object(
@@ -263,6 +378,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.get_analytics_customer_spread(timestamptz, timestamptz, numeric) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_analytics_customer_spread(timestamptz, timestamptz, numeric) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_analytics_customer_spread(timestamptz, timestamptz, numeric, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_analytics_customer_spread(timestamptz, timestamptz, numeric, boolean) TO authenticated;
 REVOKE ALL ON FUNCTION public.analytics_json_coord(jsonb, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.analytics_spread_area_label(text, text) FROM PUBLIC;

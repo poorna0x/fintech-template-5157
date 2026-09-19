@@ -33,10 +33,18 @@ export type SpreadCell = {
   brands: SpreadBrandShare[];
 };
 
+export type SpreadScope = 'all' | 'period';
+
+export const SPREAD_SCOPES: Array<{ id: SpreadScope; label: string }> = [
+  { id: 'all', label: 'All mapped' },
+  { id: 'period', label: 'This period' },
+];
+
 export type SpreadPayload = {
   cell_km: number;
   jobs_total: number;
   jobs_with_pin: number;
+  customers_total: number;
   customers_with_pin: number;
   cells: SpreadCell[];
 };
@@ -106,6 +114,7 @@ export function parseSpreadPayload(raw: unknown): SpreadPayload {
     cell_km: DEFAULT_SPREAD_CELL_KM,
     jobs_total: 0,
     jobs_with_pin: 0,
+    customers_total: 0,
     customers_with_pin: 0,
     cells: [],
   };
@@ -114,13 +123,37 @@ export function parseSpreadPayload(raw: unknown): SpreadPayload {
   const cells = Array.isArray(r.cells)
     ? r.cells.map(parseSpreadCell).filter((c): c is SpreadCell => Boolean(c))
     : [];
+  const customers_with_pin = Math.max(0, Math.round(num(r.customers_with_pin)));
+  const customers_total = Math.max(
+    customers_with_pin,
+    Math.round(num(r.customers_total) || customers_with_pin)
+  );
   return {
     cell_km: Math.max(0.8, Math.min(10, num(r.cell_km) || DEFAULT_SPREAD_CELL_KM)),
     jobs_total: Math.max(0, Math.round(num(r.jobs_total))),
     jobs_with_pin: Math.max(0, Math.round(num(r.jobs_with_pin))),
-    customers_with_pin: Math.max(0, Math.round(num(r.customers_with_pin))),
+    customers_total,
+    customers_with_pin,
     cells,
   };
+}
+
+export function customersWithoutMap(payload: SpreadPayload): number {
+  return Math.max(0, payload.customers_total - payload.customers_with_pin);
+}
+
+export function jobsWithoutMap(payload: SpreadPayload): number {
+  return Math.max(0, payload.jobs_total - payload.jobs_with_pin);
+}
+
+export function pocketBrandRows(cell: SpreadCell): SpreadBrandShare[] {
+  if (cell.jobs <= 0) return [];
+  const rows = cell.brands.filter((b) => b.jobs > 0 && b.name && b.name !== 'Unknown');
+  if (rows.length > 0) return rows;
+  if (cell.top_brand && cell.top_brand !== 'Unknown') {
+    return [{ name: cell.top_brand, jobs: cell.top_brand_jobs || cell.jobs, revenue: cell.revenue }];
+  }
+  return [];
 }
 
 function lerpHex(from: string, to: string, t: number): string {
@@ -151,6 +184,9 @@ export function spreadFillColor(
   mode: SpreadColorMode
 ): { fill: string; stroke: string } {
   if (mode === 'brand') {
+    if (cell.jobs <= 0 || !cell.top_brand || cell.top_brand === 'Unknown') {
+      return { fill: '#94a3b855', stroke: '#64748b' };
+    }
     const stroke = brandColor(cell.top_brand);
     return { fill: `${stroke}55`, stroke };
   }
@@ -204,7 +240,9 @@ export function buildSpreadInsights(
     insights.push({
       id: 'richest',
       title: 'Highest billing',
-      detail: `${richest.area} · ${formatSpreadInr(richest.revenue)} · ${richest.top_brand}`,
+      detail: `${richest.area} · ${formatSpreadInr(richest.revenue)}${
+        richest.top_brand && richest.top_brand !== 'Unknown' ? ` · ${richest.top_brand}` : ''
+      }`,
       cell: richest,
     });
   }
@@ -230,18 +268,30 @@ export function buildSpreadInsights(
       cell: stronghold,
     });
   }
-  const outside = cells
-    .filter((c) => cellOutsideHubs(c, hubs))
-    .sort((a, b) => b.customers - a.customers)[0];
+  const repeat = [...cells]
+    .filter((c) => c.customers >= 3 && c.jobs >= 6 && c.jobs / c.customers >= 2)
+    .sort((a, b) => b.jobs / b.customers - a.jobs / a.customers || b.jobs - a.jobs)[0];
+  if (repeat) {
+    const per = (repeat.jobs / repeat.customers).toFixed(1);
+    insights.push({
+      id: 'repeat',
+      title: 'Repeat visits',
+      detail: `${repeat.area} · ${per} jobs per customer · ${repeat.jobs} jobs`,
+      cell: repeat,
+    });
+  }
+  const outsideCells = cells.filter((c) => cellOutsideHubs(c, hubs) && c.customers > 0);
+  const outside = [...outsideCells].sort((a, b) => b.customers - a.customers)[0];
   if (outside) {
+    const outsideCustomers = outsideCells.reduce((sum, c) => sum + c.customers, 0);
     insights.push({
       id: 'outside',
-      title: 'Customers outside coverage',
-      detail: `${outside.area} · ${outside.customers} customers sit outside Location Hubs`,
+      title: 'Outside coverage',
+      detail: `${outside.area} is the densest gap · ${outsideCustomers} customers outside Location Hubs`,
       cell: outside,
     });
   }
-  return insights.slice(0, 5);
+  return insights.slice(0, 6);
 }
 
 export function maxSpreadValue(cells: SpreadCell[], mode: SpreadColorMode): number {

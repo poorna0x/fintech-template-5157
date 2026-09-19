@@ -8510,11 +8510,17 @@ export const db = {
       });
       return { data: data as { total: number; rows: unknown[] } | null, error };
     },
-    async getCustomerSpread(opts: { startISO?: string | null; endISO?: string | null; cellKm?: number }) {
+    async getCustomerSpread(opts: {
+      startISO?: string | null;
+      endISO?: string | null;
+      cellKm?: number;
+      activeOnly?: boolean;
+    }) {
       const { data, error } = await supabase.rpc('get_analytics_customer_spread', {
         p_start: opts.startISO ?? null,
         p_end: opts.endISO ?? null,
         p_cell_km: opts.cellKm ?? 6,
+        p_active_only: Boolean(opts.activeOnly),
       });
       return { data, error };
     },

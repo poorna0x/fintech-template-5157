@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   brandColor,
   buildSpreadInsights,
+  customersWithoutMap,
+  jobsWithoutMap,
   parseSpreadPayload,
+  pocketBrandRows,
   spreadCircleRadiusMeters,
   spreadFillColor,
   type SpreadCell,
@@ -31,6 +34,7 @@ describe('parseSpreadPayload', () => {
       cell_km: 1.2,
       jobs_total: 10,
       jobs_with_pin: 8,
+      customers_total: 12,
       customers_with_pin: 7,
       cells: [
         { lat: 12.91, lng: 77.64, customers: 9, jobs: 12, revenue: 40000, area: 'HSR', top_brand: 'Kent', brands: [] },
@@ -40,6 +44,9 @@ describe('parseSpreadPayload', () => {
     expect(payload.cells).toHaveLength(1);
     expect(payload.cells[0].area).toBe('HSR');
     expect(payload.customers_with_pin).toBe(7);
+    expect(payload.customers_total).toBe(12);
+    expect(customersWithoutMap(payload)).toBe(5);
+    expect(jobsWithoutMap(payload)).toBe(2);
   });
 });
 
@@ -49,6 +56,23 @@ describe('spread colors', () => {
     const high = spreadFillColor(cell({ lat: 1, lng: 1, area: 'B', customers: 10 }), 10, 'customers');
     expect(low.stroke).not.toBe(high.stroke);
     expect(brandColor('Kent')).toMatch(/^#/);
+  });
+
+  it('does not invent a brand color when a pocket has no jobs', () => {
+    const empty = spreadFillColor(
+      cell({ lat: 1, lng: 1, area: 'Quiet', jobs: 0, top_brand: 'Unknown', brands: [] }),
+      10,
+      'brand'
+    );
+    expect(empty.stroke).toBe('#64748b');
+  });
+});
+
+describe('pocketBrandRows', () => {
+  it('hides Unknown when a pocket has no jobs this period', () => {
+    expect(pocketBrandRows(cell({ lat: 1, lng: 1, area: 'West', jobs: 0, top_brand: 'Unknown', brands: [] }))).toEqual(
+      []
+    );
   });
 });
 
@@ -73,6 +97,14 @@ describe('buildSpreadInsights', () => {
     expect(insights.some((row) => row.id === 'richest' && row.cell.area === 'Bellandur')).toBe(true);
     expect(insights.some((row) => row.id === 'premium')).toBe(true);
     expect(insights.some((row) => row.id === 'brand' && /Aquaguard/.test(row.title))).toBe(true);
+  });
+
+  it('flags pockets with many return visits', () => {
+    const insights = buildSpreadInsights([
+      cell({ lat: 12.91, lng: 77.64, area: 'HSR', customers: 20, jobs: 22, revenue: 40000 }),
+      cell({ lat: 13.1, lng: 77.39, area: 'Nelamangala', customers: 4, jobs: 12, revenue: 18000 }),
+    ]);
+    expect(insights.some((row) => row.id === 'repeat' && row.cell.area === 'Nelamangala')).toBe(true);
   });
 });
 

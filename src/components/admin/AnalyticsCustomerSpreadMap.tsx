@@ -14,16 +14,21 @@ import {
   buildSpreadInsights,
   brandColor,
   cellOutsideHubs,
+  customersWithoutMap,
   DEFAULT_SPREAD_CELL_KM,
   formatSpreadInr,
+  jobsWithoutMap,
   maxSpreadValue,
   parseSpreadPayload,
+  pocketBrandRows,
   SPREAD_POCKET_SIZES,
+  SPREAD_SCOPES,
   spreadCircleRadiusMeters,
   spreadFillColor,
   type SpreadCell,
   type SpreadColorMode,
   type SpreadPayload,
+  type SpreadScope,
 } from '@/lib/analyticsCustomerSpread';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
@@ -49,6 +54,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   const [showHubs, setShowHubs] = useState(true);
   const [selected, setSelected] = useState<SpreadCell | null>(null);
   const [cellKm, setCellKm] = useState(DEFAULT_SPREAD_CELL_KM);
+  const [scope, setScope] = useState<SpreadScope>('all');
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
@@ -57,8 +63,8 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   const loadGenRef = useRef(0);
   selectedRef.current = selected;
 
-  const cacheKey = `v5|${startISO || 'all'}|${endISO || 'all'}|${cellKm}`;
-  const fitKey = `v5|${startISO || 'all'}|${endISO || 'all'}`;
+  const cacheKey = `v6|${startISO || 'all'}|${endISO || 'all'}|${cellKm}|${scope}`;
+  const fitKey = `v6|${startISO || 'all'}|${endISO || 'all'}|${scope}`;
   const cells = payload?.cells || [];
   const maxValue = useMemo(() => maxSpreadValue(cells, colorMode), [cells, colorMode]);
   const maxCustomers = useMemo(
@@ -92,6 +98,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
           startISO,
           endISO,
           cellKm,
+          activeOnly: scope === 'period',
         }),
         fetchBookingServiceHubs({ includeInactive: false }),
       ]);
@@ -120,7 +127,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
     } finally {
       if (gen === loadGenRef.current) setLoading(false);
     }
-  }, [cacheKey, cellKm, endISO, startISO]);
+  }, [cacheKey, cellKm, endISO, scope, startISO]);
 
   useEffect(() => {
     void load();
@@ -212,18 +219,32 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
             {showHubs ? 'Hubs on' : 'Hubs off'}
           </Button>
         </div>
-        <div>
-          <p className="mb-1.5 text-xs font-medium text-muted-foreground">Pocket size</p>
-          <Segmented
-            items={SPREAD_POCKET_SIZES.map((size) => ({ id: String(size.km), label: size.label }))}
-            value={String(cellKm)}
-            onChange={(km) => {
-              const next = Number(km);
-              if (next === cellKm) return;
-              setSelected(null);
-              setCellKm(next);
-            }}
-          />
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">Show</p>
+            <Segmented
+              items={SPREAD_SCOPES}
+              value={scope}
+              onChange={(id) => {
+                if (id === scope) return;
+                setSelected(null);
+                setScope(id as SpreadScope);
+              }}
+            />
+          </div>
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">Pocket size</p>
+            <Segmented
+              items={SPREAD_POCKET_SIZES.map((size) => ({ id: String(size.km), label: size.label }))}
+              value={String(cellKm)}
+              onChange={(km) => {
+                const next = Number(km);
+                if (next === cellKm) return;
+                setSelected(null);
+                setCellKm(next);
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -246,10 +267,15 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
           />
           <StatChip
             icon={<Award className="h-4 w-4" />}
-            label="Pins missing"
-            value={String(Math.max(0, payload.jobs_total - payload.jobs_with_pin))}
+            label="No map"
+            value={String(customersWithoutMap(payload))}
           />
         </div>
+      ) : null}
+      {payload && jobsWithoutMap(payload) > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {jobsWithoutMap(payload)} jobs in this period have no map location, so they are not in the pockets.
+        </p>
       ) : null}
 
       <div className="overflow-hidden rounded-xl border border-border">
@@ -324,10 +350,10 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
             <MiniStat label="Install / service" value={`${selected.installation} / ${selected.service}`} />
             <MiniStat label="Avg TDS" value={selected.avg_tds != null ? `${selected.avg_tds}` : '—'} />
           </div>
-          <div className="mt-3 space-y-1.5">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Top brands + models here</p>
-            {(selected.brands.length ? selected.brands : [{ name: selected.top_brand, jobs: selected.top_brand_jobs, revenue: selected.revenue }]).map(
-              (brand) => {
+          {pocketBrandRows(selected).length > 0 ? (
+            <div className="mt-3 space-y-1.5">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Top brands + models here</p>
+              {pocketBrandRows(selected).map((brand) => {
                 const share = selected.jobs > 0 ? Math.round((brand.jobs / selected.jobs) * 100) : 0;
                 return (
                   <div key={brand.name} className="flex min-w-0 items-center gap-2 text-sm">
@@ -343,9 +369,11 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
                     </span>
                   </div>
                 );
-              }
-            )}
-          </div>
+              })}
+            </div>
+          ) : selected.jobs === 0 ? (
+            <p className="mt-3 text-xs text-muted-foreground">No jobs in the selected dates for this pocket.</p>
+          ) : null}
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
@@ -369,7 +397,10 @@ function Segmented({
   className?: string;
 }) {
   return (
-    <div className={`grid grid-cols-3 gap-1 rounded-xl border border-border bg-muted/40 p-1 ${className}`}>
+    <div
+      className={`grid gap-1 rounded-xl border border-border bg-muted/40 p-1 ${className}`}
+      style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+    >
       {items.map((item) => {
         const active = value === item.id;
         return (
