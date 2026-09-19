@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   clampHubRadiusKm,
   formatOutOfServiceAreaMessage,
+  hubContainsPoint,
   matchPointToServiceHubs,
   parseBookingServiceHub,
+  pointInHubPolygon,
   type BookingServiceHub,
 } from './bookingServiceHubs';
 
@@ -11,6 +13,7 @@ function hub(partial: Partial<BookingServiceHub> & Pick<BookingServiceHub, 'id' 
   return {
     address: '',
     radius_km: 5,
+    polygon: [],
     is_active: true,
     sort_order: 0,
     customer_note: '',
@@ -66,5 +69,32 @@ describe('clampHubRadiusKm', () => {
 describe('parseBookingServiceHub', () => {
   it('drops 0,0 placeholders', () => {
     expect(parseBookingServiceHub({ id: 'x', name: 'X', lat: 0, lng: 0, radius_km: 5 })).toBeNull();
+  });
+});
+
+describe('hub polygons', () => {
+  it('lets a custom polygon cut a slice out of the circle', () => {
+    const north = { lat: HSR.lat + 0.04, lng: HSR.lng };
+    const east = { lat: HSR.lat, lng: HSR.lng + 0.04 };
+    const south = { lat: HSR.lat - 0.04, lng: HSR.lng };
+    const westCut = { lat: HSR.lat, lng: HSR.lng + 0.002 };
+    const shaped = hub({
+      ...HSR,
+      polygon: [north, east, south, westCut],
+    });
+    expect(hubContainsPoint(HSR, HSR.lat, HSR.lng - 0.01)).toBe(true);
+    expect(hubContainsPoint(shaped, HSR.lat, HSR.lng - 0.01)).toBe(false);
+    expect(matchPointToServiceHubs(HSR.lat, HSR.lng + 0.01, [shaped]).ok).toBe(true);
+  });
+
+  it('uses ray-casting for a simple square', () => {
+    const square = [
+      { lat: 12.9, lng: 77.6 },
+      { lat: 12.9, lng: 77.7 },
+      { lat: 13.0, lng: 77.7 },
+      { lat: 13.0, lng: 77.6 },
+    ];
+    expect(pointInHubPolygon(12.95, 77.65, square)).toBe(true);
+    expect(pointInHubPolygon(12.8, 77.65, square)).toBe(false);
   });
 });

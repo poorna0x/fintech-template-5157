@@ -26,6 +26,43 @@ function isMissingTable(message) {
   );
 }
 
+function parseHubPolygon(raw) {
+  if (!Array.isArray(raw)) return [];
+  const points = [];
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue;
+    const lat = Number(row.lat);
+    const lng = Number(row.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    points.push({ lat, lng });
+    if (points.length >= 16) break;
+  }
+  return points.length >= 3 ? points : [];
+}
+
+function pointInHubPolygon(lat, lng, ring) {
+  if (!ring || ring.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const yi = ring[i].lat;
+    const xi = ring[i].lng;
+    const yj = ring[j].lat;
+    const xj = ring[j].lng;
+    const denom = yj - yi;
+    if (denom === 0) continue;
+    const intersect = yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / denom + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function hubContainsPoint(hub, lat, lng) {
+  const ring = parseHubPolygon(hub.polygon);
+  if (ring.length >= 3) return pointInHubPolygon(lat, lng, ring);
+  return haversineKm(lat, lng, hub.lat, hub.lng) <= hub.radius_km;
+}
+
 function isValidCoords(lat, lng) {
   return (
     Number.isFinite(lat) &&
@@ -51,8 +88,16 @@ function coordsFromBookingRow(row) {
 async function loadActiveHubs(admin) {
   let { data, error } = await admin
     .from('booking_service_hubs')
-    .select('id,name,lat,lng,radius_km,is_active,customer_note')
+    .select('id,name,lat,lng,radius_km,polygon,is_active,customer_note')
     .eq('is_active', true);
+  if (error && String(error.message || '').toLowerCase().includes('polygon')) {
+    const retry = await admin
+      .from('booking_service_hubs')
+      .select('id,name,lat,lng,radius_km,is_active,customer_note')
+      .eq('is_active', true);
+    data = retry.data;
+    error = retry.error;
+  }
   if (error && String(error.message || '').toLowerCase().includes('customer_note')) {
     const retry = await admin
       .from('booking_service_hubs')
@@ -79,6 +124,7 @@ async function loadActiveHubs(admin) {
         lat,
         lng,
         radius_km: radius,
+        polygon: parseHubPolygon(row.polygon),
         customer_note: String(row.customer_note || '').trim().slice(0, 240),
       };
     })
@@ -150,7 +196,7 @@ async function assertLocationInServiceHub(admin, lat, lng) {
     }))
     .sort((a, b) => a.distanceKm - b.distanceKm);
 
-  const inside = ranked.find((row) => row.distanceKm <= row.radius_km);
+  const inside = ranked.find((row) => hubContainsPoint(row, Number(lat), Number(lng)));
   if (inside) {
     return { ok: true, enforced: true, hub: inside };
   }

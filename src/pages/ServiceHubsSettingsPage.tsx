@@ -41,18 +41,27 @@ import { haversineKm } from '@/lib/maps';
 import DraggableMap from '@/components/DraggableMap';
 import {
   clampHubRadiusKm,
+  circleToHubPolygon,
   createBookingServiceHub,
+  DEFAULT_HUB_POLYGON_POINTS,
   DEFAULT_HUB_RADIUS_KM,
   DEFAULT_OUT_OF_AREA_MESSAGE,
   deleteBookingServiceHub,
   fetchBookingServiceHubs,
+  hubContainsPoint,
+  hubPolygonMetrics,
+  hubPolygonOrCircle,
   MAX_CUSTOMER_NOTE_LEN,
   MAX_HUB_RADIUS_KM,
   MAX_OUT_OF_AREA_MESSAGE_LEN,
   MIN_HUB_RADIUS_KM,
+  parseHubPolygon,
+  scaleHubPolygon,
+  translateHubPolygon,
   updateBookingHubSettings,
   updateBookingServiceHub,
   type BookingServiceHub,
+  type HubLatLng,
 } from '@/lib/bookingServiceHubs';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
@@ -70,12 +79,23 @@ type DraftHub = {
   lat: number;
   lng: number;
   radius_km: number;
+  polygon: HubLatLng[];
   customer_note: string;
 };
 
 type Props = {
   onBack: () => void;
 };
+
+function pathToHubPoints(path: google.maps.MVCArray<google.maps.LatLng>): HubLatLng[] {
+  const pts: HubLatLng[] = [];
+  const len = path.getLength();
+  for (let i = 0; i < len; i += 1) {
+    const ll = path.getAt(i);
+    pts.push({ lat: ll.lat(), lng: ll.lng() });
+  }
+  return parseHubPolygon(pts);
+}
 
 export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const [hubs, setHubs] = useState<BookingServiceHub[]>([]);
@@ -114,7 +134,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const skipPaintRef = useRef(false);
   const fitKeyRef = useRef('');
   const mapClickBoundRef = useRef(false);
-  const editableCircleRef = useRef<google.maps.Circle | null>(null);
+  const editableCircleRef = useRef<google.maps.Polygon | null>(null);
   const onMapClickRef = useRef<(event: google.maps.MapMouseEvent) => void>(() => {});
 
   hubsRef.current = hubs;
@@ -174,7 +194,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   };
 
   const persistSelectedGeometry = useCallback(
-    (patch: Partial<Pick<BookingServiceHub, 'lat' | 'lng' | 'radius_km'>>) => {
+    (patch: Partial<Pick<BookingServiceHub, 'lat' | 'lng' | 'radius_km' | 'polygon'>>) => {
       if (!selectedId) return;
       if (persistTimerRef.current != null) window.clearTimeout(persistTimerRef.current);
       persistTimerRef.current = window.setTimeout(() => {
@@ -193,14 +213,15 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     [selectedId]
   );
 
-  const placeDraftAt = useCallback((lat: number, lng: number) => {
+  const placeDraftAt = useCallback((lat: number, lng: number, radiusKm = DEFAULT_HUB_RADIUS_KM) => {
     setSelectedId(null);
     setDraft({
       name: 'New hub',
       address: '',
       lat,
       lng,
-      radius_km: DEFAULT_HUB_RADIUS_KM,
+      radius_km: radiusKm,
+      polygon: circleToHubPolygon(lat, lng, radiusKm, DEFAULT_HUB_POLYGON_POINTS),
       customer_note: '',
     });
   }, []);
@@ -209,7 +230,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     const map = mapRef.current;
     if (!map || !window.google?.maps) return;
     for (const overlay of overlaysRef.current) {
-      (overlay as google.maps.Circle | google.maps.Marker).setMap(null);
+      (overlay as google.maps.Polygon | google.maps.Marker).setMap(null);
     }
     overlaysRef.current = [];
     editableCircleRef.current = null;
@@ -220,6 +241,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       lat: number;
       lng: number;
       radius_km: number;
+      polygon: HubLatLng[];
       active: boolean;
       selected: boolean;
     }> = hubs.map((h) => ({
@@ -227,6 +249,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       lat: h.lat,
       lng: h.lng,
       radius_km: h.radius_km,
+      polygon: hubPolygonOrCircle(h),
       active: h.is_active,
       selected: !draftNow && h.id === selectedId,
     }));
@@ -236,6 +259,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         lat: draftNow.lat,
         lng: draftNow.lng,
         radius_km: draftNow.radius_km,
+        polygon: hubPolygonOrCircle(draftNow),
         active: true,
         selected: true,
       });
@@ -251,10 +275,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           ? 'rgba(71, 85, 105, 0.28)'
           : 'rgba(148, 163, 184, 0.18)';
       const stroke = row.selected ? '#0284c7' : row.active ? '#475569' : '#94a3b8';
-      const circle = new window.google.maps.Circle({
+      const polygon = new window.google.maps.Polygon({
         map,
-        center: { lat: row.lat, lng: row.lng },
-        radius: row.radius_km * 1000,
+        paths: row.polygon,
         fillColor: fill,
         fillOpacity: 1,
         strokeColor: stroke,
@@ -263,42 +286,36 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         clickable: true,
         editable: row.selected,
         draggable: row.selected,
+        geodesic: false,
       });
       if (row.selected) {
-        editableCircleRef.current = circle;
-        circle.addListener('radius_changed', () => {
-          const km = clampHubRadiusKm(circle.getRadius() / 1000);
+        editableCircleRef.current = polygon;
+        const applyPath = () => {
+          const ring = pathToHubPoints(polygon.getPath());
+          const metrics = hubPolygonMetrics(ring);
+          if (!metrics) return;
           skipPaintRef.current = true;
           if (row.id === 'draft') {
-            setDraft((prev) => (prev ? { ...prev, radius_km: km } : prev));
+            setDraft((prev) => (prev ? { ...prev, ...metrics, polygon: ring } : prev));
           } else {
-            setHubs((prev) => prev.map((h) => (h.id === row.id ? { ...h, radius_km: km } : h)));
-            persistSelectedGeometry({ radius_km: km });
-          }
-        });
-        const applyCenter = () => {
-          const center = circle.getCenter();
-          if (!center) return;
-          const lat = center.lat();
-          const lng = center.lng();
-          if (Math.abs(lat - row.lat) < 1e-7 && Math.abs(lng - row.lng) < 1e-7) return;
-          skipPaintRef.current = true;
-          if (row.id === 'draft') {
-            setDraft((prev) => (prev ? { ...prev, lat, lng } : prev));
-          } else {
-            setHubs((prev) => prev.map((h) => (h.id === row.id ? { ...h, lat, lng } : h)));
-            persistSelectedGeometry({ lat, lng });
+            setHubs((prev) =>
+              prev.map((h) => (h.id === row.id ? { ...h, ...metrics, polygon: ring } : h))
+            );
+            persistSelectedGeometry({ ...metrics, polygon: ring });
           }
         };
-        circle.addListener('center_changed', applyCenter);
-        circle.addListener('dragend', applyCenter);
+        const path = polygon.getPath();
+        path.addListener('set_at', applyPath);
+        path.addListener('insert_at', applyPath);
+        path.addListener('remove_at', applyPath);
+        polygon.addListener('dragend', applyPath);
       }
       if (row.id !== 'draft') {
         const selectThis = () => {
           setDraft(null);
           setSelectedId(row.id);
         };
-        circle.addListener('click', selectThis);
+        polygon.addListener('click', selectThis);
       }
       const marker = new window.google.maps.Marker({
         map,
@@ -319,10 +336,10 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           setSelectedId(row.id);
         });
       }
-      overlaysRef.current.push(circle, marker);
-      const circleBounds = circle.getBounds();
-      if (circleBounds) {
-        bounds.union(circleBounds);
+      overlaysRef.current.push(polygon, marker);
+      const path = polygon.getPath();
+      for (let i = 0; i < path.getLength(); i += 1) {
+        bounds.extend(path.getAt(i));
         hasPoint = true;
       }
     }
@@ -358,7 +375,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     const lng = latLng.lng();
     const hit = hubsRef.current
       .map((hub) => ({ hub, distanceKm: haversineKm(lat, lng, hub.lat, hub.lng) }))
-      .filter((row) => row.distanceKm <= row.hub.radius_km)
+      .filter((row) => hubContainsPoint(row.hub, lat, lng))
       .sort((a, b) => a.distanceKm - b.distanceKm)[0];
     if (hit) {
       setDraft(null);
@@ -367,7 +384,12 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     }
     const existing = draftRef.current;
     if (existing) {
-      setDraft({ ...existing, lat, lng });
+      const moved = translateHubPolygon(
+        hubPolygonOrCircle(existing),
+        { lat: existing.lat, lng: existing.lng },
+        { lat, lng }
+      );
+      setDraft({ ...existing, lat, lng, polygon: moved });
       return;
     }
     placeDraftAt(lat, lng);
@@ -433,6 +455,11 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           lat: details.coords.lat,
           lng: details.coords.lng,
           radius_km: DEFAULT_HUB_RADIUS_KM,
+          polygon: circleToHubPolygon(
+            details.coords.lat,
+            details.coords.lng,
+            DEFAULT_HUB_RADIUS_KM
+          ),
           customer_note: '',
         });
       }
@@ -460,6 +487,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       lat: draft.lat,
       lng: draft.lng,
       radius_km: draft.radius_km,
+      polygon: hubPolygonOrCircle(draft),
       sort_order: hubs.length,
       customer_note: draft.customer_note,
     });
@@ -475,7 +503,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   };
 
   const handlePatchSelected = async (
-    patch: Partial<Pick<BookingServiceHub, 'name' | 'radius_km' | 'is_active' | 'customer_note' | 'lat' | 'lng'>>
+    patch: Partial<
+      Pick<BookingServiceHub, 'name' | 'radius_km' | 'polygon' | 'is_active' | 'customer_note' | 'lat' | 'lng'>
+    >
   ) => {
     if (!selected) return;
     setSaving(true);
@@ -569,7 +599,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           size="sm"
           className="h-11 cursor-pointer gap-1.5 md:ml-0 ml-auto"
           onClick={() => {
-            toast.message('Tap the map to drop a coverage circle, then drag the handles to resize.');
+            toast.message('Tap the map to drop a coverage area, then drag the points to reshape.');
           }}
         >
           <Plus className="h-4 w-4" />
@@ -661,7 +691,8 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           ) : null}
         </div>
         <p className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 rounded-lg bg-black/55 px-3 py-1.5 text-center text-xs font-medium text-white">
-          Tap the map to add a coverage circle. Drag the blue handles to resize.
+          Tap the map to add an area. Drag a corner to pull that side in. Drag a midpoint to add a
+          point.
         </p>
       </div>
 
@@ -738,7 +769,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             />
             <div>
               <div className="mb-2 flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Coverage radius</span>
+                <span className="text-muted-foreground">Coverage size</span>
                 <span className="font-medium tabular-nums">
                   {(draft ? draft.radius_km : selected?.radius_km || DEFAULT_HUB_RADIUS_KM).toFixed(1)} km
                 </span>
@@ -750,20 +781,67 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                 value={[draft ? draft.radius_km : selected?.radius_km || DEFAULT_HUB_RADIUS_KM]}
                 onValueChange={([value]) => {
                   const radius = clampHubRadiusKm(value);
-                  const circle = editableCircleRef.current;
-                  if (circle) circle.setRadius(radius * 1000);
+                  const current = draft || selected;
+                  if (!current) return;
+                  const scaled = scaleHubPolygon(
+                    hubPolygonOrCircle(current),
+                    { lat: current.lat, lng: current.lng },
+                    current.radius_km,
+                    radius
+                  );
+                  const shape = editableCircleRef.current;
+                  if (shape) shape.setPath(scaled);
                   skipPaintRef.current = true;
-                  if (draft) setDraft({ ...draft, radius_km: radius });
+                  if (draft) setDraft({ ...draft, radius_km: radius, polygon: scaled });
                   else if (selected) {
                     setHubs((prev) =>
-                      prev.map((h) => (h.id === selected.id ? { ...h, radius_km: radius } : h))
+                      prev.map((h) =>
+                        h.id === selected.id ? { ...h, radius_km: radius, polygon: scaled } : h
+                      )
                     );
                   }
                 }}
                 onValueCommit={([value]) => {
-                  if (!draft && selected) void handlePatchSelected({ radius_km: value });
+                  if (draft || !selected) return;
+                  const shape = editableCircleRef.current;
+                  const ring = shape
+                    ? pathToHubPoints(shape.getPath())
+                    : hubPolygonOrCircle(selected);
+                  void handlePatchSelected({
+                    radius_km: clampHubRadiusKm(value),
+                    polygon: ring,
+                  });
                 }}
               />
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-11 cursor-pointer"
+                  onClick={() => {
+                    const current = draft || selected;
+                    if (!current) return;
+                    const ring = circleToHubPolygon(current.lat, current.lng, current.radius_km);
+                    const shape = editableCircleRef.current;
+                    if (shape) shape.setPath(ring);
+                    skipPaintRef.current = true;
+                    if (draft) setDraft({ ...draft, polygon: ring });
+                    else if (selected) {
+                      setHubs((prev) =>
+                        prev.map((h) => (h.id === selected.id ? { ...h, polygon: ring } : h))
+                      );
+                      void handlePatchSelected({ polygon: ring });
+                    }
+                  }}
+                >
+                  Round shape
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Drag a white corner to cut that side out. Drag the smaller midpoint between corners to
+                add another point.
+              </p>
             </div>
             <div>
               <Label htmlFor="hub-note" className="text-sm font-medium">
@@ -800,7 +878,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                 onClick={() => void handleSaveDraft()}
               >
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Save hub — bookings allowed in this circle
+                Save hub — bookings allowed in this area
               </Button>
             ) : selected ? (
               <div className="flex items-center justify-between gap-3">
@@ -842,9 +920,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             </div>
           ) : hubs.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              No hubs yet. Tap the map to drop a circle, or search an area (HSR, Bellandur, BTM…).
-              Drag the blue handles to resize. Until you add one, website and WhatsApp booking stay
-              open everywhere.
+              No hubs yet. Tap the map to drop an area, or search (HSR, Bellandur, BTM…). Drag the
+              points to pull in streets you do not cover. Until you add one, website and WhatsApp
+              booking stay open everywhere.
             </p>
           ) : (
             <ul className="space-y-2 pb-8">
@@ -896,7 +974,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {selected?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              People will no longer be able to book from this coverage circle (unless another hub
+              People will no longer be able to book from this coverage area (unless another hub
               still covers them).
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -7,10 +7,15 @@ export const BOOKING_HUB_SETTINGS_TABLE = 'booking_service_hub_settings';
 export const DEFAULT_HUB_RADIUS_KM = 5;
 export const MIN_HUB_RADIUS_KM = 0.5;
 export const MAX_HUB_RADIUS_KM = 25;
+export const DEFAULT_HUB_POLYGON_POINTS = 8;
+export const MIN_HUB_POLYGON_POINTS = 3;
+export const MAX_HUB_POLYGON_POINTS = 16;
 export const MAX_CUSTOMER_NOTE_LEN = 240;
 export const MAX_OUT_OF_AREA_MESSAGE_LEN = 320;
 export const DEFAULT_OUT_OF_AREA_MESSAGE =
   'We will not be able to come here. Please move the pin into a coverage area, or call us.';
+
+export type HubLatLng = { lat: number; lng: number };
 
 export type BookingServiceHub = {
   id: string;
@@ -19,6 +24,7 @@ export type BookingServiceHub = {
   lat: number;
   lng: number;
   radius_km: number;
+  polygon: HubLatLng[];
   is_active: boolean;
   sort_order: number;
   customer_note: string;
@@ -39,7 +45,10 @@ export type HubMatchResult =
       nearest: Array<{ hub: BookingServiceHub; distanceKm: number }>;
     };
 
-const PUBLIC_COLUMNS = 'id,name,address,lat,lng,radius_km,is_active,sort_order,customer_note,created_at,updated_at';
+const PUBLIC_COLUMNS =
+  'id,name,address,lat,lng,radius_km,polygon,is_active,sort_order,customer_note,created_at,updated_at';
+const PUBLIC_COLUMNS_NO_POLYGON =
+  'id,name,address,lat,lng,radius_km,is_active,sort_order,customer_note,created_at,updated_at';
 const PUBLIC_COLUMNS_LEGACY = 'id,name,address,lat,lng,radius_km,is_active,sort_order,created_at,updated_at';
 
 let memoryHubs: BookingServiceHub[] | null = null;
@@ -63,6 +72,130 @@ export function clampHubRadiusKm(value: number): number {
   return Math.min(MAX_HUB_RADIUS_KM, Math.max(MIN_HUB_RADIUS_KM, Math.round(value * 10) / 10));
 }
 
+function isFinitePoint(lat: number, lng: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+}
+
+export function parseHubPolygon(raw: unknown): HubLatLng[] {
+  if (!Array.isArray(raw)) return [];
+  const points: HubLatLng[] = [];
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue;
+    const lat = Number((row as { lat?: unknown }).lat);
+    const lng = Number((row as { lng?: unknown }).lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    points.push({ lat, lng });
+    if (points.length >= MAX_HUB_POLYGON_POINTS) break;
+  }
+  return points.length >= MIN_HUB_POLYGON_POINTS ? points : [];
+}
+
+export function circleToHubPolygon(
+  lat: number,
+  lng: number,
+  radiusKm: number,
+  count = DEFAULT_HUB_POLYGON_POINTS
+): HubLatLng[] {
+  const n = Math.min(
+    MAX_HUB_POLYGON_POINTS,
+    Math.max(MIN_HUB_POLYGON_POINTS, Math.round(count))
+  );
+  const radius = clampHubRadiusKm(radiusKm);
+  const kmPerDegLat = 111.32;
+  const kmPerDegLng = Math.max(0.2, 111.32 * Math.cos((lat * Math.PI) / 180));
+  const rLat = radius / kmPerDegLat;
+  const rLng = radius / kmPerDegLng;
+  const points: HubLatLng[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+    points.push({
+      lat: lat + rLat * Math.cos(angle),
+      lng: lng + rLng * Math.sin(angle),
+    });
+  }
+  return points;
+}
+
+export function hubPolygonOrCircle(hub: {
+  lat: number;
+  lng: number;
+  radius_km: number;
+  polygon?: HubLatLng[] | null;
+}): HubLatLng[] {
+  const custom = parseHubPolygon(hub.polygon);
+  if (custom.length >= MIN_HUB_POLYGON_POINTS) return custom;
+  return circleToHubPolygon(hub.lat, hub.lng, hub.radius_km);
+}
+
+export function pointInHubPolygon(lat: number, lng: number, ring: HubLatLng[]): boolean {
+  if (ring.length < MIN_HUB_POLYGON_POINTS) return false;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const yi = ring[i].lat;
+    const xi = ring[i].lng;
+    const yj = ring[j].lat;
+    const xj = ring[j].lng;
+    const denom = yj - yi;
+    if (denom === 0) continue;
+    const intersect = yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / denom + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export function hubPolygonMetrics(points: HubLatLng[]): {
+  lat: number;
+  lng: number;
+  radius_km: number;
+} | null {
+  const ring = parseHubPolygon(points);
+  if (ring.length < MIN_HUB_POLYGON_POINTS) return null;
+  const lat = ring.reduce((sum, p) => sum + p.lat, 0) / ring.length;
+  const lng = ring.reduce((sum, p) => sum + p.lng, 0) / ring.length;
+  let maxKm = MIN_HUB_RADIUS_KM;
+  for (const p of ring) {
+    maxKm = Math.max(maxKm, haversineKm(lat, lng, p.lat, p.lng));
+  }
+  return { lat, lng, radius_km: clampHubRadiusKm(maxKm) };
+}
+
+export function scaleHubPolygon(
+  points: HubLatLng[],
+  center: HubLatLng,
+  fromRadiusKm: number,
+  toRadiusKm: number
+): HubLatLng[] {
+  const from = Math.max(0.05, fromRadiusKm);
+  const factor = clampHubRadiusKm(toRadiusKm) / from;
+  return points.map((p) => ({
+    lat: center.lat + (p.lat - center.lat) * factor,
+    lng: center.lng + (p.lng - center.lng) * factor,
+  }));
+}
+
+export function translateHubPolygon(
+  points: HubLatLng[],
+  from: HubLatLng,
+  to: HubLatLng
+): HubLatLng[] {
+  const dLat = to.lat - from.lat;
+  const dLng = to.lng - from.lng;
+  return points.map((p) => ({ lat: p.lat + dLat, lng: p.lng + dLng }));
+}
+
+export function hubContainsPoint(
+  hub: Pick<BookingServiceHub, 'lat' | 'lng' | 'radius_km' | 'polygon'>,
+  lat: number,
+  lng: number
+): boolean {
+  const ring = parseHubPolygon(hub.polygon);
+  if (ring.length >= MIN_HUB_POLYGON_POINTS) {
+    return pointInHubPolygon(lat, lng, ring);
+  }
+  return haversineKm(lat, lng, hub.lat, hub.lng) <= hub.radius_km;
+}
+
 export function parseBookingServiceHub(row: unknown): BookingServiceHub | null {
   if (!row || typeof row !== 'object') return null;
   const r = row as Record<string, unknown>;
@@ -70,7 +203,7 @@ export function parseBookingServiceHub(row: unknown): BookingServiceHub | null {
   const lng = Number(r.lng);
   const radius = clampHubRadiusKm(Number(r.radius_km));
   const name = String(r.name || '').trim();
-  if (!name || !Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+  if (!name || !isFinitePoint(lat, lng)) {
     return null;
   }
   return {
@@ -80,6 +213,7 @@ export function parseBookingServiceHub(row: unknown): BookingServiceHub | null {
     lat,
     lng,
     radius_km: radius,
+    polygon: parseHubPolygon(r.polygon),
     is_active: r.is_active !== false,
     sort_order: Number.isFinite(Number(r.sort_order)) ? Number(r.sort_order) : 0,
     customer_note: String(r.customer_note || '').trim().slice(0, MAX_CUSTOMER_NOTE_LEN),
@@ -106,7 +240,7 @@ export function matchPointToServiceHubs(
     }))
     .sort((a, b) => a.distanceKm - b.distanceKm);
 
-  const inside = ranked.find((row) => row.distanceKm <= row.hub.radius_km);
+  const inside = ranked.find((row) => hubContainsPoint(row.hub, lat, lng));
   if (inside) {
     return {
       ok: true,
@@ -242,6 +376,11 @@ export async function fetchBookingServiceHubs(opts?: {
   };
 
   let { data, error } = await runSelect(PUBLIC_COLUMNS);
+  if (error && String(error.message || '').toLowerCase().includes('polygon')) {
+    const retry = await runSelect(PUBLIC_COLUMNS_NO_POLYGON);
+    data = retry.data;
+    error = retry.error;
+  }
   if (error && String(error.message || '').toLowerCase().includes('customer_note')) {
     const retry = await runSelect(PUBLIC_COLUMNS_LEGACY);
     data = retry.data;
@@ -278,26 +417,36 @@ export async function createBookingServiceHub(input: {
   lat: number;
   lng: number;
   radius_km?: number;
+  polygon?: HubLatLng[];
   is_active?: boolean;
   sort_order?: number;
   customer_note?: string;
 }): Promise<{ hub: BookingServiceHub | null; error: string | null }> {
   const name = String(input.name || '').trim().slice(0, 80);
   if (!name) return { hub: null, error: 'Hub name is required' };
-  const { data, error } = await supabase
+  const polygon = parseHubPolygon(input.polygon);
+  const payload: Record<string, unknown> = {
+    name,
+    address: String(input.address || '').trim().slice(0, 240),
+    lat: input.lat,
+    lng: input.lng,
+    radius_km: clampHubRadiusKm(input.radius_km ?? DEFAULT_HUB_RADIUS_KM),
+    is_active: input.is_active !== false,
+    sort_order: input.sort_order ?? 0,
+    customer_note: String(input.customer_note || '').trim().slice(0, MAX_CUSTOMER_NOTE_LEN),
+  };
+  if (polygon.length >= MIN_HUB_POLYGON_POINTS) payload.polygon = polygon;
+  let { data, error } = await supabase
     .from(BOOKING_SERVICE_HUBS_TABLE)
-    .insert({
-      name,
-      address: String(input.address || '').trim().slice(0, 240),
-      lat: input.lat,
-      lng: input.lng,
-      radius_km: clampHubRadiusKm(input.radius_km ?? DEFAULT_HUB_RADIUS_KM),
-      is_active: input.is_active !== false,
-      sort_order: input.sort_order ?? 0,
-      customer_note: String(input.customer_note || '').trim().slice(0, MAX_CUSTOMER_NOTE_LEN),
-    })
+    .insert(payload)
     .select(PUBLIC_COLUMNS)
     .single();
+  if (error && String(error.message || '').toLowerCase().includes('polygon')) {
+    delete payload.polygon;
+    const retry = await supabase.from(BOOKING_SERVICE_HUBS_TABLE).insert(payload).select(PUBLIC_COLUMNS_NO_POLYGON).single();
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) {
     return {
       hub: null,
@@ -313,7 +462,10 @@ export async function createBookingServiceHub(input: {
 export async function updateBookingServiceHub(
   id: string,
   patch: Partial<
-    Pick<BookingServiceHub, 'name' | 'address' | 'lat' | 'lng' | 'radius_km' | 'is_active' | 'sort_order' | 'customer_note'>
+    Pick<
+      BookingServiceHub,
+      'name' | 'address' | 'lat' | 'lng' | 'radius_km' | 'polygon' | 'is_active' | 'sort_order' | 'customer_note'
+    >
   >
 ): Promise<{ hub: BookingServiceHub | null; error: string | null }> {
   const payload: Record<string, unknown> = {};
@@ -322,6 +474,7 @@ export async function updateBookingServiceHub(
   if (patch.lat !== undefined) payload.lat = patch.lat;
   if (patch.lng !== undefined) payload.lng = patch.lng;
   if (patch.radius_km !== undefined) payload.radius_km = clampHubRadiusKm(patch.radius_km);
+  if (patch.polygon !== undefined) payload.polygon = parseHubPolygon(patch.polygon);
   if (patch.is_active !== undefined) payload.is_active = patch.is_active;
   if (patch.sort_order !== undefined) payload.sort_order = patch.sort_order;
   if (patch.customer_note !== undefined) {
