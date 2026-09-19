@@ -248,7 +248,7 @@ const DraggableMap = ({
       window.setTimeout(() => {
         if (cancelled || !mapRef.current) return;
         try {
-          google.maps.event.trigger(mapRef.current, 'resize');
+          window.google.maps.event.trigger(mapRef.current, 'resize');
         } catch {
           /* ignore */
         }

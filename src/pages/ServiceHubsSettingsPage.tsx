@@ -272,8 +272,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       });
     } else if (hasPoint) {
       map.fitBounds(bounds, 36);
+    }
     try {
-      google.maps.event.trigger(map, 'resize');
+      window.google.maps.event.trigger(map, 'resize');
     } catch {
       /* ignore */
     }
