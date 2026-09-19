@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Award, IndianRupee, Layers, Loader2, MapPin, Search, Users } from 'lucide-react';
+import { Award, IndianRupee, Layers, Loader2, MapPin, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import DraggableMap from '@/components/DraggableMap';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,6 @@ import {
   brandColor,
   cellOutsideHubs,
   DEFAULT_SPREAD_CELL_KM,
-  findSpreadCells,
   formatSpreadInr,
   maxSpreadValue,
   parseSpreadPayload,
@@ -49,7 +48,6 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   const [colorMode, setColorMode] = useState<SpreadColorMode>('customers');
   const [showHubs, setShowHubs] = useState(true);
   const [selected, setSelected] = useState<SpreadCell | null>(null);
-  const [query, setQuery] = useState('');
   const [cellKm, setCellKm] = useState(DEFAULT_SPREAD_CELL_KM);
 
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -77,18 +75,6 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
       map.setZoom(Math.max(map.getZoom() || 12, 13));
     }
   }, []);
-
-  const searchPockets = useCallback(() => {
-    const matches = findSpreadCells(cells, query);
-    if (matches.length === 0) {
-      toast.info('No pocket matched that name or area.');
-      return;
-    }
-    focusCell(matches[0]);
-    if (matches.length > 1) {
-      toast.success(`Showing 1 of ${matches.length} matching pockets.`);
-    }
-  }, [cells, focusCell, query]);
 
   const load = useCallback(async () => {
     const gen = ++loadGenRef.current;
@@ -230,28 +216,6 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
           <Layers className="mr-1.5 h-4 w-4" />
           {showHubs ? 'Hubs on' : 'Hubs off'}
         </Button>
-        <form
-          className="flex min-w-[12rem] flex-1 gap-2 sm:max-w-xs"
-          onSubmit={(e) => {
-            e.preventDefault();
-            searchPockets();
-          }}
-        >
-          <label className="sr-only" htmlFor="spread-search">
-            Find customer or area
-          </label>
-          <input
-            id="spread-search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find Manjunath, Nelamangala…"
-            className="h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm sm:h-9"
-          />
-          <Button type="submit" size="sm" variant="outline" className="h-11 cursor-pointer sm:h-9">
-            <Search className="h-4 w-4" />
-            <span className="sr-only">Search</span>
-          </Button>
-        </form>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
