@@ -33,7 +33,7 @@ const cache = new Map<string, { at: number; payload: SpreadPayload }>();
 const COLOR_MODES: Array<{ id: SpreadColorMode; label: string }> = [
   { id: 'customers', label: 'Customers' },
   { id: 'billing', label: 'Billing' },
-  { id: 'brand', label: 'Brand / model' },
+  { id: 'brand', label: 'Brand' },
 ];
 
 type Props = {
@@ -193,54 +193,39 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {COLOR_MODES.map((mode) => (
+      <div className="space-y-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Segmented
+            className="sm:flex-1"
+            items={COLOR_MODES}
+            value={colorMode}
+            onChange={(id) => setColorMode(id as SpreadColorMode)}
+          />
           <Button
-            key={mode.id}
             type="button"
             size="sm"
-            variant={colorMode === mode.id ? 'default' : 'outline'}
-            className="h-11 cursor-pointer sm:h-9"
-            onClick={() => setColorMode(mode.id)}
+            variant={showHubs ? 'secondary' : 'outline'}
+            className="h-11 w-full cursor-pointer sm:h-9 sm:w-auto"
+            onClick={() => setShowHubs((v) => !v)}
           >
-            {mode.label}
+            <Layers className="mr-1.5 h-4 w-4" />
+            {showHubs ? 'Hubs on' : 'Hubs off'}
           </Button>
-        ))}
-        <Button
-          type="button"
-          size="sm"
-          variant={showHubs ? 'secondary' : 'outline'}
-          className="h-11 cursor-pointer sm:h-9"
-          onClick={() => setShowHubs((v) => !v)}
-        >
-          <Layers className="mr-1.5 h-4 w-4" />
-          {showHubs ? 'Hubs on' : 'Hubs off'}
-        </Button>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-muted-foreground">Pocket size</span>
-        {SPREAD_POCKET_SIZES.map((size) => (
-          <Button
-            key={size.id}
-            type="button"
-            size="sm"
-            variant={cellKm === size.km ? 'default' : 'outline'}
-            className="h-11 cursor-pointer sm:h-9"
-            onClick={() => {
-              if (size.km === cellKm) return;
+        </div>
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-muted-foreground">Pocket size</p>
+          <Segmented
+            items={SPREAD_POCKET_SIZES.map((size) => ({ id: String(size.km), label: size.label }))}
+            value={String(cellKm)}
+            onChange={(km) => {
+              const next = Number(km);
+              if (next === cellKm) return;
               setSelected(null);
-              setCellKm(size.km);
+              setCellKm(next);
             }}
-          >
-            {size.label}
-          </Button>
-        ))}
-        <span className="hidden text-xs text-muted-foreground sm:inline">
-          Starts large so the map stays light. Switch to Small for streets.
-        </span>
+          />
+        </div>
       </div>
-      <p className="text-xs text-muted-foreground sm:hidden">Starts large. Switch to Small for streets.</p>
 
       {payload ? (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -268,7 +253,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
       ) : null}
 
       <div className="overflow-hidden rounded-xl border border-border">
-        <div className="relative h-[min(52dvh,420px)] min-h-[240px] md:h-[min(58dvh,560px)]">
+        <div className="relative h-[min(56dvh,440px)] min-h-[280px] md:h-[min(58dvh,560px)]">
           <DraggableMap
             center={BENGALURU}
             zoom={11}
@@ -288,9 +273,9 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
               Mapping customers…
             </div>
           ) : null}
-          <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-end justify-between gap-2">
+          <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 flex flex-col items-start gap-1.5 sm:flex-row sm:items-end sm:justify-between">
             <Legend mode={colorMode} />
-            <p className="rounded-lg bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white">
+            <p className="hidden rounded-lg bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white sm:block">
               Color = {colorMode === 'brand' ? 'top RO brand' : colorMode === 'billing' ? 'billing' : 'customer density'}. Tap a circle.
             </p>
           </div>
@@ -323,7 +308,13 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
                 {cellOutsideHubs(selected, hubs) ? ' · outside Location Hubs' : ''}
               </p>
             </div>
-            <Button type="button" variant="ghost" size="sm" className="cursor-pointer" onClick={() => setSelected(null)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-11 shrink-0 cursor-pointer sm:h-9"
+              onClick={() => setSelected(null)}
+            >
               Close
             </Button>
           </div>
@@ -346,15 +337,15 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
               (brand) => {
                 const share = selected.jobs > 0 ? Math.round((brand.jobs / selected.jobs) * 100) : 0;
                 return (
-                  <div key={brand.name} className="flex items-center gap-2 text-sm">
+                  <div key={brand.name} className="flex min-w-0 items-center gap-2 text-sm">
                     <span className="min-w-0 flex-1 truncate font-medium">{brand.name}</span>
-                    <span className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                    <span className="hidden h-2 flex-1 overflow-hidden rounded-full bg-muted sm:block">
                       <span
                         className="block h-2 rounded-full"
                         style={{ width: `${Math.max(8, share)}%`, backgroundColor: brandColor(brand.name) }}
                       />
                     </span>
-                    <span className="w-24 shrink-0 text-right text-xs text-muted-foreground">
+                    <span className="shrink-0 text-right text-xs text-muted-foreground">
                       {share}% · {formatSpreadInr(brand.revenue)}
                     </span>
                   </div>
@@ -373,9 +364,41 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   );
 }
 
+function Segmented({
+  items,
+  value,
+  onChange,
+  className = '',
+}: {
+  items: Array<{ id: string; label: string }>;
+  value: string;
+  onChange: (id: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={`grid grid-cols-3 gap-1 rounded-xl border border-border bg-muted/40 p-1 ${className}`}>
+      {items.map((item) => {
+        const active = value === item.id;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onChange(item.id)}
+            className={`h-11 min-w-0 cursor-pointer rounded-lg px-1 text-sm font-medium transition-colors duration-200 sm:h-9 ${
+              active ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function StatChip({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card px-3 py-2.5">
+    <div className="min-w-0 rounded-xl border border-border bg-card px-3 py-2.5">
       <p className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
         {icon}
         {label}
