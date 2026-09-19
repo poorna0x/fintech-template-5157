@@ -58,7 +58,7 @@ export function BookingCoverageNotice({
     <div
       className={`rounded-xl border px-3.5 py-3 ${
         isBlock
-          ? 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-950/35 dark:text-sky-100'
+          ? 'border-red-200 bg-red-50 text-red-950 dark:border-red-800 dark:bg-red-950/35 dark:text-red-100'
           : 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100'
       }`}
     >
@@ -68,7 +68,7 @@ export function BookingCoverageNotice({
         <button
           type="button"
           onClick={() => openPublicPhoneCall(callE164)}
-          className="mt-3 inline-flex h-11 min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white transition-colors duration-200 hover:bg-sky-700"
+          className="mt-3 inline-flex h-11 min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white transition-colors duration-200 hover:bg-red-700"
         >
           <Phone className="h-4 w-4" />
           Call us
