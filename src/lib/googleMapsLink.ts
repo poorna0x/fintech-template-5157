@@ -483,6 +483,9 @@ export async function geocodePlaceHintWithGoogleMapsJs(
 
   if (!window.google?.maps?.Geocoder) return null;
 
+  const inIndia = (lat: number, lng: number) =>
+    lat >= 6 && lat <= 37 && lng >= 68 && lng <= 98;
+
   return new Promise((resolve) => {
     const geocoder = new window.google.maps.Geocoder();
     let settled = false;
@@ -493,12 +496,20 @@ export async function geocodePlaceHintWithGoogleMapsJs(
       resolve(value);
     };
     const timer = window.setTimeout(() => finish(null), 5000);
+    // region:'in' is only a bias — famous names like "Avalon Park" can still
+    // resolve to Avalon Park, Florida. Reject non-India pins.
     geocoder.geocode({ address: q, region: 'in' }, (results, status) => {
       if (status === window.google.maps.GeocoderStatus.OK && results?.[0]?.geometry?.location) {
         const loc = results[0].geometry.location;
+        const latitude = loc.lat();
+        const longitude = loc.lng();
+        if (!inIndia(latitude, longitude)) {
+          finish(null);
+          return;
+        }
         finish({
-          latitude: loc.lat(),
-          longitude: loc.lng(),
+          latitude,
+          longitude,
           address: results[0].formatted_address || q,
         });
       } else {
