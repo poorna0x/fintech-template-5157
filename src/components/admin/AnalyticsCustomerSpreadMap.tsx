@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Award, IndianRupee, Layers, Loader2, MapPin, Users } from 'lucide-react';
+import { Award, IndianRupee, Layers, Loader2, MapPin, Search, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import DraggableMap from '@/components/DraggableMap';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import {
   buildSpreadInsights,
   brandColor,
   cellOutsideHubs,
+  findSpreadCells,
   formatSpreadInr,
   maxSpreadValue,
   parseSpreadPayload,
@@ -46,6 +47,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   const [colorMode, setColorMode] = useState<SpreadColorMode>('customers');
   const [showHubs, setShowHubs] = useState(true);
   const [selected, setSelected] = useState<SpreadCell | null>(null);
+  const [query, setQuery] = useState('');
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
@@ -53,7 +55,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   const selectedRef = useRef<SpreadCell | null>(null);
   selectedRef.current = selected;
 
-  const cacheKey = `v2|${startISO || 'all'}|${endISO || 'all'}`;
+  const cacheKey = `v3|${startISO || 'all'}|${endISO || 'all'}`;
   const cells = payload?.cells || [];
   const maxValue = useMemo(() => maxSpreadValue(cells, colorMode), [cells, colorMode]);
   const maxCustomers = useMemo(
@@ -61,6 +63,27 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
     [cells]
   );
   const insights = useMemo(() => buildSpreadInsights(cells, hubs), [cells, hubs]);
+
+  const focusCell = useCallback((cell: SpreadCell) => {
+    setSelected(cell);
+    const map = mapRef.current;
+    if (map) {
+      map.panTo({ lat: cell.lat, lng: cell.lng });
+      map.setZoom(Math.max(map.getZoom() || 12, 13));
+    }
+  }, []);
+
+  const searchPockets = useCallback(() => {
+    const matches = findSpreadCells(cells, query);
+    if (matches.length === 0) {
+      toast.info('No pocket matched that name or area.');
+      return;
+    }
+    focusCell(matches[0]);
+    if (matches.length > 1) {
+      toast.success(`Showing 1 of ${matches.length} matching pockets.`);
+    }
+  }, [cells, focusCell, query]);
 
   const load = useCallback(async () => {
     const cached = cache.get(cacheKey);
@@ -94,7 +117,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
       setPayload(next);
       setHubs(hubRes.hubs || []);
       if (next.cells.length === 0) {
-        toast.info('No mapped customer pins for this period.');
+        toast.info('No mapped customer pins yet.');
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not load customer spread');
@@ -156,8 +179,11 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
       });
       circle.addListener('click', () => setSelected(cell));
       overlaysRef.current.push(circle);
-      bounds.extend({ lat: cell.lat, lng: cell.lng });
-      hasPoint = true;
+      const nearCore = Math.abs(cell.lat - BENGALURU.lat) < 0.45 && Math.abs(cell.lng - BENGALURU.lng) < 0.45;
+      if (nearCore) {
+        bounds.extend({ lat: cell.lat, lng: cell.lng });
+        hasPoint = true;
+      }
     }
 
     if (hasPoint && fitKeyRef.current !== cacheKey) {
@@ -195,6 +221,28 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
           <Layers className="mr-1.5 h-4 w-4" />
           {showHubs ? 'Hubs on' : 'Hubs off'}
         </Button>
+        <form
+          className="flex min-w-[12rem] flex-1 gap-2 sm:max-w-xs"
+          onSubmit={(e) => {
+            e.preventDefault();
+            searchPockets();
+          }}
+        >
+          <label className="sr-only" htmlFor="spread-search">
+            Find customer or area
+          </label>
+          <input
+            id="spread-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find Manjunath, Nelamangala…"
+            className="h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm sm:h-9"
+          />
+          <Button type="submit" size="sm" variant="outline" className="h-11 cursor-pointer sm:h-9">
+            <Search className="h-4 w-4" />
+            <span className="sr-only">Search</span>
+          </Button>
+        </form>
       </div>
 
       {payload ? (
@@ -258,14 +306,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
             <button
               key={row.id}
               type="button"
-              onClick={() => {
-                setSelected(row.cell);
-                const map = mapRef.current;
-                if (map) {
-                  map.panTo({ lat: row.cell.lat, lng: row.cell.lng });
-                  map.setZoom(Math.max(map.getZoom() || 12, 13));
-                }
-              }}
+              onClick={() => focusCell(row.cell)}
               className="min-h-14 cursor-pointer rounded-xl border border-border bg-card px-3 py-3 text-left hover:bg-muted/50"
             >
               <p className="text-sm font-semibold text-foreground">{row.title}</p>
@@ -295,6 +336,13 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
             <MiniStat label="Install / service" value={`${selected.installation} / ${selected.service}`} />
             <MiniStat label="Avg TDS" value={selected.avg_tds != null ? `${selected.avg_tds}` : '—'} />
           </div>
+          {selected.sample_names.length > 0 ? (
+            <p className="mt-3 text-sm text-foreground">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Customers here · </span>
+              {selected.sample_names.slice(0, 5).join(', ')}
+              {selected.customers > Math.min(5, selected.sample_names.length) ? ` +${selected.customers - Math.min(5, selected.sample_names.length)} more` : ''}
+            </p>
+          ) : null}
           <div className="mt-3 space-y-1.5">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Top brands + models here</p>
             {(selected.brands.length ? selected.brands : [{ name: selected.top_brand, jobs: selected.top_brand_jobs, revenue: selected.revenue }]).map(

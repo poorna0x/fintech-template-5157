@@ -1,4 +1,4 @@
--- Customer spread map: grid cells with jobs, billing, and top brands.
+-- Customer spread map: every pinned customer, plus period billing/brands.
 -- Admin-only. Safe to re-run.
 
 CREATE OR REPLACE FUNCTION public.analytics_json_coord(loc jsonb, k text)
@@ -9,7 +9,7 @@ AS $$
   SELECT CASE
     WHEN loc IS NULL OR k IS NULL THEN NULL
     WHEN nullif(btrim(loc->>k), '') IS NULL THEN NULL
-    WHEN (loc->>k) ~ '^-?[0-9]+(\.[0-9]+)?$' THEN (loc->>k)::numeric
+    WHEN btrim(loc->>k) ~ '^-?[0-9]+(\.[0-9]+)?$' THEN btrim(loc->>k)::numeric
     ELSE NULL
   END;
 $$;
@@ -35,7 +35,95 @@ BEGIN
   cell_deg := GREATEST(0.0045, LEAST(0.045, COALESCE(p_cell_km, 1.2) / 111.32));
 
   RETURN (
-    WITH period_jobs AS (
+    WITH pinned AS (
+      SELECT
+        c.id AS customer_id,
+        coalesce(nullif(btrim(c.full_name), ''), 'Customer') AS full_name,
+        coalesce(
+          nullif(btrim(c.visible_address), ''),
+          nullif(btrim(c.address->>'visible_address'), ''),
+          nullif(btrim(c.address->>'area'), ''),
+          'Unknown'
+        ) AS area_label,
+        coalesce(
+          public.analytics_json_coord(c.location, 'latitude'),
+          public.analytics_json_coord(c.location, 'lat')
+        ) AS lat,
+        coalesce(
+          public.analytics_json_coord(c.location, 'longitude'),
+          public.analytics_json_coord(c.location, 'lng')
+        ) AS lng,
+        true AS is_primary
+      FROM public.customers c
+      UNION ALL
+      SELECT
+        c.id,
+        coalesce(nullif(btrim(c.full_name), ''), 'Customer'),
+        coalesce(
+          nullif(btrim(c.alternate_visible_address), ''),
+          nullif(btrim(c.alternate_address->>'visible_address'), ''),
+          nullif(btrim(c.alternate_address->>'area'), ''),
+          'Unknown'
+        ),
+        coalesce(
+          public.analytics_json_coord(c.alternate_location, 'latitude'),
+          public.analytics_json_coord(c.alternate_location, 'lat')
+        ),
+        coalesce(
+          public.analytics_json_coord(c.alternate_location, 'longitude'),
+          public.analytics_json_coord(c.alternate_location, 'lng')
+        ),
+        false
+      FROM public.customers c
+    ),
+    valid_pinned AS (
+      SELECT *
+      FROM pinned
+      WHERE lat IS NOT NULL
+        AND lng IS NOT NULL
+        AND lat BETWEEN -90 AND 90
+        AND lng BETWEEN -180 AND 180
+        AND NOT (lat = 0 AND lng = 0)
+    ),
+    pinned_grid AS (
+      SELECT
+        v.*,
+        round(v.lat / cell_deg) * cell_deg AS cell_lat,
+        round(v.lng / cell_deg) * cell_deg AS cell_lng
+      FROM valid_pinned v
+    ),
+    customer_cells AS (
+      SELECT
+        g.cell_lat,
+        g.cell_lng,
+        count(DISTINCT g.customer_id)::integer AS customers,
+        mode() WITHIN GROUP (ORDER BY g.area_label) AS area
+      FROM pinned_grid g
+      GROUP BY g.cell_lat, g.cell_lng
+    ),
+    sample_names AS (
+      SELECT
+        s.cell_lat,
+        s.cell_lng,
+        jsonb_agg(s.full_name ORDER BY s.rn) AS names
+      FROM (
+        SELECT
+          pg.cell_lat,
+          pg.cell_lng,
+          pg.full_name,
+          row_number() OVER (
+            PARTITION BY pg.cell_lat, pg.cell_lng
+            ORDER BY pg.full_name
+          ) AS rn
+        FROM (
+          SELECT DISTINCT cell_lat, cell_lng, full_name
+          FROM pinned_grid
+        ) pg
+      ) s
+      WHERE s.rn <= 40
+      GROUP BY s.cell_lat, s.cell_lng
+    ),
+    period_jobs AS (
       SELECT
         j.id,
         j.customer_id,
@@ -78,44 +166,17 @@ BEGIN
           nullif(btrim(concat_ws(' · ', x.brand_name, x.model_name)), ''),
           'Unknown'
         ) AS brand_label,
-        coalesce(
-          nullif(btrim(c.visible_address), ''),
-          nullif(btrim(c.address->>'visible_address'), ''),
-          nullif(btrim(c.address->>'area'), ''),
-          'Unknown'
-        ) AS area_label,
-        c.raw_water_tds,
-        coalesce(
-          public.analytics_json_coord(c.location, 'latitude'),
-          public.analytics_json_coord(c.location, 'lat')
-        ) AS lat,
-        coalesce(
-          public.analytics_json_coord(c.location, 'longitude'),
-          public.analytics_json_coord(c.location, 'lng')
-        ) AS lng
+        pg.cell_lat,
+        pg.cell_lng,
+        c.raw_water_tds
       FROM period_jobs j
       JOIN public.customers c ON c.id = j.customer_id
+      JOIN pinned_grid pg ON pg.customer_id = c.id AND pg.is_primary
       CROSS JOIN LATERAL (
         SELECT
           coalesce(nullif(btrim(j.brand), ''), nullif(btrim(c.brand), '')) AS brand_name,
           coalesce(nullif(btrim(j.model), ''), nullif(btrim(c.model), '')) AS model_name
       ) x
-    ),
-    valid AS (
-      SELECT *
-      FROM located
-      WHERE lat IS NOT NULL
-        AND lng IS NOT NULL
-        AND lat BETWEEN -90 AND 90
-        AND lng BETWEEN -180 AND 180
-        AND NOT (lat = 0 AND lng = 0)
-    ),
-    gridded AS (
-      SELECT
-        v.*,
-        round(v.lat / cell_deg) * cell_deg AS cell_lat,
-        round(v.lng / cell_deg) * cell_deg AS cell_lng
-      FROM valid v
     ),
     brand_counts AS (
       SELECT
@@ -125,7 +186,7 @@ BEGIN
         mode() WITHIN GROUP (ORDER BY g.brand_label) AS brand_label,
         count(*)::integer AS jobs,
         sum(g.revenue)::numeric AS revenue
-      FROM gridded g
+      FROM located g
       GROUP BY g.cell_lat, g.cell_lng, g.brand_key
     ),
     brand_ranked AS (
@@ -137,19 +198,17 @@ BEGIN
         ) AS rn
       FROM brand_counts b
     ),
-    cells AS (
+    job_cells AS (
       SELECT
         g.cell_lat,
         g.cell_lng,
-        count(DISTINCT g.customer_id)::integer AS customers,
         count(*)::integer AS jobs,
         sum(g.revenue)::numeric AS revenue,
-        mode() WITHIN GROUP (ORDER BY g.area_label) AS area,
         sum(CASE WHEN public.analytics_is_installation(g.service_sub_type) THEN 1 ELSE 0 END)::integer AS installation,
         sum(CASE WHEN NOT public.analytics_is_installation(g.service_sub_type) THEN 1 ELSE 0 END)::integer AS service,
         sum(CASE WHEN g.raw_water_tds IS NOT NULL AND g.raw_water_tds > 0 THEN g.raw_water_tds ELSE 0 END)::numeric AS tds_sum,
         sum(CASE WHEN g.raw_water_tds IS NOT NULL AND g.raw_water_tds > 0 THEN 1 ELSE 0 END)::integer AS tds_count
-      FROM gridded g
+      FROM located g
       GROUP BY g.cell_lat, g.cell_lng
     ),
     cell_brands AS (
@@ -171,28 +230,34 @@ BEGIN
     ),
     ranked_cells AS (
       SELECT
-        c.cell_lat,
-        c.cell_lng,
-        c.customers,
-        c.jobs,
-        c.revenue,
-        c.area,
-        c.installation,
-        c.service,
-        CASE WHEN c.jobs > 0 THEN round(c.revenue / c.jobs, 0) ELSE 0 END AS avg_bill,
-        CASE WHEN c.tds_count > 0 THEN round(c.tds_sum / c.tds_count, 1) ELSE NULL END AS avg_tds,
-        cb.brands,
-        cb.top_brand,
-        cb.top_brand_jobs,
-        CASE WHEN c.jobs > 0 THEN round((cb.top_brand_jobs::numeric / c.jobs) * 100, 0) ELSE 0 END AS top_brand_share
-      FROM cells c
-      JOIN cell_brands cb ON cb.cell_lat = c.cell_lat AND cb.cell_lng = c.cell_lng
+        cu.cell_lat,
+        cu.cell_lng,
+        cu.customers,
+        coalesce(jb.jobs, 0)::integer AS jobs,
+        coalesce(jb.revenue, 0)::numeric AS revenue,
+        cu.area,
+        coalesce(jb.installation, 0)::integer AS installation,
+        coalesce(jb.service, 0)::integer AS service,
+        CASE WHEN coalesce(jb.jobs, 0) > 0 THEN round(jb.revenue / jb.jobs, 0) ELSE 0 END AS avg_bill,
+        CASE WHEN coalesce(jb.tds_count, 0) > 0 THEN round(jb.tds_sum / jb.tds_count, 1) ELSE NULL END AS avg_tds,
+        coalesce(cb.brands, '[]'::jsonb) AS brands,
+        coalesce(cb.top_brand, '') AS top_brand,
+        coalesce(cb.top_brand_jobs, 0)::integer AS top_brand_jobs,
+        CASE
+          WHEN coalesce(jb.jobs, 0) > 0 THEN round((coalesce(cb.top_brand_jobs, 0)::numeric / jb.jobs) * 100, 0)
+          ELSE 0
+        END AS top_brand_share,
+        coalesce(sn.names, '[]'::jsonb) AS sample_names
+      FROM customer_cells cu
+      LEFT JOIN job_cells jb ON jb.cell_lat = cu.cell_lat AND jb.cell_lng = cu.cell_lng
+      LEFT JOIN cell_brands cb ON cb.cell_lat = cu.cell_lat AND cb.cell_lng = cu.cell_lng
+      LEFT JOIN sample_names sn ON sn.cell_lat = cu.cell_lat AND sn.cell_lng = cu.cell_lng
     )
     SELECT jsonb_build_object(
       'cell_km', round((cell_deg * 111.32)::numeric, 2),
-      'jobs_total', (SELECT count(*)::integer FROM located),
-      'jobs_with_pin', (SELECT count(*)::integer FROM valid),
-      'customers_with_pin', (SELECT count(DISTINCT customer_id)::integer FROM valid),
+      'jobs_total', (SELECT count(*)::integer FROM period_jobs),
+      'jobs_with_pin', (SELECT count(*)::integer FROM located),
+      'customers_with_pin', (SELECT count(DISTINCT customer_id)::integer FROM valid_pinned),
       'cells', coalesce((
         SELECT jsonb_agg(
           jsonb_build_object(
@@ -209,14 +274,15 @@ BEGIN
             'top_brand', r.top_brand,
             'top_brand_jobs', r.top_brand_jobs,
             'top_brand_share', r.top_brand_share,
-            'brands', coalesce(r.brands, '[]'::jsonb)
+            'brands', coalesce(r.brands, '[]'::jsonb),
+            'sample_names', coalesce(r.sample_names, '[]'::jsonb)
           )
           ORDER BY r.customers DESC, r.revenue DESC
         )
         FROM (
           SELECT * FROM ranked_cells
           ORDER BY customers DESC, revenue DESC
-          LIMIT 200
+          LIMIT 4000
         ) r
       ), '[]'::jsonb)
     )
