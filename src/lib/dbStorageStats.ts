@@ -182,7 +182,7 @@ export async function fetchR2StorageOverview(): Promise<R2StorageOverview> {
     if (!('object_count' in data) || !('total_bytes' in data)) {
       return {
         ok: false,
-        error: 'R2 stats did not load. Restart the local functions server (runcode) and open Storage again.',
+        error: 'R2 stats did not load. Restart the local functions server (runcode) and open Usage & billing again.',
       };
     }
     const prefixesRaw = Array.isArray(data.prefixes) ? data.prefixes : [];

@@ -119,7 +119,7 @@ export default function DbStorageStatsPage({ hideHeader, onBack }: Props) {
               Back
             </Button>
           ) : null}
-          <h2 className="text-lg font-semibold">Storage</h2>
+          <h2 className="text-lg font-semibold">Usage & billing</h2>
         </div>
       ) : null}
 

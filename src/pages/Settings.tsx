@@ -2426,7 +2426,7 @@ const Settings = () => {
                 </div>
                 <div className="min-w-0">
                   <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
-                    Storage
+                    Usage & billing
                   </h1>
                   <p className="text-xs text-muted-foreground truncate sm:hidden">
                     Postgres, R2, Cloudinary, iLovePDF, and Google Maps
@@ -4150,8 +4150,8 @@ const Settings = () => {
 
           {!isManager ? (
           <SettingsActionCard
-            title="Storage"
-            description="Postgres, Cloudflare R2, Cloudinary, iLovePDF, and Google Maps usage"
+            title="Usage & billing"
+            description="Postgres, Cloudflare R2, Cloudinary, iLovePDF, and Google Maps"
             icon={<Database />}
             actions={
               <Button
@@ -4161,7 +4161,7 @@ const Settings = () => {
                 onClick={() => openSettingsPanel('db-storage')}
               >
                 <Database className="w-4 h-4 shrink-0" />
-                View storage
+                View usage
               </Button>
             }
           />
