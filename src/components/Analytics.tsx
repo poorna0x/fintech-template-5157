@@ -31,7 +31,7 @@ import {
   Heart,
   PhoneForwarded,
   Package,
-  Map
+  Map as MapIcon,
 } from 'lucide-react';
 import { normalizeForComparison, normalizeLeadType, getLeadSourceFromJob } from '@/lib/adminUtils';
 import {
@@ -2745,7 +2745,7 @@ const Analytics = () => {
       <AnalyticsLoadSection
         title="Customer spread map"
         description="Where customers sit on the map for this period. Color by density, billing, or top brand. Tap a pocket for brands, average bill, and whether it sits inside Location Hubs."
-        icon={<Map />}
+        icon={<MapIcon />}
         loadLabel="Open customer spread map"
         loadingLabel="Opening…"
         onLoad={() => setSpreadMapLoaded(true)}
