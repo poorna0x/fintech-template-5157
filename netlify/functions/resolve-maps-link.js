@@ -160,13 +160,32 @@ function placeNameGeocodeQueries(placeName) {
     add(withoutPlus);
     const first = withoutPlus.split(',')[0];
     if (first && first !== withoutPlus) add(`${first}, Bengaluru, Karnataka, India`);
-  } else if (withoutPlus && !plusIsOlc) {
-    add(withoutPlus);
   }
   if (plusIsOlc) {
     const locality =
       withoutPlus.split(',').slice(1).join(',').trim() || 'Bengaluru, Karnataka, India';
     add(`${plus[1]}+${plus[2]}, ${locality}`);
+  }
+  // "Eden Park @ The Prestige City, … Bangalore" — prefer society + city BEFORE the
+  // wing name. Bare/leading "Eden Park" geocodes to Auckland NZ.
+  const atParts = withoutPlus.split(/\s*@\s*/);
+  if (atParts.length >= 2) {
+    const wing = atParts[0].trim();
+    const rest = atParts.slice(1).join(' @ ').trim();
+    const restPrimary = rest.split(',')[0].trim();
+    const hasInLocality = /bengaluru|bangalore|karnataka|india/i.test(withoutPlus);
+    if (restPrimary) {
+      add(`${restPrimary}, Bengaluru, Karnataka, India`);
+      add(hasInLocality ? rest : `${restPrimary}, Bengaluru, Karnataka, India`);
+    }
+    if (wing && restPrimary) {
+      add(`${wing}, ${restPrimary}, Bengaluru, Karnataka, India`);
+    }
+  } else if (withoutPlus && !plusIsOlc) {
+    add(withoutPlus);
+    if (!/bengaluru|bangalore|karnataka|india/i.test(withoutPlus)) {
+      add(`${withoutPlus.split(',')[0].trim()}, Bengaluru, Karnataka, India`);
+    }
   }
   add(raw);
   return queries;

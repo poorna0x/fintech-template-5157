@@ -71,6 +71,14 @@ describe('extractPlaceNameFromMapsUrl', () => {
     expect(name).toMatch(/^Avalon Park @ The Prestige City/i);
     expect(name).not.toBe('Avalon Park, Bengaluru, Karnataka');
   });
+
+  it('keeps Eden Park @ The Prestige City (not bare Eden Park → Auckland)', () => {
+    const name = extractPlaceNameFromMapsUrl(
+      'https://www.google.com/maps/place/Eden+Park+%40+The+Prestige+City,+Yamare,+Sarjapura,+Bangalore,+Karnataka+562125/data=!4m2!3m1!1s0x3bae738473e531e9:0x96c5b1378fd32367'
+    );
+    expect(name).toMatch(/^Eden Park @ The Prestige City/i);
+    expect(name).toMatch(/Bangalore|Bengaluru|Karnataka/i);
+  });
 });
 
 describe('extractPlaceHintFromShareText', () => {

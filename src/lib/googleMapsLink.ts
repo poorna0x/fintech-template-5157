@@ -550,6 +550,22 @@ function expandPlaceHintQueries(hints: string[]): string[] {
         withoutPlus.split(',').slice(1).join(',').trim() || 'Bengaluru, Karnataka, India';
       add(`${olcPlus[1]}+${olcPlus[2]}, ${locality}`);
     }
+    // "Eden Park @ The Prestige City" — do not leave geocoder with bare "Eden Park"
+    // (Auckland NZ). Prefer society + Bengaluru.
+    const atParts = withoutPlus.split(/\s*@\s*/);
+    if (atParts.length >= 2) {
+      const wing = atParts[0].trim();
+      const rest = atParts.slice(1).join(' @ ').trim();
+      const restPrimary = rest.split(',')[0].trim();
+      if (restPrimary) {
+        add(`${restPrimary}, Bengaluru, Karnataka, India`);
+      }
+      if (wing && restPrimary) {
+        add(`${wing}, ${restPrimary}, Bengaluru, Karnataka, India`);
+      }
+    } else if (withoutPlus && !/bengaluru|bangalore|karnataka|india/i.test(withoutPlus)) {
+      add(`${withoutPlus.split(',')[0].trim()}, Bengaluru, Karnataka, India`);
+    }
     add(hint);
   }
   return queries;
