@@ -31,7 +31,7 @@ const cache = new Map<string, { at: number; payload: SpreadPayload }>();
 const COLOR_MODES: Array<{ id: SpreadColorMode; label: string }> = [
   { id: 'customers', label: 'Customers' },
   { id: 'billing', label: 'Billing' },
-  { id: 'brand', label: 'Top brand' },
+  { id: 'brand', label: 'Brand / model' },
 ];
 
 type Props = {
@@ -53,7 +53,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   const selectedRef = useRef<SpreadCell | null>(null);
   selectedRef.current = selected;
 
-  const cacheKey = `${startISO || 'all'}|${endISO || 'all'}`;
+  const cacheKey = `v2|${startISO || 'all'}|${endISO || 'all'}`;
   const cells = payload?.cells || [];
   const maxValue = useMemo(() => maxSpreadValue(cells, colorMode), [cells, colorMode]);
   const maxCustomers = useMemo(
@@ -296,13 +296,13 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
             <MiniStat label="Avg TDS" value={selected.avg_tds != null ? `${selected.avg_tds}` : '—'} />
           </div>
           <div className="mt-3 space-y-1.5">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Top brands here</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Top brands + models here</p>
             {(selected.brands.length ? selected.brands : [{ name: selected.top_brand, jobs: selected.top_brand_jobs, revenue: selected.revenue }]).map(
               (brand) => {
                 const share = selected.jobs > 0 ? Math.round((brand.jobs / selected.jobs) * 100) : 0;
                 return (
                   <div key={brand.name} className="flex items-center gap-2 text-sm">
-                    <span className="w-28 truncate font-medium">{brand.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{brand.name}</span>
                     <span className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                       <span
                         className="block h-2 rounded-full"
@@ -352,7 +352,7 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 function Legend({ mode }: { mode: SpreadColorMode }) {
   if (mode === 'brand') {
     return (
-      <p className="rounded-lg bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white">Each color is a brand</p>
+      <p className="rounded-lg bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white">Each color is a brand + model</p>
     );
   }
   const low = mode === 'billing' ? '#bbf7d0' : '#7dd3fc';

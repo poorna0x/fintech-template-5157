@@ -42,7 +42,8 @@ BEGIN
         j.payment_amount,
         j.actual_cost,
         j.service_sub_type,
-        j.brand
+        j.brand,
+        j.model
       FROM public.jobs j
       WHERE (
         p_start IS NULL AND p_end IS NULL
@@ -70,8 +71,13 @@ BEGIN
           ELSE coalesce(j.actual_cost, 0)
         END::numeric AS revenue,
         j.service_sub_type,
-        public.analytics_norm_key(coalesce(nullif(btrim(j.brand), ''), nullif(btrim(c.brand), ''), '')) AS brand_key,
-        coalesce(nullif(btrim(j.brand), ''), nullif(btrim(c.brand), ''), 'Unknown') AS brand_label,
+        public.analytics_norm_key(
+          coalesce(x.brand_name, '') || '|' || coalesce(x.model_name, '')
+        ) AS brand_key,
+        coalesce(
+          nullif(btrim(concat_ws(' · ', x.brand_name, x.model_name)), ''),
+          'Unknown'
+        ) AS brand_label,
         coalesce(
           nullif(btrim(c.visible_address), ''),
           nullif(btrim(c.address->>'visible_address'), ''),
@@ -89,6 +95,11 @@ BEGIN
         ) AS lng
       FROM period_jobs j
       JOIN public.customers c ON c.id = j.customer_id
+      CROSS JOIN LATERAL (
+        SELECT
+          coalesce(nullif(btrim(j.brand), ''), nullif(btrim(c.brand), '')) AS brand_name,
+          coalesce(nullif(btrim(j.model), ''), nullif(btrim(c.model), '')) AS model_name
+      ) x
     ),
     valid AS (
       SELECT *

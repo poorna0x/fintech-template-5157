@@ -2744,7 +2744,7 @@ const Analytics = () => {
 
       <AnalyticsLoadSection
         title="Customer spread map"
-        description="Where customers sit on the map for this period. Color by density, billing, or top brand. Tap a pocket for brands, average bill, and whether it sits inside Location Hubs."
+        description="Where customers sit on the map for this period. Color by density, billing, or top brand + model. Tap a pocket for brands, models, average bill, and whether it sits inside Location Hubs."
         icon={<MapIcon />}
         loadLabel="Open customer spread map"
         loadingLabel="Opening…"
