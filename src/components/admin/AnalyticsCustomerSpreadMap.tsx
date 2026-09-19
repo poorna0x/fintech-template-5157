@@ -57,8 +57,8 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   const loadGenRef = useRef(0);
   selectedRef.current = selected;
 
-  const cacheKey = `v4|${startISO || 'all'}|${endISO || 'all'}|${cellKm}`;
-  const fitKey = `v4|${startISO || 'all'}|${endISO || 'all'}`;
+  const cacheKey = `v5|${startISO || 'all'}|${endISO || 'all'}|${cellKm}`;
+  const fitKey = `v5|${startISO || 'all'}|${endISO || 'all'}`;
   const cells = payload?.cells || [];
   const maxValue = useMemo(() => maxSpreadValue(cells, colorMode), [cells, colorMode]);
   const maxCustomers = useMemo(
