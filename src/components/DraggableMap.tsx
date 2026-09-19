@@ -28,6 +28,8 @@ interface DraggableMapProps {
   centerPin?: boolean;
   /** Hub overview: map canvas only — parent draws coverage circles. */
   hideMarker?: boolean;
+  /** Default: cooperative with center pin, greedy otherwise. Use cooperative inside scrolling pages. */
+  gestureHandling?: 'cooperative' | 'greedy' | 'auto' | 'none';
   onMapReady?: (map: google.maps.Map | null) => void;
   /** Center-pin mode: fired when the user starts panning, before the map settles. */
   onMoveStart?: () => void;
@@ -79,6 +81,7 @@ const DraggableMap = ({
   onMapReady,
   onMoveStart,
   hideMarker = false,
+  gestureHandling,
 }: DraggableMapProps) => {
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -94,6 +97,7 @@ const DraggableMap = ({
   const onMoveStartRef = useRef(onMoveStart);
   const liftingRef = useRef(false);
   const hideMarkerRef = useRef(hideMarker);
+  const gestureHandlingRef = useRef(gestureHandling);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [lifting, setLifting] = useState(false);
   const [mapsAuthError, setMapsAuthError] = useState(didGoogleMapsAuthFail);
@@ -104,6 +108,7 @@ const DraggableMap = ({
   myLocationRef.current = myLocation;
   centerPinRef.current = centerPin;
   hideMarkerRef.current = hideMarker;
+  gestureHandlingRef.current = gestureHandling;
   onMapReadyRef.current = onMapReady;
   onMoveStartRef.current = onMoveStart;
 
@@ -187,7 +192,8 @@ const DraggableMap = ({
         streetViewControl,
         fullscreenControl,
         zoomControl,
-        gestureHandling: centerPinRef.current ? 'cooperative' : 'greedy',
+        gestureHandling:
+          gestureHandlingRef.current ?? (centerPinRef.current ? 'cooperative' : 'greedy'),
         clickableIcons: !centerPinRef.current && !hideMarkerRef.current,
         keyboardShortcuts: false,
       });

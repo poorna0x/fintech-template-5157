@@ -2664,7 +2664,7 @@ const Settings = () => {
 
   if (showServiceHubsPage) {
     return (
-      <div className="admin-page h-[100dvh] overflow-hidden">
+      <div className="admin-page h-[100dvh] min-h-0 overflow-hidden">
         <ServiceHubsSettingsPage onBack={closeSettingsPanel} />
       </div>
     );

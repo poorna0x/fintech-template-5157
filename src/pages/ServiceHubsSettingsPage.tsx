@@ -642,9 +642,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   }, [mapLarge, desktopMap]);
 
   return (
-    <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-background">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto overscroll-y-contain bg-background">
       <div ref={placesHostRef} className="hidden" />
-      <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2.5 sm:px-4">
+      <header className="sticky top-0 z-30 flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2.5 sm:px-4">
         <Button
           type="button"
           variant="ghost"
@@ -694,8 +694,8 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         className={cn(
           'relative w-full shrink-0 overflow-hidden bg-muted',
           mapLarge
-            ? 'h-[min(62dvh,640px)] min-h-[280px] md:h-[min(72dvh,760px)] md:min-h-[420px]'
-            : 'h-[min(42dvh,360px)] min-h-[220px] md:h-[min(38dvh,420px)] md:min-h-[240px]'
+            ? 'h-[min(42dvh,440px)] max-h-[calc(100dvh-18rem)] min-h-[200px] md:h-[min(46dvh,500px)]'
+            : 'h-[min(28dvh,260px)] max-h-[calc(100dvh-20rem)] min-h-[180px] md:h-[min(32dvh,300px)]'
         )}
       >
         <DraggableMap
@@ -703,6 +703,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           zoom={11}
           height="100%"
           hideMarker
+          gestureHandling="cooperative"
           mapTypeControl={false}
           streetViewControl={false}
           fullscreenControl={false}
@@ -787,8 +788,8 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto md:grid md:grid-cols-[minmax(0,26rem)_1fr] md:overflow-hidden">
-        <div className="md:overflow-y-auto md:border-r md:border-border">
+      <div className="grid md:grid-cols-[minmax(0,26rem)_1fr]">
+        <div className="md:border-r md:border-border">
           <div className="space-y-3 border-b border-border bg-card px-4 py-3">
             <Label htmlFor="out-of-area-message" className="text-sm font-medium">
               Outside coverage message
@@ -1056,7 +1057,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           ) : null}
         </div>
 
-        <div className="px-4 py-3 md:overflow-y-auto">
+        <div className="px-4 py-3 pb-10">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-base font-semibold text-foreground">Configured hubs</h2>
             <span className="text-xs tabular-nums text-muted-foreground">
