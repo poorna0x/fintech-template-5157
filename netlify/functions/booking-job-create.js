@@ -14,6 +14,7 @@ const { sendBookingAdminNotification } = require('./booking-notify');
 const { maybeSendOnlineBookingConfirmationWhatsApp } = require('./booking-confirmation-whatsapp-helper');
 const { isOtpEnforced, verifyFirebasePhoneToken, warmFirebaseAdmin } = require('./otp-guard');
 const { isProduction } = require('./cors-helper');
+const { assertBookingRowInServiceHub } = require('./booking-service-hub-helper');
 
 // Trigger the owner notification as a Netlify background function so the booking
 // response returns immediately — the (slow) SMTP send no longer blocks the
@@ -198,6 +199,21 @@ exports.handler = async (event) => {
   const client = getServiceClient();
   if (client.error) {
     return jsonResponse(500, corsHeaders, { error: client.error });
+  }
+
+  try {
+    const coverage = await assertBookingRowInServiceHub(client.admin, row);
+    if (!coverage.ok) {
+      return jsonResponse(422, corsHeaders, {
+        error: coverage.message || 'We do not currently serve this location.',
+        code: coverage.needsPin ? 'BOOKING_PIN_REQUIRED' : 'OUT_OF_SERVICE_AREA',
+      });
+    }
+  } catch (err) {
+    console.warn(
+      '[booking-job-create] hub check failed, allowing booking:',
+      err && err.message
+    );
   }
 
   const { data, error } = await client.admin.rpc('create_job_for_booking', {

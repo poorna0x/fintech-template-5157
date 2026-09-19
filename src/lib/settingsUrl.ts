@@ -34,6 +34,7 @@ export const SETTINGS_PANELS = [
   'add-tracker',
   'lead-catalog',
   'job-reviews',
+  'service-hubs',
 ] as const;
 
 export type SettingsPanelSlug = (typeof SETTINGS_PANELS)[number];

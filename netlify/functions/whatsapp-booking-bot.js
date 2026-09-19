@@ -32,6 +32,7 @@ const {
   handleElevenSupportButton,
 } = require('./whatsapp-eleven-support');
 const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
+const { assertLocationInServiceHub } = require('./booking-service-hub-helper');
 const {
   extractCoordinatesFromUrl,
   extractMapsUrlFromText,
@@ -1807,6 +1808,41 @@ async function acceptSharedLocation(ctx, state, enriched) {
       .join('\n');
     await afterLocationSharedLegacy(ctx, locSummary);
     return;
+  }
+
+  try {
+    const coverage = await assertLocationInServiceHub(ctx.db, incoming.lat, incoming.lng);
+    if (!coverage.ok) {
+      const next = {
+        ...(state && typeof state === 'object' ? state : {}),
+        ...live,
+        step: 'await_location',
+        loc: incoming,
+      };
+      await setBookingState(ctx.db, ctx.to, next);
+      await sendText({
+        ...ctx,
+        text: [
+          coverage.message || 'We do not currently serve this location.',
+          '',
+          coverage.needsPin
+            ? 'Please tap *Send location* and share a Google Maps pin so we can check coverage.'
+            : 'Share a pin inside a coverage area, or chat with us if you are nearby.',
+        ].join('\n'),
+      });
+      await sendButtons({
+        ...ctx,
+        bodyText: 'What would you like to do?',
+        footer: BRAND_LABEL,
+        buttons: [
+          { id: 'share_location', title: 'Send location' },
+          { id: 'talk_team', title: 'Chat with us' },
+        ],
+      });
+      return;
+    }
+  } catch (err) {
+    console.warn('[whatsapp-booking-bot] hub check failed, continuing:', err && err.message);
   }
 
   const prevLoc = live.loc || state?.loc;

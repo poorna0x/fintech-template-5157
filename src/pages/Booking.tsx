@@ -47,6 +47,13 @@ import SecurityStatus from '@/components/SecurityStatus';
 import { useSecurity } from '@/contexts/SecurityContext';
 import BookingLocationPicker, { type BookingLocationValue } from '@/components/BookingLocationPicker';
 import { googleMapsPinUrl, hasValidMapCoordinates, removePlusCode } from '@/lib/maps';
+import {
+  fetchBookingServiceHubs,
+  formatOutOfServiceAreaMessage,
+  matchPointToServiceHubs,
+  type BookingServiceHub,
+  type HubMatchResult,
+} from '@/lib/bookingServiceHubs';
 import { resolveBookingVisibleAddress } from '@/lib/bookingVisibleAddress';
 import {
   EQUIPMENT_BRAND_DATA as brandData,
@@ -124,6 +131,8 @@ const Booking: React.FC = () => {
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
   const [locationPickerStart, setLocationPickerStart] = useState<'search' | 'map'>('search');
   const [locationEditing, setLocationEditing] = useState(false);
+  const [serviceHubs, setServiceHubs] = useState<BookingServiceHub[]>([]);
+  const [hubMatch, setHubMatch] = useState<HubMatchResult>({ ok: true, enforced: false });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
@@ -584,12 +593,49 @@ const Booking: React.FC = () => {
     setShowModelSuggestions(false);
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    void fetchBookingServiceHubs().then((result) => {
+      if (cancelled) return;
+      setServiceHubs(result.hubs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasValidMapCoordinates(formData.coordinates)) {
+      setHubMatch({ ok: true, enforced: false });
+      return;
+    }
+    setHubMatch(
+      matchPointToServiceHubs(
+        formData.coordinates.lat,
+        formData.coordinates.lng,
+        serviceHubs
+      )
+    );
+  }, [formData.coordinates.lat, formData.coordinates.lng, serviceHubs]);
+
+  useEffect(() => {
+    if (!hubMatch.ok && currentStep > 3) {
+      setCurrentStep(3);
+    }
+  }, [hubMatch, currentStep]);
+
   const openLocationPicker = (startOn: 'search' | 'map' = 'search') => {
     setLocationPickerStart(startOn);
     setLocationPickerOpen(true);
   };
 
   const handleLocationPickerSave = (value: BookingLocationValue) => {
+    const coverage = matchPointToServiceHubs(
+      value.coordinates.lat,
+      value.coordinates.lng,
+      serviceHubs
+    );
+    setHubMatch(coverage);
     setFormData((prev) => ({
       ...prev,
       address: value.address,
@@ -601,6 +647,10 @@ const Booking: React.FC = () => {
     setLocationEditing(false);
     setShowValidation(false);
     setLocationPickerOpen(false);
+    if (!coverage.ok) {
+      toast.error(formatOutOfServiceAreaMessage(coverage));
+      return;
+    }
     setCurrentStep((step) => (step === 3 ? 4 : step));
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   };
@@ -609,6 +659,9 @@ const Booking: React.FC = () => {
     coordinates: { lat: number; lng: number };
     googleMapsLink: string;
   }) => {
+    setHubMatch(
+      matchPointToServiceHubs(value.coordinates.lat, value.coordinates.lng, serviceHubs)
+    );
     setFormData((prev) => ({
       ...prev,
       coordinates: value.coordinates,
@@ -675,6 +728,8 @@ const Booking: React.FC = () => {
             } else if (!formData.addressDetails.trim()) {
               firstMissingField = 'booking-location-card';
               openLocationPicker('map');
+            } else if (!hubMatch.ok) {
+              firstMissingField = 'booking-hub-coverage';
             }
             break;
           case 4:
@@ -1235,6 +1290,14 @@ const Booking: React.FC = () => {
       );
       if (!hasValidMapCoordinates(formData.coordinates)) {
         throw new Error('Please pin your location on the map before submitting.');
+      }
+      const coverage = matchPointToServiceHubs(
+        formData.coordinates.lat,
+        formData.coordinates.lng,
+        serviceHubs
+      );
+      if (!coverage.ok) {
+        throw new Error(formatOutOfServiceAreaMessage(coverage));
       }
       const pinUrl = googleMapsPinUrl(formData.coordinates.lat, formData.coordinates.lng);
       const shortLocation = await resolveBookingVisibleAddress({
@@ -2277,6 +2340,13 @@ const Booking: React.FC = () => {
                     Please enter your house / flat number so the technician reaches the exact door.
                   </p>
                 ) : null}
+                {!hubMatch.ok ? (
+                  <Alert id="booking-hub-coverage" className="mt-3 border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                    <AlertDescription>
+                      {formatOutOfServiceAreaMessage(hubMatch)}
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
               </div>
 
             </div>
@@ -2743,7 +2813,8 @@ const Booking: React.FC = () => {
         return (
           hasValidMapCoordinates(formData.coordinates) &&
           Boolean(formData.address) &&
-          Boolean(formData.addressDetails.trim())
+          Boolean(formData.addressDetails.trim()) &&
+          hubMatch.ok
         );
       case 4:
         return formData.serviceDate && formData.preferredTime;

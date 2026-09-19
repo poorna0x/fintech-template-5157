@@ -41,7 +41,10 @@ export async function createBookingJob(
     if (!res.ok) {
       return {
         data: null,
-        error: { message: json.error || json.message || `HTTP ${res.status}` },
+        error: {
+          message: json.error || json.message || `HTTP ${res.status}`,
+          code: json.code || undefined,
+        },
       };
     }
 

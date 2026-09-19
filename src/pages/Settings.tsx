@@ -71,6 +71,7 @@ import WhatsAppInboxPage from '@/pages/WhatsAppInboxPage';
 import WhatsAppSettingsPage from '@/pages/WhatsAppSettingsPage';
 import PrivacyCenterPage from '@/pages/PrivacyCenterPage';
 import LeadCatalogSettingsPage from '@/pages/LeadCatalogSettingsPage';
+import ServiceHubsSettingsPage from '@/pages/ServiceHubsSettingsPage';
 import { WhatsAppLogo } from '@/components/whatsapp/WhatsAppLogo';
 import { tryNativeBackHandlers } from '@/lib/nativeBackButton';
 import { registerAdminPWA } from '@/lib/pwa';
@@ -430,6 +431,9 @@ const Settings = () => {
   const [showLeadCatalogPage, setShowLeadCatalogPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'lead-catalog'
   );
+  const [showServiceHubsPage, setShowServiceHubsPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'service-hubs'
+  );
 
   const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
   const [advancedSearchDialogOpen, setAdvancedSearchDialogOpen] = useState(false);
@@ -543,6 +547,7 @@ const Settings = () => {
     setShowAiUsagePage(panel === 'ai-usage' && !isManager);
     setShowRecurringServicePage(panel === 'recurring-service');
     setShowLeadCatalogPage(panel === 'lead-catalog' && !isManager);
+    setShowServiceHubsPage(panel === 'service-hubs' && !isManager);
     setRemindersDialogOpen(panel === 'reminders');
     setAdvancedSearchDialogOpen(panel === 'advanced-search');
     setAddGeneralReminderOpen(panel === 'add-general-reminder');
@@ -2111,7 +2116,8 @@ const Settings = () => {
       showDbStoragePage ||
       showAiUsagePage ||
       showRecurringServicePage ||
-      showLeadCatalogPage
+      showLeadCatalogPage ||
+      showServiceHubsPage
     ) {
       return;
     }
@@ -2157,6 +2163,7 @@ const Settings = () => {
     showAiUsagePage,
     showRecurringServicePage,
     showLeadCatalogPage,
+    showServiceHubsPage,
   ]);
 
   // Deep-link / panel open: fetch only what that panel needs.
@@ -2655,6 +2662,14 @@ const Settings = () => {
     );
   }
 
+  if (showServiceHubsPage) {
+    return (
+      <div className="admin-page h-[100dvh] overflow-hidden">
+        <ServiceHubsSettingsPage onBack={closeSettingsPanel} />
+      </div>
+    );
+  }
+
   if (showRecurringServicePage) {
     return (
       <div className="admin-page">
@@ -2788,6 +2803,26 @@ const Settings = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         <div className="space-y-4 sm:space-y-6">
+          {!isManager ? (
+          <SettingsActionCard
+            sectionId="service-hubs"
+            title="Location hubs"
+            description="Search an area, set a coverage circle, and only those places can book on the website or WhatsApp"
+            icon={<MapPin className="w-5 h-5" />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('service-hubs')}
+              >
+                <MapPin className="w-4 h-4 shrink-0" />
+                Manage hubs
+              </Button>
+            }
+          />
+          ) : null}
+
           {/* Technician Locations */}
           <Card id="section-technician-locations" className="scroll-mt-24">
             <CardHeader>

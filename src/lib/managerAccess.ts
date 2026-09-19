@@ -44,6 +44,7 @@ export const MANAGER_BLOCKED_SETTINGS_PANELS = new Set<string>([
   'edit-product-qr',
   'add-tracker',
   'lead-catalog',
+  'service-hubs',
 ]);
 
 export function isManagerBlockedAdminView(view: string | null | undefined): boolean {
