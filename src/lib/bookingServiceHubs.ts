@@ -16,8 +16,10 @@ export const HUB_MATCH_SLACK_KM = 0.04;
 export const OUT_OF_AREA_TITLE = 'This is quite far from us';
 export const DEFAULT_OUT_OF_AREA_MESSAGE =
   'We may not be able to come here. Please call us and we’ll see how we can help.';
+const LEGACY_OUT_OF_AREA_MESSAGE =
+  'We may not cover this area. Please call us if you need any help.';
 const LEGACY_OUT_OF_AREA_MESSAGES = [
-  'We may not cover this area. Please call us if you need any help.',
+  LEGACY_OUT_OF_AREA_MESSAGE,
   'Give us a call and we’ll see how we can help.',
 ];
 export const DEFAULT_CALLBACK_MESSAGE =
