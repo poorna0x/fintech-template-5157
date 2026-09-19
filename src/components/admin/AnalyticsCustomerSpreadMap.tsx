@@ -16,6 +16,7 @@ import {
   cellOutsideHubs,
   customersWithoutMap,
   DEFAULT_SPREAD_CELL_KM,
+  DEFAULT_SPREAD_SCOPE,
   formatSpreadInr,
   jobsWithoutMap,
   maxSpreadValue,
@@ -54,7 +55,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   const [showHubs, setShowHubs] = useState(true);
   const [selected, setSelected] = useState<SpreadCell | null>(null);
   const [cellKm, setCellKm] = useState(DEFAULT_SPREAD_CELL_KM);
-  const [scope, setScope] = useState<SpreadScope>('all');
+  const [scope, setScope] = useState<SpreadScope>(DEFAULT_SPREAD_SCOPE);
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);

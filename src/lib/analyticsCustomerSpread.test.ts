@@ -115,4 +115,9 @@ describe('pocket size', () => {
     const small = spreadCircleRadiusMeters(pocket, 10, 1.2);
     expect(large).toBeGreaterThan(small * 3);
   });
+
+  it('keeps a 1-customer pocket large enough to see on Small', () => {
+    const quiet = cell({ lat: 13.1, lng: 77.39, area: 'Nelamangala', customers: 1 });
+    expect(spreadCircleRadiusMeters(quiet, 40, 1.2)).toBeGreaterThanOrEqual(900);
+  });
 });

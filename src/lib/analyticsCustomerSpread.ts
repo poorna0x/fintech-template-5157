@@ -36,9 +36,11 @@ export type SpreadCell = {
 export type SpreadScope = 'all' | 'period';
 
 export const SPREAD_SCOPES: Array<{ id: SpreadScope; label: string }> = [
-  { id: 'all', label: 'All mapped' },
   { id: 'period', label: 'This period' },
+  { id: 'all', label: 'All mapped' },
 ];
+
+export const DEFAULT_SPREAD_SCOPE: SpreadScope = 'period';
 
 export type SpreadPayload = {
   cell_km: number;
@@ -204,8 +206,9 @@ export function spreadCircleRadiusMeters(
   cellKm = DEFAULT_SPREAD_CELL_KM
 ): number {
   const km = Math.max(0.8, Math.min(10, cellKm || DEFAULT_SPREAD_CELL_KM));
-  const t = maxCustomers > 0 ? Math.sqrt(cell.customers / maxCustomers) : 0.25;
-  return Math.round(km * 380 + t * km * 420);
+  const t = maxCustomers > 0 ? Math.sqrt(Math.max(cell.customers, 1) / maxCustomers) : 0.35;
+  const scaled = km * 380 + t * km * 420;
+  return Math.round(Math.max(900, scaled));
 }
 
 export function formatSpreadInr(n: number): string {
