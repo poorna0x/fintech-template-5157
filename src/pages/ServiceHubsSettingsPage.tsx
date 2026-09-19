@@ -457,6 +457,11 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         mapClickBoundRef.current = false;
         return;
       }
+      try {
+        map.setOptions({ gestureHandling: 'cooperative' });
+      } catch {
+        /* ignore */
+      }
       if (!mapClickBoundRef.current) {
         mapClickBoundRef.current = true;
         map.addListener('click', (event: google.maps.MapMouseEvent) => {
