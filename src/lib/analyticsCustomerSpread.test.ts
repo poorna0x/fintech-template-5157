@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   brandColor,
   buildSpreadInsights,
-  findSpreadCells,
   parseSpreadPayload,
   spreadCircleRadiusMeters,
   spreadFillColor,
@@ -22,7 +21,6 @@ function cell(partial: Partial<SpreadCell> & Pick<SpreadCell, 'lat' | 'lng' | 'a
     top_brand_jobs: 4,
     top_brand_share: 67,
     brands: [{ name: 'Kent', jobs: 4, revenue: 8000 }],
-    sample_names: [],
     ...partial,
   };
 }
@@ -42,21 +40,6 @@ describe('parseSpreadPayload', () => {
     expect(payload.cells).toHaveLength(1);
     expect(payload.cells[0].area).toBe('HSR');
     expect(payload.customers_with_pin).toBe(7);
-  });
-
-  it('keeps sample customer names on a pocket', () => {
-    const payload = parseSpreadPayload({
-      cells: [
-        {
-          lat: 13.1,
-          lng: 77.39,
-          customers: 1,
-          area: 'Nelamangala',
-          sample_names: ['Manjunath'],
-        },
-      ],
-    });
-    expect(payload.cells[0].sample_names).toEqual(['Manjunath']);
   });
 });
 
@@ -90,18 +73,6 @@ describe('buildSpreadInsights', () => {
     expect(insights.some((row) => row.id === 'richest' && row.cell.area === 'Bellandur')).toBe(true);
     expect(insights.some((row) => row.id === 'premium')).toBe(true);
     expect(insights.some((row) => row.id === 'brand' && /Aquaguard/.test(row.title))).toBe(true);
-  });
-});
-
-describe('findSpreadCells', () => {
-  it('matches a name or area', () => {
-    const cells = [
-      cell({ lat: 13.1, lng: 77.39, area: 'Nelamangala', sample_names: ['Manjunath'] }),
-      cell({ lat: 12.91, lng: 77.64, area: 'HSR' }),
-    ];
-    expect(findSpreadCells(cells, 'manju')[0].area).toBe('Nelamangala');
-    expect(findSpreadCells(cells, 'nelamangala')).toHaveLength(1);
-    expect(findSpreadCells(cells, 'nowhere')).toHaveLength(0);
   });
 });
 

@@ -324,13 +324,6 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
             <MiniStat label="Install / service" value={`${selected.installation} / ${selected.service}`} />
             <MiniStat label="Avg TDS" value={selected.avg_tds != null ? `${selected.avg_tds}` : '—'} />
           </div>
-          {selected.sample_names.length > 0 ? (
-            <p className="mt-3 text-sm text-foreground">
-              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Customers here · </span>
-              {selected.sample_names.slice(0, 5).join(', ')}
-              {selected.customers > Math.min(5, selected.sample_names.length) ? ` +${selected.customers - Math.min(5, selected.sample_names.length)} more` : ''}
-            </p>
-          ) : null}
           <div className="mt-3 space-y-1.5">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Top brands + models here</p>
             {(selected.brands.length ? selected.brands : [{ name: selected.top_brand, jobs: selected.top_brand_jobs, revenue: selected.revenue }]).map(

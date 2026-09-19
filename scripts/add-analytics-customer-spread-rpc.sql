@@ -38,7 +38,6 @@ BEGIN
     WITH pinned AS (
       SELECT
         c.id AS customer_id,
-        coalesce(nullif(btrim(c.full_name), ''), 'Customer') AS full_name,
         coalesce(
           nullif(btrim(c.visible_address), ''),
           nullif(btrim(c.address->>'visible_address'), ''),
@@ -58,7 +57,6 @@ BEGIN
       UNION ALL
       SELECT
         c.id,
-        coalesce(nullif(btrim(c.full_name), ''), 'Customer'),
         coalesce(
           nullif(btrim(c.alternate_visible_address), ''),
           nullif(btrim(c.alternate_address->>'visible_address'), ''),
@@ -100,28 +98,6 @@ BEGIN
         mode() WITHIN GROUP (ORDER BY g.area_label) AS area
       FROM pinned_grid g
       GROUP BY g.cell_lat, g.cell_lng
-    ),
-    sample_names AS (
-      SELECT
-        s.cell_lat,
-        s.cell_lng,
-        jsonb_agg(s.full_name ORDER BY s.rn) AS names
-      FROM (
-        SELECT
-          pg.cell_lat,
-          pg.cell_lng,
-          pg.full_name,
-          row_number() OVER (
-            PARTITION BY pg.cell_lat, pg.cell_lng
-            ORDER BY pg.full_name
-          ) AS rn
-        FROM (
-          SELECT DISTINCT cell_lat, cell_lng, full_name
-          FROM pinned_grid
-        ) pg
-      ) s
-      WHERE s.rn <= 40
-      GROUP BY s.cell_lat, s.cell_lng
     ),
     period_jobs AS (
       SELECT
@@ -246,12 +222,10 @@ BEGIN
         CASE
           WHEN coalesce(jb.jobs, 0) > 0 THEN round((coalesce(cb.top_brand_jobs, 0)::numeric / jb.jobs) * 100, 0)
           ELSE 0
-        END AS top_brand_share,
-        coalesce(sn.names, '[]'::jsonb) AS sample_names
+        END AS top_brand_share
       FROM customer_cells cu
       LEFT JOIN job_cells jb ON jb.cell_lat = cu.cell_lat AND jb.cell_lng = cu.cell_lng
       LEFT JOIN cell_brands cb ON cb.cell_lat = cu.cell_lat AND cb.cell_lng = cu.cell_lng
-      LEFT JOIN sample_names sn ON sn.cell_lat = cu.cell_lat AND sn.cell_lng = cu.cell_lng
     )
     SELECT jsonb_build_object(
       'cell_km', round((cell_deg * 111.32)::numeric, 2),
@@ -274,8 +248,7 @@ BEGIN
             'top_brand', r.top_brand,
             'top_brand_jobs', r.top_brand_jobs,
             'top_brand_share', r.top_brand_share,
-            'brands', coalesce(r.brands, '[]'::jsonb),
-            'sample_names', coalesce(r.sample_names, '[]'::jsonb)
+            'brands', coalesce(r.brands, '[]'::jsonb)
           )
           ORDER BY r.customers DESC, r.revenue DESC
         )

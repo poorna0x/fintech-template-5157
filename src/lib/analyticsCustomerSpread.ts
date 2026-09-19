@@ -31,7 +31,6 @@ export type SpreadCell = {
   top_brand_jobs: number;
   top_brand_share: number;
   brands: SpreadBrandShare[];
-  sample_names: string[];
 };
 
 export type SpreadPayload = {
@@ -99,9 +98,6 @@ export function parseSpreadCell(row: unknown): SpreadCell | null {
     top_brand_jobs: Math.max(0, Math.round(num(r.top_brand_jobs) || brands[0]?.jobs || 0)),
     top_brand_share: Math.max(0, Math.min(100, num(r.top_brand_share))),
     brands,
-    sample_names: Array.isArray(r.sample_names)
-      ? r.sample_names.map((n) => String(n || '').trim()).filter(Boolean).slice(0, 40)
-      : [],
   };
 }
 
@@ -250,13 +246,4 @@ export function buildSpreadInsights(
 
 export function maxSpreadValue(cells: SpreadCell[], mode: SpreadColorMode): number {
   return cells.reduce((max, cell) => Math.max(max, spreadValue(cell, mode)), 0);
-}
-
-export function findSpreadCells(cells: SpreadCell[], query: string): SpreadCell[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  return cells.filter((cell) => {
-    if (cell.area.toLowerCase().includes(q)) return true;
-    return cell.sample_names.some((name) => name.toLowerCase().includes(q));
-  });
 }
