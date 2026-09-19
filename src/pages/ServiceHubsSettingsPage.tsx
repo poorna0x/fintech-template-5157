@@ -781,8 +781,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
               Outside coverage message
             </Label>
             <p className="text-xs text-muted-foreground">
-              Shown when the pin is outside every serving hub. They cannot continue until they move
-              it. Optional: type {'{hubs}'} to list nearby areas.
+              Shown when the pin is outside every serving hub. Optional: type {'{hubs}'} to list nearby areas.
             </p>
             <Textarea
               id="out-of-area-message"

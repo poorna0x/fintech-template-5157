@@ -2353,7 +2353,7 @@ const Booking: React.FC = () => {
                     !hubMatch.ok
                       ? {
                           tone: 'block',
-                          title: hubMatch.reason === 'no_service' ? '' : 'We will not be able to come here',
+                          title: hubMatch.reason === 'no_service' ? '' : 'We may not cover this area',
                           message: formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage),
                         }
                       : hubCustomerNote(hubMatch)
@@ -2383,7 +2383,7 @@ const Booking: React.FC = () => {
                         <p>{formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage)}</p>
                       ) : (
                         <>
-                          <p className="font-semibold">We will not be able to come here</p>
+                          <p className="font-semibold">We may not cover this area</p>
                           <p className="mt-1">{formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage)}</p>
                         </>
                       )}

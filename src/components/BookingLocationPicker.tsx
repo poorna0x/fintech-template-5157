@@ -685,7 +685,7 @@ export default function BookingLocationPicker({
               coverageNotice.title !== undefined
                 ? coverageNotice.title
                 : coverageNotice.tone === 'block'
-                  ? 'We will not be able to come here'
+                  ? 'We may not cover this area'
                   : '';
             return title ? <p className="font-semibold">{title}</p> : null;
           })()}

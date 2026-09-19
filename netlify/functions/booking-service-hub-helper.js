@@ -192,7 +192,7 @@ async function loadActiveHubs(admin) {
 }
 
 const DEFAULT_OUT_OF_AREA_MESSAGE =
-  'We will not be able to come here. Please move the pin into a coverage area, or call us.';
+  'We may not cover this area. Please call us if you need any help.';
 
 async function loadOutOfAreaMessage(admin) {
   try {
@@ -225,7 +225,7 @@ function formatOutOfArea(nearest, customMessage) {
     return custom.replaceAll('{hubs}', hubsLabel || 'our service areas');
   }
   if (!hubsLabel) return DEFAULT_OUT_OF_AREA_MESSAGE;
-  return `We will not be able to come here. We cover ${hubsLabel} — move the pin into that area, or call us.`;
+  return `We may not cover this area. We serve ${hubsLabel}. Please call us if you need any help.`;
 }
 
 /**

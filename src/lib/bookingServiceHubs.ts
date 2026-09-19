@@ -14,7 +14,7 @@ export const MAX_CUSTOMER_NOTE_LEN = 240;
 export const MAX_OUT_OF_AREA_MESSAGE_LEN = 320;
 export const HUB_MATCH_SLACK_KM = 0.04;
 export const DEFAULT_OUT_OF_AREA_MESSAGE =
-  'We will not be able to come here. Please move the pin into a coverage area, or call us.';
+  'We may not cover this area. Please call us if you need any help.';
 export const DEFAULT_CALLBACK_MESSAGE =
   'We can come here, but not immediately. We’ll call you back to confirm the visit.';
 export const DEFAULT_NO_SERVICE_MESSAGE =
@@ -421,7 +421,7 @@ export function formatOutOfServiceAreaMessage(
     return custom.replaceAll('{hubs}', hubsLabel || 'our service areas');
   }
   if (!hubsLabel) return DEFAULT_OUT_OF_AREA_MESSAGE;
-  return `We will not be able to come here. We cover ${hubsLabel} — move the pin into that area, or call us.`;
+  return `We may not cover this area. We serve ${hubsLabel}. Please call us if you need any help.`;
 }
 
 export function hubCustomerNote(result: HubMatchResult): string {
