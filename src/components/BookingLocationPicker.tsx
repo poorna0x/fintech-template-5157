@@ -543,7 +543,7 @@ export default function BookingLocationPicker({
         <div className="min-w-0">
           <p className="font-semibold text-foreground">Select service location</p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Search or use current location, then place the pin on the map
+            Search or use current location, then choose the exact spot on the map
           </p>
         </div>
         {showCancel ? (
@@ -606,7 +606,7 @@ export default function BookingLocationPicker({
   const mapCard = open ? (
     <div className="w-full overflow-hidden bg-white dark:bg-card">
       <p className="px-4 pb-3 pt-1 text-sm text-muted-foreground sm:px-6">
-        Use two fingers to move the pin. One finger scrolls the page.
+        Use two fingers to move the map. One finger scrolls the page.
       </p>
       <div className="relative w-full">
         <DraggableMap
@@ -634,7 +634,7 @@ export default function BookingLocationPicker({
         />
         <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-3 sm:hidden">
           <span className="rounded-full bg-black/55 px-3 py-1 text-[12px] font-medium text-white shadow">
-            Two fingers to move pin
+            Two fingers to move the map
           </span>
         </div>
         <button
@@ -659,7 +659,7 @@ export default function BookingLocationPicker({
             {geocoding ? (
               <span className="inline-flex max-w-full items-center gap-2">
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin text-sky-600" />
-                <span className="truncate">{address || 'Updating from the map pin…'}</span>
+                <span className="truncate">{address || 'Updating from the map…'}</span>
               </span>
             ) : (
               address || 'Selected location'
@@ -727,7 +727,7 @@ export default function BookingLocationPicker({
             : 'cursor-not-allowed bg-neutral-200 text-white'
         }`}
       >
-        {coverageBlocked ? 'Move the pin, or call us' : 'Save and proceed'}
+        {coverageBlocked ? 'Choose a closer location, or call us' : 'Save and proceed'}
       </button>
       {coverageBlocked ? (
         <p className="mt-2 pb-1 text-center text-xs text-neutral-500">

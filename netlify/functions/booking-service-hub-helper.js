@@ -99,7 +99,7 @@ function hubDisplayMessage(hub) {
     return 'We can come here, but not immediately. We’ll call you back to confirm the visit.';
   }
   if (hub.service_kind === 'no_service') {
-    return 'We don’t serve this pocket right now. Please move the pin, or call us.';
+    return 'We don’t serve this area right now. Please pick a closer location, or call us.';
   }
   return '';
 }
@@ -249,7 +249,7 @@ async function assertLocationInServiceHub(admin, lat, lng) {
     return { ok: true, enforced: false };
   }
   if (!isValidCoords(Number(lat), Number(lng))) {
-    return { ok: false, needsPin: true, message: 'Please share a map pin so we can check service coverage.' };
+    return { ok: false, needsPin: true, message: 'Please share your location so we can check if we can come.' };
   }
 
   const ranked = loaded.hubs
@@ -314,7 +314,7 @@ async function assertBookingRowInServiceHub(admin, row) {
   }
   const coords = coordsFromBookingRow(row);
   if (!coords) {
-    return { ok: false, needsPin: true, message: 'A map pin is required for this booking.' };
+    return { ok: false, needsPin: true, message: 'Please share your location so we can check if we can come.' };
   }
   return assertLocationInServiceHub(admin, coords.lat, coords.lng);
 }

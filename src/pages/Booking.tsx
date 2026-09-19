@@ -1312,7 +1312,7 @@ const Booking: React.FC = () => {
         formData.address
       );
       if (!hasValidMapCoordinates(formData.coordinates)) {
-        throw new Error('Please pin your location on the map before submitting.');
+        throw new Error('Please choose your location on the map before submitting.');
       }
       const coverage = matchPointToServiceHubs(
         formData.coordinates.lat,
@@ -2377,7 +2377,7 @@ const Booking: React.FC = () => {
 
                 {showValidation && (!hasValidMapCoordinates(formData.coordinates) || !formData.address) ? (
                   <p className="mt-2 px-4 text-sm text-red-600 dark:text-red-400 sm:px-6">
-                    Please search your location or use current location so we can pin where to come.
+                    Please search your location or use current location so we know where to come.
                   </p>
                 ) : null}
                 {showValidation && hasValidMapCoordinates(formData.coordinates) && formData.address && !formData.addressDetails.trim() ? (

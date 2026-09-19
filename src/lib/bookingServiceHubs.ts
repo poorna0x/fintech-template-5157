@@ -23,7 +23,7 @@ const LEGACY_OUT_OF_AREA_MESSAGES = [
 export const DEFAULT_CALLBACK_MESSAGE =
   'We can come here, but not immediately. We’ll call you back to confirm the visit.';
 export const DEFAULT_NO_SERVICE_MESSAGE =
-  'We don’t serve this pocket right now. Please move the pin, or call us.';
+  'We don’t serve this area right now. Please pick a closer location, or call us.';
 
 export type HubLatLng = { lat: number; lng: number };
 export type HubServiceKind = 'normal' | 'callback' | 'no_service';
@@ -414,7 +414,7 @@ export function formatOutOfServiceAreaMessage(
 ): string {
   if (result.ok) return '';
   if (result.reason === 'needs_pin') {
-    return 'Please pin your location on the map so we can check coverage.';
+    return 'Please choose your location on the map so we can check if we can come.';
   }
   if (result.reason === 'no_service') {
     return result.hub ? hubDisplayMessage(result.hub) : DEFAULT_NO_SERVICE_MESSAGE;
