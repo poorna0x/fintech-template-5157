@@ -493,14 +493,12 @@ export async function ensureGoogleMapsApi(): Promise<void> {
   }
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
-    if (window.google?.maps?.Map) break;
+    if (window.google?.maps?.Map) return;
     await new Promise((r) => window.setTimeout(r, 40));
   }
   if (!window.google?.maps?.Map) {
     throw new Error('Google Maps Map is not available');
   }
-  const { installGoogleMapsUsagePatches } = await import('@/lib/googleMapsUsageTrack');
-  installGoogleMapsUsagePatches();
 }
 
 /** Forward-geocode via browser Google Maps JS — no login token (mobile-safe). */

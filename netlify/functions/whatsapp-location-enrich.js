@@ -143,12 +143,6 @@ async function reverseGeocodeGoogle(lat, lng) {
   const shortLocation =
     shortFromComponents(top.address_components) ||
     shortFromPlusCode(formattedAddress || '');
-  try {
-    const { recordGoogleMapsUsage } = require('./google-maps-usage-helper');
-    void recordGoogleMapsUsage('geocoding');
-  } catch {
-    /* ignore */
-  }
   return { formattedAddress, shortLocation };
 }
 

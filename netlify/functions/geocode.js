@@ -177,13 +177,11 @@ exports.handler = async (event) => {
     }
 
     let data = [];
-    let fromGoogle = false;
     try {
       data =
         lat !== undefined && lon !== undefined
           ? await googleGeocodeRequest({ latlng: `${lat},${lon}`, region: 'in' })
           : await googleGeocodeRequest({ address: query, region: 'in' });
-      if (data?.length) fromGoogle = true;
     } catch (googleErr) {
       console.warn('Google geocode failed, trying Nominatim:', googleErr?.message || googleErr);
       if (query) data = await nominatimGeocode(query);
@@ -191,11 +189,6 @@ exports.handler = async (event) => {
 
     if ((!data || !data.length) && query) {
       data = await nominatimGeocode(query);
-    }
-
-    if (fromGoogle) {
-      const { recordGoogleMapsUsage } = require('./google-maps-usage-helper');
-      void recordGoogleMapsUsage('geocoding');
     }
 
     return {

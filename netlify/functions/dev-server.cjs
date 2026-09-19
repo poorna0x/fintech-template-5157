@@ -275,9 +275,6 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./ilovepdf-compress-helper')];
     delete require.cache[require.resolve('./pdf-compression-setting')];
     handler = loadFn('ilovepdf-usage');
-  } else if (req.url.startsWith('/.netlify/functions/google-maps-usage')) {
-    delete require.cache[require.resolve('./google-maps-usage-helper')];
-    handler = loadFn('google-maps-usage');
   } else if (req.url.startsWith('/.netlify/functions/ai-inbox-suggest')) {
     delete require.cache[require.resolve('./admin-auth-guard')];
     delete require.cache[require.resolve('./ai-config')];

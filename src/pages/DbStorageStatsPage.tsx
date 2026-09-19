@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import CloudinaryUsageSection from '@/components/admin/CloudinaryUsageSection';
-import GoogleMapsUsageSection from '@/components/admin/GoogleMapsUsageSection';
 import ILovePdfUsageSection from '@/components/admin/ILovePdfUsageSection';
 import {
   fetchDbStorageOverview,
@@ -119,7 +118,7 @@ export default function DbStorageStatsPage({ hideHeader, onBack }: Props) {
               Back
             </Button>
           ) : null}
-          <h2 className="text-lg font-semibold">Usage & billing</h2>
+          <h2 className="text-lg font-semibold">Storage</h2>
         </div>
       ) : null}
 
@@ -203,7 +202,6 @@ export default function DbStorageStatsPage({ hideHeader, onBack }: Props) {
 
       <CloudinaryUsageSection />
       <ILovePdfUsageSection />
-      <GoogleMapsUsageSection />
 
       <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="border-b p-4">

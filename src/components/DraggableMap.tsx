@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ensureGoogleMapsApi, GOOGLE_MAPS_AUTH_FAILURE_EVENT, didGoogleMapsAuthFail, googleMapsReferrerHelp } from '@/lib/googleMapsLink';
-import { installGoogleMapsUsagePatches, trackGoogleMapsUsage } from '@/lib/googleMapsUsageTrack';
 
 declare global {
   interface Window {
@@ -183,7 +182,6 @@ const DraggableMap = ({
     const tryCreate = (): boolean => {
       if (cancelled || mapRef.current || !mapElRef.current) return Boolean(mapRef.current);
       if (!window.google?.maps?.Map) return false;
-      installGoogleMapsUsagePatches();
       const el = mapElRef.current;
       if (el.clientWidth < 8 || el.clientHeight < 8) return false;
 
@@ -199,7 +197,6 @@ const DraggableMap = ({
         clickableIcons: !centerPinRef.current && !hideMarkerRef.current,
         keyboardShortcuts: false,
       });
-      trackGoogleMapsUsage('dynamic_maps');
 
       if (centerPinRef.current) {
         let userPanned = false;

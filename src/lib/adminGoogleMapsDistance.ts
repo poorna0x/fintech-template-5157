@@ -1,6 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { toast } from 'sonner';
-import { installGoogleMapsUsagePatches } from '@/lib/googleMapsUsageTrack';
 
 export type CustomerDistanceState = Record<
   string,
@@ -17,7 +16,6 @@ export function ensureGoogleMapsLoaded(): Promise<void> {
   return new Promise((resolve, reject) => {
     // Check if already loaded
     if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
-      installGoogleMapsUsagePatches();
       resolve();
       return;
     }
@@ -35,7 +33,6 @@ export function ensureGoogleMapsLoaded(): Promise<void> {
       const checkInterval = setInterval(() => {
         if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
           clearInterval(checkInterval);
-          installGoogleMapsUsagePatches();
           resolve();
         }
       }, 100);
@@ -44,7 +41,6 @@ export function ensureGoogleMapsLoaded(): Promise<void> {
       setTimeout(() => {
         clearInterval(checkInterval);
         if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
-          installGoogleMapsUsagePatches();
           resolve();
         } else {
           reject(new Error('Google Maps failed to load'));
@@ -69,7 +65,6 @@ export function ensureGoogleMapsLoaded(): Promise<void> {
         if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
           console.log('DistanceMatrixService is now available');
           clearInterval(checkInterval);
-          installGoogleMapsUsagePatches();
           resolve();
         } else if (attempts >= maxAttempts) {
           console.error('DistanceMatrixService not available after waiting');

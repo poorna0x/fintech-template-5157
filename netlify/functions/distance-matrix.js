@@ -252,13 +252,6 @@ exports.handler = async (event, context) => {
       };
     }
 
-    try {
-      const { recordGoogleMapsUsage } = require('./google-maps-usage-helper');
-      void recordGoogleMapsUsage('distance', formattedOrigins.length * formattedDestinations.length);
-    } catch {
-      /* ignore */
-    }
-
     // Process and format the response
     const results = {
       status: data.status,
