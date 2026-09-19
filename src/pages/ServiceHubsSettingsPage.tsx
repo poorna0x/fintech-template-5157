@@ -28,6 +28,7 @@ import {
 import { cn } from '@/lib/utils';
 import { ensureGoogleMapsApi } from '@/lib/googleMapsLink';
 import { haversineKm, removePlusCode } from '@/lib/maps';
+import DraggableMap from '@/components/DraggableMap';
 import {
   clampHubRadiusKm,
   createBookingServiceHub,
@@ -85,7 +86,6 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const [searching, setSearching] = useState(false);
   const [resolvingPlace, setResolvingPlace] = useState(false);
 
-  const mapElRef = useRef<HTMLDivElement>(null);
   const placesHostRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
@@ -272,35 +272,20 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       });
     } else if (hasPoint) {
       map.fitBounds(bounds, 36);
-    } else {
-      map.setCenter(BENGALURU);
-      map.setZoom(11);
+    try {
+      google.maps.event.trigger(map, 'resize');
+    } catch {
+      /* ignore */
     }
   }, [draft, hubs, selected, selectedId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        await ensureGoogleMapsApi();
-        if (cancelled || !mapElRef.current || mapRef.current) return;
-        mapRef.current = new window.google.maps.Map(mapElRef.current, {
-          center: BENGALURU,
-          zoom: 11,
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: false,
-          clickableIcons: false,
-          gestureHandling: 'greedy',
-        });
-      } catch {
-        if (!cancelled) toast.error('Could not load Google Maps');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const handleMapReady = useCallback(
+    (map: google.maps.Map | null) => {
+      mapRef.current = map;
+      if (map) paintMap();
+    },
+    [paintMap]
+  );
 
   useEffect(() => {
     paintMap();
@@ -323,7 +308,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             resolve(null);
             return;
           }
-          const service = new window.google.maps.places.PlacesService(host);
+          const service = new window.google.maps.places.PlacesService(
+            mapRef.current || host
+          );
           service.getDetails(
             {
               placeId: prediction.placeId,
@@ -475,9 +462,21 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         </div>
       ) : null}
 
-      <div className="relative shrink-0">
-        <div ref={mapElRef} className="h-[220px] w-full bg-muted sm:h-[280px]" />
-        <div className="absolute left-3 right-3 top-3 z-10">
+      <div
+        className="relative w-full shrink-0 overflow-hidden bg-muted"
+        style={{ height: 'min(38dvh, 420px)', minHeight: 240 }}
+      >
+        <DraggableMap
+          center={BENGALURU}
+          zoom={11}
+          height="100%"
+          hideMarker
+          mapTypeControl={false}
+          streetViewControl={false}
+          fullscreenControl={false}
+          onMapReady={handleMapReady}
+        />
+        <div className="absolute left-3 right-3 top-3 z-20">
           <div className="relative rounded-xl border border-border bg-card shadow-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input

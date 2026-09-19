@@ -25,6 +25,8 @@ interface DraggableMapProps {
   myLocation?: { lat: number; lng: number; accuracyMeters?: number } | null;
   /** Urban Company-style: pin stays in the center, user pans the map. Booking picker only. */
   centerPin?: boolean;
+  /** Hub overview: map canvas only — parent draws coverage circles. */
+  hideMarker?: boolean;
   onMapReady?: (map: google.maps.Map | null) => void;
   /** Center-pin mode: fired when the user starts panning, before the map settles. */
   onMoveStart?: () => void;
@@ -75,6 +77,7 @@ const DraggableMap = ({
   centerPin = false,
   onMapReady,
   onMoveStart,
+  hideMarker = false,
 }: DraggableMapProps) => {
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -89,6 +92,7 @@ const DraggableMap = ({
   const onMapReadyRef = useRef(onMapReady);
   const onMoveStartRef = useRef(onMoveStart);
   const liftingRef = useRef(false);
+  const hideMarkerRef = useRef(hideMarker);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [lifting, setLifting] = useState(false);
 
@@ -97,6 +101,7 @@ const DraggableMap = ({
   zoomRef.current = zoom;
   myLocationRef.current = myLocation;
   centerPinRef.current = centerPin;
+  hideMarkerRef.current = hideMarker;
   onMapReadyRef.current = onMapReady;
   onMoveStartRef.current = onMoveStart;
 
@@ -180,7 +185,7 @@ const DraggableMap = ({
         fullscreenControl,
         zoomControl,
         gestureHandling: centerPinRef.current ? 'cooperative' : 'greedy',
-        clickableIcons: !centerPinRef.current,
+        clickableIcons: !centerPinRef.current && !hideMarkerRef.current,
         keyboardShortcuts: false,
       });
 
@@ -217,7 +222,7 @@ const DraggableMap = ({
             emitCenter();
           }, 50);
         });
-      } else {
+      } else if (!hideMarkerRef.current) {
         const markerInstance = new window.google.maps.Marker({
           position: centerRef.current,
           map: mapInstance,
@@ -355,8 +360,11 @@ const DraggableMap = ({
       className={`relative w-full overflow-hidden ${
         centerPin
           ? 'rounded-none border-0 shadow-none'
-          : 'rounded-lg border-2 border-gray-300 shadow-lg'
+          : hideMarker
+            ? 'h-full rounded-none border-0 shadow-none'
+            : 'rounded-lg border-2 border-gray-300 shadow-lg'
       }`}
+      style={hideMarker || height === '100%' ? { height: '100%' } : undefined}
     >
       <div
         ref={mapElRef}
