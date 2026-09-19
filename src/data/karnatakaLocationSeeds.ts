@@ -41,8 +41,8 @@ export const KARNATAKA_LOCATION_SEEDS: KarnatakaLocationSeed[] = [
   { name: 'Chamarajanagar', district: 'Chamarajanagar', nearby: ['Kollegal', 'Gundlupet', 'Yelandur', 'Mysuru', 'Bandipur'] },
 
   // Coastal Karnataka
-  { name: 'Mangaluru', district: 'Dakshina Kannada', nearby: ['Ullal', 'Surathkal', 'Bantwal', 'Puttur', 'Moodbidri', 'Udupi'], extraKeywords: ['RO service Mangalore', 'water purifier service Mangaluru Karnataka'] },
-  { name: 'Udupi', district: 'Udupi', nearby: ['Manipal', 'Kundapura', 'Karkala', 'Mangaluru', 'Byndoor', 'Brahmavar'] },
+  { name: 'Mangaluru', district: 'Dakshina Kannada', nearby: ['Ullal', 'Surathkal', 'Baikampady', 'Panambur', 'HPCL Mangaluru', 'Bejai', 'Kadri', 'Udupi'], extraKeywords: ['RO service Mangalore', 'water purifier service Mangaluru Karnataka', 'RO service HPCL Mangalore', 'industrial RO Mangalore', 'RO repair Baikampady', 'RO service Panambur Mangalore', 'best RO service Mangalore'] },
+  { name: 'Udupi', district: 'Udupi', nearby: ['Manipal', 'Malpe', 'Kundapura', 'Karkala', 'Mangaluru', 'Ambalpady', 'Parkala', 'Brahmavar'], extraKeywords: ['RO service Udupi', 'RO repair Udupi Karnataka', 'water purifier Udupi', 'RO service near Udupi Temple', 'RO service Manipal Udupi', 'RO AMC Udupi'] },
   { name: 'Manipal', district: 'Udupi', nearby: ['Udupi', 'Kundapura', 'Karkala', 'Mangaluru', 'Parkala'] },
   { name: 'Kundapura', district: 'Udupi', nearby: ['Udupi', 'Karkala', 'Byndoor', 'Manipal', 'Senapura'] },
   { name: 'Karkala', district: 'Udupi', nearby: ['Udupi', 'Kundapura', 'Moodbidri', 'Belthangady'] },
@@ -97,7 +97,7 @@ export const KARNATAKA_LOCATION_SEEDS: KarnatakaLocationSeed[] = [
   { name: 'Sira', district: 'Tumakuru', nearby: ['Tumakuru', 'Madhugiri', 'Pavagada', 'Koratagere'] },
 
   // Hassan & Mandya
-  { name: 'Hassan', district: 'Hassan', nearby: ['Arsikere', 'Belur', 'Sakleshpur', 'Channarayapatna', 'Alur'] },
+  { name: 'Hassan', district: 'Hassan', nearby: ['Arsikere', 'Belur', 'Sakleshpur', 'Channarayapatna', 'Halebidu', 'BM Road Hassan', 'Holenarasipura'], extraKeywords: ['RO service Hassan', 'RO repair Hassan Karnataka', 'water purifier Hassan', 'RO installation Hassan', 'RO AMC Hassan', 'best RO service Hassan city'] },
   { name: 'Sakleshpur', district: 'Hassan', nearby: ['Hassan', 'Belur', 'Subramanya', 'Mudigere'] },
   { name: 'Arsikere', district: 'Hassan', nearby: ['Hassan', 'Tiptur', 'Belur', 'Javagal'] },
   { name: 'Belur', district: 'Hassan', nearby: ['Hassan', 'Arsikere', 'Chikkamagaluru', 'Sakleshpur'] },

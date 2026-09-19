@@ -32,7 +32,7 @@ export interface BrandSeoProfile {
 }
 
 const SHARED_SERVICE_AREAS =
-  'Bengaluru, Bangalore, Whitefield, ITPL, Electronic City, Mysuru, Mangaluru, Hubballi, Belagavi, Tumakuru, Shivamogga, Hassan, Mandya, Davanagere, Ballari, Raichur, Kalaburagi, Bidar, Vijayapura, Bagalkote, Udupi, Karwar, Chikkamagaluru, Kodagu, Kolar, Ramanagara, Chikkaballapura, Chamarajanagar, Hosur, Nelamangala, Doddaballapur, Anjanapura, Koramangala, Indiranagar, Dakshina Kannada, Uttara Kannada, Vijayanagara, Gadag, Haveri, Koppal, Yadgir, Chitradurga, Dharwad';
+  'Bengaluru, Bangalore, Whitefield, ITPL, Electronic City, Mysuru, Mangaluru, Mangalore, Hubballi, Belagavi, Tumakuru, Shivamogga, Hassan, Mandya, Davanagere, Ballari, Raichur, Kalaburagi, Bidar, Vijayapura, Bagalkote, Udupi, Manipal, Malpe, Karwar, Chikkamagaluru, Kodagu, Kolar, Ramanagara, Chikkaballapura, Chamarajanagar, Hosur, Nelamangala, Doddaballapur, Anjanapura, Koramangala, Indiranagar, Dakshina Kannada, Uttara Kannada, Vijayanagara, Gadag, Haveri, Koppal, Yadgir, Chitradurga, Dharwad, HPCL Mangalore, Baikampady, Panambur, Surathkal, Belur, Sakleshpur, Arsikere';
 
 const KARNATAKA_DISTRICTS = [
   'Bengaluru Urban', 'Bengaluru Rural', 'Mysuru', 'Dakshina Kannada', 'Udupi', 'Uttara Kannada',
@@ -50,7 +50,7 @@ const HYDROGEN_SEO: BrandSeoProfile = {
   defaultDescription:
     'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. Same-day RO installation, repair, maintenance and filter replacement across all Bangalore areas. Call +91-8884944288.',
   keywords:
-    'Hydrogen RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, water purifier service Karnataka, RO repair Karnataka, RO installation Karnataka, commercial RO 25 LPH Bangalore, 50 LPH RO plant Bengaluru, 500 LPH RO plant, 1000 LPH RO plant Karnataka, new water softener installation Bangalore, water softener service Karnataka, RO AMC Karnataka, RO maintenance Karnataka, RO technician Karnataka, Kent RO service, Aquaguard service, Livpure service, Pureit service, AO Smith service, best RO service near me, RO service Mysuru, RO service Mangaluru, RO service Hubballi, RO service Belagavi, same day RO service Karnataka',
+    'Hydrogen RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, water purifier service Karnataka, RO repair Karnataka, RO installation Karnataka, commercial RO 25 LPH Bangalore, 50 LPH RO plant Bengaluru, 500 LPH RO plant, 1000 LPH RO plant Karnataka, new water softener installation Bangalore, water softener service Karnataka, RO AMC Karnataka, RO maintenance Karnataka, RO technician Karnataka, Kent RO service, Aquaguard service, Livpure service, Pureit service, AO Smith service, best RO service near me, RO service Mysuru, RO service Mangaluru, RO service Mangalore, RO service Hassan, RO service Udupi, RO service HPCL Mangalore, RO service Baikampady, RO service Hubballi, RO service Belagavi, same day RO service Karnataka',
   ogImage: 'https://hydrogenro.com/og-image.jpg', // TODO(seo): add a proper 1200x630 brand OG image (placeholder removed)
   logoPath: 'https://hydrogenro.com/fulllogo.png',
   phones: ['+91-8884944288', '+91-9886944288'],
@@ -73,7 +73,7 @@ const ELEVEN_SEO: BrandSeoProfile = {
   defaultDescription:
     'Eleven RO — home RO, commercial 25/50/500/1000 LPH plants and new water softener installation. Based in Bengaluru, covering up to 250 km including Anjanapura, JP Nagar, Bannerghatta and nearby districts. Call +91-9880693311.',
   keywords:
-    'Eleven RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, commercial RO 25 LPH Bangalore, 50 LPH RO plant Bengaluru, 500 LPH RO plant, 1000 LPH RO plant Karnataka, new water softener installation Bangalore, water softener service Karnataka, RO AMC Karnataka, Kent RO service, Aquaguard service, RO service Anjanapura, RO service Tumakuru, RO service Ramanagara, RO service Kolar, RO service Hosur, RO service Nelamangala, same day RO service Eleven RO',
+    'Eleven RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, commercial RO 25 LPH Bangalore, 50 LPH RO plant Bengaluru, 500 LPH RO plant, 1000 LPH RO plant Karnataka, new water softener installation Bangalore, water softener service Karnataka, RO AMC Karnataka, Kent RO service, Aquaguard service, RO service Anjanapura, RO service Tumakuru, RO service Ramanagara, RO service Kolar, RO service Hosur, RO service Nelamangala, RO service Hassan, RO service Udupi, RO service Mangaluru, RO service Mangalore, RO service HPCL Mangalore, RO service Baikampady, same day RO service Eleven RO',
   ogImage: 'https://elevenro.com/elevenro-og.webp',
   logoPath: 'https://elevenro.com/elevenrofulloogo.webp',
   phones: ['+91-9880693311', '+91-8792467611'],

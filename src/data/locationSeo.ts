@@ -4,6 +4,7 @@
 import { karnatakaSeedsToLocationSeo, KARNATAKA_LOCATION_SEEDS } from '@/data/karnatakaLocationSeeds';
 import { ALL_MICRO_AREA_SEEDS } from '@/data/karnatakaMicroAreas';
 import { KARNATAKA_DISTRICT_EXPANSION_SEEDS } from '@/data/karnatakaDistrictExpansion';
+import { HASSAN_UDUPI_MANGALURU_LANDMARK_SEEDS } from '@/data/hassanUdupiMangaluruSeo';
 import { BENGALURU_ZONE_EXPANSION } from '@/data/bengaluruZoneExpansion';
 
 export interface LocationSEO {
@@ -430,6 +431,7 @@ export const locationSeoList: LocationSEO[] = (() => {
   karnatakaSeedsToLocationSeo(KARNATAKA_LOCATION_SEEDS).forEach(add);
   karnatakaSeedsToLocationSeo(ALL_MICRO_AREA_SEEDS).forEach(add);
   karnatakaSeedsToLocationSeo(KARNATAKA_DISTRICT_EXPANSION_SEEDS).forEach(add);
+  karnatakaSeedsToLocationSeo(HASSAN_UDUPI_MANGALURU_LANDMARK_SEEDS).forEach(add);
   BENGALURU_ZONE_EXPANSION.forEach(add);
   return merged;
 })();
