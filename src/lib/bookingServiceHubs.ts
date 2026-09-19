@@ -13,11 +13,13 @@ export const MAX_HUB_POLYGON_POINTS = 16;
 export const MAX_CUSTOMER_NOTE_LEN = 240;
 export const MAX_OUT_OF_AREA_MESSAGE_LEN = 320;
 export const HUB_MATCH_SLACK_KM = 0.04;
-export const OUT_OF_AREA_TITLE = 'This pin is a little outside our usual area';
+export const OUT_OF_AREA_TITLE = 'This is quite far from us';
 export const DEFAULT_OUT_OF_AREA_MESSAGE =
-  'Give us a call and we’ll see how we can help.';
-const LEGACY_OUT_OF_AREA_MESSAGE =
-  'We may not cover this area. Please call us if you need any help.';
+  'We may not be able to come here. Please call us and we’ll see how we can help.';
+const LEGACY_OUT_OF_AREA_MESSAGES = [
+  'We may not cover this area. Please call us if you need any help.',
+  'Give us a call and we’ll see how we can help.',
+];
 export const DEFAULT_CALLBACK_MESSAGE =
   'We can come here, but not immediately. We’ll call you back to confirm the visit.';
 export const DEFAULT_NO_SERVICE_MESSAGE =
@@ -420,11 +422,10 @@ export function formatOutOfServiceAreaMessage(
   const names = result.nearest.map((row) => row.hub.name).filter(Boolean);
   const hubsLabel = formatHubsLabel(names);
   const custom = String(customMessage || '').trim();
-  if (custom && custom !== DEFAULT_OUT_OF_AREA_MESSAGE) {
+  if (custom && custom !== DEFAULT_OUT_OF_AREA_MESSAGE && !LEGACY_OUT_OF_AREA_MESSAGES.includes(custom)) {
     return custom.replaceAll('{hubs}', hubsLabel || 'our service areas');
   }
-  if (!hubsLabel) return DEFAULT_OUT_OF_AREA_MESSAGE;
-  return `We usually serve ${hubsLabel}. Give us a call and we’ll see how we can help.`;
+  return DEFAULT_OUT_OF_AREA_MESSAGE;
 }
 
 export function hubCustomerNote(result: HubMatchResult): string {
@@ -442,7 +443,7 @@ export function invalidateBookingServiceHubsCache() {
 
 function clampOutOfAreaMessage(value: string | null | undefined): string {
   const trimmed = String(value || '').trim().slice(0, MAX_OUT_OF_AREA_MESSAGE_LEN);
-  if (!trimmed || trimmed === LEGACY_OUT_OF_AREA_MESSAGE) return DEFAULT_OUT_OF_AREA_MESSAGE;
+  if (!trimmed || LEGACY_OUT_OF_AREA_MESSAGES.includes(trimmed)) return DEFAULT_OUT_OF_AREA_MESSAGE;
   return trimmed;
 }
 
