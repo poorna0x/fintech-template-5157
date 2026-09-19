@@ -131,6 +131,19 @@ async function notifyOwnerOfBooking(client, row, phoneNorm, job) {
   }
 }
 
+function isWebsiteCustomTimeAllowed(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return true;
+  const m = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return false;
+  const hours = Number(m[1]);
+  const minutes = Number(m[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return false;
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return false;
+  const mins = hours * 60 + minutes;
+  return mins >= 9 * 60 && mins <= 18 * 60;
+}
+
 exports.handler = async (event) => {
   const pre = preflightOrReject(event);
   if (pre.handled) return pre.response;
@@ -214,6 +227,15 @@ exports.handler = async (event) => {
       '[booking-job-create] hub check failed, allowing booking:',
       err && err.message
     );
+  }
+
+  const requirements = Array.isArray(row.requirements) ? row.requirements[0] : null;
+  const customTime = requirements && requirements.custom_time;
+  if (customTime && !isWebsiteCustomTimeAllowed(customTime)) {
+    return jsonResponse(422, corsHeaders, {
+      error: 'Custom time must be between 9:00 AM and 6:00 PM.',
+      code: 'BOOKING_TIME_WINDOW',
+    });
   }
 
   const { data, error } = await client.admin.rpc('create_job_for_booking', {
