@@ -284,11 +284,16 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // Must be cleared whenever the Maps link changes or the form resets; otherwise the next
   // customer can inherit the previous customer's pin (admin link correct, tech/distance wrong).
   const fetchedCoordsRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  // Full expanded Maps URL from last Fetch Address (for long-press test open).
+  const lastResolvedFullMapsUrlRef = useRef<string | null>(null);
+  const fetchAddressLongPressTimerRef = useRef<number | null>(null);
+  const fetchAddressLongPressFiredRef = useRef(false);
   // Full Maps share text (place name + link) from clipboard — used when short-link expand fails.
   const mapsShareTextRef = useRef('');
 
   const clearLocationFetchState = useCallback(() => {
     fetchedCoordsRef.current = null;
+    lastResolvedFullMapsUrlRef.current = null;
     mapsShareTextRef.current = '';
   }, []);
   // Guards against double-clicks and other re-entrancy on the Fetch Address button.
@@ -1047,8 +1052,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         return;
       }
 
-      const { coords, didExpandShortLink, placeHintUsed, placeName } = resolved;
+      const { coords, didExpandShortLink, placeHintUsed, placeName, resolvedLocation } = resolved;
       const stableMapsLink = `https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`;
+      lastResolvedFullMapsUrlRef.current =
+        resolvedLocation && !isGoogleMapsShortLink(resolvedLocation)
+          ? resolvedLocation
+          : stableMapsLink;
       if (fromAutofill && generationAtStart !== autofillGenerationRef.current) return;
       setAddFormData((prev) => {
         // Re-check inside updater: clear X can land between the await and this write.
@@ -1307,6 +1316,41 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       removeAppListener?.();
     };
   }, [open, showResumePrompt, showExistingPrompt, openGateReady, tryAutoFillFromRecentClipboard]);
+
+  const clearFetchAddressLongPress = useCallback(() => {
+    if (fetchAddressLongPressTimerRef.current != null) {
+      window.clearTimeout(fetchAddressLongPressTimerRef.current);
+      fetchAddressLongPressTimerRef.current = null;
+    }
+  }, []);
+
+  const openResolvedMapsLinkForTest = useCallback(() => {
+    const fromField =
+      extractMapsUrlFromText(addFormDataRef.current.google_location || '') ||
+      sanitizeGoogleMapsInput(addFormDataRef.current.google_location || '') ||
+      googleLocationRef.current;
+    const url = lastResolvedFullMapsUrlRef.current || fromField;
+    if (!url || !isGoogleMapsUrl(url)) {
+      toast.info('Fetch an address first, then long-press to open the resolved link');
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+    toast.info('Opened resolved Maps link');
+  }, []);
+
+  const onFetchAddressPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (e.button !== 0) return;
+      fetchAddressLongPressFiredRef.current = false;
+      clearFetchAddressLongPress();
+      fetchAddressLongPressTimerRef.current = window.setTimeout(() => {
+        fetchAddressLongPressTimerRef.current = null;
+        fetchAddressLongPressFiredRef.current = true;
+        openResolvedMapsLinkForTest();
+      }, 1500);
+    },
+    [clearFetchAddressLongPress, openResolvedMapsLinkForTest]
+  );
 
   const fetchAddressFromGoogleLocation = async () => {
     // Prevent overlapping runs (double-clicks, accidental Enter while busy).
@@ -2487,14 +2531,27 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={fetchAddressFromGoogleLocation}
+                    onClick={(e) => {
+                      clearFetchAddressLongPress();
+                      if (fetchAddressLongPressFiredRef.current) {
+                        e.preventDefault();
+                        fetchAddressLongPressFiredRef.current = false;
+                        return;
+                      }
+                      void fetchAddressFromGoogleLocation();
+                    }}
+                    onPointerDown={onFetchAddressPointerDown}
+                    onPointerUp={clearFetchAddressLongPress}
+                    onPointerLeave={clearFetchAddressLongPress}
+                    onPointerCancel={clearFetchAddressLongPress}
+                    onContextMenu={(e) => e.preventDefault()}
                     disabled={isFetchingAddress}
                     aria-busy={isFetchingAddress}
-                    className="h-10 shrink-0 whitespace-nowrap"
+                    className="h-10 shrink-0 whitespace-nowrap select-none touch-manipulation [-webkit-touch-callout:none]"
                     title={
                       addFormData.google_location
-                        ? 'Fetch address from Google Maps link'
-                        : 'Paste from clipboard and fetch address'
+                        ? 'Fetch address from Google Maps link (long-press 1.5s to open resolved link)'
+                        : 'Paste from clipboard and fetch address (long-press 1.5s to open resolved link)'
                     }
                   >
                     {isFetchingAddress ? (
