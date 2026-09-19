@@ -34,10 +34,20 @@ REVOKE ALL ON public.booking_service_hubs FROM PUBLIC;
 GRANT SELECT ON public.booking_service_hubs TO anon, authenticated, service_role;
 GRANT INSERT, UPDATE, DELETE ON public.booking_service_hubs TO authenticated, service_role;
 
+-- Anon cannot EXECUTE is_admin_user() (security-hardening revokes it). A single
+-- policy that ORs is_admin_user() therefore 401s public /book and fail-opens.
 DROP POLICY IF EXISTS booking_service_hubs_public_select ON public.booking_service_hubs;
-CREATE POLICY booking_service_hubs_public_select
+DROP POLICY IF EXISTS booking_service_hubs_anon_select ON public.booking_service_hubs;
+DROP POLICY IF EXISTS booking_service_hubs_authenticated_select ON public.booking_service_hubs;
+CREATE POLICY booking_service_hubs_anon_select
   ON public.booking_service_hubs
   FOR SELECT
+  TO anon
+  USING (is_active = true);
+CREATE POLICY booking_service_hubs_authenticated_select
+  ON public.booking_service_hubs
+  FOR SELECT
+  TO authenticated
   USING (
     is_active = true
     OR (SELECT public.is_admin_user())
