@@ -55,3 +55,19 @@ describe('scoreSettingsMatch typos', () => {
     expect(scoreSettingsMatch(whatsapp, 'xyzzy')).toBe(0);
   });
 });
+
+describe('scoreSettingsMatch location hubs', () => {
+  const hubs = {
+    id: 'service-hubs',
+    label: 'Location hubs',
+    description: 'Areas where website and WhatsApp booking is allowed',
+    keywords: 'hub hubs service area coverage radius map pincode book location booking zone',
+  };
+
+  it('ranks Location hubs for location, hub, and coverage', () => {
+    expect(scoreSettingsMatch(hubs, 'location')).toBeGreaterThanOrEqual(800);
+    expect(scoreSettingsMatch(hubs, 'hub')).toBeGreaterThan(0);
+    expect(scoreSettingsMatch(hubs, 'coverage')).toBeGreaterThan(0);
+    expect(scoreSettingsMatch(hubs, 'booking area')).toBeGreaterThan(0);
+  });
+});
