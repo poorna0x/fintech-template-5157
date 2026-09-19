@@ -898,10 +898,10 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   {editorKind === 'no_service'
-                    ? 'Hubs can overlap. A no-service pocket still blocks booking even when a Normal hub covers the same streets.'
+                    ? 'Hubs can overlap. No service is ignored wherever a Normal hub covers the same pin, so a city can still book inside a larger blocked area.'
                     : editorKind === 'callback'
                       ? 'Hubs can overlap. If a Normal hub also covers this pin, booking stays normal; otherwise we show the call-back message.'
-                      : 'Hubs can overlap. Normal wins over Call back. A No-service hole still blocks that pocket.'}
+                      : 'Hubs can overlap. Normal wins over Call back and No service on the same streets.'}
                 </p>
               </div>
               <div>

@@ -262,7 +262,13 @@ async function assertLocationInServiceHub(admin, lat, lng) {
     }))
     .sort((a, b) => a.distanceKm - b.distanceKm);
 
-  const exclusion = ranked.find((row) => row.inside && row.service_kind === 'no_service');
+  const inside = ranked.filter((row) => row.inside);
+  const normal = inside.find((row) => row.service_kind === 'normal');
+  if (normal) {
+    return { ok: true, enforced: true, hub: normal, kind: 'normal', notice: hubDisplayMessage(normal) || null };
+  }
+
+  const exclusion = inside.find((row) => row.service_kind === 'no_service');
   if (exclusion) {
     return {
       ok: false,
@@ -278,12 +284,7 @@ async function assertLocationInServiceHub(admin, lat, lng) {
     return { ok: true, enforced: false };
   }
 
-  const insideServing = serving.filter((row) => row.inside);
-  const normal = insideServing.find((row) => row.service_kind === 'normal');
-  if (normal) {
-    return { ok: true, enforced: true, hub: normal, kind: 'normal', notice: hubDisplayMessage(normal) || null };
-  }
-  const callback = insideServing.find((row) => row.service_kind === 'callback');
+  const callback = inside.find((row) => row.service_kind === 'callback');
   if (callback) {
     return {
       ok: true,

@@ -263,7 +263,7 @@ export const HUB_KIND_OPTIONS: Array<{
 }> = [
   { id: 'normal', label: 'Normal', hint: 'Book as usual' },
   { id: 'callback', label: 'Call back', hint: 'We go, not immediately' },
-  { id: 'no_service', label: 'No service', hint: 'Block this pocket' },
+  { id: 'no_service', label: 'No service', hint: 'Block, unless Normal covers it' },
 ];
 
 export function hubKindLabel(kind: HubServiceKind): string {
@@ -358,7 +358,19 @@ export function matchPointToServiceHubs(
     }))
     .sort((a, b) => a.distanceKm - b.distanceKm);
 
-  const exclusion = ranked.find((row) => row.inside && row.hub.service_kind === 'no_service');
+  const inside = ranked.filter((row) => row.inside);
+  const normal = inside.find((row) => row.hub.service_kind === 'normal');
+  if (normal) {
+    return {
+      ok: true,
+      enforced: true,
+      hub: normal.hub,
+      distanceKm: normal.distanceKm,
+      kind: 'normal',
+    };
+  }
+
+  const exclusion = inside.find((row) => row.hub.service_kind === 'no_service');
   if (exclusion) {
     return {
       ok: false,
@@ -372,18 +384,7 @@ export function matchPointToServiceHubs(
   const serving = ranked.filter((row) => row.hub.service_kind !== 'no_service');
   if (serving.length === 0) return { ok: true, enforced: false };
 
-  const insideServing = serving.filter((row) => row.inside);
-  const normal = insideServing.find((row) => row.hub.service_kind === 'normal');
-  if (normal) {
-    return {
-      ok: true,
-      enforced: true,
-      hub: normal.hub,
-      distanceKm: normal.distanceKm,
-      kind: 'normal',
-    };
-  }
-  const callback = insideServing.find((row) => row.hub.service_kind === 'callback');
+  const callback = inside.find((row) => row.hub.service_kind === 'callback');
   if (callback) {
     return {
       ok: true,

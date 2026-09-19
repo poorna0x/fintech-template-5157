@@ -119,22 +119,54 @@ describe('hub polygons', () => {
 });
 
 describe('hub service kinds', () => {
-  it('blocks a no-service hole even inside a normal hub', () => {
-    const hole = hub({
-      id: 'hole',
-      name: 'Restricted pocket',
+  it('lets a normal hub book even when a larger no-service area overlaps it', () => {
+    const karnataka = hub({
+      id: 'ka',
+      name: 'Karnataka',
       lat: HSR.lat,
       lng: HSR.lng,
-      radius_km: 0.5,
+      radius_km: 25,
       service_kind: 'no_service',
-      customer_note: 'Army area — we cannot come here.',
     });
-    const result = matchPointToServiceHubs(HSR.lat, HSR.lng, [HSR, hole]);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toBe('no_service');
-      expect(formatOutOfServiceAreaMessage(result)).toMatch(/Army area/);
+    const result = matchPointToServiceHubs(HSR.lat, HSR.lng, [karnataka, HSR]);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.enforced) {
+      expect(result.kind).toBe('normal');
+      expect(result.hub.id).toBe('1');
     }
+  });
+
+  it('still blocks a no-service area when no normal hub covers the pin', () => {
+    const karnataka = hub({
+      id: 'ka',
+      name: 'Karnataka',
+      lat: HSR.lat,
+      lng: HSR.lng,
+      radius_km: 25,
+      service_kind: 'no_service',
+    });
+    const justOutsideCity = matchPointToServiceHubs(HSR.lat + 0.09, HSR.lng, [karnataka, HSR]);
+    expect(justOutsideCity.ok).toBe(false);
+    if (!justOutsideCity.ok) expect(justOutsideCity.reason).toBe('no_service');
+  });
+
+  it('does not let a callback hub override a no-service area', () => {
+    const karnataka = hub({
+      id: 'ka',
+      name: 'Karnataka',
+      lat: HSR.lat,
+      lng: HSR.lng,
+      radius_km: 25,
+      service_kind: 'no_service',
+    });
+    const delayed = hub({
+      ...HSR,
+      id: 'slow',
+      service_kind: 'callback',
+    });
+    const result = matchPointToServiceHubs(HSR.lat, HSR.lng, [karnataka, delayed]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('no_service');
   });
 
   it('allows callback areas with a call-back notice', () => {
