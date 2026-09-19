@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { ensureGoogleMapsApi } from '@/lib/googleMapsLink';
+import { ensureGoogleMapsApi, GOOGLE_MAPS_AUTH_FAILURE_EVENT, didGoogleMapsAuthFail, googleMapsReferrerHelp } from '@/lib/googleMapsLink';
 
 declare global {
   interface Window {
     google: typeof google;
     initMap: () => void;
+    gm_authFailure?: () => void;
   }
 }
 
@@ -95,6 +96,7 @@ const DraggableMap = ({
   const hideMarkerRef = useRef(hideMarker);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [lifting, setLifting] = useState(false);
+  const [mapsAuthError, setMapsAuthError] = useState(didGoogleMapsAuthFail);
 
   onChangeRef.current = onLocationChange;
   centerRef.current = center;
@@ -293,8 +295,12 @@ const DraggableMap = ({
 
     void init();
 
+    const onAuthFail = () => setMapsAuthError(true);
+    window.addEventListener(GOOGLE_MAPS_AUTH_FAILURE_EVENT, onAuthFail);
+
     return () => {
       cancelled = true;
+      window.removeEventListener(GOOGLE_MAPS_AUTH_FAILURE_EVENT, onAuthFail);
       resizeObserver?.disconnect();
       if (sizePoll != null) window.clearInterval(sizePoll);
       if (dragStartListener) {
@@ -374,8 +380,15 @@ const DraggableMap = ({
           position: 'relative',
         }}
       />
-      {centerPin && isMapLoaded ? <MapCenterPin lifting={lifting} /> : null}
-      {!isMapLoaded && (
+      {centerPin && isMapLoaded && !mapsAuthError ? <MapCenterPin lifting={lifting} /> : null}
+      {mapsAuthError ? (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center bg-muted px-4 text-center"
+          style={{ height }}
+        >
+          <p className="max-w-md text-sm text-muted-foreground">{googleMapsReferrerHelp()}</p>
+        </div>
+      ) : !isMapLoaded ? (
         <div
           className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100"
           style={{ height }}
@@ -385,7 +398,7 @@ const DraggableMap = ({
             <p className="text-sm text-gray-600">Loading map...</p>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

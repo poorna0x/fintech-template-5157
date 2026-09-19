@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { ensureGoogleMapsApi } from '@/lib/googleMapsLink';
+import { fetchGooglePlacePredictions } from '@/lib/googlePlacesSearch';
 import { haversineKm, removePlusCode } from '@/lib/maps';
 import DraggableMap from '@/components/DraggableMap';
 import {
@@ -124,14 +125,6 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const ensureSessionToken = () => {
-    if (!window.google?.maps?.places?.AutocompleteSessionToken) return null;
-    if (!sessionTokenRef.current) {
-      sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
-    }
-    return sessionTokenRef.current;
-  };
-
   const fetchPredictions = useCallback(async (input: string) => {
     const trimmed = input.trim();
     if (trimmed.length < 2) {
@@ -141,37 +134,12 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     }
     setSearching(true);
     try {
-      await ensureGoogleMapsApi();
-      if (!window.google?.maps?.places?.AutocompleteService) {
-        setSearching(false);
-        return;
-      }
-      const service = new window.google.maps.places.AutocompleteService();
-      const token = ensureSessionToken();
-      service.getPlacePredictions(
-        {
-          input: trimmed,
-          componentRestrictions: { country: 'in' },
-          ...(token ? { sessionToken: token } : {}),
-        },
-        (results, status) => {
-          setSearching(false);
-          if (status !== window.google.maps.places.PlacesServiceStatus.OK || !results?.length) {
-            setPredictions([]);
-            return;
-          }
-          setPredictions(
-            results.map((item) => ({
-              placeId: item.place_id,
-              mainText: item.structured_formatting?.main_text || item.description,
-              secondaryText: item.structured_formatting?.secondary_text || '',
-            }))
-          );
-        }
-      );
+      const results = await fetchGooglePlacePredictions(trimmed);
+      setPredictions(results);
     } catch {
-      setSearching(false);
       setPredictions([]);
+    } finally {
+      setSearching(false);
     }
   }, []);
 

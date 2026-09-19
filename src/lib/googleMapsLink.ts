@@ -370,7 +370,39 @@ export function collectPlaceHints(...texts: Array<string | null | undefined>): s
   return [...hints];
 }
 
+declare global {
+  interface Window {
+    gm_authFailure?: () => void;
+  }
+}
+
 let googleMapsScriptPromise: Promise<void> | null = null;
+let googleMapsAuthFailed = false;
+
+export const GOOGLE_MAPS_AUTH_FAILURE_EVENT = 'hro-google-maps-auth-failure';
+
+export function didGoogleMapsAuthFail(): boolean {
+  return googleMapsAuthFailed;
+}
+
+export function googleMapsReferrerHelp(): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8080';
+  return `Google Maps blocked this page. In Google Cloud Console → that API key → Application restrictions → HTTP referrers, add ${origin}/*`;
+}
+
+function installGoogleMapsAuthFailureHandler() {
+  if (typeof window === 'undefined') return;
+  const previous = window.gm_authFailure;
+  window.gm_authFailure = () => {
+    googleMapsAuthFailed = true;
+    try {
+      previous?.();
+    } catch {
+      /* ignore */
+    }
+    window.dispatchEvent(new Event(GOOGLE_MAPS_AUTH_FAILURE_EVENT));
+  };
+}
 
 function mapsScriptAlreadyUsable(): boolean {
   return Boolean(window.google?.maps?.Map || window.google?.maps?.Geocoder || window.google?.maps?.importLibrary);
@@ -381,6 +413,7 @@ export function loadGoogleMapsGeocoderScript(): Promise<void> {
   if (typeof window === 'undefined') {
     return Promise.reject(new Error('Google Maps is only available in the browser'));
   }
+  installGoogleMapsAuthFailureHandler();
   if (mapsScriptAlreadyUsable()) {
     return Promise.resolve();
   }

@@ -2138,7 +2138,7 @@ const Settings = () => {
     const observers: IntersectionObserver[] = [];
     for (const [key, ref] of pairs) {
       const el = ref.current;
-      if (!el) continue;
+      if (!(el instanceof Element)) continue;
       const obs = new IntersectionObserver(
         (entries) => {
           if (entries.some((e) => e.isIntersecting)) {
