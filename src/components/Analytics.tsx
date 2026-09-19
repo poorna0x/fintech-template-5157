@@ -30,7 +30,8 @@ import {
   MapPin,
   Heart,
   PhoneForwarded,
-  Package
+  Package,
+  Map
 } from 'lucide-react';
 import { normalizeForComparison, normalizeLeadType, getLeadSourceFromJob } from '@/lib/adminUtils';
 import {
@@ -60,6 +61,7 @@ import { cn } from '@/lib/utils';
 
 // Code-split: spare-parts analytics JS only downloads when the section is opened.
 const SparePartsAnalytics = React.lazy(() => import('@/components/admin/SparePartsAnalytics'));
+const AnalyticsCustomerSpreadMap = React.lazy(() => import('@/components/admin/AnalyticsCustomerSpreadMap'));
 import {
   AnalyticsListPagination,
   AnalyticsListLoadingOverlay,
@@ -740,6 +742,7 @@ const Analytics = () => {
   const [brandsLoaded, setBrandsLoaded] = useState(false);
   const [trendGraphLoaded, setTrendGraphLoaded] = useState(false);
   const [leadSourceTrendLoaded, setLeadSourceTrendLoaded] = useState(false);
+  const [spreadMapLoaded, setSpreadMapLoaded] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
@@ -2737,6 +2740,37 @@ const Analytics = () => {
             }}
           />
         ) : null}
+      </AnalyticsLoadSection>
+
+      <AnalyticsLoadSection
+        title="Customer spread map"
+        description="Where customers sit on the map for this period. Color by density, billing, or top brand. Tap a pocket for brands, average bill, and whether it sits inside Location Hubs."
+        icon={<Map />}
+        loadLabel="Open customer spread map"
+        loadingLabel="Opening…"
+        onLoad={() => setSpreadMapLoaded(true)}
+        loaded={spreadMapLoaded}
+        keepActionVisible
+        emptyHint="Load the map to see customer clusters, hot billing pockets, and brand strongholds."
+      >
+        <React.Suspense
+          fallback={
+            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Opening map…
+            </div>
+          }
+        >
+          {(() => {
+            const { startDate, endDate } = getDateRange();
+            return (
+              <AnalyticsCustomerSpreadMap
+                startISO={startDate ? startDate.toISOString() : null}
+                endISO={endDate ? endDate.toISOString() : null}
+              />
+            );
+          })()}
+        </React.Suspense>
       </AnalyticsLoadSection>
 
       {/* Top locations - load on demand */}
