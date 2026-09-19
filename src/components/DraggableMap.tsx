@@ -160,6 +160,7 @@ const DraggableMap = ({
   useEffect(() => {
     let cancelled = false;
     let resizeObserver: ResizeObserver | null = null;
+    let layoutObserver: ResizeObserver | null = null;
     let sizePoll: number | null = null;
     let dragListener: google.maps.MapsEventListener | null = null;
     let dragStartListener: google.maps.MapsEventListener | null = null;
@@ -247,6 +248,18 @@ const DraggableMap = ({
       paintMyLocation(mapInstance, myLocationRef.current);
       setIsMapLoaded(true);
       onMapReadyRef.current?.(mapInstance);
+      if (typeof ResizeObserver !== 'undefined') {
+        layoutObserver?.disconnect();
+        layoutObserver = new ResizeObserver(() => {
+          if (!mapRef.current || !window.google?.maps) return;
+          try {
+            window.google.maps.event.trigger(mapRef.current, 'resize');
+          } catch {
+            /* ignore */
+          }
+        });
+        layoutObserver.observe(el);
+      }
       window.setTimeout(() => {
         if (cancelled || !mapRef.current) return;
         try {
@@ -302,6 +315,7 @@ const DraggableMap = ({
       cancelled = true;
       window.removeEventListener(GOOGLE_MAPS_AUTH_FAILURE_EVENT, onAuthFail);
       resizeObserver?.disconnect();
+      layoutObserver?.disconnect();
       if (sizePoll != null) window.clearInterval(sizePoll);
       if (dragStartListener) {
         try {

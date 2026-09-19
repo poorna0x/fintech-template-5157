@@ -4,6 +4,8 @@ import {
   Check,
   Loader2,
   MapPin,
+  Maximize2,
+  Minimize2,
   Plus,
   Search,
   Trash2,
@@ -54,6 +56,7 @@ import {
 } from '@/lib/bookingServiceHubs';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
+const MAP_LARGE_STORAGE_KEY = 'hro-service-hubs-map-large';
 
 type PlacePrediction = {
   placeId: string;
@@ -85,6 +88,16 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const [outOfAreaMessage, setOutOfAreaMessage] = useState(DEFAULT_OUT_OF_AREA_MESSAGE);
   const [missingMessagesTable, setMissingMessagesTable] = useState(false);
 
+  const [mapLarge, setMapLarge] = useState(() => {
+    try {
+      return window.sessionStorage.getItem(MAP_LARGE_STORAGE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [desktopMap, setDesktopMap] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
+  );
   const [query, setQuery] = useState('');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searching, setSearching] = useState(false);
@@ -494,6 +507,39 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const editor = draft || selected;
   const configuredCount = hubs.filter((h) => h.is_active).length;
 
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const onChange = () => setDesktopMap(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  const toggleMapLarge = () => {
+    setMapLarge((prev) => {
+      const next = !prev;
+      try {
+        window.sessionStorage.setItem(MAP_LARGE_STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !window.google?.maps) return;
+    const timer = window.setTimeout(() => {
+      try {
+        window.google.maps.event.trigger(map, 'resize');
+      } catch {
+        /* ignore */
+      }
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [mapLarge, desktopMap]);
+
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-background">
       <div ref={placesHostRef} className="hidden" />
@@ -510,8 +556,18 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         </Button>
         <Button
           type="button"
+          variant="outline"
           size="sm"
-          className="ml-auto h-11 cursor-pointer gap-1.5"
+          className="ml-auto hidden h-11 cursor-pointer gap-1.5 md:inline-flex"
+          onClick={toggleMapLarge}
+        >
+          {mapLarge ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          {mapLarge ? 'Smaller map' : 'Larger map'}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-11 cursor-pointer gap-1.5 md:ml-0 ml-auto"
           onClick={() => {
             toast.message('Tap the map to drop a coverage circle, then drag the handles to resize.');
           }}
@@ -536,7 +592,10 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
 
       <div
         className="relative w-full shrink-0 overflow-hidden bg-muted"
-        style={{ height: 'min(38dvh, 420px)', minHeight: 240 }}
+        style={{
+          height: mapLarge && desktopMap ? 'min(72dvh, 760px)' : 'min(38dvh, 420px)',
+          minHeight: mapLarge && desktopMap ? 420 : 240,
+        }}
       >
         <DraggableMap
           center={BENGALURU}
