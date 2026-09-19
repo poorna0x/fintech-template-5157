@@ -12,6 +12,15 @@ function getGoogleMapsServerKey() {
   return trim(process.env.GOOGLE_MAPS_API_KEY) || trim(process.env.VITE_GOOGLE_MAPS_API_KEY) || null;
 }
 
+function noteMapsUsage(sku) {
+  try {
+    const { recordGoogleMapsUsage } = require('./google-maps-usage-helper');
+    void recordGoogleMapsUsage(sku);
+  } catch {
+    /* ignore */
+  }
+}
+
 function validLatLng(lat, lng) {
   return (
     Number.isFinite(lat) &&
@@ -229,6 +238,7 @@ async function geocodePlaceNameWithGoogle(placeName) {
               lng >= 68 &&
               lng <= 98
             ) {
+              noteMapsUsage('geocoding');
               return { latitude: lat, longitude: lng };
             }
           }
@@ -265,6 +275,7 @@ async function geocodePlaceNameWithGoogle(placeName) {
             loc.lng >= 68 &&
             loc.lng <= 98
           ) {
+            noteMapsUsage('places');
             return { latitude: loc.lat, longitude: loc.lng };
           }
         }

@@ -1,4 +1,5 @@
 import { ensureGoogleMapsApi } from '@/lib/googleMapsLink';
+import { trackGoogleMapsUsage } from '@/lib/googleMapsUsageTrack';
 import { removePlusCode } from '@/lib/maps';
 
 /** Skip 1–2 letter queries so Autocomplete does not fire on every first keystroke. */
@@ -185,7 +186,9 @@ async function resolvePlaceDetailsNew(
     await place.fetchFields({
       fields: ['location', 'formattedAddress', 'displayName'],
     });
-    return detailsFromPlace(place, fallbackName);
+    const details = detailsFromPlace(place, fallbackName);
+    if (details) trackGoogleMapsUsage('places');
+    return details;
   } catch {
     return null;
   }

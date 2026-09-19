@@ -12,6 +12,7 @@ import { db, generateJobNumber } from '@/lib/supabase';
 import { createBookingCustomer } from '@/lib/bookingCustomer';
 import { emailService } from '@/lib/email';
 import ImageUpload from './ImageUpload';
+import { installGoogleMapsUsagePatches } from '@/lib/googleMapsUsageTrack';
 
 const normalizePhone10 = (phone: string): string => phone.replace(/\D/g, '').slice(-10);
 
@@ -48,6 +49,7 @@ const BookingSection = () => {
   const loadGoogleMapsScript = (): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (window.google?.maps?.places) {
+        installGoogleMapsUsagePatches();
         resolve();
         return;
       }
@@ -60,7 +62,10 @@ const BookingSection = () => {
       script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
       script.async = true;
       script.defer = true;
-      script.onload = () => resolve();
+      script.onload = () => {
+        installGoogleMapsUsagePatches();
+        resolve();
+      };
       script.onerror = () => reject(new Error('Failed to load Google Maps'));
       document.head.appendChild(script);
     });

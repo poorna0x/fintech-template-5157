@@ -95,6 +95,12 @@ async function drivingRouteAvoidTollsOnce(origin, dest, traffic) {
         : null;
     cache.set(key, { meters, durationSec, at: Date.now() });
     pruneCache();
+    try {
+      const { recordGoogleMapsUsage } = require('./google-maps-usage-helper');
+      void recordGoogleMapsUsage('distance');
+    } catch {
+      /* ignore */
+    }
     return { meters, durationSec };
   } catch (err) {
     console.warn('[tech-travel] Google Distance Matrix failed', err?.message || err);

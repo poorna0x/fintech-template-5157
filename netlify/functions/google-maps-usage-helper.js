@@ -161,17 +161,34 @@ function skuForService(service) {
   return SKU_CATALOG.find((row) => row.match.test(name)) || null;
 }
 
+function withFreeLimit(row) {
+  const requests = Math.max(0, Number(row.requests) || 0);
+  const freeCap = Math.max(0, Number(row.freeCap) || 0);
+  const billable = Math.max(0, requests - freeCap);
+  return {
+    ...row,
+    requests,
+    remaining: Math.max(0, freeCap - requests),
+    usedPercent: freeCap ? Math.min(100, Math.round((requests / freeCap) * 1000) / 10) : 0,
+    insideFree: requests <= freeCap,
+    billable,
+    estimatedUsd: Math.round((billable / 1000) * (Number(row.usdPerThousand) || 0) * 100) / 100,
+  };
+}
+
 function emptySkus() {
-  return SKU_CATALOG.map((row) => ({
-    id: row.id,
-    label: row.label,
-    hint: row.hint,
-    freeCap: row.freeCap,
-    usdPerThousand: row.usdPerThousand,
-    requests: 0,
-    billable: 0,
-    estimatedUsd: 0,
-  }));
+  return SKU_CATALOG.map((row) =>
+    withFreeLimit({
+      id: row.id,
+      label: row.label,
+      hint: row.hint,
+      freeCap: row.freeCap,
+      usdPerThousand: row.usdPerThousand,
+      requests: 0,
+      trackedRequests: 0,
+      googleRequests: 0,
+    })
+  );
 }
 
 function rollupSkus(series) {
@@ -188,17 +205,28 @@ function rollupSkus(series) {
       other.push({ service, requests });
     }
   }
-  const skus = [...byId.values()].map((row) => {
-    const billable = Math.max(0, row.requests - row.freeCap);
-    return {
-      ...row,
-      billable,
-      estimatedUsd: Math.round((billable / 1000) * row.usdPerThousand * 100) / 100,
-    };
-  });
+  const skus = [...byId.values()].map((row) => withFreeLimit(row));
   const estimatedUsd = Math.round(skus.reduce((sum, row) => sum + row.estimatedUsd, 0) * 100) / 100;
   const requests = skus.reduce((sum, row) => sum + row.requests, 0);
   return { skus, other, estimatedUsd, requests };
+}
+
+function mergeTrackedAndGoogle(trackedBySku, googleSkus) {
+  const googleById = new Map((googleSkus || []).map((row) => [row.id, row]));
+  const skus = emptySkus().map((row) => {
+    const tracked = Math.max(0, Number(trackedBySku?.[row.id]) || 0);
+    const google = Math.max(0, Number(googleById.get(row.id)?.requests) || 0);
+    return withFreeLimit({
+      ...row,
+      requests: Math.max(tracked, google),
+      trackedRequests: tracked,
+      googleRequests: google,
+    });
+  });
+  const estimatedUsd = Math.round(skus.reduce((sum, row) => sum + row.estimatedUsd, 0) * 100) / 100;
+  const requests = skus.reduce((sum, row) => sum + row.requests, 0);
+  const insideFree = skus.every((row) => row.insideFree);
+  return { skus, estimatedUsd, requests, insideFree };
 }
 
 function seriesRequests(series) {
@@ -242,6 +270,46 @@ async function listTimeSeries(projectId, token, filter, start, end) {
   return out;
 }
 
+async function loadTrackedUsage() {
+  const db = getServiceSupabase();
+  if (!db) return { available: false, bySku: {}, error: 'Supabase service role is not configured' };
+  const monthKey = istMonthBounds().monthKey;
+  const { data, error } = await db
+    .from('google_maps_usage_counters')
+    .select('sku, requests')
+    .eq('month_key', monthKey);
+  if (error) {
+    const missing = /does not exist|schema cache|google_maps_usage_counters/i.test(error.message || '');
+    return {
+      available: false,
+      bySku: {},
+      missing,
+      error: missing
+        ? 'Run scripts/add-google-maps-usage.sql in Supabase to count Maps calls against the 10k free caps'
+        : String(error.message || 'Could not load Maps usage counters').slice(0, 220),
+    };
+  }
+  const bySku = {};
+  for (const row of data || []) {
+    if (row && row.sku) bySku[row.sku] = Math.max(0, Number(row.requests) || 0);
+  }
+  return { available: true, bySku };
+}
+
+async function recordGoogleMapsUsage(sku, count = 1) {
+  const n = Math.min(50, Math.max(1, Math.floor(Number(count) || 1)));
+  if (!SKU_CATALOG.some((row) => row.id === sku)) return;
+  try {
+    const db = getServiceSupabase();
+    if (!db) return;
+    cached = null;
+    cachedAt = 0;
+    await db.rpc('increment_google_maps_usage', { p_counts: { [sku]: n } });
+  } catch {
+    /* RPC missing until SQL is applied */
+  }
+}
+
 async function fetchMapsMonitoring(sa) {
   const token = await googleAccessToken(sa);
   const { start, end, monthKey } = istMonthBounds();
@@ -266,11 +334,13 @@ async function buildGoogleMapsUsagePayload(force = false) {
   if (!force && cached && Date.now() - cachedAt < CACHE_TTL_MS) return cached;
 
   const loaded = await loadServiceAccount();
-  const catalog = emptySkus();
+  const tracked = await loadTrackedUsage();
   const bounds = istMonthBounds();
+  const catalog = emptySkus();
   const base = {
     ok: false,
-    configured: Boolean(loaded.sa),
+    configured: Boolean(loaded.sa) || tracked.available,
+    trackingAvailable: tracked.available,
     credentialSource: loaded.source,
     projectId: loaded.sa?.projectId || null,
     monthKey: bounds.monthKey,
@@ -278,51 +348,53 @@ async function buildGoogleMapsUsagePayload(force = false) {
     other: [],
     requests: 0,
     estimatedUsd: 0,
+    insideFree: true,
     consoleUrl: loaded.sa?.projectId ? `${CONSOLE_METRICS}?project=${encodeURIComponent(loaded.sa.projectId)}` : CONSOLE_METRICS,
     generatedAt: new Date().toISOString(),
   };
 
-  if (!loaded.sa) {
-    const payload = { ...base, error: loaded.error };
-    cached = payload;
-    cachedAt = Date.now();
-    return payload;
+  let googleSkus = [];
+  let googleOther = [];
+  let googleError = null;
+  if (loaded.sa) {
+    try {
+      const usage = await fetchMapsMonitoring(loaded.sa);
+      googleSkus = usage.skus || [];
+      googleOther = usage.other || [];
+    } catch (err) {
+      googleError =
+        err.status === 403
+          ? 'Cloud Monitoring is not readable yet (grant Monitoring Viewer). App counters still track the 10k free caps.'
+          : String(err && err.message ? err.message : 'Cloud Monitoring failed').slice(0, 280);
+    }
   }
 
-  try {
-    const usage = await fetchMapsMonitoring(loaded.sa);
-    const payload = {
-      ...base,
-      ok: true,
-      monthKey: usage.monthKey,
-      skus: usage.skus,
-      other: usage.other,
-      requests: usage.requests,
-      estimatedUsd: usage.estimatedUsd,
-      generatedAt: new Date().toISOString(),
-    };
-    cached = payload;
-    cachedAt = Date.now();
-    return payload;
-  } catch (err) {
-    const message = err && err.message ? String(err.message).slice(0, 280) : 'Cloud Monitoring failed';
-    const payload = {
-      ...base,
-      ok: false,
-      error:
-        err.status === 403
-          ? 'This service account cannot read Cloud Monitoring. Grant Monitoring Viewer on the Maps GCP project, or store that SA in app_secrets.google_cloud_monitoring.'
-          : message,
-    };
-    cached = payload;
-    cachedAt = Date.now();
-    return payload;
-  }
+  const merged = mergeTrackedAndGoogle(tracked.bySku, googleSkus);
+  const payload = {
+    ...base,
+    ok: tracked.available || merged.requests > 0 || Boolean(loaded.sa && !googleError),
+    configured: base.configured,
+    skus: merged.skus,
+    other: googleOther,
+    requests: merged.requests,
+    estimatedUsd: merged.estimatedUsd,
+    insideFree: merged.insideFree,
+    error: tracked.available ? undefined : tracked.error || googleError || loaded.error,
+    note: tracked.available ? googleError || undefined : undefined,
+    generatedAt: new Date().toISOString(),
+  };
+
+  cached = payload;
+  cachedAt = Date.now();
+  return payload;
 }
 
 module.exports = {
   buildGoogleMapsUsagePayload,
+  recordGoogleMapsUsage,
   SKU_CATALOG,
   rollupSkus,
   emptySkus,
+  withFreeLimit,
+  mergeTrackedAndGoogle,
 };

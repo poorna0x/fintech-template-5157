@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Loader2, MapPin, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fetchGoogleMapsUsage, GOOGLE_MAPS_SKU_FALLBACK, type GoogleMapsUsagePayload } from '@/lib/googleMapsUsage';
@@ -11,6 +11,12 @@ function formatCount(n: number | null | undefined): string {
 function pctOfCap(used: number, cap: number): number {
   if (!cap) return 0;
   return Math.min(100, Math.max(0, (used / cap) * 100));
+}
+
+function barClass(pct: number): string {
+  if (pct >= 90) return 'bg-red-500';
+  if (pct >= 70) return 'bg-amber-500';
+  return 'bg-emerald-500';
 }
 
 export default function GoogleMapsUsageSection() {
@@ -30,6 +36,15 @@ export default function GoogleMapsUsageSection() {
 
   const skus = data?.skus?.length ? data.skus : GOOGLE_MAPS_SKU_FALLBACK;
   const estimatedUsd = data?.estimatedUsd ?? 0;
+  const focus = useMemo(() => {
+    return skus.reduce((best, row) => {
+      const a = Number(best.usedPercent) || (best.freeCap ? (best.requests / best.freeCap) * 100 : 0);
+      const b = Number(row.usedPercent) || (row.freeCap ? (row.requests / row.freeCap) * 100 : 0);
+      return b >= a ? row : best;
+    }, skus[0]);
+  }, [skus]);
+  const remaining = Math.max(0, (focus?.freeCap || 0) - (focus?.requests || 0));
+  const allInside = data?.insideFree !== false && skus.every((row) => (row.requests || 0) <= (row.freeCap || 0));
 
   return (
     <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
@@ -40,14 +55,20 @@ export default function GoogleMapsUsageSection() {
             <p className="text-xs font-semibold uppercase tracking-wide">Google Maps</p>
           </div>
           <p className="mt-2 text-2xl font-bold tabular-nums">
-            {loading ? '…' : data?.ok ? `$${estimatedUsd.toFixed(2)}` : '—'}
+            {loading
+              ? '…'
+              : data?.ok
+                ? `${formatCount(focus?.requests)} / ${formatCount(focus?.freeCap)}`
+                : '—'}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {loading
               ? 'Loading Maps usage…'
               : data?.ok
-                ? `Estimated bill after Essentials free caps · IST ${data.monthKey || 'this month'}`
-                : data?.error || 'Live usage needs Cloud Monitoring on the Maps GCP project'}
+                ? allInside
+                  ? `${focus?.label || 'Maps'} this month · ${formatCount(remaining)} of 10,000 free left`
+                  : `${formatCount(focus?.billable)} over the 10,000 free cap · ~$${estimatedUsd.toFixed(2)}`
+                : data?.error || 'Run the Maps usage SQL so we can count calls against the 10,000 free caps'}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -68,7 +89,8 @@ export default function GoogleMapsUsageSection() {
 
       <div className="grid gap-3 p-4 sm:grid-cols-2">
         {skus.map((sku) => {
-          const pct = pctOfCap(sku.requests, sku.freeCap);
+          const pct = Number(sku.usedPercent) || pctOfCap(sku.requests, sku.freeCap);
+          const left = sku.remaining ?? Math.max(0, sku.freeCap - sku.requests);
           return (
             <div key={sku.id} className="rounded-xl border bg-background/60 px-3 py-3">
               <div className="flex items-baseline justify-between gap-2">
@@ -79,7 +101,7 @@ export default function GoogleMapsUsageSection() {
               </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
-                  className={`h-full rounded-full ${pct >= 90 ? 'bg-red-500' : 'bg-emerald-500'}`}
+                  className={`h-full rounded-full ${barClass(pct)}`}
                   style={{ width: `${Math.max(pct, sku.requests > 0 ? 2 : 0)}%` }}
                 />
               </div>
@@ -89,8 +111,8 @@ export default function GoogleMapsUsageSection() {
                   {formatCount(sku.billable)} over free cap · ~${sku.estimatedUsd.toFixed(2)}
                 </p>
               ) : (
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {sku.freeCap.toLocaleString('en-IN')} free / month · ${sku.usdPerThousand.toFixed(2)} / 1,000 after
+                <p className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                  {loading ? '…' : `${formatCount(left)} free left · ${pct.toFixed(pct >= 10 ? 0 : 1)}% of 10,000 used`}
                 </p>
               )}
             </div>
@@ -105,20 +127,22 @@ export default function GoogleMapsUsageSection() {
         </p>
       ) : null}
 
-      {!loading && data?.credentialSource === 'firebase_service_account' ? (
+      {!loading && data?.note ? (
+        <p className="border-t px-4 py-2 text-[11px] text-muted-foreground">{data.note}</p>
+      ) : null}
+
+      {!loading && data?.ok ? (
         <p className="border-t px-4 py-2 text-[11px] text-muted-foreground">
-          Reading Cloud Monitoring with the Firebase service account. If counts look empty, grant that account
-          Monitoring Viewer on the Maps GCP project, or store a dedicated JSON in{' '}
-          <code className="rounded bg-muted px-1">app_secrets.google_cloud_monitoring</code>.
+          Each SKU has its own 10,000 Essentials free calls this IST month. Booking maps, address search, pin
+          geocodes, and travel-km lookups are counted here.
         </p>
       ) : null}
 
-      {!loading && !data?.ok && !data?.configured ? (
+      {!loading && !data?.ok && !data?.trackingAvailable ? (
         <p className="border-t px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-          Google does not expose Maps usage from the browser API key. Store a GCP service account JSON in{' '}
-          <code className="rounded bg-muted px-1">app_secrets.google_cloud_monitoring</code> with Monitoring Viewer on
-          the Maps project. This card still shows the Essentials 10,000/month free caps (Dynamic Maps, Places,
-          Geocoding, Distance).
+          Run <code className="rounded bg-muted px-1">scripts/add-google-maps-usage.sql</code> in Supabase so the CRM
+          can count Maps calls against the 10,000/month free caps. Dynamic Maps, Places, Geocoding, and Distance each
+          have a separate free allotment.
         </p>
       ) : null}
     </section>

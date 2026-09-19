@@ -1,4 +1,5 @@
 /** Google Maps Distance Matrix helpers (lazy script load + driving distance). */
+import { installGoogleMapsUsagePatches } from '@/lib/googleMapsUsageTrack';
 
 export type LatLng = { lat: number; lng: number };
 
@@ -41,6 +42,7 @@ export function ensureGoogleMapsDistanceMatrixLoaded(): Promise<void> {
   if (
     (window as any).google?.maps?.DistanceMatrixService
   ) {
+    installGoogleMapsUsagePatches();
     return Promise.resolve();
   }
 
@@ -64,6 +66,7 @@ export function ensureGoogleMapsDistanceMatrixLoaded(): Promise<void> {
       const started = Date.now();
       const check = () => {
         if (isReady()) {
+          installGoogleMapsUsagePatches();
           resolve();
           return;
         }
@@ -87,6 +90,7 @@ export function ensureGoogleMapsDistanceMatrixLoaded(): Promise<void> {
       const started = Date.now();
       const check = () => {
         if (isReady()) {
+          installGoogleMapsUsagePatches();
           resolve();
           return;
         }
