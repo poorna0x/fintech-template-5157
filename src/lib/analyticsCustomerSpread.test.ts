@@ -4,6 +4,7 @@ import {
   buildSpreadInsights,
   findSpreadCells,
   parseSpreadPayload,
+  spreadCircleRadiusMeters,
   spreadFillColor,
   type SpreadCell,
 } from './analyticsCustomerSpread';
@@ -101,5 +102,14 @@ describe('findSpreadCells', () => {
     expect(findSpreadCells(cells, 'manju')[0].area).toBe('Nelamangala');
     expect(findSpreadCells(cells, 'nelamangala')).toHaveLength(1);
     expect(findSpreadCells(cells, 'nowhere')).toHaveLength(0);
+  });
+});
+
+describe('pocket size', () => {
+  it('draws bigger circles for larger packets', () => {
+    const pocket = cell({ lat: 13.1, lng: 77.39, area: 'Nelamangala', customers: 4 });
+    const large = spreadCircleRadiusMeters(pocket, 10, 6);
+    const small = spreadCircleRadiusMeters(pocket, 10, 1.2);
+    expect(large).toBeGreaterThan(small * 3);
   });
 });

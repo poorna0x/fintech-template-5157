@@ -2,6 +2,14 @@ import { hubContainsPoint, type BookingServiceHub } from '@/lib/bookingServiceHu
 
 export type SpreadColorMode = 'customers' | 'billing' | 'brand';
 
+export const SPREAD_POCKET_SIZES = [
+  { id: 'large', km: 6, label: 'Large' },
+  { id: 'medium', km: 3, label: 'Medium' },
+  { id: 'small', km: 1.2, label: 'Small' },
+] as const;
+
+export const DEFAULT_SPREAD_CELL_KM = SPREAD_POCKET_SIZES[0].km;
+
 export type SpreadBrandShare = {
   name: string;
   jobs: number;
@@ -99,7 +107,7 @@ export function parseSpreadCell(row: unknown): SpreadCell | null {
 
 export function parseSpreadPayload(raw: unknown): SpreadPayload {
   const empty: SpreadPayload = {
-    cell_km: 1.2,
+    cell_km: DEFAULT_SPREAD_CELL_KM,
     jobs_total: 0,
     jobs_with_pin: 0,
     customers_with_pin: 0,
@@ -111,7 +119,7 @@ export function parseSpreadPayload(raw: unknown): SpreadPayload {
     ? r.cells.map(parseSpreadCell).filter((c): c is SpreadCell => Boolean(c))
     : [];
   return {
-    cell_km: Math.max(0.5, num(r.cell_km) || 1.2),
+    cell_km: Math.max(0.8, Math.min(10, num(r.cell_km) || DEFAULT_SPREAD_CELL_KM)),
     jobs_total: Math.max(0, Math.round(num(r.jobs_total))),
     jobs_with_pin: Math.max(0, Math.round(num(r.jobs_with_pin))),
     customers_with_pin: Math.max(0, Math.round(num(r.customers_with_pin))),
@@ -158,9 +166,14 @@ export function spreadFillColor(
   return { fill: `${stroke}59`, stroke };
 }
 
-export function spreadCircleRadiusMeters(cell: SpreadCell, maxCustomers: number): number {
-  const t = maxCustomers > 0 ? Math.sqrt(cell.customers / maxCustomers) : 0.2;
-  return Math.round(320 + t * 980);
+export function spreadCircleRadiusMeters(
+  cell: SpreadCell,
+  maxCustomers: number,
+  cellKm = DEFAULT_SPREAD_CELL_KM
+): number {
+  const km = Math.max(0.8, Math.min(10, cellKm || DEFAULT_SPREAD_CELL_KM));
+  const t = maxCustomers > 0 ? Math.sqrt(cell.customers / maxCustomers) : 0.25;
+  return Math.round(km * 380 + t * km * 420);
 }
 
 export function formatSpreadInr(n: number): string {

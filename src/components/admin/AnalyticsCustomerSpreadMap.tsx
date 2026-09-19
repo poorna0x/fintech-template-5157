@@ -14,10 +14,12 @@ import {
   buildSpreadInsights,
   brandColor,
   cellOutsideHubs,
+  DEFAULT_SPREAD_CELL_KM,
   findSpreadCells,
   formatSpreadInr,
   maxSpreadValue,
   parseSpreadPayload,
+  SPREAD_POCKET_SIZES,
   spreadCircleRadiusMeters,
   spreadFillColor,
   type SpreadCell,
@@ -48,14 +50,17 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   const [showHubs, setShowHubs] = useState(true);
   const [selected, setSelected] = useState<SpreadCell | null>(null);
   const [query, setQuery] = useState('');
+  const [cellKm, setCellKm] = useState(DEFAULT_SPREAD_CELL_KM);
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
   const fitKeyRef = useRef('');
   const selectedRef = useRef<SpreadCell | null>(null);
+  const loadGenRef = useRef(0);
   selectedRef.current = selected;
 
-  const cacheKey = `v3|${startISO || 'all'}|${endISO || 'all'}`;
+  const cacheKey = `v4|${startISO || 'all'}|${endISO || 'all'}|${cellKm}`;
+  const fitKey = `v4|${startISO || 'all'}|${endISO || 'all'}`;
   const cells = payload?.cells || [];
   const maxValue = useMemo(() => maxSpreadValue(cells, colorMode), [cells, colorMode]);
   const maxCustomers = useMemo(
@@ -86,6 +91,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
   }, [cells, focusCell, query]);
 
   const load = useCallback(async () => {
+    const gen = ++loadGenRef.current;
     const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
       setPayload(cached.payload);
@@ -99,9 +105,11 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
         db.analyticsPaginated.getCustomerSpread({
           startISO,
           endISO,
+          cellKm,
         }),
         fetchBookingServiceHubs({ includeInactive: false }),
       ]);
+      if (gen !== loadGenRef.current) return;
       if (spreadRes.error) {
         const msg = String(spreadRes.error.message || spreadRes.error);
         toast.error(
@@ -120,12 +128,13 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
         toast.info('No mapped customer pins yet.');
       }
     } catch (err) {
+      if (gen !== loadGenRef.current) return;
       toast.error(err instanceof Error ? err.message : 'Could not load customer spread');
       setPayload(null);
     } finally {
-      setLoading(false);
+      if (gen === loadGenRef.current) setLoading(false);
     }
-  }, [cacheKey, endISO, startISO]);
+  }, [cacheKey, cellKm, endISO, startISO]);
 
   useEffect(() => {
     void load();
@@ -168,7 +177,7 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
       const circle = new window.google.maps.Circle({
         map,
         center: { lat: cell.lat, lng: cell.lng },
-        radius: spreadCircleRadiusMeters(cell, maxCustomers),
+        radius: spreadCircleRadiusMeters(cell, maxCustomers, payload?.cell_km || cellKm),
         fillColor: colors.stroke,
         fillOpacity: isSel ? 0.55 : 0.38,
         strokeColor: isSel ? '#0f172a' : colors.stroke,
@@ -186,11 +195,11 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
       }
     }
 
-    if (hasPoint && fitKeyRef.current !== cacheKey) {
-      fitKeyRef.current = cacheKey;
+    if (hasPoint && fitKeyRef.current !== fitKey) {
+      fitKeyRef.current = fitKey;
       map.fitBounds(bounds, 48);
     }
-  }, [cacheKey, cells, colorMode, hubs, maxCustomers, maxValue, selected, showHubs]);
+  }, [cellKm, cells, colorMode, fitKey, hubs, maxCustomers, maxValue, payload?.cell_km, selected, showHubs]);
 
   useEffect(() => {
     paint();
@@ -244,6 +253,30 @@ export default function AnalyticsCustomerSpreadMap({ startISO, endISO }: Props) 
           </Button>
         </form>
       </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-muted-foreground">Pocket size</span>
+        {SPREAD_POCKET_SIZES.map((size) => (
+          <Button
+            key={size.id}
+            type="button"
+            size="sm"
+            variant={cellKm === size.km ? 'default' : 'outline'}
+            className="h-11 cursor-pointer sm:h-9"
+            onClick={() => {
+              if (size.km === cellKm) return;
+              setSelected(null);
+              setCellKm(size.km);
+            }}
+          >
+            {size.label}
+          </Button>
+        ))}
+        <span className="hidden text-xs text-muted-foreground sm:inline">
+          Starts large so the map stays light. Switch to Small for streets.
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground sm:hidden">Starts large. Switch to Small for streets.</p>
 
       {payload ? (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

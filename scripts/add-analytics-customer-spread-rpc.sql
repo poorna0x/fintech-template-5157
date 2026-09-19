@@ -17,7 +17,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.get_analytics_customer_spread(
   p_start timestamptz DEFAULT NULL,
   p_end timestamptz DEFAULT NULL,
-  p_cell_km numeric DEFAULT 1.2
+  p_cell_km numeric DEFAULT 6
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -32,7 +32,7 @@ BEGIN
     RAISE EXCEPTION 'not authorized' USING ERRCODE = '42501';
   END IF;
 
-  cell_deg := GREATEST(0.0045, LEAST(0.045, COALESCE(p_cell_km, 1.2) / 111.32));
+  cell_deg := GREATEST(0.007, LEAST(0.09, COALESCE(NULLIF(p_cell_km, 0), 6) / 111.32));
 
   RETURN (
     WITH pinned AS (

@@ -8514,7 +8514,7 @@ export const db = {
       const { data, error } = await supabase.rpc('get_analytics_customer_spread', {
         p_start: opts.startISO ?? null,
         p_end: opts.endISO ?? null,
-        p_cell_km: opts.cellKm ?? 1.2,
+        p_cell_km: opts.cellKm ?? 6,
       });
       return { data, error };
     },
