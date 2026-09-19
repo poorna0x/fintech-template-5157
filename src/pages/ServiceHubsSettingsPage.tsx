@@ -326,10 +326,11 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         strokeColor: colors.stroke,
         strokeOpacity: 0.9,
         strokeWeight: row.selected ? 2.5 : 1.5,
-        clickable: true,
+        clickable: row.selected || !draftNow,
         editable: row.selected,
         draggable: row.selected,
         geodesic: false,
+        zIndex: row.selected ? 12 : row.kind === 'no_service' ? 8 : row.kind === 'callback' ? 4 : 2,
       });
       if (row.selected) {
         editableCircleRef.current = polygon;
@@ -353,7 +354,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         path.addListener('remove_at', applyPath);
         polygon.addListener('dragend', applyPath);
       }
-      if (row.id !== 'draft') {
+      if (row.id !== 'draft' && !draftNow) {
         const selectThis = () => {
           setDraft(null);
           setSelectedId(row.id);
@@ -371,9 +372,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           strokeColor: colors.stroke,
           strokeWeight: 2,
         },
-        clickable: row.id !== 'draft',
+        clickable: row.id !== 'draft' && !draftNow,
       });
-      if (row.id !== 'draft') {
+      if (row.id !== 'draft' && !draftNow) {
         marker.addListener('click', () => {
           setDraft(null);
           setSelectedId(row.id);
@@ -416,15 +417,6 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     if (!latLng) return;
     const lat = latLng.lat();
     const lng = latLng.lng();
-    const hit = hubsRef.current
-      .map((hub) => ({ hub, distanceKm: haversineKm(lat, lng, hub.lat, hub.lng) }))
-      .filter((row) => hubContainsPoint(row.hub, lat, lng))
-      .sort((a, b) => a.distanceKm - b.distanceKm)[0];
-    if (hit) {
-      setDraft(null);
-      setSelectedId(hit.hub.id);
-      return;
-    }
     const existing = draftRef.current;
     if (existing) {
       const moved = translateHubPolygon(
@@ -433,6 +425,14 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         { lat, lng }
       );
       setDraft({ ...existing, lat, lng, polygon: moved });
+      return;
+    }
+    const hit = hubsRef.current
+      .map((hub) => ({ hub, distanceKm: haversineKm(lat, lng, hub.lat, hub.lng) }))
+      .filter((row) => hubContainsPoint(row.hub, lat, lng))
+      .sort((a, b) => a.distanceKm - b.distanceKm)[0];
+    if (hit) {
+      setSelectedId(hit.hub.id);
       return;
     }
     placeDraftAt(lat, lng);
@@ -483,29 +483,26 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         toast.error('Could not open that place. Try another search.');
         return;
       }
-      const already = hubs.find(
+      const overlapping = hubs.find(
         (h) => haversineKm(h.lat, h.lng, details.coords.lat, details.coords.lng) < 0.4
       );
-      if (already) {
-        setDraft(null);
-        setSelectedId(already.id);
-        toast.message(`${already.name} is already a hub`);
-      } else {
-        setSelectedId(null);
-        setDraft({
-          name: (details.name || prediction.mainText).slice(0, 80),
-          address: details.address,
-          lat: details.coords.lat,
-          lng: details.coords.lng,
-          radius_km: DEFAULT_HUB_RADIUS_KM,
-          polygon: circleToHubPolygon(
-            details.coords.lat,
-            details.coords.lng,
-            DEFAULT_HUB_RADIUS_KM
-          ),
-          service_kind: 'normal',
-          customer_note: '',
-        });
+      setSelectedId(null);
+      setDraft({
+        name: (details.name || prediction.mainText).slice(0, 80),
+        address: details.address,
+        lat: details.coords.lat,
+        lng: details.coords.lng,
+        radius_km: DEFAULT_HUB_RADIUS_KM,
+        polygon: circleToHubPolygon(
+          details.coords.lat,
+          details.coords.lng,
+          DEFAULT_HUB_RADIUS_KM
+        ),
+        service_kind: 'normal',
+        customer_note: '',
+      });
+      if (overlapping) {
+        toast.message(`Overlaps ${overlapping.name} — that’s fine. Save this as another hub.`);
       }
       setQuery('');
       setPredictions([]);
@@ -664,7 +661,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           onClick={() => {
             const center = mapRef.current?.getCenter();
             placeDraftAt(center?.lat() ?? BENGALURU.lat, center?.lng() ?? BENGALURU.lng);
-            toast.message('Drag the corners to reshape. Pick Normal, Call back, or No service below.');
+            toast.message('Overlapping is fine. Drag the corners, then pick Normal, Call back, or No service.');
           }}
         >
           <Plus className="h-4 w-4" />
@@ -883,10 +880,10 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   {editorKind === 'no_service'
-                    ? 'Draw this over a pocket you do not cover. It blocks booking even if a Normal hub overlaps it.'
+                    ? 'Hubs can overlap. A no-service pocket still blocks booking even when a Normal hub covers the same streets.'
                     : editorKind === 'callback'
-                      ? 'Customers can still book. We’ll show a call-back message instead of treating it as immediate service.'
-                      : 'Website and WhatsApp booking work as usual inside this area.'}
+                      ? 'Hubs can overlap. If a Normal hub also covers this pin, booking stays normal; otherwise we show the call-back message.'
+                      : 'Hubs can overlap. Normal wins over Call back. A No-service hole still blocks that pocket.'}
                 </p>
               </div>
               <div>
