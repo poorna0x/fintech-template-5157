@@ -50,7 +50,7 @@ describe('matchPointToServiceHubs', () => {
       expect(result.reason).toBe('out_of_area');
       expect(result.nearest.length).toBeGreaterThan(0);
       expect(formatOutOfServiceAreaMessage(result)).toMatch(/HSR Layout/);
-      expect(formatOutOfServiceAreaMessage(result)).toMatch(/may not cover this area/i);
+      expect(formatOutOfServiceAreaMessage(result)).toMatch(/give us a call/i);
       expect(formatOutOfServiceAreaMessage(result, 'Sorry, too far from {hubs}.')).toMatch(/HSR Layout/);
     }
   });

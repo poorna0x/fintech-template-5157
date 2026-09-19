@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, LocateFixed, MapPin, Search, X } from 'lucide-react';
+import { Loader2, LocateFixed, MapPin, Phone, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ensureGoogleMapsApi } from '@/lib/googleMapsLink';
 import {
@@ -16,6 +16,7 @@ import {
 } from '@/lib/geolocation';
 import { haversineKm, removePlusCode, googleMapsPinUrl } from '@/lib/maps';
 import DraggableMap from '@/components/DraggableMap';
+import { openPublicPhoneCall } from '@/lib/publicPhone';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
 const DEFAULT_ZOOM = 18;
@@ -39,6 +40,44 @@ type PlacePrediction = {
 
 type PickerView = 'search' | 'map';
 
+export type BookingCoverageNoticeValue = {
+  tone: 'block' | 'info';
+  message: string;
+  title?: string;
+  callE164?: string;
+};
+
+export function BookingCoverageNotice({
+  tone,
+  title,
+  message,
+  callE164,
+}: BookingCoverageNoticeValue) {
+  const isBlock = tone === 'block';
+  return (
+    <div
+      className={`rounded-xl border px-3.5 py-3 ${
+        isBlock
+          ? 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-950/35 dark:text-sky-100'
+          : 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100'
+      }`}
+    >
+      {title ? <p className="text-[15px] font-semibold leading-snug">{title}</p> : null}
+      <p className={`text-sm leading-relaxed ${title ? 'mt-1' : ''}`}>{message}</p>
+      {isBlock && callE164 ? (
+        <button
+          type="button"
+          onClick={() => openPublicPhoneCall(callE164)}
+          className="mt-3 inline-flex h-11 min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white transition-colors duration-200 hover:bg-sky-700"
+        >
+          <Phone className="h-4 w-4" />
+          Call us
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 type BookingLocationPickerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,7 +91,7 @@ type BookingLocationPickerProps = {
   showCancel?: boolean;
   onCancelSearch?: () => void;
   onRequestSearch?: () => void;
-  coverageNotice?: { tone: 'block' | 'info'; message: string; title?: string } | null;
+  coverageNotice?: BookingCoverageNoticeValue | null;
 };
 
 function hasCoords(coords?: { lat?: number; lng?: number } | null): boolean {
@@ -673,25 +712,8 @@ export default function BookingLocationPicker({
       />
 
       {coverageNotice?.message ? (
-        <div
-          className={`mt-3 rounded-lg border px-3 py-2.5 text-sm ${
-            coverageNotice.tone === 'block'
-              ? 'border-red-300 bg-red-50 text-red-950 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100'
-              : 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100'
-          }`}
-        >
-          {(() => {
-            const title =
-              coverageNotice.title !== undefined
-                ? coverageNotice.title
-                : coverageNotice.tone === 'block'
-                  ? 'We may not cover this area'
-                  : '';
-            return title ? <p className="font-semibold">{title}</p> : null;
-          })()}
-          <p className={coverageNotice.title || coverageNotice.tone === 'block' ? 'mt-1' : ''}>
-            {coverageNotice.message}
-          </p>
+        <div className="mt-3">
+          <BookingCoverageNotice {...coverageNotice} />
         </div>
       ) : null}
 
@@ -705,11 +727,11 @@ export default function BookingLocationPicker({
             : 'cursor-not-allowed bg-neutral-200 text-white'
         }`}
       >
-        {coverageBlocked ? 'Move the pin to continue' : 'Save and proceed'}
+        {coverageBlocked ? 'Move the pin, or call us' : 'Save and proceed'}
       </button>
       {coverageBlocked ? (
         <p className="mt-2 pb-1 text-center text-xs text-neutral-500">
-          Search again or drag the pin into a coverage area.
+          Search a nearby area we cover, or call us and we’ll try to help.
         </p>
       ) : !canSave ? (
         <p className="mt-2 pb-1 text-center text-xs text-neutral-500">

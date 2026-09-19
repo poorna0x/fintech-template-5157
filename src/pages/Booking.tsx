@@ -45,10 +45,14 @@ import HoneypotField from '@/components/HoneypotField';
 import BehavioralTracker from '@/components/BehavioralTracker';
 import SecurityStatus from '@/components/SecurityStatus';
 import { useSecurity } from '@/contexts/SecurityContext';
-import BookingLocationPicker, { type BookingLocationValue } from '@/components/BookingLocationPicker';
+import BookingLocationPicker, {
+  BookingCoverageNotice,
+  type BookingLocationValue,
+} from '@/components/BookingLocationPicker';
 import { googleMapsPinUrl, hasValidMapCoordinates, removePlusCode } from '@/lib/maps';
 import {
   DEFAULT_OUT_OF_AREA_MESSAGE,
+  OUT_OF_AREA_TITLE,
   fetchBookingServiceHubs,
   formatOutOfServiceAreaMessage,
   hubCustomerNote,
@@ -56,6 +60,7 @@ import {
   type BookingServiceHub,
   type HubMatchResult,
 } from '@/lib/bookingServiceHubs';
+import { brandPrimaryVoicePhone } from '@/lib/whatsappBrandContact';
 import {
   bookingCustomHoursForPeriod,
   clampBookingCustomTime,
@@ -69,6 +74,9 @@ import {
 
 const WEBSITE_BOOKING_SITE_KEY: 'hydrogenro' | 'elevenro' =
   (import.meta.env.VITE_WEBSITE_BOOKING_SITE_KEY as 'hydrogenro' | 'elevenro') ?? 'hydrogenro';
+const BOOKING_VOICE_PHONE = brandPrimaryVoicePhone(
+  WEBSITE_BOOKING_SITE_KEY === 'elevenro' ? 'elevenro' : 'hydrogenro'
+);
 
 function cleanBookingStreet(raw: string): string {
   let cleanAddress = removePlusCode(raw || '');
@@ -2353,8 +2361,9 @@ const Booking: React.FC = () => {
                     !hubMatch.ok
                       ? {
                           tone: 'block',
-                          title: hubMatch.reason === 'no_service' ? '' : 'We may not cover this area',
+                          title: hubMatch.reason === 'no_service' ? '' : OUT_OF_AREA_TITLE,
                           message: formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage),
+                          callE164: BOOKING_VOICE_PHONE.e164,
                         }
                       : hubCustomerNote(hubMatch)
                         ? {
@@ -2376,30 +2385,23 @@ const Booking: React.FC = () => {
                     Please enter your house / flat number so the technician reaches the exact door.
                   </p>
                 ) : null}
-                {!hubMatch.ok ? (
-                  <Alert id="booking-hub-coverage" className="mt-3 border-red-300 bg-red-50 text-red-950 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
-                    <AlertDescription>
-                      {hubMatch.reason === 'no_service' ? (
-                        <p>{formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage)}</p>
-                      ) : (
-                        <>
-                          <p className="font-semibold">We may not cover this area</p>
-                          <p className="mt-1">{formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage)}</p>
-                        </>
-                      )}
-                    </AlertDescription>
-                  </Alert>
-                ) : hubCustomerNote(hubMatch) ? (
-                  <Alert id="booking-hub-coverage" className="mt-3 border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
-                    <AlertDescription>
-                      {hubMatch.enforced && hubMatch.kind === 'callback' ? (
-                        <p className="font-semibold">We’ll call you back</p>
-                      ) : null}
-                      <p className={hubMatch.enforced && hubMatch.kind === 'callback' ? 'mt-1' : undefined}>
-                        {hubCustomerNote(hubMatch)}
-                      </p>
-                    </AlertDescription>
-                  </Alert>
+                {!locationPickerOpen && !hubMatch.ok ? (
+                  <div id="booking-hub-coverage" className="mt-3">
+                    <BookingCoverageNotice
+                      tone="block"
+                      title={hubMatch.reason === 'no_service' ? '' : OUT_OF_AREA_TITLE}
+                      message={formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage)}
+                      callE164={BOOKING_VOICE_PHONE.e164}
+                    />
+                  </div>
+                ) : !locationPickerOpen && hubCustomerNote(hubMatch) ? (
+                  <div id="booking-hub-coverage" className="mt-3">
+                    <BookingCoverageNotice
+                      tone="info"
+                      title={hubMatch.enforced && hubMatch.kind === 'callback' ? 'We’ll call you back' : ''}
+                      message={hubCustomerNote(hubMatch)}
+                    />
+                  </div>
                 ) : null}
               </div>
 

@@ -14,7 +14,7 @@ ALTER TABLE public.booking_service_hubs
 CREATE TABLE IF NOT EXISTS public.booking_service_hub_settings (
   id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   out_of_area_message text NOT NULL DEFAULT
-    'We may not cover this area. Please call us if you need any help.',
+    'Give us a call and we’ll see how we can help.',
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 

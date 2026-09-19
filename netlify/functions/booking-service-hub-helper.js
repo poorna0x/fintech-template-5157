@@ -192,6 +192,8 @@ async function loadActiveHubs(admin) {
 }
 
 const DEFAULT_OUT_OF_AREA_MESSAGE =
+  'Give us a call and we’ll see how we can help.';
+const LEGACY_OUT_OF_AREA_MESSAGE =
   'We may not cover this area. Please call us if you need any help.';
 
 async function loadOutOfAreaMessage(admin) {
@@ -203,7 +205,8 @@ async function loadOutOfAreaMessage(admin) {
       .maybeSingle();
     if (error || !data) return DEFAULT_OUT_OF_AREA_MESSAGE;
     const custom = String(data.out_of_area_message || '').trim();
-    return custom || DEFAULT_OUT_OF_AREA_MESSAGE;
+    if (!custom || custom === LEGACY_OUT_OF_AREA_MESSAGE) return DEFAULT_OUT_OF_AREA_MESSAGE;
+    return custom;
   } catch {
     return DEFAULT_OUT_OF_AREA_MESSAGE;
   }
@@ -221,11 +224,11 @@ function formatOutOfArea(nearest, customMessage) {
   const names = (nearest || []).map((row) => row.name).filter(Boolean);
   const hubsLabel = formatHubsLabel(names);
   const custom = String(customMessage || '').trim();
-  if (custom) {
+  if (custom && custom !== DEFAULT_OUT_OF_AREA_MESSAGE) {
     return custom.replaceAll('{hubs}', hubsLabel || 'our service areas');
   }
   if (!hubsLabel) return DEFAULT_OUT_OF_AREA_MESSAGE;
-  return `We may not cover this area. We serve ${hubsLabel}. Please call us if you need any help.`;
+  return `We usually serve ${hubsLabel}. Give us a call and we’ll see how we can help.`;
 }
 
 /**
