@@ -118,6 +118,14 @@ async function geocodePlaceNameNominatim(placeName) {
           validLatLng(lat, lng) &&
           nominatimLooksLikeQuery(q, data?.[0]?.display_name)
         ) {
+          // Never accept a non-India pin from the unrestricted Nominatim fallback
+          // (short names like "Avalon Park" can resolve overseas).
+          if (
+            !country &&
+            !(lat >= 6 && lat <= 37 && lng >= 68 && lng <= 98)
+          ) {
+            continue;
+          }
           return { latitude: lat, longitude: lng };
         }
       } catch {
@@ -195,7 +203,15 @@ async function geocodePlaceNameWithGoogle(placeName) {
           }
           if (data.status === 'OK' && data.results?.[0]?.geometry?.location) {
             const { lat, lng } = data.results[0].geometry.location;
-            if (validLatLng(lat, lng)) return { latitude: lat, longitude: lng };
+            if (
+              validLatLng(lat, lng) &&
+              lat >= 6 &&
+              lat <= 37 &&
+              lng >= 68 &&
+              lng <= 98
+            ) {
+              return { latitude: lat, longitude: lng };
+            }
           }
         }
       } catch {
@@ -222,7 +238,14 @@ async function geocodePlaceNameWithGoogle(placeName) {
             break;
           }
           const loc = data?.candidates?.[0]?.geometry?.location;
-          if (loc && validLatLng(loc.lat, loc.lng)) {
+          if (
+            loc &&
+            validLatLng(loc.lat, loc.lng) &&
+            loc.lat >= 6 &&
+            loc.lat <= 37 &&
+            loc.lng >= 68 &&
+            loc.lng <= 98
+          ) {
             return { latitude: loc.lat, longitude: loc.lng };
           }
         }
@@ -598,7 +621,7 @@ function extractMapsUrlFromHtml(html) {
     if (extractCoordinatesFromUrl(candidate)) return candidate;
   }
 
-  const named = candidates.find((c) => /\/place\/[^/@?]+/i.test(c) && extractPlaceNameFromUrl(c));
+  const named = candidates.find((c) => /\/place\/[^/?#]+/i.test(c) && extractPlaceNameFromUrl(c));
   return named || candidates[0] || null;
 }
 
@@ -726,14 +749,22 @@ async function followRedirects(startUrl) {
   return best;
 }
 
+/**
+ * Place slug from `/place/…` until next path segment or query.
+ * Allow `@` in the name (Avalon+Park+@+The+Prestige+City). Stopping at bare `@`
+ * truncated to "Avalon Park" and could geocode overseas.
+ */
+function matchMapsPlaceSlug(url) {
+  const match = String(url || '').match(/\/place\/([^/?#]+)/i);
+  return match ? match[1] : null;
+}
+
 function extractPlaceNameFromUrl(url) {
   try {
     const rawUrl = sanitizeUrl(url);
-    const placeMatch =
-      rawUrl.match(/\/place\/([^/@?]+)/) ||
-      normalizeUrlForParsing(rawUrl).match(/\/place\/([^/@?]+)/);
-    if (placeMatch) {
-      const raw = decodeMapsPlaceSlug(placeMatch[1]);
+    const slug = matchMapsPlaceSlug(rawUrl) || matchMapsPlaceSlug(normalizeUrlForParsing(rawUrl));
+    if (slug) {
+      const raw = decodeMapsPlaceSlug(slug);
       if (raw && !isCoordinatePlaceSlug(raw) && isUsefulPlaceName(raw)) return raw;
     }
     try {

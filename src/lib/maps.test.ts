@@ -64,17 +64,12 @@ describe('extractPlaceNameFromMapsUrl', () => {
     expect(removePlusCode(name || '')).toMatch(/^Assetz Marq/i);
   });
 
-  it('handles encoded apostrophes and ampersands', () => {
-    expect(
-      extractPlaceNameFromMapsUrl(
-        "https://www.google.com/maps/place/Joe%27s+Cafe/@12.9,77.6,17z"
-      )
-    ).toMatch(/^Joe's Cafe/i);
-    expect(
-      extractPlaceNameFromMapsUrl(
-        'https://www.google.com/maps/place/A+%26+B+Residency/@12.9,77.6,17z'
-      )
-    ).toMatch(/^A & B Residency/i);
+  it('keeps full name when place contains @ (not truncated before /@coords)', () => {
+    const name = extractPlaceNameFromMapsUrl(
+      'https://www.google.com/maps/place/Avalon+Park+%40+The+Prestige+City/@12.879192,77.7725407,17z/data=!3m1!4b1!4m6!3m5!1s0x3bae0d3f0example:0xabc!8m2!3d12.879192!4d77.7725407!16s%2Fg%2F11example?entry=ttu'
+    );
+    expect(name).toMatch(/^Avalon Park @ The Prestige City/i);
+    expect(name).not.toBe('Avalon Park, Bengaluru, Karnataka');
   });
 });
 

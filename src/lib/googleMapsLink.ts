@@ -97,17 +97,25 @@ function decodeMapsPlaceSlug(slug: string): string {
 }
 
 /**
+ * Place slug from `/place/…` until the next path segment or query.
+ * Allow `@` in the name (e.g. Avalon+Park+@+The+Prestige+City). Stopping at bare `@`
+ * truncated names to "Avalon Park" and could geocode to a foreign Avalon Park.
+ */
+function matchMapsPlaceSlug(url: string): string | null {
+  const match = String(url || '').match(/\/place\/([^/?#]+)/i);
+  return match?.[1] || null;
+}
+
+/**
  * Place name from an expanded /place/Name,.../ Google Maps URL.
  */
 export function extractPlaceNameFromMapsUrl(url: string): string | null {
   try {
     const rawUrl = sanitizeGoogleMapsInput(url);
-    const match =
-      rawUrl.match(/\/place\/([^/@?]+)/) ||
-      normalizeUrlForParsing(rawUrl).match(/\/place\/([^/@?]+)/);
-    if (!match) return null;
+    const slug = matchMapsPlaceSlug(rawUrl) || matchMapsPlaceSlug(normalizeUrlForParsing(rawUrl));
+    if (!slug) return null;
 
-    const raw = decodeMapsPlaceSlug(match[1]);
+    const raw = decodeMapsPlaceSlug(slug);
     // Plus Codes often start with a digit (2QG7+J9F …). Only skip real lat,lng slugs.
     if (!raw || /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?/.test(raw)) return null;
 
