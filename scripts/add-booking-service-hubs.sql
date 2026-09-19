@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS public.booking_service_hubs (
     AND lng BETWEEN -180 AND 180
     AND NOT (lat = 0 AND lng = 0)
   ),
-  CONSTRAINT booking_service_hubs_radius CHECK (radius_km >= 0.3 AND radius_km <= 30)
+  CONSTRAINT booking_service_hubs_radius CHECK (radius_km >= 0.3 AND radius_km <= 200)
 );
 
 CREATE INDEX IF NOT EXISTS idx_booking_service_hubs_active
@@ -114,3 +114,8 @@ CREATE POLICY booking_service_hub_settings_admin_update
   TO authenticated
   USING ((SELECT public.is_admin_user()))
   WITH CHECK ((SELECT public.is_admin_user()));
+
+-- Allow large coverage (statewide No-service wrapping a city). Safe to re-run.
+ALTER TABLE public.booking_service_hubs DROP CONSTRAINT IF EXISTS booking_service_hubs_radius;
+ALTER TABLE public.booking_service_hubs
+  ADD CONSTRAINT booking_service_hubs_radius CHECK (radius_km >= 0.3 AND radius_km <= 200);

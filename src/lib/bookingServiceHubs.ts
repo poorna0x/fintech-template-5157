@@ -6,7 +6,7 @@ export const BOOKING_HUB_SETTINGS_TABLE = 'booking_service_hub_settings';
 
 export const DEFAULT_HUB_RADIUS_KM = 5;
 export const MIN_HUB_RADIUS_KM = 0.5;
-export const MAX_HUB_RADIUS_KM = 25;
+export const MAX_HUB_RADIUS_KM = 200;
 export const DEFAULT_HUB_POLYGON_POINTS = 8;
 export const MIN_HUB_POLYGON_POINTS = 3;
 export const MAX_HUB_POLYGON_POINTS = 16;

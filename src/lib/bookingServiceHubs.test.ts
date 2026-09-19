@@ -65,7 +65,8 @@ describe('matchPointToServiceHubs', () => {
 describe('clampHubRadiusKm', () => {
   it('keeps radius in the allowed band', () => {
     expect(clampHubRadiusKm(0)).toBe(0.5);
-    expect(clampHubRadiusKm(40)).toBe(25);
+    expect(clampHubRadiusKm(40)).toBe(40);
+    expect(clampHubRadiusKm(250)).toBe(200);
     expect(clampHubRadiusKm(5.26)).toBe(5.3);
   });
 });
