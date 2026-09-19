@@ -79,6 +79,25 @@ function coordsFromPlaceGeometry(
   return { lat, lng };
 }
 
+function hubNameFromGeocode(results: google.maps.GeocoderResult[] | null | undefined): {
+  name: string;
+  address: string;
+} {
+  const result = results?.[0];
+  const address = removePlusCode(result?.formatted_address || '');
+  const preferred =
+    result?.address_components?.find((c) =>
+      c.types.includes('neighborhood') ||
+      c.types.includes('sublocality_level_1') ||
+      c.types.includes('sublocality')
+    )?.long_name ||
+    result?.address_components?.find((c) => c.types.includes('locality'))?.long_name;
+  return {
+    name: (preferred || 'New hub').slice(0, 80),
+    address,
+  };
+}
+
 export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const [hubs, setHubs] = useState<BookingServiceHub[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,12 +118,24 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
   const debounceRef = useRef<number | null>(null);
+  const persistTimerRef = useRef<number | null>(null);
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
+  const hubsRef = useRef(hubs);
+  const draftRef = useRef(draft);
+  const skipPaintRef = useRef(false);
+  const fitKeyRef = useRef('');
+  const mapClickBoundRef = useRef(false);
+  const editableCircleRef = useRef<google.maps.Circle | null>(null);
+  const onMapClickRef = useRef<(event: google.maps.MapMouseEvent) => void>(() => {});
+
+  hubsRef.current = hubs;
+  draftRef.current = draft;
 
   const selected = useMemo(
     () => hubs.find((h) => h.id === selectedId) || null,
     [hubs, selectedId]
   );
+  const draftAnchor = draft ? `${draft.lat.toFixed(4)},${draft.lng.toFixed(4)}` : '';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -151,6 +182,61 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     }, 220);
   };
 
+  const persistSelectedGeometry = useCallback(
+    (patch: Partial<Pick<BookingServiceHub, 'lat' | 'lng' | 'radius_km'>>) => {
+      if (!selectedId) return;
+      if (persistTimerRef.current != null) window.clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = window.setTimeout(() => {
+        persistTimerRef.current = null;
+        void (async () => {
+          const result = await updateBookingServiceHub(selectedId, patch);
+          if (result.error || !result.hub) {
+            toast.error(result.error || 'Could not update hub');
+            return;
+          }
+          skipPaintRef.current = true;
+          setHubs((prev) => prev.map((h) => (h.id === result.hub!.id ? result.hub! : h)));
+        })();
+      }, 450);
+    },
+    [selectedId]
+  );
+
+  const relabelDraft = useCallback(async (lat: number, lng: number) => {
+    try {
+      await ensureGoogleMapsApi();
+      if (!window.google?.maps?.Geocoder) return;
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        const ok =
+          status === 'OK' ||
+          status === window.google.maps.GeocoderStatus.OK;
+        if (!ok) return;
+        const labeled = hubNameFromGeocode(results);
+        setDraft((prev) =>
+          prev && Math.abs(prev.lat - lat) < 1e-7 && Math.abs(prev.lng - lng) < 1e-7
+            ? { ...prev, name: labeled.name, address: labeled.address }
+            : prev
+        );
+      });
+    } catch {
+      /* keep current name */
+    }
+  }, []);
+
+  const placeDraftAt = useCallback(async (lat: number, lng: number) => {
+    setSelectedId(null);
+    setDraft({
+      name: 'New hub',
+      address: '',
+      lat,
+      lng,
+      radius_km: DEFAULT_HUB_RADIUS_KM,
+      customer_note: '',
+    });
+    await relabelDraft(lat, lng);
+  }, [relabelDraft]);
+
   const paintMap = useCallback(() => {
     const map = mapRef.current;
     if (!map || !window.google?.maps) return;
@@ -158,7 +244,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       (overlay as google.maps.Circle | google.maps.Marker).setMap(null);
     }
     overlaysRef.current = [];
+    editableCircleRef.current = null;
 
+    const draftNow = draftRef.current;
     const rows: Array<{
       id: string;
       lat: number;
@@ -172,14 +260,14 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       lng: h.lng,
       radius_km: h.radius_km,
       active: h.is_active,
-      selected: !draft && h.id === selectedId,
+      selected: !draftNow && h.id === selectedId,
     }));
-    if (draft) {
+    if (draftNow) {
       rows.push({
         id: 'draft',
-        lat: draft.lat,
-        lng: draft.lng,
-        radius_km: draft.radius_km,
+        lat: draftNow.lat,
+        lng: draftNow.lng,
+        radius_km: draftNow.radius_km,
         active: true,
         selected: true,
       });
@@ -204,13 +292,46 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         strokeColor: stroke,
         strokeOpacity: 0.9,
         strokeWeight: row.selected ? 2 : 1,
-        clickable: row.id !== 'draft',
+        clickable: true,
+        editable: row.selected,
+        draggable: row.selected,
       });
+      if (row.selected) {
+        editableCircleRef.current = circle;
+        circle.addListener('radius_changed', () => {
+          const km = clampHubRadiusKm(circle.getRadius() / 1000);
+          skipPaintRef.current = true;
+          if (row.id === 'draft') {
+            setDraft((prev) => (prev ? { ...prev, radius_km: km } : prev));
+          } else {
+            setHubs((prev) => prev.map((h) => (h.id === row.id ? { ...h, radius_km: km } : h)));
+            persistSelectedGeometry({ radius_km: km });
+          }
+        });
+        const applyCenter = (geocodeDraft: boolean) => {
+          const center = circle.getCenter();
+          if (!center) return;
+          const lat = center.lat();
+          const lng = center.lng();
+          if (Math.abs(lat - row.lat) < 1e-7 && Math.abs(lng - row.lng) < 1e-7) return;
+          skipPaintRef.current = true;
+          if (row.id === 'draft') {
+            setDraft((prev) => (prev ? { ...prev, lat, lng } : prev));
+            if (geocodeDraft) void relabelDraft(lat, lng);
+          } else {
+            setHubs((prev) => prev.map((h) => (h.id === row.id ? { ...h, lat, lng } : h)));
+            persistSelectedGeometry({ lat, lng });
+          }
+        };
+        circle.addListener('center_changed', () => applyCenter(false));
+        circle.addListener('dragend', () => applyCenter(true));
+      }
       if (row.id !== 'draft') {
-        circle.addListener('click', () => {
+        const selectThis = () => {
           setDraft(null);
           setSelectedId(row.id);
-        });
+        };
+        circle.addListener('click', selectThis);
       }
       const marker = new window.google.maps.Marker({
         map,
@@ -239,8 +360,12 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       }
     }
 
-    const focus = draft || selected;
-    if (focus) {
+    const focus = draftNow || hubs.find((h) => h.id === selectedId) || null;
+    const fitKey = draftNow
+      ? `draft:${draftNow.lat.toFixed(4)},${draftNow.lng.toFixed(4)}`
+      : `sel:${selectedId || ''}`;
+    if (focus && fitKeyRef.current !== fitKey) {
+      fitKeyRef.current = fitKey;
       const radiusDeg = Math.max(0.02, (focus.radius_km * 1000) / 111_000) * 1.35;
       map.fitBounds({
         north: focus.lat + radiusDeg,
@@ -248,31 +373,70 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         east: focus.lng + radiusDeg,
         west: focus.lng - radiusDeg,
       });
-    } else if (hasPoint) {
+    } else if (!focus && hasPoint && !fitKeyRef.current) {
       map.fitBounds(bounds, 36);
+      fitKeyRef.current = 'all';
     }
     try {
       window.google.maps.event.trigger(map, 'resize');
     } catch {
       /* ignore */
     }
-  }, [draft, hubs, selected, selectedId]);
+  }, [draftAnchor, hubs, persistSelectedGeometry, relabelDraft, selectedId]);
+
+  onMapClickRef.current = (event) => {
+    const latLng = event.latLng;
+    if (!latLng) return;
+    const lat = latLng.lat();
+    const lng = latLng.lng();
+    const hit = hubsRef.current
+      .map((hub) => ({ hub, distanceKm: haversineKm(lat, lng, hub.lat, hub.lng) }))
+      .filter((row) => row.distanceKm <= row.hub.radius_km)
+      .sort((a, b) => a.distanceKm - b.distanceKm)[0];
+    if (hit) {
+      setDraft(null);
+      setSelectedId(hit.hub.id);
+      return;
+    }
+    const existing = draftRef.current;
+    if (existing) {
+      setDraft({ ...existing, lat, lng });
+      void relabelDraft(lat, lng);
+      return;
+    }
+    void placeDraftAt(lat, lng);
+  };
 
   const handleMapReady = useCallback(
     (map: google.maps.Map | null) => {
       mapRef.current = map;
-      if (map) paintMap();
+      if (!map) {
+        mapClickBoundRef.current = false;
+        return;
+      }
+      if (!mapClickBoundRef.current) {
+        mapClickBoundRef.current = true;
+        map.addListener('click', (event: google.maps.MapMouseEvent) => {
+          onMapClickRef.current(event);
+        });
+      }
+      paintMap();
     },
     [paintMap]
   );
 
   useEffect(() => {
+    if (skipPaintRef.current) {
+      skipPaintRef.current = false;
+      return;
+    }
     paintMap();
   }, [paintMap, loading]);
 
   useEffect(() => {
     return () => {
       if (debounceRef.current != null) window.clearTimeout(debounceRef.current);
+      if (persistTimerRef.current != null) window.clearTimeout(persistTimerRef.current);
     };
   }, []);
 
@@ -375,7 +539,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   };
 
   const handlePatchSelected = async (
-    patch: Partial<Pick<BookingServiceHub, 'name' | 'radius_km' | 'is_active' | 'customer_note'>>
+    patch: Partial<Pick<BookingServiceHub, 'name' | 'radius_km' | 'is_active' | 'customer_note' | 'lat' | 'lng'>>
   ) => {
     if (!selected) return;
     setSaving(true);
@@ -426,9 +590,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           size="sm"
           className="ml-auto h-11 cursor-pointer gap-1.5"
           onClick={() => {
-            const el = document.getElementById('service-hub-search');
-            el?.focus();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            toast.message('Tap the map to drop a coverage circle, then drag the handles to resize.');
           }}
         >
           <Plus className="h-4 w-4" />
@@ -470,7 +632,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
               id="service-hub-search"
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
-              placeholder="Search area, landmark, or address"
+              placeholder="Search, or tap the map to add"
               className="h-11 border-0 bg-transparent pl-9 pr-10 shadow-none focus-visible:ring-0"
               autoComplete="off"
             />
@@ -516,6 +678,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             </ul>
           ) : null}
         </div>
+        <p className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 rounded-lg bg-black/55 px-3 py-1.5 text-center text-xs font-medium text-white">
+          Tap the map to add a coverage circle. Drag the blue handles to resize.
+        </p>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -603,6 +768,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                 value={[draft ? draft.radius_km : selected?.radius_km || DEFAULT_HUB_RADIUS_KM]}
                 onValueChange={([value]) => {
                   const radius = clampHubRadiusKm(value);
+                  const circle = editableCircleRef.current;
+                  if (circle) circle.setRadius(radius * 1000);
+                  skipPaintRef.current = true;
                   if (draft) setDraft({ ...draft, radius_km: radius });
                   else if (selected) {
                     setHubs((prev) =>
@@ -692,8 +860,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             </div>
           ) : hubs.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              No hubs yet. Search an area above (HSR, Bellandur, BTM…) and save a coverage
-              circle. Until you add one, website and WhatsApp booking stay open everywhere.
+              No hubs yet. Tap the map to drop a circle, or search an area (HSR, Bellandur, BTM…).
+              Drag the blue handles to resize. Until you add one, website and WhatsApp booking stay
+              open everywhere.
             </p>
           ) : (
             <ul className="space-y-2 pb-8">
