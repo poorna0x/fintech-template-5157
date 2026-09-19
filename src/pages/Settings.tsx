@@ -2429,7 +2429,7 @@ const Settings = () => {
                     Storage
                   </h1>
                   <p className="text-xs text-muted-foreground truncate sm:hidden">
-                    Postgres, Cloudflare R2, Cloudinary, and iLovePDF
+                    Postgres, R2, Cloudinary, iLovePDF, and Google Maps
                   </p>
                 </div>
               </div>
@@ -4151,7 +4151,7 @@ const Settings = () => {
           {!isManager ? (
           <SettingsActionCard
             title="Storage"
-            description="Postgres, Cloudflare R2, Cloudinary, and iLovePDF account usage"
+            description="Postgres, Cloudflare R2, Cloudinary, iLovePDF, and Google Maps usage"
             icon={<Database />}
             actions={
               <Button
