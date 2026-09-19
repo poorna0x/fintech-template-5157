@@ -2353,10 +2353,15 @@ const Booking: React.FC = () => {
                     !hubMatch.ok
                       ? {
                           tone: 'block',
+                          title: hubMatch.reason === 'no_service' ? '' : 'We will not be able to come here',
                           message: formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage),
                         }
                       : hubCustomerNote(hubMatch)
-                        ? { tone: 'info', message: hubCustomerNote(hubMatch) }
+                        ? {
+                            tone: 'info',
+                            title: hubMatch.enforced && hubMatch.kind === 'callback' ? 'We’ll call you back' : '',
+                            message: hubCustomerNote(hubMatch),
+                          }
                         : null
                   }
                 />
@@ -2374,13 +2379,26 @@ const Booking: React.FC = () => {
                 {!hubMatch.ok ? (
                   <Alert id="booking-hub-coverage" className="mt-3 border-red-300 bg-red-50 text-red-950 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
                     <AlertDescription>
-                      <p className="font-semibold">We will not be able to come here</p>
-                      <p className="mt-1">{formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage)}</p>
+                      {hubMatch.reason === 'no_service' ? (
+                        <p>{formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage)}</p>
+                      ) : (
+                        <>
+                          <p className="font-semibold">We will not be able to come here</p>
+                          <p className="mt-1">{formatOutOfServiceAreaMessage(hubMatch, outOfAreaMessage)}</p>
+                        </>
+                      )}
                     </AlertDescription>
                   </Alert>
                 ) : hubCustomerNote(hubMatch) ? (
                   <Alert id="booking-hub-coverage" className="mt-3 border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
-                    <AlertDescription>{hubCustomerNote(hubMatch)}</AlertDescription>
+                    <AlertDescription>
+                      {hubMatch.enforced && hubMatch.kind === 'callback' ? (
+                        <p className="font-semibold">We’ll call you back</p>
+                      ) : null}
+                      <p className={hubMatch.enforced && hubMatch.kind === 'callback' ? 'mt-1' : undefined}>
+                        {hubCustomerNote(hubMatch)}
+                      </p>
+                    </AlertDescription>
                   </Alert>
                 ) : null}
               </div>

@@ -3,6 +3,7 @@ import {
   clampHubRadiusKm,
   formatOutOfServiceAreaMessage,
   hubContainsPoint,
+  hubCustomerNote,
   matchPointToServiceHubs,
   parseBookingServiceHub,
   pointInHubPolygon,
@@ -14,6 +15,7 @@ function hub(partial: Partial<BookingServiceHub> & Pick<BookingServiceHub, 'id' 
     address: '',
     radius_km: 5,
     polygon: [],
+    service_kind: 'normal',
     is_active: true,
     sort_order: 0,
     customer_note: '',
@@ -36,6 +38,7 @@ describe('matchPointToServiceHubs', () => {
     expect(result.ok).toBe(true);
     if (result.ok && result.enforced) {
       expect(result.hub.name).toBe('HSR Layout');
+      expect(result.kind).toBe('normal');
     }
   });
 
@@ -44,6 +47,7 @@ describe('matchPointToServiceHubs', () => {
     const result = matchPointToServiceHubs(12.2958, 76.6394, [HSR, BELLANDUR]);
     expect(result.ok).toBe(false);
     if (!result.ok) {
+      expect(result.reason).toBe('out_of_area');
       expect(result.nearest.length).toBeGreaterThan(0);
       expect(formatOutOfServiceAreaMessage(result)).toMatch(/HSR Layout/);
       expect(formatOutOfServiceAreaMessage(result)).toMatch(/not be able to come here/i);
@@ -96,5 +100,82 @@ describe('hub polygons', () => {
     ];
     expect(pointInHubPolygon(12.95, 77.65, square)).toBe(true);
     expect(pointInHubPolygon(12.8, 77.65, square)).toBe(false);
+    expect(pointInHubPolygon(12.9, 77.6, square)).toBe(true);
+  });
+
+  it('still matches a pin just outside a polygon edge (GPS slack)', () => {
+    const squareHub = hub({
+      ...HSR,
+      polygon: [
+        { lat: 12.9, lng: 77.6 },
+        { lat: 12.9, lng: 77.7 },
+        { lat: 13.0, lng: 77.7 },
+        { lat: 13.0, lng: 77.6 },
+      ],
+    });
+    expect(hubContainsPoint(squareHub, 12.95, 77.6 - 0.00025)).toBe(true);
+    expect(hubContainsPoint(squareHub, 12.95, 77.5)).toBe(false);
+  });
+});
+
+describe('hub service kinds', () => {
+  it('blocks a no-service hole even inside a normal hub', () => {
+    const hole = hub({
+      id: 'hole',
+      name: 'Restricted pocket',
+      lat: HSR.lat,
+      lng: HSR.lng,
+      radius_km: 0.5,
+      service_kind: 'no_service',
+      customer_note: 'Army area — we cannot come here.',
+    });
+    const result = matchPointToServiceHubs(HSR.lat, HSR.lng, [HSR, hole]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe('no_service');
+      expect(formatOutOfServiceAreaMessage(result)).toMatch(/Army area/);
+    }
+  });
+
+  it('allows callback areas with a call-back notice', () => {
+    const delayed = hub({
+      ...BELLANDUR,
+      service_kind: 'callback',
+    });
+    const result = matchPointToServiceHubs(BELLANDUR.lat, BELLANDUR.lng, [delayed]);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.enforced) {
+      expect(result.kind).toBe('callback');
+      expect(hubCustomerNote(result)).toMatch(/call you back/i);
+    }
+  });
+
+  it('prefers normal coverage over an overlapping callback hub', () => {
+    const delayed = hub({
+      ...HSR,
+      id: 'slow',
+      service_kind: 'callback',
+    });
+    const result = matchPointToServiceHubs(HSR.lat, HSR.lng, [delayed, HSR]);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.enforced) {
+      expect(result.kind).toBe('normal');
+      expect(result.hub.id).toBe('1');
+    }
+  });
+
+  it('fails open when only no-service hubs exist and the pin is outside them', () => {
+    const hole = hub({
+      id: 'hole',
+      name: 'Restricted',
+      lat: HSR.lat,
+      lng: HSR.lng,
+      radius_km: 0.5,
+      service_kind: 'no_service',
+    });
+    expect(matchPointToServiceHubs(12.2958, 76.6394, [hole])).toEqual({
+      ok: true,
+      enforced: false,
+    });
   });
 });

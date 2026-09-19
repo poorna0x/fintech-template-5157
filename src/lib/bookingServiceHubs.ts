@@ -12,10 +12,16 @@ export const MIN_HUB_POLYGON_POINTS = 3;
 export const MAX_HUB_POLYGON_POINTS = 16;
 export const MAX_CUSTOMER_NOTE_LEN = 240;
 export const MAX_OUT_OF_AREA_MESSAGE_LEN = 320;
+export const HUB_MATCH_SLACK_KM = 0.04;
 export const DEFAULT_OUT_OF_AREA_MESSAGE =
   'We will not be able to come here. Please move the pin into a coverage area, or call us.';
+export const DEFAULT_CALLBACK_MESSAGE =
+  'We can come here, but not immediately. We’ll call you back to confirm the visit.';
+export const DEFAULT_NO_SERVICE_MESSAGE =
+  'We don’t serve this pocket right now. Please move the pin, or call us.';
 
 export type HubLatLng = { lat: number; lng: number };
+export type HubServiceKind = 'normal' | 'callback' | 'no_service';
 
 export type BookingServiceHub = {
   id: string;
@@ -25,6 +31,7 @@ export type BookingServiceHub = {
   lng: number;
   radius_km: number;
   polygon: HubLatLng[];
+  service_kind: HubServiceKind;
   is_active: boolean;
   sort_order: number;
   customer_note: string;
@@ -38,14 +45,24 @@ export type BookingHubSettings = {
 
 export type HubMatchResult =
   | { ok: true; enforced: false }
-  | { ok: true; enforced: true; hub: BookingServiceHub; distanceKm: number }
+  | {
+      ok: true;
+      enforced: true;
+      hub: BookingServiceHub;
+      distanceKm: number;
+      kind: 'normal' | 'callback';
+    }
   | {
       ok: false;
       enforced: true;
+      reason: 'out_of_area' | 'no_service' | 'needs_pin';
       nearest: Array<{ hub: BookingServiceHub; distanceKm: number }>;
+      hub?: BookingServiceHub;
     };
 
 const PUBLIC_COLUMNS =
+  'id,name,address,lat,lng,radius_km,polygon,service_kind,is_active,sort_order,customer_note,created_at,updated_at';
+const PUBLIC_COLUMNS_NO_KIND =
   'id,name,address,lat,lng,radius_km,polygon,is_active,sort_order,customer_note,created_at,updated_at';
 const PUBLIC_COLUMNS_NO_POLYGON =
   'id,name,address,lat,lng,radius_km,is_active,sort_order,customer_note,created_at,updated_at';
@@ -130,6 +147,9 @@ export function hubPolygonOrCircle(hub: {
 
 export function pointInHubPolygon(lat: number, lng: number, ring: HubLatLng[]): boolean {
   if (ring.length < MIN_HUB_POLYGON_POINTS) return false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    if (pointOnSegment(lat, lng, ring[j], ring[i])) return true;
+  }
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
     const yi = ring[i].lat;
@@ -142,6 +162,32 @@ export function pointInHubPolygon(lat: number, lng: number, ring: HubLatLng[]): 
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+function pointOnSegment(lat: number, lng: number, a: HubLatLng, b: HubLatLng): boolean {
+  const cross = (lng - a.lng) * (b.lat - a.lat) - (lat - a.lat) * (b.lng - a.lng);
+  if (Math.abs(cross) > 1e-10) return false;
+  const dot = (lng - a.lng) * (b.lng - a.lng) + (lat - a.lat) * (b.lat - a.lat);
+  if (dot < -1e-10) return false;
+  const lenSq = (b.lng - a.lng) ** 2 + (b.lat - a.lat) ** 2;
+  return dot <= lenSq + 1e-10;
+}
+
+function distanceToSegmentKm(lat: number, lng: number, a: HubLatLng, b: HubLatLng): number {
+  const dx = b.lng - a.lng;
+  const dy = b.lat - a.lat;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-18) return haversineKm(lat, lng, a.lat, a.lng);
+  const t = Math.max(0, Math.min(1, ((lng - a.lng) * dx + (lat - a.lat) * dy) / lenSq));
+  return haversineKm(lat, lng, a.lat + t * dy, a.lng + t * dx);
+}
+
+function minDistanceKmToRing(lat: number, lng: number, ring: HubLatLng[]): number {
+  let min = Number.POSITIVE_INFINITY;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    min = Math.min(min, distanceToSegmentKm(lat, lng, ring[j], ring[i]));
+  }
+  return min;
 }
 
 export function hubPolygonMetrics(points: HubLatLng[]): {
@@ -191,9 +237,72 @@ export function hubContainsPoint(
 ): boolean {
   const ring = parseHubPolygon(hub.polygon);
   if (ring.length >= MIN_HUB_POLYGON_POINTS) {
-    return pointInHubPolygon(lat, lng, ring);
+    if (pointInHubPolygon(lat, lng, ring)) return true;
+    return minDistanceKmToRing(lat, lng, ring) <= HUB_MATCH_SLACK_KM;
   }
-  return haversineKm(lat, lng, hub.lat, hub.lng) <= hub.radius_km;
+  return haversineKm(lat, lng, hub.lat, hub.lng) <= hub.radius_km + HUB_MATCH_SLACK_KM;
+}
+
+export function parseHubServiceKind(raw: unknown): HubServiceKind {
+  const value = String(raw || '').trim();
+  if (value === 'callback' || value === 'no_service') return value;
+  return 'normal';
+}
+
+export const HUB_KIND_OPTIONS: Array<{
+  id: HubServiceKind;
+  label: string;
+  hint: string;
+}> = [
+  { id: 'normal', label: 'Normal', hint: 'Book as usual' },
+  { id: 'callback', label: 'Call back', hint: 'We go, not immediately' },
+  { id: 'no_service', label: 'No service', hint: 'Block this pocket' },
+];
+
+export function hubKindLabel(kind: HubServiceKind): string {
+  if (kind === 'callback') return 'Call back';
+  if (kind === 'no_service') return 'No service';
+  return 'Normal';
+}
+
+export function hubKindMessagePlaceholder(kind: HubServiceKind): string {
+  if (kind === 'callback') return DEFAULT_CALLBACK_MESSAGE;
+  if (kind === 'no_service') return DEFAULT_NO_SERVICE_MESSAGE;
+  return 'Optional note, e.g. we may be a bit late in this area.';
+}
+
+export function hubDisplayMessage(hub: Pick<BookingServiceHub, 'service_kind' | 'customer_note'>): string {
+  const custom = String(hub.customer_note || '').trim();
+  if (custom) return custom;
+  if (hub.service_kind === 'callback') return DEFAULT_CALLBACK_MESSAGE;
+  if (hub.service_kind === 'no_service') return DEFAULT_NO_SERVICE_MESSAGE;
+  return '';
+}
+
+export function hubMapColors(
+  kind: HubServiceKind,
+  selected: boolean,
+  active: boolean
+): { fill: string; stroke: string } {
+  if (kind === 'no_service') {
+    return {
+      fill: selected ? 'rgba(225, 29, 72, 0.30)' : 'rgba(225, 29, 72, 0.16)',
+      stroke: selected ? '#e11d48' : '#be123c',
+    };
+  }
+  if (kind === 'callback') {
+    return {
+      fill: selected ? 'rgba(217, 119, 6, 0.30)' : 'rgba(217, 119, 6, 0.16)',
+      stroke: selected ? '#d97706' : '#b45309',
+    };
+  }
+  if (!active) {
+    return { fill: 'rgba(148, 163, 184, 0.18)', stroke: '#94a3b8' };
+  }
+  return {
+    fill: selected ? 'rgba(2, 132, 199, 0.24)' : 'rgba(71, 85, 105, 0.28)',
+    stroke: selected ? '#0284c7' : '#475569',
+  };
 }
 
 export function parseBookingServiceHub(row: unknown): BookingServiceHub | null {
@@ -214,6 +323,7 @@ export function parseBookingServiceHub(row: unknown): BookingServiceHub | null {
     lng,
     radius_km: radius,
     polygon: parseHubPolygon(r.polygon),
+    service_kind: parseHubServiceKind(r.service_kind),
     is_active: r.is_active !== false,
     sort_order: Number.isFinite(Number(r.sort_order)) ? Number(r.sort_order) : 0,
     customer_note: String(r.customer_note || '').trim().slice(0, MAX_CUSTOMER_NOTE_LEN),
@@ -230,27 +340,59 @@ export function matchPointToServiceHubs(
   const active = hubs.filter((h) => h.is_active);
   if (active.length === 0) return { ok: true, enforced: false };
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
-    return { ok: false, enforced: true, nearest: [] };
+    return { ok: false, enforced: true, reason: 'needs_pin', nearest: [] };
   }
 
   const ranked = active
     .map((hub) => ({
       hub,
       distanceKm: haversineKm(lat, lng, hub.lat, hub.lng),
+      inside: hubContainsPoint(hub, lat, lng),
     }))
     .sort((a, b) => a.distanceKm - b.distanceKm);
 
-  const inside = ranked.find((row) => hubContainsPoint(row.hub, lat, lng));
-  if (inside) {
+  const exclusion = ranked.find((row) => row.inside && row.hub.service_kind === 'no_service');
+  if (exclusion) {
     return {
-      ok: true,
+      ok: false,
       enforced: true,
-      hub: inside.hub,
-      distanceKm: inside.distanceKm,
+      reason: 'no_service',
+      hub: exclusion.hub,
+      nearest: ranked.filter((row) => row.hub.service_kind !== 'no_service').slice(0, 3),
     };
   }
 
-  return { ok: false, enforced: true, nearest: ranked.slice(0, 3) };
+  const serving = ranked.filter((row) => row.hub.service_kind !== 'no_service');
+  if (serving.length === 0) return { ok: true, enforced: false };
+
+  const insideServing = serving.filter((row) => row.inside);
+  const normal = insideServing.find((row) => row.hub.service_kind === 'normal');
+  if (normal) {
+    return {
+      ok: true,
+      enforced: true,
+      hub: normal.hub,
+      distanceKm: normal.distanceKm,
+      kind: 'normal',
+    };
+  }
+  const callback = insideServing.find((row) => row.hub.service_kind === 'callback');
+  if (callback) {
+    return {
+      ok: true,
+      enforced: true,
+      hub: callback.hub,
+      distanceKm: callback.distanceKm,
+      kind: 'callback',
+    };
+  }
+
+  return {
+    ok: false,
+    enforced: true,
+    reason: 'out_of_area',
+    nearest: serving.slice(0, 3),
+  };
 }
 
 export function formatHubsLabel(names: string[]): string {
@@ -266,6 +408,12 @@ export function formatOutOfServiceAreaMessage(
   customMessage?: string | null
 ): string {
   if (result.ok) return '';
+  if (result.reason === 'needs_pin') {
+    return 'Please pin your location on the map so we can check coverage.';
+  }
+  if (result.reason === 'no_service') {
+    return result.hub ? hubDisplayMessage(result.hub) : DEFAULT_NO_SERVICE_MESSAGE;
+  }
   const names = result.nearest.map((row) => row.hub.name).filter(Boolean);
   const hubsLabel = formatHubsLabel(names);
   const custom = String(customMessage || '').trim();
@@ -278,6 +426,7 @@ export function formatOutOfServiceAreaMessage(
 
 export function hubCustomerNote(result: HubMatchResult): string {
   if (!result.ok || !result.enforced) return '';
+  if (result.kind === 'callback') return hubDisplayMessage(result.hub);
   return String(result.hub.customer_note || '').trim();
 }
 
@@ -376,6 +525,11 @@ export async function fetchBookingServiceHubs(opts?: {
   };
 
   let { data, error } = await runSelect(PUBLIC_COLUMNS);
+  if (error && String(error.message || '').toLowerCase().includes('service_kind')) {
+    const retry = await runSelect(PUBLIC_COLUMNS_NO_KIND);
+    data = retry.data;
+    error = retry.error;
+  }
   if (error && String(error.message || '').toLowerCase().includes('polygon')) {
     const retry = await runSelect(PUBLIC_COLUMNS_NO_POLYGON);
     data = retry.data;
@@ -418,6 +572,7 @@ export async function createBookingServiceHub(input: {
   lng: number;
   radius_km?: number;
   polygon?: HubLatLng[];
+  service_kind?: HubServiceKind;
   is_active?: boolean;
   sort_order?: number;
   customer_note?: string;
@@ -434,6 +589,7 @@ export async function createBookingServiceHub(input: {
     is_active: input.is_active !== false,
     sort_order: input.sort_order ?? 0,
     customer_note: String(input.customer_note || '').trim().slice(0, MAX_CUSTOMER_NOTE_LEN),
+    service_kind: parseHubServiceKind(input.service_kind),
   };
   if (polygon.length >= MIN_HUB_POLYGON_POINTS) payload.polygon = polygon;
   let { data, error } = await supabase
@@ -441,6 +597,12 @@ export async function createBookingServiceHub(input: {
     .insert(payload)
     .select(PUBLIC_COLUMNS)
     .single();
+  if (error && String(error.message || '').toLowerCase().includes('service_kind')) {
+    delete payload.service_kind;
+    const retry = await supabase.from(BOOKING_SERVICE_HUBS_TABLE).insert(payload).select(PUBLIC_COLUMNS_NO_KIND).single();
+    data = retry.data;
+    error = retry.error;
+  }
   if (error && String(error.message || '').toLowerCase().includes('polygon')) {
     delete payload.polygon;
     const retry = await supabase.from(BOOKING_SERVICE_HUBS_TABLE).insert(payload).select(PUBLIC_COLUMNS_NO_POLYGON).single();
@@ -464,7 +626,7 @@ export async function updateBookingServiceHub(
   patch: Partial<
     Pick<
       BookingServiceHub,
-      'name' | 'address' | 'lat' | 'lng' | 'radius_km' | 'polygon' | 'is_active' | 'sort_order' | 'customer_note'
+      'name' | 'address' | 'lat' | 'lng' | 'radius_km' | 'polygon' | 'service_kind' | 'is_active' | 'sort_order' | 'customer_note'
     >
   >
 ): Promise<{ hub: BookingServiceHub | null; error: string | null }> {
@@ -475,17 +637,29 @@ export async function updateBookingServiceHub(
   if (patch.lng !== undefined) payload.lng = patch.lng;
   if (patch.radius_km !== undefined) payload.radius_km = clampHubRadiusKm(patch.radius_km);
   if (patch.polygon !== undefined) payload.polygon = parseHubPolygon(patch.polygon);
+  if (patch.service_kind !== undefined) payload.service_kind = parseHubServiceKind(patch.service_kind);
   if (patch.is_active !== undefined) payload.is_active = patch.is_active;
   if (patch.sort_order !== undefined) payload.sort_order = patch.sort_order;
   if (patch.customer_note !== undefined) {
     payload.customer_note = String(patch.customer_note).trim().slice(0, MAX_CUSTOMER_NOTE_LEN);
   }
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from(BOOKING_SERVICE_HUBS_TABLE)
     .update(payload)
     .eq('id', id)
     .select(PUBLIC_COLUMNS)
     .single();
+  if (error && payload.service_kind !== undefined && String(error.message || '').toLowerCase().includes('service_kind')) {
+    delete payload.service_kind;
+    const retry = await supabase
+      .from(BOOKING_SERVICE_HUBS_TABLE)
+      .update(payload)
+      .eq('id', id)
+      .select(PUBLIC_COLUMNS_NO_KIND)
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
   if (error) return { hub: null, error: error.message };
   invalidateBookingServiceHubsCache();
   return { hub: parseBookingServiceHub(data), error: null };

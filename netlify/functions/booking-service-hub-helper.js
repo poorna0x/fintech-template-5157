@@ -43,6 +43,9 @@ function parseHubPolygon(raw) {
 
 function pointInHubPolygon(lat, lng, ring) {
   if (!ring || ring.length < 3) return false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    if (pointOnSegment(lat, lng, ring[j], ring[i])) return true;
+  }
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
     const yi = ring[i].lat;
@@ -57,10 +60,57 @@ function pointInHubPolygon(lat, lng, ring) {
   return inside;
 }
 
+function pointOnSegment(lat, lng, a, b) {
+  const cross = (lng - a.lng) * (b.lat - a.lat) - (lat - a.lat) * (b.lng - a.lng);
+  if (Math.abs(cross) > 1e-10) return false;
+  const dot = (lng - a.lng) * (b.lng - a.lng) + (lat - a.lat) * (b.lat - a.lat);
+  if (dot < -1e-10) return false;
+  const lenSq = (b.lng - a.lng) ** 2 + (b.lat - a.lat) ** 2;
+  return dot <= lenSq + 1e-10;
+}
+
+function distanceToSegmentKm(lat, lng, a, b) {
+  const dx = b.lng - a.lng;
+  const dy = b.lat - a.lat;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-18) return haversineKm(lat, lng, a.lat, a.lng);
+  const t = Math.max(0, Math.min(1, ((lng - a.lng) * dx + (lat - a.lat) * dy) / lenSq));
+  return haversineKm(lat, lng, a.lat + t * dy, a.lng + t * dx);
+}
+
+function minDistanceKmToRing(lat, lng, ring) {
+  let min = Number.POSITIVE_INFINITY;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    min = Math.min(min, distanceToSegmentKm(lat, lng, ring[j], ring[i]));
+  }
+  return min;
+}
+
+function parseHubServiceKind(raw) {
+  const value = String(raw || '').trim();
+  if (value === 'callback' || value === 'no_service') return value;
+  return 'normal';
+}
+
+function hubDisplayMessage(hub) {
+  const custom = String(hub.customer_note || '').trim();
+  if (custom) return custom;
+  if (hub.service_kind === 'callback') {
+    return 'We can come here, but not immediately. We’ll call you back to confirm the visit.';
+  }
+  if (hub.service_kind === 'no_service') {
+    return 'We don’t serve this pocket right now. Please move the pin, or call us.';
+  }
+  return '';
+}
+
 function hubContainsPoint(hub, lat, lng) {
   const ring = parseHubPolygon(hub.polygon);
-  if (ring.length >= 3) return pointInHubPolygon(lat, lng, ring);
-  return haversineKm(lat, lng, hub.lat, hub.lng) <= hub.radius_km;
+  if (ring.length >= 3) {
+    if (pointInHubPolygon(lat, lng, ring)) return true;
+    return minDistanceKmToRing(lat, lng, ring) <= 0.04;
+  }
+  return haversineKm(lat, lng, hub.lat, hub.lng) <= hub.radius_km + 0.04;
 }
 
 function isValidCoords(lat, lng) {
@@ -88,8 +138,16 @@ function coordsFromBookingRow(row) {
 async function loadActiveHubs(admin) {
   let { data, error } = await admin
     .from('booking_service_hubs')
-    .select('id,name,lat,lng,radius_km,polygon,is_active,customer_note')
+    .select('id,name,lat,lng,radius_km,polygon,service_kind,is_active,customer_note')
     .eq('is_active', true);
+  if (error && String(error.message || '').toLowerCase().includes('service_kind')) {
+    const retry = await admin
+      .from('booking_service_hubs')
+      .select('id,name,lat,lng,radius_km,polygon,is_active,customer_note')
+      .eq('is_active', true);
+    data = retry.data;
+    error = retry.error;
+  }
   if (error && String(error.message || '').toLowerCase().includes('polygon')) {
     const retry = await admin
       .from('booking_service_hubs')
@@ -125,6 +183,7 @@ async function loadActiveHubs(admin) {
         lng,
         radius_km: radius,
         polygon: parseHubPolygon(row.polygon),
+        service_kind: parseHubServiceKind(row.service_kind),
         customer_note: String(row.customer_note || '').trim().slice(0, 240),
       };
     })
@@ -193,19 +252,48 @@ async function assertLocationInServiceHub(admin, lat, lng) {
     .map((hub) => ({
       ...hub,
       distanceKm: haversineKm(Number(lat), Number(lng), hub.lat, hub.lng),
+      inside: hubContainsPoint(hub, Number(lat), Number(lng)),
     }))
     .sort((a, b) => a.distanceKm - b.distanceKm);
 
-  const inside = ranked.find((row) => hubContainsPoint(row, Number(lat), Number(lng)));
-  if (inside) {
-    return { ok: true, enforced: true, hub: inside };
+  const exclusion = ranked.find((row) => row.inside && row.service_kind === 'no_service');
+  if (exclusion) {
+    return {
+      ok: false,
+      enforced: true,
+      reason: 'no_service',
+      hub: exclusion,
+      message: hubDisplayMessage(exclusion),
+    };
   }
 
-  const nearest = ranked.slice(0, 3);
+  const serving = ranked.filter((row) => row.service_kind !== 'no_service');
+  if (serving.length === 0) {
+    return { ok: true, enforced: false };
+  }
+
+  const insideServing = serving.filter((row) => row.inside);
+  const normal = insideServing.find((row) => row.service_kind === 'normal');
+  if (normal) {
+    return { ok: true, enforced: true, hub: normal, kind: 'normal', notice: hubDisplayMessage(normal) || null };
+  }
+  const callback = insideServing.find((row) => row.service_kind === 'callback');
+  if (callback) {
+    return {
+      ok: true,
+      enforced: true,
+      hub: callback,
+      kind: 'callback',
+      notice: hubDisplayMessage(callback),
+    };
+  }
+
+  const nearest = serving.slice(0, 3);
   const customMessage = await loadOutOfAreaMessage(admin);
   return {
     ok: false,
     enforced: true,
+    reason: 'out_of_area',
     nearest,
     message: formatOutOfArea(nearest, customMessage),
   };

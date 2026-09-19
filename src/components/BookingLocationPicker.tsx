@@ -52,7 +52,7 @@ type BookingLocationPickerProps = {
   showCancel?: boolean;
   onCancelSearch?: () => void;
   onRequestSearch?: () => void;
-  coverageNotice?: { tone: 'block' | 'info'; message: string } | null;
+  coverageNotice?: { tone: 'block' | 'info'; message: string; title?: string } | null;
 };
 
 function hasCoords(coords?: { lat?: number; lng?: number } | null): boolean {
@@ -680,10 +680,18 @@ export default function BookingLocationPicker({
               : 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100'
           }`}
         >
-          {coverageNotice.tone === 'block' ? (
-            <p className="font-semibold">We will not be able to come here</p>
-          ) : null}
-          <p className={coverageNotice.tone === 'block' ? 'mt-1' : ''}>{coverageNotice.message}</p>
+          {(() => {
+            const title =
+              coverageNotice.title !== undefined
+                ? coverageNotice.title
+                : coverageNotice.tone === 'block'
+                  ? 'We will not be able to come here'
+                  : '';
+            return title ? <p className="font-semibold">{title}</p> : null;
+          })()}
+          <p className={coverageNotice.title || coverageNotice.tone === 'block' ? 'mt-1' : ''}>
+            {coverageNotice.message}
+          </p>
         </div>
       ) : null}
 

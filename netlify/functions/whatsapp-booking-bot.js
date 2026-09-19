@@ -1841,6 +1841,9 @@ async function acceptSharedLocation(ctx, state, enriched) {
       });
       return;
     }
+    if (coverage.kind === 'callback' && coverage.notice) {
+      await sendText({ ...ctx, text: coverage.notice });
+    }
   } catch (err) {
     console.warn('[whatsapp-booking-bot] hub check failed, continuing:', err && err.message);
   }

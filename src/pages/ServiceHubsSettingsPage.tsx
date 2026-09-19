@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   ArrowLeft,
+  Ban,
   Check,
+  CheckCircle2,
   Loader2,
   MapPin,
   Maximize2,
   Minimize2,
+  PhoneCall,
   Plus,
   Search,
   Trash2,
@@ -49,6 +52,10 @@ import {
   deleteBookingServiceHub,
   fetchBookingServiceHubs,
   hubContainsPoint,
+  hubKindLabel,
+  hubKindMessagePlaceholder,
+  hubMapColors,
+  HUB_KIND_OPTIONS,
   hubPolygonMetrics,
   hubPolygonOrCircle,
   MAX_CUSTOMER_NOTE_LEN,
@@ -62,6 +69,7 @@ import {
   updateBookingServiceHub,
   type BookingServiceHub,
   type HubLatLng,
+  type HubServiceKind,
 } from '@/lib/bookingServiceHubs';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
@@ -80,8 +88,42 @@ type DraftHub = {
   lng: number;
   radius_km: number;
   polygon: HubLatLng[];
+  service_kind: HubServiceKind;
   customer_note: string;
 };
+
+function KindIcon({
+  kind,
+  className,
+  style,
+}: {
+  kind: HubServiceKind;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  if (kind === 'callback') return <PhoneCall className={className} style={style} />;
+  if (kind === 'no_service') return <Ban className={className} style={style} />;
+  return <CheckCircle2 className={className} style={style} />;
+}
+
+function KindBadge({ kind, paused }: { kind: HubServiceKind; paused?: boolean }) {
+  if (paused) {
+    return (
+      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+        Paused
+      </span>
+    );
+  }
+  const colors = hubMapColors(kind, false, true);
+  return (
+    <span
+      className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+      style={{ color: colors.stroke, backgroundColor: colors.fill }}
+    >
+      {hubKindLabel(kind)}
+    </span>
+  );
+}
 
 type Props = {
   onBack: () => void;
@@ -144,7 +186,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     () => hubs.find((h) => h.id === selectedId) || null,
     [hubs, selectedId]
   );
-  const draftAnchor = draft ? `${draft.lat.toFixed(4)},${draft.lng.toFixed(4)}` : '';
+  const draftAnchor = draft
+    ? `${draft.lat.toFixed(4)},${draft.lng.toFixed(4)}:${draft.service_kind}`
+    : '';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -222,6 +266,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       lng,
       radius_km: radiusKm,
       polygon: circleToHubPolygon(lat, lng, radiusKm, DEFAULT_HUB_POLYGON_POINTS),
+      service_kind: 'normal',
       customer_note: '',
     });
   }, []);
@@ -242,6 +287,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       lng: number;
       radius_km: number;
       polygon: HubLatLng[];
+      kind: HubServiceKind;
       active: boolean;
       selected: boolean;
     }> = hubs.map((h) => ({
@@ -250,6 +296,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       lng: h.lng,
       radius_km: h.radius_km,
       polygon: hubPolygonOrCircle(h),
+      kind: h.service_kind,
       active: h.is_active,
       selected: !draftNow && h.id === selectedId,
     }));
@@ -260,6 +307,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         lng: draftNow.lng,
         radius_km: draftNow.radius_km,
         polygon: hubPolygonOrCircle(draftNow),
+        kind: draftNow.service_kind,
         active: true,
         selected: true,
       });
@@ -269,20 +317,15 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     let hasPoint = false;
 
     for (const row of rows) {
-      const fill = row.selected
-        ? 'rgba(2, 132, 199, 0.22)'
-        : row.active
-          ? 'rgba(71, 85, 105, 0.28)'
-          : 'rgba(148, 163, 184, 0.18)';
-      const stroke = row.selected ? '#0284c7' : row.active ? '#475569' : '#94a3b8';
+      const colors = hubMapColors(row.kind, row.selected, row.active);
       const polygon = new window.google.maps.Polygon({
         map,
         paths: row.polygon,
-        fillColor: fill,
+        fillColor: colors.fill,
         fillOpacity: 1,
-        strokeColor: stroke,
+        strokeColor: colors.stroke,
         strokeOpacity: 0.9,
-        strokeWeight: row.selected ? 2 : 1,
+        strokeWeight: row.selected ? 2.5 : 1.5,
         clickable: true,
         editable: row.selected,
         draggable: row.selected,
@@ -323,9 +366,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
           scale: row.selected ? 8 : 6,
-          fillColor: row.selected ? '#0284c7' : '#ffffff',
+          fillColor: row.selected ? colors.stroke : '#ffffff',
           fillOpacity: 1,
-          strokeColor: row.selected ? '#0369a1' : '#334155',
+          strokeColor: colors.stroke,
           strokeWeight: 2,
         },
         clickable: row.id !== 'draft',
@@ -460,6 +503,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             details.coords.lng,
             DEFAULT_HUB_RADIUS_KM
           ),
+          service_kind: 'normal',
           customer_note: '',
         });
       }
@@ -488,6 +532,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       lng: draft.lng,
       radius_km: draft.radius_km,
       polygon: hubPolygonOrCircle(draft),
+      service_kind: draft.service_kind,
       sort_order: hubs.length,
       customer_note: draft.customer_note,
     });
@@ -504,7 +549,10 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
 
   const handlePatchSelected = async (
     patch: Partial<
-      Pick<BookingServiceHub, 'name' | 'radius_km' | 'polygon' | 'is_active' | 'customer_note' | 'lat' | 'lng'>
+      Pick<
+        BookingServiceHub,
+        'name' | 'radius_km' | 'polygon' | 'is_active' | 'customer_note' | 'lat' | 'lng' | 'service_kind'
+      >
     >
   ) => {
     if (!selected) return;
@@ -516,6 +564,14 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       return;
     }
     setHubs((prev) => prev.map((h) => (h.id === result.hub!.id ? result.hub! : h)));
+  };
+
+  const applyKind = (kind: HubServiceKind) => {
+    if (draft) {
+      setDraft({ ...draft, service_kind: kind });
+      return;
+    }
+    if (selected) void handlePatchSelected({ service_kind: kind });
   };
 
   const handleDelete = async () => {
@@ -535,7 +591,13 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   };
 
   const editor = draft || selected;
+  const editorKind: HubServiceKind = editor?.service_kind || 'normal';
   const configuredCount = hubs.filter((h) => h.is_active).length;
+  const kindCounts = {
+    normal: hubs.filter((h) => h.is_active && h.service_kind === 'normal').length,
+    callback: hubs.filter((h) => h.is_active && h.service_kind === 'callback').length,
+    no_service: hubs.filter((h) => h.is_active && h.service_kind === 'no_service').length,
+  };
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)');
@@ -582,24 +644,27 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           className="h-11 min-w-11 cursor-pointer px-2"
         >
           <ArrowLeft className="mr-1 h-4 w-4" />
-          Location Hubs
+          <span className="hidden sm:inline">Location Hubs</span>
+          <span className="sm:hidden">Hubs</span>
         </Button>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="ml-auto hidden h-11 cursor-pointer gap-1.5 md:inline-flex"
+          className="ml-auto h-11 cursor-pointer gap-1.5 px-2.5 sm:px-3"
           onClick={toggleMapLarge}
         >
           {mapLarge ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          {mapLarge ? 'Smaller map' : 'Larger map'}
+          <span className="hidden sm:inline">{mapLarge ? 'Smaller map' : 'Larger map'}</span>
         </Button>
         <Button
           type="button"
           size="sm"
-          className="h-11 cursor-pointer gap-1.5 md:ml-0 ml-auto"
+          className="h-11 cursor-pointer gap-1.5"
           onClick={() => {
-            toast.message('Tap the map to drop a coverage area, then drag the points to reshape.');
+            const center = mapRef.current?.getCenter();
+            placeDraftAt(center?.lat() ?? BENGALURU.lat, center?.lng() ?? BENGALURU.lng);
+            toast.message('Drag the corners to reshape. Pick Normal, Call back, or No service below.');
           }}
         >
           <Plus className="h-4 w-4" />
@@ -621,11 +686,12 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       ) : null}
 
       <div
-        className="relative w-full shrink-0 overflow-hidden bg-muted"
-        style={{
-          height: mapLarge && desktopMap ? 'min(72dvh, 760px)' : 'min(38dvh, 420px)',
-          minHeight: mapLarge && desktopMap ? 420 : 240,
-        }}
+        className={cn(
+          'relative w-full shrink-0 overflow-hidden bg-muted',
+          mapLarge
+            ? 'h-[min(62dvh,640px)] min-h-[280px] md:h-[min(72dvh,760px)] md:min-h-[420px]'
+            : 'h-[min(42dvh,360px)] min-h-[220px] md:h-[min(38dvh,420px)] md:min-h-[240px]'
+        )}
       >
         <DraggableMap
           center={BENGALURU}
@@ -690,228 +756,304 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             </ul>
           ) : null}
         </div>
-        <p className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 rounded-lg bg-black/55 px-3 py-1.5 text-center text-xs font-medium text-white">
-          Tap the map to add an area. Drag a corner to pull that side in. Drag a midpoint to add a
-          point.
-        </p>
+        <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-end justify-between gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            {HUB_KIND_OPTIONS.map((opt) => {
+              const colors = hubMapColors(opt.id, false, true);
+              return (
+                <span
+                  key={opt.id}
+                  className="rounded-full px-2 py-1 text-[11px] font-semibold text-white shadow-sm"
+                  style={{ backgroundColor: colors.stroke }}
+                >
+                  {opt.label}
+                </span>
+              );
+            })}
+          </div>
+          <p className="max-w-[16rem] rounded-lg bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white sm:max-w-none">
+            Tap map to add · drag corners to cut · drag midpoints to add a point
+          </p>
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="space-y-3 border-b border-border bg-card px-4 py-3">
-          <Label htmlFor="out-of-area-message" className="text-sm font-medium">
-            Outside coverage message
-          </Label>
-          <p className="text-xs text-muted-foreground">
-            Shown on the website after they pin a location we cannot serve. They cannot go to the next
-            step until the pin is inside a hub. Optional: type {'{hubs}'} to list nearby areas.
-          </p>
-          <Textarea
-            id="out-of-area-message"
-            value={outOfAreaMessage}
-            maxLength={MAX_OUT_OF_AREA_MESSAGE_LEN}
-            rows={3}
-            onChange={(e) => setOutOfAreaMessage(e.target.value.slice(0, MAX_OUT_OF_AREA_MESSAGE_LEN))}
-            placeholder={DEFAULT_OUT_OF_AREA_MESSAGE}
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="h-11 cursor-pointer"
-            disabled={saving}
-            onClick={() => {
-              void (async () => {
-                setSaving(true);
-                const result = await updateBookingHubSettings({ out_of_area_message: outOfAreaMessage });
-                setSaving(false);
-                if (result.error || !result.settings) {
-                  toast.error(result.error || 'Could not save message');
-                  return;
-                }
-                setOutOfAreaMessage(result.settings.out_of_area_message);
-                toast.success('Outside-coverage message saved');
-              })();
-            }}
-          >
-            Save message
-          </Button>
-        </div>
-        {editor ? (
-          <div className="space-y-3 border-b border-border bg-muted/30 px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="hub-name" className="text-sm font-medium">
-                {draft ? 'New hub' : 'Selected hub'}
-              </Label>
+      <div className="min-h-0 flex-1 overflow-y-auto md:grid md:grid-cols-[minmax(0,26rem)_1fr] md:overflow-hidden">
+        <div className="md:overflow-y-auto md:border-r md:border-border">
+          <div className="space-y-3 border-b border-border bg-card px-4 py-3">
+            <Label htmlFor="out-of-area-message" className="text-sm font-medium">
+              Outside coverage message
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Shown when the pin is outside every serving hub. They cannot continue until they move
+              it. Optional: type {'{hubs}'} to list nearby areas.
+            </p>
+            <Textarea
+              id="out-of-area-message"
+              value={outOfAreaMessage}
+              maxLength={MAX_OUT_OF_AREA_MESSAGE_LEN}
+              rows={3}
+              onChange={(e) => setOutOfAreaMessage(e.target.value.slice(0, MAX_OUT_OF_AREA_MESSAGE_LEN))}
+              placeholder={DEFAULT_OUT_OF_AREA_MESSAGE}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-11 cursor-pointer"
+              disabled={saving}
+              onClick={() => {
+                void (async () => {
+                  setSaving(true);
+                  const result = await updateBookingHubSettings({ out_of_area_message: outOfAreaMessage });
+                  setSaving(false);
+                  if (result.error || !result.settings) {
+                    toast.error(result.error || 'Could not save message');
+                    return;
+                  }
+                  setOutOfAreaMessage(result.settings.out_of_area_message);
+                  toast.success('Outside-coverage message saved');
+                })();
+              }}
+            >
+              Save message
+            </Button>
+          </div>
+          {editor ? (
+            <div className="space-y-3 border-b border-border bg-muted/30 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="hub-name" className="text-sm font-medium">
+                  {draft ? 'New hub' : 'Selected hub'}
+                </Label>
+                {draft ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="cursor-pointer"
+                    onClick={() => setDraft(null)}
+                  >
+                    Cancel
+                  </Button>
+                ) : null}
+              </div>
+              <Input
+                id="hub-name"
+                value={draft ? draft.name : selected?.name || ''}
+                onChange={(e) => {
+                  if (draft) setDraft({ ...draft, name: e.target.value.slice(0, 80) });
+                }}
+                onBlur={(e) => {
+                  if (!draft && selected && e.target.value.trim() && e.target.value.trim() !== selected.name) {
+                    void handlePatchSelected({ name: e.target.value });
+                  }
+                }}
+                placeholder="Hub name (HSR Layout, Bellandur…)"
+              />
+              <div>
+                <p className="mb-2 text-sm font-medium">What happens here</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {HUB_KIND_OPTIONS.map((opt) => {
+                    const selectedKind = editorKind === opt.id;
+                    const colors = hubMapColors(opt.id, selectedKind, true);
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => applyKind(opt.id)}
+                        className={cn(
+                          'flex min-h-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border px-1.5 py-2 text-center transition-colors duration-200',
+                          selectedKind ? 'shadow-sm' : 'border-border bg-card hover:bg-muted/60'
+                        )}
+                        style={
+                          selectedKind
+                            ? { borderColor: colors.stroke, backgroundColor: colors.fill }
+                            : undefined
+                        }
+                      >
+                        <KindIcon kind={opt.id} className="h-4 w-4" style={{ color: colors.stroke }} />
+                        <span className="text-xs font-semibold" style={{ color: colors.stroke }}>
+                          {opt.label}
+                        </span>
+                        <span className="hidden text-[10px] leading-tight text-muted-foreground sm:block">
+                          {opt.hint}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {editorKind === 'no_service'
+                    ? 'Draw this over a pocket you do not cover. It blocks booking even if a Normal hub overlaps it.'
+                    : editorKind === 'callback'
+                      ? 'Customers can still book. We’ll show a call-back message instead of treating it as immediate service.'
+                      : 'Website and WhatsApp booking work as usual inside this area.'}
+                </p>
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Coverage size</span>
+                  <span className="font-medium tabular-nums">
+                    {(draft ? draft.radius_km : selected?.radius_km || DEFAULT_HUB_RADIUS_KM).toFixed(1)} km
+                  </span>
+                </div>
+                <Slider
+                  min={MIN_HUB_RADIUS_KM}
+                  max={MAX_HUB_RADIUS_KM}
+                  step={0.5}
+                  value={[draft ? draft.radius_km : selected?.radius_km || DEFAULT_HUB_RADIUS_KM]}
+                  onValueChange={([value]) => {
+                    const radius = clampHubRadiusKm(value);
+                    const current = draft || selected;
+                    if (!current) return;
+                    const scaled = scaleHubPolygon(
+                      hubPolygonOrCircle(current),
+                      { lat: current.lat, lng: current.lng },
+                      current.radius_km,
+                      radius
+                    );
+                    const shape = editableCircleRef.current;
+                    if (shape) shape.setPath(scaled);
+                    skipPaintRef.current = true;
+                    if (draft) setDraft({ ...draft, radius_km: radius, polygon: scaled });
+                    else if (selected) {
+                      setHubs((prev) =>
+                        prev.map((h) =>
+                          h.id === selected.id ? { ...h, radius_km: radius, polygon: scaled } : h
+                        )
+                      );
+                    }
+                  }}
+                  onValueCommit={([value]) => {
+                    if (draft || !selected) return;
+                    const shape = editableCircleRef.current;
+                    const ring = shape
+                      ? pathToHubPoints(shape.getPath())
+                      : hubPolygonOrCircle(selected);
+                    void handlePatchSelected({
+                      radius_km: clampHubRadiusKm(value),
+                      polygon: ring,
+                    });
+                  }}
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-11 cursor-pointer"
+                    onClick={() => {
+                      const current = draft || selected;
+                      if (!current) return;
+                      const ring = circleToHubPolygon(current.lat, current.lng, current.radius_km);
+                      const shape = editableCircleRef.current;
+                      if (shape) shape.setPath(ring);
+                      skipPaintRef.current = true;
+                      if (draft) setDraft({ ...draft, polygon: ring });
+                      else if (selected) {
+                        setHubs((prev) =>
+                          prev.map((h) => (h.id === selected.id ? { ...h, polygon: ring } : h))
+                        );
+                        void handlePatchSelected({ polygon: ring });
+                      }
+                    }}
+                  >
+                    Round shape
+                  </Button>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Drag a white corner to cut that side out. Drag the smaller midpoint between corners to
+                  add another point.
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="hub-note" className="text-sm font-medium">
+                  {editorKind === 'callback'
+                    ? 'Call-back message'
+                    : editorKind === 'no_service'
+                      ? 'No-service message'
+                      : 'Note for this area (optional)'}
+                </Label>
+                <p className="mb-2 mt-1 text-xs text-muted-foreground">
+                  {editorKind === 'callback'
+                    ? 'Shown after they pin here. Leave blank to use the default call-back copy.'
+                    : editorKind === 'no_service'
+                      ? 'Shown when they pin in this blocked pocket. Leave blank for the default no-service copy.'
+                      : 'Shown when the pin is inside this hub. Example: “We may be a bit late in this area.”'}
+                </p>
+                <Textarea
+                  id="hub-note"
+                  value={draft ? draft.customer_note : selected?.customer_note || ''}
+                  maxLength={MAX_CUSTOMER_NOTE_LEN}
+                  rows={2}
+                  placeholder={hubKindMessagePlaceholder(editorKind)}
+                  onChange={(e) => {
+                    const next = e.target.value.slice(0, MAX_CUSTOMER_NOTE_LEN);
+                    if (draft) setDraft({ ...draft, customer_note: next });
+                    else if (selected) {
+                      setHubs((prev) =>
+                        prev.map((h) => (h.id === selected.id ? { ...h, customer_note: next } : h))
+                      );
+                    }
+                  }}
+                  onBlur={(e) => {
+                    if (!draft && selected) void handlePatchSelected({ customer_note: e.target.value });
+                  }}
+                />
+              </div>
               {draft ? (
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="cursor-pointer"
-                  onClick={() => setDraft(null)}
+                  className="h-11 w-full cursor-pointer"
+                  disabled={saving}
+                  onClick={() => void handleSaveDraft()}
                 >
-                  Cancel
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {editorKind === 'no_service'
+                    ? 'Save hub — bookings blocked here'
+                    : editorKind === 'callback'
+                      ? 'Save hub — we’ll call them back'
+                      : 'Save hub — bookings allowed here'}
                 </Button>
+              ) : selected ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={selected.is_active}
+                      disabled={saving}
+                      onCheckedChange={(v) => void handlePatchSelected({ is_active: v })}
+                      aria-label={editorKind === 'no_service' ? 'Exclusion is active' : 'Hub accepts bookings'}
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      {selected.is_active
+                        ? editorKind === 'no_service'
+                          ? 'Exclusion on'
+                          : 'Accepts bookings'
+                        : 'Paused'}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="cursor-pointer text-destructive hover:text-destructive"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="mr-1 h-4 w-4" />
+                    Remove
+                  </Button>
+                </div>
               ) : null}
             </div>
-            <Input
-              id="hub-name"
-              value={draft ? draft.name : selected?.name || ''}
-              onChange={(e) => {
-                if (draft) setDraft({ ...draft, name: e.target.value.slice(0, 80) });
-              }}
-              onBlur={(e) => {
-                if (!draft && selected && e.target.value.trim() && e.target.value.trim() !== selected.name) {
-                  void handlePatchSelected({ name: e.target.value });
-                }
-              }}
-              placeholder="Hub name (HSR Layout, Bellandur…)"
-            />
-            <div>
-              <div className="mb-2 flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Coverage size</span>
-                <span className="font-medium tabular-nums">
-                  {(draft ? draft.radius_km : selected?.radius_km || DEFAULT_HUB_RADIUS_KM).toFixed(1)} km
-                </span>
-              </div>
-              <Slider
-                min={MIN_HUB_RADIUS_KM}
-                max={MAX_HUB_RADIUS_KM}
-                step={0.5}
-                value={[draft ? draft.radius_km : selected?.radius_km || DEFAULT_HUB_RADIUS_KM]}
-                onValueChange={([value]) => {
-                  const radius = clampHubRadiusKm(value);
-                  const current = draft || selected;
-                  if (!current) return;
-                  const scaled = scaleHubPolygon(
-                    hubPolygonOrCircle(current),
-                    { lat: current.lat, lng: current.lng },
-                    current.radius_km,
-                    radius
-                  );
-                  const shape = editableCircleRef.current;
-                  if (shape) shape.setPath(scaled);
-                  skipPaintRef.current = true;
-                  if (draft) setDraft({ ...draft, radius_km: radius, polygon: scaled });
-                  else if (selected) {
-                    setHubs((prev) =>
-                      prev.map((h) =>
-                        h.id === selected.id ? { ...h, radius_km: radius, polygon: scaled } : h
-                      )
-                    );
-                  }
-                }}
-                onValueCommit={([value]) => {
-                  if (draft || !selected) return;
-                  const shape = editableCircleRef.current;
-                  const ring = shape
-                    ? pathToHubPoints(shape.getPath())
-                    : hubPolygonOrCircle(selected);
-                  void handlePatchSelected({
-                    radius_km: clampHubRadiusKm(value),
-                    polygon: ring,
-                  });
-                }}
-              />
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-11 cursor-pointer"
-                  onClick={() => {
-                    const current = draft || selected;
-                    if (!current) return;
-                    const ring = circleToHubPolygon(current.lat, current.lng, current.radius_km);
-                    const shape = editableCircleRef.current;
-                    if (shape) shape.setPath(ring);
-                    skipPaintRef.current = true;
-                    if (draft) setDraft({ ...draft, polygon: ring });
-                    else if (selected) {
-                      setHubs((prev) =>
-                        prev.map((h) => (h.id === selected.id ? { ...h, polygon: ring } : h))
-                      );
-                      void handlePatchSelected({ polygon: ring });
-                    }
-                  }}
-                >
-                  Round shape
-                </Button>
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Drag a white corner to cut that side out. Drag the smaller midpoint between corners to
-                add another point.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="hub-note" className="text-sm font-medium">
-                Note for this area (optional)
-              </Label>
-              <p className="mb-2 mt-1 text-xs text-muted-foreground">
-                Shown when the pin is inside this hub. Example: “We may be a bit late in this area.”
-              </p>
-              <Textarea
-                id="hub-note"
-                value={draft ? draft.customer_note : selected?.customer_note || ''}
-                maxLength={MAX_CUSTOMER_NOTE_LEN}
-                rows={2}
-                placeholder="We may be a bit late in this area."
-                onChange={(e) => {
-                  const next = e.target.value.slice(0, MAX_CUSTOMER_NOTE_LEN);
-                  if (draft) setDraft({ ...draft, customer_note: next });
-                  else if (selected) {
-                    setHubs((prev) =>
-                      prev.map((h) => (h.id === selected.id ? { ...h, customer_note: next } : h))
-                    );
-                  }
-                }}
-                onBlur={(e) => {
-                  if (!draft && selected) void handlePatchSelected({ customer_note: e.target.value });
-                }}
-              />
-            </div>
-            {draft ? (
-              <Button
-                type="button"
-                className="h-11 w-full cursor-pointer"
-                disabled={saving}
-                onClick={() => void handleSaveDraft()}
-              >
-                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Save hub — bookings allowed in this area
-              </Button>
-            ) : selected ? (
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={selected.is_active}
-                    disabled={saving}
-                    onCheckedChange={(v) => void handlePatchSelected({ is_active: v })}
-                    aria-label="Hub accepts bookings"
-                  />
-                  <span className="text-sm text-muted-foreground">
-                    {selected.is_active ? 'Accepts bookings' : 'Paused'}
-                  </span>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="cursor-pointer text-destructive hover:text-destructive"
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  <Trash2 className="mr-1 h-4 w-4" />
-                  Remove
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
-        <div className="px-4 py-3">
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="text-base font-semibold text-foreground">Configured Hubs</h2>
-            <span className="text-sm tabular-nums text-muted-foreground">{configuredCount}</span>
+        <div className="px-4 py-3 md:overflow-y-auto">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-base font-semibold text-foreground">Configured hubs</h2>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {kindCounts.normal} normal · {kindCounts.callback} call back · {kindCounts.no_service} no service
+              {configuredCount ? ` · ${configuredCount} on` : ''}
+            </span>
           </div>
           {loading ? (
             <div className="flex items-center justify-center py-10 text-muted-foreground">
@@ -920,14 +1062,15 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             </div>
           ) : hubs.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              No hubs yet. Tap the map to drop an area, or search (HSR, Bellandur, BTM…). Drag the
-              points to pull in streets you do not cover. Until you add one, website and WhatsApp
-              booking stay open everywhere.
+              No hubs yet. Tap the map or Add hub, then pick Normal, Call back, or No service. Until you
+              add a serving hub, website and WhatsApp booking stay open everywhere (except No-service
+              pockets).
             </p>
           ) : (
             <ul className="space-y-2 pb-8">
               {hubs.map((hub) => {
                 const isSel = !draft && hub.id === selectedId;
+                const colors = hubMapColors(hub.service_kind, isSel, hub.is_active);
                 return (
                   <li key={hub.id}>
                     <button
@@ -938,28 +1081,28 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                       }}
                       className={cn(
                         'flex min-h-14 w-full cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors duration-200',
-                        isSel
-                          ? 'border-sky-600 bg-sky-50 dark:border-sky-500 dark:bg-sky-950/40'
-                          : 'border-border bg-card hover:bg-muted/50',
+                        isSel ? 'shadow-sm' : 'border-border bg-card hover:bg-muted/50',
                         !hub.is_active && 'opacity-60'
                       )}
+                      style={isSel ? { borderColor: colors.stroke, backgroundColor: colors.fill } : undefined}
                     >
                       <span
-                        className={cn(
-                          'flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
-                          isSel ? 'bg-sky-600 text-white' : 'bg-muted text-muted-foreground'
-                        )}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white"
+                        style={{ backgroundColor: colors.stroke }}
                       >
-                        <MapPin className="h-4 w-4" />
+                        <KindIcon kind={hub.service_kind} className="h-4 w-4" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium text-foreground">{hub.name}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="block truncate font-medium text-foreground">{hub.name}</span>
+                          <KindBadge kind={hub.service_kind} paused={!hub.is_active} />
+                        </span>
                         <span className="block truncate text-xs text-muted-foreground">
                           {hub.radius_km.toFixed(1)} km
-                          {hub.is_active ? '' : ' · paused'}
+                          {hub.customer_note ? ' · custom message' : ''}
                         </span>
                       </span>
-                      {isSel ? <Check className="h-5 w-5 shrink-0 text-sky-700" /> : null}
+                      {isSel ? <Check className="h-5 w-5 shrink-0" style={{ color: colors.stroke }} /> : null}
                     </button>
                   </li>
                 );
