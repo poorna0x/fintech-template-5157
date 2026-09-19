@@ -257,19 +257,31 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     [selectedId]
   );
 
-  const placeDraftAt = useCallback((lat: number, lng: number, radiusKm = DEFAULT_HUB_RADIUS_KM) => {
-    setSelectedId(null);
-    setDraft({
-      name: 'New hub',
-      address: '',
-      lat,
-      lng,
-      radius_km: radiusKm,
-      polygon: circleToHubPolygon(lat, lng, radiusKm, DEFAULT_HUB_POLYGON_POINTS),
-      service_kind: 'normal',
-      customer_note: '',
-    });
-  }, []);
+  const placeDraftAt = useCallback(
+    (lat: number, lng: number, kind: HubServiceKind = 'normal', radiusKm = DEFAULT_HUB_RADIUS_KM) => {
+      const label =
+        kind === 'no_service' ? 'No service' : kind === 'callback' ? 'Call back' : 'New hub';
+      setSelectedId(null);
+      setDraft({
+        name: label,
+        address: '',
+        lat,
+        lng,
+        radius_km: radiusKm,
+        polygon: circleToHubPolygon(lat, lng, radiusKm, DEFAULT_HUB_POLYGON_POINTS),
+        service_kind: kind,
+        customer_note: '',
+      });
+    },
+    []
+  );
+
+  const startNewHub = (kind: HubServiceKind) => {
+    const center = mapRef.current?.getCenter();
+    placeDraftAt(center?.lat() ?? BENGALURU.lat, center?.lng() ?? BENGALURU.lng, kind);
+    const label = hubKindLabel(kind);
+    toast.message(`${label} hub dropped on the map. Drag the corners, then save.`);
+  };
 
   const paintMap = useCallback(() => {
     const map = mapRef.current;
@@ -658,11 +670,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           type="button"
           size="sm"
           className="h-11 cursor-pointer gap-1.5"
-          onClick={() => {
-            const center = mapRef.current?.getCenter();
-            placeDraftAt(center?.lat() ?? BENGALURU.lat, center?.lng() ?? BENGALURU.lng);
-            toast.message('Overlapping is fine. Drag the corners, then pick Normal, Call back, or No service.');
-          }}
+          onClick={() => startNewHub('normal')}
         >
           <Plus className="h-4 w-4" />
           Add hub
@@ -753,24 +761,29 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             </ul>
           ) : null}
         </div>
-        <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-end justify-between gap-2">
-          <div className="flex flex-wrap gap-1.5">
-            {HUB_KIND_OPTIONS.map((opt) => {
-              const colors = hubMapColors(opt.id, false, true);
-              return (
-                <span
-                  key={opt.id}
-                  className="rounded-full px-2 py-1 text-[11px] font-semibold text-white shadow-sm"
-                  style={{ backgroundColor: colors.stroke }}
-                >
-                  {opt.label}
-                </span>
-              );
-            })}
-          </div>
-          <p className="max-w-[16rem] rounded-lg bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white sm:max-w-none">
-            Tap map to add · drag corners to cut · drag midpoints to add a point
-          </p>
+        <p className="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[14rem] rounded-lg bg-black/55 px-2.5 py-1 text-right text-[11px] font-medium text-white sm:max-w-none">
+          Tap the map or use the buttons below to add a hub
+        </p>
+      </div>
+
+      <div className="shrink-0 border-b border-border bg-card px-3 py-2.5 sm:px-4">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Add a hub on the map</p>
+        <div className="grid grid-cols-3 gap-2">
+          {HUB_KIND_OPTIONS.map((opt) => {
+            const colors = hubMapColors(opt.id, false, true);
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => startNewHub(opt.id)}
+                className="flex min-h-11 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-2 text-white shadow-sm"
+                style={{ backgroundColor: colors.stroke }}
+              >
+                <KindIcon kind={opt.id} className="h-4 w-4" />
+                <span className="text-xs font-semibold">{opt.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
