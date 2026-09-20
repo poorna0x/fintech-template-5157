@@ -834,27 +834,39 @@ export default function ArrangeTechnicianVisitOrderDialog({
             </Select>
           </div>
 
-          <div className="flex shrink-0 flex-wrap gap-2">
+          <div className="grid shrink-0 grid-cols-2 gap-2">
             <Button
               type="button"
-              variant={showMap ? 'default' : 'outline'}
-              size="sm"
-              className="h-11 cursor-pointer sm:h-9"
+              variant="outline"
+              className={cn(
+                'h-12 w-full cursor-pointer rounded-xl px-2.5 text-[13px] font-semibold shadow-none transition-colors duration-150 sm:h-11 sm:text-sm',
+                showMap
+                  ? 'border-sky-700 bg-sky-700 text-white hover:bg-sky-800 hover:text-white'
+                  : 'border-sky-200 bg-sky-50 text-sky-950 hover:border-sky-300 hover:bg-sky-100 hover:text-sky-950'
+              )}
               disabled={!showMap && (!technicianId || rows.length === 0)}
               onClick={() => setShowMap((on) => !on)}
             >
-              <Map className="mr-1.5 h-4 w-4" />
+              <span
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded-lg',
+                  showMap ? 'bg-white/20' : 'bg-sky-600/15'
+                )}
+              >
+                <Map className="h-4 w-4" />
+              </span>
               {showMap ? 'Hide map' : 'Plan map'}
             </Button>
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="h-11 cursor-pointer sm:h-9"
+              className="h-12 w-full cursor-pointer rounded-xl border-teal-200 bg-teal-50 px-2.5 text-[13px] font-semibold text-teal-950 shadow-none transition-colors duration-150 hover:border-teal-300 hover:bg-teal-100 hover:text-teal-950 sm:h-11 sm:text-sm"
               disabled={!technicianId || rows.length < 2 || planning || saving}
               onClick={() => void handleSuggestNearest()}
             >
-              {planning ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Route className="mr-1.5 h-4 w-4" />}
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-teal-600/15">
+                {planning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Route className="h-4 w-4" />}
+              </span>
               Suggest nearest
             </Button>
           </div>
