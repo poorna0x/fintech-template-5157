@@ -196,7 +196,7 @@ export function techDisplayName(tech: Technician): string {
 
 const photoThumbCache = new Map<string, string>();
 
-/** Tiny circular face crop. Cached so the map and list reuse one URL instead of the full photo. */
+/** Retina circular face crop. Cached so the map and list reuse one URL instead of the full photo. */
 export function jobsMapTechPhotoThumb(url: string): string {
   const key = url.trim();
   if (!key) return '';
@@ -206,7 +206,7 @@ export function jobsMapTechPhotoThumb(url: string): string {
   if (key.includes('cloudinary.com') && key.includes('/upload/')) {
     const [prefix, rest] = key.split('/upload/');
     if (prefix && rest) {
-      out = `${prefix}/upload/w_72,h_72,c_fill,g_face,r_max,bo_3px_solid_rgb:ffffff,q_auto,f_png/${rest}`;
+      out = `${prefix}/upload/w_192,h_192,c_fill,g_face,r_max,dpr_2.0,bo_4px_solid_rgb:ffffff,q_auto:good,f_png/${rest}`;
     }
   }
   photoThumbCache.set(key, out);
@@ -218,11 +218,32 @@ function techPhoto(tech: Technician): string | null {
   return photo || null;
 }
 
+export type JobsMapLastLoc = {
+  id: string;
+  lat: number;
+  lng: number;
+  updatedAt: string | null;
+};
+
+export function parseJobsMapLastLocation(row: unknown): JobsMapLastLoc | null {
+  const rec = asRecord(row);
+  const id = String(rec.id || '').trim();
+  if (!id) return null;
+  const last = readLocationLatLng(rec.current_location ?? rec.currentLocation);
+  if (!last) return null;
+  const loc = asRecord(rec.current_location ?? rec.currentLocation);
+  const updatedAt =
+    String(loc.lastUpdated || loc.last_updated || loc.updated_at || loc.fix_time || '') || null;
+  return { id, lat: last.lat, lng: last.lng, updatedAt };
+}
+
 export function buildJobsMapTechs(
   technicians: Technician[],
-  liveRows: JobsMapLiveRow[]
+  liveRows: JobsMapLiveRow[],
+  lastKnown: JobsMapLastLoc[] = []
 ): JobsMapTech[] {
   const liveById = new Map(liveRows.map((row) => [String(row.technician_id), row]));
+  const lastById = new Map(lastKnown.map((row) => [row.id, row]));
   const out: JobsMapTech[] = [];
   for (const tech of technicians) {
     if ((tech as { isActive?: boolean }).isActive === false) continue;
@@ -242,23 +263,33 @@ export function buildJobsMapTechs(
       });
       continue;
     }
-    const last = readLocationLatLng(tech.currentLocation ?? (tech as { current_location?: unknown }).current_location);
+    const fallback = lastById.get(tech.id);
+    const last =
+      fallback ||
+      (() => {
+        const coords = readLocationLatLng(
+          tech.currentLocation ?? (tech as { current_location?: unknown }).current_location
+        );
+        if (!coords) return null;
+        const loc = (tech.currentLocation ||
+          (tech as { current_location?: Record<string, unknown> }).current_location) as
+          | Record<string, unknown>
+          | null
+          | undefined;
+        const updatedAt =
+          loc && typeof loc === 'object'
+            ? String(loc.lastUpdated || loc.last_updated || loc.updated_at || '') || null
+            : null;
+        return { id: tech.id, lat: coords.lat, lng: coords.lng, updatedAt };
+      })();
     if (!last) continue;
-    const loc = (tech.currentLocation || (tech as { current_location?: Record<string, unknown> }).current_location) as
-      | Record<string, unknown>
-      | null
-      | undefined;
-    const updatedAt =
-      loc && typeof loc === 'object'
-        ? String(loc.lastUpdated || loc.last_updated || loc.updated_at || '') || null
-        : null;
     out.push({
       id: tech.id,
       name: techDisplayName(tech),
       lat: last.lat,
       lng: last.lng,
       source: 'last',
-      updatedAt,
+      updatedAt: last.updatedAt,
       isTracking: false,
       photo: techPhoto(tech),
     });
@@ -459,6 +490,20 @@ export async function fetchJobsMapLiveRows(): Promise<JobsMapLiveRow[]> {
     .select('technician_id,latitude,longitude,is_tracking,updated_at,fix_time');
   if (error) return [];
   return (data || []) as JobsMapLiveRow[];
+}
+
+/** Dashboard roster strips GPS — jobs map loads last-known pins separately. */
+export async function fetchJobsMapLastLocations(ids: string[]): Promise<JobsMapLastLoc[]> {
+  const unique = [...new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))].slice(0, 100);
+  if (!unique.length) return [];
+  const { data, error } = await supabase.from('technicians').select('id,current_location').in('id', unique);
+  if (error) return [];
+  const out: JobsMapLastLoc[] = [];
+  for (const row of data || []) {
+    const parsed = parseJobsMapLastLocation(row);
+    if (parsed) out.push(parsed);
+  }
+  return out;
 }
 
 function mergeJobsMapRows(rows: unknown[]): { jobs: JobsMapJob[]; missing: number } {

@@ -20,6 +20,7 @@ import { fetchDrivingRoute } from '@/lib/googleMapsDistance';
 import { openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
   buildJobsMapTechs,
+  fetchJobsMapLastLocations,
   fetchJobsMapLiveRows,
   fetchOngoingJobsForMap,
   filterJobsMapJobs,
@@ -42,6 +43,7 @@ import {
   visibleTechsForJobsMap,
   type JobsMapFilter,
   type JobsMapJob,
+  type JobsMapLastLoc,
   type JobsMapLiveRow,
   type JobsMapTech,
 } from '@/lib/adminJobsMap';
@@ -160,8 +162,8 @@ function techMarkerIcon(tech: { name: string; photo: string | null }): google.ma
   if (cached) return cached;
   const icon: google.maps.Icon = {
     url: thumb,
-    scaledSize: new google.maps.Size(40, 40),
-    anchor: new google.maps.Point(20, 20),
+    scaledSize: new google.maps.Size(48, 48),
+    anchor: new google.maps.Point(24, 24),
   };
   photoIconCache.set(thumb, icon);
   return icon;
@@ -204,6 +206,7 @@ export default function JobsMapToolDialog({
   const [jobs, setJobs] = useState<JobsMapJob[]>([]);
   const [missingPins, setMissingPins] = useState(0);
   const [liveRows, setLiveRows] = useState<JobsMapLiveRow[]>([]);
+  const [lastKnown, setLastKnown] = useState<JobsMapLastLoc[]>([]);
   const [filter, setFilter] = useState<JobsMapFilter>('all');
   const [selection, setSelection] = useState<Selection>(null);
   const [pingingId, setPingingId] = useState<string | null>(null);
@@ -212,7 +215,7 @@ export default function JobsMapToolDialog({
   const [mapReady, setMapReady] = useState(false);
   const [query, setQuery] = useState('');
   const [darkMap, setDarkMap] = useState(() => readJobsMapPref('dark', true));
-  const [liveOnly, setLiveOnly] = useState(() => readJobsMapPref('live', true));
+  const [liveOnly, setLiveOnly] = useState(() => readJobsMapPref('livegps', false));
   const [trafficOn, setTrafficOn] = useState(() => readJobsMapPref('traffic', false));
 
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -230,14 +233,19 @@ export default function JobsMapToolDialog({
   const filterRef = useRef(filter);
   const queryRef = useRef(query);
   const liveOnlyRef = useRef(liveOnly);
+  const techniciansRef = useRef(technicians);
   const channelRef = useRef<RealtimeChannel | null>(null);
   jobsRef.current = jobs;
   selectionRef.current = selection;
   filterRef.current = filter;
   queryRef.current = query;
   liveOnlyRef.current = liveOnly;
+  techniciansRef.current = technicians;
 
-  const techs = useMemo(() => buildJobsMapTechs(technicians, liveRows), [technicians, liveRows]);
+  const techs = useMemo(
+    () => buildJobsMapTechs(technicians, liveRows, lastKnown),
+    [technicians, liveRows, lastKnown]
+  );
   techsRef.current = techs;
 
   const visibleJobs = useMemo(
@@ -275,13 +283,18 @@ export default function JobsMapToolDialog({
         setJobs(cached.jobs);
         setMissingPins(cached.missing);
       }
-      const [live, fetched] = await Promise.all([fetchJobsMapLiveRows(), fetchOngoingJobsForMap()]);
+      const [live, fetched, lastPins] = await Promise.all([
+        fetchJobsMapLiveRows(),
+        fetchOngoingJobsForMap(),
+        fetchJobsMapLastLocations(techniciansRef.current.map((tech) => tech.id)),
+      ]);
       if (fetched.error && !fetched.jobs.length && !cached.jobs.length) toast.error(fetched.error);
       if (fetched.jobs.length || !cached.jobs.length) {
         setJobs(fetched.jobs);
         setMissingPins(fetched.missing);
       }
       setLiveRows(live);
+      setLastKnown(lastPins);
     } finally {
       setLoading(false);
     }
@@ -428,7 +441,7 @@ export default function JobsMapToolDialog({
 
   useEffect(() => {
     writeJobsMapPref('dark', darkMap);
-    writeJobsMapPref('live', liveOnly);
+    writeJobsMapPref('livegps', liveOnly);
     writeJobsMapPref('traffic', trafficOn);
   }, [darkMap, liveOnly, trafficOn]);
 
@@ -609,7 +622,8 @@ export default function JobsMapToolDialog({
             {ongoingCount} ongoing with pins
             {followupCount ? ` · ${followupCount} follow-up` : ''}
             {unassignedCount ? ` · ${unassignedCount} unassigned` : ''}
-            {liveCount ? ` · ${liveCount} techs live` : ` · ${techs.length} tech pins`}
+            {techs.length ? ` · ${techs.length} technicians` : ''}
+            {liveCount ? ` · ${liveCount} live GPS` : ''}
             {missingPins ? ` · ${missingPins} jobs have no map pin` : ''}
           </DialogDescription>
         </DialogHeader>
@@ -762,6 +776,36 @@ export default function JobsMapToolDialog({
                 />
               </div>
             </div>
+
+            {techs.length ? (
+              <div className="flex gap-2 overflow-x-auto border-b px-3 py-2">
+                {techs.map((tech) => {
+                  const onMap = visibleTechs.some((row) => row.id === tech.id);
+                  const selected = selectedTech?.id === tech.id;
+                  return (
+                    <button
+                      key={tech.id}
+                      type="button"
+                      title={`${tech.name} · ${agoLabel(tech.updatedAt)}`}
+                      className={cn(
+                        'flex shrink-0 cursor-pointer flex-col items-center gap-1 rounded-lg px-1 py-0.5',
+                        selected ? 'bg-muted' : 'hover:bg-muted/60',
+                        !onMap && 'opacity-40'
+                      )}
+                      onClick={() => {
+                        setSelection({ kind: 'tech', id: tech.id });
+                        mapRef.current?.panTo({ lat: tech.lat, lng: tech.lng });
+                      }}
+                    >
+                      <TechPhoto url={tech.photo} name={tech.name} className="h-10 w-10" />
+                      <span className="max-w-[4.5rem] truncate text-[10px] text-muted-foreground">
+                        {tech.name.split(' ')[0]}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
 
             {selectedJob ? (
               <div className="space-y-3 border-b px-3 py-3">

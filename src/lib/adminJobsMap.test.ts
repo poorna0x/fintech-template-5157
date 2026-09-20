@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { drivingRouteCacheKey } from './googleMapsDistance';
 import {
+  buildJobsMapTechs,
   filterJobsMapJobs,
   isJobsMapDueToday,
   jobsMapCameraJobs,
@@ -9,6 +10,7 @@ import {
   jobsMapTechPhotoThumb,
   nearestTechsForJob,
   parseJobsMapJobs,
+  parseJobsMapLastLocation,
   searchJobsMapJobs,
   techsNearJobs,
   visibleTechsForJobsMap,
@@ -185,10 +187,45 @@ describe('jobsMap camera fit', () => {
 });
 
 describe('jobsMapTechPhotoThumb', () => {
-  it('asks Cloudinary for a tiny circular crop instead of the full photo', () => {
+  it('asks Cloudinary for a retina circular crop instead of the full photo', () => {
     const full = 'https://res.cloudinary.com/demo/image/upload/v1/techs/pradeep.jpg';
     const thumb = jobsMapTechPhotoThumb(full);
-    expect(thumb).toContain('w_72,h_72,c_fill,g_face,r_max');
+    expect(thumb).toContain('w_192,h_192,c_fill,g_face,r_max');
+    expect(thumb).toContain('dpr_2.0');
     expect(jobsMapTechPhotoThumb(full)).toBe(thumb);
+  });
+});
+
+describe('jobsMap last-known GPS', () => {
+  it('reads last-known coordinates when live GPS is missing', () => {
+    expect(
+      parseJobsMapLastLocation({
+        id: 't1',
+        current_location: { latitude: 12.91, longitude: 77.64, lastUpdated: '2026-09-20T04:00:00.000Z' },
+      })
+    ).toEqual({
+      id: 't1',
+      lat: 12.91,
+      lng: 77.64,
+      updatedAt: '2026-09-20T04:00:00.000Z',
+    });
+  });
+
+  it('places a technician from last-known GPS when there is no live row', () => {
+    const placed = buildJobsMapTechs(
+      [
+        {
+          id: 't1',
+          fullName: 'Pradeep',
+          account_status: 'ACTIVE',
+          photo: null,
+        } as never,
+      ],
+      [],
+      [{ id: 't1', lat: 12.91, lng: 77.64, updatedAt: null }]
+    );
+    expect(placed).toHaveLength(1);
+    expect(placed[0].source).toBe('last');
+    expect(placed[0].lat).toBe(12.91);
   });
 });
