@@ -894,23 +894,16 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
               Tap to move map
             </button>
           </div>
-        ) : (
-          <>
-            <p className="pointer-events-none absolute bottom-3 right-3 z-10 hidden max-w-[14rem] rounded-lg bg-black/55 px-2.5 py-1 text-right text-[11px] font-medium text-white md:block">
-              Drag corners to reshape, then Update hub.
-            </p>
-            {!desktopMap ? (
-              <button
-                type="button"
-                className="absolute bottom-3 left-3 z-20 inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-full bg-card px-3 text-sm font-medium text-foreground shadow-md"
-                onClick={() => setMapLocked(true)}
-              >
-                <Lock className="h-4 w-4" />
-                Scroll list
-              </button>
-            ) : null}
-          </>
-        )}
+        ) : !desktopMap ? (
+          <button
+            type="button"
+            className="absolute bottom-3 left-3 z-20 inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-full bg-card px-3 text-sm font-medium text-foreground shadow-md"
+            onClick={() => setMapLocked(true)}
+          >
+            <Lock className="h-4 w-4" />
+            Scroll list
+          </button>
+        ) : null}
       </div>
 
       <div
