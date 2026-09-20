@@ -356,12 +356,96 @@ export function jobsForTechnician(jobs: JobsMapJob[], technicianId: string): Job
   return jobs.filter((job) => job.assigned_technician_id === technicianId);
 }
 
-/** Keep initial zoom on Bengaluru jobs, not a stale GPS pin hours away. */
-export function techsNearJobs(jobs: JobsMapJob[], techs: JobsMapTech[], maxKm = 40): JobsMapTech[] {
+export type JobsMapLatLng = { lat: number; lng: number };
+
+/** Camera stays on the day’s work, not every follow-up across the city. */
+export const JOBS_MAP_FIT_MAX_KM = 18;
+export const JOBS_MAP_MIN_ZOOM = 12;
+export const JOBS_MAP_MAX_ZOOM = 16;
+
+function medianNumber(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (!sorted.length) return 0;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/** Prefer ongoing pins for the default camera; follow-up filters keep their own set. */
+export function jobsMapCameraJobs(jobs: JobsMapJob[], filter: JobsMapFilter): JobsMapJob[] {
+  if (filter !== 'all') return jobs;
+  const ongoing = jobs.filter((job) => !isJobsMapFollowUpStatus(job.status));
+  return ongoing.length ? ongoing : jobs;
+}
+
+/**
+ * Drop far outliers so zoom matches the main cluster (HSR jobs, not one pin in Mysore).
+ * Jobs should be listed before technicians so a lone far tech is dropped first.
+ */
+export function jobsMapFitPoints(
+  points: JobsMapLatLng[],
+  maxSpreadKm = JOBS_MAP_FIT_MAX_KM
+): JobsMapLatLng[] {
+  const unique: JobsMapLatLng[] = [];
+  const seen = new Set<string>();
+  for (const point of points) {
+    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) continue;
+    const key = `${point.lat.toFixed(5)},${point.lng.toFixed(5)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(point);
+  }
+  if (unique.length <= 1) return unique;
+  if (unique.length === 2) {
+    const span = haversineKm(unique[0].lat, unique[0].lng, unique[1].lat, unique[1].lng);
+    return span > maxSpreadKm ? unique.slice(0, 1) : unique;
+  }
+  const medLat = medianNumber(unique.map((point) => point.lat));
+  const medLng = medianNumber(unique.map((point) => point.lng));
+  const ranked = unique
+    .map((point) => ({
+      ...point,
+      d: haversineKm(medLat, medLng, point.lat, point.lng),
+    }))
+    .sort((a, b) => a.d - b.d);
+  const p75 = ranked[Math.floor((ranked.length - 1) * 0.75)]?.d ?? 0;
+  const cutoff = Math.min(maxSpreadKm, Math.max(5, p75 * 1.6));
+  const kept = ranked.filter((point) => point.d <= cutoff);
+  return (kept.length ? kept : ranked.slice(0, Math.max(2, Math.ceil(ranked.length * 0.7)))).map(
+    ({ lat, lng }) => ({ lat, lng })
+  );
+}
+
+/** Street / neighborhood zoom from the fitted cluster — never city-of-India. */
+export function jobsMapSuggestedZoom(points: JobsMapLatLng[]): number {
+  if (points.length <= 1) return 15;
+  let minLat = 90;
+  let maxLat = -90;
+  let minLng = 180;
+  let maxLng = -180;
+  for (const point of points) {
+    minLat = Math.min(minLat, point.lat);
+    maxLat = Math.max(maxLat, point.lat);
+    minLng = Math.min(minLng, point.lng);
+    maxLng = Math.max(maxLng, point.lng);
+  }
+  const spanKm = haversineKm(minLat, minLng, maxLat, maxLng);
+  if (spanKm < 0.8) return 16;
+  if (spanKm < 2) return 15;
+  if (spanKm < 4.5) return 14;
+  if (spanKm < 9) return 13;
+  return JOBS_MAP_MIN_ZOOM;
+}
+
+/** Keep camera on techs next to the fitted jobs, not a live pin hours away. */
+export function techsNearJobs(jobs: JobsMapJob[], techs: JobsMapTech[], maxKm = 20): JobsMapTech[] {
   if (!jobs.length) return techs.filter((tech) => isJobsMapFixFresh(tech.updatedAt));
-  return techs.filter((tech) =>
-    isJobsMapFixFresh(tech.updatedAt) ||
-    jobs.some((job) => haversineKm(job.lat, job.lng, tech.lat, tech.lng) <= maxKm)
+  const assigned = new Set(
+    jobs.map((job) => job.assigned_technician_id).filter((id): id is string => Boolean(id))
+  );
+  return techs.filter(
+    (tech) =>
+      assigned.has(tech.id) ||
+      jobs.some((job) => haversineKm(job.lat, job.lng, tech.lat, tech.lng) <= maxKm)
   );
 }
 

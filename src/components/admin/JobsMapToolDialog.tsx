@@ -26,8 +26,11 @@ import {
   isJobsMapFixFresh,
   isJobsMapFollowUpStatus,
   jobsForTechnician,
+  jobsMapCameraJobs,
   jobsMapDueLabel,
+  jobsMapFitPoints,
   jobsMapStatusColor,
+  jobsMapSuggestedZoom,
   jobsMapStatusLabel,
   jobsMapStatusShort,
   jobsMapTechPhotoThumb,
@@ -43,6 +46,34 @@ import {
 } from '@/lib/adminJobsMap';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
+
+function applyJobsMapCamera(
+  map: google.maps.Map,
+  points: Array<{ lat: number; lng: number }>,
+  idleRef: { current: google.maps.MapsEventListener | null }
+) {
+  if (!points.length || !window.google?.maps) return;
+  if (idleRef.current) {
+    window.google.maps.event.removeListener(idleRef.current);
+    idleRef.current = null;
+  }
+  const wanted = jobsMapSuggestedZoom(points);
+  if (points.length === 1) {
+    map.setCenter(points[0]);
+    map.setZoom(wanted);
+    return;
+  }
+  const bounds = new window.google.maps.LatLngBounds();
+  for (const point of points) bounds.extend(point);
+  map.fitBounds(bounds, { top: 88, right: 56, bottom: 52, left: 12 });
+  idleRef.current = window.google.maps.event.addListenerOnce(map, 'idle', () => {
+    idleRef.current = null;
+    const zoom = map.getZoom();
+    if (zoom == null) return;
+    if (zoom < wanted) map.setZoom(wanted);
+    else if (zoom > 16) map.setZoom(16);
+  });
+}
 const FILTERS: Array<{ id: JobsMapFilter; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'followup', label: 'Follow-up' },
@@ -190,6 +221,8 @@ export default function JobsMapToolDialog({
   const mapClickRef = useRef<google.maps.MapsEventListener | null>(null);
   const fitKeyRef = useRef('');
   const forceFitRef = useRef(false);
+  const cameraIdleRef = useRef<google.maps.MapsEventListener | null>(null);
+  const paintRef = useRef<() => void>(() => undefined);
   const jobsRef = useRef(jobs);
   const techsRef = useRef<JobsMapTech[]>([]);
   const selectionRef = useRef(selection);
@@ -319,9 +352,14 @@ export default function JobsMapToolDialog({
       queryRef.current
     );
     const shownTechs = visibleTechsForJobsMap(shownJobs, techsRef.current, liveOnlyRef.current);
-    const fitTechs = techsNearJobs(shownJobs, shownTechs);
-    const bounds = new window.google.maps.LatLngBounds();
-    let hasPoint = false;
+    const cameraJobs = queryRef.current.trim()
+      ? shownJobs
+      : jobsMapCameraJobs(shownJobs, filterRef.current);
+    const fitTechs = techsNearJobs(cameraJobs, shownTechs);
+    const fitPoints = jobsMapFitPoints([
+      ...cameraJobs.map((job) => ({ lat: job.lat, lng: job.lng })),
+      ...fitTechs.map((tech) => ({ lat: tech.lat, lng: tech.lng })),
+    ]);
     const sel = selectionRef.current;
 
     const addMarker = (
@@ -330,7 +368,6 @@ export default function JobsMapToolDialog({
       title: string,
       zIndex: number,
       onClick: () => void,
-      includeInFit: boolean,
       opacity = 1
     ) => {
       const marker = new window.google.maps.Marker({
@@ -344,13 +381,7 @@ export default function JobsMapToolDialog({
       });
       marker.addListener('click', onClick);
       overlaysRef.current.push(marker);
-      if (includeInFit) {
-        bounds.extend(position);
-        hasPoint = true;
-      }
     };
-
-    const fitTechIds = new Set(fitTechs.map((tech) => tech.id));
 
     for (const job of shownJobs) {
       const selected = sel?.kind === 'job' && sel.id === job.id;
@@ -359,8 +390,7 @@ export default function JobsMapToolDialog({
         markerIcon(jobsMapStatusColor(job.status), jobsMapStatusShort(job.status)),
         `${job.job_number || 'Job'} · ${job.customer_name}`,
         selected ? 24 : 8,
-        () => setSelection({ kind: 'job', id: job.id }),
-        true
+        () => setSelection({ kind: 'job', id: job.id })
       );
     }
 
@@ -373,22 +403,23 @@ export default function JobsMapToolDialog({
         `${tech.name} · ${agoLabel(tech.updatedAt)}`,
         selected ? 26 : 12,
         () => setSelection({ kind: 'tech', id: tech.id }),
-        fitTechIds.has(tech.id),
         fresh ? 1 : 0.55
       );
     }
 
-    const fitKey = `${shownJobs.length}:${shownTechs.length}:${filterRef.current}:${queryRef.current}:${liveOnlyRef.current}`;
-    if (hasPoint && (forceFitRef.current || (fitKeyRef.current !== fitKey && !sel))) {
+    const fitKey = `${fitPoints.length}:${cameraJobs.length}:${filterRef.current}:${queryRef.current}:${liveOnlyRef.current}`;
+    if (fitPoints.length && (forceFitRef.current || (fitKeyRef.current !== fitKey && !sel))) {
       forceFitRef.current = false;
       fitKeyRef.current = fitKey;
       try {
-        map.fitBounds(bounds, 48);
+        applyJobsMapCamera(map, fitPoints, cameraIdleRef);
       } catch {
         /* ignore */
       }
     }
   }, [filter, query, liveOnly, visibleJobs.length]);
+
+  paintRef.current = paint;
 
   useEffect(() => {
     paint();
@@ -516,7 +547,7 @@ export default function JobsMapToolDialog({
     const map = mapRef.current;
     clearRouteOverlays();
     if (!map || !window.google?.maps || !routes.length) return;
-    const bounds = new window.google.maps.LatLngBounds();
+    const ends: Array<{ lat: number; lng: number }> = [];
     for (const route of routes) {
       const line = new window.google.maps.Polyline({
         map,
@@ -527,10 +558,13 @@ export default function JobsMapToolDialog({
         zIndex: 7,
       });
       routeOverlaysRef.current.push(line);
-      for (const point of route.path) bounds.extend(point);
+      const first = route.path[0];
+      const last = route.path[route.path.length - 1];
+      if (first) ends.push(first);
+      if (last) ends.push(last);
     }
     try {
-      map.fitBounds(bounds, 64);
+      applyJobsMapCamera(map, jobsMapFitPoints(ends), cameraIdleRef);
     } catch {
       /* ignore */
     }
@@ -583,9 +617,10 @@ export default function JobsMapToolDialog({
           <div className={cn('relative min-h-[220px] flex-1 overflow-hidden md:order-2', darkMap ? 'bg-[#1c1c1e]' : 'bg-muted')}>
             <DraggableMap
               center={BENGALURU}
-              zoom={11}
+              zoom={14}
               height="100%"
               hideMarker
+              syncCamera={false}
               gestureHandling="greedy"
               mapTypeControl={false}
               streetViewControl={false}
@@ -598,7 +633,12 @@ export default function JobsMapToolDialog({
                 }
                 mapClickRef.current = map.addListener('click', () => setSelection(null));
                 setMapReady(true);
+                forceFitRef.current = true;
                 paint();
+                window.setTimeout(() => {
+                  forceFitRef.current = true;
+                  paintRef.current();
+                }, 160);
               }}
             />
             {loading ? (

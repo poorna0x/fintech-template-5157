@@ -3,10 +3,14 @@ import { drivingRouteCacheKey } from './googleMapsDistance';
 import {
   filterJobsMapJobs,
   isJobsMapDueToday,
+  jobsMapCameraJobs,
+  jobsMapFitPoints,
+  jobsMapSuggestedZoom,
   jobsMapTechPhotoThumb,
   nearestTechsForJob,
   parseJobsMapJobs,
   searchJobsMapJobs,
+  techsNearJobs,
   visibleTechsForJobsMap,
   type JobsMapJob,
   type JobsMapTech,
@@ -141,6 +145,42 @@ describe('drivingRouteCacheKey', () => {
     expect(
       drivingRouteCacheKey({ lat: 12.91111, lng: 77.64111 }, { lat: 12.92, lng: 77.65 })
     ).toBe('12.9111,77.6411>12.9200,77.6500');
+  });
+});
+
+describe('jobsMap camera fit', () => {
+  it('zooms All to ongoing jobs, not every follow-up', () => {
+    const rows = [
+      job({ id: 'open', lat: 12.91, lng: 77.64, status: 'PENDING' }),
+      job({ id: 'fu', lat: 13.2, lng: 77.7, status: 'FOLLOW_UP' }),
+    ];
+    expect(jobsMapCameraJobs(rows, 'all').map((row) => row.id)).toEqual(['open']);
+    expect(
+      jobsMapCameraJobs(filterJobsMapJobs(rows, 'followup'), 'followup').map((row) => row.id)
+    ).toEqual(['fu']);
+  });
+
+  it('drops a far technician so zoom stays on the local cluster', () => {
+    const fitted = jobsMapFitPoints([
+      { lat: 12.91, lng: 77.64 },
+      { lat: 12.915, lng: 77.645 },
+      { lat: 13.34, lng: 74.79 },
+    ]);
+    expect(fitted).toHaveLength(2);
+    expect(fitted.every((point) => point.lat < 13)).toBe(true);
+    expect(jobsMapSuggestedZoom(fitted)).toBeGreaterThanOrEqual(14);
+  });
+
+  it('keeps only nearby or assigned technicians for the camera', () => {
+    const pin = job({ id: 'j1', lat: 12.91, lng: 77.64, assigned_technician_id: 'near' });
+    const kept = techsNearJobs(
+      [pin],
+      [
+        tech({ id: 'near', lat: 12.912, lng: 77.641, updatedAt: new Date().toISOString() }),
+        tech({ id: 'mysore', lat: 12.3, lng: 76.65, updatedAt: new Date().toISOString() }),
+      ]
+    );
+    expect(kept.map((row) => row.id)).toEqual(['near']);
   });
 });
 

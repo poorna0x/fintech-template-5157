@@ -32,6 +32,8 @@ interface DraggableMapProps {
   gestureHandling?: 'cooperative' | 'greedy' | 'auto' | 'none';
   /** Google Maps JSON styles (night / dispatch). */
   styles?: google.maps.MapTypeStyle[];
+  /** When false, parent owns pan/zoom (Jobs map fitBounds). Default true. */
+  syncCamera?: boolean;
   onMapReady?: (map: google.maps.Map | null) => void;
   /** Center-pin mode: fired when the user starts panning, before the map settles. */
   onMoveStart?: () => void;
@@ -85,6 +87,7 @@ const DraggableMap = ({
   hideMarker = false,
   gestureHandling,
   styles,
+  syncCamera = true,
 }: DraggableMapProps) => {
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -102,6 +105,7 @@ const DraggableMap = ({
   const hideMarkerRef = useRef(hideMarker);
   const gestureHandlingRef = useRef(gestureHandling);
   const stylesRef = useRef(styles);
+  const syncCameraRef = useRef(syncCamera);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [lifting, setLifting] = useState(false);
   const [mapsAuthError, setMapsAuthError] = useState(didGoogleMapsAuthFail);
@@ -114,6 +118,7 @@ const DraggableMap = ({
   hideMarkerRef.current = hideMarker;
   gestureHandlingRef.current = gestureHandling;
   stylesRef.current = styles;
+  syncCameraRef.current = syncCamera;
   onMapReadyRef.current = onMapReady;
   onMoveStartRef.current = onMoveStart;
 
@@ -280,7 +285,7 @@ const DraggableMap = ({
         } catch {
           /* ignore */
         }
-        mapRef.current.setCenter(centerRef.current);
+        if (syncCameraRef.current) mapRef.current.setCenter(centerRef.current);
       }, 80);
       return true;
     };
@@ -366,14 +371,15 @@ const DraggableMap = ({
   }, []);
 
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !syncCamera) return;
     if (markerRef.current) markerRef.current.setPosition(center);
     mapRef.current.setCenter(center);
-  }, [center.lat, center.lng]);
+  }, [center.lat, center.lng, syncCamera]);
 
   useEffect(() => {
+    if (!syncCamera) return;
     mapRef.current?.setZoom(zoom);
-  }, [zoom]);
+  }, [zoom, syncCamera]);
 
   useEffect(() => {
     if (!cameraNonce || !mapRef.current) return;
