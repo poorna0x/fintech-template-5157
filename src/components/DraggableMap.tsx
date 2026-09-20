@@ -30,6 +30,8 @@ interface DraggableMapProps {
   hideMarker?: boolean;
   /** Default: cooperative with center pin, greedy otherwise. Use cooperative inside scrolling pages. */
   gestureHandling?: 'cooperative' | 'greedy' | 'auto' | 'none';
+  /** Google Maps JSON styles (night / dispatch). */
+  styles?: google.maps.MapTypeStyle[];
   onMapReady?: (map: google.maps.Map | null) => void;
   /** Center-pin mode: fired when the user starts panning, before the map settles. */
   onMoveStart?: () => void;
@@ -82,6 +84,7 @@ const DraggableMap = ({
   onMoveStart,
   hideMarker = false,
   gestureHandling,
+  styles,
 }: DraggableMapProps) => {
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -98,6 +101,7 @@ const DraggableMap = ({
   const liftingRef = useRef(false);
   const hideMarkerRef = useRef(hideMarker);
   const gestureHandlingRef = useRef(gestureHandling);
+  const stylesRef = useRef(styles);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [lifting, setLifting] = useState(false);
   const [mapsAuthError, setMapsAuthError] = useState(didGoogleMapsAuthFail);
@@ -109,6 +113,7 @@ const DraggableMap = ({
   centerPinRef.current = centerPin;
   hideMarkerRef.current = hideMarker;
   gestureHandlingRef.current = gestureHandling;
+  stylesRef.current = styles;
   onMapReadyRef.current = onMapReady;
   onMoveStartRef.current = onMoveStart;
 
@@ -196,6 +201,8 @@ const DraggableMap = ({
           gestureHandlingRef.current ?? (centerPinRef.current ? 'cooperative' : 'greedy'),
         clickableIcons: !centerPinRef.current && !hideMarkerRef.current,
         keyboardShortcuts: false,
+        styles: stylesRef.current,
+        backgroundColor: stylesRef.current?.length ? '#1c1c1e' : undefined,
       });
 
       if (centerPinRef.current) {
@@ -410,7 +417,9 @@ const DraggableMap = ({
         </div>
       ) : !isMapLoaded ? (
         <div
-          className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100"
+          className={`absolute inset-0 z-10 flex items-center justify-center ${
+            styles?.length ? 'bg-[#1c1c1e]' : 'bg-gray-100'
+          }`}
           style={{ height }}
         >
           <div className="flex flex-col items-center gap-2">

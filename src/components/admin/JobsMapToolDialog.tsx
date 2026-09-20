@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Technician } from '@/types';
-import DraggableMap from '@/components/DraggableMap';
+import { DARK_DISPATCH_MAP_STYLES } from '@/lib/darkMapStyle';
 import { fetchDrivingRoute } from '@/lib/googleMapsDistance';
 import { openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
@@ -374,7 +374,7 @@ export default function JobsMapToolDialog({
             toId: job.id,
             origin: { lat: tech.lat, lng: tech.lng },
             dest: { lat: job.lat, lng: job.lng },
-            color: tech.isAssigned ? '#2563eb' : '#0f766e',
+            color: tech.isAssigned ? '#60a5fa' : '#2dd4bf',
           });
         }
       }
@@ -502,7 +502,7 @@ export default function JobsMapToolDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <div className="relative min-h-[220px] flex-1 overflow-hidden bg-muted md:order-2">
+          <div className="relative min-h-[220px] flex-1 overflow-hidden bg-[#1c1c1e] md:order-2">
             <DraggableMap
               center={BENGALURU}
               zoom={11}
@@ -512,6 +512,7 @@ export default function JobsMapToolDialog({
               mapTypeControl={false}
               streetViewControl={false}
               fullscreenControl={false}
+              styles={DARK_DISPATCH_MAP_STYLES}
               onMapReady={(map) => {
                 mapRef.current = map;
                 setMapReady(true);
@@ -527,7 +528,7 @@ export default function JobsMapToolDialog({
               type="button"
               variant="secondary"
               size="sm"
-              className="absolute right-3 top-3 z-20 h-11 cursor-pointer gap-1.5"
+              className="absolute right-3 top-3 z-20 h-11 cursor-pointer gap-1.5 bg-white/90 text-foreground shadow-sm hover:bg-white"
               onClick={() => void load()}
               disabled={loading}
             >
