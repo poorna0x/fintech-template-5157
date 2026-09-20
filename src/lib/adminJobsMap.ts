@@ -38,6 +38,7 @@ export type JobsMapTech = {
   source: 'live' | 'last';
   updatedAt: string | null;
   isTracking: boolean;
+  photo: string | null;
 };
 
 export type JobsMapLiveRow = {
@@ -169,6 +170,30 @@ export function techDisplayName(tech: Technician): string {
     'Technician';
 }
 
+const photoThumbCache = new Map<string, string>();
+
+/** Tiny circular face crop. Cached so the map and list reuse one URL instead of the full photo. */
+export function jobsMapTechPhotoThumb(url: string): string {
+  const key = url.trim();
+  if (!key) return '';
+  const hit = photoThumbCache.get(key);
+  if (hit) return hit;
+  let out = key;
+  if (key.includes('cloudinary.com') && key.includes('/upload/')) {
+    const [prefix, rest] = key.split('/upload/');
+    if (prefix && rest) {
+      out = `${prefix}/upload/w_72,h_72,c_fill,g_face,r_max,bo_3px_solid_rgb:ffffff,q_auto,f_png/${rest}`;
+    }
+  }
+  photoThumbCache.set(key, out);
+  return out;
+}
+
+function techPhoto(tech: Technician): string | null {
+  const photo = typeof tech.photo === 'string' ? tech.photo.trim() : '';
+  return photo || null;
+}
+
 export function buildJobsMapTechs(
   technicians: Technician[],
   liveRows: JobsMapLiveRow[]
@@ -189,6 +214,7 @@ export function buildJobsMapTechs(
         source: 'live',
         updatedAt: fromLive.updatedAt,
         isTracking: Boolean(live?.is_tracking),
+        photo: techPhoto(tech),
       });
       continue;
     }
@@ -210,6 +236,7 @@ export function buildJobsMapTechs(
       source: 'last',
       updatedAt,
       isTracking: false,
+      photo: techPhoto(tech),
     });
   }
   return out;

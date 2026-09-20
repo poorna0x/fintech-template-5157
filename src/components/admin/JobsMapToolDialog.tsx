@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ExternalLink, Loader2, MapPinned, Navigation, RefreshCw, UserRound } from 'lucide-react';
+import { ExternalLink, Loader2, MapPinned, Navigation, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -27,6 +27,7 @@ import {
   jobsMapStatusColor,
   jobsMapStatusLabel,
   jobsMapStatusShort,
+  jobsMapTechPhotoThumb,
   nearestTechsForJob,
   parseJobsMapJobs,
   techsNearJobs,
@@ -87,6 +88,49 @@ function markerIcon(fill: string, label: string, square = false): google.maps.Ic
     scaledSize: new google.maps.Size(36, 36),
     anchor: new google.maps.Point(18, 18),
   };
+}
+
+const photoIconCache = new Map<string, google.maps.Icon>();
+
+function techMarkerIcon(tech: { name: string; photo: string | null }): google.maps.Icon {
+  const thumb = tech.photo ? jobsMapTechPhotoThumb(tech.photo) : '';
+  if (!thumb) {
+    return markerIcon('#0f766e', tech.name.slice(0, 1).toUpperCase() || 'T', true);
+  }
+  const cached = photoIconCache.get(thumb);
+  if (cached) return cached;
+  const icon: google.maps.Icon = {
+    url: thumb,
+    scaledSize: new google.maps.Size(40, 40),
+    anchor: new google.maps.Point(20, 20),
+  };
+  photoIconCache.set(thumb, icon);
+  return icon;
+}
+
+function TechPhoto({ url, name, className }: { url: string | null; name: string; className?: string }) {
+  const thumb = url ? jobsMapTechPhotoThumb(url) : '';
+  if (thumb) {
+    return (
+      <img
+        src={thumb}
+        alt=""
+        className={cn('h-8 w-8 shrink-0 rounded-full bg-muted object-cover', className)}
+        loading="lazy"
+        decoding="async"
+      />
+    );
+  }
+  return (
+    <span
+      className={cn(
+        'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-700 text-xs font-semibold text-white',
+        className
+      )}
+    >
+      {name.slice(0, 1).toUpperCase() || 'T'}
+    </span>
+  );
 }
 
 export default function JobsMapToolDialog({
@@ -223,7 +267,8 @@ export default function JobsMapToolDialog({
       title: string,
       zIndex: number,
       onClick: () => void,
-      includeInFit: boolean
+      includeInFit: boolean,
+      opacity = 1
     ) => {
       const marker = new window.google.maps.Marker({
         map,
@@ -231,6 +276,8 @@ export default function JobsMapToolDialog({
         icon,
         title,
         zIndex,
+        opacity,
+        optimized: icon.url.startsWith('http') ? false : true,
       });
       marker.addListener('click', onClick);
       overlaysRef.current.push(marker);
@@ -259,11 +306,12 @@ export default function JobsMapToolDialog({
       const fresh = isJobsMapFixFresh(tech.updatedAt);
       addMarker(
         { lat: tech.lat, lng: tech.lng },
-        markerIcon(fresh ? '#0f766e' : '#94a3b8', tech.name.slice(0, 1).toUpperCase() || 'T', true),
+        techMarkerIcon(tech),
         `${tech.name} · ${agoLabel(tech.updatedAt)}`,
         selected ? 26 : 12,
         () => setSelection({ kind: 'tech', id: tech.id }),
-        fitTechIds.has(tech.id)
+        fitTechIds.has(tech.id),
+        fresh ? 1 : 0.55
       );
     }
 
@@ -547,13 +595,16 @@ export default function JobsMapToolDialog({
                           className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-2 text-left hover:bg-muted/50"
                           onClick={() => setSelection({ kind: 'tech', id: tech.id })}
                         >
-                          <span className="min-w-0">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <TechPhoto url={tech.photo} name={tech.name} />
+                            <span className="min-w-0">
                             <span className="block truncate text-sm font-medium">
                               {tech.name}
                               {tech.isAssigned ? ' · assigned' : ''}
                             </span>
                             <span className="block text-xs text-muted-foreground">
                               {routeCaption(tech.id, selectedJob.id)} · {agoLabel(tech.updatedAt)}
+                            </span>
                             </span>
                           </span>
                           <Navigation className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -585,7 +636,7 @@ export default function JobsMapToolDialog({
             {selectedTech ? (
               <div className="space-y-3 border-b px-3 py-3">
                 <p className="flex items-center gap-2 text-sm font-semibold">
-                  <UserRound className="h-4 w-4" />
+                  <TechPhoto url={selectedTech.photo} name={selectedTech.name} />
                   {selectedTech.name}
                 </p>
                 <p className="text-xs text-muted-foreground">

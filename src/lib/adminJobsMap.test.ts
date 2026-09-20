@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { drivingRouteCacheKey } from './googleMapsDistance';
 import {
   filterJobsMapJobs,
+  jobsMapTechPhotoThumb,
   nearestTechsForJob,
   parseJobsMapJobs,
   type JobsMapJob,
@@ -24,6 +25,7 @@ const tech = (partial: Partial<JobsMapTech> & Pick<JobsMapTech, 'id' | 'lat' | '
   source: 'live',
   updatedAt: null,
   isTracking: true,
+  photo: null,
   ...partial,
 });
 
@@ -70,5 +72,14 @@ describe('drivingRouteCacheKey', () => {
     expect(
       drivingRouteCacheKey({ lat: 12.91111, lng: 77.64111 }, { lat: 12.92, lng: 77.65 })
     ).toBe('12.9111,77.6411>12.9200,77.6500');
+  });
+});
+
+describe('jobsMapTechPhotoThumb', () => {
+  it('asks Cloudinary for a tiny circular crop instead of the full photo', () => {
+    const full = 'https://res.cloudinary.com/demo/image/upload/v1/techs/pradeep.jpg';
+    const thumb = jobsMapTechPhotoThumb(full);
+    expect(thumb).toContain('w_72,h_72,c_fill,g_face,r_max');
+    expect(jobsMapTechPhotoThumb(full)).toBe(thumb);
   });
 });
