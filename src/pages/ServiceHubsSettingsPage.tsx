@@ -90,7 +90,44 @@ type DraftHub = {
   polygon: HubLatLng[];
   service_kind: HubServiceKind;
   customer_note: string;
+  is_active: boolean;
 };
+
+function hubToDraft(hub: BookingServiceHub): DraftHub {
+  return {
+    name: hub.name,
+    address: hub.address,
+    lat: hub.lat,
+    lng: hub.lng,
+    radius_km: hub.radius_km,
+    polygon: hubPolygonOrCircle(hub),
+    service_kind: hub.service_kind,
+    customer_note: hub.customer_note,
+    is_active: hub.is_active,
+  };
+}
+
+function sameHubPolygon(a: HubLatLng[], b: HubLatLng[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every(
+    (p, i) => Math.abs(p.lat - b[i].lat) < 1e-6 && Math.abs(p.lng - b[i].lng) < 1e-6
+  );
+}
+
+function isHubDraftDirty(draft: DraftHub, hub: BookingServiceHub | null): boolean {
+  if (!hub) return true;
+  return (
+    draft.name.trim() !== hub.name.trim() ||
+    draft.address.trim() !== hub.address.trim() ||
+    Math.abs(draft.lat - hub.lat) > 1e-6 ||
+    Math.abs(draft.lng - hub.lng) > 1e-6 ||
+    Math.abs(draft.radius_km - hub.radius_km) > 0.04 ||
+    draft.service_kind !== hub.service_kind ||
+    draft.customer_note.trim() !== hub.customer_note.trim() ||
+    draft.is_active !== hub.is_active ||
+    !sameHubPolygon(hubPolygonOrCircle(draft), hubPolygonOrCircle(hub))
+  );
+}
 
 function KindIcon({
   kind,
@@ -169,7 +206,6 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
   const debounceRef = useRef<number | null>(null);
-  const persistTimerRef = useRef<number | null>(null);
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
   const hubsRef = useRef(hubs);
   const draftRef = useRef(draft);
@@ -178,6 +214,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const mapClickBoundRef = useRef(false);
   const editableCircleRef = useRef<google.maps.Polygon | null>(null);
   const onMapClickRef = useRef<(event: google.maps.MapMouseEvent) => void>(() => {});
+  const selectHubRef = useRef<(id: string) => void>(() => {});
 
   hubsRef.current = hubs;
   draftRef.current = draft;
@@ -186,9 +223,39 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     () => hubs.find((h) => h.id === selectedId) || null,
     [hubs, selectedId]
   );
+  const isNewHub = Boolean(draft) && !selectedId;
+  const dirty = Boolean(draft && isHubDraftDirty(draft, isNewHub ? null : selected));
   const draftAnchor = draft
-    ? `${draft.lat.toFixed(4)},${draft.lng.toFixed(4)}:${draft.service_kind}`
+    ? `${draft.lat.toFixed(4)},${draft.lng.toFixed(4)}:${draft.service_kind}:${draft.radius_km}`
     : '';
+
+  const canLeaveEditor = useCallback(() => {
+    const current = draftRef.current;
+    if (!current) return true;
+    if (!selectedId) {
+      toast.error('Save this hub first, or tap Cancel.');
+      return false;
+    }
+    const saved = hubsRef.current.find((h) => h.id === selectedId) || null;
+    if (isHubDraftDirty(current, saved)) {
+      toast.error('Update this hub first, or tap Discard.');
+      return false;
+    }
+    return true;
+  }, [selectedId]);
+
+  const selectHub = useCallback(
+    (id: string) => {
+      if (id === selectedId && draft && !isNewHub) return;
+      if (!canLeaveEditor()) return;
+      const hub = hubsRef.current.find((h) => h.id === id);
+      if (!hub) return;
+      setSelectedId(id);
+      setDraft(hubToDraft(hub));
+    },
+    [canLeaveEditor, draft, isNewHub, selectedId]
+  );
+  selectHubRef.current = selectHub;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -201,7 +268,10 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     setOutOfAreaMessage(result.settings.out_of_area_message);
     setMissingMessagesTable(result.missingSettingsTable);
     setLoading(false);
-    if (!selectedId && result.hubs[0]) setSelectedId(result.hubs[0].id);
+    if (!selectedId && result.hubs[0]) {
+      setSelectedId(result.hubs[0].id);
+      setDraft(hubToDraft(result.hubs[0]));
+    }
   }, [selectedId]);
 
   useEffect(() => {
@@ -237,26 +307,6 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     }, 400);
   };
 
-  const persistSelectedGeometry = useCallback(
-    (patch: Partial<Pick<BookingServiceHub, 'lat' | 'lng' | 'radius_km' | 'polygon'>>) => {
-      if (!selectedId) return;
-      if (persistTimerRef.current != null) window.clearTimeout(persistTimerRef.current);
-      persistTimerRef.current = window.setTimeout(() => {
-        persistTimerRef.current = null;
-        void (async () => {
-          const result = await updateBookingServiceHub(selectedId, patch);
-          if (result.error || !result.hub) {
-            toast.error(result.error || 'Could not update hub');
-            return;
-          }
-          skipPaintRef.current = true;
-          setHubs((prev) => prev.map((h) => (h.id === result.hub!.id ? result.hub! : h)));
-        })();
-      }, 450);
-    },
-    [selectedId]
-  );
-
   const placeDraftAt = useCallback(
     (lat: number, lng: number, kind: HubServiceKind = 'normal', radiusKm = DEFAULT_HUB_RADIUS_KM) => {
       const label =
@@ -271,12 +321,14 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         polygon: circleToHubPolygon(lat, lng, radiusKm, DEFAULT_HUB_POLYGON_POINTS),
         service_kind: kind,
         customer_note: '',
+        is_active: true,
       });
     },
     []
   );
 
   const startNewHub = (kind: HubServiceKind) => {
+    if (!canLeaveEditor()) return;
     const center = mapRef.current?.getCenter();
     placeDraftAt(center?.lat() ?? BENGALURU.lat, center?.lng() ?? BENGALURU.lng, kind);
     const label = hubKindLabel(kind);
@@ -293,6 +345,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     editableCircleRef.current = null;
 
     const draftNow = draftRef.current;
+    const editingId = selectedId && draftNow ? selectedId : null;
     const rows: Array<{
       id: string;
       lat: number;
@@ -302,25 +355,27 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       kind: HubServiceKind;
       active: boolean;
       selected: boolean;
-    }> = hubs.map((h) => ({
-      id: h.id,
-      lat: h.lat,
-      lng: h.lng,
-      radius_km: h.radius_km,
-      polygon: hubPolygonOrCircle(h),
-      kind: h.service_kind,
-      active: h.is_active,
-      selected: !draftNow && h.id === selectedId,
-    }));
+    }> = hubs
+      .filter((h) => h.id !== editingId)
+      .map((h) => ({
+        id: h.id,
+        lat: h.lat,
+        lng: h.lng,
+        radius_km: h.radius_km,
+        polygon: hubPolygonOrCircle(h),
+        kind: h.service_kind,
+        active: h.is_active,
+        selected: false,
+      }));
     if (draftNow) {
       rows.push({
-        id: 'draft',
+        id: editingId || 'draft',
         lat: draftNow.lat,
         lng: draftNow.lng,
         radius_km: draftNow.radius_km,
         polygon: hubPolygonOrCircle(draftNow),
         kind: draftNow.service_kind,
-        active: true,
+        active: draftNow.is_active,
         selected: true,
       });
     }
@@ -338,7 +393,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         strokeColor: colors.stroke,
         strokeOpacity: 0.9,
         strokeWeight: row.selected ? 2.5 : 1.5,
-        clickable: row.selected || !draftNow,
+        clickable: true,
         editable: row.selected,
         draggable: row.selected,
         geodesic: false,
@@ -351,14 +406,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           const metrics = hubPolygonMetrics(ring);
           if (!metrics) return;
           skipPaintRef.current = true;
-          if (row.id === 'draft') {
-            setDraft((prev) => (prev ? { ...prev, ...metrics, polygon: ring } : prev));
-          } else {
-            setHubs((prev) =>
-              prev.map((h) => (h.id === row.id ? { ...h, ...metrics, polygon: ring } : h))
-            );
-            persistSelectedGeometry({ ...metrics, polygon: ring });
-          }
+          setDraft((prev) => (prev ? { ...prev, ...metrics, polygon: ring } : prev));
         };
         const path = polygon.getPath();
         path.addListener('set_at', applyPath);
@@ -366,10 +414,9 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         path.addListener('remove_at', applyPath);
         polygon.addListener('dragend', applyPath);
       }
-      if (row.id !== 'draft' && !draftNow) {
+      if (!row.selected) {
         const selectThis = () => {
-          setDraft(null);
-          setSelectedId(row.id);
+          selectHubRef.current(row.id);
         };
         polygon.addListener('click', selectThis);
       }
@@ -384,12 +431,11 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           strokeColor: colors.stroke,
           strokeWeight: 2,
         },
-        clickable: row.id !== 'draft' && !draftNow,
+        clickable: !row.selected,
       });
-      if (row.id !== 'draft' && !draftNow) {
+      if (!row.selected) {
         marker.addListener('click', () => {
-          setDraft(null);
-          setSelectedId(row.id);
+          selectHubRef.current(row.id);
         });
       }
       overlaysRef.current.push(polygon, marker);
@@ -422,7 +468,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     } catch {
       /* ignore */
     }
-  }, [draftAnchor, hubs, persistSelectedGeometry, selectedId]);
+  }, [draftAnchor, hubs, selectedId]);
 
   onMapClickRef.current = (event) => {
     const latLng = event.latLng;
@@ -430,7 +476,8 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     const lat = latLng.lat();
     const lng = latLng.lng();
     const existing = draftRef.current;
-    if (existing) {
+    const editingSavedHub = Boolean(existing && selectedId);
+    if (existing && !selectedId) {
       const moved = translateHubPolygon(
         hubPolygonOrCircle(existing),
         { lat: existing.lat, lng: existing.lng },
@@ -444,9 +491,11 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       .filter((row) => hubContainsPoint(row.hub, lat, lng))
       .sort((a, b) => a.distanceKm - b.distanceKm)[0];
     if (hit) {
-      setSelectedId(hit.hub.id);
+      selectHubRef.current(hit.hub.id);
       return;
     }
+    if (editingSavedHub) return;
+    if (!canLeaveEditor()) return;
     placeDraftAt(lat, lng);
   };
 
@@ -484,11 +533,11 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   useEffect(() => {
     return () => {
       if (debounceRef.current != null) window.clearTimeout(debounceRef.current);
-      if (persistTimerRef.current != null) window.clearTimeout(persistTimerRef.current);
     };
   }, []);
 
   const handleSelectPlace = async (prediction: PlacePrediction) => {
+    if (!canLeaveEditor()) return;
     setResolvingPlace(true);
     try {
       const details = await resolveGooglePlaceDetails(prediction.placeId, {
@@ -517,6 +566,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         ),
         service_kind: 'normal',
         customer_note: '',
+        is_active: true,
       });
       if (overlapping) {
         toast.message(`Overlaps ${overlapping.name} — that’s fine. Save this as another hub.`);
@@ -531,7 +581,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     }
   };
 
-  const handleSaveDraft = async () => {
+  const handleSaveEditor = async () => {
     if (!draft) return;
     const name = draft.name.trim();
     if (!name) {
@@ -539,6 +589,28 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       return;
     }
     setSaving(true);
+    if (selectedId) {
+      const result = await updateBookingServiceHub(selectedId, {
+        name,
+        address: draft.address,
+        lat: draft.lat,
+        lng: draft.lng,
+        radius_km: draft.radius_km,
+        polygon: hubPolygonOrCircle(draft),
+        service_kind: draft.service_kind,
+        customer_note: draft.customer_note,
+        is_active: draft.is_active,
+      });
+      setSaving(false);
+      if (result.error || !result.hub) {
+        toast.error(result.error || 'Could not update hub');
+        return;
+      }
+      setHubs((prev) => prev.map((h) => (h.id === result.hub!.id ? result.hub! : h)));
+      setDraft(hubToDraft(result.hub));
+      toast.success(`${result.hub.name} updated`);
+      return;
+    }
     const result = await createBookingServiceHub({
       name,
       address: draft.address,
@@ -549,43 +621,37 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       service_kind: draft.service_kind,
       sort_order: hubs.length,
       customer_note: draft.customer_note,
+      is_active: draft.is_active,
     });
     setSaving(false);
     if (result.error || !result.hub) {
       toast.error(result.error || 'Could not save hub');
       return;
     }
-    setHubs((prev) => [...prev, result.hub!].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)));
+    setHubs((prev) =>
+      [...prev, result.hub!].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+    );
     setSelectedId(result.hub.id);
-    setDraft(null);
+    setDraft(hubToDraft(result.hub));
     toast.success(`${result.hub.name} added`);
   };
 
-  const handlePatchSelected = async (
-    patch: Partial<
-      Pick<
-        BookingServiceHub,
-        'name' | 'radius_km' | 'polygon' | 'is_active' | 'customer_note' | 'lat' | 'lng' | 'service_kind'
-      >
-    >
-  ) => {
-    if (!selected) return;
-    setSaving(true);
-    const result = await updateBookingServiceHub(selected.id, patch);
-    setSaving(false);
-    if (result.error || !result.hub) {
-      toast.error(result.error || 'Could not update hub');
+  const discardEditor = () => {
+    if (selected) {
+      setDraft(hubToDraft(selected));
       return;
     }
-    setHubs((prev) => prev.map((h) => (h.id === result.hub!.id ? result.hub! : h)));
+    const first = hubsRef.current[0];
+    if (first) {
+      setSelectedId(first.id);
+      setDraft(hubToDraft(first));
+      return;
+    }
+    setDraft(null);
   };
 
   const applyKind = (kind: HubServiceKind) => {
-    if (draft) {
-      setDraft({ ...draft, service_kind: kind });
-      return;
-    }
-    if (selected) void handlePatchSelected({ service_kind: kind });
+    setDraft((prev) => (prev ? { ...prev, service_kind: kind } : prev));
   };
 
   const handleDelete = async () => {
@@ -600,7 +666,13 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     }
     const next = hubs.filter((h) => h.id !== selected.id);
     setHubs(next);
-    setSelectedId(next[0]?.id || null);
+    if (next[0]) {
+      setSelectedId(next[0].id);
+      setDraft(hubToDraft(next[0]));
+    } else {
+      setSelectedId(null);
+      setDraft(null);
+    }
     toast.success(`${selected.name} removed`);
   };
 
@@ -654,7 +726,10 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           type="button"
           variant="ghost"
           size="sm"
-          onClick={onBack}
+          onClick={() => {
+            if (!canLeaveEditor()) return;
+            onBack();
+          }}
           className="h-11 min-w-11 cursor-pointer px-2"
         >
           <ArrowLeft className="mr-1 h-4 w-4" />
@@ -768,7 +843,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           ) : null}
         </div>
         <p className="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[14rem] rounded-lg bg-black/55 px-2.5 py-1 text-right text-[11px] font-medium text-white sm:max-w-none">
-          Tap the map or use the buttons below to add a hub
+          Tap Add hub or search to create. Drag corners to reshape — then Update hub.
         </p>
       </div>
 
@@ -837,7 +912,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             <div className="space-y-3 border-b border-border bg-muted/30 px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="hub-name" className="text-sm font-medium">
-                  {draft ? 'New hub' : 'Selected hub'}
+                  {isNewHub ? 'New hub' : 'Selected hub'}
                 </Label>
                 {draft ? (
                   <Button
@@ -845,22 +920,26 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                     variant="ghost"
                     size="sm"
                     className="cursor-pointer"
-                    onClick={() => setDraft(null)}
+                    onClick={discardEditor}
                   >
-                    Cancel
+                    {isNewHub ? 'Cancel' : 'Discard'}
                   </Button>
                 ) : null}
               </div>
+              {dirty ? (
+                <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+                  Unsaved changes — tap {isNewHub ? 'Save hub' : 'Update hub'} to apply them.
+                </p>
+              ) : !isNewHub ? (
+                <p className="text-xs text-muted-foreground">
+                  Drag the map or change size here. Nothing is saved until you tap Update hub.
+                </p>
+              ) : null}
               <Input
                 id="hub-name"
-                value={draft ? draft.name : selected?.name || ''}
+                value={draft?.name || ''}
                 onChange={(e) => {
-                  if (draft) setDraft({ ...draft, name: e.target.value.slice(0, 80) });
-                }}
-                onBlur={(e) => {
-                  if (!draft && selected && e.target.value.trim() && e.target.value.trim() !== selected.name) {
-                    void handlePatchSelected({ name: e.target.value });
-                  }
+                  setDraft((prev) => (prev ? { ...prev, name: e.target.value.slice(0, 80) } : prev));
                 }}
                 placeholder="Hub name (HSR Layout, Bellandur…)"
               />
@@ -908,17 +987,17 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                 <div className="mb-2 flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Coverage size</span>
                   <span className="font-medium tabular-nums">
-                    {(draft ? draft.radius_km : selected?.radius_km || DEFAULT_HUB_RADIUS_KM).toFixed(1)} km
+                    {(draft?.radius_km || DEFAULT_HUB_RADIUS_KM).toFixed(1)} km
                   </span>
                 </div>
                 <Slider
                   min={MIN_HUB_RADIUS_KM}
                   max={MAX_HUB_RADIUS_KM}
                   step={0.5}
-                  value={[draft ? draft.radius_km : selected?.radius_km || DEFAULT_HUB_RADIUS_KM]}
+                  value={[draft?.radius_km || DEFAULT_HUB_RADIUS_KM]}
                   onValueChange={([value]) => {
                     const radius = clampHubRadiusKm(value);
-                    const current = draft || selected;
+                    const current = draft;
                     if (!current) return;
                     const scaled = scaleHubPolygon(
                       hubPolygonOrCircle(current),
@@ -929,25 +1008,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                     const shape = editableCircleRef.current;
                     if (shape) shape.setPath(scaled);
                     skipPaintRef.current = true;
-                    if (draft) setDraft({ ...draft, radius_km: radius, polygon: scaled });
-                    else if (selected) {
-                      setHubs((prev) =>
-                        prev.map((h) =>
-                          h.id === selected.id ? { ...h, radius_km: radius, polygon: scaled } : h
-                        )
-                      );
-                    }
-                  }}
-                  onValueCommit={([value]) => {
-                    if (draft || !selected) return;
-                    const shape = editableCircleRef.current;
-                    const ring = shape
-                      ? pathToHubPoints(shape.getPath())
-                      : hubPolygonOrCircle(selected);
-                    void handlePatchSelected({
-                      radius_km: clampHubRadiusKm(value),
-                      polygon: ring,
-                    });
+                    setDraft({ ...current, radius_km: radius, polygon: scaled });
                   }}
                 />
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -957,19 +1018,13 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                     size="sm"
                     className="h-11 cursor-pointer"
                     onClick={() => {
-                      const current = draft || selected;
+                      const current = draft;
                       if (!current) return;
                       const ring = circleToHubPolygon(current.lat, current.lng, current.radius_km);
                       const shape = editableCircleRef.current;
                       if (shape) shape.setPath(ring);
                       skipPaintRef.current = true;
-                      if (draft) setDraft({ ...draft, polygon: ring });
-                      else if (selected) {
-                        setHubs((prev) =>
-                          prev.map((h) => (h.id === selected.id ? { ...h, polygon: ring } : h))
-                        );
-                        void handlePatchSelected({ polygon: ring });
-                      }
+                      setDraft({ ...current, polygon: ring });
                     }}
                   >
                     Round shape
@@ -997,66 +1052,65 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                 </p>
                 <Textarea
                   id="hub-note"
-                  value={draft ? draft.customer_note : selected?.customer_note || ''}
+                  value={draft?.customer_note || ''}
                   maxLength={MAX_CUSTOMER_NOTE_LEN}
                   rows={2}
                   placeholder={hubKindMessagePlaceholder(editorKind)}
                   onChange={(e) => {
                     const next = e.target.value.slice(0, MAX_CUSTOMER_NOTE_LEN);
-                    if (draft) setDraft({ ...draft, customer_note: next });
-                    else if (selected) {
-                      setHubs((prev) =>
-                        prev.map((h) => (h.id === selected.id ? { ...h, customer_note: next } : h))
-                      );
-                    }
-                  }}
-                  onBlur={(e) => {
-                    if (!draft && selected) void handlePatchSelected({ customer_note: e.target.value });
+                    setDraft((prev) => (prev ? { ...prev, customer_note: next } : prev));
                   }}
                 />
               </div>
               {draft ? (
-                <Button
-                  type="button"
-                  className="h-11 w-full cursor-pointer"
-                  disabled={saving}
-                  onClick={() => void handleSaveDraft()}
-                >
-                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {editorKind === 'no_service'
-                    ? 'Save hub — bookings blocked here'
-                    : editorKind === 'callback'
-                      ? 'Save hub — we’ll call them back'
-                      : 'Save hub — bookings allowed here'}
-                </Button>
-              ) : selected ? (
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={selected.is_active}
-                      disabled={saving}
-                      onCheckedChange={(v) => void handlePatchSelected({ is_active: v })}
-                      aria-label={editorKind === 'no_service' ? 'Exclusion is active' : 'Hub accepts bookings'}
-                    />
-                    <span className="text-sm text-muted-foreground">
-                      {selected.is_active
-                        ? editorKind === 'no_service'
-                          ? 'Exclusion on'
-                          : 'Accepts bookings'
-                        : 'Paused'}
-                    </span>
-                  </div>
+                <>
+                  {selectedId ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={draft.is_active}
+                          disabled={saving}
+                          onCheckedChange={(v) =>
+                            setDraft((prev) => (prev ? { ...prev, is_active: v } : prev))
+                          }
+                          aria-label={editorKind === 'no_service' ? 'Exclusion is active' : 'Hub accepts bookings'}
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          {draft.is_active
+                            ? editorKind === 'no_service'
+                              ? 'Exclusion on'
+                              : 'Accepts bookings'
+                            : 'Paused'}
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="cursor-pointer text-destructive hover:text-destructive"
+                        onClick={() => setDeleteOpen(true)}
+                      >
+                        <Trash2 className="mr-1 h-4 w-4" />
+                        Remove
+                      </Button>
+                    </div>
+                  ) : null}
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="cursor-pointer text-destructive hover:text-destructive"
-                    onClick={() => setDeleteOpen(true)}
+                    className="h-11 w-full cursor-pointer"
+                    disabled={saving || (!isNewHub && !dirty)}
+                    onClick={() => void handleSaveEditor()}
                   >
-                    <Trash2 className="mr-1 h-4 w-4" />
-                    Remove
+                    {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    {isNewHub
+                      ? editorKind === 'no_service'
+                        ? 'Save hub — bookings blocked here'
+                        : editorKind === 'callback'
+                          ? 'Save hub — we’ll call them back'
+                          : 'Save hub — bookings allowed here'
+                      : 'Update hub'}
                   </Button>
-                </div>
+                </>
               ) : null}
             </div>
           ) : null}
@@ -1084,16 +1138,13 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           ) : (
             <ul className="space-y-2 pb-8">
               {hubs.map((hub) => {
-                const isSel = !draft && hub.id === selectedId;
+                const isSel = !isNewHub && hub.id === selectedId;
                 const colors = hubMapColors(hub.service_kind, isSel, hub.is_active);
                 return (
                   <li key={hub.id}>
                     <button
                       type="button"
-                      onClick={() => {
-                        setDraft(null);
-                        setSelectedId(hub.id);
-                      }}
+                      onClick={() => selectHub(hub.id)}
                       className={cn(
                         'flex min-h-14 w-full cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors duration-200',
                         isSel ? 'shadow-sm' : 'border-border bg-card hover:bg-muted/50',
