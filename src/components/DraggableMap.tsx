@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ensureGoogleMapsApi, GOOGLE_MAPS_AUTH_FAILURE_EVENT, didGoogleMapsAuthFail, googleMapsReferrerHelp } from '@/lib/googleMapsLink';
+import { DARK_DISPATCH_BG } from '@/lib/darkMapStyle';
 
 declare global {
   interface Window {
@@ -207,7 +208,7 @@ const DraggableMap = ({
         clickableIcons: !centerPinRef.current && !hideMarkerRef.current,
         keyboardShortcuts: false,
         styles: stylesRef.current,
-        backgroundColor: stylesRef.current?.length ? '#1c1c1e' : undefined,
+        backgroundColor: stylesRef.current?.length ? DARK_DISPATCH_BG : undefined,
       });
 
       if (centerPinRef.current) {
@@ -424,7 +425,7 @@ const DraggableMap = ({
       ) : !isMapLoaded ? (
         <div
           className={`absolute inset-0 z-10 flex items-center justify-center ${
-            styles?.length ? 'bg-[#1c1c1e]' : 'bg-gray-100'
+            styles?.length ? 'bg-[#3d4248]' : 'bg-gray-100'
           }`}
           style={{ height }}
         >

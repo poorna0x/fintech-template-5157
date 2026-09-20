@@ -15,7 +15,7 @@ import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Technician } from '@/types';
 import DraggableMap from '@/components/DraggableMap';
-import { DARK_DISPATCH_MAP_STYLES } from '@/lib/darkMapStyle';
+import { DARK_DISPATCH_BG, DARK_DISPATCH_MAP_STYLES } from '@/lib/darkMapStyle';
 import { fetchDrivingRoute } from '@/lib/googleMapsDistance';
 import { openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
@@ -437,7 +437,7 @@ export default function JobsMapToolDialog({
     if (!map) return;
     map.setOptions({
       styles: darkMap ? DARK_DISPATCH_MAP_STYLES : [],
-      backgroundColor: darkMap ? '#1c1c1e' : '#e8eaed',
+      backgroundColor: darkMap ? DARK_DISPATCH_BG : '#e8eaed',
     });
   }, [darkMap, mapReady]);
 
@@ -615,7 +615,7 @@ export default function JobsMapToolDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <div className={cn('relative min-h-[220px] flex-1 overflow-hidden md:order-2', darkMap ? 'bg-[#1c1c1e]' : 'bg-muted')}>
+          <div className={cn('relative min-h-[220px] flex-1 overflow-hidden md:order-2', darkMap ? 'bg-[#3d4248]' : 'bg-muted')}>
             <DraggableMap
               center={BENGALURU}
               zoom={14}
@@ -718,7 +718,7 @@ export default function JobsMapToolDialog({
             <div
               className={cn(
                 'pointer-events-none absolute bottom-3 left-3 z-20 max-w-[min(100%,16rem)] rounded-lg px-2.5 py-2 text-[11px] leading-5 shadow-sm',
-                darkMap ? 'bg-black/60 text-white/85' : 'bg-white/90 text-foreground'
+                darkMap ? 'bg-zinc-700/80 text-white/90' : 'bg-white/90 text-foreground'
               )}
             >
               <p>P unassigned · A assigned · F follow-up</p>
