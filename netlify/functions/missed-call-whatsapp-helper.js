@@ -56,10 +56,24 @@ function formatLastServiceDate(value) {
   });
 }
 
+/** Latest completion timestamp among COMPLETED job rows (completed_at, else end_time). */
+function pickLastCompletedServiceAt(jobs) {
+  let best = null;
+  let bestMs = Number.NEGATIVE_INFINITY;
+  for (const row of jobs || []) {
+    const raw = String(row?.completed_at || row?.end_time || '').trim();
+    if (!raw) continue;
+    const ms = new Date(raw).getTime();
+    if (Number.isNaN(ms) || ms < bestMs) continue;
+    bestMs = ms;
+    best = raw;
+  }
+  return best;
+}
+
 async function loadMissedCallFacts(db, phone, opts) {
   let customerId = opts.customerId ? String(opts.customerId) : null;
   let customerName = String(opts.customerName || '').trim();
-  let lastServiceRaw = null;
   let brand = 'elevenro';
 
   if (!customerId) {
@@ -74,15 +88,18 @@ async function loadMissedCallFacts(db, phone, opts) {
     };
   }
 
-  const [{ data: customer }, { data: job }] = await Promise.all([
-    db
-      .from('customers')
-      .select('full_name, last_service_date')
-      .eq('id', customerId)
-      .maybeSingle(),
+  const [{ data: customer }, { data: completedJobs }, { data: brandedJob }] = await Promise.all([
+    db.from('customers').select('full_name').eq('id', customerId).maybeSingle(),
     db
       .from('jobs')
-      .select('service_brand, completed_at')
+      .select('completed_at, end_time')
+      .eq('customer_id', customerId)
+      .eq('status', 'COMPLETED')
+      .order('completed_at', { ascending: false, nullsFirst: false })
+      .limit(40),
+    db
+      .from('jobs')
+      .select('service_brand')
       .eq('customer_id', customerId)
       .eq('status', 'COMPLETED')
       .not('service_brand', 'is', null)
@@ -93,11 +110,11 @@ async function loadMissedCallFacts(db, phone, opts) {
 
   if (customer) {
     customerName = customerName || String(customer.full_name || '').trim();
-    lastServiceRaw = customer.last_service_date || lastServiceRaw;
   }
-  const fromJob = normalizeServiceBrand(job?.service_brand);
+  const fromJob = normalizeServiceBrand(brandedJob?.service_brand);
   if (fromJob) brand = fromJob;
-  if (!lastServiceRaw && job?.completed_at) lastServiceRaw = job.completed_at;
+  // Same source as Reports: COMPLETED jobs only. Ignore customers.last_service_date.
+  const lastServiceRaw = pickLastCompletedServiceAt(completedJobs || []);
 
   return {
     customerId,
@@ -108,107 +125,20 @@ async function loadMissedCallFacts(db, phone, opts) {
 }
 
 /**
+ * Auto missed-call WhatsApp to customers is off. Staff can still send a
+ * missed-call template by hand from Calling / inbox.
+ *
  * @param {import('@supabase/supabase-js').SupabaseClient} db
  * @param {{ phone: string, customerId?: string|null, customerName?: string|null, force?: boolean }} opts
  */
-async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
-  try {
-    if (!db) return { sent: false, reason: 'no_db' };
-    const phone = normalizePhoneE164(opts.phone);
-    if (!phone) return { sent: false, reason: 'no_phone' };
-
-    const { data: settings } = await db
-      .from('whatsapp_crm_settings')
-      .select('enabled, allow_calling, allow_cold_templates, auto_send_missed_call_whatsapp')
-      .eq('id', 1)
-      .maybeSingle();
-
-    if (settings?.enabled === false) return { sent: false, reason: 'wa_master_off' };
-    if (settings?.allow_calling === false) return { sent: false, reason: 'calling_off' };
-    if (settings?.allow_cold_templates === false) {
-      return { sent: false, reason: 'cold_templates_off' };
-    }
-    if (!opts.force && settings?.auto_send_missed_call_whatsapp !== true) {
-      return { sent: false, reason: 'auto_off' };
-    }
-
-    const sinceIso = new Date(Date.now() - DEDUPE_HOURS * 3600_000).toISOString();
-    const { data: recentTpl } = await db
-      .from('whatsapp_messages')
-      .select('id')
-      .eq('phone_e164', phone)
-      .eq('direction', 'outbound')
-      .in('template_name', MISSED_CALL_TEMPLATE_NAMES)
-      .gte('created_at', sinceIso)
-      .limit(1)
-      .maybeSingle();
-    if (recentTpl?.id) return { sent: false, reason: 'deduped' };
-    const { data: recentBody } = await db
-      .from('whatsapp_messages')
-      .select('id')
-      .eq('phone_e164', phone)
-      .eq('direction', 'outbound')
-      .ilike('body', 'Missed-call callback%')
-      .gte('created_at', sinceIso)
-      .limit(1)
-      .maybeSingle();
-    if (recentBody?.id) return { sent: false, reason: 'deduped' };
-
-    const facts = await loadMissedCallFacts(db, phone, opts);
-    const name = facts.customerName || 'there';
-    const templateName = `missed_call_callback_${brandSuffix(facts.brand)}_cta_v7`;
-    const bodyParams = [name, facts.lastServiceDate];
-
-    const { accessToken, phoneNumberId } = await getWhatsAppCredentials(db);
-    if (!accessToken || !phoneNumberId) {
-      return { sent: false, reason: 'no_credentials' };
-    }
-
-    const sendResult = await sendTemplateWithColdFallbacks({
-      phoneNumberId,
-      accessToken,
-      to: phone,
-      templateName,
-      languageCode: 'en',
-      bodyParams,
-      headerComponents: [],
-      enableFallback: true,
-    });
-
-    const usedName = sendResult.templateName || templateName;
-    const result = sendResult.result;
-
-    const waId = result?.data?.messages?.[0]?.id || null;
-    await insertWhatsAppMessage(db, {
-      wa_message_id: waId,
-      direction: 'outbound',
-      phone_e164: phone,
-      customer_id: facts.customerId,
-      msg_type: 'template',
-      body: `Missed-call callback (${usedName})`,
-      template_name: usedName,
-      status: result.ok ? 'sent' : 'failed',
-      error_message: result.ok
-        ? null
-        : JSON.stringify(result.data?.error || result.data || {}).slice(0, 500),
-    });
-
-    if (!result.ok) {
-      console.warn(
-        '[missed-call-whatsapp] send failed',
-        result.data?.error?.message || result.status
-      );
-      return { sent: false, reason: 'api_failed' };
-    }
-    return { sent: true, waId, templateName: usedName, brand: facts.brand };
-  } catch (err) {
-    console.warn('[missed-call-whatsapp] error', err?.message || err);
-    return { sent: false, reason: 'error' };
-  }
+async function maybeSendMissedCallCallbackWhatsApp(_db, _opts) {
+  return { sent: false, reason: 'disabled' };
 }
 
 module.exports = {
   maybeSendMissedCallCallbackWhatsApp,
   formatLastServiceDate,
   normalizeServiceBrand,
+  pickLastCompletedServiceAt,
+  loadMissedCallFacts,
 };

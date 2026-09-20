@@ -111,7 +111,7 @@ function mapCallingRowToCustomer(row: CallingPageRpcRow): CustomerWithHistory {
     status: row.status as Customer['status'],
     hasPrefilter: row.has_prefilter ?? null,
     rawWaterTds: row.raw_water_tds ?? 0,
-    lastServiceDate: row.last_service_at ?? row.last_service_date ?? undefined,
+    lastServiceDate: row.last_service_at ?? undefined,
     daysSinceService: row.days_since_service ?? undefined,
     lastServiceSubType: row.last_service_sub_type ?? null,
     lastServiceType: row.last_service_type ?? null,

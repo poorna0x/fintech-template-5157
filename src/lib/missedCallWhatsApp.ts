@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
 import type { DocumentBrand } from '@/lib/service-brands';
-import { supabase } from '@/lib/supabaseClient';
+import { fetchLastCompletedServiceAt } from '@/lib/customerLastService';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
 import { openWhatsAppMeDeepLink } from '@/lib/sendAdminWhatsAppApi';
 import {
@@ -32,16 +32,11 @@ async function loadMissedCallFacts(
     /* keep fallback */
   }
   try {
-    const { data } = await supabase
-      .from('customers')
-      .select('last_service_date')
-      .eq('id', customerId)
-      .maybeSingle();
+    // Same source as Reports / booking bot: COMPLETED jobs only (ignore customers.last_service_date).
+    const at = await fetchLastCompletedServiceAt(customerId);
     return {
       brand,
-      lastServiceDate: formatLastServiceDateLabel(
-        (data as { last_service_date?: string | null } | null)?.last_service_date
-      ),
+      lastServiceDate: formatLastServiceDateLabel(at),
     };
   } catch {
     return { brand, lastServiceDate: formatLastServiceDateLabel(null) };

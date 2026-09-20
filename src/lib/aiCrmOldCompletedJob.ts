@@ -91,11 +91,6 @@ function mergePhotoUrls(existing: unknown, extra: string[]): string[] {
   return out;
 }
 
-function laterDate(a: string | null | undefined, b: string): string {
-  if (!a) return b;
-  return a >= b ? a : b;
-}
-
 function completionTimestamp(isoDate: string): string {
   const [year, month, day] = isoDate.split('-').map(Number);
   return new Date(year, month - 1, day, 12, 0, 0, 0).toISOString();
@@ -344,8 +339,8 @@ export async function createOldCompletedJob(input: {
     return { ok: false, error: created.error?.message || 'Could not save the completed job' };
   }
 
-  const lastService = laterDate((customer as any).last_service_date, input.completedDateIso);
-  await db.customers.update(input.customerId, { last_service_date: lastService }).catch(() => {});
+  const { syncCustomerLastServiceDate } = await import('@/lib/customerLastService');
+  await syncCustomerLastServiceDate(input.customerId).catch(() => {});
 
   const row = created.data as Record<string, unknown>;
   return {

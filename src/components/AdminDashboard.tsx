@@ -7877,16 +7877,14 @@ const AdminDashboard = () => {
               (completedJob as any)?.customerId ||
               ((completedJob as any)?.customer && (completedJob as any).customer.id);
             if (completedCustomerId) {
-              const serviceDate = new Date().toISOString().split('T')[0];
               setCustomerPriorServiceStatus((prev) => ({ ...prev, [completedCustomerId]: true }));
               setCustomers((prev) =>
                 prev.map((c) =>
                   c.id === completedCustomerId
-                    ? { ...c, lastServiceDate: c.lastServiceDate || serviceDate }
+                    ? { ...c, lastServiceDate: c.lastServiceDate || new Date().toISOString() }
                     : c
                 )
               );
-              void db.customers.update(completedCustomerId, { last_service_date: serviceDate });
             }
           }
           await invalidateAdminDashboardCaches();

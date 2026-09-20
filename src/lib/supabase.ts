@@ -41,6 +41,10 @@ import {
   isActiveTechnicianAccount,
   isSalaryListedTechnician,
 } from './technicianAccountStatus';
+import {
+  jobChangeAffectsLastService,
+  queueSyncCustomerLastServiceDate,
+} from './customerLastService';
 
 export { supabaseAuthClient as supabase };
 export { generateJobNumber } from './jobNumber';
@@ -1044,7 +1048,7 @@ async function getCallingPageFallback(
 
   const enriched: CallingPageRpcRow[] = rows.map((customer: any) => {
     const lastJobInfo = lastServiceMap.get(customer.id);
-    const lastServiceAt = lastJobInfo?.completed_at || customer.last_service_date || null;
+    const lastServiceAt = lastJobInfo?.completed_at || null;
     const lastCall = lastCallMap.get(customer.id);
     const lastWhatsApp = lastWhatsAppMap.get(customer.id);
     const daysSinceService =
@@ -1874,6 +1878,10 @@ export const db = {
         cacheInvalidate('job_counts_v1');
         if ((job as { status?: string })?.status === 'COMPLETED') {
           cacheInvalidate('completed_customers_map_v1');
+          queueSyncCustomerLastServiceDate(
+            (job as { customer_id?: string }).customer_id ||
+              (data as { customer_id?: string } | null)?.customer_id
+          );
         }
       }
       return { data, error };
@@ -1906,7 +1914,15 @@ export const db = {
           retryCount + 1
         );
       }
-      if (!error) cacheInvalidate('job_counts_v1');
+      if (!error) {
+        cacheInvalidate('job_counts_v1');
+        if (String((job as { status?: string }).status || '').toUpperCase() === 'COMPLETED') {
+          queueSyncCustomerLastServiceDate(
+            String((job as { customer_id?: string }).customer_id || '') ||
+              String((data as { customer_id?: string } | null)?.customer_id || '')
+          );
+        }
+      }
       return { data: data as Record<string, unknown> | null, error };
     },
 
@@ -2713,11 +2729,27 @@ export const db = {
             error: selectError,
             id
           });
-          cacheInvalidate('job_counts_v1');
-          if ((updates as { status?: string }).status !== undefined) {
-            cacheInvalidate('completed_customers_map_v1');
+        cacheInvalidate('job_counts_v1');
+        if ((updates as { status?: string }).status !== undefined) {
+          cacheInvalidate('completed_customers_map_v1');
+        }
+        if (jobChangeAffectsLastService(updates)) {
+          const cid = (updates as { customer_id?: string }).customer_id;
+          if (cid) queueSyncCustomerLastServiceDate(cid);
+          else {
+            void supabase
+              .from('jobs')
+              .select('customer_id')
+              .eq('id', id)
+              .maybeSingle()
+              .then(({ data: row }) =>
+                queueSyncCustomerLastServiceDate(
+                  (row as { customer_id?: string } | null)?.customer_id
+                )
+              );
           }
-          return { data: null, error: null };
+        }
+        return { data: null, error: null };
       }
       
         console.log('✅ [db.jobs.update] Success:', {
@@ -2728,6 +2760,12 @@ export const db = {
         cacheInvalidate('job_counts_v1');
         if ((updates as { status?: string }).status !== undefined) {
           cacheInvalidate('completed_customers_map_v1');
+        }
+        if (jobChangeAffectsLastService(updates)) {
+          queueSyncCustomerLastServiceDate(
+            (data as { customer_id?: string } | null)?.customer_id ||
+              (updates as { customer_id?: string }).customer_id
+          );
         }
         return { data: data || null, error: null };
       } catch (err: any) {
@@ -2962,6 +3000,13 @@ export const db = {
         };
       }
 
+      const { data: existingJob } = await supabase
+        .from('jobs')
+        .select('customer_id')
+        .eq('id', id)
+        .maybeSingle();
+      const deletedCustomerId = (existingJob as { customer_id?: string } | null)?.customer_id;
+
       const { error: rpcError } = await supabase.rpc('delete_job_admin', {
         p_job_id: id,
       });
@@ -2969,6 +3014,7 @@ export const db = {
       if (!rpcError) {
         cacheInvalidate('job_counts_v1');
         cacheInvalidate('completed_customers_map_v1');
+        queueSyncCustomerLastServiceDate(deletedCustomerId);
         return { data: null, error: null };
       }
 
@@ -2991,6 +3037,7 @@ export const db = {
       if (!error) {
         cacheInvalidate('job_counts_v1');
         cacheInvalidate('completed_customers_map_v1');
+        queueSyncCustomerLastServiceDate(deletedCustomerId);
       }
       return { data: null, error };
     },
