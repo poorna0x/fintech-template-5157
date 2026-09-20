@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { drivingRouteCacheKey } from './googleMapsDistance';
 import {
   filterJobsMapJobs,
+  isJobsMapDueToday,
   jobsMapTechPhotoThumb,
   nearestTechsForJob,
   parseJobsMapJobs,
+  searchJobsMapJobs,
+  visibleTechsForJobsMap,
   type JobsMapJob,
   type JobsMapTech,
 } from './adminJobsMap';
@@ -17,6 +20,7 @@ const job = (partial: Partial<JobsMapJob> & Pick<JobsMapJob, 'id' | 'lat' | 'lng
   customer_id: 'c1',
   customer_name: 'Asha',
   visible_address: 'HSR',
+  follow_up_date: null,
   ...partial,
 });
 
@@ -92,6 +96,43 @@ describe('adminJobsMap', () => {
     ];
     expect(filterJobsMapJobs(rows, 'followup').map((row) => row.id)).toEqual(['b', 'c']);
     expect(filterJobsMapJobs(rows, 'all').map((row) => row.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('finds due-today follow-ups, including overdue', () => {
+    const rows = [
+      job({ id: 'later', lat: 12.9, lng: 77.6, status: 'FOLLOW_UP', follow_up_date: '2099-01-01' }),
+      job({ id: 'today', lat: 12.91, lng: 77.61, status: 'FOLLOW_UP', follow_up_date: '2026-09-20' }),
+      job({ id: 'old', lat: 12.92, lng: 77.62, status: 'FOLLOW_UP', follow_up_date: '2026-09-18' }),
+      job({ id: 'open', lat: 12.93, lng: 77.63, status: 'PENDING' }),
+    ];
+    expect(rows.filter((row) => isJobsMapDueToday(row, '2026-09-20')).map((row) => row.id)).toEqual([
+      'today',
+      'old',
+    ]);
+    expect(filterJobsMapJobs(rows, 'due-today').some((row) => row.id === 'open')).toBe(false);
+  });
+
+  it('searches job number, name, and area', () => {
+    const rows = [
+      job({ id: 'a', lat: 12.9, lng: 77.6, job_number: 'RO-9', customer_name: 'Asha', visible_address: 'HSR' }),
+      job({ id: 'b', lat: 12.91, lng: 77.61, customer_name: 'Ravi', visible_address: 'Jigani' }),
+    ];
+    expect(searchJobsMapJobs(rows, 'jigani').map((row) => row.id)).toEqual(['b']);
+    expect(searchJobsMapJobs(rows, 'ro-9').map((row) => row.id)).toEqual(['a']);
+  });
+
+  it('hides stale technicians unless they are assigned', () => {
+    const pin = job({ id: 'j1', lat: 12.91, lng: 77.64, assigned_technician_id: 'stale' });
+    const shown = visibleTechsForJobsMap(
+      [pin],
+      [
+        tech({ id: 'live', lat: 12.91, lng: 77.64, updatedAt: new Date().toISOString() }),
+        tech({ id: 'stale', lat: 13.05, lng: 77.8, updatedAt: '2026-01-01T00:00:00.000Z' }),
+        tech({ id: 'other', lat: 12.5, lng: 77.5, updatedAt: '2026-01-01T00:00:00.000Z' }),
+      ],
+      true
+    );
+    expect(shown.map((row) => row.id).sort()).toEqual(['live', 'stale']);
   });
 });
 

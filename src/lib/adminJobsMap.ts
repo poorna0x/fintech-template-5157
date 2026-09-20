@@ -15,7 +15,7 @@ export const JOBS_MAP_ONGOING_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN
 export const JOBS_MAP_FOLLOWUP_STATUSES = ['FOLLOW_UP', 'RESCHEDULED'] as const;
 export const JOBS_MAP_STATUSES = [...JOBS_MAP_ONGOING_STATUSES, ...JOBS_MAP_FOLLOWUP_STATUSES] as const;
 export type JobsMapStatus = (typeof JOBS_MAP_STATUSES)[number];
-export type JobsMapFilter = 'all' | 'unassigned' | 'followup' | JobsMapStatus;
+export type JobsMapFilter = 'all' | 'unassigned' | 'followup' | 'due-today' | JobsMapStatus;
 
 export const JOBS_MAP_FRESH_MS = 15 * 60 * 1000;
 
@@ -28,6 +28,7 @@ export type JobsMapJob = {
   customer_id: string | null;
   customer_name: string;
   visible_address: string;
+  follow_up_date: string | null;
   lat: number;
   lng: number;
 };
@@ -59,6 +60,7 @@ const JOB_SELECT = [
   'scheduled_date',
   'assigned_technician_id',
   'customer_id',
+  'follow_up_date',
   'service_location',
   'service_address',
   'service_site',
@@ -147,6 +149,10 @@ export function parseJobsMapJob(row: unknown): JobsMapJob | null {
       : null,
     customer_name: name,
     visible_address: address,
+    follow_up_date:
+      job.follow_up_date != null || job.followUpDate != null
+        ? String(job.follow_up_date ?? job.followUpDate).slice(0, 10) || null
+        : null,
     lat: coords.lat,
     lng: coords.lng,
   };
@@ -260,9 +266,61 @@ export function buildJobsMapTechs(
   return out;
 }
 
+export function jobsMapLocalTodayYmd(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+export function jobsMapFollowUpYmd(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const day = String(value).trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+}
+
+export function isJobsMapDueToday(job: JobsMapJob, today = jobsMapLocalTodayYmd()): boolean {
+  if (!isJobsMapFollowUpStatus(job.status)) return false;
+  const day = jobsMapFollowUpYmd(job.follow_up_date);
+  return Boolean(day && day <= today);
+}
+
+export function searchJobsMapJobs(jobs: JobsMapJob[], query: string): JobsMapJob[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return jobs;
+  return jobs.filter((job) => {
+    const hay = `${job.job_number || ''} ${job.customer_name} ${job.visible_address}`.toLowerCase();
+    return hay.includes(needle);
+  });
+}
+
+export function visibleTechsForJobsMap(
+  jobs: JobsMapJob[],
+  techs: JobsMapTech[],
+  liveOnly: boolean
+): JobsMapTech[] {
+  if (!liveOnly) return techs;
+  const assigned = new Set(
+    jobs.map((job) => job.assigned_technician_id).filter((id): id is string => Boolean(id))
+  );
+  return techs.filter((tech) => isJobsMapFixFresh(tech.updatedAt) || assigned.has(tech.id));
+}
+
+export function jobsMapDueLabel(job: JobsMapJob, today = jobsMapLocalTodayYmd()): string {
+  const day = jobsMapFollowUpYmd(job.follow_up_date);
+  if (!day || !isJobsMapFollowUpStatus(job.status)) return '';
+  if (day < today) return `Overdue ${formatJobsMapDay(day)}`;
+  if (day === today) return 'Due today';
+  return `Due ${formatJobsMapDay(day)}`;
+}
+
+function formatJobsMapDay(ymd: string): string {
+  const [year, month, day] = ymd.split('-').map(Number);
+  const date = new Date(year, (month || 1) - 1, day || 1);
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
 export function filterJobsMapJobs(jobs: JobsMapJob[], filter: JobsMapFilter): JobsMapJob[] {
   if (filter === 'all') return jobs;
   if (filter === 'followup') return jobs.filter((job) => isJobsMapFollowUpStatus(job.status));
+  if (filter === 'due-today') return jobs.filter((job) => isJobsMapDueToday(job));
   if (filter === 'unassigned') {
     return jobs.filter((job) => job.status === 'PENDING' || !job.assigned_technician_id);
   }

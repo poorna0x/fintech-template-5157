@@ -7,7 +7,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ExternalLink, Loader2, MapPinned, Navigation, RefreshCw } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Car, ExternalLink, Loader2, LocateFixed, MapPinned, Moon, Navigation, Radio, RefreshCw, Search, Sun } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -25,13 +26,16 @@ import {
   isJobsMapFixFresh,
   isJobsMapFollowUpStatus,
   jobsForTechnician,
+  jobsMapDueLabel,
   jobsMapStatusColor,
   jobsMapStatusLabel,
   jobsMapStatusShort,
   jobsMapTechPhotoThumb,
   nearestTechsForJob,
   parseJobsMapJobs,
+  searchJobsMapJobs,
   techsNearJobs,
+  visibleTechsForJobsMap,
   type JobsMapFilter,
   type JobsMapJob,
   type JobsMapLiveRow,
@@ -42,11 +46,31 @@ const BENGALURU = { lat: 12.9716, lng: 77.5946 };
 const FILTERS: Array<{ id: JobsMapFilter; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'followup', label: 'Follow-up' },
+  { id: 'due-today', label: 'Due today' },
   { id: 'unassigned', label: 'Unassigned' },
   { id: 'ASSIGNED', label: 'Assigned' },
   { id: 'EN_ROUTE', label: 'En route' },
   { id: 'IN_PROGRESS', label: 'In progress' },
 ];
+
+function readJobsMapPref(key: string, fallback: boolean): boolean {
+  try {
+    const raw = sessionStorage.getItem(`hro-jobs-map-${key}`);
+    if (raw === '1') return true;
+    if (raw === '0') return false;
+  } catch {
+    /* ignore */
+  }
+  return fallback;
+}
+
+function writeJobsMapPref(key: string, value: boolean) {
+  try {
+    sessionStorage.setItem(`hro-jobs-map-${key}`, value ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
 
 type Selection = { kind: 'job'; id: string } | { kind: 'tech'; id: string } | null;
 
@@ -154,26 +178,46 @@ export default function JobsMapToolDialog({
   const [routes, setRoutes] = useState<DrawnRoute[]>([]);
   const [routing, setRouting] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [query, setQuery] = useState('');
+  const [darkMap, setDarkMap] = useState(() => readJobsMapPref('dark', true));
+  const [liveOnly, setLiveOnly] = useState(() => readJobsMapPref('live', true));
+  const [trafficOn, setTrafficOn] = useState(() => readJobsMapPref('traffic', false));
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
   const routeOverlaysRef = useRef<google.maps.Polyline[]>([]);
+  const trafficRef = useRef<google.maps.TrafficLayer | null>(null);
+  const mapClickRef = useRef<google.maps.MapsEventListener | null>(null);
   const fitKeyRef = useRef('');
+  const forceFitRef = useRef(false);
   const jobsRef = useRef(jobs);
   const techsRef = useRef<JobsMapTech[]>([]);
   const selectionRef = useRef(selection);
+  const filterRef = useRef(filter);
+  const queryRef = useRef(query);
+  const liveOnlyRef = useRef(liveOnly);
   const channelRef = useRef<RealtimeChannel | null>(null);
   jobsRef.current = jobs;
   selectionRef.current = selection;
+  filterRef.current = filter;
+  queryRef.current = query;
+  liveOnlyRef.current = liveOnly;
 
   const techs = useMemo(() => buildJobsMapTechs(technicians, liveRows), [technicians, liveRows]);
   techsRef.current = techs;
 
-  const visibleJobs = useMemo(() => filterJobsMapJobs(jobs, filter), [jobs, filter]);
+  const visibleJobs = useMemo(
+    () => searchJobsMapJobs(filterJobsMapJobs(jobs, filter), query),
+    [jobs, filter, query]
+  );
+  const visibleTechs = useMemo(
+    () => visibleTechsForJobsMap(visibleJobs, techs, liveOnly),
+    [visibleJobs, techs, liveOnly]
+  );
   const selectedJob = selection?.kind === 'job' ? jobs.find((job) => job.id === selection.id) || null : null;
   const selectedTech = selection?.kind === 'tech' ? techs.find((tech) => tech.id === selection.id) || null : null;
   const nearby = selectedJob
-    ? nearestTechsForJob(selectedJob, techs).filter((tech) => tech.isAssigned || tech.distance_m <= 40_000)
+    ? nearestTechsForJob(selectedJob, visibleTechs).filter((tech) => tech.isAssigned || tech.distance_m <= 40_000)
     : [];
   const techJobs = selectedTech ? jobsForTechnician(jobs, selectedTech.id) : [];
   const followupCount = jobs.filter((job) => isJobsMapFollowUpStatus(job.status)).length;
@@ -212,6 +256,7 @@ export default function JobsMapToolDialog({
   useEffect(() => {
     if (!open) return;
     setFilter('all');
+    setQuery('');
     setSelection(null);
     fitKeyRef.current = '';
     void load();
@@ -269,8 +314,12 @@ export default function JobsMapToolDialog({
     const map = mapRef.current;
     if (!map || !window.google?.maps) return;
     clearOverlays();
-    const shownJobs = filterJobsMapJobs(jobsRef.current, filter);
-    const fitTechs = techsNearJobs(shownJobs, techsRef.current);
+    const shownJobs = searchJobsMapJobs(
+      filterJobsMapJobs(jobsRef.current, filterRef.current),
+      queryRef.current
+    );
+    const shownTechs = visibleTechsForJobsMap(shownJobs, techsRef.current, liveOnlyRef.current);
+    const fitTechs = techsNearJobs(shownJobs, shownTechs);
     const bounds = new window.google.maps.LatLngBounds();
     let hasPoint = false;
     const sel = selectionRef.current;
@@ -315,7 +364,7 @@ export default function JobsMapToolDialog({
       );
     }
 
-    for (const tech of techsRef.current) {
+    for (const tech of shownTechs) {
       const selected = sel?.kind === 'tech' && sel.id === tech.id;
       const fresh = isJobsMapFixFresh(tech.updatedAt);
       addMarker(
@@ -329,8 +378,9 @@ export default function JobsMapToolDialog({
       );
     }
 
-    const fitKey = `${visibleJobs.length}:${techsRef.current.length}:${filter}`;
-    if (hasPoint && fitKeyRef.current !== fitKey && !sel) {
+    const fitKey = `${shownJobs.length}:${shownTechs.length}:${filterRef.current}:${queryRef.current}:${liveOnlyRef.current}`;
+    if (hasPoint && (forceFitRef.current || (fitKeyRef.current !== fitKey && !sel))) {
+      forceFitRef.current = false;
       fitKeyRef.current = fitKey;
       try {
         map.fitBounds(bounds, 48);
@@ -338,11 +388,36 @@ export default function JobsMapToolDialog({
         /* ignore */
       }
     }
-  }, [filter, visibleJobs.length]);
+  }, [filter, query, liveOnly, visibleJobs.length]);
 
   useEffect(() => {
     paint();
-  }, [paint, jobs, techs, selection]);
+  }, [paint, jobs, techs, selection, query, liveOnly]);
+
+  useEffect(() => {
+    writeJobsMapPref('dark', darkMap);
+    writeJobsMapPref('live', liveOnly);
+    writeJobsMapPref('traffic', trafficOn);
+  }, [darkMap, liveOnly, trafficOn]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.setOptions({
+      styles: darkMap ? DARK_DISPATCH_MAP_STYLES : [],
+      backgroundColor: darkMap ? '#1c1c1e' : '#e8eaed',
+    });
+  }, [darkMap, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !window.google?.maps?.TrafficLayer) return;
+    if (!trafficRef.current) trafficRef.current = new window.google.maps.TrafficLayer();
+    trafficRef.current.setMap(trafficOn && open ? map : null);
+    return () => {
+      if (!open) trafficRef.current?.setMap(null);
+    };
+  }, [trafficOn, mapReady, open]);
 
   useEffect(() => {
     if (!open) {
@@ -366,7 +441,10 @@ export default function JobsMapToolDialog({
     if (selection.kind === 'job') {
       const job = jobsRef.current.find((row) => row.id === selection.id);
       if (job) {
-        for (const tech of nearestTechsForJob(job, techsRef.current)
+        for (const tech of nearestTechsForJob(
+          job,
+          visibleTechsForJobsMap(jobsRef.current, techsRef.current, liveOnlyRef.current)
+        )
           .filter((row) => row.isAssigned || row.distance_m <= 40_000)
           .slice(0, MAX_JOB_ROUTES)) {
           pairs.push({
@@ -502,7 +580,7 @@ export default function JobsMapToolDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <div className="relative min-h-[220px] flex-1 overflow-hidden bg-[#1c1c1e] md:order-2">
+          <div className={cn('relative min-h-[220px] flex-1 overflow-hidden md:order-2', darkMap ? 'bg-[#1c1c1e]' : 'bg-muted')}>
             <DraggableMap
               center={BENGALURU}
               zoom={11}
@@ -515,6 +593,10 @@ export default function JobsMapToolDialog({
               styles={DARK_DISPATCH_MAP_STYLES}
               onMapReady={(map) => {
                 mapRef.current = map;
+                if (mapClickRef.current) {
+                  window.google?.maps.event.removeListener(mapClickRef.current);
+                }
+                mapClickRef.current = map.addListener('click', () => setSelection(null));
                 setMapReady(true);
                 paint();
               }}
@@ -524,17 +606,83 @@ export default function JobsMapToolDialog({
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : null}
+            <div className="absolute right-3 top-3 z-20 flex flex-col items-end gap-1.5">
             <Button
               type="button"
               variant="secondary"
               size="sm"
-              className="absolute right-3 top-3 z-20 h-11 cursor-pointer gap-1.5 bg-white/90 text-foreground shadow-sm hover:bg-white"
+              className="h-11 cursor-pointer gap-1.5 bg-white/90 text-foreground shadow-sm hover:bg-white"
               onClick={() => void load()}
               disabled={loading}
             >
               <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
               Refresh
             </Button>
+            <div className="flex gap-1.5">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                title={trafficOn ? 'Hide traffic' : 'Show traffic'}
+                className={cn(
+                  'h-11 w-11 cursor-pointer bg-white/90 p-0 text-foreground shadow-sm hover:bg-white',
+                  trafficOn && 'ring-2 ring-sky-500'
+                )}
+                onClick={() => setTrafficOn((on) => !on)}
+              >
+                <Car className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                title={liveOnly ? 'Showing live GPS only' : 'Showing all technician pins'}
+                className={cn(
+                  'h-11 w-11 cursor-pointer bg-white/90 p-0 text-foreground shadow-sm hover:bg-white',
+                  liveOnly && 'ring-2 ring-teal-600'
+                )}
+                onClick={() => {
+                  setLiveOnly((on) => !on);
+                  forceFitRef.current = true;
+                }}
+              >
+                <Radio className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                title={darkMap ? 'Light map' : 'Dark map'}
+                className="h-11 w-11 cursor-pointer bg-white/90 p-0 text-foreground shadow-sm hover:bg-white"
+                onClick={() => setDarkMap((on) => !on)}
+              >
+                {darkMap ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                title="Fit pins"
+                className="h-11 w-11 cursor-pointer bg-white/90 p-0 text-foreground shadow-sm hover:bg-white"
+                onClick={() => {
+                  forceFitRef.current = true;
+                  if (selection) setSelection(null);
+                  else paint();
+                }}
+              >
+                <LocateFixed className="h-4 w-4" />
+              </Button>
+            </div>
+            </div>
+            <div
+              className={cn(
+                'pointer-events-none absolute bottom-3 left-3 z-20 max-w-[min(100%,16rem)] rounded-lg px-2.5 py-2 text-[11px] leading-5 shadow-sm',
+                darkMap ? 'bg-black/60 text-white/85' : 'bg-white/90 text-foreground'
+              )}
+            >
+              <p>P unassigned · A assigned · F follow-up</p>
+              <p>Photos are technicians · faded = stale GPS</p>
+            </div>
           </div>
 
           <div className="flex max-h-[46dvh] min-h-0 w-full flex-col overflow-y-auto border-t md:order-1 md:max-h-none md:w-[min(100%,22rem)] md:flex-none md:border-r md:border-t-0">
@@ -559,6 +707,20 @@ export default function JobsMapToolDialog({
                 </button>
               ))}
             </div>
+            <div className="border-b px-3 py-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    fitKeyRef.current = '';
+                  }}
+                  placeholder="Search name, job no, or area"
+                  className="h-11 pl-9"
+                />
+              </div>
+            </div>
 
             {selectedJob ? (
               <div className="space-y-3 border-b px-3 py-3">
@@ -567,6 +729,7 @@ export default function JobsMapToolDialog({
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {jobsMapStatusLabel(selectedJob.status)}
+                  {jobsMapDueLabel(selectedJob) ? ` · ${jobsMapDueLabel(selectedJob)}` : ''}
                   {selectedJob.visible_address ? ` · ${selectedJob.visible_address}` : ''}
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -716,7 +879,7 @@ export default function JobsMapToolDialog({
               {visibleJobs.length === 0 && !loading ? (
                 <li className="rounded-xl border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
                   No jobs with map pins
-                  {filter !== 'all' ? ' in this filter' : ''}.
+                  {query.trim() ? ' matching search' : filter !== 'all' ? ' in this filter' : ''}.
                 </li>
               ) : (
                 visibleJobs.map((job) => {
@@ -751,6 +914,7 @@ export default function JobsMapToolDialog({
                           </span>
                           <span className="block truncate text-xs text-muted-foreground">
                             {jobsMapStatusLabel(job.status)}
+                            {jobsMapDueLabel(job) ? ` · ${jobsMapDueLabel(job)}` : ''}
                             {job.visible_address ? ` · ${job.visible_address}` : ''}
                           </span>
                         </span>
