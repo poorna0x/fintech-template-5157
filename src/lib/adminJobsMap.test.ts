@@ -6,6 +6,7 @@ import {
   isJobsMapDueToday,
   jobsMapCameraJobs,
   jobsMapFitPoints,
+  jobsMapReachLabel,
   jobsMapSuggestedZoom,
   jobsMapTechPhotoThumb,
   nearestTechsForJob,
@@ -228,5 +229,14 @@ describe('jobsMap last-known GPS', () => {
     expect(placed).toHaveLength(1);
     expect(placed[0].source).toBe('last');
     expect(placed[0].lat).toBe(12.91);
+  });
+});
+
+describe('jobsMapReachLabel', () => {
+  it('adds the clock time they would reach if they left now', () => {
+    const now = Date.parse('2026-09-20T10:13:00+05:30');
+    const label = jobsMapReachLabel('32 mins', 32 * 60, now);
+    expect(label).toContain('32 mins');
+    expect(label.toLowerCase()).toMatch(/10:45/);
   });
 });

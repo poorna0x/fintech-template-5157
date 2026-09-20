@@ -204,6 +204,7 @@ export type DrivingRoute = {
   path: google.maps.LatLngLiteral[];
   distanceMeters: number;
   durationText: string;
+  durationSeconds: number;
 };
 
 const drivingRouteCache = new Map<string, DrivingRoute | null>();
@@ -295,6 +296,7 @@ export async function fetchDrivingRoute(origin: LatLng, dest: LatLng): Promise<D
     path: collectRoutePath(route),
     distanceMeters: leg.distance?.value ?? 0,
     durationText: leg.duration?.text || '',
+    durationSeconds: leg.duration?.value ?? 0,
   };
   drivingRouteCache.set(key, parsed);
   return parsed;

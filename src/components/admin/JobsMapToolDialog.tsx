@@ -31,6 +31,7 @@ import {
   jobsMapCameraJobs,
   jobsMapDueLabel,
   jobsMapFitPoints,
+  jobsMapReachLabel,
   jobsMapStatusColor,
   jobsMapSuggestedZoom,
   jobsMapStatusLabel,
@@ -115,6 +116,7 @@ type DrawnRoute = {
   path: google.maps.LatLngLiteral[];
   distanceMeters: number;
   durationText: string;
+  durationSeconds: number;
   color: string;
 };
 
@@ -138,6 +140,17 @@ function agoLabel(iso: string | null): string {
   if (mins < 60) return `${mins} min ago`;
   const hours = Math.floor(mins / 60);
   return `${hours}h ago`;
+}
+
+function etaMarkerIcon(label: string): google.maps.Icon {
+  const text = label.replace(/[<>&]/g, '');
+  const width = Math.min(220, Math.max(96, 7.2 * text.length + 28));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="32"><rect x="1" y="1" width="${width - 2}" height="30" rx="15" fill="#111827" stroke="white" stroke-width="2"/><text x="${width / 2}" y="21" text-anchor="middle" fill="white" font-size="12" font-family="system-ui,sans-serif" font-weight="700">${text}</text></svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new google.maps.Size(width, 32),
+    anchor: new google.maps.Point(width / 2, 16),
+  };
 }
 
 function markerIcon(fill: string, label: string, square = false): google.maps.Icon {
@@ -221,7 +234,7 @@ export default function JobsMapToolDialog({
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
-  const routeOverlaysRef = useRef<google.maps.Polyline[]>([]);
+  const routeOverlaysRef = useRef<google.maps.MVCObject[]>([]);
   const trafficRef = useRef<google.maps.TrafficLayer | null>(null);
   const mapClickRef = useRef<google.maps.MapsEventListener | null>(null);
   const fitKeyRef = useRef('');
@@ -343,7 +356,9 @@ export default function JobsMapToolDialog({
   };
 
   const clearRouteOverlays = () => {
-    for (const line of routeOverlaysRef.current) line.setMap(null);
+    for (const overlay of routeOverlaysRef.current) {
+      (overlay as google.maps.Polyline | google.maps.Marker).setMap(null);
+    }
     routeOverlaysRef.current = [];
   };
 
@@ -353,7 +368,8 @@ export default function JobsMapToolDialog({
   const routeCaption = (fromId: string, toId: string) => {
     const route = routeFor(fromId, toId);
     if (route) {
-      return `${formatJobsMapDistance(route.distanceMeters)}${route.durationText ? ` · ${route.durationText}` : ''}`;
+      const reach = jobsMapReachLabel(route.durationText, route.durationSeconds);
+      return `${formatJobsMapDistance(route.distanceMeters)}${reach ? ` · ${reach}` : ''}`;
     }
     return routing ? 'Road…' : 'No road route';
   };
@@ -536,6 +552,7 @@ export default function JobsMapToolDialog({
           path: route.path,
           distanceMeters: route.distanceMeters,
           durationText: route.durationText,
+          durationSeconds: route.durationSeconds,
           color: pair.color,
         } satisfies DrawnRoute;
       })
@@ -573,6 +590,19 @@ export default function JobsMapToolDialog({
         zIndex: 7,
       });
       routeOverlaysRef.current.push(line);
+      const reach = jobsMapReachLabel(route.durationText, route.durationSeconds);
+      if (reach && route.path.length) {
+        const mid = route.path[Math.floor(route.path.length / 2)];
+        const badge = new window.google.maps.Marker({
+          map,
+          position: mid,
+          icon: etaMarkerIcon(reach),
+          title: `Reaches ${reach}`,
+          zIndex: 30,
+          clickable: false,
+        });
+        routeOverlaysRef.current.push(badge);
+      }
       const first = route.path[0];
       const last = route.path[route.path.length - 1];
       if (first) ends.push(first);

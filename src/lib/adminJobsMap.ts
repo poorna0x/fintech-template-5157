@@ -489,6 +489,24 @@ export function formatJobsMapDistance(meters: number): string {
   return formatNearbyDistanceLabel(meters);
 }
 
+/** Clock time the technician would arrive if they left now. */
+export function jobsMapReachAt(durationSeconds: number, now = Date.now()): string {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return '';
+  return new Date(now + durationSeconds * 1000).toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
+  });
+}
+
+export function jobsMapReachLabel(durationText: string, durationSeconds: number, now = Date.now()): string {
+  const clock = jobsMapReachAt(durationSeconds, now);
+  const drive = String(durationText || '').trim();
+  if (drive && clock) return `${drive} · ${clock}`;
+  return drive || clock;
+}
+
 export async function fetchJobsMapLiveRows(): Promise<JobsMapLiveRow[]> {
   const { data, error } = await supabase
     .from('technician_live_locations')
