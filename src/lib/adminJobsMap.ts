@@ -448,8 +448,9 @@ export function jobsForTechnician(jobs: JobsMapJob[], technicianId: string): Job
 
 export type JobsMapLatLng = { lat: number; lng: number };
 
-/** Camera stays on the day’s work, not every follow-up across the city. */
-export const JOBS_MAP_FIT_MAX_KM = 18;
+/** Drop only another-city outliers (Mysore), not jobs across Bengaluru. */
+export const JOBS_MAP_FIT_MAX_KM = 45;
+export const JOBS_MAP_CITY_SPAN_KM = 80;
 export const JOBS_MAP_MIN_ZOOM = 12;
 export const JOBS_MAP_MAX_ZOOM = 16;
 
@@ -468,7 +469,7 @@ export function jobsMapCameraJobs(jobs: JobsMapJob[], filter: JobsMapFilter): Jo
 }
 
 /**
- * Drop far outliers so zoom matches the main cluster (HSR jobs, not one pin in Mysore).
+ * Drop far outliers so zoom matches the day’s work (HSR + Whitefield, not Mysore).
  * Jobs should be listed before technicians so a lone far tech is dropped first.
  */
 export function jobsMapFitPoints(
@@ -487,7 +488,7 @@ export function jobsMapFitPoints(
   if (unique.length <= 1) return unique;
   if (unique.length === 2) {
     const span = haversineKm(unique[0].lat, unique[0].lng, unique[1].lat, unique[1].lng);
-    return span > maxSpreadKm ? unique.slice(0, 1) : unique;
+    return span > JOBS_MAP_CITY_SPAN_KM ? unique.slice(0, 1) : unique;
   }
   const medLat = medianNumber(unique.map((point) => point.lat));
   const medLng = medianNumber(unique.map((point) => point.lng));
@@ -498,9 +499,9 @@ export function jobsMapFitPoints(
     }))
     .sort((a, b) => a.d - b.d);
   const p75 = ranked[Math.floor((ranked.length - 1) * 0.75)]?.d ?? 0;
-  const cutoff = Math.min(maxSpreadKm, Math.max(5, p75 * 1.6));
-  const kept = ranked.filter((point) => point.d <= cutoff);
-  return (kept.length ? kept : ranked.slice(0, Math.max(2, Math.ceil(ranked.length * 0.7)))).map(
+  const cutoff = Math.max(maxSpreadKm, p75 * 2.4, 12);
+  const kept = ranked.filter((point) => point.d <= cutoff && point.d <= JOBS_MAP_CITY_SPAN_KM);
+  return (kept.length ? kept : ranked.slice(0, Math.max(2, Math.ceil(ranked.length * 0.85)))).map(
     ({ lat, lng }) => ({ lat, lng })
   );
 }

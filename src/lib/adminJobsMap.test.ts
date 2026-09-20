@@ -191,6 +191,14 @@ describe('jobsMap camera fit', () => {
     expect(jobsMapSuggestedZoom(fitted)).toBeGreaterThanOrEqual(14);
   });
 
+  it('keeps jobs on opposite sides of Bengaluru in the same frame', () => {
+    const fitted = jobsMapFitPoints([
+      { lat: 12.91, lng: 77.64 },
+      { lat: 13.04, lng: 77.76 },
+    ]);
+    expect(fitted).toHaveLength(2);
+  });
+
   it('keeps only nearby or assigned technicians for the camera', () => {
     const pin = job({ id: 'j1', lat: 12.91, lng: 77.64, assigned_technician_id: 'near' });
     const kept = techsNearJobs(

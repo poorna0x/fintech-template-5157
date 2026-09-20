@@ -35,6 +35,8 @@ interface DraggableMapProps {
   styles?: google.maps.MapTypeStyle[];
   /** When false, parent owns pan/zoom (Jobs map fitBounds). Default true. */
   syncCamera?: boolean;
+  /** Fired after the canvas is resized (dialog layout). Parent can refit bounds. */
+  onLayout?: () => void;
   onMapReady?: (map: google.maps.Map | null) => void;
   /** Center-pin mode: fired when the user starts panning, before the map settles. */
   onMoveStart?: () => void;
@@ -89,6 +91,7 @@ const DraggableMap = ({
   gestureHandling,
   styles,
   syncCamera = true,
+  onLayout,
 }: DraggableMapProps) => {
   const mapElRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -107,6 +110,7 @@ const DraggableMap = ({
   const gestureHandlingRef = useRef(gestureHandling);
   const stylesRef = useRef(styles);
   const syncCameraRef = useRef(syncCamera);
+  const onLayoutRef = useRef(onLayout);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [lifting, setLifting] = useState(false);
   const [mapsAuthError, setMapsAuthError] = useState(didGoogleMapsAuthFail);
@@ -120,6 +124,7 @@ const DraggableMap = ({
   gestureHandlingRef.current = gestureHandling;
   stylesRef.current = styles;
   syncCameraRef.current = syncCamera;
+  onLayoutRef.current = onLayout;
   onMapReadyRef.current = onMapReady;
   onMoveStartRef.current = onMoveStart;
 
@@ -276,6 +281,7 @@ const DraggableMap = ({
           } catch {
             /* ignore */
           }
+          onLayoutRef.current?.();
         });
         layoutObserver.observe(el);
       }
@@ -287,6 +293,7 @@ const DraggableMap = ({
           /* ignore */
         }
         if (syncCameraRef.current) mapRef.current.setCenter(centerRef.current);
+        else onLayoutRef.current?.();
       }, 80);
       return true;
     };

@@ -19,6 +19,7 @@ import { DARK_DISPATCH_BG, DARK_DISPATCH_MAP_STYLES } from '@/lib/darkMapStyle';
 import { fetchDrivingRoute } from '@/lib/googleMapsDistance';
 import { openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
+  JOBS_MAP_MAX_ZOOM,
   buildJobsMapTechs,
   fetchJobsMapLastLocations,
   fetchJobsMapLiveRows,
@@ -55,32 +56,79 @@ import {
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
 
+function jobsMapHasSize(map: google.maps.Map): boolean {
+  const el = map.getDiv?.();
+  return Boolean(el && el.clientWidth >= 40 && el.clientHeight >= 40);
+}
+
+function jobsMapFitPadding(map: google.maps.Map): google.maps.Padding {
+  const el = map.getDiv?.();
+  const width = el?.clientWidth || 400;
+  const height = el?.clientHeight || 320;
+  return {
+    top: Math.max(56, Math.min(100, Math.round(height * 0.14))),
+    right: Math.max(56, Math.min(96, Math.round(width * 0.16))),
+    bottom: Math.max(48, Math.min(80, Math.round(height * 0.14))),
+    left: Math.max(16, Math.min(32, Math.round(width * 0.06))),
+  };
+}
+
 function applyJobsMapCamera(
   map: google.maps.Map,
   points: Array<{ lat: number; lng: number }>,
   idleRef: { current: google.maps.MapsEventListener | null }
-) {
-  if (!points.length || !window.google?.maps) return;
+): boolean {
+  if (!points.length || !window.google?.maps) return false;
+  if (!jobsMapHasSize(map)) return false;
   if (idleRef.current) {
-    window.google.maps.event.removeListener(idleRef.current);
+    try {
+      window.google.maps.event.removeListener(idleRef.current);
+    } catch {
+      /* ignore */
+    }
     idleRef.current = null;
   }
   const wanted = jobsMapSuggestedZoom(points);
   if (points.length === 1) {
     map.setCenter(points[0]);
     map.setZoom(wanted);
-    return;
+    return true;
   }
   const bounds = new window.google.maps.LatLngBounds();
   for (const point of points) bounds.extend(point);
-  map.fitBounds(bounds, { top: 88, right: 56, bottom: 52, left: 12 });
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  if (Math.abs(ne.lat() - sw.lat()) < 1e-5 && Math.abs(ne.lng() - sw.lng()) < 1e-5) {
+    map.setCenter(points[0]);
+    map.setZoom(wanted);
+    return true;
+  }
+  map.fitBounds(bounds, jobsMapFitPadding(map));
   idleRef.current = window.google.maps.event.addListenerOnce(map, 'idle', () => {
     idleRef.current = null;
+    if (!jobsMapHasSize(map)) return;
     const zoom = map.getZoom();
     if (zoom == null) return;
-    if (zoom < wanted) map.setZoom(wanted);
-    else if (zoom > 16) map.setZoom(16);
+    // Never zoom in after fitBounds — that clips pins. Only stop on a building.
+    if (zoom > JOBS_MAP_MAX_ZOOM) map.setZoom(JOBS_MAP_MAX_ZOOM);
+    // Zero-size canvas often lands at world zoom; snap to the cluster instead.
+    if (zoom < 10) {
+      map.setCenter(bounds.getCenter());
+      map.setZoom(wanted);
+    }
   });
+  return true;
+}
+
+function scheduleJobsMapCamera(
+  map: google.maps.Map,
+  points: Array<{ lat: number; lng: number }>,
+  idleRef: { current: google.maps.MapsEventListener | null },
+  attempt = 0
+) {
+  if (applyJobsMapCamera(map, points, idleRef)) return;
+  if (attempt >= 14) return;
+  window.setTimeout(() => scheduleJobsMapCamera(map, points, idleRef, attempt + 1), 90);
 }
 const FILTERS: Array<{ id: JobsMapFilter; label: string }> = [
   { id: 'ongoing', label: 'Ongoing' },
@@ -247,6 +295,8 @@ export default function JobsMapToolDialog({
   const fitKeyRef = useRef('');
   const forceFitRef = useRef(false);
   const cameraIdleRef = useRef<google.maps.MapsEventListener | null>(null);
+  const layoutTimerRef = useRef<number | null>(null);
+  const prevSelRef = useRef<Selection>(null);
   const paintRef = useRef<() => void>(() => undefined);
   const jobsRef = useRef(jobs);
   const techsRef = useRef<JobsMapTech[]>([]);
@@ -338,7 +388,13 @@ export default function JobsMapToolDialog({
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      if (layoutTimerRef.current) {
+        window.clearTimeout(layoutTimerRef.current);
+        layoutTimerRef.current = null;
+      }
+      return;
+    }
     setFilter('ongoing');
     setQuery('');
     setSelection(null);
@@ -467,12 +523,20 @@ export default function JobsMapToolDialog({
       );
     }
 
-    const fitKey = `${fitPoints.length}:${cameraJobs.length}:${filterRef.current}:${queryRef.current}:${liveOnlyRef.current}`;
+    const fitKey = [
+      filterRef.current,
+      queryRef.current,
+      liveOnlyRef.current ? '1' : '0',
+      cameraJobs.map((job) => `${job.id}:${job.lat.toFixed(3)},${job.lng.toFixed(3)}`).join('|'),
+      fitTechs.map((tech) => tech.id).join('|'),
+    ].join('~');
+    if (prevSelRef.current && !sel) forceFitRef.current = true;
+    prevSelRef.current = sel;
     if (fitPoints.length && (forceFitRef.current || (fitKeyRef.current !== fitKey && !sel))) {
       forceFitRef.current = false;
       fitKeyRef.current = fitKey;
       try {
-        applyJobsMapCamera(map, fitPoints, cameraIdleRef);
+        scheduleJobsMapCamera(map, fitPoints, cameraIdleRef);
       } catch {
         /* ignore */
       }
@@ -638,7 +702,7 @@ export default function JobsMapToolDialog({
       if (last) ends.push(last);
     }
     try {
-      applyJobsMapCamera(map, jobsMapFitPoints(ends), cameraIdleRef);
+      scheduleJobsMapCamera(map, jobsMapFitPoints(ends), cameraIdleRef);
     } catch {
       /* ignore */
     }
@@ -726,6 +790,15 @@ export default function JobsMapToolDialog({
               streetViewControl={false}
               fullscreenControl={false}
               styles={DARK_DISPATCH_MAP_STYLES}
+              onLayout={() => {
+                if (layoutTimerRef.current) window.clearTimeout(layoutTimerRef.current);
+                layoutTimerRef.current = window.setTimeout(() => {
+                  layoutTimerRef.current = null;
+                  if (!mapRef.current || selectionRef.current) return;
+                  forceFitRef.current = true;
+                  paintRef.current();
+                }, 180);
+              }}
               onMapReady={(map) => {
                 mapRef.current = map;
                 if (mapClickRef.current) {
@@ -748,7 +821,12 @@ export default function JobsMapToolDialog({
                   if (!mapRef.current) return;
                   forceFitRef.current = true;
                   paintRef.current();
-                }, 160);
+                }, 280);
+                window.setTimeout(() => {
+                  if (!mapRef.current) return;
+                  forceFitRef.current = true;
+                  paintRef.current();
+                }, 700);
               }}
             />
             {loading ? (
