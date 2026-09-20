@@ -78,13 +78,14 @@ function applyJobsMapCamera(
   });
 }
 const FILTERS: Array<{ id: JobsMapFilter; label: string }> = [
-  { id: 'all', label: 'All' },
+  { id: 'ongoing', label: 'Ongoing' },
   { id: 'followup', label: 'Follow-up' },
   { id: 'due-today', label: 'Due today' },
   { id: 'unassigned', label: 'Unassigned' },
   { id: 'ASSIGNED', label: 'Assigned' },
   { id: 'EN_ROUTE', label: 'En route' },
   { id: 'IN_PROGRESS', label: 'In progress' },
+  { id: 'all', label: 'All' },
 ];
 
 function readJobsMapPref(key: string, fallback: boolean): boolean {
@@ -207,7 +208,7 @@ export default function JobsMapToolDialog({
   const [missingPins, setMissingPins] = useState(0);
   const [liveRows, setLiveRows] = useState<JobsMapLiveRow[]>([]);
   const [lastKnown, setLastKnown] = useState<JobsMapLastLoc[]>([]);
-  const [filter, setFilter] = useState<JobsMapFilter>('all');
+  const [filter, setFilter] = useState<JobsMapFilter>('ongoing');
   const [selection, setSelection] = useState<Selection>(null);
   const [pingingId, setPingingId] = useState<string | null>(null);
   const [routes, setRoutes] = useState<DrawnRoute[]>([]);
@@ -302,7 +303,7 @@ export default function JobsMapToolDialog({
 
   useEffect(() => {
     if (!open) return;
-    setFilter('all');
+    setFilter('ongoing');
     setQuery('');
     setSelection(null);
     fitKeyRef.current = '';

@@ -101,6 +101,7 @@ describe('adminJobsMap', () => {
       job({ id: 'c', lat: 12.92, lng: 77.62, status: 'RESCHEDULED' }),
     ];
     expect(filterJobsMapJobs(rows, 'followup').map((row) => row.id)).toEqual(['b', 'c']);
+    expect(filterJobsMapJobs(rows, 'ongoing').map((row) => row.id)).toEqual(['a']);
     expect(filterJobsMapJobs(rows, 'all').map((row) => row.id)).toEqual(['a', 'b', 'c']);
   });
 

@@ -15,7 +15,7 @@ export const JOBS_MAP_ONGOING_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN
 export const JOBS_MAP_FOLLOWUP_STATUSES = ['FOLLOW_UP', 'RESCHEDULED'] as const;
 export const JOBS_MAP_STATUSES = [...JOBS_MAP_ONGOING_STATUSES, ...JOBS_MAP_FOLLOWUP_STATUSES] as const;
 export type JobsMapStatus = (typeof JOBS_MAP_STATUSES)[number];
-export type JobsMapFilter = 'all' | 'unassigned' | 'followup' | 'due-today' | JobsMapStatus;
+export type JobsMapFilter = 'all' | 'ongoing' | 'unassigned' | 'followup' | 'due-today' | JobsMapStatus;
 
 export const JOBS_MAP_FRESH_MS = 15 * 60 * 1000;
 
@@ -350,6 +350,11 @@ function formatJobsMapDay(ymd: string): string {
 
 export function filterJobsMapJobs(jobs: JobsMapJob[], filter: JobsMapFilter): JobsMapJob[] {
   if (filter === 'all') return jobs;
+  if (filter === 'ongoing') {
+    return jobs.filter((job) =>
+      (JOBS_MAP_ONGOING_STATUSES as readonly string[]).includes(String(job.status || '').toUpperCase())
+    );
+  }
   if (filter === 'followup') return jobs.filter((job) => isJobsMapFollowUpStatus(job.status));
   if (filter === 'due-today') return jobs.filter((job) => isJobsMapDueToday(job));
   if (filter === 'unassigned') {
