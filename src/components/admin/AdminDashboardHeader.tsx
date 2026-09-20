@@ -86,10 +86,10 @@ function AdminSearchField({
   };
 
   return (
-    <div className="relative min-w-0 flex-1">
+    <div className="relative flex-1 min-w-[12rem]">
       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
       <Input
-        placeholder="Search ID, name, or phone"
+        placeholder="Search by customer ID, name, phone, alternate number, or email..."
         value={searchQuery}
         onChange={(e) => onSearchQueryChange(e.target.value)}
         onPaste={onSearchPaste}
@@ -124,69 +124,79 @@ export function AdminDashboardHeader({
   const whatsAppChatCount = useWhatsAppChatCount();
   const hasWhatsAppUnread = whatsAppChatCount > 0;
 
-  return (
-    <div className="mb-4 sm:mb-6">
-      <div className="flex flex-col gap-3">
-        <div className="flex w-full min-w-0 items-center gap-2" data-admin-search>
-          <AdminSearchField
-            searchQuery={searchQuery}
-            onSearchQueryChange={onSearchQueryChange}
-            onSearchPaste={onSearchPaste}
-            onSearchKeyPress={onSearchKeyPress}
-            inputClassName="pl-10 h-11 bg-white border-gray-400 focus:border-blue-500 focus:ring-blue-500 text-sm"
-          />
-          <Button
-            onClick={onSearch}
-            disabled={isSearching || !searchQuery.trim()}
-            size="sm"
-            className="h-11 shrink-0 bg-blue-600 hover:bg-blue-700 px-3 text-white"
-          >
-            {isSearching ? (
-              <div className="flex items-center gap-1.5">
-                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                <span className="sr-only">Searching</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1">
-                <Search className="h-4 w-4 shrink-0" />
-                <span className="text-sm">Search</span>
-              </div>
-            )}
-          </Button>
-          {searchQuery ? (
-            <Button onClick={onClearSearch} variant="outline" size="sm" className="h-11 px-2.5 shrink-0" title="Clear">
-              <X className="h-4 w-4" />
-            </Button>
-          ) : null}
-        </div>
+  const trimSearchOnBlur: React.FocusEventHandler<HTMLInputElement> = (e) => {
+    const trimmed = e.target.value.trim();
+    if (trimmed !== e.target.value) {
+      onSearchQueryChange(trimmed);
+    }
+  };
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:gap-2">
+  return (
+    <>
+      <div className="mb-6 sm:mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div className="hidden sm:flex flex-1 max-w-2xl min-w-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full" data-admin-search>
+              <AdminSearchField
+                searchQuery={searchQuery}
+                onSearchQueryChange={onSearchQueryChange}
+                onSearchPaste={onSearchPaste}
+                onSearchKeyPress={onSearchKeyPress}
+                inputClassName="pl-10 h-9 bg-white border-gray-400 focus:border-blue-500 focus:ring-blue-500 text-sm"
+              />
+              <Button
+                onClick={onSearch}
+                disabled={isSearching || !searchQuery.trim()}
+                size="sm"
+                className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-2.5 sm:px-3"
+              >
+                {isSearching ? (
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span className="hidden md:inline text-xs sm:text-sm">Searching...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <Search className="w-4 h-4 shrink-0" />
+                    <span className="hidden sm:inline text-sm">Search</span>
+                  </div>
+                )}
+              </Button>
+              {searchQuery && (
+                <Button onClick={onClearSearch} variant="outline" size="sm" className="h-9 px-2.5 shrink-0" title="Clear">
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 sm:flex-wrap">
+            <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2 w-full sm:w-auto">
               <Button
                 variant="outline"
-                className="flex h-11 items-center justify-center gap-2 px-2 sm:px-3"
+                className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
                 title="Settings — ⌘K searches settings from this page"
                 onClick={() => {
                   hapticTap();
                   navigate('/admin/settings');
                 }}
               >
-                <Settings className="h-4 w-4 shrink-0" />
-                <span className="truncate text-xs sm:text-sm">Settings</span>
+                <Settings className="w-4 h-4" />
+                <span className="hidden sm:inline">Settings</span>
               </Button>
               <DropdownMenu open={toolsMenuOpen} onOpenChange={onToolsMenuOpenChange}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
-                    className="relative flex h-11 items-center justify-center gap-2 px-2 sm:px-3"
+                    className="relative flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
                     title={
                       hasWhatsAppUnread
                         ? `${whatsAppChatCount} unread WhatsApp chat${whatsAppChatCount === 1 ? '' : 's'}`
                         : 'Tools'
                     }
                   >
-                    <Wrench className="h-4 w-4 shrink-0" />
-                    <span className="truncate text-xs sm:text-sm">Tools</span>
+                    <Wrench className="w-4 h-4" />
+                    <span className="hidden sm:inline">Tools</span>
                     {hasWhatsAppUnread ? (
                       <WhatsAppUnreadBadge
                         count={whatsAppChatCount}
@@ -349,58 +359,93 @@ export function AdminDashboardHeader({
               <Button
                 variant={currentView === 'payments' ? 'default' : 'outline'}
                 onClick={() => onViewChange('payments')}
-                className="flex h-11 items-center justify-center gap-2 px-2 sm:px-3"
+                className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
                 title="Payments"
               >
-                <DollarSign className="h-4 w-4 shrink-0" />
-                <span className="truncate text-xs sm:text-sm">Payments</span>
+                <DollarSign className="w-4 h-4" />
+                <span className="hidden sm:inline">Payments</span>
               </Button>
               ) : null}
               {!isManager ? (
               <Button
                 variant={currentView === 'billing' ? 'default' : 'outline'}
                 onClick={() => onViewChange('billing')}
-                className="flex h-11 items-center justify-center gap-2 px-2 sm:px-3"
+                className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
                 title="Billing"
               >
-                <Receipt className="h-4 w-4 shrink-0" />
-                <span className="truncate text-xs sm:text-sm">Billing</span>
+                <Receipt className="w-4 h-4" />
+                <span className="hidden sm:inline">Billing</span>
               </Button>
               ) : null}
               {!isManager ? (
               <Button
                 variant={currentView === 'analytics' ? 'default' : 'outline'}
                 onClick={() => onViewChange('analytics')}
-                className="flex h-11 items-center justify-center gap-2 px-2 sm:px-3"
+                className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
                 title="Analytics"
               >
-                <BarChart3 className="h-4 w-4 shrink-0" />
-                <span className="truncate text-xs sm:text-sm">Analytics</span>
+                <BarChart3 className="w-4 h-4" />
+                <span className="hidden sm:inline">Analytics</span>
               </Button>
               ) : null}
               {!isManager ? (
               <Button
                 variant={currentView === 'inventory' ? 'default' : 'outline'}
                 onClick={() => onViewChange('inventory')}
-                className="flex h-11 items-center justify-center gap-2 px-2 sm:px-3"
+                className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
                 title="Inventory"
               >
-                <ShoppingCart className="h-4 w-4 shrink-0" />
-                <span className="truncate text-xs sm:text-sm">Inventory</span>
+                <ShoppingCart className="w-4 h-4" />
+                <span className="hidden sm:inline">Inventory</span>
               </Button>
               ) : null}
             </div>
 
-            <Button
-              variant="brand"
-              onClick={onAddCustomer}
-              className="h-11 w-full px-4 text-sm sm:ml-auto sm:w-auto sm:text-base"
-            >
-              <Users className="mr-2 h-4 w-4 shrink-0" />
-              Add Customer
+            <Button variant="brand" onClick={onAddCustomer} className="w-full sm:w-auto px-4 py-2 text-sm sm:text-base">
+              <Users className="w-4 h-4 mr-2" />
+              <span className="hidden sm:inline">Add Customer</span>
+              <span className="sm:hidden">Add</span>
             </Button>
+          </div>
         </div>
       </div>
-    </div>
+
+      <div className="mb-4 sm:mb-6 sm:hidden" data-admin-search>
+        <div className="flex flex-wrap gap-1.5 w-full max-w-2xl items-center">
+          <div className="relative flex-1 min-w-0 basis-[min(100%,12rem)]">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
+            <Input
+              placeholder="Search by customer ID, name, phone, alternate number, or email..."
+              value={searchQuery}
+              onChange={(e) => onSearchQueryChange(e.target.value)}
+              onPaste={onSearchPaste}
+              onTouchEnd={focusAndroidInputWithoutScroll}
+              onBlur={trimSearchOnBlur}
+              onKeyPress={onSearchKeyPress}
+              className="pl-10 h-9 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
+            />
+          </div>
+          <Button
+            onClick={onSearch}
+            disabled={isSearching || !searchQuery.trim()}
+            size="sm"
+            className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-2.5"
+          >
+            {isSearching ? (
+              <div className="flex items-center gap-1.5">
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <Search className="w-4 h-4" />
+            )}
+          </Button>
+          {searchQuery && (
+            <Button onClick={onClearSearch} variant="outline" size="sm" className="h-9 px-2.5 shrink-0" title="Clear">
+              <X className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
