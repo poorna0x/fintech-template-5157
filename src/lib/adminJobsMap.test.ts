@@ -46,6 +46,24 @@ describe('adminJobsMap', () => {
     expect(missing).toBe(1);
   });
 
+  it('keeps follow-up jobs that have a pin', () => {
+    const { jobs } = parseJobsMapJobs([
+      {
+        id: 'fu',
+        status: 'FOLLOW_UP',
+        service_location: { latitude: 12.91, longitude: 77.64 },
+        customer: { full_name: 'Ravi' },
+      },
+      {
+        id: 'rs',
+        status: 'RESCHEDULED',
+        service_location: { latitude: 12.92, longitude: 77.65 },
+        customer: { full_name: 'Meera' },
+      },
+    ]);
+    expect(jobs.map((row) => row.id)).toEqual(['fu', 'rs']);
+  });
+
   it('lists the assigned technician first, then the closest others', () => {
     const pin = job({ id: 'j1', lat: 12.91, lng: 77.64, assigned_technician_id: 'far' });
     const ranked = nearestTechsForJob(pin, [
@@ -64,6 +82,16 @@ describe('adminJobsMap', () => {
     ];
     expect(filterJobsMapJobs(rows, 'unassigned').map((row) => row.id)).toEqual(['a']);
     expect(filterJobsMapJobs(rows, 'ASSIGNED').map((row) => row.id)).toEqual(['b']);
+  });
+
+  it('filters follow-up jobs', () => {
+    const rows = [
+      job({ id: 'a', lat: 12.9, lng: 77.6, status: 'PENDING' }),
+      job({ id: 'b', lat: 12.91, lng: 77.61, status: 'FOLLOW_UP' }),
+      job({ id: 'c', lat: 12.92, lng: 77.62, status: 'RESCHEDULED' }),
+    ];
+    expect(filterJobsMapJobs(rows, 'followup').map((row) => row.id)).toEqual(['b', 'c']);
+    expect(filterJobsMapJobs(rows, 'all').map((row) => row.id)).toEqual(['a', 'b', 'c']);
   });
 });
 

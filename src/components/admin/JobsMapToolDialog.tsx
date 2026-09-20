@@ -23,6 +23,7 @@ import {
   filterJobsMapJobs,
   formatJobsMapDistance,
   isJobsMapFixFresh,
+  isJobsMapFollowUpStatus,
   jobsForTechnician,
   jobsMapStatusColor,
   jobsMapStatusLabel,
@@ -40,6 +41,7 @@ import {
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
 const FILTERS: Array<{ id: JobsMapFilter; label: string }> = [
   { id: 'all', label: 'All' },
+  { id: 'followup', label: 'Follow-up' },
   { id: 'unassigned', label: 'Unassigned' },
   { id: 'ASSIGNED', label: 'Assigned' },
   { id: 'EN_ROUTE', label: 'En route' },
@@ -65,6 +67,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   technicians: Technician[];
   initialJobs?: unknown[];
+  initialFollowUpJobs?: unknown[];
   onAssignJob?: (jobId: string) => void;
 };
 
@@ -138,6 +141,7 @@ export default function JobsMapToolDialog({
   onOpenChange,
   technicians,
   initialJobs,
+  initialFollowUpJobs,
   onAssignJob,
 }: Props) {
   const [loading, setLoading] = useState(false);
@@ -172,23 +176,33 @@ export default function JobsMapToolDialog({
     ? nearestTechsForJob(selectedJob, techs).filter((tech) => tech.isAssigned || tech.distance_m <= 40_000)
     : [];
   const techJobs = selectedTech ? jobsForTechnician(jobs, selectedTech.id) : [];
+  const followupCount = jobs.filter((job) => isJobsMapFollowUpStatus(job.status)).length;
+  const ongoingCount = jobs.length - followupCount;
   const unassignedCount = jobs.filter((job) => job.status === 'PENDING' || !job.assigned_technician_id).length;
   const liveCount = techs.filter((tech) => tech.source === 'live' && isJobsMapFixFresh(tech.updatedAt)).length;
 
   const initialJobsRef = useRef(initialJobs);
   initialJobsRef.current = initialJobs;
+  const initialFollowUpJobsRef = useRef(initialFollowUpJobs);
+  initialFollowUpJobsRef.current = initialFollowUpJobs;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const fromDash = parseJobsMapJobs(initialJobsRef.current || []);
-      const [live, fetched] =
-        fromDash.jobs.length > 0
-          ? [await fetchJobsMapLiveRows(), { jobs: fromDash.jobs, missing: fromDash.missing, error: null }]
-          : await Promise.all([fetchJobsMapLiveRows(), fetchOngoingJobsForMap()]);
-      if (fetched.error) toast.error(fetched.error);
-      setJobs(fetched.jobs);
-      setMissingPins(fetched.missing);
+      const cached = parseJobsMapJobs([
+        ...(initialJobsRef.current || []),
+        ...(initialFollowUpJobsRef.current || []),
+      ]);
+      if (cached.jobs.length) {
+        setJobs(cached.jobs);
+        setMissingPins(cached.missing);
+      }
+      const [live, fetched] = await Promise.all([fetchJobsMapLiveRows(), fetchOngoingJobsForMap()]);
+      if (fetched.error && !fetched.jobs.length && !cached.jobs.length) toast.error(fetched.error);
+      if (fetched.jobs.length || !cached.jobs.length) {
+        setJobs(fetched.jobs);
+        setMissingPins(fetched.missing);
+      }
       setLiveRows(live);
     } finally {
       setLoading(false);
@@ -479,7 +493,8 @@ export default function JobsMapToolDialog({
             Jobs map
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
-            {jobs.length} ongoing with pins
+            {ongoingCount} ongoing with pins
+            {followupCount ? ` · ${followupCount} follow-up` : ''}
             {unassignedCount ? ` · ${unassignedCount} unassigned` : ''}
             {liveCount ? ` · ${liveCount} techs live` : ` · ${techs.length} tech pins`}
             {missingPins ? ` · ${missingPins} jobs have no map pin` : ''}
@@ -699,7 +714,7 @@ export default function JobsMapToolDialog({
             <ul className="space-y-1 px-3 py-2 pb-8">
               {visibleJobs.length === 0 && !loading ? (
                 <li className="rounded-xl border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                  No ongoing jobs with map pins
+                  No jobs with map pins
                   {filter !== 'all' ? ' in this filter' : ''}.
                 </li>
               ) : (

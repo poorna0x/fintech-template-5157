@@ -11,9 +11,11 @@ import { haversineKm, readLocationLatLng } from '@/lib/maps';
 import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 import type { Technician } from '@/types';
 
-export const JOBS_MAP_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'] as const;
+export const JOBS_MAP_ONGOING_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'] as const;
+export const JOBS_MAP_FOLLOWUP_STATUSES = ['FOLLOW_UP', 'RESCHEDULED'] as const;
+export const JOBS_MAP_STATUSES = [...JOBS_MAP_ONGOING_STATUSES, ...JOBS_MAP_FOLLOWUP_STATUSES] as const;
 export type JobsMapStatus = (typeof JOBS_MAP_STATUSES)[number];
-export type JobsMapFilter = 'all' | 'unassigned' | JobsMapStatus;
+export type JobsMapFilter = 'all' | 'unassigned' | 'followup' | JobsMapStatus;
 
 export const JOBS_MAP_FRESH_MS = 15 * 60 * 1000;
 
@@ -67,12 +69,18 @@ export function isJobsMapStatus(value: string): value is JobsMapStatus {
   return (JOBS_MAP_STATUSES as readonly string[]).includes(value);
 }
 
+export function isJobsMapFollowUpStatus(value: string): boolean {
+  return (JOBS_MAP_FOLLOWUP_STATUSES as readonly string[]).includes(String(value || '').toUpperCase());
+}
+
 export function jobsMapStatusLabel(status: string): string {
   const value = String(status || '').toUpperCase();
   if (value === 'IN_PROGRESS') return 'In progress';
   if (value === 'EN_ROUTE') return 'En route';
   if (value === 'ASSIGNED') return 'Assigned';
   if (value === 'PENDING') return 'Unassigned';
+  if (value === 'FOLLOW_UP') return 'Follow-up';
+  if (value === 'RESCHEDULED') return 'Rescheduled';
   return value || 'Job';
 }
 
@@ -81,6 +89,8 @@ export function jobsMapStatusColor(status: string): string {
   if (value === 'IN_PROGRESS') return '#059669';
   if (value === 'EN_ROUTE') return '#d97706';
   if (value === 'ASSIGNED') return '#2563eb';
+  if (value === 'FOLLOW_UP') return '#7c3aed';
+  if (value === 'RESCHEDULED') return '#a855f7';
   return '#64748b';
 }
 
@@ -89,6 +99,8 @@ export function jobsMapStatusShort(status: string): string {
   if (value === 'IN_PROGRESS') return 'IP';
   if (value === 'EN_ROUTE') return 'ER';
   if (value === 'ASSIGNED') return 'A';
+  if (value === 'FOLLOW_UP') return 'F';
+  if (value === 'RESCHEDULED') return 'R';
   return 'P';
 }
 
@@ -142,13 +154,19 @@ export function parseJobsMapJob(row: unknown): JobsMapJob | null {
 
 export function parseJobsMapJobs(rows: unknown[]): { jobs: JobsMapJob[]; missing: number } {
   const jobs: JobsMapJob[] = [];
+  const seen = new Set<string>();
   let missing = 0;
   for (const row of rows) {
     const status = String(asRecord(row).status || '').toUpperCase();
     if (status && !isJobsMapStatus(status)) continue;
     const parsed = parseJobsMapJob(row);
-    if (parsed) jobs.push(parsed);
-    else missing += 1;
+    if (!parsed) {
+      missing += 1;
+      continue;
+    }
+    if (seen.has(parsed.id)) continue;
+    seen.add(parsed.id);
+    jobs.push(parsed);
   }
   return { jobs, missing };
 }
@@ -244,6 +262,7 @@ export function buildJobsMapTechs(
 
 export function filterJobsMapJobs(jobs: JobsMapJob[], filter: JobsMapFilter): JobsMapJob[] {
   if (filter === 'all') return jobs;
+  if (filter === 'followup') return jobs.filter((job) => isJobsMapFollowUpStatus(job.status));
   if (filter === 'unassigned') {
     return jobs.filter((job) => job.status === 'PENDING' || !job.assigned_technician_id);
   }
@@ -300,16 +319,40 @@ export async function fetchJobsMapLiveRows(): Promise<JobsMapLiveRow[]> {
   return (data || []) as JobsMapLiveRow[];
 }
 
-export async function fetchOngoingJobsForMap(): Promise<{ jobs: JobsMapJob[]; missing: number; error: string | null }> {
-  const { data, error } = await supabase
-    .from('jobs')
-    .select(JOB_SELECT)
-    .in('status', [...JOBS_MAP_STATUSES])
-    .order('created_at', { ascending: false })
-    .limit(100);
-  if (error) {
-    return { jobs: [], missing: 0, error: error.message || 'Could not load jobs' };
+function mergeJobsMapRows(rows: unknown[]): { jobs: JobsMapJob[]; missing: number } {
+  const seen = new Set<string>();
+  const jobs: JobsMapJob[] = [];
+  const parsed = parseJobsMapJobs(rows);
+  for (const job of parsed.jobs) {
+    if (seen.has(job.id)) continue;
+    seen.add(job.id);
+    jobs.push(job);
   }
-  const parsed = parseJobsMapJobs(data || []);
-  return { ...parsed, error: null };
+  return { jobs, missing: parsed.missing };
+}
+
+export async function fetchOngoingJobsForMap(): Promise<{ jobs: JobsMapJob[]; missing: number; error: string | null }> {
+  const [ongoing, followup] = await Promise.all([
+    supabase
+      .from('jobs')
+      .select(JOB_SELECT)
+      .in('status', [...JOBS_MAP_ONGOING_STATUSES])
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('jobs')
+      .select(JOB_SELECT)
+      .in('status', [...JOBS_MAP_FOLLOWUP_STATUSES])
+      .order('follow_up_date', { ascending: true })
+      .limit(200),
+  ]);
+  if (ongoing.error && followup.error) {
+    return {
+      jobs: [],
+      missing: 0,
+      error: ongoing.error.message || followup.error.message || 'Could not load jobs',
+    };
+  }
+  const parsed = mergeJobsMapRows([...(ongoing.data || []), ...(followup.data || [])]);
+  return { ...parsed, error: ongoing.error?.message || followup.error?.message || null };
 }

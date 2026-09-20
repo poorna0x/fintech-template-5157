@@ -8259,11 +8259,12 @@ const AdminDashboard = () => {
         onOpenChange={(open) => handleAdminToolOpenChange('jobs-map', open)}
         technicians={technicians}
         initialJobs={jobs}
+        initialFollowUpJobs={allFollowUpJobs}
         onAssignJob={(jobId) => {
-          const job = jobs.find((row) => row.id === jobId);
+          const job = jobs.find((row) => row.id === jobId) || allFollowUpJobs.find((row) => row.id === jobId);
           closeAdminTool();
           if (job) handleAssignJob(job);
-          else toast.error('Open Ongoing jobs first, then assign from the list');
+          else toast.error('Open Ongoing or Followup jobs first, then assign from the list');
         }}
       />
 
