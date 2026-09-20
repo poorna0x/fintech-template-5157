@@ -7,6 +7,7 @@ import {
   matchPointToServiceHubs,
   parseBookingServiceHub,
   pointInHubPolygon,
+  resampleHubPolygon,
   type BookingServiceHub,
 } from './bookingServiceHubs';
 
@@ -116,6 +117,19 @@ describe('hub polygons', () => {
     });
     expect(hubContainsPoint(squareHub, 12.95, 77.6 - 0.00025)).toBe(true);
     expect(hubContainsPoint(squareHub, 12.95, 77.5)).toBe(false);
+  });
+
+  it('adds corners around an existing shape without dropping the centre', () => {
+    const square = [
+      { lat: 12.9, lng: 77.6 },
+      { lat: 12.9, lng: 77.7 },
+      { lat: 13.0, lng: 77.7 },
+      { lat: 13.0, lng: 77.6 },
+    ];
+    const denser = resampleHubPolygon(square, 8);
+    expect(denser).toHaveLength(8);
+    expect(pointInHubPolygon(12.95, 77.65, denser)).toBe(true);
+    expect(resampleHubPolygon(square, 3)).toHaveLength(3);
   });
 });
 

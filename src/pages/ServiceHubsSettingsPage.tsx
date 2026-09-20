@@ -11,6 +11,7 @@ import {
   MapPin,
   Maximize2,
   Minimize2,
+  Minus,
   PhoneCall,
   Plus,
   Search,
@@ -62,10 +63,13 @@ import {
   hubPolygonMetrics,
   hubPolygonOrCircle,
   MAX_CUSTOMER_NOTE_LEN,
+  MAX_HUB_POLYGON_POINTS,
   MAX_HUB_RADIUS_KM,
   MAX_OUT_OF_AREA_MESSAGE_LEN,
+  MIN_HUB_POLYGON_POINTS,
   MIN_HUB_RADIUS_KM,
   parseHubPolygon,
+  resampleHubPolygon,
   scaleHubPolygon,
   translateHubPolygon,
   updateBookingHubSettings,
@@ -1096,7 +1100,12 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                     onClick={() => {
                       const current = draft;
                       if (!current) return;
-                      const ring = circleToHubPolygon(current.lat, current.lng, current.radius_km);
+                      const ring = circleToHubPolygon(
+                        current.lat,
+                        current.lng,
+                        current.radius_km,
+                        current.polygon.length || DEFAULT_HUB_POLYGON_POINTS
+                      );
                       const shape = editableCircleRef.current;
                       if (shape) shape.setPath(ring);
                       skipPaintRef.current = true;
@@ -1105,10 +1114,51 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
                   >
                     Round shape
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-11 cursor-pointer"
+                    disabled={!draft || (draft.polygon.length || 0) <= MIN_HUB_POLYGON_POINTS}
+                    onClick={() => {
+                      const current = draft;
+                      if (!current) return;
+                      const nextCount = Math.max(MIN_HUB_POLYGON_POINTS, current.polygon.length - 1);
+                      const ring = resampleHubPolygon(hubPolygonOrCircle(current), nextCount);
+                      const shape = editableCircleRef.current;
+                      if (shape) shape.setPath(ring);
+                      skipPaintRef.current = true;
+                      setDraft({ ...current, polygon: ring });
+                    }}
+                  >
+                    <Minus className="mr-1 h-4 w-4" />
+                    Fewer points
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-11 cursor-pointer"
+                    disabled={!draft || (draft.polygon.length || 0) >= MAX_HUB_POLYGON_POINTS}
+                    onClick={() => {
+                      const current = draft;
+                      if (!current) return;
+                      const nextCount = Math.min(MAX_HUB_POLYGON_POINTS, current.polygon.length + 1);
+                      const ring = resampleHubPolygon(hubPolygonOrCircle(current), nextCount);
+                      const shape = editableCircleRef.current;
+                      if (shape) shape.setPath(ring);
+                      skipPaintRef.current = true;
+                      setDraft({ ...current, polygon: ring });
+                      setMapLocked(false);
+                    }}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    More points
+                  </Button>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Drag a white corner to cut that side out. Drag the smaller midpoint between corners to
-                  add another point.
+                  {(draft?.polygon.length || DEFAULT_HUB_POLYGON_POINTS)} of {MAX_HUB_POLYGON_POINTS}{' '}
+                  points. Drag a white corner to cut that side. Add points if you need a finer shape.
                 </p>
               </div>
               <div>

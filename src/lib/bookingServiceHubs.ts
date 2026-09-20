@@ -100,6 +100,51 @@ function isFinitePoint(lat: number, lng: number): boolean {
   return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
 }
 
+export function clampHubPolygonPoints(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_HUB_POLYGON_POINTS;
+  return Math.min(MAX_HUB_POLYGON_POINTS, Math.max(MIN_HUB_POLYGON_POINTS, Math.round(value)));
+}
+
+function pointAlongSegment(a: HubLatLng, b: HubLatLng, t: number): HubLatLng {
+  return {
+    lat: a.lat + (b.lat - a.lat) * t,
+    lng: a.lng + (b.lng - a.lng) * t,
+  };
+}
+
+/** Keep the same outline, with more or fewer corners to drag. */
+export function resampleHubPolygon(points: HubLatLng[], count: number): HubLatLng[] {
+  const ring = parseHubPolygon(points);
+  const n = clampHubPolygonPoints(count);
+  if (ring.length < MIN_HUB_POLYGON_POINTS) return ring;
+  if (ring.length === n) return ring;
+
+  const closed = [...ring, ring[0]];
+  const lengths: number[] = [];
+  let total = 0;
+  for (let i = 1; i < closed.length; i += 1) {
+    const d = Math.max(
+      1e-9,
+      haversineKm(closed[i - 1].lat, closed[i - 1].lng, closed[i].lat, closed[i].lng)
+    );
+    lengths.push(d);
+    total += d;
+  }
+
+  const out: HubLatLng[] = [];
+  for (let i = 0; i < n; i += 1) {
+    let remain = (total * i) / n;
+    for (let s = 0; s < lengths.length; s += 1) {
+      if (remain <= lengths[s] || s === lengths.length - 1) {
+        out.push(pointAlongSegment(closed[s], closed[s + 1], Math.min(1, remain / lengths[s])));
+        break;
+      }
+      remain -= lengths[s];
+    }
+  }
+  return out;
+}
+
 export function parseHubPolygon(raw: unknown): HubLatLng[] {
   if (!Array.isArray(raw)) return [];
   const points: HubLatLng[] = [];
