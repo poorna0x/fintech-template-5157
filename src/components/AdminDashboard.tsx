@@ -304,6 +304,7 @@ import { EmailSentLogDialog } from './admin/EmailSentLogDialog';
 import MeasureDistanceToolDialog from './admin/MeasureDistanceToolDialog';
 import ArrangeTechnicianVisitOrderDialog from './admin/ArrangeTechnicianVisitOrderDialog';
 import NearbyJobsToolDialog from './admin/NearbyJobsToolDialog';
+import JobsMapToolDialog from './admin/JobsMapToolDialog';
 import TechnicianLiveLocationDialog from './admin/TechnicianLiveLocationDialog';
 import MessageTechnicianDialog from './admin/MessageTechnicianDialog';
 import { settingsPath } from '@/lib/settingsSections';
@@ -1137,6 +1138,7 @@ const AdminDashboard = () => {
   const measureDistanceOpen = activeAdminTool === 'measure-distance';
   const arrangeVisitOrderOpen = activeAdminTool === 'arrange-visit-order';
   const nearbyJobsOpen = activeAdminTool === 'nearby-jobs';
+  const jobsMapOpen = activeAdminTool === 'jobs-map';
   const technicianLiveLocationOpen = activeAdminTool === 'technician-live-location';
   const messageTechnicianOpen = activeAdminTool === 'message-technician';
   const aiAssistantOpen = !isManager && activeAdminTool === 'ai-assistant';
@@ -8250,6 +8252,19 @@ const AdminDashboard = () => {
         open={nearbyJobsOpen}
         onOpenChange={(open) => handleAdminToolOpenChange('nearby-jobs', open)}
         technicians={technicians}
+      />
+
+      <JobsMapToolDialog
+        open={jobsMapOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('jobs-map', open)}
+        technicians={technicians}
+        initialJobs={jobs}
+        onAssignJob={(jobId) => {
+          const job = jobs.find((row) => row.id === jobId);
+          closeAdminTool();
+          if (job) handleAssignJob(job);
+          else toast.error('Open Ongoing jobs first, then assign from the list');
+        }}
       />
 
       <TechnicianLiveLocationDialog

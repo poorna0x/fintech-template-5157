@@ -15,6 +15,7 @@ import {
   Mail,
   ListOrdered,
   MapPin,
+  MapPinned,
   MessageSquare,
   Navigation,
   Radar,
@@ -327,6 +328,10 @@ export function AdminDashboardHeader({
                   <DropdownMenuItem onClick={() => onOpenAdminTool('nearby-jobs')}>
                     <Radar className="w-4 h-4 mr-2" />
                     Nearby jobs
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onOpenAdminTool('jobs-map')}>
+                    <MapPinned className="w-4 h-4 mr-2" />
+                    Jobs map
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onOpenAdminTool('technician-live-location')}>
                     <MapPin className="w-4 h-4 mr-2" />

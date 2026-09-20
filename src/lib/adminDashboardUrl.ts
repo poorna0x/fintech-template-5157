@@ -295,6 +295,7 @@ export const ADMIN_TOOL_DIALOGS = [
   'measure-distance',
   'arrange-visit-order',
   'nearby-jobs',
+  'jobs-map',
   'technician-live-location',
   'message-technician',
   'ai-assistant',
