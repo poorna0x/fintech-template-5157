@@ -312,7 +312,7 @@ export default function JobsMapToolDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(92dvh,920px)] max-h-[92dvh] w-[calc(100vw-1rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
+      <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-[100vw] max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-[min(92dvh,920px)] sm:max-h-[92dvh] sm:w-[calc(100vw-1.5rem)] sm:max-w-6xl sm:rounded-lg">
         <DialogHeader className="shrink-0 space-y-1 border-b px-4 py-3 sm:px-5">
           <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
             <MapPinned className="h-5 w-5 text-sky-700" />
@@ -327,7 +327,7 @@ export default function JobsMapToolDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <div className="relative min-h-[220px] flex-1 overflow-hidden bg-muted md:order-2">
+          <div className="relative h-[min(34dvh,260px)] shrink-0 overflow-hidden bg-muted md:order-2 md:h-auto md:min-h-0 md:flex-1">
             <DraggableMap
               center={BENGALURU}
               zoom={11}
@@ -351,16 +351,16 @@ export default function JobsMapToolDialog({
               type="button"
               variant="secondary"
               size="sm"
-              className="absolute right-3 top-3 z-20 h-11 cursor-pointer gap-1.5"
+              className="absolute right-3 top-3 z-20 h-11 cursor-pointer gap-1.5 px-3"
               onClick={() => void load()}
               disabled={loading}
             >
               <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
-              Refresh
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
           </div>
 
-          <div className="flex max-h-[46dvh] min-h-0 w-full flex-col overflow-y-auto border-t md:order-1 md:max-h-none md:w-[min(100%,22rem)] md:flex-none md:border-r md:border-t-0">
+          <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto border-t md:order-1 md:max-h-none md:w-[min(100%,22rem)] md:flex-none md:border-r md:border-t-0">
             <div className="flex flex-wrap gap-1.5 border-b px-3 py-2">
               {FILTERS.map((item) => (
                 <button
