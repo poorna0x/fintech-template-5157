@@ -675,13 +675,23 @@ export default function JobsMapToolDialog({
               onMapReady={(map) => {
                 mapRef.current = map;
                 if (mapClickRef.current) {
-                  window.google?.maps.event.removeListener(mapClickRef.current);
+                  try {
+                    window.google?.maps?.event.removeListener(mapClickRef.current);
+                  } catch {
+                    /* ignore */
+                  }
+                  mapClickRef.current = null;
+                }
+                if (!map) {
+                  setMapReady(false);
+                  return;
                 }
                 mapClickRef.current = map.addListener('click', () => setSelection(null));
                 setMapReady(true);
                 forceFitRef.current = true;
                 paint();
                 window.setTimeout(() => {
+                  if (!mapRef.current) return;
                   forceFitRef.current = true;
                   paintRef.current();
                 }, 160);
