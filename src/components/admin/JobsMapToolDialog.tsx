@@ -37,6 +37,7 @@ import {
   jobsMapStatusLabel,
   jobsMapStatusShort,
   jobsMapTechPhotoThumb,
+  mergeJobsMapLiveRows,
   nearestTechsForJob,
   parseJobsMapJobs,
   searchJobsMapJobs,
@@ -249,6 +250,7 @@ export default function JobsMapToolDialog({
   const liveOnlyRef = useRef(liveOnly);
   const techniciansRef = useRef(technicians);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const pingPullRef = useRef<number[]>([]);
   jobsRef.current = jobs;
   selectionRef.current = selection;
   filterRef.current = filter;
@@ -280,6 +282,19 @@ export default function JobsMapToolDialog({
   const ongoingCount = jobs.length - followupCount;
   const unassignedCount = jobs.filter((job) => job.status === 'PENDING' || !job.assigned_technician_id).length;
   const liveCount = techs.filter((tech) => tech.source === 'live' && isJobsMapFixFresh(tech.updatedAt)).length;
+  const routeLiveKey = useMemo(() => {
+    if (!selection) return '';
+    if (selection.kind === 'tech') {
+      const tech = techs.find((row) => row.id === selection.id);
+      return tech ? `t:${tech.id}:${tech.lat.toFixed(4)}:${tech.lng.toFixed(4)}` : selection.id;
+    }
+    const job = jobs.find((row) => row.id === selection.id);
+    if (!job) return selection.id;
+    const near = nearestTechsForJob(job, visibleTechs)
+      .filter((row) => row.isAssigned || row.distance_m <= 40_000)
+      .slice(0, MAX_JOB_ROUTES);
+    return `j:${job.id}:${near.map((row) => `${row.id}:${row.lat.toFixed(4)}:${row.lng.toFixed(4)}`).join(',')}`;
+  }, [selection, techs, jobs, visibleTechs]);
 
   const initialJobsRef = useRef(initialJobs);
   initialJobsRef.current = initialJobs;
@@ -325,24 +340,30 @@ export default function JobsMapToolDialog({
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
+    const pullLive = () => {
+      void fetchJobsMapLiveRows().then((rows) => {
+        if (!cancelled) setLiveRows(rows);
+      });
+    };
     const channel = supabase
-      .channel('jobs-map-live')
+      .channel(`jobs-map-live-${Date.now()}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'technician_live_locations' },
         (payload) => {
-          const row = (payload.new || payload.old) as JobsMapLiveRow | undefined;
-          if (!row?.technician_id) return;
-          setLiveRows((prev) => {
-            const next = prev.filter((item) => item.technician_id !== row.technician_id);
-            if (payload.eventType === 'DELETE') return next;
-            return [...next, row];
-          });
+          const incoming = payload.eventType === 'DELETE' ? payload.old : payload.new;
+          setLiveRows((prev) => mergeJobsMapLiveRows(prev, incoming, payload.eventType));
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') pullLive();
+      });
     channelRef.current = channel;
     return () => {
+      cancelled = true;
+      for (const id of pingPullRef.current) window.clearTimeout(id);
+      pingPullRef.current = [];
       void supabase.removeChannel(channel);
       channelRef.current = null;
     };
@@ -573,7 +594,7 @@ export default function JobsMapToolDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, selection, mapReady]);
+  }, [open, selection, mapReady, routeLiveKey]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -634,6 +655,12 @@ export default function JobsMapToolDialog({
         return;
       }
       toast.message('Asked the phone for a fresh pin');
+      for (const id of pingPullRef.current) window.clearTimeout(id);
+      pingPullRef.current = [2000, 7000].map((ms) =>
+        window.setTimeout(() => {
+          void fetchJobsMapLiveRows().then(setLiveRows);
+        }, ms)
+      );
     } catch {
       toast.error('Could not ping the technician phone');
     } finally {

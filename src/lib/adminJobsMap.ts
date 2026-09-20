@@ -186,7 +186,52 @@ function liveCoords(row: JobsMapLiveRow | null | undefined): {
   const lat = Number(row.latitude);
   const lng = Number(row.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
-  return { lat, lng, updatedAt: row.fix_time || row.updated_at || null };
+  return { lat, lng, updatedAt: jobsMapLiveStamp(row) };
+}
+
+export function jobsMapLiveStamp(row: Pick<JobsMapLiveRow, 'fix_time' | 'updated_at'>): string | null {
+  const times = [row.fix_time, row.updated_at]
+    .map((value) => (value ? new Date(value).getTime() : 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (!times.length) return null;
+  return new Date(Math.max(...times)).toISOString();
+}
+
+export function parseJobsMapLiveRow(value: unknown): JobsMapLiveRow | null {
+  const rec = asRecord(value);
+  const technician_id = String(rec.technician_id || '').trim();
+  if (!technician_id) return null;
+  const latRaw = rec.latitude;
+  const lngRaw = rec.longitude;
+  const lat = latRaw == null || latRaw === '' ? null : Number(latRaw);
+  const lng = lngRaw == null || lngRaw === '' ? null : Number(lngRaw);
+  return {
+    technician_id,
+    latitude: Number.isFinite(lat as number) ? (lat as number) : null,
+    longitude: Number.isFinite(lng as number) ? (lng as number) : null,
+    is_tracking: rec.is_tracking == null ? null : Boolean(rec.is_tracking),
+    updated_at: rec.updated_at ? String(rec.updated_at) : null,
+    fix_time: rec.fix_time ? String(rec.fix_time) : null,
+  };
+}
+
+/** Keep previous lat/lng when a realtime UPDATE is missing coords (partial payload). */
+export function mergeJobsMapLiveRows(
+  prev: JobsMapLiveRow[],
+  incoming: unknown,
+  eventType?: string
+): JobsMapLiveRow[] {
+  const parsed = parseJobsMapLiveRow(incoming);
+  if (!parsed) return prev;
+  const existing = prev.find((item) => item.technician_id === parsed.technician_id);
+  const rest = prev.filter((item) => item.technician_id !== parsed.technician_id);
+  if (eventType === 'DELETE') return rest;
+  const merged: JobsMapLiveRow = existing ? { ...existing, ...parsed } : parsed;
+  if (merged.latitude == null && existing?.latitude != null) {
+    merged.latitude = existing.latitude;
+    merged.longitude = existing.longitude;
+  }
+  return [...rest, merged];
 }
 
 export function techDisplayName(tech: Technician): string {

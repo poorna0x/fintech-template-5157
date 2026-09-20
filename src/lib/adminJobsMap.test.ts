@@ -12,6 +12,9 @@ import {
   nearestTechsForJob,
   parseJobsMapJobs,
   parseJobsMapLastLocation,
+  parseJobsMapLiveRow,
+  mergeJobsMapLiveRows,
+  jobsMapLiveStamp,
   searchJobsMapJobs,
   techsNearJobs,
   visibleTechsForJobsMap,
@@ -238,5 +241,62 @@ describe('jobsMapReachLabel', () => {
     const label = jobsMapReachLabel('32 mins', 32 * 60, now);
     expect(label).toContain('32 mins');
     expect(label.toLowerCase()).toMatch(/10:45/);
+  });
+});
+
+describe('jobsMap live GPS merge', () => {
+  it('keeps previous coordinates when a realtime update omits lat/lng', () => {
+    const prev = [
+      {
+        technician_id: 't1',
+        latitude: 12.91,
+        longitude: 77.64,
+        is_tracking: true,
+        updated_at: '2026-09-20T04:00:00.000Z',
+        fix_time: '2026-09-20T03:50:00.000Z',
+      },
+    ];
+    const merged = mergeJobsMapLiveRows(prev, {
+      technician_id: 't1',
+      updated_at: '2026-09-20T04:30:00.000Z',
+      is_tracking: true,
+    });
+    expect(merged[0].latitude).toBe(12.91);
+    expect(merged[0].updated_at).toBe('2026-09-20T04:30:00.000Z');
+  });
+
+  it('applies a newer GPS fix', () => {
+    const merged = mergeJobsMapLiveRows(
+      [
+        {
+          technician_id: 't1',
+          latitude: 12.91,
+          longitude: 77.64,
+          is_tracking: true,
+          updated_at: '2026-09-20T04:00:00.000Z',
+          fix_time: null,
+        },
+      ],
+      {
+        technician_id: 't1',
+        latitude: 12.92,
+        longitude: 77.65,
+        updated_at: '2026-09-20T04:40:00.000Z',
+        fix_time: '2026-09-20T04:40:00.000Z',
+        is_tracking: true,
+      }
+    );
+    expect(merged[0].latitude).toBe(12.92);
+    expect(jobsMapLiveStamp(merged[0])).toBe('2026-09-20T04:40:00.000Z');
+  });
+
+  it('parses string coordinates from a live row', () => {
+    expect(
+      parseJobsMapLiveRow({ technician_id: 't1', latitude: '12.91', longitude: '77.64' })
+    ).toMatchObject({
+      technician_id: 't1',
+      latitude: 12.91,
+      longitude: 77.64,
+    });
   });
 });
