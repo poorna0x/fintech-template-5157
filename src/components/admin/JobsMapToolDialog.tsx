@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Technician } from '@/types';
+import DraggableMap from '@/components/DraggableMap';
 import { DARK_DISPATCH_MAP_STYLES } from '@/lib/darkMapStyle';
 import { fetchDrivingRoute } from '@/lib/googleMapsDistance';
 import { openGoogleMapsDirectionsBetween } from '@/lib/maps';
