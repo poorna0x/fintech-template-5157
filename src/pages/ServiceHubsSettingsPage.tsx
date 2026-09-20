@@ -4,7 +4,10 @@ import {
   Ban,
   Check,
   CheckCircle2,
+  ChevronDown,
+  Hand,
   Loader2,
+  Lock,
   MapPin,
   Maximize2,
   Minimize2,
@@ -197,6 +200,10 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const [desktopMap, setDesktopMap] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
   );
+  const [mapLocked, setMapLocked] = useState(
+    () => typeof window !== 'undefined' && !window.matchMedia('(min-width: 768px)').matches
+  );
+  const [messageOpen, setMessageOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searching, setSearching] = useState(false);
@@ -215,6 +222,8 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
   const editableCircleRef = useRef<google.maps.Polygon | null>(null);
   const onMapClickRef = useRef<(event: google.maps.MapMouseEvent) => void>(() => {});
   const selectHubRef = useRef<(id: string) => void>(() => {});
+  const listPaneRef = useRef<HTMLDivElement>(null);
+  const lockTouchYRef = useRef<number | null>(null);
 
   hubsRef.current = hubs;
   draftRef.current = draft;
@@ -329,6 +338,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
 
   const startNewHub = (kind: HubServiceKind) => {
     if (!canLeaveEditor()) return;
+    setMapLocked(false);
     const center = mapRef.current?.getCenter();
     placeDraftAt(center?.lat() ?? BENGALURU.lat, center?.lng() ?? BENGALURU.lng, kind);
     const label = hubKindLabel(kind);
@@ -507,7 +517,10 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         return;
       }
       try {
-        map.setOptions({ gestureHandling: 'cooperative' });
+        map.setOptions({
+          gestureHandling: mapLocked ? 'none' : 'greedy',
+          zoomControl: !mapLocked || desktopMap,
+        });
       } catch {
         /* ignore */
       }
@@ -573,6 +586,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
       }
       setQuery('');
       setPredictions([]);
+      setMapLocked(false);
     } catch {
       toast.error('Could not open that place. Try again.');
     } finally {
@@ -687,8 +701,11 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)');
-    const onChange = () => setDesktopMap(mq.matches);
-    onChange();
+    const onChange = () => {
+      const isDesktop = mq.matches;
+      setDesktopMap(isDesktop);
+      if (isDesktop) setMapLocked(false);
+    };
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
@@ -710,18 +727,22 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
     if (!map || !window.google?.maps) return;
     const timer = window.setTimeout(() => {
       try {
+        map.setOptions({
+          gestureHandling: mapLocked ? 'none' : 'greedy',
+          zoomControl: !mapLocked || desktopMap,
+        });
         window.google.maps.event.trigger(map, 'resize');
       } catch {
         /* ignore */
       }
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [mapLarge, desktopMap]);
+  }, [mapLarge, desktopMap, mapLocked]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto overscroll-y-contain bg-background">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <div ref={placesHostRef} className="hidden" />
-      <header className="sticky top-0 z-30 flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2.5 sm:px-4">
+      <header className="z-30 flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2.5 sm:px-4">
         <Button
           type="button"
           variant="ghost"
@@ -740,16 +761,16 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           type="button"
           variant="outline"
           size="sm"
-          className="ml-auto h-11 cursor-pointer gap-1.5 px-2.5 sm:px-3"
+          className="ml-auto h-11 cursor-pointer gap-1.5 px-2.5 md:hidden"
           onClick={toggleMapLarge}
         >
           {mapLarge ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          <span className="hidden sm:inline">{mapLarge ? 'Smaller map' : 'Larger map'}</span>
+          <span>{mapLarge ? 'Smaller' : 'Larger'}</span>
         </Button>
         <Button
           type="button"
           size="sm"
-          className="h-11 cursor-pointer gap-1.5"
+          className="h-11 cursor-pointer gap-1.5 md:ml-auto"
           onClick={() => startNewHub('normal')}
         >
           <Plus className="h-4 w-4" />
@@ -770,12 +791,13 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         </div>
       ) : null}
 
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       <div
         className={cn(
-          'relative w-full shrink-0 overflow-hidden bg-muted',
+          'relative w-full shrink-0 overflow-hidden bg-muted md:order-2 md:h-auto md:min-h-0 md:flex-1',
           mapLarge
-            ? 'h-[min(42dvh,440px)] max-h-[calc(100dvh-18rem)] min-h-[200px] md:h-[min(46dvh,500px)]'
-            : 'h-[min(28dvh,260px)] max-h-[calc(100dvh-20rem)] min-h-[180px] md:h-[min(32dvh,300px)]'
+            ? 'h-[min(38dvh,340px)] min-h-[188px]'
+            : 'h-[min(26dvh,220px)] min-h-[168px]'
         )}
       >
         <DraggableMap
@@ -783,20 +805,21 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
           zoom={11}
           height="100%"
           hideMarker
-          gestureHandling="cooperative"
+          gestureHandling={mapLocked ? 'none' : 'greedy'}
           mapTypeControl={false}
           streetViewControl={false}
           fullscreenControl={false}
+          zoomControl={!mapLocked || desktopMap}
           onMapReady={handleMapReady}
         />
-        <div className="absolute left-3 right-3 top-3 z-20">
+        <div className="absolute left-3 right-3 top-3 z-30">
           <div className="relative rounded-xl border border-border bg-card shadow-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="service-hub-search"
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
-              placeholder="Search, or tap the map to add"
+              placeholder="Search an area"
               className="h-11 border-0 bg-transparent pl-9 pr-10 shadow-none focus-visible:ring-0"
               autoComplete="off"
             />
@@ -842,11 +865,58 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             </ul>
           ) : null}
         </div>
-        <p className="pointer-events-none absolute bottom-3 right-3 z-10 max-w-[14rem] rounded-lg bg-black/55 px-2.5 py-1 text-right text-[11px] font-medium text-white sm:max-w-none">
-          Tap Add hub or search to create. Drag corners to reshape — then Update hub.
-        </p>
+        {mapLocked && !desktopMap ? (
+          <div
+            className="absolute inset-x-0 bottom-0 top-14 z-20 flex items-end justify-center bg-gradient-to-t from-black/35 via-transparent to-transparent pb-3"
+            onWheel={(event) => {
+              listPaneRef.current?.scrollBy({ top: event.deltaY });
+            }}
+            onTouchStart={(event) => {
+              lockTouchYRef.current = event.touches[0]?.clientY ?? null;
+            }}
+            onTouchMove={(event) => {
+              const start = lockTouchYRef.current;
+              const y = event.touches[0]?.clientY;
+              if (start == null || y == null) return;
+              listPaneRef.current?.scrollBy({ top: start - y });
+              lockTouchYRef.current = y;
+            }}
+            onTouchEnd={() => {
+              lockTouchYRef.current = null;
+            }}
+          >
+            <button
+              type="button"
+              className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-full bg-card px-3.5 text-sm font-medium text-foreground shadow-md"
+              onClick={() => setMapLocked(false)}
+            >
+              <Hand className="h-4 w-4" />
+              Tap to move map
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="pointer-events-none absolute bottom-3 right-3 z-10 hidden max-w-[14rem] rounded-lg bg-black/55 px-2.5 py-1 text-right text-[11px] font-medium text-white md:block">
+              Drag corners to reshape, then Update hub.
+            </p>
+            {!desktopMap ? (
+              <button
+                type="button"
+                className="absolute bottom-3 left-3 z-20 inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-full bg-card px-3 text-sm font-medium text-foreground shadow-md"
+                onClick={() => setMapLocked(true)}
+              >
+                <Lock className="h-4 w-4" />
+                Scroll list
+              </button>
+            ) : null}
+          </>
+        )}
       </div>
 
+      <div
+        ref={listPaneRef}
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-y-contain md:order-1 md:w-[min(100%,26rem)] md:flex-none md:border-r md:border-border"
+      >
       <div className="shrink-0 border-b border-border bg-card px-3 py-2.5 sm:px-4">
         <p className="mb-2 text-xs font-medium text-muted-foreground">Add a hub on the map</p>
         <div className="grid grid-cols-3 gap-2">
@@ -868,45 +938,58 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
         </div>
       </div>
 
-      <div className="grid md:grid-cols-[minmax(0,26rem)_1fr]">
-        <div className="md:border-r md:border-border">
-          <div className="space-y-3 border-b border-border bg-card px-4 py-3">
-            <Label htmlFor="out-of-area-message" className="text-sm font-medium">
-              Outside coverage message
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              Shown when the pin is outside every serving hub. Optional: type {'{hubs}'} to list nearby areas.
-            </p>
-            <Textarea
-              id="out-of-area-message"
-              value={outOfAreaMessage}
-              maxLength={MAX_OUT_OF_AREA_MESSAGE_LEN}
-              rows={3}
-              onChange={(e) => setOutOfAreaMessage(e.target.value.slice(0, MAX_OUT_OF_AREA_MESSAGE_LEN))}
-              placeholder={DEFAULT_OUT_OF_AREA_MESSAGE}
-            />
-            <Button
+          <div className="border-b border-border bg-card">
+            <button
               type="button"
-              variant="secondary"
-              size="sm"
-              className="h-11 cursor-pointer"
-              disabled={saving}
-              onClick={() => {
-                void (async () => {
-                  setSaving(true);
-                  const result = await updateBookingHubSettings({ out_of_area_message: outOfAreaMessage });
-                  setSaving(false);
-                  if (result.error || !result.settings) {
-                    toast.error(result.error || 'Could not save message');
-                    return;
-                  }
-                  setOutOfAreaMessage(result.settings.out_of_area_message);
-                  toast.success('Outside-coverage message saved');
-                })();
-              }}
+              className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 px-4 py-2.5 text-left"
+              aria-expanded={messageOpen}
+              onClick={() => setMessageOpen((open) => !open)}
             >
-              Save message
-            </Button>
+              <span>
+                <span className="block text-sm font-medium">Outside coverage message</span>
+                <span className="block text-xs text-muted-foreground">Shown when the pin is outside every serving hub</span>
+              </span>
+              <ChevronDown
+                className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', messageOpen && 'rotate-180')}
+              />
+            </button>
+            {messageOpen ? (
+              <div className="space-y-3 px-4 pb-3">
+                <p className="text-xs text-muted-foreground">
+                  Optional: type {'{hubs}'} to list nearby areas.
+                </p>
+                <Textarea
+                  id="out-of-area-message"
+                  value={outOfAreaMessage}
+                  maxLength={MAX_OUT_OF_AREA_MESSAGE_LEN}
+                  rows={3}
+                  onChange={(e) => setOutOfAreaMessage(e.target.value.slice(0, MAX_OUT_OF_AREA_MESSAGE_LEN))}
+                  placeholder={DEFAULT_OUT_OF_AREA_MESSAGE}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-11 cursor-pointer"
+                  disabled={saving}
+                  onClick={() => {
+                    void (async () => {
+                      setSaving(true);
+                      const result = await updateBookingHubSettings({ out_of_area_message: outOfAreaMessage });
+                      setSaving(false);
+                      if (result.error || !result.settings) {
+                        toast.error(result.error || 'Could not save message');
+                        return;
+                      }
+                      setOutOfAreaMessage(result.settings.out_of_area_message);
+                      toast.success('Outside-coverage message saved');
+                    })();
+                  }}
+                >
+                  Save message
+                </Button>
+              </div>
+            ) : null}
           </div>
           {editor ? (
             <div className="space-y-3 border-b border-border bg-muted/30 px-4 py-3">
@@ -1114,7 +1197,6 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
               ) : null}
             </div>
           ) : null}
-        </div>
 
         <div className="px-4 py-3 pb-10">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
@@ -1176,6 +1258,7 @@ export default function ServiceHubsSettingsPage({ onBack }: Props) {
             </ul>
           )}
         </div>
+      </div>
       </div>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
