@@ -28,7 +28,9 @@ import {
   isJobsMapFixFresh,
   isJobsMapFollowUpStatus,
   jobsForTechnician,
+  jobsMapBestNextTech,
   jobsMapCameraJobs,
+  jobsMapCanQuickAssign,
   jobsMapDueLabel,
   jobsMapFitPoints,
   jobsMapReachLabel,
@@ -48,6 +50,7 @@ import {
   type JobsMapLastLoc,
   type JobsMapLiveRow,
   type JobsMapTech,
+  type NearbyMapTech,
 } from '@/lib/adminJobsMap';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
@@ -131,6 +134,7 @@ type Props = {
   initialJobs?: unknown[];
   initialFollowUpJobs?: unknown[];
   onAssignJob?: (jobId: string) => void;
+  onAssignNearest?: (jobId: string, technicianId: string) => Promise<boolean | void>;
 };
 
 function agoLabel(iso: string | null): string {
@@ -216,6 +220,7 @@ export default function JobsMapToolDialog({
   initialJobs,
   initialFollowUpJobs,
   onAssignJob,
+  onAssignNearest,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [jobs, setJobs] = useState<JobsMapJob[]>([]);
@@ -225,6 +230,7 @@ export default function JobsMapToolDialog({
   const [filter, setFilter] = useState<JobsMapFilter>('ongoing');
   const [selection, setSelection] = useState<Selection>(null);
   const [pingingId, setPingingId] = useState<string | null>(null);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
   const [routes, setRoutes] = useState<DrawnRoute[]>([]);
   const [routing, setRouting] = useState(false);
   const [mapReady, setMapReady] = useState(false);
@@ -277,6 +283,8 @@ export default function JobsMapToolDialog({
   const nearby = selectedJob
     ? nearestTechsForJob(selectedJob, visibleTechs).filter((tech) => tech.isAssigned || tech.distance_m <= 40_000)
     : [];
+  const canQuickAssign = selectedJob ? jobsMapCanQuickAssign(selectedJob) : false;
+  const bestNext = canQuickAssign ? jobsMapBestNextTech(nearby) : null;
   const techJobs = selectedTech ? jobsForTechnician(jobs, selectedTech.id) : [];
   const followupCount = jobs.filter((job) => isJobsMapFollowUpStatus(job.status)).length;
   const ongoingCount = jobs.length - followupCount;
@@ -668,6 +676,25 @@ export default function JobsMapToolDialog({
     }
   };
 
+  const assignTo = async (tech: NearbyMapTech) => {
+    if (!selectedJob || !onAssignNearest) return;
+    setAssigningId(tech.id);
+    try {
+      const ok = await onAssignNearest(selectedJob.id, tech.id);
+      if (ok === false) return;
+      setJobs((prev) =>
+        prev.map((row) =>
+          row.id === selectedJob.id
+            ? { ...row, status: 'ASSIGNED', assigned_technician_id: tech.id }
+            : row
+        )
+      );
+      toast.success(`Assigned to ${tech.name}`);
+    } finally {
+      setAssigningId(null);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[min(92dvh,920px)] max-h-[92dvh] w-[calc(100vw-1rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
@@ -902,7 +929,37 @@ export default function JobsMapToolDialog({
                     <ExternalLink className="mr-1 h-4 w-4" />
                     Maps
                   </Button>
-                  {onAssignJob && (selectedJob.status === 'PENDING' || !selectedJob.assigned_technician_id) ? (
+                  {canQuickAssign && onAssignNearest && bestNext ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-11 cursor-pointer"
+                      disabled={Boolean(assigningId)}
+                      onClick={() => void assignTo(bestNext)}
+                    >
+                      {assigningId === bestNext.id ? (
+                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                      ) : null}
+                      Assign {bestNext.name.split(' ')[0]}
+                      {routeFor(bestNext.id, selectedJob.id)?.durationText
+                        ? ` · ${routeFor(bestNext.id, selectedJob.id)?.durationText}`
+                        : routing
+                          ? ' · road…'
+                          : ` · ${formatJobsMapDistance(bestNext.distance_m)}`}
+                    </Button>
+                  ) : null}
+                  {onAssignJob && canQuickAssign ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-11 cursor-pointer"
+                      onClick={() => onAssignJob(selectedJob.id)}
+                    >
+                      Other
+                    </Button>
+                  ) : onAssignJob &&
+                    (selectedJob.status === 'PENDING' || !selectedJob.assigned_technician_id) ? (
                     <Button
                       type="button"
                       size="sm"
@@ -922,9 +979,10 @@ export default function JobsMapToolDialog({
                   <ul className="space-y-1.5">
                     {nearby.map((tech) => (
                       <li key={tech.id}>
+                        <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-2 text-left hover:bg-muted/50"
+                          className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-2 text-left hover:bg-muted/50"
                           onClick={() => setSelection({ kind: 'tech', id: tech.id })}
                         >
                           <span className="flex min-w-0 items-center gap-2">
@@ -941,6 +999,19 @@ export default function JobsMapToolDialog({
                           </span>
                           <Navigation className="h-4 w-4 shrink-0 text-muted-foreground" />
                         </button>
+                        {canQuickAssign && onAssignNearest && !tech.isAssigned ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-11 shrink-0 cursor-pointer px-3"
+                            disabled={Boolean(assigningId)}
+                            onClick={() => void assignTo(tech)}
+                          >
+                            {assigningId === tech.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Assign'}
+                          </Button>
+                        ) : null}
+                        </div>
                       </li>
                     ))}
                   </ul>

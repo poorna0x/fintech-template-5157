@@ -367,6 +367,11 @@ export function searchJobsMapJobs(jobs: JobsMapJob[], query: string): JobsMapJob
   });
 }
 
+export function jobsMapCanQuickAssign(job: JobsMapJob): boolean {
+  if (job.assigned_technician_id) return false;
+  return (JOBS_MAP_ONGOING_STATUSES as readonly string[]).includes(String(job.status || '').toUpperCase());
+}
+
 export function visibleTechsForJobsMap(
   jobs: JobsMapJob[],
   techs: JobsMapTech[],
@@ -431,6 +436,10 @@ export function nearestTechsForJob(
   const assigned = ranked.find((row) => row.isAssigned);
   const others = ranked.filter((row) => !row.isAssigned).slice(0, limit);
   return assigned ? [assigned, ...others] : others;
+}
+
+export function jobsMapBestNextTech<T extends { isAssigned: boolean }>(techs: T[]): T | null {
+  return techs.find((tech) => !tech.isAssigned) || null;
 }
 
 export function jobsForTechnician(jobs: JobsMapJob[], technicianId: string): JobsMapJob[] {

@@ -4,7 +4,9 @@ import {
   buildJobsMapTechs,
   filterJobsMapJobs,
   isJobsMapDueToday,
+  jobsMapBestNextTech,
   jobsMapCameraJobs,
+  jobsMapCanQuickAssign,
   jobsMapFitPoints,
   jobsMapReachLabel,
   jobsMapSuggestedZoom,
@@ -87,6 +89,17 @@ describe('adminJobsMap', () => {
     expect(ranked[0].id).toBe('far');
     expect(ranked[0].isAssigned).toBe(true);
     expect(ranked[1].id).toBe('near');
+  });
+
+  it('allows one-tap assign only for unassigned ongoing jobs', () => {
+    expect(jobsMapCanQuickAssign(job({ id: 'a', lat: 12.9, lng: 77.6, status: 'PENDING' }))).toBe(true);
+    expect(
+      jobsMapCanQuickAssign(job({ id: 'b', lat: 12.9, lng: 77.6, status: 'PENDING', assigned_technician_id: 't1' }))
+    ).toBe(false);
+    expect(jobsMapCanQuickAssign(job({ id: 'c', lat: 12.9, lng: 77.6, status: 'FOLLOW_UP' }))).toBe(false);
+    expect(jobsMapBestNextTech([{ isAssigned: true, id: 'a' }, { isAssigned: false, id: 'near' }])?.id).toBe(
+      'near'
+    );
   });
 
   it('filters unassigned jobs', () => {

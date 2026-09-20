@@ -42,8 +42,8 @@ export type AdminSaveJobAssignmentCtx = {
   loadFilteredJobs: LoadFilteredJobsFn;
 };
 
-export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
-  if (!ctx.jobToAssign || !ctx.selectedTechnicianId) return;
+export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx): Promise<boolean> {
+  if (!ctx.jobToAssign || !ctx.selectedTechnicianId) return false;
 
   const scrollY = window.scrollY;
 
@@ -54,7 +54,7 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
       ctx.setAssignJobDialogOpen(false);
       ctx.setAssignAfterMoveToOngoing(true);
       ctx.handleMoveToOngoing(ctx.jobToAssign);
-      return;
+      return true;
     }
 
     const { error } = await db.jobs.update(ctx.jobToAssign.id, {
@@ -164,9 +164,11 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
           });
         });
     });
+    return true;
   } catch {
     toast.error('Failed to assign job');
     ctx.setFollowUpAssignFlow(false);
     ctx.setFollowUpAssignTechnicianId('');
+    return false;
   }
 }

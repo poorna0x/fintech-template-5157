@@ -8266,6 +8266,41 @@ const AdminDashboard = () => {
           if (job) handleAssignJob(job);
           else toast.error('Open Ongoing or Followup jobs first, then assign from the list');
         }}
+        onAssignNearest={async (jobId, technicianId) => {
+          const job = jobs.find((row) => row.id === jobId) || allFollowUpJobs.find((row) => row.id === jobId);
+          if (!job) {
+            toast.error('Open Ongoing jobs first, then assign from the map');
+            return false;
+          }
+          return saveAdminJobAssignment({
+            jobToAssign: job,
+            selectedTechnicianId: technicianId,
+            followUpAssignFlow: false,
+            statusFilter,
+            currentPage,
+            technicians,
+            setFollowUpAssignFlow,
+            setFollowUpAssignTechnicianId,
+            setAssignJobDialogOpen,
+            setAssignAfterMoveToOngoing,
+            handleMoveToOngoing,
+            scrollPositionBeforeWhatsAppRef,
+            setWhatsappTechnician,
+            setWhatsappServiceSubType,
+            setWhatsappCustomerName,
+            setWhatsappLocation,
+            setWhatsappLeadSource,
+            setWhatsappCustomTime,
+            setWhatsappDescription,
+            setWhatsappAgreedCost,
+            setWhatsappDialogOpen,
+            openAdminWhatsappModal,
+            closeAdminModal,
+            setJobToAssign,
+            setSelectedTechnicianId,
+            loadFilteredJobs,
+          });
+        }}
       />
 
       <TechnicianLiveLocationDialog
