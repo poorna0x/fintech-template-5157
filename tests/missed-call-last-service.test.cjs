@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const {
   pickLastCompletedServiceAt,
   formatLastServiceDate,
+  maybeSendMissedCallCallbackWhatsApp,
 } = require('../netlify/functions/missed-call-whatsapp-helper.js');
 
 function testPicksLatestCompletedJob() {
@@ -26,7 +27,18 @@ function testFormatsIstLabel() {
   assert.match(label, /2026/);
 }
 
+async function testAutoSendIsNotStubbed() {
+  const result = await maybeSendMissedCallCallbackWhatsApp(null, { phone: '+919876543210' });
+  assert.equal(result.sent, false);
+  assert.equal(result.reason, 'no_db');
+}
+
 testPicksLatestCompletedJob();
 testIgnoresEmptyJobs();
 testFormatsIstLabel();
-console.log('missed-call-last-service.test.cjs ok');
+testAutoSendIsNotStubbed().then(() => {
+  console.log('missed-call-last-service.test.cjs ok');
+}).catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
