@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Technician } from '@/types';
 import DraggableMap from '@/components/DraggableMap';
-import { haversineDistanceMeters } from '@/lib/adminGoogleMapsDistance';
+import { fetchDrivingRoute } from '@/lib/googleMapsDistance';
 import { openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
   buildJobsMapTechs,
@@ -46,6 +46,18 @@ const FILTERS: Array<{ id: JobsMapFilter; label: string }> = [
 ];
 
 type Selection = { kind: 'job'; id: string } | { kind: 'tech'; id: string } | null;
+
+type DrawnRoute = {
+  fromId: string;
+  toId: string;
+  path: google.maps.LatLngLiteral[];
+  distanceMeters: number;
+  durationText: string;
+  color: string;
+};
+
+const MAX_JOB_ROUTES = 4;
+const MAX_TECH_ROUTES = 4;
 
 type Props = {
   open: boolean;
@@ -91,9 +103,13 @@ export default function JobsMapToolDialog({
   const [filter, setFilter] = useState<JobsMapFilter>('all');
   const [selection, setSelection] = useState<Selection>(null);
   const [pingingId, setPingingId] = useState<string | null>(null);
+  const [routes, setRoutes] = useState<DrawnRoute[]>([]);
+  const [routing, setRouting] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
+  const routeOverlaysRef = useRef<google.maps.Polyline[]>([]);
   const fitKeyRef = useRef('');
   const jobsRef = useRef(jobs);
   const techsRef = useRef<JobsMapTech[]>([]);
@@ -108,7 +124,9 @@ export default function JobsMapToolDialog({
   const visibleJobs = useMemo(() => filterJobsMapJobs(jobs, filter), [jobs, filter]);
   const selectedJob = selection?.kind === 'job' ? jobs.find((job) => job.id === selection.id) || null : null;
   const selectedTech = selection?.kind === 'tech' ? techs.find((tech) => tech.id === selection.id) || null : null;
-  const nearby = selectedJob ? nearestTechsForJob(selectedJob, techs) : [];
+  const nearby = selectedJob
+    ? nearestTechsForJob(selectedJob, techs).filter((tech) => tech.isAssigned || tech.distance_m <= 40_000)
+    : [];
   const techJobs = selectedTech ? jobsForTechnician(jobs, selectedTech.id) : [];
   const unassignedCount = jobs.filter((job) => job.status === 'PENDING' || !job.assigned_technician_id).length;
   const liveCount = techs.filter((tech) => tech.source === 'live' && isJobsMapFixFresh(tech.updatedAt)).length;
@@ -168,9 +186,25 @@ export default function JobsMapToolDialog({
 
   const clearOverlays = () => {
     for (const overlay of overlaysRef.current) {
-      (overlay as google.maps.Marker | google.maps.Polyline).setMap(null);
+      (overlay as google.maps.Marker).setMap(null);
     }
     overlaysRef.current = [];
+  };
+
+  const clearRouteOverlays = () => {
+    for (const line of routeOverlaysRef.current) line.setMap(null);
+    routeOverlaysRef.current = [];
+  };
+
+  const routeFor = (fromId: string, toId: string) =>
+    routes.find((route) => route.fromId === fromId && route.toId === toId);
+
+  const routeCaption = (fromId: string, toId: string) => {
+    const route = routeFor(fromId, toId);
+    if (route) {
+      return `${formatJobsMapDistance(route.distanceMeters)}${route.durationText ? ` · ${route.durationText}` : ''}`;
+    }
+    return routing ? 'Road…' : 'No road route';
   };
 
   const paint = useCallback(() => {
@@ -233,42 +267,6 @@ export default function JobsMapToolDialog({
       );
     }
 
-    const drawLine = (from: { lat: number; lng: number }, to: { lat: number; lng: number }, color: string, dashed: boolean) => {
-      const line = new window.google.maps.Polyline({
-        map,
-        path: [from, to],
-        strokeColor: color,
-        strokeOpacity: dashed ? 0 : 0.85,
-        strokeWeight: 2.5,
-        zIndex: 6,
-        icons: dashed
-          ? [
-              {
-                icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.85, scale: 3 },
-                offset: '0',
-                repeat: '12px',
-              },
-            ]
-          : undefined,
-      });
-      overlaysRef.current.push(line);
-    };
-
-    if (sel?.kind === 'job') {
-      const job = jobsRef.current.find((row) => row.id === sel.id);
-      if (job) {
-        for (const tech of nearestTechsForJob(job, techsRef.current)) {
-          drawLine({ lat: tech.lat, lng: tech.lng }, { lat: job.lat, lng: job.lng }, tech.isAssigned ? '#2563eb' : '#64748b', !tech.isAssigned);
-        }
-      }
-    } else if (sel?.kind === 'tech') {
-      for (const job of jobsForTechnician(jobsRef.current, sel.id)) {
-        const tech = techsRef.current.find((row) => row.id === sel.id);
-        if (!tech) continue;
-        drawLine({ lat: tech.lat, lng: tech.lng }, { lat: job.lat, lng: job.lng }, jobsMapStatusColor(job.status), false);
-      }
-    }
-
     const fitKey = `${visibleJobs.length}:${techsRef.current.length}:${filter}`;
     if (hasPoint && fitKeyRef.current !== fitKey && !sel) {
       fitKeyRef.current = fitKey;
@@ -283,6 +281,120 @@ export default function JobsMapToolDialog({
   useEffect(() => {
     paint();
   }, [paint, jobs, techs, selection]);
+
+  useEffect(() => {
+    if (!open) {
+      setRoutes([]);
+      setRouting(false);
+      setMapReady(false);
+      clearRouteOverlays();
+      return;
+    }
+    if (!selection || !mapReady) {
+      if (!selection) {
+        setRoutes([]);
+        setRouting(false);
+        clearRouteOverlays();
+      }
+      return;
+    }
+
+    const pairs: Array<{ fromId: string; toId: string; origin: { lat: number; lng: number }; dest: { lat: number; lng: number }; color: string }> =
+      [];
+    if (selection.kind === 'job') {
+      const job = jobsRef.current.find((row) => row.id === selection.id);
+      if (job) {
+        for (const tech of nearestTechsForJob(job, techsRef.current)
+          .filter((row) => row.isAssigned || row.distance_m <= 40_000)
+          .slice(0, MAX_JOB_ROUTES)) {
+          pairs.push({
+            fromId: tech.id,
+            toId: job.id,
+            origin: { lat: tech.lat, lng: tech.lng },
+            dest: { lat: job.lat, lng: job.lng },
+            color: tech.isAssigned ? '#2563eb' : '#0f766e',
+          });
+        }
+      }
+    } else {
+      const tech = techsRef.current.find((row) => row.id === selection.id);
+      if (tech) {
+        for (const job of jobsForTechnician(jobsRef.current, tech.id).slice(0, MAX_TECH_ROUTES)) {
+          pairs.push({
+            fromId: tech.id,
+            toId: job.id,
+            origin: { lat: tech.lat, lng: tech.lng },
+            dest: { lat: job.lat, lng: job.lng },
+            color: jobsMapStatusColor(job.status),
+          });
+        }
+      }
+    }
+
+    if (!pairs.length) {
+      setRoutes([]);
+      setRouting(false);
+      return;
+    }
+
+    let cancelled = false;
+    setRouting(true);
+    setRoutes([]);
+    void Promise.all(
+      pairs.map(async (pair) => {
+        const route = await fetchDrivingRoute(pair.origin, pair.dest);
+        if (!route?.path.length) return null;
+        return {
+          fromId: pair.fromId,
+          toId: pair.toId,
+          path: route.path,
+          distanceMeters: route.distanceMeters,
+          durationText: route.durationText,
+          color: pair.color,
+        } satisfies DrawnRoute;
+      })
+    ).then((rows) => {
+      if (cancelled) return;
+      const drawn = rows.filter((row): row is DrawnRoute => Boolean(row));
+      setRoutes(drawn);
+      setRouting(false);
+      if (!drawn.length) toast.error('Could not load a road route');
+    })
+    .catch(() => {
+      if (cancelled) return;
+      setRoutes([]);
+      setRouting(false);
+      toast.error('Could not load a road route');
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, selection, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    clearRouteOverlays();
+    if (!map || !window.google?.maps || !routes.length) return;
+    const bounds = new window.google.maps.LatLngBounds();
+    for (const route of routes) {
+      const line = new window.google.maps.Polyline({
+        map,
+        path: route.path,
+        strokeColor: route.color,
+        strokeOpacity: 0.95,
+        strokeWeight: 6,
+        zIndex: 7,
+      });
+      routeOverlaysRef.current.push(line);
+      for (const point of route.path) bounds.extend(point);
+    }
+    try {
+      map.fitBounds(bounds, 64);
+    } catch {
+      /* ignore */
+    }
+  }, [routes, mapReady]);
 
   const pingTech = async (technicianId: string) => {
     setPingingId(technicianId);
@@ -339,6 +451,7 @@ export default function JobsMapToolDialog({
               fullscreenControl={false}
               onMapReady={(map) => {
                 mapRef.current = map;
+                setMapReady(true);
                 paint();
               }}
             />
@@ -420,7 +533,9 @@ export default function JobsMapToolDialog({
                     </Button>
                   ) : null}
                 </div>
-                <p className="text-xs font-medium text-muted-foreground">Nearby technicians</p>
+                <p className="text-xs font-medium text-muted-foreground">
+                  Nearby technicians{routing ? ' · loading road' : ''}
+                </p>
                 {nearby.length === 0 ? (
                   <p className="text-xs text-muted-foreground">No technician pins yet.</p>
                 ) : (
@@ -438,7 +553,7 @@ export default function JobsMapToolDialog({
                               {tech.isAssigned ? ' · assigned' : ''}
                             </span>
                             <span className="block text-xs text-muted-foreground">
-                              {formatJobsMapDistance(tech.distance_m)} · {agoLabel(tech.updatedAt)}
+                              {routeCaption(tech.id, selectedJob.id)} · {agoLabel(tech.updatedAt)}
                             </span>
                           </span>
                           <Navigation className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -518,12 +633,7 @@ export default function JobsMapToolDialog({
                             {job.job_number || 'Job'} · {job.customer_name}
                           </span>
                           <span className="shrink-0 text-xs text-muted-foreground">
-                            {formatJobsMapDistance(
-                              haversineDistanceMeters(
-                                { lat: selectedTech.lat, lng: selectedTech.lng },
-                                { lat: job.lat, lng: job.lng }
-                              )
-                            )}
+                            {routeCaption(selectedTech.id, job.id)}
                           </span>
                         </button>
                       </li>

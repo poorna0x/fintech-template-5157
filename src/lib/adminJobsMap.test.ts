@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { drivingRouteCacheKey } from './googleMapsDistance';
 import {
   filterJobsMapJobs,
   nearestTechsForJob,
@@ -61,5 +62,13 @@ describe('adminJobsMap', () => {
     ];
     expect(filterJobsMapJobs(rows, 'unassigned').map((row) => row.id)).toEqual(['a']);
     expect(filterJobsMapJobs(rows, 'ASSIGNED').map((row) => row.id)).toEqual(['b']);
+  });
+});
+
+describe('drivingRouteCacheKey', () => {
+  it('rounds coordinates so nearby GPS ticks reuse the same road path', () => {
+    expect(
+      drivingRouteCacheKey({ lat: 12.91111, lng: 77.64111 }, { lat: 12.92, lng: 77.65 })
+    ).toBe('12.9111,77.6411>12.9200,77.6500');
   });
 });
