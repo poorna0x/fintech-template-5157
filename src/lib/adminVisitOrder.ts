@@ -10,6 +10,8 @@ import {
   omitVisitOrderFromSelect,
 } from '@/lib/visit-order-columns';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
+import { haversineKm } from '@/lib/maps';
+import { jobsMapReachAt } from '@/lib/adminJobsMap';
 import type { Job } from '@/types';
 
 export const VISIT_ORDER_STATUSES = new Set([
@@ -374,5 +376,85 @@ export async function setVisitOrderVisibleForTechnician(
     return { error: new Error(error.message) };
   }
   return { error: null };
+}
+
+export type VisitOrderLatLng = { lat: number; lng: number };
+
+export type VisitOrderReachStop = {
+  jobId: string;
+  durationSeconds: number;
+  durationText: string;
+  distanceMeters: number;
+  cumulativeSeconds: number;
+  reachAt: string;
+};
+
+/** Clock time at each stop if the technician left now, in list order. */
+export function visitOrderReachPlan(
+  legs: Array<{
+    jobId: string;
+    durationSeconds: number;
+    durationText: string;
+    distanceMeters: number;
+  }>,
+  now = Date.now()
+): VisitOrderReachStop[] {
+  let acc = 0;
+  return legs.map((leg) => {
+    acc += Math.max(0, Number(leg.durationSeconds) || 0);
+    return {
+      ...leg,
+      cumulativeSeconds: acc,
+      reachAt: jobsMapReachAt(acc, now),
+    };
+  });
+}
+
+export function formatVisitOrderDrive(seconds: number): string {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const mins = Math.round(total / 60);
+  if (mins < 1) return 'under 1 min';
+  if (mins < 60) return `${mins} min`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem ? `${hours} hr ${rem} min` : `${hours} hr`;
+}
+
+/**
+ * Greedy nearest-neighbour from the technician’s pin.
+ * Jobs without coordinates stay at the end in their current order.
+ */
+export function suggestVisitOrderByNearest<T extends { id: string }>(
+  start: VisitOrderLatLng,
+  items: T[],
+  coordsOf: (item: T) => VisitOrderLatLng | null
+): T[] {
+  const withPin: T[] = [];
+  const without: T[] = [];
+  for (const item of items) {
+    if (coordsOf(item)) withPin.push(item);
+    else without.push(item);
+  }
+  const remaining = [...withPin];
+  const ordered: T[] = [];
+  let cur = start;
+  while (remaining.length) {
+    let best = 0;
+    let bestD = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < remaining.length; i++) {
+      const point = coordsOf(remaining[i]);
+      if (!point) continue;
+      const dist = haversineKm(cur.lat, cur.lng, point.lat, point.lng);
+      if (dist < bestD) {
+        bestD = dist;
+        best = i;
+      }
+    }
+    const next = remaining.splice(best, 1)[0];
+    if (!next) break;
+    ordered.push(next);
+    cur = coordsOf(next) || cur;
+  }
+  return [...ordered, ...without];
 }
 

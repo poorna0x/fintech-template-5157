@@ -18,17 +18,22 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { GripVertical, ListOrdered, Loader2, MapPinned } from 'lucide-react';
+import { GripVertical, ListOrdered, Loader2, Map, MapPinned, Route } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
   fetchTechnicianJobsForVisitOrder,
   filterCachedJobsForVisitOrder,
+  formatVisitOrderDrive,
   getVisitOrderVisibleForTechnician,
   saveTechnicianVisitOrder,
   setVisitOrderVisibleForTechnician,
+  suggestVisitOrderByNearest,
+  visitOrderReachPlan,
   visitOrderStopLabel,
   type VisitOrderJobRow,
+  type VisitOrderLatLng,
+  type VisitOrderReachStop,
 } from '@/lib/adminVisitOrder';
 import {
   notifyTechnicianJobPush,
@@ -41,6 +46,13 @@ import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import {
+  buildJobsMapTechs,
+  fetchJobsMapLastLocations,
+  fetchJobsMapLiveRows,
+} from '@/lib/adminJobsMap';
+import { fetchDrivingRoute } from '@/lib/googleMapsDistance';
+import VisitOrderPlanMap, { type VisitOrderMapLeg, type VisitOrderMapStop } from './VisitOrderPlanMap';
 
 type ArrangeTechnicianVisitOrderDialogProps = {
   open: boolean;
@@ -140,6 +152,12 @@ export default function ArrangeTechnicianVisitOrderDialog({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [openingMaps, setOpeningMaps] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  const [planning, setPlanning] = useState(false);
+  const [techStart, setTechStart] = useState<(VisitOrderLatLng & { name: string }) | null>(null);
+  const [pins, setPins] = useState<Record<string, VisitOrderLatLng>>({});
+  const [planLegs, setPlanLegs] = useState<VisitOrderMapLeg[]>([]);
+  const [reachByJobId, setReachByJobId] = useState<Record<string, VisitOrderReachStop>>({});
   const [dirty, setDirty] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropHint, setDropHint] = useState<DropHint>(null);
@@ -153,11 +171,17 @@ export default function ArrangeTechnicianVisitOrderDialog({
   const scrollRafRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
   const dragIndexRef = useRef<number | null>(null);
+  const pinsRef = useRef(pins);
+  const planGenRef = useRef(0);
+  pinsRef.current = pins;
 
   const applyRows = useCallback((data: VisitOrderJobRow[]) => {
     setRows(data);
     setDirty(data.some((j) => j.visit_order == null));
   }, []);
+
+  const techLabel = (t: Technician) =>
+    String(t.fullName || (t as any).full_name || 'Technician').trim() || 'Technician';
 
   const loadJobs = useCallback(
     async (techId: string, opts?: { silentCacheFirst?: boolean }) => {
@@ -187,7 +211,15 @@ export default function ArrangeTechnicianVisitOrderDialog({
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setShowMap(false);
+      setPins({});
+      setPlanLegs([]);
+      setReachByJobId({});
+      setTechStart(null);
+      setPlanning(false);
+      return;
+    }
     const nextTech =
       initialTechnicianId && activeTechs.some((t) => t.id === initialTechnicianId)
         ? initialTechnicianId
@@ -215,6 +247,14 @@ export default function ArrangeTechnicianVisitOrderDialog({
       cancelled = true;
     };
   }, [open, technicianId]);
+
+  useEffect(() => {
+    planGenRef.current += 1;
+    setPins({});
+    setPlanLegs([]);
+    setReachByJobId({});
+    setTechStart(null);
+  }, [technicianId]);
 
   const handleVisibilityToggle = async (next: boolean) => {
     if (!technicianId) {
@@ -532,8 +572,198 @@ export default function ArrangeTechnicianVisitOrderDialog({
     }
   };
 
-  const techLabel = (t: Technician) =>
-    String(t.fullName || (t as any).full_name || 'Technician').trim() || 'Technician';
+  const resolveTechStart = async (): Promise<(VisitOrderLatLng & { name: string }) | null> => {
+    const tech = activeTechs.find((row) => row.id === technicianId);
+    const name = tech ? techLabel(tech) : 'Technician';
+    const [live, last] = await Promise.all([
+      fetchJobsMapLiveRows(),
+      fetchJobsMapLastLocations(technicianId ? [technicianId] : []),
+    ]);
+    const built = buildJobsMapTechs(tech ? [tech] : [], live, last);
+    if (built[0]) return { lat: built[0].lat, lng: built[0].lng, name };
+    try {
+      const { data: freshTech } = await db.technicians.getById(technicianId);
+      const loc = readLocationLatLng(freshTech?.current_location || (freshTech as any)?.currentLocation);
+      if (loc) return { ...loc, name };
+    } catch {
+      /* ignore */
+    }
+    return null;
+  };
+
+  const resolveJobPin = async (
+    job: VisitOrderJobRow,
+    known: Record<string, VisitOrderLatLng>
+  ): Promise<VisitOrderLatLng | null> => {
+    if (known[job.id]) return known[job.id];
+    let row: any = initialJobs.find((item) => String((item as any).id) === String(job.id)) || job;
+    let resolved = await resolveJobLatLngFromRow(row);
+    if (resolved) return { lat: resolved.lat, lng: resolved.lng };
+    try {
+      const { data: full, error } = await db.jobs.getByIdFull(job.id);
+      if (!error && full) row = full;
+    } catch {
+      /* keep cached */
+    }
+    resolved = await resolveJobLatLngFromRow(row);
+    if (resolved) return { lat: resolved.lat, lng: resolved.lng };
+    const accessToken = await resolveSupabaseAccessTokenForApi();
+    const cust = row?.customer || {};
+    const addressHint =
+      formatAddressForMapsSearch(cust.address) ||
+      String(cust.visible_address || cust.visibleAddress || '').trim() ||
+      '';
+    const hints = [addressHint, String(cust.full_name || cust.fullName || '').trim()].filter(Boolean);
+    if (hints.length) {
+      const geocoded = await geocodeFromPlaceHints(hints, accessToken);
+      if (geocoded) return { lat: geocoded.geocoded.latitude, lng: geocoded.geocoded.longitude };
+    }
+    return null;
+  };
+
+  const loadPlan = async (
+    jobRows: VisitOrderJobRow[],
+    pinSeed?: Record<string, VisitOrderLatLng>
+  ) => {
+    if (!technicianId || jobRows.length === 0) {
+      setTechStart(null);
+      setPlanLegs([]);
+      setReachByJobId({});
+      return;
+    }
+    const gen = ++planGenRef.current;
+    setPlanning(true);
+    try {
+      const start = await resolveTechStart();
+      if (planGenRef.current !== gen) return;
+      setTechStart(start);
+      const nextPins: Record<string, VisitOrderLatLng> = { ...pinsRef.current, ...pinSeed };
+      for (const job of jobRows) {
+        if (nextPins[job.id]) continue;
+        const pin = await resolveJobPin(job, nextPins);
+        if (pin) nextPins[job.id] = pin;
+      }
+      if (planGenRef.current !== gen) return;
+      setPins(nextPins);
+
+      const origin = start;
+      const orderedPins = jobRows
+        .map((job) => (nextPins[job.id] ? { job, pin: nextPins[job.id] } : null))
+        .filter((row): row is { job: VisitOrderJobRow; pin: VisitOrderLatLng } => Boolean(row));
+      if (!origin || orderedPins.length === 0) {
+        setPlanLegs([]);
+        setReachByJobId({});
+        return;
+      }
+      if (orderedPins.length > 12) {
+        toast.message(`Plan map uses the first 12 of ${orderedPins.length} pinned stops.`);
+        orderedPins.splice(12);
+      }
+
+      const legs: VisitOrderMapLeg[] = [];
+      const raw: Array<{
+        jobId: string;
+        durationSeconds: number;
+        durationText: string;
+        distanceMeters: number;
+      }> = [];
+      let from = origin;
+      for (let i = 0; i < orderedPins.length; i++) {
+        const stop = orderedPins[i];
+        const route = await fetchDrivingRoute(from, stop.pin);
+        if (route?.path.length) {
+          legs.push({
+            path: route.path,
+            durationText: route.durationText,
+            durationSeconds: route.durationSeconds,
+            color: i === 0 ? '#0f766e' : '#0284c7',
+          });
+          raw.push({
+            jobId: stop.job.id,
+            durationSeconds: route.durationSeconds,
+            durationText: route.durationText,
+            distanceMeters: route.distanceMeters,
+          });
+        }
+        from = stop.pin;
+      }
+      if (planGenRef.current !== gen) return;
+      const plan = visitOrderReachPlan(raw);
+      if (planGenRef.current !== gen) return;
+      setPlanLegs(
+        legs.map((leg, index) => ({
+          ...leg,
+          reachAt: plan[index]?.reachAt,
+        }))
+      );
+      setReachByJobId(Object.fromEntries(plan.map((stop) => [stop.jobId, stop])));
+    } finally {
+      if (planGenRef.current === gen) setPlanning(false);
+    }
+  };
+
+  const handleSuggestNearest = async () => {
+    if (!technicianId || rows.length < 2) return;
+    setPlanning(true);
+    let handoffToMap = false;
+    try {
+      const start = techStart || (await resolveTechStart());
+      if (!start) {
+        toast.error('Technician location not available. Ping them or use Live location first.');
+        return;
+      }
+      setTechStart(start);
+      const nextPins: Record<string, VisitOrderLatLng> = { ...pinsRef.current };
+      for (const job of rows) {
+        if (nextPins[job.id]) continue;
+        const pin = await resolveJobPin(job, nextPins);
+        if (pin) nextPins[job.id] = pin;
+      }
+      setPins(nextPins);
+      const next = suggestVisitOrderByNearest(start, rows, (job) => nextPins[job.id] || null);
+      const changed = next.some((job, index) => job.id !== rows[index]?.id);
+      if (!changed) {
+        toast.message('This order is already the nearest route');
+        return;
+      }
+      setRows(next);
+      setDirty(true);
+      toast.success('Suggested nearest route — Save order to keep it');
+      handoffToMap = showMap;
+    } finally {
+      if (!handoffToMap) setPlanning(false);
+    }
+  };
+
+  const orderKey = rows.map((job) => job.id).join(',');
+  const mapStops = useMemo(
+    () =>
+      rows.flatMap((job, index) => {
+        const pin = pins[job.id];
+        if (!pin) return [];
+        return [
+          {
+            id: job.id,
+            lat: pin.lat,
+            lng: pin.lng,
+            index,
+            title: visitOrderStopLabel(job),
+          } satisfies VisitOrderMapStop,
+        ];
+      }),
+    [rows, pins]
+  );
+
+  useEffect(() => {
+    if (!open || !showMap) return;
+    if (!technicianId || !orderKey) {
+      setPlanLegs([]);
+      setReachByJobId({});
+      return;
+    }
+    void loadPlan(rows);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- plan from current stop order only
+  }, [open, showMap, technicianId, orderKey]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -541,8 +771,10 @@ export default function ArrangeTechnicianVisitOrderDialog({
         className={cn(
           '!flex flex-col gap-0 overflow-hidden p-0',
           '!w-[calc(100vw-1rem)] !max-w-[calc(100vw-1rem)]',
-          'sm:!w-full sm:!max-w-lg',
+          'sm:!w-full',
+          showMap ? 'sm:!max-w-5xl' : 'sm:!max-w-lg',
           'max-h-[min(92dvh,92vh)] sm:max-h-[90vh]',
+          showMap && 'sm:min-h-[min(85vh,720px)]',
           '!top-[max(0.5rem,env(safe-area-inset-top,0px))] !translate-y-0',
           'sm:!top-[50%] sm:!translate-y-[-50%]',
           'rounded-xl sm:rounded-lg',
@@ -556,12 +788,24 @@ export default function ArrangeTechnicianVisitOrderDialog({
             Arrange visit order
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground sm:text-sm">
-            Pick a technician, drag to reorder, then open the route in Maps. The
-            switch only applies to the selected technician.
+            Pick a technician, drag stops, and use the plan map for reach times. Suggest nearest to tighten the route.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
+        <div
+          className={cn(
+            'flex min-h-0 flex-1',
+            showMap ? 'flex-col overflow-y-auto md:flex-row md:overflow-hidden' : 'flex-col overflow-hidden'
+          )}
+        >
+          <div
+            className={cn(
+              'flex min-w-0 flex-col gap-3 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4',
+              showMap
+                ? 'flex-none md:min-h-0 md:flex-1 md:overflow-hidden'
+                : 'min-h-0 flex-1 overflow-hidden'
+            )}
+          >
           <div className="shrink-0 space-y-1.5">
             <Label htmlFor="visit-order-tech" className="text-sm">
               Technician
@@ -570,6 +814,10 @@ export default function ArrangeTechnicianVisitOrderDialog({
               value={technicianId || undefined}
               onValueChange={(v) => {
                 setTechnicianId(v);
+                setPins({});
+                setPlanLegs([]);
+                setReachByJobId({});
+                setTechStart(null);
                 void loadJobs(v, { silentCacheFirst: true });
               }}
             >
@@ -584,6 +832,31 @@ export default function ArrangeTechnicianVisitOrderDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button
+              type="button"
+              variant={showMap ? 'default' : 'outline'}
+              size="sm"
+              className="h-11 cursor-pointer sm:h-9"
+              disabled={!showMap && (!technicianId || rows.length === 0)}
+              onClick={() => setShowMap((on) => !on)}
+            >
+              <Map className="mr-1.5 h-4 w-4" />
+              {showMap ? 'Hide map' : 'Plan map'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-11 cursor-pointer sm:h-9"
+              disabled={!technicianId || rows.length < 2 || planning || saving}
+              onClick={() => void handleSuggestNearest()}
+            >
+              {planning ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Route className="mr-1.5 h-4 w-4" />}
+              Suggest nearest
+            </Button>
           </div>
 
           <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2.5">
@@ -608,11 +881,24 @@ export default function ArrangeTechnicianVisitOrderDialog({
               ? 'Loading…'
               : `${rows.length} open job${rows.length === 1 ? '' : 's'}`}
             {!loading && dirty ? ' · unsaved' : ''}
+            {planning ? ' · road times…' : ''}
+            {!planning &&
+            rows.some((job) => reachByJobId[job.id]?.cumulativeSeconds)
+              ? ` · ${formatVisitOrderDrive(
+                  Math.max(
+                    0,
+                    ...rows.map((job) => reachByJobId[job.id]?.cumulativeSeconds || 0)
+                  )
+                )} if they leave now`
+              : ''}
           </p>
 
           <div
             ref={scrollContainerRef}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-gray-100 bg-slate-50/60 -mx-0 px-1.5 py-1.5 sm:px-2 sm:py-2"
+            className={cn(
+              'overflow-y-auto overscroll-contain rounded-lg border border-gray-100 bg-slate-50/60 -mx-0 px-1.5 py-1.5 sm:px-2 sm:py-2',
+              showMap ? 'max-md:flex-none md:min-h-0 md:flex-1' : 'min-h-0 flex-1'
+            )}
             onDragOver={(event) => {
               if (dragIndex === null) return;
               event.preventDefault();
@@ -731,6 +1017,16 @@ export default function ArrangeTechnicianVisitOrderDialog({
                               {String(job.scheduled_time_slot).replace('_', ' ')}
                             </span>
                           ) : null}
+                          {reachByJobId[job.id]?.reachAt ? (
+                            <span className="shrink-0 font-medium text-sky-800">
+                              Reach {reachByJobId[job.id].reachAt}
+                              {reachByJobId[job.id].durationText
+                                ? ` · ${reachByJobId[job.id].durationText} drive`
+                                : ''}
+                            </span>
+                          ) : pins[job.id] ? null : showMap ? (
+                            <span className="shrink-0">No map pin</span>
+                          ) : null}
                         </div>
                       </div>
                     </li>
@@ -739,6 +1035,18 @@ export default function ArrangeTechnicianVisitOrderDialog({
               </ol>
             )}
           </div>
+          </div>
+          {showMap ? (
+            <div className="relative h-[240px] min-h-[200px] w-full shrink-0 overflow-hidden border-t md:h-auto md:min-h-0 md:w-[48%] md:flex-none md:border-l md:border-t-0">
+              <VisitOrderPlanMap tech={techStart} stops={mapStops} legs={planLegs} />
+              {planning ? (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/50 text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading reach times…
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <DialogFooter
