@@ -118,15 +118,16 @@ function bookingIntentLocationPayload(input: {
     input.address || ''
   ).slice(0, 160);
   let maps = String(input.googleMapsLink || '').trim().slice(0, 500);
+  if (/[?&]q=0(,|%2C)0(?:&|$)/i.test(maps)) maps = '';
   const lat = Number(input.lat);
   const lng = Number(input.lng);
-  if (
-    !maps &&
+  const coordsOk =
     Number.isFinite(lat) &&
     Number.isFinite(lng) &&
     Math.abs(lat) <= 90 &&
-    Math.abs(lng) <= 180
-  ) {
+    Math.abs(lng) <= 180 &&
+    !(lat === 0 && lng === 0);
+  if (!maps && coordsOk) {
     maps = `https://www.google.com/maps?q=${lat},${lng}`;
   }
   return {
@@ -482,11 +483,16 @@ const Booking: React.FC = () => {
         lat: formData.coordinates.lat,
         lng: formData.coordinates.lng,
       });
+      const pinLat = Number(formData.coordinates.lat);
+      const pinLng = Number(formData.coordinates.lng);
+      const pinOk =
+        Number.isFinite(pinLat) &&
+        Number.isFinite(pinLng) &&
+        !(pinLat === 0 && pinLng === 0);
       const location = {
         location_label: locationOverride?.location_label || fromForm.location_label,
         location_maps_url: locationOverride?.location_maps_url || fromForm.location_maps_url,
-        location_lat: formData.coordinates.lat,
-        location_lng: formData.coordinates.lng,
+        ...(pinOk ? { location_lat: pinLat, location_lng: pinLng } : {}),
       };
       const payload = {
         full_name: name,
