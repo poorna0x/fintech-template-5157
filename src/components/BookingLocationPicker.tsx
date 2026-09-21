@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { Loader2, LocateFixed, MapPin, Phone, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ensureGoogleMapsApi } from '@/lib/googleMapsLink';
@@ -30,6 +30,11 @@ export type BookingLocationValue = {
   googleMapsLink: string;
   houseFlat: string;
   landmark: string;
+};
+
+export type BookingLocationPickerHandle = {
+  /** Same path as Save and proceed. Returns true when house/flat + pin were saved. */
+  trySave: () => boolean;
 };
 
 type PlacePrediction = {
@@ -154,20 +159,23 @@ function looksLikeCopiedAddress(house: string, address: string): boolean {
   return /bengaluru|bangalore|karnataka|\blayout\b|\broad\b|\brd\b/.test(h) && h.includes(',');
 }
 
-export default function BookingLocationPicker({
-  open,
-  onOpenChange,
-  startOn: _startOn = 'search',
-  initial,
-  onSave,
-  onPinChange,
-  inlineSearch = false,
-  invalid = false,
-  showCancel = false,
-  onCancelSearch,
-  onRequestSearch,
-  coverageNotice = null,
-}: BookingLocationPickerProps) {
+const BookingLocationPicker = forwardRef(function BookingLocationPicker(
+  {
+    open,
+    onOpenChange,
+    startOn: _startOn = 'search',
+    initial,
+    onSave,
+    onPinChange,
+    inlineSearch = false,
+    invalid = false,
+    showCancel = false,
+    onCancelSearch,
+    onRequestSearch,
+    coverageNotice = null,
+  }: BookingLocationPickerProps,
+  ref: Ref<BookingLocationPickerHandle>
+) {
   const [query, setQuery] = useState('');
   const [predictions, setPredictions] = useState<PlacePrediction[]>([]);
   const [searching, setSearching] = useState(false);
@@ -180,6 +188,7 @@ export default function BookingLocationPicker({
   const [address, setAddress] = useState('');
   const [houseFlat, setHouseFlat] = useState('');
   const [landmark, setLandmark] = useState('');
+  const [showHouseError, setShowHouseError] = useState(false);
   const [myLocation, setMyLocation] = useState<{
     lat: number;
     lng: number;
@@ -222,6 +231,7 @@ export default function BookingLocationPicker({
       const seededAddress = seed?.address ? removePlusCode(seed.address) : '';
       setHouseFlat(looksLikeCopiedAddress(seededHouse, seededAddress) ? '' : seededHouse);
       setLandmark((seed?.landmark || '').trim());
+      setShowHouseError(false);
       setSearching(false);
       setGpsLoading(false);
       setResolvingPlace(false);
@@ -458,10 +468,25 @@ export default function BookingLocationPicker({
     hasCoords(centerLiveRef.current) &&
     Boolean(address.trim());
   const coverageBlocked = coverageNotice?.tone === 'block';
+  const houseMissing = !houseFlat.trim();
+
+  const focusHouseField = () => {
+    window.setTimeout(() => {
+      const el = document.getElementById('booking-house-flat');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el?.focus();
+    }, 50);
+  };
 
   const handleSave = () => {
+    if (coverageBlocked || savingRef.current) return;
+    if (houseMissing) {
+      setShowHouseError(true);
+      focusHouseField();
+      return;
+    }
     const pin = readLivePin();
-    if (!canSave || savingRef.current || !hasCoords(pin)) return;
+    if (!canSave || !hasCoords(pin)) return;
     savingRef.current = true;
     emitPin(pin);
     onSave({
@@ -473,11 +498,19 @@ export default function BookingLocationPicker({
     });
     setQuery('');
     setPredictions([]);
+    setShowHouseError(false);
     onOpenChange(false);
     window.setTimeout(() => {
       savingRef.current = false;
     }, 400);
   };
+
+  useImperativeHandle(ref, () => ({
+    trySave() {
+      handleSave();
+      return !coverageBlocked && canSave;
+    },
+  }));
 
   const searchResults = (
     <>
@@ -684,16 +717,30 @@ export default function BookingLocationPicker({
         id="booking-house-flat"
         name="hro-house-flat"
         value={houseFlat}
-        onChange={(e) => setHouseFlat(e.target.value)}
+        onChange={(e) => {
+          setHouseFlat(e.target.value);
+          if (e.target.value.trim()) setShowHouseError(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handleSave();
+          }
+        }}
         placeholder="House/Flat Number*"
         autoComplete="off"
         autoCorrect="off"
         spellCheck={false}
         enterKeyHint="next"
+        aria-invalid={showHouseError && houseMissing}
         data-1p-ignore="true"
         data-lpignore="true"
         maxLength={80}
-        className="mt-3 h-12 w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/15 dark:border-border dark:bg-background dark:text-foreground"
+        className={`mt-3 h-12 w-full rounded-lg border bg-white px-3 text-base text-neutral-900 outline-none placeholder:text-neutral-400 focus:ring-2 dark:bg-background dark:text-foreground ${
+          showHouseError && houseMissing
+            ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20'
+            : 'border-neutral-300 focus:border-sky-500 focus:ring-sky-500/15 dark:border-border'
+        }`}
       />
       <input
         id="booking-landmark"
@@ -720,11 +767,13 @@ export default function BookingLocationPicker({
       <button
         type="button"
         onClick={handleSave}
-        disabled={!canSave || coverageBlocked}
+        disabled={coverageBlocked}
         className={`mt-3 flex h-12 w-full min-h-12 cursor-pointer items-center justify-center rounded-lg text-[15px] font-semibold transition-colors duration-200 ${
           canSave && !coverageBlocked
             ? 'bg-sky-600 text-white hover:bg-sky-700'
-            : 'cursor-not-allowed bg-neutral-200 text-white'
+            : coverageBlocked
+              ? 'cursor-not-allowed bg-neutral-200 text-white'
+              : 'bg-neutral-200 text-white'
         }`}
       >
         {coverageBlocked ? 'Choose a closer location, or call us' : 'Save and proceed'}
@@ -732,6 +781,10 @@ export default function BookingLocationPicker({
       {coverageBlocked ? (
         <p className="mt-2 pb-1 text-center text-xs text-neutral-500">
           Search a nearby area we cover, or call us and we’ll try to help.
+        </p>
+      ) : showHouseError && houseMissing ? (
+        <p className="mt-2 pb-1 text-center text-sm font-medium text-red-600">
+          Enter your house / flat number to continue.
         </p>
       ) : !canSave ? (
         <p className="mt-2 pb-1 text-center text-xs text-neutral-500">
@@ -751,4 +804,6 @@ export default function BookingLocationPicker({
       {mapCard}
     </>
   );
-}
+});
+
+export default BookingLocationPicker;
