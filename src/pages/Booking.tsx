@@ -575,6 +575,8 @@ const Booking: React.FC = () => {
     formData.landmark,
     formData.address,
     formData.googleMapsLink,
+    formData.coordinates.lat,
+    formData.coordinates.lng,
     currentStep,
     showConfirmation,
     showSuccessLoader,
@@ -737,11 +739,6 @@ const Booking: React.FC = () => {
     setLocationEditing(false);
     setShowValidation(false);
     setLocationPickerOpen(false);
-    if (!coverage.ok) {
-      toast.error(formatOutOfServiceAreaMessage(coverage, outOfAreaMessage));
-      return;
-    }
-    setCurrentStep((step) => (step === 3 ? 4 : step));
     const loc = bookingIntentLocationPayload({
       houseFlat: value.houseFlat,
       landmark: value.landmark,
@@ -750,6 +747,13 @@ const Booking: React.FC = () => {
       lat: value.coordinates.lat,
       lng: value.coordinates.lng,
     });
+    // Always send the pin to the live banner, even when we don't cover this area.
+    if (!coverage.ok) {
+      void flushWebsiteBookingIntent(currentStep, loc);
+      toast.error(formatOutOfServiceAreaMessage(coverage, outOfAreaMessage));
+      return;
+    }
+    setCurrentStep((step) => (step === 3 ? 4 : step));
     void flushWebsiteBookingIntent(4, loc);
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   };
@@ -757,15 +761,30 @@ const Booking: React.FC = () => {
   const handleLocationPinChange = (value: {
     coordinates: { lat: number; lng: number };
     googleMapsLink: string;
+    address?: string;
   }) => {
-    setHubMatch(
-      matchPointToServiceHubs(value.coordinates.lat, value.coordinates.lng, serviceHubs)
+    const coverage = matchPointToServiceHubs(
+      value.coordinates.lat,
+      value.coordinates.lng,
+      serviceHubs
     );
+    setHubMatch(coverage);
     setFormData((prev) => ({
       ...prev,
       coordinates: value.coordinates,
       googleMapsLink: value.googleMapsLink,
+      ...(value.address ? { address: value.address } : {}),
     }));
+    if (coverage.ok) return;
+    const loc = bookingIntentLocationPayload({
+      houseFlat: formData.addressDetails,
+      landmark: formData.landmark,
+      address: value.address || formData.address,
+      googleMapsLink: value.googleMapsLink,
+      lat: value.coordinates.lat,
+      lng: value.coordinates.lng,
+    });
+    void flushWebsiteBookingIntent(currentStep, loc);
   };
 
   useEffect(() => {

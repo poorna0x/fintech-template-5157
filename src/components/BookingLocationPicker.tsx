@@ -90,7 +90,11 @@ type BookingLocationPickerProps = {
   initial?: Partial<BookingLocationValue>;
   onSave: (value: BookingLocationValue) => void;
   /** Fired whenever the pin is placed (search, GPS, or map settle) so the job always has coords. */
-  onPinChange?: (value: { coordinates: { lat: number; lng: number }; googleMapsLink: string }) => void;
+  onPinChange?: (value: {
+    coordinates: { lat: number; lng: number };
+    googleMapsLink: string;
+    address?: string;
+  }) => void;
   inlineSearch?: boolean;
   invalid?: boolean;
   showCancel?: boolean;
@@ -326,6 +330,7 @@ const BookingLocationPicker = forwardRef(function BookingLocationPicker(
     if (cached) {
       lastLabelLookupRef.current = coords;
       setAddress(cached);
+      emitPin(coords, cached);
       setGeocoding(false);
       return;
     }
@@ -344,6 +349,7 @@ const BookingLocationPicker = forwardRef(function BookingLocationPicker(
         if (geo) {
           setAddress(geo);
           pinLabelCacheRef.current.set(cacheKey, geo);
+          emitPin(coords, geo);
         }
         setGeocoding(false);
       })
@@ -355,12 +361,14 @@ const BookingLocationPicker = forwardRef(function BookingLocationPicker(
   };
   paintPinLabelRef.current = paintPinLabel;
 
-  const emitPin = (coords: { lat: number; lng: number }) => {
+  const emitPin = (coords: { lat: number; lng: number }, addressOverride?: string) => {
     if (!hasCoords(coords)) return;
     centerLiveRef.current = coords;
+    const label = (addressOverride ?? '').trim();
     onPinChangeRef.current?.({
       coordinates: coords,
       googleMapsLink: googleMapsPinUrl(coords.lat, coords.lng),
+      ...(label ? { address: removePlusCode(label) } : {}),
     });
   };
 
@@ -386,7 +394,7 @@ const BookingLocationPicker = forwardRef(function BookingLocationPicker(
     preset?: { address?: string }
   ) => {
     setCenter(coords);
-    emitPin(coords);
+    emitPin(coords, preset?.address);
     setZoom(DEFAULT_ZOOM);
     setCameraNonce((n) => n + 1);
     skipSeedOnOpenRef.current = true;
