@@ -756,6 +756,8 @@ export interface Database {
           dismissed_at: string | null;
           booked_at: string | null;
           booked_job_number: string | null;
+          location_label: string | null;
+          location_maps_url: string | null;
         };
         Insert: never;
         Update: Partial<{
@@ -778,6 +780,8 @@ export interface Database {
           booked_at: string | null;
           booked_job_number: string | null;
           archived_at: string;
+          location_label: string | null;
+          location_maps_url: string | null;
         };
         Insert: never;
         Update: never;
@@ -795,6 +799,10 @@ export interface Database {
           p_phone_normalized: string;
           p_current_step: number;
           p_site_key: string;
+          p_client_ip_hash?: string;
+          p_quarantined?: boolean;
+          p_location_label?: string | null;
+          p_location_maps_url?: string | null;
         };
         Returns: undefined;
       };

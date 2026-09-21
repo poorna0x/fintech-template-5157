@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Phone, Search, Volume2, VolumeX } from 'lucide-react';
+import { MapPin, Phone, Search, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { db, supabase } from '@/lib/supabase';
@@ -19,6 +19,8 @@ type Row = {
   site_key: string;
   booked_at?: string | null;
   booked_job_number?: string | null;
+  location_label?: string | null;
+  location_maps_url?: string | null;
 };
 
 const SITE_LABEL: Record<string, string> = {
@@ -54,6 +56,14 @@ function mergeRow(rows: Row[], raw: Record<string, unknown>): Row[] {
   const existing = rows.find((r) => r.id === id);
   const created_at =
     (raw.created_at as string | undefined) || existing?.created_at || updated_at;
+  const location_label =
+    typeof raw.location_label === 'string' && raw.location_label.trim()
+      ? raw.location_label.trim()
+      : existing?.location_label || null;
+  const location_maps_url =
+    typeof raw.location_maps_url === 'string' && raw.location_maps_url.trim()
+      ? raw.location_maps_url.trim()
+      : existing?.location_maps_url || null;
 
   const next: Row = {
     id,
@@ -65,6 +75,8 @@ function mergeRow(rows: Row[], raw: Record<string, unknown>): Row[] {
     site_key,
     booked_at,
     booked_job_number,
+    location_label,
+    location_maps_url,
   };
   const rest = rows.filter((r) => r.id !== id);
   const merged = [next, ...rest];
@@ -334,6 +346,25 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert, onSearchCusto
               <span className="text-xs text-muted-foreground">
                 Step {r.current_step}: {STEP_LABEL[r.current_step] ?? '—'}
               </span>
+              {r.location_label ? (
+                r.location_maps_url ? (
+                  <a
+                    href={r.location_maps_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex max-w-[min(100%,22rem)] items-center gap-1 text-xs text-emerald-900 hover:underline"
+                    title="Open in Maps"
+                  >
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{r.location_label}</span>
+                  </a>
+                ) : (
+                  <span className="inline-flex max-w-[min(100%,22rem)] items-center gap-1 text-xs text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{r.location_label}</span>
+                  </span>
+                )
+              ) : null}
               {r.booked_at ? (
                 <span
                   className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-900"

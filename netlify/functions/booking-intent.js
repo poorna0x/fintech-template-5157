@@ -13,6 +13,33 @@ const { checkRateLimit, checkRateLimitForKey } = require('./rate-limiter');
 
 const SITE_KEYS = new Set(['hydrogenro', 'elevenro']);
 
+function sanitizeLocationLabel(raw) {
+  const s = String(raw || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160);
+  return s || null;
+}
+
+function sanitizeMapsUrl(raw) {
+  const s = String(raw || '').trim().slice(0, 500);
+  if (!s) return null;
+  try {
+    const u = new URL(s);
+    if (u.protocol !== 'https:') return null;
+    const host = u.hostname.toLowerCase();
+    const ok =
+      host === 'maps.app.goo.gl' ||
+      host === 'goo.gl' ||
+      host === 'maps.google.com' ||
+      host.endsWith('.google.com') ||
+      /^maps\.google\./.test(host);
+    return ok ? s : null;
+  } catch {
+    return null;
+  }
+}
+
 function hashClientIp(event) {
   const ip = getClientIdentifier(event);
   const pepper =
@@ -141,7 +168,10 @@ exports.handler = async (event) => {
   // household IP with a few genuine customers isn't hidden from the banner.
   const quarantined = recentIpCount >= 12;
 
-  const { error } = await client.admin.rpc('upsert_website_booking_intent', {
+  const locationLabel = sanitizeLocationLabel(body.location_label);
+  const locationMapsUrl = sanitizeMapsUrl(body.location_maps_url);
+
+  const upsertArgs = {
     p_full_name: fullName,
     p_phone: String(body.phone || phoneNorm),
     p_phone_normalized: phoneNorm,
@@ -149,7 +179,17 @@ exports.handler = async (event) => {
     p_site_key: siteKey,
     p_client_ip_hash: ipHash,
     p_quarantined: quarantined,
-  });
+    p_location_label: locationLabel,
+    p_location_maps_url: locationMapsUrl,
+  };
+
+  let { error } = await client.admin.rpc('upsert_website_booking_intent', upsertArgs);
+  if (error && /p_location|function.*upsert_website_booking_intent/i.test(error.message || '')) {
+    delete upsertArgs.p_location_label;
+    delete upsertArgs.p_location_maps_url;
+    const retry = await client.admin.rpc('upsert_website_booking_intent', upsertArgs);
+    error = retry.error;
+  }
 
   if (error) {
     console.error('[booking-intent upsert]', error.message, { ip: getClientIdentifier(event) });

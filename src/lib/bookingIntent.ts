@@ -6,6 +6,9 @@ export interface WebsiteBookingIntentRow {
   phone_normalized: string;
   current_step: number;
   site_key: 'hydrogenro' | 'elevenro';
+  /** Set after the location step is saved. */
+  location_label?: string | null;
+  location_maps_url?: string | null;
 }
 
 async function bookingIntentFetch(
@@ -41,6 +44,8 @@ export async function pushWebsiteBookingIntent(
     phone_normalized: row.phone_normalized,
     current_step: row.current_step,
     site_key: row.site_key,
+    location_label: row.location_label || undefined,
+    location_maps_url: row.location_maps_url || undefined,
     altchaLoginToken: ctx.altchaLoginToken,
     altchaPayload: ctx.altchaPayload,
   });

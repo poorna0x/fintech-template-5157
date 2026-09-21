@@ -103,6 +103,24 @@ function composeBookingStreet(houseFlat: string, landmark: string, base: string)
   return `${detail}, ${street}`;
 }
 
+function bookingIntentLocationPayload(input: {
+  houseFlat?: string;
+  landmark?: string;
+  address?: string;
+  googleMapsLink?: string;
+}): { location_label?: string; location_maps_url?: string } {
+  const label = composeBookingStreet(
+    input.houseFlat || '',
+    input.landmark || '',
+    input.address || ''
+  ).slice(0, 160);
+  const maps = String(input.googleMapsLink || '').trim().slice(0, 500);
+  return {
+    ...(label ? { location_label: label } : {}),
+    ...(maps ? { location_maps_url: maps } : {}),
+  };
+}
+
 declare global {
   interface Window {
     google: typeof google;
@@ -221,6 +239,8 @@ const Booking: React.FC = () => {
     full_name: string;
     phone_normalized: string;
     current_step: number;
+    location_label: string;
+    location_maps_url: string;
   } | null>(null);
 
   // Get tomorrow's date
@@ -428,7 +448,10 @@ const Booking: React.FC = () => {
   const WEBSITE_INTENT_DEBOUNCE_MS = 1500;
 
   const flushWebsiteBookingIntent = useCallback(
-    async (step?: number) => {
+    async (
+      step?: number,
+      locationOverride?: { location_label?: string; location_maps_url?: string }
+    ) => {
       const name = formData.fullName.trim();
       const phoneNorm = normalizePhoneNumber(formData.phone);
       // No ALTCHA gate: capture the live intent immediately. The booking-intent
@@ -436,19 +459,32 @@ const Booking: React.FC = () => {
       if (name.length < 2 || !/^[6-9]\d{9}$/.test(phoneNorm)) {
         return;
       }
+      const fromForm = bookingIntentLocationPayload({
+        houseFlat: formData.addressDetails,
+        landmark: formData.landmark,
+        address: formData.address,
+        googleMapsLink: formData.googleMapsLink,
+      });
+      const location = {
+        location_label: locationOverride?.location_label || fromForm.location_label,
+        location_maps_url: locationOverride?.location_maps_url || fromForm.location_maps_url,
+      };
       const payload = {
         full_name: name,
         phone: formData.phone,
         phone_normalized: phoneNorm,
         current_step: step ?? currentStep,
         site_key: WEBSITE_BOOKING_SITE_KEY,
+        ...location,
       };
       const last = websiteIntentLastSentRef.current;
       if (
         last &&
         last.full_name === payload.full_name &&
         last.phone_normalized === payload.phone_normalized &&
-        last.current_step === payload.current_step
+        last.current_step === payload.current_step &&
+        last.location_label === (payload.location_label || '') &&
+        last.location_maps_url === (payload.location_maps_url || '')
       ) {
         return;
       }
@@ -462,10 +498,22 @@ const Booking: React.FC = () => {
           full_name: payload.full_name,
           phone_normalized: payload.phone_normalized,
           current_step: payload.current_step,
+          location_label: payload.location_label || '',
+          location_maps_url: payload.location_maps_url || '',
         };
       }
     },
-    [formData.fullName, formData.phone, currentStep, altchaLoginToken, altchaPayload]
+    [
+      formData.fullName,
+      formData.phone,
+      formData.addressDetails,
+      formData.landmark,
+      formData.address,
+      formData.googleMapsLink,
+      currentStep,
+      altchaLoginToken,
+      altchaPayload,
+    ]
   );
 
   useEffect(() => {
@@ -502,6 +550,10 @@ const Booking: React.FC = () => {
   }, [
     formData.fullName,
     formData.phone,
+    formData.addressDetails,
+    formData.landmark,
+    formData.address,
+    formData.googleMapsLink,
     currentStep,
     showConfirmation,
     showSuccessLoader,
@@ -669,6 +721,13 @@ const Booking: React.FC = () => {
       return;
     }
     setCurrentStep((step) => (step === 3 ? 4 : step));
+    const loc = bookingIntentLocationPayload({
+      houseFlat: value.houseFlat,
+      landmark: value.landmark,
+      address: value.address,
+      googleMapsLink: value.googleMapsLink,
+    });
+    void flushWebsiteBookingIntent(4, loc);
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   };
 

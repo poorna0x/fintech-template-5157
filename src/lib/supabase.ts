@@ -8440,7 +8440,7 @@ export const db = {
       // Egress guard: only fetch recent rows (live intent banner is only useful short-term).
       const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
       const INTENT_LIVE_COLUMNS =
-        'id, full_name, phone, current_step, created_at, updated_at, site_key, booked_at, booked_job_number, dismissed_at, quarantined';
+        'id, full_name, phone, current_step, created_at, updated_at, site_key, booked_at, booked_job_number, dismissed_at, quarantined, location_label, location_maps_url';
       const { data, error } = await supabase
         .from('website_booking_intent')
         .select(INTENT_LIVE_COLUMNS)
