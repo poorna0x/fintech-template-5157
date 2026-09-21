@@ -32,12 +32,23 @@ function sanitizeMapsUrl(raw) {
       host === 'maps.app.goo.gl' ||
       host === 'goo.gl' ||
       host === 'maps.google.com' ||
+      host === 'www.google.com' ||
+      host === 'google.com' ||
       host.endsWith('.google.com') ||
       /^maps\.google\./.test(host);
     return ok ? s : null;
   } catch {
     return null;
   }
+}
+
+function mapsUrlFromCoords(latRaw, lngRaw) {
+  const lat = Number(latRaw);
+  const lng = Number(lngRaw);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (lat === 0 && lng === 0) return null;
+  return `https://www.google.com/maps?q=${lat},${lng}`;
 }
 
 function hashClientIp(event) {
@@ -169,7 +180,9 @@ exports.handler = async (event) => {
   const quarantined = recentIpCount >= 12;
 
   const locationLabel = sanitizeLocationLabel(body.location_label);
-  const locationMapsUrl = sanitizeMapsUrl(body.location_maps_url);
+  const locationMapsUrl =
+    sanitizeMapsUrl(body.location_maps_url) ||
+    mapsUrlFromCoords(body.location_lat, body.location_lng);
 
   const upsertArgs = {
     p_full_name: fullName,

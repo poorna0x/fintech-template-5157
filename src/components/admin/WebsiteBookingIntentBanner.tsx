@@ -343,28 +343,26 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert, onSearchCusto
                 <Phone className="w-3.5 h-3.5 shrink-0" />
                 {r.phone}
               </button>
+              {r.location_maps_url ? (
+                <a
+                  href={r.location_maps_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex max-w-[min(100%,18rem)] items-center gap-1 text-emerald-800 hover:underline"
+                  title={r.location_label ? `Open in Maps: ${r.location_label}` : 'Open location in Maps'}
+                >
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate text-xs">{r.location_label || 'Location'}</span>
+                </a>
+              ) : r.location_label ? (
+                <span className="inline-flex max-w-[min(100%,18rem)] items-center gap-1 text-xs text-muted-foreground">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{r.location_label}</span>
+                </span>
+              ) : null}
               <span className="text-xs text-muted-foreground">
                 Step {r.current_step}: {STEP_LABEL[r.current_step] ?? '—'}
               </span>
-              {r.location_label ? (
-                r.location_maps_url ? (
-                  <a
-                    href={r.location_maps_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex max-w-[min(100%,22rem)] items-center gap-1 text-xs text-emerald-900 hover:underline"
-                    title="Open in Maps"
-                  >
-                    <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">{r.location_label}</span>
-                  </a>
-                ) : (
-                  <span className="inline-flex max-w-[min(100%,22rem)] items-center gap-1 text-xs text-muted-foreground">
-                    <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">{r.location_label}</span>
-                  </span>
-                )
-              ) : null}
               {r.booked_at ? (
                 <span
                   className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-900"

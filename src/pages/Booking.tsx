@@ -108,13 +108,26 @@ function bookingIntentLocationPayload(input: {
   landmark?: string;
   address?: string;
   googleMapsLink?: string;
+  lat?: number;
+  lng?: number;
 }): { location_label?: string; location_maps_url?: string } {
   const label = composeBookingStreet(
     input.houseFlat || '',
     input.landmark || '',
     input.address || ''
   ).slice(0, 160);
-  const maps = String(input.googleMapsLink || '').trim().slice(0, 500);
+  let maps = String(input.googleMapsLink || '').trim().slice(0, 500);
+  const lat = Number(input.lat);
+  const lng = Number(input.lng);
+  if (
+    !maps &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lng) <= 180
+  ) {
+    maps = `https://www.google.com/maps?q=${lat},${lng}`;
+  }
   return {
     ...(label ? { location_label: label } : {}),
     ...(maps ? { location_maps_url: maps } : {}),
@@ -464,10 +477,14 @@ const Booking: React.FC = () => {
         landmark: formData.landmark,
         address: formData.address,
         googleMapsLink: formData.googleMapsLink,
+        lat: formData.coordinates.lat,
+        lng: formData.coordinates.lng,
       });
       const location = {
         location_label: locationOverride?.location_label || fromForm.location_label,
         location_maps_url: locationOverride?.location_maps_url || fromForm.location_maps_url,
+        location_lat: formData.coordinates.lat,
+        location_lng: formData.coordinates.lng,
       };
       const payload = {
         full_name: name,
@@ -510,6 +527,8 @@ const Booking: React.FC = () => {
       formData.landmark,
       formData.address,
       formData.googleMapsLink,
+      formData.coordinates.lat,
+      formData.coordinates.lng,
       currentStep,
       altchaLoginToken,
       altchaPayload,
@@ -726,6 +745,8 @@ const Booking: React.FC = () => {
       landmark: value.landmark,
       address: value.address,
       googleMapsLink: value.googleMapsLink,
+      lat: value.coordinates.lat,
+      lng: value.coordinates.lng,
     });
     void flushWebsiteBookingIntent(4, loc);
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);

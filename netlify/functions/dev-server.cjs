@@ -132,7 +132,7 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/cloudinary-signed-url')) {
     handler = cloudinarySignedUrl;
   } else if (req.url.startsWith('/.netlify/functions/booking-intent')) {
-    handler = bookingIntent;
+    handler = loadFn('booking-intent');
   } else if (req.url.startsWith('/.netlify/functions/booking-job-create')) {
     handler = bookingJobCreate;
   } else if (req.url.startsWith('/.netlify/functions/privacy-data-export')) {
