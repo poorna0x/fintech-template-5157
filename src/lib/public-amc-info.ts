@@ -87,7 +87,7 @@ export function getPublicAmcNotCoveredBullets(includesPrefilter = false): string
     'Purifier body or outer housing/cabinet',
     'Outer pre-filter housing',
     'Inlet valves',
-    'Storage tank',
+    'Storage tank, including any under-sink tank if fitted',
   ];
   if (!includesPrefilter) {
     bullets.push('Pre-sediment filtration (unless expressly included in your agreement)');

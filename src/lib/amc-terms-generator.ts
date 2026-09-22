@@ -77,7 +77,7 @@ If the customer fails to give the machine for servicing, it will still be treate
 Agreement Modification: Cannot be changed unless written and signed by both parties.`;
 
   const notCoveredStructural =
-    'Exclusions: This agreement does not cover the purifier body or outer housing/cabinet, the outer pre-filter housing, inlet valves, the purifier display or indicator lights, the dispenser tap, or the storage tank.';
+    'Exclusions: This agreement does not cover the purifier body or outer housing/cabinet, the outer pre-filter housing, inlet valves, the purifier display or indicator lights, the dispenser tap, or the storage tank (including any under-sink tank, if fitted).';
 
   const notCoveredWithPreFilter = includesPreFilter
     ? notCoveredStructural
