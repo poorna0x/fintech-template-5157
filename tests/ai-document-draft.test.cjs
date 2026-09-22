@@ -227,6 +227,19 @@ function testNoMutationImportsOrToolExecution() {
   for (const kind of DOCUMENT_KINDS) assert.ok(ALLOWED_FIELDS[kind] instanceof Set);
 }
 
+function testLetterheadSystemInstructionWritesFullHrLetters() {
+  const endpoint = fs.readFileSync(
+    path.join(__dirname, '../netlify/functions/ai-document-draft.js'),
+    'utf8'
+  );
+  assert.match(endpoint, /Never output \[Company Name\]/);
+  assert.match(endpoint, /complete formal Indian employment offer/);
+  assert.match(endpoint, /hideBrandFooter true/);
+  assert.match(endpoint, /Document body copy in operations must be complete/);
+  assert.equal(/Keep the answer short and describe what is ready for review/.test(endpoint), false);
+  assert.match(endpoint, /maxOutputTokens: parsed\.value\.kind === 'letterhead' \? 8192/);
+}
+
 async function testMockDocumentConversation() {
   const result = await generateWithMock({
     operation: 'document_draft',
@@ -248,6 +261,7 @@ async function main() {
   testItemsAreNormalizedAndPricedOnlyFromOutput();
   testLetterheadCanEditFormattingButCannotReplaceImagesOrIds();
   testNoMutationImportsOrToolExecution();
+  testLetterheadSystemInstructionWritesFullHrLetters();
   await testMockDocumentConversation();
   console.log('ai-document-draft tests passed');
 }

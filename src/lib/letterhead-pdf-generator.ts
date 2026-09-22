@@ -582,6 +582,98 @@ export function createInternshipCertificateLetterhead(
   };
 }
 
+/** Formal technician offer letter on company letterhead (editable placeholders). */
+export function createTechnicianOfferLetterhead(
+  brand: DocumentBrand
+): LetterheadDocumentData {
+  const company = getCompanyInfoForBrand(brand);
+  const companyLabel = getDocumentBrandLabel(brand);
+  const base = createEmptyLetterhead('custom_document', brand);
+  return {
+    ...base,
+    title: 'Offer Letter',
+    titleAlignment: 'center',
+    titleSize: 'large',
+    titleCase: 'uppercase',
+    layoutMode: 'letter',
+    subject: 'Offer of Employment – Water Purifier Technician',
+    customerName: '[Employee Name]',
+    customerCompany: '',
+    siteLocation: '[Employee Address]',
+    customerPhone: '[Phone Number]',
+    customerEmail: '',
+    showRecipientBlock: true,
+    recipientLabel: 'To',
+    showDocumentMeta: true,
+    showBrandTag: false,
+    hideRightSignatory: false,
+    hideBrandFooter: true,
+    leftSignatory: {
+      name: '[Owner/Manager Name]',
+      designation: 'Authorized Person',
+      company: company.name,
+    },
+    rightSignatory: {
+      name: '[Employee Name]',
+      designation: 'Employee',
+      company: '',
+    },
+    terms:
+      'This offer is subject to verification of the documents listed above. Please sign and return one copy to confirm acceptance. The original remains with the company.',
+    blocks: [
+      {
+        id: newBlockId(),
+        kind: 'text',
+        html:
+          `<p>Dear <strong>[Employee Name]</strong>,</p>` +
+          `<p>We are pleased to offer you employment with <strong>${companyLabel}</strong> as a <strong>Water Purifier Technician</strong>, based in Bengaluru. This letter sets out the terms of your appointment. Please read it carefully and sign below if you accept.</p>` +
+          `<h3>1. Offer of Employment</h3>` +
+          `<p>This is a full-time field role with ${companyLabel}. You will represent the company at customer homes and commercial sites while installing, servicing and repairing RO / water-purifier systems. The appointment begins on <strong>[Joining Date]</strong>, subject to document verification and your acceptance of these terms.</p>` +
+          `<h3>2. Position &amp; Joining Details</h3>` +
+          `<p><strong>Position:</strong> Water Purifier Technician<br/>` +
+          `<strong>Location:</strong> Bengaluru<br/>` +
+          `<strong>Joining date:</strong> [Joining Date]<br/>` +
+          `<strong>Reporting to:</strong> [Owner/Manager Name]</p>` +
+          `<h3>3. Salary &amp; Incentives</h3>` +
+          `<p>Your starting monthly salary is <strong>₹20,000</strong> (Rupees Twenty Thousand only). Based on experience, attendance, job quality and customer feedback, earning potential can rise to <strong>up to ₹40,000 per month within 3–6 months</strong>. Any incentive, allowance or revision is at the company’s discretion and is not guaranteed until confirmed in writing.</p>` +
+          `<h3>4. Job Responsibilities</h3>` +
+          `<p>Your duties include, without limitation:</p>` +
+          `<ul>` +
+          `<li>Domestic and commercial RO / water-purifier installation, servicing, repair and troubleshooting</li>` +
+          `<li>Filter, membrane and spare replacement as per company procedure</li>` +
+          `<li>Courteous customer handling and clear explanation of work done</li>` +
+          `<li>Collection of payments when required, with immediate handover as per company process</li>` +
+          `<li>Care of company tools, test kits, spare parts and the service bag issued to you</li>` +
+          `<li>Completion of job sheets, photos and reports as instructed</li>` +
+          `</ul>` +
+          `<h3>5. Travel Requirements</h3>` +
+          `<p>This is a field role. You will travel regularly to customer locations across Bengaluru. Consecutive jobs may be <strong>approximately 20 km or more</strong> apart. You must hold a <strong>valid two-wheeler driving licence</strong> and be able to ride safely between sites. You may need to carry a service bag weighing approximately <strong>5–10 kg</strong>.</p>` +
+          `<h3>6. Working Days &amp; Attendance</h3>` +
+          `<p>You are expected to work a <strong>minimum of 25 days per month</strong>, unless leave is approved in advance. Punctuality at the first job of the day and at every scheduled visit is essential. Unauthorised absence may affect incentives and continuation of employment.</p>` +
+          `<h3>7. Training</h3>` +
+          `<p>The company will provide product, process and customer-handling training at joining and as systems change. You are expected to follow the methods taught and to ask for help when a job is beyond your current skill.</p>` +
+          `<h3>8. Performance &amp; Probation</h3>` +
+          `<p>Your performance will be reviewed on technical skill, customer satisfaction, attendance, punctuality, quality of work, and professionalism. The first three months are a probation period, which the company may extend. Confirmation, incentives and continuation of employment depend on satisfactory performance during and after probation.</p>` +
+          `<h3>9. Employment Commitment</h3>` +
+          `<p>This role involves training, tools and customer trust. You should be prepared to work with ${companyLabel} for <strong>at least one year</strong> from the joining date. Early resignation without agreed notice may require return of company property and settlement as per company policy.</p>` +
+          `<h3>10. Documents Required</h3>` +
+          `<p>Please submit copies of the following on or before joining:</p>` +
+          `<ul>` +
+          `<li>Valid two-wheeler driving licence</li>` +
+          `<li>Government identity proof (Aadhaar or equivalent)</li>` +
+          `<li>Address proof</li>` +
+          `<li>Passport-size photograph</li>` +
+          `<li>Bank account details for salary credit</li>` +
+          `</ul>` +
+          `<h3>11. Employee Acceptance</h3>` +
+          `<p>By signing this letter you confirm that you have read and understood these terms, that the details you have given are true, and that you accept employment as a Water Purifier Technician with ${companyLabel} on the terms stated above.</p>` +
+          `<p>We look forward to working with you.</p>` +
+          `<p>Yours sincerely,<br/><strong>${companyLabel}</strong></p>`,
+      },
+    ],
+  };
+}
+
 /** Robust normalizer used when restoring drafts from localStorage. */
 export function normalizeLetterheadData(raw: any): LetterheadDocumentData {
   const type: LetterheadDocumentType =
@@ -1048,12 +1140,18 @@ const LETTERHEAD_BASE_CSS = `
   .lh-body p { margin-bottom: 8px; }
   .lh-body ul, .lh-body ol { margin: 6px 0 8px 22px; }
   .lh-body h1, .lh-body h2, .lh-body h3 {
-    margin: 12px 0 6px 0;
-    color: #0f172a;
+    margin: 14px 0 6px 0;
+    color: #0c4a6e;
+    font-weight: 600;
   }
   .lh-body h1 { font-size: 16px; }
   .lh-body h2 { font-size: 14px; }
-  .lh-body h3 { font-size: 13px; }
+  .lh-body h3 {
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid #e0f2fe;
+    padding-bottom: 3px;
+  }
   .lh-body a { color: #0369a1; }
 
   .lh-layout-certificate .lh-title-row {

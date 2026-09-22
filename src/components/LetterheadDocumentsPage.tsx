@@ -65,6 +65,7 @@ import {
   buildLetterheadInnerHtml,
   createEmptyLetterhead,
   createStarterBlocks,
+  createTechnicianOfferLetterhead,
   generateLetterheadPDF,
   getLetterheadBodyClass,
   getLetterheadCss,
@@ -668,6 +669,22 @@ export default function LetterheadDocumentsPage({
                 }}
               >
                 Long service report
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-auto justify-start py-2 text-left whitespace-normal"
+                onClick={() => {
+                  setData((prev) => ({
+                    ...createTechnicianOfferLetterhead(prev.brand),
+                    documentNumber: prev.documentNumber,
+                    date: prev.date,
+                  }));
+                  toast.success('Technician offer letter loaded — fill the [placeholders]');
+                }}
+              >
+                Technician offer letter
               </Button>
             </CardContent>
           </Card>
