@@ -84,7 +84,9 @@ export function getPublicAmcNotCoveredBullets(includesPrefilter = false): string
     'Physical damage to the purifier (impact, drops, misuse, or similar)',
     'Purifier display or indicator lights',
     'Dispenser tap',
-    'Outer housing or cabinet',
+    'Purifier body or outer housing/cabinet',
+    'Outer pre-filter housing',
+    'Inlet valves',
     'Storage tank',
   ];
   if (!includesPrefilter) {
