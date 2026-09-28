@@ -197,7 +197,9 @@ function buildSingleMonthSalaryBreakdown(opts) {
   const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech, 8000, startDate);
   const periodBaseSalary = monthlyBaseSalary;
 
-  const techPayments = payments.filter((p) => p.technician_id === techId);
+  const completedJobIds = new Set((completedJobs || []).map((j) => j.id).filter(Boolean));
+  const periodPayments = (payments || []).filter((p) => completedJobIds.has(p.job_id));
+  const techPayments = periodPayments.filter((p) => p.technician_id === techId);
   const techCompletedJobsForCommission = completedJobs.filter(
     (j) =>
       String(j.completed_by || '').trim() === techId ||
@@ -208,7 +210,7 @@ function buildSingleMonthSalaryBreakdown(opts) {
     (sum, payment) => sum + (payment.commission_amount || 0),
     0
   );
-  const jobsWithAnyPayment = new Set(payments.map((p) => p.job_id));
+  const jobsWithAnyPayment = new Set(periodPayments.map((p) => p.job_id));
   const jobsWithoutPayments = techCompletedJobsForCommission.filter(
     (j) => !jobsWithAnyPayment.has(j.id)
   );
@@ -474,11 +476,13 @@ async function loadMonthSalaryBreakdowns(db, opts) {
         payment_status,
         payment_date,
         created_at,
-        job:jobs(id, job_number)
+        job:jobs!inner(id, job_number, end_time)
       `
       )
-      .gte('created_at', startDate.toISOString())
-      .lte('created_at', endDate.toISOString()),
+      .eq('jobs.status', 'COMPLETED')
+      .not('jobs.end_time', 'is', null)
+      .gte('jobs.end_time', startDate.toISOString())
+      .lte('jobs.end_time', endDate.toISOString()),
     db
       .from('technician_expenses')
       .select('id, technician_id, amount, expense_date, description, created_at')

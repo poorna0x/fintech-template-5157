@@ -1,4 +1,5 @@
 -- Step 8: per-technician commission totals for Analytics salary (replaces row-level payment/extra fetches).
+-- Commission is keyed to jobs.end_time, not technician_payments.created_at.
 -- Requires: public.is_admin_user()
 
 CREATE OR REPLACE FUNCTION public.get_analytics_commission_totals(
@@ -28,8 +29,11 @@ BEGIN
       p.technician_id,
       coalesce(sum(coalesce(p.commission_amount, 0)), 0)::numeric AS total
     FROM public.technician_payments p
-    WHERE (p_start IS NULL OR p.created_at >= p_start)
-      AND (p_end IS NULL OR p.created_at <= p_end)
+    INNER JOIN public.jobs j ON j.id = p.job_id
+    WHERE j.status = 'COMPLETED'
+      AND j.end_time IS NOT NULL
+      AND (p_start IS NULL OR j.end_time >= p_start)
+      AND (p_end IS NULL OR j.end_time <= p_end)
     GROUP BY p.technician_id
   ) r;
 

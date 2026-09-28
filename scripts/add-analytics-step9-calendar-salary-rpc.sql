@@ -201,7 +201,6 @@ DECLARE
   daily_base numeric;
   period_base numeric;
   payment_sum numeric;
-  paid_job_ids uuid[];
   default_comm numeric;
   billing_slab numeric;
   extra_comm numeric;
@@ -229,13 +228,15 @@ BEGIN
     period_base := monthly_base;
 
     SELECT
-      coalesce(sum(coalesce(p.commission_amount, 0)), 0),
-      coalesce(array_agg(DISTINCT p.job_id) FILTER (WHERE p.job_id IS NOT NULL), ARRAY[]::uuid[])
-    INTO payment_sum, paid_job_ids
+      coalesce(sum(coalesce(p.commission_amount, 0)), 0)
+    INTO payment_sum
     FROM public.technician_payments p
+    INNER JOIN public.jobs j ON j.id = p.job_id
     WHERE p.technician_id = tech.id
-      AND p.created_at >= p_start
-      AND p.created_at <= p_end;
+      AND j.status = 'COMPLETED'
+      AND j.end_time IS NOT NULL
+      AND j.end_time >= p_start
+      AND j.end_time <= p_end;
 
     SELECT coalesce(sum(
       CASE
@@ -251,7 +252,9 @@ BEGIN
       AND j.end_time IS NOT NULL
       AND j.end_time >= p_start
       AND j.end_time <= p_end
-      AND NOT (j.id = ANY(coalesce(paid_job_ids, ARRAY[]::uuid[])));
+      AND NOT EXISTS (
+        SELECT 1 FROM public.technician_payments p2 WHERE p2.job_id = j.id
+      );
 
     SELECT coalesce(sum(coalesce(e.amount, 0)), 0)
     INTO extra_comm

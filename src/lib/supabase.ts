@@ -8515,10 +8515,11 @@ export const db = {
       return fetchAnalyticsPages((from, to) => {
         let query = supabase
           .from('technician_payments')
-          .select('technician_id, commission_amount, payment_status')
+          .select('technician_id, commission_amount, payment_status, job:jobs!inner(end_time, status)')
+          .eq('jobs.status', 'COMPLETED')
           .range(from, to);
-        if (opts?.startISO) query = query.gte('created_at', opts.startISO);
-        if (opts?.endISO) query = query.lte('created_at', opts.endISO);
+        if (opts?.startISO) query = query.gte('jobs.end_time', opts.startISO);
+        if (opts?.endISO) query = query.lte('jobs.end_time', opts.endISO);
         return query;
       });
     },

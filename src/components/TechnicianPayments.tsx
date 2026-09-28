@@ -60,6 +60,7 @@ interface TechnicianPayment {
   job?: {
     id: string;
     job_number: string;
+    end_time?: string;
   };
 }
 
@@ -501,6 +502,7 @@ const TechnicianPayments = () => {
         holidaysRes,
         completedJobsRes
       ] = await Promise.all([
+        // Commission month = job end_time. Do not use payment created_at (backfilled old jobs).
         supabase
           .from('technician_payments')
           .select(`
@@ -513,9 +515,12 @@ const TechnicianPayments = () => {
             payment_status,
             payment_date,
             created_at,
-            job:jobs(id, job_number)
+            job:jobs!inner(id, job_number, end_time)
           `)
-          .gte('created_at', startDate.toISOString()).lte('created_at', endDate.toISOString()),
+          .eq('jobs.status', 'COMPLETED')
+          .not('jobs.end_time', 'is', null)
+          .gte('jobs.end_time', startDate.toISOString())
+          .lte('jobs.end_time', endDate.toISOString()),
         db.technicianExpenses.getAll(undefined, periodStartStr, periodEndStr),
         db.technicianAdvances.getAll(undefined, periodStartStr, periodEndStr),
         db.technicianExtraCommissions.getAll(undefined, periodStartStr, periodEndStr),
@@ -576,11 +581,6 @@ const TechnicianPayments = () => {
         const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech, 8000, monthRange.start);
         const allowedHolidays = 4;
 
-        const techPaymentsForCommission = paymentsData.filter((p: TechnicianPayment) => {
-          if (p.technician_id !== techId) return false;
-          const d = (p.created_at || '').split('T')[0];
-          return d >= monthStartStr && d <= monthEndStr;
-        });
         const techCompletedJobsForCommission = completedJobsData.filter((j: any) => {
           if (resolveJobBillingTechnicianId(j) !== techId) return false;
           const completionDate = j.end_time || j.completed_at;
@@ -588,10 +588,21 @@ const TechnicianPayments = () => {
           const d = formatDateString(new Date(completionDate));
           return d >= monthStartStr && d <= monthEndStr;
         });
+        const monthJobIds = new Set(techCompletedJobsForCommission.map((j: any) => j.id));
+        const techPaymentsForCommission = paymentsData.filter((p: TechnicianPayment) => {
+          if (p.technician_id !== techId) return false;
+          if (monthJobIds.has(p.job_id)) return true;
+          const completionDate = p.job?.end_time;
+          if (!completionDate) return false;
+          const d = formatDateString(new Date(completionDate));
+          return d >= monthStartStr && d <= monthEndStr;
+        });
 
         let totalCommission = techPaymentsForCommission.reduce((sum: number, payment: TechnicianPayment) => sum + (payment.commission_amount || 0), 0);
         // Any payment row for the job (even another tech) means no fallback 10% — avoids double-pay on team jobs.
-        const jobsWithAnyPayment = new Set(paymentsData.map((p: TechnicianPayment) => p.job_id));
+        const jobsWithAnyPayment = new Set(
+          paymentsData.filter((p: TechnicianPayment) => monthJobIds.has(p.job_id)).map((p: TechnicianPayment) => p.job_id)
+        );
         const jobsWithoutPayments = techCompletedJobsForCommission.filter((j: any) => !jobsWithAnyPayment.has(j.id));
         totalCommission += jobsWithoutPayments.reduce((sum: number, job: any) => {
           const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);
@@ -725,14 +736,19 @@ const TechnicianPayments = () => {
         const periodBaseSalary = getTechnicianBaseSalaryForPeriod(tech, startDate, endDate);
         const allowedHolidays = 4 * inclusiveMonthCount;
 
-        const techPayments = paymentsData.filter((p: TechnicianPayment) => p.technician_id === techId);
-        const techPaymentsForCommission = paymentsData.filter((p: TechnicianPayment) => p.technician_id === techId);
         const techCompletedJobsForCommission = completedJobsData.filter(
           (j: any) => resolveJobBillingTechnicianId(j) === techId
         );
+        const periodJobIds = new Set(techCompletedJobsForCommission.map((j: any) => j.id));
+        const techPayments = paymentsData.filter(
+          (p: TechnicianPayment) => p.technician_id === techId && periodJobIds.has(p.job_id)
+        );
+        const techPaymentsForCommission = techPayments;
 
         let totalCommission = techPaymentsForCommission.reduce((sum: number, payment: TechnicianPayment) => sum + (payment.commission_amount || 0), 0);
-        const jobsWithAnyPayment = new Set(paymentsData.map((p: TechnicianPayment) => p.job_id));
+        const jobsWithAnyPayment = new Set(
+          paymentsData.filter((p: TechnicianPayment) => periodJobIds.has(p.job_id)).map((p: TechnicianPayment) => p.job_id)
+        );
         const jobsWithoutPayments = techCompletedJobsForCommission.filter((j: any) => !jobsWithAnyPayment.has(j.id));
         totalCommission += jobsWithoutPayments.reduce((sum: number, job: any) => {
           const billAmount = parseFloat(job.actual_cost || job.payment_amount || 0);

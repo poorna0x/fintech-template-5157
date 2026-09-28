@@ -243,11 +243,15 @@ export async function getTotalSalaryForCalendarMonth(
     options?.technicians
       ? Promise.resolve({ data: options.technicians })
       : db.technicians.getAllForAnalytics(100, { activeRosterOnly: false }),
+    // Commission follows job completion (end_time), not payment-row created_at.
+    // Saving/backfilling an old job this month must not move that commission into this month.
     supabase
       .from('technician_payments')
-      .select('technician_id, job_id, commission_amount')
-      .gte('created_at', startDate.toISOString())
-      .lte('created_at', endDate.toISOString()),
+      .select('technician_id, job_id, commission_amount, job:jobs!inner(end_time, status)')
+      .eq('jobs.status', 'COMPLETED')
+      .not('jobs.end_time', 'is', null)
+      .gte('jobs.end_time', startDate.toISOString())
+      .lte('jobs.end_time', endDate.toISOString()),
     db.technicianExtraCommissions.getAll(undefined, periodStartStr, periodEndStr),
     db.technicianHolidays.getAll(undefined, periodStartStr, periodEndStr),
   ]);
@@ -279,7 +283,9 @@ export async function getTotalSalaryForCalendarMonth(
     const periodBaseSalary = monthlyBaseSalary;
     const dailyBaseSalary = monthlyBaseSalary / dailyDivisor;
 
-    const techPayments = payments.filter((p: any) => p.technician_id === techId);
+    const completedJobIds = new Set(completedJobs.map((j: any) => j.id));
+    const periodPayments = payments.filter((p: any) => completedJobIds.has(p.job_id));
+    const techPayments = periodPayments.filter((p: any) => p.technician_id === techId);
     const techExtraCommissions = extraCommissions.filter((ec: any) => {
       if (ec.technician_id !== techId) return false;
       const d = (ec.commission_date || '').split('T')[0];
@@ -288,7 +294,7 @@ export async function getTotalSalaryForCalendarMonth(
 
     let totalCommission = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
     const techCompletedJobs = completedJobs.filter((j: any) => j.assigned_technician_id === techId);
-    const jobsWithPayments = new Set(techPayments.map((p: any) => p.job_id));
+    const jobsWithPayments = new Set(periodPayments.map((p: any) => p.job_id));
     const jobsWithoutPayments = techCompletedJobs.filter((j: any) => !jobsWithPayments.has(j.id));
     const defaultCommission = jobsWithoutPayments.reduce((sum: number, j: any) => {
       const billAmount = parseFloat(j.actual_cost || j.payment_amount || 0);
