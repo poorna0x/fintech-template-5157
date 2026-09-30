@@ -37,6 +37,7 @@ import {
   jobsMapStatusLabel,
   jobsMapStatusShort,
   jobsMapSuggestedZoom,
+  jobsMapTechPhotoThumb,
   mergeJobsMapLiveRows,
   nearestTechsForJob,
   parseJobsMapJobs,
@@ -224,6 +225,48 @@ function InitialMark({ name, color, className }: { name: string; color: string; 
     >
       {nameInitial(name)}
     </span>
+  );
+}
+
+const photoIconCache = new Map<string, google.maps.Icon>();
+
+function techMarkerIcon(tech: { id: string; name: string; photo: string | null }): google.maps.Icon {
+  const thumb = tech.photo ? jobsMapTechPhotoThumb(tech.photo) : '';
+  if (!thumb) return markerIcon(techRouteColor(tech.id), nameInitial(tech.name), true);
+  const cacheKey = `${tech.id}:${thumb}`;
+  const cached = photoIconCache.get(cacheKey);
+  if (cached) return cached;
+  const icon: google.maps.Icon = {
+    url: thumb,
+    scaledSize: new google.maps.Size(48, 48),
+    anchor: new google.maps.Point(24, 24),
+  };
+  photoIconCache.set(cacheKey, icon);
+  return icon;
+}
+
+function TechPhoto({
+  url,
+  name,
+  color,
+  className,
+}: {
+  url: string | null;
+  name: string;
+  color: string;
+  className?: string;
+}) {
+  const thumb = url ? jobsMapTechPhotoThumb(url) : '';
+  if (!thumb) return <InitialMark name={name} color={color} className={className} />;
+  return (
+    <img
+      src={thumb}
+      alt=""
+      className={cn('h-8 w-8 shrink-0 rounded-full bg-muted object-cover', className)}
+      style={{ boxShadow: `0 0 0 2px ${color}` }}
+      loading="lazy"
+      decoding="async"
+    />
   );
 }
 
@@ -486,7 +529,7 @@ export default function JobsMapToolDialog({
       const fresh = isJobsMapFixFresh(tech.updatedAt);
       addMarker(
         { lat: tech.lat, lng: tech.lng },
-        markerIcon(techRouteColor(tech.id), nameInitial(tech.name), true),
+        techMarkerIcon(tech),
         `${tech.name} · ${agoLabel(tech.updatedAt)}`,
         selected ? 26 : 12,
         () => setSelection({ kind: 'tech', id: tech.id }),
@@ -842,7 +885,7 @@ export default function JobsMapToolDialog({
                         mapRef.current?.panTo({ lat: tech.lat, lng: tech.lng });
                       }}
                     >
-                      <InitialMark name={tech.name} color={techRouteColor(tech.id)} className="h-10 w-10" />
+                      <TechPhoto url={tech.photo} name={tech.name} color={techRouteColor(tech.id)} className="h-10 w-10" />
                       <span className="max-w-[4.5rem] truncate text-[10px] text-muted-foreground">
                         {tech.name.split(' ')[0]}
                       </span>
@@ -918,7 +961,7 @@ export default function JobsMapToolDialog({
                           }
                         >
                           <span className="flex min-w-0 items-center gap-2">
-                            <InitialMark name={tech.name} color={techRouteColor(tech.id)} />
+                            <TechPhoto url={tech.photo} name={tech.name} color={techRouteColor(tech.id)} />
                             <span className="min-w-0">
                             <span className="block truncate text-sm font-medium">
                               {tech.name}
@@ -971,7 +1014,7 @@ export default function JobsMapToolDialog({
             {selectedTech ? (
               <div className="space-y-3 border-b px-3 py-3">
                 <p className="flex items-center gap-2 text-sm font-semibold">
-                  <InitialMark name={selectedTech.name} color={techRouteColor(selectedTech.id)} />
+                  <TechPhoto url={selectedTech.photo} name={selectedTech.name} color={techRouteColor(selectedTech.id)} />
                   {selectedTech.name}
                 </p>
                 <p className="text-xs text-muted-foreground">
