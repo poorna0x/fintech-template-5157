@@ -18,6 +18,7 @@ export const TECH_WHATSAPP_CUSTOMER_CATEGORIES = [
 
 export const TECH_WHATSAPP_CATEGORIES = [
   ...TECH_WHATSAPP_PUSH_CATEGORIES,
+  'job_assign_background',
   ...TECH_WHATSAPP_CUSTOMER_CATEGORIES,
 ] as const;
 
@@ -34,6 +35,7 @@ export const TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES = [
 
 /** Toggles shown on Edit technician / WhatsApp settings (not app-only alerts). */
 export const TECH_WHATSAPP_EDITABLE_CATEGORIES = [
+  'job_assign_background',
   'job_assigned',
   'job_unassigned',
   'pay_qr_screenshot',
@@ -51,7 +53,12 @@ export const TECH_WHATSAPP_LABELS: Record<
   job_assigned: {
     label: TECH_PUSH_LABELS.job_assigned.label + ' (WhatsApp)',
     description:
-      'WhatsApp when a job is assigned/reassigned (auto or manual). Master: Dashboard Settings.',
+      'Opens the assign WhatsApp message when this is on and background send is off. Master: Dashboard Settings.',
+  },
+  job_assign_background: {
+    label: 'Assign with push (background)',
+    description:
+      'Off unless you turn it on for this technician. Then Assign sends the short WhatsApp template in the background with the app notification. WhatsApp does not open.',
   },
   job_unassigned: {
     label: TECH_PUSH_LABELS.job_unassigned.label + ' (WhatsApp)',
@@ -114,7 +121,12 @@ export const TECH_WHATSAPP_LABELS: Record<
 };
 
 export function defaultTechWhatsAppPrefs(): TechWhatsAppPrefs {
-  return Object.fromEntries(TECH_WHATSAPP_CATEGORIES.map((k) => [k, true])) as TechWhatsAppPrefs;
+  const prefs = Object.fromEntries(
+    TECH_WHATSAPP_CATEGORIES.map((k) => [k, true])
+  ) as TechWhatsAppPrefs;
+  // Background assign WhatsApp is opt-in per technician.
+  prefs.job_assign_background = false;
+  return prefs;
 }
 
 /** Legacy keys from early job-only WhatsApp prefs. */
@@ -139,6 +151,10 @@ export function normalizeTechWhatsAppPrefs(raw: unknown): TechWhatsAppPrefs {
       base[key] = obj[key] !== false;
     }
   }
+  // Missing key stays off. Do not inherit the default-on used by other categories.
+  if (!('job_assign_background' in obj)) {
+    base.job_assign_background = false;
+  }
   return base;
 }
 
@@ -147,6 +163,12 @@ export function isTechWhatsAppCategoryOn(
   category: TechWhatsAppCategory
 ): boolean {
   return normalizeTechWhatsAppPrefs(prefs)[category] !== false;
+}
+
+/** True only when Edit technician has Assign with push turned on. */
+export function isTechJobAssignBackgroundOn(prefs: unknown): boolean {
+  if (!prefs || typeof prefs !== 'object') return false;
+  return (prefs as Record<string, unknown>).job_assign_background === true;
 }
 
 export function defaultTechPushWhatsAppGlobal(): Record<TechPushCategory, boolean> {

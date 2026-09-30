@@ -4078,8 +4078,9 @@ const Settings = () => {
                   </h3>
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
                     Same setting as WhatsApp Settings (phone and laptop). OFF = no WhatsApp popup
-                    when assigning or unassigning. ON = show manual wa.me dialog, or send in the
-                    background if Auto-send / cold template is on in WhatsApp Settings.
+                    when assigning or unassigning. ON = show the manual dialog, or send the short
+                    template in the background with the push for technicians who have Assign with
+                    push turned on in Edit technician.
                   </p>
                 </div>
                 <Switch
@@ -4457,9 +4458,9 @@ const Settings = () => {
                   <div className="space-y-2 rounded-md border border-emerald-200/80 bg-emerald-50/30 px-3 py-2.5 dark:bg-emerald-950/20">
                     <p className="text-sm font-medium">WhatsApp for this technician</p>
                     <p className="text-xs text-muted-foreground leading-snug mb-2">
-                      Same categories as job WhatsApp, plus pay-QR payment photos and customer
-                      tech-share. Nudges, OTP, hours, cash, and similar alerts stay on the app
-                      only. Global: Settings → WhatsApp. Assign master: Dashboard Settings.
+                      Assign with push is off until you turn it on here. That send stays in the
+                      background with the app notification and does not open WhatsApp. Other
+                      technicians are skipped.
                     </p>
                     {TECH_WHATSAPP_EDITABLE_CATEGORIES.map((key) => {
                       const meta = TECH_WHATSAPP_LABELS[key];
@@ -4475,7 +4476,11 @@ const Settings = () => {
                             </p>
                           </div>
                           <Switch
-                            checked={technicianFormData.whatsappPrefs?.[key] !== false}
+                            checked={
+                              key === 'job_assign_background'
+                                ? technicianFormData.whatsappPrefs?.[key] === true
+                                : technicianFormData.whatsappPrefs?.[key] !== false
+                            }
                             onCheckedChange={(checked) =>
                               setTechnicianFormData((prev) => ({
                                 ...prev,

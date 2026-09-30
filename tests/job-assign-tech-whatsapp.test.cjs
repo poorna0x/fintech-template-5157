@@ -13,9 +13,15 @@ function testColdTemplateIsWired() {
   assert.match(cold, /svc_job_assigned_tech_v2/);
 
   const send = fs.readFileSync(path.join(root, 'src/lib/jobTechnicianWhatsApp.ts'), 'utf8');
-  assert.match(send, /prefs\.autoAssignCold/);
+  assert.match(send, /technicianWantsAssignBackground/);
   assert.match(send, /preferColdTemplate: true/);
   assert.match(send, /WA_COLD\.job_assigned_tech/);
+  assert.match(send, /fallbackWaMe: false/);
+
+  const prefs = fs.readFileSync(path.join(root, 'src/lib/techWhatsAppPrefs.ts'), 'utf8');
+  assert.match(prefs, /job_assign_background/);
+  assert.match(prefs, /isTechJobAssignBackgroundOn/);
+  assert.match(prefs, /prefs\.job_assign_background = false/);
 
   const settings = fs.readFileSync(path.join(root, 'src/pages/WhatsAppSettingsPage.tsx'), 'utf8');
   assert.match(settings, /auto_send_job_assign_cold_whatsapp/);

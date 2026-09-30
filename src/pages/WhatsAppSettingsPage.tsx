@@ -399,7 +399,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           />
           <ToggleRow
             label="Cold template on assign (background)"
-            description="When Job assign WhatsApp is ON: clicking Assign sends a short cold template in the background even if the technician has not messaged in 24h. Needs Cold templates ON and Meta APPROVED. No dialog."
+            description="When Job assign WhatsApp is ON: clicking Assign sends a short template in the background with the app notification. Only technicians with Assign with push turned on in Edit technician. Does not open WhatsApp. Needs Cold templates ON and Meta APPROVED."
             checked={settings.auto_send_job_assign_cold_whatsapp}
             disabled={!settings.enabled || !settings.allow_cold_templates}
             onCheckedChange={(v) => patch('auto_send_job_assign_cold_whatsapp', v)}

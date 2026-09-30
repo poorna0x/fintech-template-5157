@@ -8,6 +8,7 @@ import { sendAdminWhatsAppText, sendAdminWhatsAppTextWithOptionalTemplate } from
 import { ensureJobWhatsAppNotifyPrefs } from '@/lib/jobAssignWhatsAppSettingsCache';
 import { isWhatsAppJobNotifyAllowed } from '@/lib/whatsappCrmSettings';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
+import { isTechJobAssignBackgroundOn } from '@/lib/techWhatsAppPrefs';
 import { supabase } from '@/lib/supabaseClient';
 import type { Job } from '@/types';
 import type { OpenAdminWhatsappForJobCtx } from '@/lib/openAdminWhatsappForJobAssign';
@@ -184,6 +185,18 @@ async function autoSendJobTechWhatsApp(
   }
 }
 
+/** Opt-in only. Missing or false means this technician does not get the background assign template. */
+async function technicianWantsAssignBackground(technicianId: string): Promise<boolean> {
+  if (!technicianId) return false;
+  const { data, error } = await supabase
+    .from('technicians')
+    .select('whatsapp_prefs')
+    .eq('id', technicianId)
+    .maybeSingle();
+  if (error) return false;
+  return isTechJobAssignBackgroundOn(data?.whatsapp_prefs);
+}
+
 export type NotifyJobTechWhatsAppResult = 'auto' | 'dialog' | 'skipped';
 
 /** Per-tech WhatsApp off or Dashboard master off → silent skip (admin already chose that). */
@@ -201,6 +214,8 @@ function shouldToastJobWhatsAppSkip(reason?: string): boolean {
  * - Dashboard master OFF → skipped (no popup)
  * - Per-tech job_assigned / job_unassigned OFF → skipped silently (no dialog, no toast)
  * - Auto-send ON → return immediately; Cloud API runs in background (no dialog, no wa.me)
+ * - Assign with push ON for this technician → cold template in the background with the app notification (no WhatsApp window)
+ * - Cold assign ON but this technician is not selected → skip (push only, WhatsApp stays closed)
  * - Else if ctx → manual dialog (wa.me only on Send)
  * - Else → skipped
  */
@@ -235,21 +250,33 @@ export async function notifyTechnicianJobWhatsApp(opts: {
     return 'skipped';
   }
 
+  const backgroundAssign =
+    opts.mode === 'assign' &&
+    prefs.autoAssignCold &&
+    (await technicianWantsAssignBackground(techId));
+  if (
+    opts.mode === 'assign' &&
+    prefs.autoAssignCold &&
+    !backgroundAssign &&
+    !prefs.autoAssign
+  ) {
+    return 'skipped';
+  }
   const autoSend =
     opts.mode === 'unassign'
       ? prefs.autoUnassign
-      : prefs.autoAssign || prefs.autoAssignCold;
+      : prefs.autoAssign || backgroundAssign;
   const payload = buildJobTechnicianWhatsAppPayload(opts.job, opts.mode);
 
   if (autoSend) {
     // Fire-and-forget: do not block assign/unassign dialogs on API latency.
-    const cold =
-      opts.mode === 'assign' && prefs.autoAssignCold
-        ? {
-            name: WA_COLD.job_assigned_tech.name,
-            bodyParams: WA_COLD.job_assigned_tech.bodyParams(),
-          }
-        : null;
+    // Cold template only for technicians with Assign with push turned on. Never opens WhatsApp.
+    const cold = backgroundAssign
+      ? {
+          name: WA_COLD.job_assigned_tech.name,
+          bodyParams: WA_COLD.job_assigned_tech.bodyParams(),
+        }
+      : null;
     void autoSendJobTechWhatsApp(phone, payload.message, opts.mode, cold);
     return 'auto';
   }
