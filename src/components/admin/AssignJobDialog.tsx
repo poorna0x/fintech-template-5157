@@ -13,6 +13,7 @@ import { getFreshGoogleMapsLinkForJobRow, getLocationUnavailableMessage, jobRowN
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 import { openGoogleMapsDirectionsBetween, readLocationLatLng } from '@/lib/maps';
+import AssignDistanceRoutesDialog from '@/components/admin/AssignDistanceRoutesDialog';
 
 interface AssignJobDialogProps {
   open: boolean;
@@ -50,6 +51,10 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
   // All hooks must be called before any conditional returns
   const [techniciansWithDistances, setTechniciansWithDistances] = useState<TechnicianWithDistance[]>([]);
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false);
+  const [routesOpen, setRoutesOpen] = useState(false);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressFiredRef = useRef(false);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
   
   // Cache for distance calculations (key: "lat1,lng1-lat2,lng2", value: { distance, duration })
   const distanceCacheRef = useRef<Map<string, { distance: string; duration: string; distanceValue: number }>>(new Map());
@@ -405,6 +410,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
     if (!open) {
       setTechniciansWithDistances([]);
       setIsCalculatingDistances(false);
+      setRoutesOpen(false);
     }
     // Don't auto-calculate distances - only calculate when user clicks "Assign by Distance" button
   }, [open]);
@@ -544,10 +550,53 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={calculateDistances}
                 disabled={technicianPickerBlocked || isCalculatingDistances}
-                className="text-xs w-full sm:w-auto"
-                title="Calculate distances from job location (loads full address if needed)"
+                className="text-xs w-full sm:w-auto touch-manipulation select-none"
+                title="Tap to sort by distance. Hold to see each technician, the job, and the driving time."
+                onPointerDown={(e) => {
+                  if (e.button !== 0 || technicianPickerBlocked || isCalculatingDistances) return;
+                  longPressFiredRef.current = false;
+                  longPressStartRef.current = { x: e.clientX, y: e.clientY };
+                  if (longPressTimerRef.current != null) window.clearTimeout(longPressTimerRef.current);
+                  try {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  } catch {
+                    /* ignore */
+                  }
+                  longPressTimerRef.current = window.setTimeout(() => {
+                    longPressTimerRef.current = null;
+                    longPressFiredRef.current = true;
+                    setRoutesOpen(true);
+                  }, 500);
+                }}
+                onPointerMove={(e) => {
+                  const start = longPressStartRef.current;
+                  if (!start || longPressTimerRef.current == null) return;
+                  const dx = e.clientX - start.x;
+                  const dy = e.clientY - start.y;
+                  if (dx * dx + dy * dy > 144) {
+                    window.clearTimeout(longPressTimerRef.current);
+                    longPressTimerRef.current = null;
+                  }
+                }}
+                onPointerUp={() => {
+                  if (longPressTimerRef.current != null) window.clearTimeout(longPressTimerRef.current);
+                  longPressTimerRef.current = null;
+                  longPressStartRef.current = null;
+                }}
+                onPointerCancel={() => {
+                  if (longPressTimerRef.current != null) window.clearTimeout(longPressTimerRef.current);
+                  longPressTimerRef.current = null;
+                  longPressStartRef.current = null;
+                }}
+                onContextMenu={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (longPressFiredRef.current) {
+                    longPressFiredRef.current = false;
+                    return;
+                  }
+                  void calculateDistances();
+                }}
               >
                 {isCalculatingDistances ? (
                   <>
@@ -562,6 +611,9 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 )}
               </Button>
             </div>
+            <p className="text-[11px] leading-snug text-muted-foreground sm:text-right">
+              Hold Assign by Distance to see photos, routes, and travel time.
+            </p>
             <Select
               value={selectedTechnicianId}
               onValueChange={onTechnicianSelect}
@@ -634,6 +686,13 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
           </Button>
         </DialogFooter>
       </DialogContent>
+      <AssignDistanceRoutesDialog
+        open={routesOpen}
+        onOpenChange={setRoutesOpen}
+        job={job}
+        technicians={inactiveTechnicians}
+        onSelectTechnician={onTechnicianSelect}
+      />
     </Dialog>
   );
 };
