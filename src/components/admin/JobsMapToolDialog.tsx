@@ -741,6 +741,7 @@ export default function JobsMapToolDialog({
               mapTypeControl={false}
               streetViewControl={false}
               fullscreenControl={false}
+              zoomControl={false}
               styles={[]}
               onLayout={() => {
                 if (layoutTimerRef.current) window.clearTimeout(layoutTimerRef.current);
