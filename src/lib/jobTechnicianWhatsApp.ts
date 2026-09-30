@@ -247,12 +247,7 @@ export async function notifyTechnicianJobWhatsApp(opts: {
       opts.mode === 'assign' && prefs.autoAssignCold
         ? {
             name: WA_COLD.job_assigned_tech.name,
-            bodyParams: WA_COLD.job_assigned_tech.bodyParams(
-              opts.technician.fullName,
-              payload.serviceSubType,
-              payload.customerName,
-              payload.location
-            ),
+            bodyParams: WA_COLD.job_assigned_tech.bodyParams(),
           }
         : null;
     void autoSendJobTechWhatsApp(phone, payload.message, opts.mode, cold);

@@ -1836,13 +1836,12 @@ const TECH_CUSTOMER_PHOTO_TEMPLATES = [
 
 /**
  * Job assigned TO the technician (cold, outside 24h). No buttons — internal dispatch.
- * {{1}} tech name, {{2}} job type, {{3}} customer, {{4}} area.
+ * Fixed copy, no variables.
  */
 const JOB_ASSIGNED_TECH_TEMPLATES = [
   {
-    name: 'svc_job_assigned_tech_v1',
-    body: 'Hi {{1}}, a new {{2}} job has been assigned to you. Customer: {{3}}. Location: {{4}}. Reply on this chat if you need office support.',
-    examples: ['Suresh', 'RO service', 'Rahul', 'HSR Layout'],
+    name: 'svc_job_assigned_tech_v2',
+    body: 'A new job has been assigned to you.',
     noButtons: true,
     lockCategory: true,
   },

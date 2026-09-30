@@ -206,21 +206,14 @@ export const WA_COLD = {
       String(technicianName || 'our technician').trim() || 'our technician',
     ],
   },
-  /** Cold assign notice TO the technician (outside 24h). {{1}} tech, {{2}} job type, {{3}} customer, {{4}} area. */
+  /**
+   * Cold assign notice TO the technician (outside 24h). Fixed copy, no variables.
+   * Meta: svc_job_assigned_tech_v2
+   */
   job_assigned_tech: {
-    name: 'svc_job_assigned_tech_v1',
+    name: 'svc_job_assigned_tech_v2',
     language: 'en',
-    bodyParams: (
-      technicianName: string,
-      serviceType: string,
-      customerName: string,
-      location?: string
-    ) => [
-      cleanName(technicianName),
-      cleanShortLabel(serviceType, 'service'),
-      cleanName(customerName),
-      cleanShortLabel(location, 'see app'),
-    ],
+    bodyParams: () => [],
   },
   /** Job completion cold open — {{1}}=name, {{2}}=amount collected (Meta: svc_job_done) */
   job_completion: {
@@ -649,7 +642,7 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   payment_received: 'Payment received (svc_payment_received)',
   payment_received_letter: 'Payment received letter (svc_payment_received_letter_*_v1)',
   tech_assigned: 'Technician assigned (svc_tech_assigned)',
-  job_assigned_tech: 'Job assigned → technician (svc_job_assigned_tech_v1)',
+  job_assigned_tech: 'Job assigned → technician (svc_job_assigned_tech_v2)',
   job_completion: 'Service completed (svc_job_done_letter_*_v5 Review us → v4 → v3 / svc_job_done)',
   job_completion_plain: 'Job done letter no buttons (svc_job_done_letter_*_plain_v2 → v1)',
   ask_review: 'Ask review (svc_ask_review_{hro|ero}_v1 — last completed job)',
