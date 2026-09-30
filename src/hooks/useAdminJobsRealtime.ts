@@ -46,7 +46,23 @@ export function useAdminJobsRealtime({
 }) {
   const adminRealtimeStatusRef = useRef<string | null>(null);
   const onRealtimeResubscribedRef = useRef(onRealtimeResubscribed);
+  const statusFilterRef = useRef(statusFilter);
+  const currentPageRef = useRef(currentPage);
+  const loadFilteredJobsRef = useRef(loadFilteredJobs);
+  const loadJobCountsRef = useRef(loadJobCounts);
+  const playCompletedJobSoundRef = useRef(playCompletedJobSound);
+  const setLastCheckedJobIdRef = useRef(setLastCheckedJobId);
+  const setJobCountsRef = useRef(setJobCounts);
+  const setCustomerPriorServiceStatusRef = useRef(setCustomerPriorServiceStatus);
   onRealtimeResubscribedRef.current = onRealtimeResubscribed;
+  statusFilterRef.current = statusFilter;
+  currentPageRef.current = currentPage;
+  loadFilteredJobsRef.current = loadFilteredJobs;
+  loadJobCountsRef.current = loadJobCounts;
+  playCompletedJobSoundRef.current = playCompletedJobSound;
+  setLastCheckedJobIdRef.current = setLastCheckedJobId;
+  setJobCountsRef.current = setJobCounts;
+  setCustomerPriorServiceStatusRef.current = setCustomerPriorServiceStatus;
 
   useEffect(() => {
     if (isInitialLoad) return;
@@ -77,12 +93,12 @@ export function useAdminJobsRealtime({
         { event: 'INSERT', schema: 'public', table: 'jobs' },
         (payload: { new: Record<string, unknown> }) => {
           const row = payload.new as { id: string; status?: string };
-          if (row.id) setLastCheckedJobId(row.id);
+          if (row.id) setLastCheckedJobIdRef.current(row.id);
           const status = (row.status || 'PENDING') as string;
           if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status)) {
-            setJobCounts((prev) => ({ ...prev, ongoing: (prev.ongoing || 0) + 1 }));
+            setJobCountsRef.current((prev) => ({ ...prev, ongoing: (prev.ongoing || 0) + 1 }));
           }
-          loadFilteredJobs(statusFilter, 1);
+          void loadFilteredJobsRef.current(statusFilterRef.current, 1);
         }
       );
     }
@@ -131,7 +147,7 @@ export function useAdminJobsRealtime({
           if (!isFreshCompletion) return;
 
           if (row.customer_id) {
-            setCustomerPriorServiceStatus((prev) =>
+            setCustomerPriorServiceStatusRef.current((prev) =>
               prev[row.customer_id as string]
                 ? prev
                 : { ...prev, [row.customer_id as string]: true }
@@ -142,14 +158,15 @@ export function useAdminJobsRealtime({
           const completedAtMs = new Date(newCompletedAt).getTime();
           if (Number.isNaN(completedAtMs) || Date.now() - completedAtMs > 60_000) return;
           jobIdsCompletedByAdminRef.current.add(row.id);
-          playCompletedJobSound();
-          void loadJobCounts();
-          if (statusFilter === 'COMPLETED') {
-            void loadFilteredJobs('COMPLETED', currentPage, { silent: true });
+          void playCompletedJobSoundRef.current();
+          void loadJobCountsRef.current();
+          const filter = statusFilterRef.current;
+          if (filter === 'COMPLETED') {
+            void loadFilteredJobsRef.current('COMPLETED', currentPageRef.current, { silent: true });
           } else {
-            void loadFilteredJobs('COMPLETED', 1, { silent: true, cacheOnly: true });
-            if (statusFilter === 'ONGOING') {
-              void loadFilteredJobs('ONGOING', 1, { silent: true });
+            void loadFilteredJobsRef.current('COMPLETED', 1, { silent: true, cacheOnly: true });
+            if (filter === 'ONGOING') {
+              void loadFilteredJobsRef.current('ONGOING', 1, { silent: true });
             }
           }
         }
@@ -166,17 +183,7 @@ export function useAdminJobsRealtime({
       clearTimeout(seedTimeout);
       supabase.removeChannel(channel);
     };
-  }, [
-    isInitialLoad,
-    isPollingEnabled,
-    statusFilter,
-    currentPage,
-    loadFilteredJobs,
-    loadJobCounts,
-    playCompletedJobSound,
-    setLastCheckedJobId,
-    setJobCounts,
-    setCustomerPriorServiceStatus,
-    jobIdsCompletedByAdminRef,
-  ]);
+    // Tab, page, and date-filter changes already reload the list. Rebuilding
+    // this channel on those changes only repeated the same read.
+  }, [isInitialLoad, isPollingEnabled, jobIdsCompletedByAdminRef]);
 }

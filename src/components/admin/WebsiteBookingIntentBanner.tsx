@@ -177,17 +177,8 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert, onSearchCusto
             if (!mutedRef.current && playAlert && !(row.dismissed_at != null && row.dismissed_at !== '')) {
               void Promise.resolve(playAlert());
             }
-            // Always refetch once on INSERT so the banner updates immediately even if realtime misses/omits columns.
+            // One refetch. Thin realtime rows omit columns; a second load was the same request.
             void load();
-            // Some realtime configurations may omit columns; fall back to a refresh.
-            if (
-              typeof row.full_name !== 'string' ||
-              typeof row.phone !== 'string' ||
-              row.updated_at == null ||
-              row.current_step == null
-            ) {
-              void load();
-            }
             setRows((prev) => mergeRow(prev, row));
             if (row.dismissed_at) return;
             return;

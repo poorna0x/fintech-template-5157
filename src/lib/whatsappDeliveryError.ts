@@ -88,7 +88,7 @@ export async function confirmWhatsAppCloudDelivery(opts: {
     if (status === 'delivered' || status === 'read' || status === 'played') {
       return { ok: true };
     }
-    await new Promise((r) => setTimeout(r, 450));
+    await new Promise((r) => setTimeout(r, 1_000));
   }
   return { ok: true };
 }

@@ -254,17 +254,23 @@ export function setWhatsAppAlertNavigator(navigate: (path: string) => void): voi
 export function startWhatsAppAdminAlerts(): () => void {
   const stopPresence = startWhatsAppViewingPresence();
   let hydrateTimer: number | null = null;
-  const hydrateFromServer = () => {
+  let lastHydrateAt = 0;
+  let hiddenAt = 0;
+  const HYDRATE_MIN_MS = 2 * 60 * 1000;
+  const hydrateFromServer = (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastHydrateAt < HYDRATE_MIN_MS) return;
+    lastHydrateAt = now;
     void fetchWhatsAppInboxUnreadSummary().then((summary) => {
       if (!summary) return;
       dispatchWhatsAppUnreadChanged(applyWhatsAppUnreadSummary(summary), summary.chats);
     });
   };
-  const scheduleHydrate = (ms: number) => {
+  const scheduleHydrate = (ms: number, force = false) => {
     if (hydrateTimer != null) window.clearTimeout(hydrateTimer);
     hydrateTimer = window.setTimeout(() => {
       hydrateTimer = null;
-      hydrateFromServer();
+      hydrateFromServer(force);
     }, ms);
   };
 
@@ -294,11 +300,18 @@ export function startWhatsAppAdminAlerts(): () => void {
     )
     .subscribe();
 
-  hydrateFromServer();
+  hydrateFromServer(true);
 
   const onVisibility = () => {
-    if (document.visibilityState !== 'visible') return;
-    scheduleHydrate(400);
+    if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
+      return;
+    }
+    const awayMs = hiddenAt ? Date.now() - hiddenAt : 0;
+    hiddenAt = 0;
+    // A real return catches messages missed in the background. A quick flicker
+    // stays on the 2-minute recount cap; the live insert still bumps the badge.
+    scheduleHydrate(400, awayMs > 5_000);
   };
   document.addEventListener('visibilitychange', onVisibility);
 

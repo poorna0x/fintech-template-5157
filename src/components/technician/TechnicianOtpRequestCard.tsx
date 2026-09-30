@@ -174,7 +174,7 @@ const TechnicianOtpRequestCard = ({
     if (!hasPending) return;
     const timer = window.setInterval(() => {
       void refresh();
-    }, 4000);
+    }, 15_000);
     return () => window.clearInterval(timer);
   }, [hasPending, refresh]);
 

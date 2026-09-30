@@ -56,10 +56,17 @@ export function AdminNotificationBell({ onOpenAmcView, className }: AdminNotific
   }, []);
 
   useEffect(() => {
-    loadCounts();
-    const id = window.setInterval(loadCounts, POLL_MS);
+    let lastAt = 0;
+    const run = () => {
+      const now = Date.now();
+      if (now - lastAt < POLL_MS) return;
+      lastAt = now;
+      void loadCounts();
+    };
+    run();
+    const id = window.setInterval(run, POLL_MS);
     const onVis = () => {
-      if (document.visibilityState === 'visible') loadCounts();
+      if (document.visibilityState === 'visible') run();
     };
     document.addEventListener('visibilitychange', onVis);
     return () => {

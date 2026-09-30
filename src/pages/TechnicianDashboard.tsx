@@ -2797,72 +2797,32 @@ const TechnicianDashboard = () => {
 
   // Periodic location update (every 5 minutes) - ONLY when app is open and visible
   useEffect(() => {
-    if (!user?.technicianId) {
-      console.log('⏭️ [TechnicianDashboard] Periodic location update: No technician ID, skipping');
-      return;
-    }
+    if (!user?.technicianId) return;
 
-    // Check if location tracking is enabled
     const locationTrackingEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
-    const settingValue = localStorage.getItem('technician_location_tracking_enabled');
-    console.log('⏰ [TechnicianDashboard] Periodic location update check:', {
-      settingValue,
-      locationTrackingEnabled,
-      willSetupInterval: locationTrackingEnabled
-    });
-    
-    if (!locationTrackingEnabled) {
-      console.log('🚫 [TechnicianDashboard] Location tracking is DISABLED - skipping periodic location updates');
-      console.log('🚫 [TechnicianDashboard] - No automatic updates on mount');
-      console.log('🚫 [TechnicianDashboard] - No 5-minute interval updates');
-      console.log('🚫 [TechnicianDashboard] - No visibility / appState resume updates');
-      return;
-    }
-    
-    console.log('✅ [TechnicianDashboard] Location tracking ENABLED - setting up periodic updates');
+    if (!locationTrackingEnabled) return;
 
     // visibilitychange + appStateChange often both fire on APK resume — only one GPS write.
     let lastResumeLocationAt = 0;
     const RESUME_DEDUPE_MS = 2_000;
-    const requestLocationOnResume = (source: string) => {
+    const requestLocationOnResume = () => {
       const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
       if (!stillEnabled || !user?.technicianId) return;
       const now = Date.now();
-      if (now - lastResumeLocationAt < RESUME_DEDUPE_MS) {
-        console.log('⏸️ [TechnicianDashboard] Resume location deduped', { source });
-        return;
-      }
+      if (now - lastResumeLocationAt < RESUME_DEDUPE_MS) return;
       lastResumeLocationAt = now;
-      console.log('🔄 [TechnicianDashboard] Resume — location update', { source });
       getCurrentLocation(true);
     };
 
-    // Update location immediately on mount (only if page is visible)
     if (!document.hidden) {
-      console.log('🔄 [TechnicianDashboard] Page visible on mount - triggering initial location update');
       lastResumeLocationAt = Date.now();
       getCurrentLocation(true);
-    } else {
-      console.log('⏸️ [TechnicianDashboard] Page hidden on mount - skipping initial location update');
     }
 
-    // Then update every 5 minutes - ONLY if page is visible
     const locationInterval = setInterval(() => {
-      // Check again if tracking is still enabled
       const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
-      console.log('⏰ [TechnicianDashboard] 5-minute interval check:', {
-        stillEnabled,
-        pageVisible: !document.hidden,
-        willUpdate: stillEnabled && !document.hidden
-      });
-      
-      if (stillEnabled && !document.hidden) {
-        console.log('🔄 [TechnicianDashboard] 5-minute interval - triggering location update');
-        getCurrentLocation(true);
-      } else if (!stillEnabled) {
-        console.log('🚫 [TechnicianDashboard] Location tracking was disabled - stopping interval updates');
-      }
-    }, 5 * 60 * 1000); // 5 minutes
+      if (stillEnabled && !document.hidden) getCurrentLocation(true);
+    }, 5 * 60 * 1000);
 
     // WebView signal — works on browser + most APK resumes
     const handleVisibilityChange = () => {

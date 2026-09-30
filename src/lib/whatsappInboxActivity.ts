@@ -100,13 +100,15 @@ export function startWhatsAppViewingPresence(): () => void {
     void syncViewingWhatsAppPresence(viewingPhoneFromActivity());
   };
   document.addEventListener('visibilitychange', onVisibility);
+  // Push suppression treats a view as stale after 2 minutes. 90s keeps that
+  // window without a write every 45s.
   const heartbeat = window.setInterval(() => {
     if (document.hidden) return;
     const phone = viewingPhoneFromActivity();
     if (!phone) return;
     lastSyncedViewingPhone = undefined;
     void syncViewingWhatsAppPresence(phone);
-  }, 45_000);
+  }, 90_000);
   if (Capacitor.isNativePlatform()) {
     void (async () => {
       try {
