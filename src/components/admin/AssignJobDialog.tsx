@@ -611,9 +611,6 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 )}
               </Button>
             </div>
-            <p className="text-[11px] leading-snug text-muted-foreground sm:text-right">
-              Hold Assign by Distance to see photos, routes, and travel time.
-            </p>
             <Select
               value={selectedTechnicianId}
               onValueChange={onTechnicianSelect}
