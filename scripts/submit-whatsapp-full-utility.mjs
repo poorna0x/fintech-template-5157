@@ -11,6 +11,7 @@
  *   node scripts/submit-whatsapp-full-utility.mjs --preview-md  # write docs/whatsapp-cold-template-previews.md
  *   node scripts/submit-whatsapp-full-utility.mjs --submit       # submit missing only
    *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-tech-customer-photo
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-job-assign-tech
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-ask-location-v3
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-overdue
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-received
@@ -1833,6 +1834,20 @@ const TECH_CUSTOMER_PHOTO_TEMPLATES = [
   },
 ];
 
+/**
+ * Job assigned TO the technician (cold, outside 24h). No buttons — internal dispatch.
+ * {{1}} tech name, {{2}} job type, {{3}} customer, {{4}} area.
+ */
+const JOB_ASSIGNED_TECH_TEMPLATES = [
+  {
+    name: 'svc_job_assigned_tech_v1',
+    body: 'Hi {{1}}, a new {{2}} job has been assigned to you. Customer: {{3}}. Location: {{4}}. Reply on this chat if you need office support.',
+    examples: ['Suresh', 'RO service', 'Rahul', 'HSR Layout'],
+    noButtons: true,
+    lockCategory: true,
+  },
+];
+
 /** Existing-customer schedule — Book online button only (no Call). */
 const EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES = [
   {
@@ -2703,6 +2718,7 @@ function collectAllTemplatePreviewEntries() {
       techCustomerPhotoPayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
     );
   }
+  for (const t of JOB_ASSIGNED_TECH_TEMPLATES) push('Job assigned to technician', t, corePayload);
   for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) push('Existing customer book', t, bookOnlyPayload);
   for (const t of SERVICE_DUE_BOOK_CTA_TEMPLATES) push('Service due book CTA', t, bookOnlyPayload);
   for (const t of WFS_HELLO_TEMPLATES) push('WFS hello', t, corePayload);
@@ -2894,6 +2910,35 @@ async function main() {
   }
 
   const queue = [];
+  if (process.argv.includes('--only-job-assign-tech')) {
+    for (const t of JOB_ASSIGNED_TECH_TEMPLATES) {
+      const skip = shouldSkip(t.name, byName);
+      if (skip) {
+        console.log(`SKIP ${t.name} — ${skip}`);
+        continue;
+      }
+      queue.push({ label: t.name, payload: corePayload(t) });
+    }
+    console.log(`\n${doSubmit ? 'Submitting' : 'Would submit'} ${queue.length} template(s)\n`);
+    for (const item of queue) {
+      console.log(`• ${item.label} → ${item.payload.name}`);
+      console.log(`  ${item.payload.components.find((c) => c.type === 'BODY')?.text || ''}`);
+      if (!doSubmit) {
+        console.log('');
+        continue;
+      }
+      const result = await submitOne(token, item.payload);
+      console.log(result.ok ? '  OK' : '  FAIL', result.status, JSON.stringify(result.data));
+      console.log('');
+      await new Promise((r) => setTimeout(r, 700));
+    }
+    if (!doSubmit) {
+      console.log('Dry-run. Submit with: node scripts/submit-whatsapp-full-utility.mjs --submit --only-job-assign-tech');
+    } else {
+      console.log('Done. Recheck: node scripts/submit-whatsapp-full-utility.mjs --status');
+    }
+    return;
+  }
   for (const t of CORE_TEMPLATES) {
     const metaName = t.aliasOf || t.name;
     if (t.skipSubmit) {
@@ -3182,6 +3227,14 @@ async function main() {
       label: t.name,
       payload: await techCustomerPhotoPayload(t, doSubmit ? token : ''),
     });
+  }
+  for (const t of JOB_ASSIGNED_TECH_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: corePayload(t) });
   }
   for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
@@ -3555,6 +3608,14 @@ async function main() {
   const onlyTechCustomerPhoto = process.argv.includes('--only-tech-customer-photo');
   if (onlyTechCustomerPhoto) {
     const keep = new Set(TECH_CUSTOMER_PHOTO_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyJobAssignTech = process.argv.includes('--only-job-assign-tech');
+  if (onlyJobAssignTech) {
+    const keep = new Set(JOB_ASSIGNED_TECH_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

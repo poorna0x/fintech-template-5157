@@ -97,6 +97,11 @@ const RECOMMENDED = [
     hint: 'Booking confirmed ({{1}} name, {{2}} ref, {{3}} when)',
   },
   { name: 'svc_tech_assigned', language: 'en', hint: 'Tech assigned ({{1}} name, {{2}} tech)' },
+  {
+    name: 'svc_job_assigned_tech_v1',
+    language: 'en',
+    hint: 'Job assigned to technician ({{1}} tech, {{2}} type, {{3}} customer, {{4}} area)',
+  },
   { name: 'svc_job_done', language: 'en', hint: 'Service done ({{1}} name, {{2}} amount)' },
   {
     name: 'svc_ask_review_hro_v1',

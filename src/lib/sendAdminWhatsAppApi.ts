@@ -837,6 +837,7 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
     const skipSmokeLastResort =
       source === 'pending_payment' ||
       source === 'documents' ||
+      source === 'job_assign_tech' ||
       /balance_due|payment_overdue|pending_payment/i.test(coldName);
     const smokeName = resolveWaTemplateName('svc_smoke_update');
     if (!skipSmokeLastResort && coldName !== smokeName) {

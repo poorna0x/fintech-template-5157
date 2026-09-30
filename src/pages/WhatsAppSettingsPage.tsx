@@ -393,9 +393,16 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           />
           <ToggleRow
             label="Auto-send on assign (instant)"
-            description="When Dashboard job WhatsApp is ON: send via Cloud API immediately after assign (no dialog). OFF = open manual wa.me dialog."
+            description="When Dashboard job WhatsApp is ON: send via Cloud API immediately after assign (no dialog). OFF = open manual wa.me dialog. Free-form only works inside 24h unless the cold template below is on."
             checked={settings.auto_send_job_assign_whatsapp}
             onCheckedChange={(v) => patch('auto_send_job_assign_whatsapp', v)}
+          />
+          <ToggleRow
+            label="Cold template on assign (background)"
+            description="When Job assign WhatsApp is ON: clicking Assign sends svc_job_assigned_tech_v1 in the background even if the technician has not messaged in 24h. Needs Cold templates ON and Meta APPROVED. No dialog."
+            checked={settings.auto_send_job_assign_cold_whatsapp}
+            disabled={!settings.enabled || !settings.allow_cold_templates}
+            onCheckedChange={(v) => patch('auto_send_job_assign_cold_whatsapp', v)}
           />
           <ToggleRow
             label="Auto-send on unassign (instant)"

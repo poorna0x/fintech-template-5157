@@ -4,9 +4,10 @@ import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 import { getJobAgreedCostLabel, getJobDescriptionText } from '@/lib/jobAssignMessageDetails';
 import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
-import { sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
+import { sendAdminWhatsAppText, sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
 import { ensureJobWhatsAppNotifyPrefs } from '@/lib/jobAssignWhatsAppSettingsCache';
 import { isWhatsAppJobNotifyAllowed } from '@/lib/whatsappCrmSettings';
+import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { supabase } from '@/lib/supabaseClient';
 import type { Job } from '@/types';
 import type { OpenAdminWhatsappForJobCtx } from '@/lib/openAdminWhatsappForJobAssign';
@@ -130,25 +131,47 @@ export function buildJobTechnicianWhatsAppPayload(
 async function autoSendJobTechWhatsApp(
   phone: string,
   message: string,
-  mode: JobTechWhatsAppMode
+  mode: JobTechWhatsAppMode,
+  cold?: { name: string; bodyParams: string[] } | null
 ): Promise<'api' | 'failed'> {
   const toastId = toast.loading(
     mode === 'unassign' ? 'Sending unassign WhatsApp…' : 'Sending assign WhatsApp…'
   );
   try {
-    const result = await sendAdminWhatsAppText({
-      to: phone,
-      text: message,
-      fallbackWaMe: false,
-    });
+    const result = cold?.name
+      ? await sendAdminWhatsAppTextWithOptionalTemplate({
+          to: phone,
+          text: message,
+          fallbackWaMe: false,
+          preferColdTemplate: true,
+          source: 'job_assign_tech',
+          coldTemplate: {
+            name: cold.name,
+            languageCode: 'en',
+            bodyParams: cold.bodyParams,
+          },
+        })
+      : await sendAdminWhatsAppText({
+          to: phone,
+          text: message,
+          fallbackWaMe: false,
+          source: 'job_assign_tech',
+        });
     if (result.ok && result.via === 'api') {
-      toast.success('WhatsApp sent to technician', { id: toastId });
+      toast.success(
+        cold?.name && 'usedTemplate' in result && result.usedTemplate
+          ? 'Assign WhatsApp template sent to technician'
+          : 'WhatsApp sent to technician',
+        { id: toastId }
+      );
       return 'api';
     }
     // Auto-send stays in-app: do not open wa.me (that steals focus after assign).
     toast.message(
       result.needsWindowOrTemplate
-        ? 'WhatsApp API window closed — message not sent (open chat or use manual dialog)'
+        ? cold?.name
+          ? 'Assign template could not send (not approved yet or WhatsApp blocked)'
+          : 'WhatsApp API window closed — message not sent (turn on cold template in WhatsApp Settings)'
         : result.featureDisabled
           ? 'WhatsApp send skipped (feature off)'
           : 'WhatsApp auto-send failed',
@@ -212,12 +235,27 @@ export async function notifyTechnicianJobWhatsApp(opts: {
     return 'skipped';
   }
 
-  const autoSend = opts.mode === 'unassign' ? prefs.autoUnassign : prefs.autoAssign;
+  const autoSend =
+    opts.mode === 'unassign'
+      ? prefs.autoUnassign
+      : prefs.autoAssign || prefs.autoAssignCold;
   const payload = buildJobTechnicianWhatsAppPayload(opts.job, opts.mode);
 
   if (autoSend) {
     // Fire-and-forget: do not block assign/unassign dialogs on API latency.
-    void autoSendJobTechWhatsApp(phone, payload.message, opts.mode);
+    const cold =
+      opts.mode === 'assign' && prefs.autoAssignCold
+        ? {
+            name: WA_COLD.job_assigned_tech.name,
+            bodyParams: WA_COLD.job_assigned_tech.bodyParams(
+              opts.technician.fullName,
+              payload.serviceSubType,
+              payload.customerName,
+              payload.location
+            ),
+          }
+        : null;
+    void autoSendJobTechWhatsApp(phone, payload.message, opts.mode, cold);
     return 'auto';
   }
 

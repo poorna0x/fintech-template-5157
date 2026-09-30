@@ -2,11 +2,12 @@
  * Job assign/unassign WhatsApp prefs (DB) + localStorage cache.
  * - Dashboard master `enabled`: OFF = no popup / no auto-send at all
  * - WhatsApp Settings `autoAssign` / `autoUnassign`: when master ON, send instantly via API
+ * - `autoAssignCold`: assign also sends Meta cold template in the background
  * Manual dialog path is always wa.me (not Cloud API).
  */
 import { supabase } from '@/lib/supabaseClient';
 
-export const JOB_WA_NOTIFY_CACHE_KEY = 'wa_job_notify_prefs_v3';
+export const JOB_WA_NOTIFY_CACHE_KEY = 'wa_job_notify_prefs_v4';
 export const JOB_WA_NOTIFY_CHANGED_EVENT = 'jobWaNotifyPrefsChanged';
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -16,6 +17,8 @@ export type JobWhatsAppNotifyPrefs = {
   enabled: boolean;
   /** WhatsApp Settings: instant API send on assign (no dialog). */
   autoAssign: boolean;
+  /** WhatsApp Settings: instant cold template on assign (works outside 24h). */
+  autoAssignCold: boolean;
   /** WhatsApp Settings: instant API send on unassign (no dialog). */
   autoUnassign: boolean;
 };
@@ -25,6 +28,7 @@ type CacheBlob = JobWhatsAppNotifyPrefs & { savedAt: number };
 const DEFAULTS: JobWhatsAppNotifyPrefs = {
   enabled: true,
   autoAssign: false,
+  autoAssignCold: false,
   autoUnassign: false,
 };
 
@@ -34,6 +38,7 @@ function normalizePrefs(raw: Partial<JobWhatsAppNotifyPrefs> | null | undefined)
   return {
     enabled: raw?.enabled !== false,
     autoAssign: raw?.autoAssign === true,
+    autoAssignCold: raw?.autoAssignCold === true,
     autoUnassign: raw?.autoUnassign === true,
   };
 }
@@ -61,10 +66,12 @@ export function writeJobWhatsAppNotifyPrefsCache(prefs: JobWhatsAppNotifyPrefs):
   try {
     localStorage.setItem(JOB_WA_NOTIFY_CACHE_KEY, JSON.stringify(blob));
   } catch {
-    /* ignore quota */
+    /* ignore */
   }
-  if (typeof window !== 'undefined') {
+  try {
     window.dispatchEvent(new CustomEvent(JOB_WA_NOTIFY_CHANGED_EVENT, { detail: blob }));
+  } catch {
+    /* ignore */
   }
 }
 
@@ -77,12 +84,31 @@ export async function fetchJobWhatsAppNotifyPrefs(): Promise<{
   const { data, error } = await supabase
     .from('whatsapp_crm_settings')
     .select(
-      'allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp'
+      'allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_assign_cold_whatsapp, auto_send_job_unassign_whatsapp'
     )
     .eq('id', 1)
     .maybeSingle();
 
   if (error) {
+    if (/auto_send_job_assign_cold/i.test(error.message)) {
+      const legacy = await supabase
+        .from('whatsapp_crm_settings')
+        .select(
+          'allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp'
+        )
+        .eq('id', 1)
+        .maybeSingle();
+      if (!legacy.error) {
+        const prefs = normalizePrefs({
+          enabled: legacy.data?.allow_job_assign_whatsapp !== false,
+          autoAssign: legacy.data?.auto_send_job_assign_whatsapp === true,
+          autoAssignCold: false,
+          autoUnassign: legacy.data?.auto_send_job_unassign_whatsapp === true,
+        });
+        writeJobWhatsAppNotifyPrefsCache(prefs);
+        return { ok: true, prefs };
+      }
+    }
     const cached = readJobWhatsAppNotifyPrefsCached();
     return {
       ok: false,
@@ -95,6 +121,7 @@ export async function fetchJobWhatsAppNotifyPrefs(): Promise<{
   const prefs = normalizePrefs({
     enabled: data?.allow_job_assign_whatsapp !== false,
     autoAssign: data?.auto_send_job_assign_whatsapp === true,
+    autoAssignCold: data?.auto_send_job_assign_cold_whatsapp === true,
     autoUnassign: data?.auto_send_job_unassign_whatsapp === true,
   });
   writeJobWhatsAppNotifyPrefsCache(prefs);
@@ -133,11 +160,13 @@ export function syncJobWhatsAppNotifyCacheFromCrmSettings(row: {
   allow_job_assign_whatsapp?: boolean;
   allow_job_unassign_whatsapp?: boolean;
   auto_send_job_assign_whatsapp?: boolean;
+  auto_send_job_assign_cold_whatsapp?: boolean;
   auto_send_job_unassign_whatsapp?: boolean;
 }): void {
   writeJobWhatsAppNotifyPrefsCache({
     enabled: row.allow_job_assign_whatsapp !== false,
     autoAssign: row.auto_send_job_assign_whatsapp === true,
+    autoAssignCold: row.auto_send_job_assign_cold_whatsapp === true,
     autoUnassign: row.auto_send_job_unassign_whatsapp === true,
   });
 }

@@ -696,6 +696,7 @@ const Settings = () => {
         setJobWaNotifyPrefs({
           enabled: detail.enabled !== false,
           autoAssign: detail.autoAssign === true,
+          autoAssignCold: detail.autoAssignCold === true,
           autoUnassign: detail.autoUnassign === true,
         });
       } else {
@@ -4077,8 +4078,8 @@ const Settings = () => {
                   </h3>
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
                     Same setting as WhatsApp Settings (phone and laptop). OFF = no WhatsApp popup
-                    when assigning or unassigning. ON = show manual wa.me dialog (or auto-send if
-                    enabled in WhatsApp Settings).
+                    when assigning or unassigning. ON = show manual wa.me dialog, or send in the
+                    background if Auto-send / cold template is on in WhatsApp Settings.
                   </p>
                 </div>
                 <Switch

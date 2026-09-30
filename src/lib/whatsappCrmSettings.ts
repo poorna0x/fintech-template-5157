@@ -22,6 +22,7 @@ export type WhatsAppSendSource =
   | 'tech_assigned'
   | 'tech_unassigned'
   | 'job_completion'
+  | 'job_assign_tech'
   | 'booking_bot'
   | 'online_booking'
   | 'other';
@@ -45,6 +46,8 @@ export type WhatsAppCrmSettings = {
   allow_job_unassign_whatsapp: boolean;
   /** When true, assign/reassign sends WhatsApp instantly (no Send click). */
   auto_send_job_assign_whatsapp: boolean;
+  /** When true, assign sends the technician cold template in the background (works outside 24h). */
+  auto_send_job_assign_cold_whatsapp: boolean;
   /** When true, unassign sends WhatsApp instantly (no Send click). */
   auto_send_job_unassign_whatsapp: boolean;
   /** Cloud API: share tech details to customer. */
@@ -147,6 +150,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
   allow_job_assign_whatsapp: true,
   allow_job_unassign_whatsapp: true,
   auto_send_job_assign_whatsapp: false,
+  auto_send_job_assign_cold_whatsapp: false,
   auto_send_job_unassign_whatsapp: false,
   allow_tech_assigned: true,
   allow_tech_unassigned: true,
@@ -168,7 +172,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
 };
 
 const SETTINGS_COLUMNS =
-  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, allow_salary_slip_whatsapp, auto_send_salary_slip_whatsapp, auto_send_missed_call_whatsapp, allow_online_booking_whatsapp, auto_send_online_booking_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
+  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_assign_cold_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, allow_salary_slip_whatsapp, auto_send_salary_slip_whatsapp, auto_send_missed_call_whatsapp, allow_online_booking_whatsapp, auto_send_online_booking_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
 
 function num(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v);
@@ -202,6 +206,7 @@ export function normalizeWhatsAppCrmSettings(
     allow_job_assign_whatsapp: bool(row.allow_job_assign_whatsapp, true),
     allow_job_unassign_whatsapp: bool(row.allow_job_unassign_whatsapp, true),
     auto_send_job_assign_whatsapp: row.auto_send_job_assign_whatsapp === true,
+    auto_send_job_assign_cold_whatsapp: row.auto_send_job_assign_cold_whatsapp === true,
     auto_send_job_unassign_whatsapp: row.auto_send_job_unassign_whatsapp === true,
     allow_tech_assigned: bool(row.allow_tech_assigned, true),
     allow_tech_unassigned: bool(row.allow_tech_unassigned, true),
@@ -249,6 +254,8 @@ export function settingsKeyForSendSource(
       return 'allow_tech_unassigned';
     case 'job_completion':
       return 'allow_job_completion_whatsapp';
+    case 'job_assign_tech':
+      return 'allow_job_assign_whatsapp';
     case 'booking_bot':
       return 'allow_booking_bot';
     case 'online_booking':
@@ -502,6 +509,7 @@ export async function saveWhatsAppCrmSettings(
     allow_job_assign_whatsapp: bool(patch.allow_job_assign_whatsapp, true),
     allow_job_unassign_whatsapp: bool(patch.allow_job_unassign_whatsapp, true),
     auto_send_job_assign_whatsapp: patch.auto_send_job_assign_whatsapp === true,
+    auto_send_job_assign_cold_whatsapp: patch.auto_send_job_assign_cold_whatsapp === true,
     auto_send_job_unassign_whatsapp: patch.auto_send_job_unassign_whatsapp === true,
     allow_tech_assigned: bool(patch.allow_tech_assigned, true),
     allow_tech_unassigned: bool(patch.allow_tech_unassigned, true),
@@ -539,6 +547,28 @@ export async function saveWhatsAppCrmSettings(
     .single();
 
   if (error) {
+    if (/auto_send_job_assign_cold/i.test(error.message)) {
+      const { auto_send_job_assign_cold_whatsapp: _cold, ...legacyPayload } = payload;
+      const retry = await supabase
+        .from('whatsapp_crm_settings')
+        .update(legacyPayload)
+        .eq('id', 1)
+        .select(SETTINGS_COLUMNS.replace(', auto_send_job_assign_cold_whatsapp', ''))
+        .single();
+      if (retry.error) return { ok: false, error: retry.error.message };
+      const settings = normalizeWhatsAppCrmSettings(retry.data as WhatsAppCrmSettings);
+      const { syncJobWhatsAppNotifyCacheFromCrmSettings } = await import(
+        '@/lib/jobAssignWhatsAppSettingsCache'
+      );
+      syncJobWhatsAppNotifyCacheFromCrmSettings(settings);
+      const cached = { ok: true as const, settings, at: Date.now() };
+      settingsCacheMem = cached;
+      return {
+        ok: false,
+        settings,
+        error: 'Job-assign cold WhatsApp column is missing — run scripts/add-whatsapp-job-assign-cold.sql',
+      };
+    }
     if (/allow_salary_slip|auto_send_salary_slip/i.test(error.message)) {
       const {
         allow_salary_slip_whatsapp: _a,

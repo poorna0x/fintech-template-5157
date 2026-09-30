@@ -274,7 +274,7 @@ exports.handler = async (event) => {
     const { data: waSettings } = await db
       .from('whatsapp_crm_settings')
       .select(
-        'enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp'
+        'enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, allow_job_assign_whatsapp'
       )
       .eq('id', 1)
       .maybeSingle();
@@ -300,6 +300,7 @@ exports.handler = async (event) => {
         tech_assigned: 'allow_tech_assigned',
         tech_unassigned: 'allow_tech_unassigned',
         job_completion: 'allow_job_completion_whatsapp',
+        job_assign_tech: 'allow_job_assign_whatsapp',
         booking_bot: 'allow_booking_bot',
         online_booking: 'allow_online_booking_whatsapp',
       };
@@ -315,6 +316,7 @@ exports.handler = async (event) => {
           allow_tech_assigned: 'Technician assigned → customer',
           allow_tech_unassigned: 'Technician unassigned → customer',
           allow_job_completion_whatsapp: 'Job completion → customer',
+          allow_job_assign_whatsapp: 'Job assign → technician',
           allow_booking_bot: 'Booking bot',
           allow_online_booking_whatsapp: 'Online booking confirmation',
         };
