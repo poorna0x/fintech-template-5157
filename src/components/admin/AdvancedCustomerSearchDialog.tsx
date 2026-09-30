@@ -843,6 +843,73 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           </DialogDescription>
         </DialogHeader>
 
+        {/* Kept outside the scroller so Search stays on screen on a phone
+            after scrolling down to paste a Google Maps link. */}
+        <div className="shrink-0 px-4 sm:px-5 py-3 border-b space-y-2.5 bg-background">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input
+              id="adv_free"
+              placeholder="Name, phone, ID, flat/house no, area, model…"
+              value={filters.freeText ?? ''}
+              onChange={(e) => update('freeText', e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleSearch();
+              }}
+              className="h-10 sm:flex-1"
+              autoFocus={false}
+            />
+            <div className="flex gap-2 shrink-0">
+              <Button
+                type="button"
+                onClick={() => void handleSearch()}
+                disabled={busy}
+                className="h-10 flex-1 sm:flex-none sm:min-w-[7.5rem]"
+              >
+                {busy ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Search className="w-4 h-4 mr-2" />
+                )}
+                {isResolvingNear ? 'Resolving…' : isSearching ? 'Searching…' : resultsStale ? 'Update' : 'Search'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleReset}
+                disabled={busy}
+                className="h-10 px-3"
+                title="Reset filters"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span className="sr-only sm:not-sr-only sm:ml-2">Reset</span>
+              </Button>
+            </div>
+          </div>
+
+          {activeChips.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {activeChips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={chip.clear}
+                  className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2.5 py-0.5 text-[11px] text-foreground/80 hover:bg-muted transition-colors cursor-pointer"
+                  title="Clear filter"
+                >
+                  <span className="max-w-[12rem] truncate">{chip.label}</span>
+                  <X className="w-3 h-3 shrink-0 opacity-60" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {resultsStale && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-400">
+              Filters changed — tap Update to search again.
+            </p>
+          )}
+        </div>
+
         <div
           ref={scrollBodyRef}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y"
@@ -854,70 +921,6 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           onWheel={(e) => e.stopPropagation()}
         >
           <div className="px-4 sm:px-5 py-4 space-y-5">
-            {/* Primary search */}
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Input
-                id="adv_free"
-                placeholder="Name, phone, ID, flat/house no, area, model…"
-                value={filters.freeText ?? ''}
-                onChange={(e) => update('freeText', e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void handleSearch();
-                }}
-                className="h-10 sm:flex-1"
-                autoFocus={false}
-              />
-              <div className="flex gap-2 shrink-0">
-                <Button
-                  type="button"
-                  onClick={() => void handleSearch()}
-                  disabled={busy}
-                  className="h-10 flex-1 sm:flex-none sm:min-w-[7.5rem]"
-                >
-                  {busy ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Search className="w-4 h-4 mr-2" />
-                  )}
-                  {isResolvingNear ? 'Resolving…' : isSearching ? 'Searching…' : resultsStale ? 'Update' : 'Search'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleReset}
-                  disabled={busy}
-                  className="h-10 px-3"
-                  title="Reset filters"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  <span className="sr-only sm:not-sr-only sm:ml-2">Reset</span>
-                </Button>
-              </div>
-            </div>
-
-            {activeChips.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 -mt-2">
-                {activeChips.map((chip) => (
-                  <button
-                    key={chip.key}
-                    type="button"
-                    onClick={chip.clear}
-                    className="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2.5 py-0.5 text-[11px] text-foreground/80 hover:bg-muted transition-colors cursor-pointer"
-                    title="Clear filter"
-                  >
-                    <span className="max-w-[12rem] truncate">{chip.label}</span>
-                    <X className="w-3 h-3 shrink-0 opacity-60" />
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {resultsStale && (
-              <p className="text-[11px] text-amber-700 dark:text-amber-400 -mt-2">
-                Filters changed — tap Update to search again.
-              </p>
-            )}
-
             {/* Core filters */}
             <section className="space-y-3">
               <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
