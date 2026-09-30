@@ -19,7 +19,6 @@
 
 [functions."generate-pdf"]
   timeout = 26
-  memory = 2048
   node_bundler = "esbuild"
   external_node_modules = ["@sparticuz/chromium"]
 
@@ -36,7 +35,6 @@
 [functions."salary-slip-month-end"]
   schedule = "30 15 28-31 * *"
   timeout = 26
-  memory = 2048
   node_bundler = "esbuild"
   external_node_modules = ["@sparticuz/chromium"]
 
