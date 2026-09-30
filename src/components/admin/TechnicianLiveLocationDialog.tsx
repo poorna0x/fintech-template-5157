@@ -7,7 +7,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -107,11 +106,11 @@ const LiveLocationMap = React.memo(function LiveLocationMap({
 }) {
   const src = `https://maps.google.com/maps?q=${latitude},${longitude}&z=16&output=embed`;
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="overflow-hidden bg-muted">
       <iframe
         title="Technician location map"
         src={src}
-        className="h-64 w-full sm:h-80"
+        className="h-[46vh] min-h-[240px] w-full sm:h-80"
         loading="lazy"
         referrerPolicy="no-referrer-when-downgrade"
       />
@@ -326,79 +325,91 @@ const TechnicianLiveLocationDialog = ({
     return isActiveTechnicianAccount(t);
   });
   const hasCoords = row != null && row.latitude != null && row.longitude != null;
+  const techName = (t: Technician) => t.fullName || (t as { full_name?: string }).full_name || 'Technician';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
-        {/* text-left overrides the mobile text-center default, which looked
-            lopsided combined with the right padding that clears the X button */}
-        <DialogHeader className="pr-10 text-left">
-          <DialogTitle className="flex items-center gap-2">
-            <MapPin className="h-5 w-5" />
+      <DialogContent className="flex max-h-[92vh] w-[calc(100vw-1.25rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:w-full">
+        <DialogHeader className="space-y-3 px-4 py-3 pr-12 text-left">
+          <DialogTitle className="flex items-center gap-2.5 text-base">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <MapPin className="h-4 w-4" />
+            </span>
             Technician location
           </DialogTitle>
           <DialogDescription className="sr-only">
             Shows the technician's current location on a map.
           </DialogDescription>
+          <Select value={technicianId} onValueChange={setTechnicianId}>
+            <SelectTrigger className="h-11">
+              <SelectValue placeholder="Select technician" />
+            </SelectTrigger>
+            <SelectContent>
+              {activeTechs.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  <span className="flex items-center gap-2">
+                    {t.photo ? (
+                      <img src={t.photo} alt="" className="h-6 w-6 rounded-full object-cover" />
+                    ) : (
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
+                        {(techName(t)[0] || '?').toUpperCase()}
+                      </span>
+                    )}
+                    <span className="truncate">{techName(t)}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </DialogHeader>
 
-        <div className="min-w-0 space-y-4">
-          <div className="space-y-1.5">
-            <Label>Technician</Label>
-            <Select value={technicianId} onValueChange={setTechnicianId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select technician" />
-              </SelectTrigger>
-              <SelectContent>
-                {activeTechs.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.fullName || (t as any).full_name || 'Technician'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           {(loading || waitingFresh) && (
-            <div className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+            <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-sm text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
               {loading ? 'Checking…' : "Getting the technician's current location…"}
             </div>
           )}
 
           {!loading && noRow && technicianId && (
-            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            <div className="m-4 rounded-xl border border-dashed p-4 text-sm leading-relaxed text-muted-foreground">
               This technician hasn't opened the Android app yet — location sharing starts
               automatically the first time they do. They may be using the website instead.
             </div>
           )}
 
           {!loading && !waitingFresh && row && (
-            <div className="min-w-0 space-y-3">
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    row.is_tracking
-                      ? 'border-green-300 bg-green-50 text-green-700'
-                      : 'border-gray-300 bg-gray-50 text-gray-600'
-                  )}
-                >
-                  {row.is_tracking ? 'Sharing on' : 'Sharing off'}
-                </Badge>
-                {exactFix && hasCoords && (
-                  <Badge variant="outline" className="border-blue-300 bg-blue-50 text-blue-700">
-                    Exact location
+            <div className="min-w-0">
+              <div className="space-y-2 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'rounded-full px-2.5 py-0.5 text-[11px] font-medium',
+                      row.is_tracking
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-border bg-muted text-muted-foreground'
+                    )}
+                  >
+                    {row.is_tracking ? 'Sharing on' : 'Sharing off'}
                   </Badge>
-                )}
-                <span className="text-muted-foreground">
-                  Position from <RelativeAgo iso={fixTimeOf(row)} />
+                  {exactFix && hasCoords && (
+                    <Badge
+                      variant="outline"
+                      className="rounded-full border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[11px] font-medium text-sky-700"
+                    >
+                      Exact location
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  <RelativeAgo iso={fixTimeOf(row)} />
                   {row.accuracy != null ? ` · ±${Math.round(row.accuracy)} m` : ''}
-                </span>
+                </p>
               </div>
 
               {!row.is_tracking && (
-                <p className="text-xs text-muted-foreground">
+                <p className="px-4 pb-3 text-xs leading-relaxed text-muted-foreground">
                   Location sharing is off in the app record — ask them to open the
                   HydrogenRO Tech APK (not the website), keep Location allowed for
                   the app, then force-close and reopen once. Showing the last known
@@ -407,7 +418,7 @@ const TechnicianLiveLocationDialog = ({
               )}
 
               {timedOut && (
-                <p className="text-xs text-amber-700">
+                <p className="px-4 pb-3 text-xs leading-relaxed text-amber-700">
                   Couldn't get the exact current location — showing the latest known
                   position
                   {hasCoords ? (
@@ -416,22 +427,20 @@ const TechnicianLiveLocationDialog = ({
                       from <RelativeAgo iso={fixTimeOf(row)} />
                     </>
                   ) : null}
-                  . Tap Refresh to try again, or ask the technician to open the app.
+                  . Tap refresh to try again, or ask the technician to open the app.
                 </p>
               )}
 
-              {/* Approximate answer shown, phone still measuring the exact fix */}
               {!timedOut && !exactFix && hasCoords && row.is_tracking && (
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <p className="flex items-center gap-1.5 px-4 pb-3 text-xs text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Approximate position shown — getting the exact location, updates
-                  automatically…
+                  Approximate position — updating to the exact fix…
                 </p>
               )}
 
               {!hasCoords && row.is_tracking && (
-                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  No location has been received from this technician's phone yet. Tap Refresh
+                <div className="mx-4 mb-3 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                  No location has been received from this technician's phone yet. Tap refresh
                   to request it again.
                 </div>
               )}
@@ -440,17 +449,11 @@ const TechnicianLiveLocationDialog = ({
                 <LiveLocationMap latitude={row.latitude!} longitude={row.longitude!} />
               )}
 
-              {/* Full-width split on mobile, compact inline on desktop.
-                  min-w-0 lets the buttons shrink below their label's natural
-                  width (flexbox min-size:auto) — without it the long "exact
-                  location" label widens the whole dialog past the screen edge
-                  on phones. */}
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2 px-4 py-3">
                 {hasCoords && (
                   <Button
-                    variant={exactFix ? 'default' : 'outline'}
                     size="sm"
-                    className="h-10 min-w-0 flex-1 sm:h-9 sm:flex-none"
+                    className="h-10 min-w-0 flex-1"
                     onClick={() =>
                       window.open(
                         `https://maps.google.com/?q=${row.latitude},${row.longitude}`,
@@ -458,20 +461,20 @@ const TechnicianLiveLocationDialog = ({
                       )
                     }
                   >
-                    <ExternalLink className="mr-2 h-4 w-4 shrink-0" />
-                    <span className="truncate">
-                      {exactFix ? 'Open exact location in Google Maps' : 'Open in Google Maps'}
-                    </span>
+                    <ExternalLink className="h-4 w-4 shrink-0" />
+                    Open in Maps
                   </Button>
                 )}
                 <Button
+                  type="button"
                   variant="outline"
-                  size="sm"
-                  className="h-10 min-w-0 flex-1 sm:h-9 sm:flex-none"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-full"
+                  aria-label="Refresh location"
+                  title="Refresh location"
                   onClick={() => technicianId && void startWatching(technicianId, true)}
                 >
-                  <RefreshCw className="mr-2 h-4 w-4 shrink-0" />
-                  Refresh
+                  <RefreshCw className="h-4 w-4" />
                 </Button>
               </div>
             </div>
