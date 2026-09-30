@@ -123,7 +123,7 @@ export function buildJobCompletionMessage(input: JobCompletionMessageInput): str
 
 /**
  * WhatsApp free-form (24h) — letter layout matching Meta letter templates.
- * Call = voice main line (Hydrogen 8884944288 / Eleven 9880693311), not Cloud API WA.
+ * Call = voice main line (Hydrogen 9886944288 / Eleven 9880693311), not Cloud API WA.
  */
 export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInput): string {
   const customerName = whatsappGreetingName(input.customerName, 'there');

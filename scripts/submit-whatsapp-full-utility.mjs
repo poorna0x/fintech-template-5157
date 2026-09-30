@@ -905,7 +905,7 @@ const JOB_DONE_V2_TEMPLATES = [
 
 /**
  * Job-done v3 — Call (voice main) + Website + Review.
- * Call phones: Eleven 9880693311 · Hydrogen 8884944288 (not the Cloud API WA line).
+ * Call phones: Eleven 9880693311 · Hydrogen 9886944288 (not the Cloud API WA line).
  */
 const JOB_DONE_V3_TEMPLATES = [
   {
@@ -945,7 +945,7 @@ const LETTER_BRANDS = {
   },
   hro: {
     label: 'Hydrogen RO',
-    phone: '8884944288',
+    phone: '9886944288',
     email: 'mail@hydrogenro.com',
     website: 'https://hydrogenro.com',
     webHost: 'hydrogenro.com',
@@ -2792,7 +2792,7 @@ async function writeColdTemplatePreviewMarkdown(token) {
     '',
     '| Call us (voice) | Eleven RO | Hydrogen RO |',
     '|---|---|---|',
-    '| Main line | 9880693311 | 8884944288 |',
+    '| Main line | 9880693311 | 9886944288 |',
     '| Website | elevenro.com | hydrogenro.com |',
     '| Pay now link | elevenro.com/p/{code} | hydrogenro.com/p/{code} |',
     '| Accept link | elevenro.com/c/{token} | hydrogenro.com/c/{token} |',

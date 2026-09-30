@@ -169,11 +169,11 @@ const PublicAmcLearnMoreDialog: React.FC<PublicAmcLearnMoreDialogProps> = ({
               type="button"
               variant="outline"
               className="gap-2"
-              onClick={() => openPublicPhoneCall('+918884944288')}
+              onClick={() => openPublicPhoneCall('+919886944288')}
             >
               <span className="inline-flex items-center gap-2">
                 <Phone className="h-4 w-4" />
-                Call +91 8884944288
+                Call +91 9886944288
               </span>
             </Button>
           </div>

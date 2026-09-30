@@ -5,7 +5,7 @@
 
 const CONTACT = {
   hydrogenro: {
-    phone: '8884944288',
+    phone: '9886944288',
     email: 'mail@hydrogenro.com',
     website: 'https://hydrogenro.com',
     team: 'Hydrogen RO Team',

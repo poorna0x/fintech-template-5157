@@ -325,11 +325,11 @@ const Header = () => {
           {/* Show phone number on booking page, Book Service button on other pages */}
           {location.pathname === '/book' ? (
             <Button 
-              onClick={() => openPublicPhoneCall('+918884944288', 'header_booking_page')}
+              onClick={() => openPublicPhoneCall('+919886944288', 'header_booking_page')}
               className="bg-sky-700 text-white hover:bg-sky-800 shadow-lg flex items-center gap-2 whitespace-nowrap"
             >
               <Phone size={18} />
-              +91-8884944288
+              +91-9886944288
             </Button>
           ) : (
             <Button 

@@ -221,7 +221,7 @@ const STATIC_PAGE_SEO: Record<string, Partial<Record<PublicSiteKey, RouteSeo>>> 
   '/book': {
     hydrogenro: {
       title: 'Book RO Service in Bengaluru | Same-Day Booking | Hydrogen RO',
-      description: 'Book RO water purifier service online in Bengaluru with Hydrogen RO. Same-day installation, repair and maintenance. Call +91-8884944288.',
+      description: 'Book RO water purifier service online in Bengaluru with Hydrogen RO. Same-day installation, repair and maintenance. Call +91-9886944288.',
     },
     elevenro: {
       title: 'Book RO Service in Bengaluru | Same-Day Booking | Eleven RO',
@@ -230,7 +230,7 @@ const STATIC_PAGE_SEO: Record<string, Partial<Record<PublicSiteKey, RouteSeo>>> 
   },
   '/contact': {
     hydrogenro: {
-      title: 'Contact Hydrogen RO | RO Service Bengaluru | +91-8884944288',
+      title: 'Contact Hydrogen RO | RO Service Bengaluru | +91-9886944288',
       description: 'Contact Hydrogen RO for RO water purifier service in Bengaluru. Phone, WhatsApp and email support. Same-day RO installation and repair.',
     },
     elevenro: {

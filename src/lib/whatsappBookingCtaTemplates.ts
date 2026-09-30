@@ -4,7 +4,7 @@
  * Meta template body + Book URL + Call us phone are fixed at approval time, so each
  * use-case has TWO templates:
  *   - *_ero_cta*  → Eleven RO Call us (+919880693311) + https://elevenro.com/book
- *   - *_hro_cta*  → Hydrogen RO Call us (+918884944288) + https://hydrogenro.com/book
+ *   - *_hro_cta*  → Hydrogen RO Call us (+919886944288) + https://hydrogenro.com/book
  *
  * Prefer *_cta_v3 (Call us + Book). Older v2 is Book-only; v1 ero Call us had wrong number.
  *
@@ -20,7 +20,7 @@ export const WA_BOOKING_CTA_BUTTONS = {
   callDisplay: 'Call us',
   callPhone: {
     elevenro: '+919880693311',
-    hydrogenro: '+918884944288',
+    hydrogenro: '+919886944288',
   },
   bookDisplay: 'Book online',
   bookUrl: {

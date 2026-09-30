@@ -107,11 +107,11 @@ const EnhancedBookingForm = () => {
   const watchedValues = watch();
 
   const handleCall = () => {
-    window.open('tel:+918884944288', '_self');
+    window.open('tel:+919886944288', '_self');
   };
 
   const handleWhatsApp = () => {
-    window.open('https://wa.me/918884944288', '_blank', 'noopener,noreferrer');
+    window.open('https://wa.me/919886944288', '_blank', 'noopener,noreferrer');
   };
 
   const handleEmail = () => {
@@ -446,7 +446,7 @@ const EnhancedBookingForm = () => {
                 className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
               >
                 <Phone className="w-4 h-4 mr-2" />
-                Call: +91-8884944288
+                Call: +91-9886944288
               </Button>
             </div>
 
@@ -991,7 +991,7 @@ const EnhancedBookingForm = () => {
                         className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
                       >
                         <Phone className="w-4 h-4 mr-2" />
-                        Call: +91-8884944288
+                        Call: +91-9886944288
                       </Button>
                     </div>
 

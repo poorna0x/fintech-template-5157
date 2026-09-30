@@ -468,7 +468,7 @@ const Warranty: React.FC = () => {
                   <Button
                     variant="outline"
                     className="mt-4"
-                    onClick={() => openPublicPhoneCall('+918884944288', 'warranty_page')}
+                    onClick={() => openPublicPhoneCall('+919886944288', 'warranty_page')}
                   >
                     <Phone className="w-4 h-4 mr-2" />
                     Call support

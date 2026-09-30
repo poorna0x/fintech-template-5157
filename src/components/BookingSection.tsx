@@ -653,7 +653,7 @@ const BookingSection = () => {
                         type="tel"
                         value={formData.phone}
                         onChange={(e) => handleInputChange('phone', e.target.value)}
-                            placeholder="+91-8884944288"
+                            placeholder="+91-9886944288"
                             className="force-visible-border focus:border-primary focus:ring-2 focus:ring-primary p-3 shadow-sm mx-1"
                         required
                       />

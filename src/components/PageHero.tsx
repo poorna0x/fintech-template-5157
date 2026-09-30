@@ -37,7 +37,7 @@ const PageHero: React.FC<PageHeroProps> = ({
     navigate('/book');
   };
 
-  const handleCall = () => openPublicPhoneCall('+918884944288');
+  const handleCall = () => openPublicPhoneCall('+919886944288');
 
   return (
     <section 
@@ -81,7 +81,7 @@ const PageHero: React.FC<PageHeroProps> = ({
                 variant="outline" 
                 className="border-sky-200 dark:border-sky-500/30 text-foreground hover:bg-sky-50 dark:hover:bg-sky-500/10 text-sm sm:text-base h-12 w-full max-w-[280px] sm:w-auto sm:min-w-[200px] px-6 sm:px-8 transition-all duration-200 min-h-[48px]"
               >
-                Call: +91-8884944288
+                Call: +91-9886944288
               </Button>
             </div>
             

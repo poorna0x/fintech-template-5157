@@ -198,9 +198,9 @@ const EMAIL_FONT =
 
 const BRAND_CONTACT = {
   hydrogenro: {
-    phoneDisplay: '9886944288 / 8884944288',
+    phoneDisplay: '9886944288',
     phoneTel: '+919886944288',
-    whatsapp: '918884944288',
+    whatsapp: '919886944288',
     email: 'mail@hydrogenro.com',
     website: 'hydrogenro.com',
     tagline: 'Authorised RO Water Purifier Service · Bengaluru',

@@ -290,7 +290,7 @@ const Services = () => {
                 <div className="text-center">
                   <h3 className="text-2xl font-semibold mb-6 text-foreground">Contact Us</h3>
                   <div className="space-y-3 text-foreground">
-                    <p>Phone: +91-8884944288, +91-9886944288</p>
+                    <p>Phone: +91-9886944288</p>
                     <p>Email: info@hydrogenro.com</p>
                     <p>Available: 24/7 Emergency Service</p>
                   </div>

@@ -48,13 +48,13 @@ const HYDROGEN_SEO: BrandSeoProfile = {
   legalName: 'Hydrogen RO',
   defaultTitle: 'Hydrogen RO - #1 Best RO Service in Bengaluru Bangalore | 5★ Rated',
   defaultDescription:
-    'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. Same-day RO installation, repair, maintenance and filter replacement across all Bangalore areas. Call +91-8884944288.',
+    'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. Same-day RO installation, repair, maintenance and filter replacement across all Bangalore areas. Call +91-9886944288.',
   keywords:
     'Hydrogen RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, water purifier service Karnataka, RO repair Karnataka, RO installation Karnataka, commercial RO 25 LPH Bangalore, 50 LPH RO plant Bengaluru, 500 LPH RO plant, 1000 LPH RO plant Karnataka, new water softener installation Bangalore, water softener service Karnataka, RO AMC Karnataka, RO maintenance Karnataka, RO technician Karnataka, Kent RO service, Aquaguard service, Livpure service, Pureit service, AO Smith service, best RO service near me, RO service Mysuru, RO service Mangaluru, RO service Mangalore, RO service Hassan, RO service Udupi, RO service HPCL Mangalore, RO service Baikampady, RO service Hubballi, RO service Belagavi, same day RO service Karnataka',
   ogImage: 'https://hydrogenro.com/og-image.jpg', // TODO(seo): add a proper 1200x630 brand OG image (placeholder removed)
   logoPath: 'https://hydrogenro.com/fulllogo.png',
-  phones: ['+91-8884944288', '+91-9886944288'],
-  primaryPhone: '+91-8884944288',
+  phones: ['+91-9886944288'],
+  primaryPhone: '+91-9886944288',
   email: 'mail@hydrogenro.com',
   streetAddress:
     'Ground Floor, 13, 4th Main Road, Next To Jain Temple, Seshadripuram, Kumara Park West',

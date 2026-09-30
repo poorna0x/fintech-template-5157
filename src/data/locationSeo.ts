@@ -598,7 +598,7 @@ export function buildLocationTitle(loc: LocationSEO, brandName = 'Hydrogen RO'):
   return `RO Service in ${loc.name} ${suffix} | Installation, Repair & AMC - ${brandName}`;
 }
 
-export function buildLocationDescription(loc: LocationSEO, brandName = 'Hydrogen RO', phone = '+91-8884944288'): string {
+export function buildLocationDescription(loc: LocationSEO, brandName = 'Hydrogen RO', phone = '+91-9886944288'): string {
   const place =
     loc.region === 'Bengaluru'
       ? `${loc.name}, Bengaluru`

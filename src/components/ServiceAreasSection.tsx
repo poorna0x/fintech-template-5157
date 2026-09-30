@@ -224,7 +224,7 @@ const ServiceAreasSection = () => {
         <div className="seo-hidden">
           <h3>Don't See Your Area? We Still Serve You!</h3>
           <p>We provide RO water purifier services to all areas of Bengaluru, Karnataka. If your area is not listed above, call us and we'll confirm service availability.</p>
-          <p>Call: +91-8884944288</p>
+          <p>Call: +91-9886944288</p>
           <p>Check Service Availability</p>
         </div>
       </div>

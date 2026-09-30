@@ -48,13 +48,13 @@ const BookingRedirect: React.FC = () => {
                 Book Service Now
               </Button>
               <Button
-                onClick={() => openPublicPhoneCall('+918884944288', 'booking_redirect')}
+                onClick={() => openPublicPhoneCall('+919886944288', 'booking_redirect')}
                 size="lg"
                 variant="outline"
                 className="h-12 px-8 text-base font-semibold border-white/70 bg-white/10 text-white hover:bg-white/20 flex items-center gap-2"
               >
                 <Phone className="w-4 h-4" />
-                +91-8884944288
+                +91-9886944288
               </Button>
             </div>
           </div>

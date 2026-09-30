@@ -88,7 +88,7 @@ export default function WhatsAppTemplatesManageCard() {
     '15 Aug 2026',
     'RO2608121234',
   ]);
-  const [formCallPhone, setFormCallPhone] = useState('8884944288');
+  const [formCallPhone, setFormCallPhone] = useState('9886944288');
   const [formUrl, setFormUrl] = useState('https://hydrogenro.com/p/{{1}}');
   const [formUrlText, setFormUrlText] = useState('Pay now');
   const [formUrlExample, setFormUrlExample] = useState('pay123456');
@@ -512,7 +512,7 @@ export default function WhatsAppTemplatesManageCard() {
                   id="wa-tpl-call"
                   value={formCallPhone}
                   onChange={(e) => setFormCallPhone(e.target.value)}
-                  placeholder="8884944288 or 9880693311"
+                  placeholder="9886944288 or 9880693311"
                   className="h-10 rounded-xl"
                 />
               </div>

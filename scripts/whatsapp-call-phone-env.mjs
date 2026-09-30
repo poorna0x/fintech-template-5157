@@ -1,6 +1,6 @@
 /**
  * Brand Call-us numbers for Meta WhatsApp template PHONE_NUMBER buttons.
- * Eleven RO: 9880693311 · Hydrogen RO: 8884944288
+ * Eleven RO: 9880693311 · Hydrogen RO: 9886944288
  */
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
@@ -40,10 +40,10 @@ export function resolveWhatsAppCallPhones() {
   const hydrogenRaw =
     process.env.WHATSAPP_CALL_PHONE_HYDROGENRO ||
     process.env.WHATSAPP_BOOKING_CALL_PHONE ||
-    '+918884944288';
+    '+919886944288';
   return {
     eleven: normalizeE164(elevenRaw, '+919880693311'),
-    hydrogen: normalizeE164(hydrogenRaw, '+918884944288'),
+    hydrogen: normalizeE164(hydrogenRaw, '+919886944288'),
   };
 }
 

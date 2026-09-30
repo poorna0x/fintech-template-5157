@@ -169,7 +169,7 @@ const PincodeServiceSection = () => {
         <div className="seo-hidden">
           <h3>Need RO Service in Your Pincode?</h3>
           <p>Call us now to confirm RO service availability in your specific pincode. We serve all areas of Bengaluru with professional RO installation and repair services.</p>
-          <p>Call: +91-8884944288</p>
+          <p>Call: +91-9886944288</p>
           <p>Check My Pincode</p>
         </div>
       </div>

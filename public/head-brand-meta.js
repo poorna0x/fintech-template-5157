@@ -25,7 +25,7 @@
     : {
         title: 'Hydrogen RO - #1 Best RO Service in Bengaluru Bangalore | 5★ Rated',
         description:
-          'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. RO service in Electronic City, BTM, HSR, Whitefield, Koramangala, Hebbal, Yelahanka, Sarjapur, Bellandur, JP Nagar, Banashankari, Tumakuru, Nelamangala, Attibele, Chandapura, Devanahalli and all areas. Same-day service, 24/7 support. Call +91-8884944288.',
+          'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. RO service in Electronic City, BTM, HSR, Whitefield, Koramangala, Hebbal, Yelahanka, Sarjapur, Bellandur, JP Nagar, Banashankari, Tumakuru, Nelamangala, Attibele, Chandapura, Devanahalli and all areas. Same-day service, 24/7 support. Call +91-9886944288.',
         keywords:
           'Hydrogen RO, best RO service Bengaluru, best RO service Bangalore, RO water purifier service Bangalore, RO installation Bengaluru, RO repair Bangalore, RO service Electronic City, RO service BTM Layout, RO service HSR Layout, same day RO service Bangalore',
         author: 'Hydrogen RO - Water Purifier Services',

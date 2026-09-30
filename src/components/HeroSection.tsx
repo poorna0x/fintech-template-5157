@@ -16,7 +16,7 @@ const HeroSection = () => {
   const handleBookService = () => {
     navigate('/book');
   };
-  const handleCall = () => openPublicPhoneCall('+918884944288');
+  const handleCall = () => openPublicPhoneCall('+919886944288');
 
   const trustPoints = [
     'Same-day service',
@@ -75,7 +75,7 @@ const HeroSection = () => {
                 className="h-12 px-8 text-base font-semibold border-sky-200 dark:border-sky-500/30 text-foreground hover:bg-sky-50 dark:hover:bg-sky-500/10 flex items-center gap-2"
               >
                 <Phone className="w-4 h-4 text-sky-700" />
-                +91-8884944288
+                +91-9886944288
               </Button>
             </div>
 

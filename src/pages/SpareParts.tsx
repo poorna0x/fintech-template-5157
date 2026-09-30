@@ -266,7 +266,7 @@ const SpareParts = () => {
                   <div className="space-y-3 text-foreground">
                     <p>Call us to order spare parts or get assistance:</p>
                     <p className="text-lg font-semibold text-sky-600 dark:text-sky-400">
-                      +91-8884944288, +91-9886944288
+                      +91-9886944288
                     </p>
                     <p>Email: info@hydrogenro.com</p>
                     <p className="text-sm text-muted-foreground">

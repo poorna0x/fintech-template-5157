@@ -33,9 +33,9 @@ const BRAND_EMAIL_CONTACT = {
   hydrogenro: {
     label: 'Hydrogen RO',
     origin: 'https://hydrogenro.com',
-    phoneDisplay: '9886944288 / 8884944288',
+    phoneDisplay: '9886944288',
     phoneTel: '+919886944288',
-    whatsapp: '918884944288',
+    whatsapp: '919886944288',
     email: 'mail@hydrogenro.com',
     website: 'hydrogenro.com',
   },

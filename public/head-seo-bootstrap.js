@@ -9,13 +9,13 @@
       legalName: 'Hydrogen RO',
       defaultTitle: 'Hydrogen RO - #1 Best RO Service in Bengaluru Bangalore | 5★ Rated',
       defaultDescription:
-        'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. Same-day RO installation, repair, maintenance and filter replacement across all Bangalore areas. Call +91-8884944288.',
+        'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. Same-day RO installation, repair, maintenance and filter replacement across all Bangalore areas. Call +91-9886944288.',
       keywords:
         'Hydrogen RO, best RO service Bengaluru, RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Attibele, RO service Chandapura, RO service Bommasandra, RO service Jigani, RO service Hosur Road, RO service Silk Board, RO service Sarjapur Road, RO installation Bengaluru, RO repair Bangalore, same day RO service South Bangalore',
       ogImage: 'https://hydrogenro.com/og-image.jpg', // TODO(seo): add a proper 1200x630 brand OG image (placeholder removed)
       logoPath: 'https://hydrogenro.com/fulllogo.png',
-      phones: ['+91-8884944288', '+91-9886944288'],
-      primaryPhone: '+91-8884944288',
+      phones: ['+91-9886944288'],
+      primaryPhone: '+91-9886944288',
       email: 'mail@hydrogenro.com',
       streetAddress:
         'Ground Floor, 13, 4th Main Road, Next To Jain Temple, Seshadripuram, Kumara Park West',

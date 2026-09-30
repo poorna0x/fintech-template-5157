@@ -10,7 +10,7 @@ import {
 /**
  * Voice / website / review contacts for customer WhatsApp.
  * Call buttons use the *voice* main line — not the Cloud API WhatsApp number:
- * - Hydrogen RO: 8884944288
+ * - Hydrogen RO: 9886944288
  * - Eleven RO: 9880693311 (…3311)
  */
 export function brandPrimaryVoicePhone(brand: DocumentBrand): {
@@ -21,7 +21,7 @@ export function brandPrimaryVoicePhone(brand: DocumentBrand): {
   if (brand === 'elevenro') {
     return { display: '9880693311', e164: '+919880693311', digits10: '9880693311' };
   }
-  return { display: '8884944288', e164: '+918884944288', digits10: '8884944288' };
+  return { display: '9886944288', e164: '+919886944288', digits10: '9886944288' };
 }
 
 export function brandWebsiteUrl(brand: DocumentBrand): string {

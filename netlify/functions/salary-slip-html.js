@@ -29,7 +29,7 @@ function getDefaultCompanyData() {
     city: 'Bengaluru',
     state: 'Karnataka',
     pincode: '560020',
-    phone: '9886944288 & 8884944288',
+    phone: '9886944288',
     email: 'mail@hydrogenro.com',
     gstNumber: '29LIJPS5140P1Z6',
   };

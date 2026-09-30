@@ -153,7 +153,7 @@ const AMC = () => {
       pdf.text('Authorized for Service by RO Care India', 105, 50, { align: 'center' });
       pdf.text('Ground Floor, 13, 4th Main Road, Next To Jain Temple, Seshadripuram, Kumara Park West', 105, 55, { align: 'center' });
       pdf.text('Bengaluru, Bengaluru Urban, Karnataka, 560020', 105, 60, { align: 'center' });
-      pdf.text('Phone: 9886944288 & 8884944288 | Email: mail@hydrogenro.com', 105, 65, { align: 'center' });
+      pdf.text('Phone: 9886944288 | Email: mail@hydrogenro.com', 105, 65, { align: 'center' });
       pdf.text('Website: hydrogenro.com | GST No: 29LIJPS5140P1Z6', 105, 70, { align: 'center' });
       
       // Line separator
@@ -496,7 +496,7 @@ const AMC = () => {
                             <p className="text-muted-foreground text-sm mb-1">Ground Floor, 13, 4th Main Road, Next To Jain Temple, Seshadripuram, Kumara Park West</p>
                             <p className="text-muted-foreground text-sm mb-3">Bengaluru, Bengaluru Urban, Karnataka, 560020</p>
                             <div className="flex gap-6 text-sm">
-                              <span className="text-foreground">📞 9886944288 & 8884944288</span>
+                              <span className="text-foreground">📞 9886944288</span>
                               <span className="text-foreground">✉️ mail@hydrogenro.com</span>
                             </div>
                           </div>
@@ -657,7 +657,7 @@ const AMC = () => {
                 <p className="text-gray-700">Ground Floor, 13, 4th Main Road, Next To Jain Temple, Seshadripuram, Kumara Park West</p>
                 <p className="text-gray-700">Bengaluru, Bengaluru Urban, Karnataka, 560020</p>
                 <div className="flex justify-center gap-6 mt-2 text-xs">
-                  <span className="text-blue-600">📞 9886944288 & 8884944288</span>
+                  <span className="text-blue-600">📞 9886944288</span>
                   <span className="text-blue-600">✉️ mail@hydrogenro.com</span>
                 </div>
                 <div className="flex justify-center gap-6 mt-1 text-xs">

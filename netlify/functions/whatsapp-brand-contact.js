@@ -5,7 +5,7 @@
 const BRAND_CONTACT = {
   hydrogenro: {
     label: 'Hydrogen RO',
-    phone: '8884944288',
+    phone: '9886944288',
     email: 'mail@hydrogenro.com',
     webHost: 'hydrogenro.com',
   },

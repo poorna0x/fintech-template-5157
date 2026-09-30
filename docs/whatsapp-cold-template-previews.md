@@ -10,7 +10,7 @@ How to read this doc:
 
 | Call us (voice) | Eleven RO | Hydrogen RO |
 |---|---|---|
-| Main line | 9880693311 | 8884944288 |
+| Main line | 9880693311 | 9886944288 |
 | Website | elevenro.com | hydrogenro.com |
 | Pay now link | elevenro.com/p/{code} | hydrogenro.com/p/{code} |
 | Accept link | elevenro.com/c/{token} | hydrogenro.com/c/{token} |
@@ -801,18 +801,18 @@ Invoice / Job: RO2608121234
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Tap Pay now below or reply on this chat if you have already paid.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Pay now** → https://hydrogenro.com/p/pay123456
+**Buttons:** **Call us** → `+919886944288` · **Pay now** → https://hydrogenro.com/p/pay123456
 
 ---
 
@@ -828,7 +828,7 @@ Meta status: `APPROVED` UTILITY
 Hi Rahul, your Hydrogen RO water purifier service booking for Tue 12 Aug, 2:00 PM has been cancelled. Reply BOOK on this chat to reschedule, or use Call / Text us / Book below.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Text us** → https://wa.me/918884944288 · **Book online** → https://hydrogenro.com/book
+**Buttons:** **Call us** → `+919886944288` · **Text us** → https://wa.me/919886944288 · **Book online** → https://hydrogenro.com/book
 
 ---
 
@@ -842,7 +842,7 @@ Meta status: `APPROVED` UTILITY
 Hi Rahul, your Hydrogen RO water purifier service booking RO2608121234 is confirmed for Tue 12 Aug, 2:00 PM. Reply on this chat if you need to change the date or time.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com · **Text us** → https://wa.me/918884944288
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com · **Text us** → https://wa.me/919886944288
 
 ---
 
@@ -858,7 +858,7 @@ Meta status: `APPROVED` UTILITY
 Hi Rahul, this is Hydrogen RO. Our records show your RO service visit can be scheduled. Please reply BOOK on this chat to confirm a convenient time, or use Call / Book below for assistance.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Text us** → https://wa.me/918884944288 · **Book online** → https://hydrogenro.com/book
+**Buttons:** **Call us** → `+919886944288` · **Text us** → https://wa.me/919886944288 · **Book online** → https://hydrogenro.com/book
 
 ---
 
@@ -872,7 +872,7 @@ Meta status: `APPROVED` UTILITY
 Hi Rahul, this is Hydrogen RO. We tried to reach you and could not connect. Please reply on this chat so we can assist with your RO service, or use Call / Book below.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Text us** → https://wa.me/918884944288 · **Book online** → https://hydrogenro.com/book
+**Buttons:** **Call us** → `+919886944288` · **Text us** → https://wa.me/919886944288 · **Book online** → https://hydrogenro.com/book
 
 ---
 
@@ -886,7 +886,7 @@ Meta status: `APPROVED` UTILITY
 Hi Rahul, your Hydrogen RO visit is set for Mon 12 Aug, 10:00 AM. To reschedule, reply on this chat or use Call / Book online below.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Text us** → https://wa.me/918884944288 · **Book online** → https://hydrogenro.com/book
+**Buttons:** **Call us** → `+919886944288` · **Text us** → https://wa.me/919886944288 · **Book online** → https://hydrogenro.com/book
 
 ---
 
@@ -900,7 +900,7 @@ Meta status: `APPROVED` UTILITY
 Hi there, this is Hydrogen RO. This WhatsApp number is not linked to a service account in our system. Reply BOOK on this chat with your name and service address to register your request, or use Call / Book below for assistance.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Text us** → https://wa.me/918884944288 · **Book online** → https://hydrogenro.com/book
+**Buttons:** **Call us** → `+919886944288` · **Text us** → https://wa.me/919886944288 · **Book online** → https://hydrogenro.com/book
 
 ---
 
@@ -920,18 +920,18 @@ Your AMC agreement is attached.
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply on this chat if you need any help.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -949,18 +949,18 @@ Your service bill is attached.
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply on this chat if you need any help.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -978,18 +978,18 @@ Your document is attached.
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply on this chat if you need any help.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -1007,18 +1007,18 @@ Your tax invoice is attached.
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply on this chat if you need any help.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -1036,18 +1036,18 @@ Your quotation is attached.
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply on this chat if you need any help.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -1065,18 +1065,18 @@ Your payment receipt is attached.
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply on this chat if you need any help.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -1094,18 +1094,18 @@ Your warranty card is attached.
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply on this chat if you need any help.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -1161,14 +1161,14 @@ Hi Rahul, 👋
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Accept** → https://hydrogenro.com/c/Ab3xY9kLmN2pQ8rT
+**Buttons:** **Call us** → `+919886944288` · **Accept** → https://hydrogenro.com/c/Ab3xY9kLmN2pQ8rT
 
 ---
 
@@ -1200,7 +1200,7 @@ Meta status: `APPROVED` UTILITY
 Hi Poorna Shetty, Your Water Purifier Service is completed. Amount of INR 1500 has been collected. Thank you for choosing us. Reply on this chat if you need any help.
 ```
 
-**Buttons:** **Call us** → `+918884944288`
+**Buttons:** **Call us** → `+919886944288`
 
 ---
 
@@ -1216,7 +1216,7 @@ Meta status: `APPROVED` UTILITY
 Hi Poorna Shetty, Your Water Purifier Service is completed. Amount of INR 1500 has been collected. Thank you for choosing Hydrogen RO. Reply on this chat if you need any help.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com · **Review** → https://www.google.com/maps/search/?api=1&query=Hydrogen+RO+Seshadripuram+Bengaluru
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com · **Review** → https://www.google.com/maps/search/?api=1&query=Hydrogen+RO+Seshadripuram+Bengaluru
 
 ---
 
@@ -1238,18 +1238,18 @@ Invoice / Job: RO2608121234
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Tap Pay now below or reply on this chat if you have already paid.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -1267,18 +1267,18 @@ Your booking for Tue 12 Aug, 2:00 PM has been cancelled.
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply BOOK on this chat to reschedule.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -1297,18 +1297,18 @@ Confirmed for: Tue 12 Aug, 2:00 PM
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply on this chat if you need to change the date or time.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -1327,18 +1327,18 @@ Invoice / Job: RO2608121234
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply on this chat if you need any help.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -1356,18 +1356,18 @@ Service due around: your upcoming service visit
 
 Thank you for choosing Hydrogen RO.
 Call:
-8884944288
+9886944288
 Email:
 mail@hydrogenro.com
 Website:
 hydrogenro.com
 Text us:
-https://wa.me/918884944288
+https://wa.me/919886944288
 
 Reply BOOK on this chat to pick date and time — we already have your details on file.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Website** → https://hydrogenro.com
+**Buttons:** **Call us** → `+919886944288` · **Website** → https://hydrogenro.com
 
 ---
 
@@ -1399,7 +1399,7 @@ Meta status: `APPROVED` UTILITY
 Hi Rahul, your water purifier service is due around Tue 12 Aug 2026. Reply BOOK on this chat to schedule a visit — we will ask for your preferred date and time. Or use Call / Website / Book below.
 ```
 
-**Buttons:** **Call us** → `+918884944288` · **Text us** → https://wa.me/918884944288 · **Book online** → https://hydrogenro.com/book
+**Buttons:** **Call us** → `+919886944288` · **Text us** → https://wa.me/919886944288 · **Book online** → https://hydrogenro.com/book
 
 ---
 
