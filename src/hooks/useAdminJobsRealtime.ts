@@ -15,6 +15,8 @@ type LoadFilteredJobs = (
   opts?: { silent?: boolean; cacheOnly?: boolean }
 ) => Promise<void>;
 
+const ONGOING_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'];
+
 export function useAdminJobsRealtime({
   isInitialLoad,
   isPollingEnabled,
@@ -34,7 +36,7 @@ export function useAdminJobsRealtime({
   statusFilter: AdminStatusFilter;
   currentPage: number;
   loadFilteredJobs: LoadFilteredJobs;
-  loadJobCounts: () => Promise<void>;
+  loadJobCounts: (opts?: { bypassCache?: boolean }) => Promise<void>;
   playCompletedJobSound: () => Promise<void>;
   setLastCheckedJobId: React.Dispatch<React.SetStateAction<string | null>>;
   setJobCounts: React.Dispatch<React.SetStateAction<JobCounts>>;
@@ -95,7 +97,7 @@ export function useAdminJobsRealtime({
           const row = payload.new as { id: string; status?: string };
           if (row.id) setLastCheckedJobIdRef.current(row.id);
           const status = (row.status || 'PENDING') as string;
-          if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status)) {
+          if (ONGOING_STATUSES.includes(status)) {
             setJobCountsRef.current((prev) => ({ ...prev, ongoing: (prev.ongoing || 0) + 1 }));
           }
           void loadFilteredJobsRef.current(statusFilterRef.current, 1);
@@ -159,7 +161,13 @@ export function useAdminJobsRealtime({
           if (Number.isNaN(completedAtMs) || Date.now() - completedAtMs > 60_000) return;
           jobIdsCompletedByAdminRef.current.add(row.id);
           void playCompletedJobSoundRef.current();
-          void loadJobCountsRef.current();
+          // Badge moves now. The 25s counts cache would otherwise paint the old number.
+          setJobCountsRef.current((prev) => ({
+            ...prev,
+            ongoing: Math.max(0, (prev.ongoing || 0) - 1),
+            completed: (prev.completed || 0) + 1,
+          }));
+          void loadJobCountsRef.current({ bypassCache: true });
           const filter = statusFilterRef.current;
           if (filter === 'COMPLETED') {
             void loadFilteredJobsRef.current('COMPLETED', currentPageRef.current, { silent: true });

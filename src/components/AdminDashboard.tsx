@@ -1762,9 +1762,10 @@ const AdminDashboard = () => {
   }, []);
 
   // Load job counts for stats cards (lightweight query)
-  const loadJobCounts = useCallback(async () => {
+  const loadJobCounts = useCallback(async (opts?: { bypassCache?: boolean }) => {
     try {
       const { data, error } = await db.jobs.getCounts({
+        bypassCache: opts?.bypassCache,
         countOnlyNonAmcFollowUps: followUpDisplaySettings.countOnlyNonAmcFollowUps,
         followUpsDueWithinDays: FOLLOW_UP_COUNT_DUE_WITHIN_DAYS,
       });

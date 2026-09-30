@@ -3043,7 +3043,11 @@ export const db = {
     },
 
     // Get job counts by status (for stats without loading all data)
-    async getCounts() {
+    async getCounts(opts?: {
+      bypassCache?: boolean;
+      countOnlyNonAmcFollowUps?: boolean;
+      followUpsDueWithinDays?: number;
+    }) {
       try {
         // Get today's date range (start and end of today) for today-specific counts
         // Use local timezone date, then convert to UTC for database comparison
@@ -3054,13 +3058,15 @@ export const db = {
 
         const dayKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const countsCacheKey = `job_counts_v1:${dayKey}`;
-        const cached = cacheGet<{
-          ongoing: number;
-          followup: number;
-          denied: number;
-          completed: number;
-        }>(countsCacheKey);
-        if (cached) return { data: cached, error: null };
+        if (!opts?.bypassCache) {
+          const cached = cacheGet<{
+            ongoing: number;
+            followup: number;
+            denied: number;
+            completed: number;
+          }>(countsCacheKey);
+          if (cached) return { data: cached, error: null };
+        }
         
         // Create date objects in local timezone (start and end of today)
         // new Date(year, month, day, hour, min, sec) creates a date at that LOCAL time
