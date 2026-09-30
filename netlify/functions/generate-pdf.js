@@ -205,13 +205,7 @@ async function launchBrowser() {
       return await puppeteer.launch({
         executablePath,
         headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-extensions',
-        ],
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
       });
     } catch (error) {
       lastError = error;
@@ -222,10 +216,24 @@ async function launchBrowser() {
   throw lastError || new Error('Could not launch a local browser for PDF generation');
 }
 
-async function waitForDocumentFonts(page, timeoutMs = 1500) {
+async function waitForDocumentFonts(page, timeoutMs = 2500) {
   await Promise.race([
     page
       .evaluate(async () => {
+        if (document.fonts?.ready) {
+          await document.fonts.ready;
+        }
+        const families = ['Poppins', 'Inter'];
+        const weights = [300, 400, 500, 600, 700];
+        for (const family of families) {
+          for (const weight of weights) {
+            try {
+              await document.fonts.load(`${weight} 16px "${family}"`);
+            } catch {
+              /* ignore missing family */
+            }
+          }
+        }
         if (document.fonts?.ready) {
           await document.fonts.ready;
         }
@@ -233,9 +241,10 @@ async function waitForDocumentFonts(page, timeoutMs = 1500) {
       .catch(() => undefined),
     new Promise((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
+  await new Promise((resolve) => setTimeout(resolve, 300));
 }
 
-async function waitForDocumentImages(page, timeoutMs = 1500) {
+async function waitForDocumentImages(page, timeoutMs = 2500) {
   await Promise.race([
     page
       .evaluate(async () => {
@@ -258,6 +267,7 @@ async function waitForDocumentImages(page, timeoutMs = 1500) {
       .catch(() => undefined),
     new Promise((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
+  await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
 const SHARED_BROWSER_IDLE_MS = 60_000;

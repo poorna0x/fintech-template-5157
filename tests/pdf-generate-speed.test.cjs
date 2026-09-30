@@ -1,5 +1,5 @@
 /**
- * PDF generate-pdf keeps Chromium warm and skips extra font/image sleeps.
+ * PDF generate-pdf reuses Chromium; font/image waits stay the same as before.
  * Run: node tests/pdf-generate-speed.test.cjs
  */
 const assert = require('node:assert/strict');
@@ -16,9 +16,10 @@ assert.match(src, /__hroSharedPdfBrowser/);
 assert.match(src, /scheduleSharedBrowserIdleClose/);
 assert.match(src, /page\.close\(\)/);
 assert.doesNotMatch(src, /await browser\.close\(\)/);
-assert.doesNotMatch(src, /document\.fonts\.load/);
-assert.doesNotMatch(src, /setTimeout\(resolve, 300\)/);
-assert.doesNotMatch(src, /setTimeout\(resolve, 200\)/);
+assert.match(src, /document\.fonts\.load/);
+assert.match(src, /setTimeout\(resolve, 300\)/);
+assert.match(src, /setTimeout\(resolve, 200\)/);
+assert.match(src, /timeoutMs = 2500/);
 assert.match(src, /Promise\.all\(\[\s*isPdfCompressionEnabled\(\),\s*renderHtmlToPdf/);
 
 console.log('pdf-generate-speed.test.cjs ok');
