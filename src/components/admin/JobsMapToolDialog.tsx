@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FileText, Images, Loader2, MapPinned, Navigation, Search, X } from 'lucide-react';
+import { FileText, Images, Loader2, MapPinned, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -16,7 +16,6 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Technician } from '@/types';
 import DraggableMap from '@/components/DraggableMap';
 import { fetchDrivingRoute } from '@/lib/googleMapsDistance';
-import { openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
   JOBS_MAP_MAX_ZOOM,
   buildJobsMapTechs,
@@ -29,7 +28,6 @@ import {
   isJobsMapFollowUpStatus,
   jobsForTechnician,
   jobsMapCameraJobs,
-  jobsMapCanQuickAssign,
   jobsMapDueLabel,
   jobsMapFitPoints,
   jobsMapPinColor,
@@ -50,7 +48,6 @@ import {
   type JobsMapLastLoc,
   type JobsMapLiveRow,
   type JobsMapTech,
-  type NearbyMapTech,
 } from '@/lib/adminJobsMap';
 
 const BENGALURU = { lat: 12.9716, lng: 77.5946 };
@@ -277,7 +274,6 @@ export default function JobsMapToolDialog({
   initialJobs,
   initialFollowUpJobs,
   onAssignJob,
-  onAssignNearest,
   onOpenGallery,
   onOpenReports,
 }: Props) {
@@ -289,7 +285,6 @@ export default function JobsMapToolDialog({
   const [filter, setFilter] = useState<JobsMapFilter>('ongoing');
   const [selection, setSelection] = useState<Selection>(null);
   const [pingingId, setPingingId] = useState<string | null>(null);
-  const [assigningId, setAssigningId] = useState<string | null>(null);
   const [routes, setRoutes] = useState<DrawnRoute[]>([]);
   const [routing, setRouting] = useState(false);
   const [mapReady, setMapReady] = useState(false);
@@ -340,10 +335,6 @@ export default function JobsMapToolDialog({
     listScrollRef.current?.scrollTo({ top: 0 });
   }, [selectedJob]);
   const selectedTech = selection?.kind === 'tech' ? techs.find((tech) => tech.id === selection.id) || null : null;
-  const nearby = selectedJob
-    ? nearestTechsForJob(selectedJob, visibleTechs).filter((tech) => tech.isAssigned || tech.distance_m <= 40_000)
-    : [];
-  const canQuickAssign = selectedJob ? jobsMapCanQuickAssign(selectedJob) : false;
   const techJobs = selectedTech ? jobsForTechnician(visibleJobs, selectedTech.id) : [];
   const followupCount = jobs.filter((job) => isJobsMapFollowUpStatus(job.status)).length;
   const ongoingCount = jobs.length - followupCount;
@@ -736,25 +727,6 @@ export default function JobsMapToolDialog({
     }
   };
 
-  const assignTo = async (tech: NearbyMapTech) => {
-    if (!selectedJob || !onAssignNearest) return;
-    setAssigningId(tech.id);
-    try {
-      const ok = await onAssignNearest(selectedJob.id, tech.id);
-      if (ok === false) return;
-      setJobs((prev) =>
-        prev.map((row) =>
-          row.id === selectedJob.id
-            ? { ...row, status: 'ASSIGNED', assigned_technician_id: tech.id }
-            : row
-        )
-      );
-      toast.success(`Assigned to ${tech.name}`);
-    } finally {
-      setAssigningId(null);
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[min(92dvh,920px)] max-h-[92dvh] w-[calc(100vw-1rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
@@ -947,76 +919,6 @@ export default function JobsMapToolDialog({
                     Reports
                   </Button>
                 </div>
-                <p className="text-xs font-medium text-muted-foreground">
-                  Nearby technicians{routing ? ' · loading road' : ''}
-                </p>
-                {nearby.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No technician pins yet.</p>
-                ) : (
-                  <ul className="space-y-1.5">
-                    {nearby.map((tech) => (
-                      <li key={tech.id}>
-                        <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left hover:bg-muted/50"
-                          style={{ borderColor: techRouteColor(tech.id) }}
-                          onClick={() =>
-                            openGoogleMapsDirectionsBetween(
-                              { lat: tech.lat, lng: tech.lng },
-                              { lat: selectedJob.lat, lng: selectedJob.lng },
-                              'driving'
-                            )
-                          }
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <TechPhoto url={tech.photo} name={tech.name} color={techRouteColor(tech.id)} />
-                            <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">
-                              {tech.name}
-                              {tech.isAssigned ? ' · assigned' : ''}
-                            </span>
-                            <span className="block text-xs text-muted-foreground">
-                              {routeCaption(tech.id, selectedJob.id)} · {agoLabel(tech.updatedAt)}
-                            </span>
-                            </span>
-                          </span>
-                          <Navigation className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        </button>
-                        {canQuickAssign && onAssignNearest && !tech.isAssigned ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-11 shrink-0 cursor-pointer px-3"
-                            disabled={Boolean(assigningId)}
-                            onClick={() => void assignTo(tech)}
-                          >
-                            {assigningId === tech.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Assign'}
-                          </Button>
-                        ) : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {nearby[0] ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="h-11 w-full cursor-pointer"
-                    onClick={() =>
-                      openGoogleMapsDirectionsBetween(
-                        { lat: nearby[0].lat, lng: nearby[0].lng },
-                        { lat: selectedJob.lat, lng: selectedJob.lng },
-                        'driving'
-                      )
-                    }
-                  >
-                    Directions from {nearby[0].name}
-                  </Button>
-                ) : null}
               </div>
             ) : null}
 
