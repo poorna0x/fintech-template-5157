@@ -470,41 +470,46 @@ export function DeviceTrackerSettings() {
     <>
       <Card id="section-device-tracker" className="scroll-mt-24">
         <CardHeader className="space-y-0 p-0">
-          <div className="flex w-full flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-6">
+          <div className="flex w-full items-center gap-2 px-4 py-3">
             <button
               type="button"
-              className="min-w-0 flex-1 text-left hover:opacity-90 transition-opacity rounded-md"
+              className="flex min-w-0 flex-1 items-center gap-3 text-left rounded-md"
               onClick={() => setSectionOpen((v) => !v)}
               aria-expanded={sectionOpen}
             >
-              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                <Smartphone className="w-5 h-5" />
-                Device Tracker
-                {sectionOpen ? (
-                  <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                )}
-              </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                {sectionOpen
-                  ? 'Every admin phone, Home Screen PWA, and technician phone — rename, mute all push, or turn individual types on/off. List is cached for this session; tap Load when someone registers a new device.'
-                  : 'Admin and technician devices — push types, WhatsApp, calls. Tap to open.'}
-              </CardDescription>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Smartphone className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <CardTitle className="flex items-center gap-1.5 text-sm font-semibold">
+                  Device Tracker
+                  {sectionOpen ? (
+                    <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </CardTitle>
+                <CardDescription className="mt-0.5 text-xs leading-snug">
+                  {sectionOpen
+                    ? 'Rename a phone, mute push, or turn alert types on or off.'
+                    : 'Push, WhatsApp, and calls on each phone.'}
+                </CardDescription>
+              </span>
             </button>
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="shrink-0 self-start sm:self-center"
+              size="icon"
+              className="h-8 w-8 shrink-0 rounded-full border-border bg-background text-muted-foreground shadow-none"
+              aria-label="Refresh devices"
+              title="Refresh devices"
               onClick={() => {
                 if (!sectionOpen) setSectionOpen(true);
                 void refresh({ force: true });
               }}
               disabled={loading}
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              Load
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
         </CardHeader>

@@ -231,77 +231,77 @@ export function AppCrashReports() {
   return (
     <>
       <Card id="section-app-crashes" className="scroll-mt-24">
-        <CardHeader className="p-4 pb-2 sm:p-5 sm:pb-2">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                <Bug className="w-4 h-4 shrink-0" />
-                App health
-                {hasLoaded && crashCount > 0 ? (
-                  <Badge variant="outline" className="text-[10px] text-red-700 border-red-300 px-1.5 py-0">
-                    {crashCount} crash{crashCount === 1 ? '' : 'es'}
-                  </Badge>
-                ) : null}
-                {hasLoaded && warningCount > 0 ? (
-                  <Badge variant="outline" className="text-[10px] text-amber-800 border-amber-300 px-1.5 py-0">
-                    {warningCount} warning{warningCount === 1 ? '' : 's'}
-                  </Badge>
-                ) : null}
-              </CardTitle>
-              {cachedLabel ? (
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Last loaded {cachedLabel} — tap Load for latest
+        <CardHeader className="space-y-0 p-0">
+          <div className="flex w-full items-center gap-2 px-4 py-3">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Bug className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <CardTitle className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+                  App health
+                  {hasLoaded && crashCount > 0 ? (
+                    <Badge variant="outline" className="text-[10px] text-red-700 border-red-300 px-1.5 py-0">
+                      {crashCount} crash{crashCount === 1 ? '' : 'es'}
+                    </Badge>
+                  ) : null}
+                  {hasLoaded && warningCount > 0 ? (
+                    <Badge variant="outline" className="text-[10px] text-amber-800 border-amber-300 px-1.5 py-0">
+                      {warningCount} warning{warningCount === 1 ? '' : 's'}
+                    </Badge>
+                  ) : null}
+                </CardTitle>
+                <p className="mt-0.5 text-xs text-muted-foreground leading-snug">
+                  {!hasLoaded
+                    ? 'Crash and warning reports from phones.'
+                    : crashes.length === 0
+                      ? `Phones healthy${cachedLabel ? ` · ${cachedLabel}` : ''}`
+                      : cachedLabel
+                        ? `Updated ${cachedLabel}`
+                        : 'Reports from phones.'}
                 </p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Not loaded yet — tap Load when you want to check
-                </p>
-              )}
+              </div>
             </div>
-            <div className="flex gap-1.5 shrink-0">
+            <div className="flex shrink-0 items-center">
               {hasLoaded && crashes.length > 0 ? (
-                <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => setConfirmClear(true)}>
-                  <Trash2 className="w-3.5 h-3.5 sm:mr-1.5" />
-                  <span className="hidden sm:inline">Clear</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-full border-border bg-background text-muted-foreground shadow-none"
+                  aria-label="Clear reports"
+                  title="Clear reports"
+                  onClick={() => setConfirmClear(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               ) : null}
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
-                className="h-8"
+                size="icon"
+                className="h-8 w-8 rounded-full border-border bg-background text-muted-foreground shadow-none"
+                aria-label="Refresh app health"
+                title="Refresh"
                 onClick={() => void refresh()}
                 disabled={loading}
               >
-                <RefreshCw className={`w-3.5 h-3.5 sm:mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Load</span>
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-4 pt-2 sm:p-5 sm:pt-2 space-y-2">
-          {loading && crashes.length === 0 ? (
-            <div className="text-center py-3 text-muted-foreground text-xs">Loading…</div>
-          ) : !hasLoaded ? (
-            <div className="text-center py-3 text-muted-foreground text-xs">
-              Tap Load to load crash and warning reports.
-            </div>
-          ) : crashes.length === 0 ? (
-            <div className="text-center py-3 text-muted-foreground text-xs">
-              Nothing reported — phones healthy.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {crashes.map((crash) => (
-                <CrashCard
-                  key={crash.id}
-                  crash={crash}
-                  onDelete={() => setDeleteTarget(crash)}
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
+        {hasLoaded && crashes.length > 0 ? (
+          <CardContent className="space-y-2 border-t border-border p-4 pt-3">
+            {crashes.map((crash) => (
+              <CrashCard
+                key={crash.id}
+                crash={crash}
+                onDelete={() => setDeleteTarget(crash)}
+              />
+            ))}
+          </CardContent>
+        ) : null}
       </Card>
 
       <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
