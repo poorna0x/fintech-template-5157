@@ -28,16 +28,15 @@ import {
   isJobsMapFixFresh,
   isJobsMapFollowUpStatus,
   jobsForTechnician,
-  jobsMapBestNextTech,
   jobsMapCameraJobs,
   jobsMapCanQuickAssign,
   jobsMapDueLabel,
   jobsMapFitPoints,
+  jobsMapPinColor,
   jobsMapReachLabel,
-  jobsMapStatusColor,
-  jobsMapSuggestedZoom,
   jobsMapStatusLabel,
   jobsMapStatusShort,
+  jobsMapSuggestedZoom,
   jobsMapTechPhotoThumb,
   mergeJobsMapLiveRows,
   nearestTechsForJob,
@@ -303,7 +302,6 @@ export default function JobsMapToolDialog({
     ? nearestTechsForJob(selectedJob, visibleTechs).filter((tech) => tech.isAssigned || tech.distance_m <= 40_000)
     : [];
   const canQuickAssign = selectedJob ? jobsMapCanQuickAssign(selectedJob) : false;
-  const bestNext = canQuickAssign ? jobsMapBestNextTech(nearby) : null;
   const techJobs = selectedTech ? jobsForTechnician(visibleJobs, selectedTech.id) : [];
   const followupCount = jobs.filter((job) => isJobsMapFollowUpStatus(job.status)).length;
   const ongoingCount = jobs.length - followupCount;
@@ -481,7 +479,7 @@ export default function JobsMapToolDialog({
       const selected = sel?.kind === 'job' && sel.id === job.id;
       addMarker(
         { lat: job.lat, lng: job.lng },
-        markerIcon(jobsMapStatusColor(job.status), jobsMapStatusShort(job.status)),
+        markerIcon(jobsMapPinColor(job), jobsMapStatusShort(job.status)),
         `${job.job_number || 'Job'} · ${job.customer_name}`,
         selected ? 24 : 8,
         () => setSelection({ kind: 'job', id: job.id })
@@ -575,7 +573,7 @@ export default function JobsMapToolDialog({
             toId: job.id,
             origin: { lat: tech.lat, lng: tech.lng },
             dest: { lat: job.lat, lng: job.lng },
-            color: jobsMapStatusColor(job.status),
+            color: jobsMapPinColor(job),
           });
         }
       }
@@ -870,64 +868,6 @@ export default function JobsMapToolDialog({
                   {jobsMapDueLabel(selectedJob) ? ` · ${jobsMapDueLabel(selectedJob)}` : ''}
                   {selectedJob.visible_address ? ` · ${selectedJob.visible_address}` : ''}
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-11 cursor-pointer"
-                    onClick={() =>
-                      window.open(
-                        `https://www.google.com/maps?q=${selectedJob.lat},${selectedJob.lng}`,
-                        '_blank',
-                        'noopener,noreferrer'
-                      )
-                    }
-                  >
-                    <ExternalLink className="mr-1 h-4 w-4" />
-                    Maps
-                  </Button>
-                  {canQuickAssign && onAssignNearest && bestNext ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-11 cursor-pointer"
-                      disabled={Boolean(assigningId)}
-                      onClick={() => void assignTo(bestNext)}
-                    >
-                      {assigningId === bestNext.id ? (
-                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                      ) : null}
-                      Assign {bestNext.name.split(' ')[0]}
-                      {routeFor(bestNext.id, selectedJob.id)?.durationText
-                        ? ` · ${routeFor(bestNext.id, selectedJob.id)?.durationText}`
-                        : routing
-                          ? ' · road…'
-                          : ` · ${formatJobsMapDistance(bestNext.distance_m)}`}
-                    </Button>
-                  ) : null}
-                  {onAssignJob && canQuickAssign ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-11 cursor-pointer"
-                      onClick={() => onAssignJob(selectedJob.id)}
-                    >
-                      Other
-                    </Button>
-                  ) : onAssignJob &&
-                    (selectedJob.status === 'PENDING' || !selectedJob.assigned_technician_id) ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-11 cursor-pointer"
-                      onClick={() => onAssignJob(selectedJob.id)}
-                    >
-                      Assign
-                    </Button>
-                  ) : null}
-                </div>
                 <p className="text-xs font-medium text-muted-foreground">
                   Nearby technicians{routing ? ' · loading road' : ''}
                 </p>
@@ -941,7 +881,13 @@ export default function JobsMapToolDialog({
                         <button
                           type="button"
                           className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-2 text-left hover:bg-muted/50"
-                          onClick={() => setSelection({ kind: 'tech', id: tech.id })}
+                          onClick={() =>
+                            openGoogleMapsDirectionsBetween(
+                              { lat: tech.lat, lng: tech.lng },
+                              { lat: selectedJob.lat, lng: selectedJob.lng },
+                              'driving'
+                            )
+                          }
                         >
                           <span className="flex min-w-0 items-center gap-2">
                             <TechPhoto url={tech.photo} name={tech.name} />
@@ -1080,13 +1026,13 @@ export default function JobsMapToolDialog({
                         )}
                         style={
                           isSel
-                            ? { borderColor: jobsMapStatusColor(job.status), backgroundColor: `${jobsMapStatusColor(job.status)}14` }
+                            ? { borderColor: jobsMapPinColor(job), backgroundColor: `${jobsMapPinColor(job)}14` }
                             : undefined
                         }
                       >
                         <span
                           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                          style={{ backgroundColor: jobsMapStatusColor(job.status) }}
+                          style={{ backgroundColor: jobsMapPinColor(job) }}
                         >
                           {jobsMapStatusShort(job.status)}
                         </span>

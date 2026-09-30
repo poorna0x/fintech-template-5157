@@ -29,6 +29,8 @@ export type JobsMapJob = {
   customer_name: string;
   visible_address: string;
   follow_up_date: string | null;
+  /** AMC Service follow-up — green pin. Other follow-ups stay purple. */
+  amc: boolean;
   lat: number;
   lng: number;
 };
@@ -61,6 +63,7 @@ const JOB_SELECT = [
   'assigned_technician_id',
   'customer_id',
   'follow_up_date',
+  'service_sub_type',
   'service_location',
   'service_address',
   'service_site',
@@ -94,6 +97,22 @@ export function jobsMapStatusColor(status: string): string {
   if (value === 'FOLLOW_UP') return '#7c3aed';
   if (value === 'RESCHEDULED') return '#a855f7';
   return '#64748b';
+}
+
+const JOBS_MAP_AMC_GREEN = '#16a34a';
+
+export function isJobsMapAmcJob(job: { amc?: boolean; service_sub_type?: string | null }): boolean {
+  if (job.amc) return true;
+  const sub = String(job.service_sub_type || '')
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '');
+  return sub === 'amcservice';
+}
+
+/** Follow-up AMC pins are green. Every other follow-up stays the purple F. */
+export function jobsMapPinColor(job: { status: string; amc?: boolean }): string {
+  if (job.amc && isJobsMapFollowUpStatus(job.status)) return JOBS_MAP_AMC_GREEN;
+  return jobsMapStatusColor(job.status);
 }
 
 export function jobsMapStatusShort(status: string): string {
@@ -153,6 +172,12 @@ export function parseJobsMapJob(row: unknown): JobsMapJob | null {
       job.follow_up_date != null || job.followUpDate != null
         ? String(job.follow_up_date ?? job.followUpDate).slice(0, 10) || null
         : null,
+    amc: isJobsMapAmcJob({
+      service_sub_type:
+        job.service_sub_type != null || job.serviceSubType != null
+          ? String(job.service_sub_type ?? job.serviceSubType)
+          : null,
+    }),
     lat: coords.lat,
     lng: coords.lng,
   };

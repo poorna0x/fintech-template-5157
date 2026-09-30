@@ -8,6 +8,7 @@ import {
   jobsMapCameraJobs,
   jobsMapCanQuickAssign,
   jobsMapFitPoints,
+  jobsMapPinColor,
   jobsMapReachLabel,
   jobsMapSuggestedZoom,
   jobsMapTechPhotoThumb,
@@ -33,6 +34,7 @@ const job = (partial: Partial<JobsMapJob> & Pick<JobsMapJob, 'id' | 'lat' | 'lng
   customer_name: 'Asha',
   visible_address: 'HSR',
   follow_up_date: null,
+  amc: false,
   ...partial,
 });
 
@@ -119,6 +121,8 @@ describe('adminJobsMap', () => {
     ];
     expect(filterJobsMapJobs(rows, 'followup').map((row) => row.id)).toEqual(['b', 'c']);
     expect(filterJobsMapJobs(rows, 'ongoing').map((row) => row.id)).toEqual(['a']);
+    expect(jobsMapPinColor(job({ id: 'b', lat: 1, lng: 1, status: 'FOLLOW_UP', amc: true }))).toBe('#16a34a');
+    expect(jobsMapPinColor(job({ id: 'c', lat: 1, lng: 1, status: 'FOLLOW_UP' }))).toBe('#7c3aed');
     expect(filterJobsMapJobs(rows, 'all').map((row) => row.id)).toEqual(['a', 'b', 'c']);
   });
 
