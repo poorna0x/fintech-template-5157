@@ -132,12 +132,6 @@ function scheduleJobsMapCamera(
 const FILTERS: Array<{ id: JobsMapFilter; label: string }> = [
   { id: 'ongoing', label: 'Ongoing' },
   { id: 'followup', label: 'Follow-up' },
-  { id: 'due-today', label: 'Due today' },
-  { id: 'unassigned', label: 'Unassigned' },
-  { id: 'ASSIGNED', label: 'Assigned' },
-  { id: 'EN_ROUTE', label: 'En route' },
-  { id: 'IN_PROGRESS', label: 'In progress' },
-  { id: 'all', label: 'All' },
 ];
 
 type Selection = { kind: 'job'; id: string } | { kind: 'tech'; id: string } | null;
@@ -715,7 +709,7 @@ export default function JobsMapToolDialog({
             <MapPinned className="h-5 w-5 text-sky-700" />
             Jobs map
           </DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm">
+          <DialogDescription className="whitespace-normal text-xs sm:text-sm">
             {ongoingCount} ongoing with pins
             {followupCount ? ` · ${followupCount} follow-up` : ''}
             {unassignedCount ? ` · ${unassignedCount} unassigned` : ''}
@@ -726,7 +720,7 @@ export default function JobsMapToolDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <div className="relative min-h-[220px] flex-1 overflow-hidden bg-muted md:order-2">
+          <div className="relative h-[34dvh] min-h-[180px] shrink-0 overflow-hidden bg-muted md:order-2 md:h-auto md:min-h-0 md:flex-1">
             <DraggableMap
               center={BENGALURU}
               zoom={14}
@@ -788,8 +782,8 @@ export default function JobsMapToolDialog({
             </div>
           </div>
 
-          <div className="flex max-h-[46dvh] min-h-0 w-full flex-col overflow-y-auto border-t md:order-1 md:max-h-none md:w-[min(100%,22rem)] md:flex-none md:border-r md:border-t-0">
-            <div className="flex flex-wrap gap-1.5 border-b px-3 py-2">
+          <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden border-t md:order-1 md:w-[min(100%,22rem)] md:flex-none md:border-r md:border-t-0">
+            <div className="flex shrink-0 flex-wrap gap-1.5 border-b px-3 py-2">
               {FILTERS.map((item) => (
                 <button
                   key={item.id}
@@ -810,7 +804,7 @@ export default function JobsMapToolDialog({
                 </button>
               ))}
             </div>
-            <div className="border-b px-3 py-2">
+            <div className="shrink-0 border-b px-3 py-2">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -826,7 +820,7 @@ export default function JobsMapToolDialog({
             </div>
 
             {techs.length ? (
-              <div className="flex gap-2 overflow-x-auto border-b px-3 py-2">
+              <div className="flex shrink-0 gap-2 overflow-x-auto border-b px-3 py-2">
                 {techs.map((tech) => {
                   const onMap = visibleTechs.some((row) => row.id === tech.id);
                   const selected = selectedTech?.id === tech.id;
@@ -855,6 +849,7 @@ export default function JobsMapToolDialog({
               </div>
             ) : null}
 
+            <div className="min-h-0 flex-1 overflow-y-auto">
             {selectedJob ? (
               <div className="space-y-3 border-b px-3 py-3">
                 <p className="text-sm font-semibold text-foreground">
@@ -1101,6 +1096,7 @@ export default function JobsMapToolDialog({
                 })
               )}
             </ul>
+            </div>
           </div>
         </div>
       </DialogContent>
