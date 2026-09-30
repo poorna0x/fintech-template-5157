@@ -6,7 +6,7 @@ import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
 import { sendAdminWhatsAppText, sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
 import { ensureJobWhatsAppNotifyPrefs } from '@/lib/jobAssignWhatsAppSettingsCache';
-import { isWhatsAppJobNotifyAllowed } from '@/lib/whatsappCrmSettings';
+import { isWhatsAppJobNotifyAllowed, loadTechnicianWhatsAppPrefs } from '@/lib/whatsappCrmSettings';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { isTechJobAssignBackgroundOn } from '@/lib/techWhatsAppPrefs';
 import { supabase } from '@/lib/supabaseClient';
@@ -188,13 +188,9 @@ async function autoSendJobTechWhatsApp(
 /** Opt-in only. Missing or false means this technician does not get the background assign template. */
 async function technicianWantsAssignBackground(technicianId: string): Promise<boolean> {
   if (!technicianId) return false;
-  const { data, error } = await supabase
-    .from('technicians')
-    .select('whatsapp_prefs')
-    .eq('id', technicianId)
-    .maybeSingle();
-  if (error) return false;
-  return isTechJobAssignBackgroundOn(data?.whatsapp_prefs);
+  const prefs = await loadTechnicianWhatsAppPrefs(technicianId);
+  if (prefs === undefined) return false;
+  return isTechJobAssignBackgroundOn(prefs);
 }
 
 export type NotifyJobTechWhatsAppResult = 'auto' | 'dialog' | 'skipped';

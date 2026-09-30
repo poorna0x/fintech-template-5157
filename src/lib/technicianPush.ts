@@ -22,6 +22,14 @@ let lastPersistedKey: string | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retriesScheduled = 0;
 let registerInFlight: Promise<void> | null = null;
+let prefsSnapshot: {
+  token: string;
+  at: number;
+  callAlertsEnabled: boolean;
+  pushEnabled: boolean;
+  wrongLineReminderEnabled: boolean;
+} | null = null;
+const PREFS_REFRESH_MS = 10 * 60 * 1000;
 
 const TOKEN_CACHE_KEY = 'hro_tech_push_token_v1';
 const PERSIST_KEY = 'hro_tech_push_persist_v2';
@@ -176,22 +184,37 @@ async function saveToken(
 
   const cached = readPersist();
   if (cached?.token === token && cached.technicianId === technicianId) {
-    // Always re-fetch call-detect (Settings may have toggled it remotely).
-    // Do not short-circuit on lastPersistedKey — resume must refresh native prefs.
+    // Remote Settings toggles are picked up on the next refresh, not every resume.
     lastPersistedKey = key;
     lastToken = token;
-    const { data: prefsRow } = await supabase
-      .from('technician_push_tokens')
-      .select('call_alerts_enabled, push_enabled, push_prefs')
-      .eq('token', token)
-      .maybeSingle();
-    const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
-    const pushEnabled = prefsRow?.push_enabled !== false;
-    const wrongLineReminderEnabled =
-      normalizeTechPushPrefs(prefsRow?.push_prefs).wrong_line !== false;
-    writePersist({ ...cached, callAlertsEnabled, platform });
+    const prefsFresh =
+      prefsSnapshot?.token === token && Date.now() - prefsSnapshot.at < PREFS_REFRESH_MS;
+    let callAlertsEnabled = prefsSnapshot?.callAlertsEnabled ?? cached.callAlertsEnabled !== false;
+    let pushEnabled = prefsSnapshot?.pushEnabled ?? true;
+    let wrongLineReminderEnabled = prefsSnapshot?.wrongLineReminderEnabled ?? true;
+    if (!prefsFresh) {
+      const { data: prefsRow, error: prefsErr } = await supabase
+        .from('technician_push_tokens')
+        .select('call_alerts_enabled, push_enabled, push_prefs')
+        .eq('token', token)
+        .maybeSingle();
+      if (!prefsErr) {
+        callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
+        pushEnabled = prefsRow?.push_enabled !== false;
+        wrongLineReminderEnabled =
+          normalizeTechPushPrefs(prefsRow?.push_prefs).wrong_line !== false;
+        prefsSnapshot = {
+          token,
+          at: Date.now(),
+          callAlertsEnabled,
+          pushEnabled,
+          wrongLineReminderEnabled,
+        };
+        writePersist({ ...cached, callAlertsEnabled, platform });
+      }
+    }
     // Soft refresh can leave DB platform stuck on android — keep web rows marked.
-    if (platform === 'web') {
+    if (platform === 'web' && !prefsFresh) {
       await supabase
         .from('technician_push_tokens')
         .update({ platform: 'web' })
@@ -207,7 +230,7 @@ async function saveToken(
         fcmToken: token,
         companyPhone: readCompanyPhoneCache()?.phone,
       });
-      void syncCompanyPhoneOnce(technicianId);
+      if (!prefsFresh) void syncCompanyPhoneOnce(technicianId);
     }
     return true;
   }

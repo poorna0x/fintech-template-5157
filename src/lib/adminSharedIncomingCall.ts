@@ -216,17 +216,26 @@ export function initAdminSharedCallLookup(
   let appListener: PluginListenerHandle | null = null;
   let resubTimer: ReturnType<typeof setTimeout> | null = null;
 
+  let lastResumeCheckAt = 0;
   const deliver = () => {
     void checkSharedIncomingCall(onNumber);
   };
+  // Focus fires while the admin app stays open. Resume is enough, and a
+  // visibility flicker plus appStateChange should not read twice.
+  const deliverOnResume = () => {
+    const now = Date.now();
+    if (now - lastResumeCheckAt < 20_000) return;
+    lastResumeCheckAt = now;
+    deliver();
+  };
 
   deliver();
+  lastResumeCheckAt = Date.now();
 
   const onVisible = () => {
-    if (document.visibilityState === 'visible') deliver();
+    if (document.visibilityState === 'visible') deliverOnResume();
   };
   document.addEventListener('visibilitychange', onVisible);
-  window.addEventListener('focus', deliver);
 
   const subscribe = () => {
     if (disposed) return;
@@ -268,7 +277,7 @@ export function initAdminSharedCallLookup(
     void import('@capacitor/app')
       .then(({ App }) =>
         App.addListener('appStateChange', ({ isActive }) => {
-          if (isActive) deliver();
+          if (isActive) deliverOnResume();
         })
       )
       .then((handle) => {
@@ -283,7 +292,6 @@ export function initAdminSharedCallLookup(
   return () => {
     disposed = true;
     document.removeEventListener('visibilitychange', onVisible);
-    window.removeEventListener('focus', deliver);
     if (resubTimer) clearTimeout(resubTimer);
     void appListener?.remove();
     if (channel) void supabase.removeChannel(channel);

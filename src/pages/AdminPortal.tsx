@@ -41,6 +41,7 @@ export default function AdminPortal() {
   const onSettingsRef = useRef(onSettings);
   onSettingsRef.current = onSettings;
   const { user, isAdmin, authInitializing } = useAuth();
+  const adminUserId = user?.id;
   const [Dashboard, setDashboard] = useState<React.ComponentType | null>(null);
   const [Settings, setSettings] = useState<React.ComponentType | null>(null);
 
@@ -92,7 +93,7 @@ export default function AdminPortal() {
   // Keep caller lookup alive on Settings too — AdminDashboard unmounts there, so
   // without this a ring while in Settings never stashes/searches on return.
   useEffect(() => {
-    if (!user || !isAdmin) return;
+    if (!adminUserId || !isAdmin) return;
 
     let cancelled = false;
     let cleanupLocal: (() => void) | null = null;
@@ -166,12 +167,12 @@ export default function AdminPortal() {
       cleanupLocal?.();
       cleanupShared?.();
     };
-  }, [user, isAdmin, navigate]);
+  }, [adminUserId, isAdmin, navigate]);
 
   // Returning from Settings (or landing on /admin): pick up a ring that was
   // stored natively while the dashboard was unmounted and never resumed.
   useEffect(() => {
-    if (!user || !isAdmin || onSettings) return;
+    if (!adminUserId || !isAdmin || onSettings) return;
     let cancelled = false;
 
     void (async () => {
@@ -218,7 +219,7 @@ export default function AdminPortal() {
     return () => {
       cancelled = true;
     };
-  }, [user, isAdmin, onSettings, navigate]);
+  }, [adminUserId, isAdmin, onSettings, navigate]);
 
   // Admin APK: fingerprint lock controller (no-op in browser / old APKs).
   useEffect(() => {

@@ -234,8 +234,8 @@ import CompletionFinishSection, {
   CompletionPhotoStep,
 } from '@/components/technician/CompletionFinishSection';
 
-/** Visible-tab poll (backup if postgres/broadcast miss). */
-const TECH_JOBS_POLL_MS = 12_000;
+/** Visible-tab poll (backup if postgres/broadcast miss). Realtime is the live path. */
+const TECH_JOBS_POLL_MS = 150_000;
 /** Debounce full list refetch after sync ping / admin broadcast. */
 const TECH_JOB_SYNC_DEBOUNCE_MS = 250;
 
@@ -1107,11 +1107,12 @@ const TechnicianDashboard = () => {
 
   const loadAssignedJobs = useCallback(async (
     retryCount = 0,
-    loadOpts?: { activeOnly?: boolean }
+    loadOpts?: { activeOnly?: boolean; skipDecorations?: boolean }
   ) => {
     if (!user?.technicianId) return;
 
     const activeOnly = loadOpts?.activeOnly === true;
+    const skipDecorations = loadOpts?.skipDecorations === true;
 
     try {
       // Only show loading if we haven't loaded jobs before (first load)
@@ -1130,7 +1131,7 @@ const TechnicianDashboard = () => {
         if (retryCount < 2 && (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch') || error.message.includes('timeout') || error.message.includes('AbortError'))) {
           console.log(`Retrying loadAssignedJobs (attempt ${retryCount + 1}/2)...`);
           await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1))); // Exponential backoff
-          return loadAssignedJobs(retryCount + 1);
+          return loadAssignedJobs(retryCount + 1, loadOpts);
         }
         throw new Error(error.message);
       }
@@ -1209,13 +1210,13 @@ const TechnicianDashboard = () => {
         if (cid) activeWorkCustomerIds.add(cid);
       }
 
-      if (activeWorkCustomerIds.size > 0) {
+      if (!skipDecorations && activeWorkCustomerIds.size > 0) {
         setTimeout(() => {
           hydrateCustomerPriorServiceFlags(Array.from(activeWorkCustomerIds)).catch(() => {});
         }, 50);
       }
 
-      if (priorCustomerIds.size > 0) {
+      if (!skipDecorations && priorCustomerIds.size > 0) {
         // Defer slightly so the main list paints first.
         setTimeout(() => {
           loadCustomerLastServiceBrands(Array.from(priorCustomerIds)).catch(() => {});
@@ -1223,7 +1224,7 @@ const TechnicianDashboard = () => {
       }
       
       // AMC dots on active cards only — skip bulk completed customer_ids (global map covers returning)
-      if (allJobs.length > 0) {
+      if (!skipDecorations && allJobs.length > 0) {
         setTimeout(async () => {
           try {
             const customerIds = [
@@ -1417,7 +1418,12 @@ const TechnicianDashboard = () => {
     if (!user?.technicianId) return;
     const technicianId = user.technicianId;
 
+    let lastEnableAt = 0;
     const enableSharing = () => {
+      const now = Date.now();
+      // visibilitychange and appStateChange usually fire together on resume.
+      if (now - lastEnableAt < 8_000) return;
+      lastEnableAt = now;
       void import('@/lib/technicianLiveLocation').then(({ startLiveTracking }) =>
         startLiveTracking(technicianId)
       );
@@ -2778,7 +2784,8 @@ const TechnicianDashboard = () => {
 
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      void loadAssignedJobs();
+      // Active rows only. Realtime and the first load still fetch history, AMC, and returning-customer flags.
+      void loadAssignedJobs(0, { activeOnly: true, skipDecorations: true });
     }, TECH_JOBS_POLL_MS);
     return () => clearInterval(pollInterval);
   }, [user?.technicianId, loadAssignedJobs]);

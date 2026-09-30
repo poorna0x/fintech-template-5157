@@ -346,18 +346,39 @@ export async function isWhatsAppJobNotifyAllowed(
   }
 
   if (technicianId) {
-    const { data, error: techErr } = await supabase
-      .from('technicians')
-      .select('whatsapp_prefs')
-      .eq('id', technicianId)
-      .maybeSingle();
-    if (techErr) {
-      console.warn('[whatsapp] tech prefs:', techErr.message);
-    } else if (!isTechWhatsAppCategoryOn(data?.whatsapp_prefs, category)) {
+    const prefs = await loadTechnicianWhatsAppPrefs(technicianId);
+    if (prefs === undefined) {
+      /* lookup failed — do not block the send */
+    } else if (!isTechWhatsAppCategoryOn(prefs, category)) {
       return { ok: false, reason: 'WhatsApp notify disabled for this technician' };
     }
   }
   return { ok: true };
+}
+
+const TECH_WA_PREFS_TTL_MS = 60_000;
+const techWaPrefsCache = new Map<string, { at: number; prefs: unknown }>();
+
+/** Same technician row for assign checks that run back-to-back. Failed lookups are not cached. */
+export async function loadTechnicianWhatsAppPrefs(
+  technicianId: string
+): Promise<unknown | undefined> {
+  const id = String(technicianId || '').trim();
+  if (!id) return undefined;
+  const hit = techWaPrefsCache.get(id);
+  if (hit && Date.now() - hit.at < TECH_WA_PREFS_TTL_MS) return hit.prefs;
+  const { data, error } = await supabase
+    .from('technicians')
+    .select('whatsapp_prefs')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) {
+    console.warn('[whatsapp] tech prefs:', error.message);
+    return undefined;
+  }
+  const prefs = data?.whatsapp_prefs;
+  techWaPrefsCache.set(id, { at: Date.now(), prefs });
+  return prefs;
 }
 
 let settingsCacheMem: {
@@ -367,7 +388,7 @@ let settingsCacheMem: {
   error?: string;
 } | null = null;
 
-const SETTINGS_CACHE_TTL_MS = 2 * 60 * 1000;
+const SETTINGS_CACHE_TTL_MS = 20 * 60 * 1000;
 const SETTINGS_CACHE_KEY = 'wa_crm_settings_cache_v1';
 
 /** Sync peek of cached settings (memory / sessionStorage). Null if cache cold. */

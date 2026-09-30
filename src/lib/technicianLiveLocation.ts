@@ -9,14 +9,14 @@
  * grabs a fix and uploads it via the upload-tech-location function.
  *
  * The only JS work happens on app start / resume (startLiveTracking):
- * mark the row is_tracking=true (gates admin pings), register the FCM token,
- * and run one brief bootstrap fix (permission prompt + initial pin).
+ * mark the row is_tracking=true (gates admin pings) and run one brief
+ * bootstrap fix (permission prompt + initial pin). FCM registration stays
+ * on the technician dashboard resume.
  *
  * On the plain website/PWA `isNativeApp()` is false and none of this runs.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { supabase } from '@/lib/supabase';
-import { registerTechnicianPushToken } from '@/lib/technicianPush';
 
 interface Location {
   latitude: number;
@@ -54,6 +54,9 @@ const BOOTSTRAP_TIMEOUT_MS = 30_000;
 let sharingEnabled = false;
 let watcherId: string | null = null;
 let watcherTimeout: ReturnType<typeof setTimeout> | null = null;
+let lastMarkedAt = 0;
+let lastMarkedTechId = '';
+const MARK_MIN_INTERVAL_MS = 3 * 60 * 1000;
 
 export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
@@ -150,10 +153,20 @@ async function runBootstrapFix(technicianId: string): Promise<boolean> {
 export async function startLiveTracking(technicianId: string): Promise<boolean> {
   if (!isNativeApp()) return false;
 
-  // Admin pings gate on this flag. Always refresh it (do not early-return
-  // before the upsert — the in-memory flag can be true while DB is false).
-  const marked = await markSharingOn(technicianId);
-  void registerTechnicianPushToken(technicianId);
+  // Admin pings gate on this flag. Rewrite it on resume, but not on every
+  // visibility flicker in the same few minutes. A fresh app start always writes.
+  const recentlyMarked =
+    sharingEnabled &&
+    lastMarkedTechId === technicianId &&
+    Date.now() - lastMarkedAt < MARK_MIN_INTERVAL_MS;
+  let marked = true;
+  if (!recentlyMarked) {
+    marked = await markSharingOn(technicianId);
+    if (marked) {
+      lastMarkedAt = Date.now();
+      lastMarkedTechId = technicianId;
+    }
+  }
 
   if (sharingEnabled) {
     return marked;
@@ -174,6 +187,8 @@ export async function startLiveTracking(technicianId: string): Promise<boolean> 
 /** Disable sharing: the server refuses location pings while is_tracking=false. */
 export async function stopLiveTracking(technicianId: string): Promise<void> {
   sharingEnabled = false;
+  lastMarkedAt = 0;
+  lastMarkedTechId = '';
   await stopWatcherOnly();
 
   await supabase
