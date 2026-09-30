@@ -338,7 +338,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100vw-1.25rem)] max-w-7xl max-h-[95vh] overflow-x-hidden overflow-y-auto p-4 sm:w-[90vw] sm:p-6 md:w-[85vw] min-w-0">
+      <DialogContent className="z-[80] w-[calc(100vw-1.25rem)] max-w-7xl max-h-[95vh] overflow-x-hidden overflow-y-auto p-4 sm:w-[90vw] sm:p-6 md:w-[85vw] min-w-0" overlayClassName="z-[80]">
         <DialogHeader className="pr-10">
           <DialogTitle className="flex items-center gap-2">
             <span className="text-lg sm:text-xl font-semibold">Gallery</span>

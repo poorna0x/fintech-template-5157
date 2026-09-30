@@ -147,7 +147,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden"
+        className="z-[80] sm:max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden"
+        overlayClassName="z-[80]"
         onPointerDownOutside={(e) => {
           if (photoViewerOpen) e.preventDefault();
         }}

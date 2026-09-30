@@ -3828,7 +3828,6 @@ const AdminDashboard = () => {
         adminDashboardLocation(
           buildAdminDashboardSearch(
             {
-              clearTool: true,
               modal: surface === 'gallery' ? 'customer-photos' : 'report',
               customerId: customer.id,
               jobId: null,
