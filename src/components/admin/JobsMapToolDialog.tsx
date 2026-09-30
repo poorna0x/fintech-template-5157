@@ -879,8 +879,8 @@ export default function JobsMapToolDialog({
             <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto">
             {selectedJob ? (
               <div className="space-y-3 border-b px-3 py-3">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 text-sm font-semibold text-foreground">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="min-w-0 flex-1 text-sm font-semibold leading-5 text-foreground">
                     {selectedJob.job_number || 'Job'} · {selectedJob.customer_name}
                   </p>
                   <Button
@@ -890,7 +890,7 @@ export default function JobsMapToolDialog({
                     className="h-9 shrink-0 cursor-pointer px-3"
                     onClick={() => setSelection(null)}
                   >
-                    <X className="mr-1 h-4 w-4" />
+                    <X className="h-4 w-4" />
                     Close
                   </Button>
                 </div>
