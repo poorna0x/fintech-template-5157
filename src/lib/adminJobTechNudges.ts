@@ -193,6 +193,8 @@ export async function sendTechnicianPush(opts: {
   replyAbout?: string;
   /** Also show draw-over-apps card (tech APK + overlay permission). */
   overlay?: boolean;
+  /** Ring nudgetech.wav only — no message text. */
+  soundOnly?: boolean;
 }): Promise<TechPushSendResult> {
   const {
     technicianId,
@@ -207,8 +209,9 @@ export async function sendTechnicianPush(opts: {
     jobId,
     replyAbout,
     overlay,
+    soundOnly,
   } = opts;
-  if (!technicianId || !title) return 'skipped';
+  if (!technicianId || (!title && !soundOnly)) return 'skipped';
 
   try {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -226,21 +229,30 @@ export async function sendTechnicianPush(opts: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        technicianId,
-        title,
-        body,
-        color: color || TECH_NUDGE_COLOR,
-        source: 'nudge',
-        ...(tag ? { tag } : {}),
-        ...(allowReply && !phoneDigits && !goingNow ? { allowReply: true } : {}),
-        ...(phoneDigits ? { callPhone: phoneDigits } : {}),
-        ...(goingNow && jobId
-          ? { goingNow: true, jobId, ...(startOnly ? { startOnly: true } : {}) }
-          : {}),
-        ...(replyAbout ? { replyAbout } : {}),
-        ...((overlay ?? getTechPushOverlayPref()) ? { overlay: true } : {}),
-      }),
+      body: JSON.stringify(
+        soundOnly
+          ? {
+              technicianId,
+              soundOnly: true,
+              source: 'nudge',
+              tag: tag || 'nudge_sound',
+            }
+          : {
+              technicianId,
+              title,
+              body,
+              color: color || TECH_NUDGE_COLOR,
+              source: 'nudge',
+              ...(tag ? { tag } : {}),
+              ...(allowReply && !phoneDigits && !goingNow ? { allowReply: true } : {}),
+              ...(phoneDigits ? { callPhone: phoneDigits } : {}),
+              ...(goingNow && jobId
+                ? { goingNow: true, jobId, ...(startOnly ? { startOnly: true } : {}) }
+                : {}),
+              ...(replyAbout ? { replyAbout } : {}),
+              ...((overlay ?? getTechPushOverlayPref()) ? { overlay: true } : {}),
+            }
+      ),
     });
     const out = (await res.json().catch(() => null)) as
       | { sent?: boolean; reason?: string; error?: string }
@@ -260,13 +272,23 @@ export async function sendTechnicianPush(opts: {
       toast.warning('Nudge was not delivered.');
       return 'failed';
     }
-    toast.success('Nudge sent to technician');
+    toast.success(soundOnly ? 'Nudge sound sent' : 'Nudge sent to technician');
     return 'sent';
   } catch (err) {
     console.warn('[job-nudge] error:', err);
     toast.warning('Could not send nudge to technician.');
     return 'failed';
   }
+}
+
+/** Ring nudgetech.wav on the assigned technician's phone. No message text. */
+export function sendJobSoundNudge(technicianId: string): Promise<TechPushSendResult> {
+  return sendTechnicianPush({
+    technicianId,
+    title: '',
+    soundOnly: true,
+    tag: 'nudge_sound',
+  });
 }
 
 export function buildPhotoNudgeCopy(job: Record<string, unknown>): { title: string; body: string } {

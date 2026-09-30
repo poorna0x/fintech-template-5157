@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { AlertTriangle, BellOff, CheckCircle2, Loader2, MessageSquare, Send } from 'lucide-react';
+import { AlertTriangle, BellOff, CheckCircle2, Loader2, MessageSquare, Send, Volume2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { getTechPushOverlayPref, setTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
@@ -91,7 +91,7 @@ const MessageTechnicianDialog = ({
    * previous office message on the phone). mode 'clear': silent push that
    * removes all of our app's notifications from the phone's tray.
    */
-  const dispatch = async (mode: 'send' | 'clear') => {
+  const dispatch = async (mode: 'send' | 'clear' | 'sound') => {
     const body = message.trim();
     if (selected.size === 0 || (mode === 'send' && !body)) return;
     setSending(true);
@@ -117,7 +117,9 @@ const MessageTechnicianDialog = ({
               source: 'direct_message',
               ...(showOverlay ? { overlay: true } : {}),
             }
-          : { clear: true };
+          : mode === 'sound'
+            ? { soundOnly: true, source: 'direct_message', tag: 'nudge_sound' }
+            : { clear: true };
 
       const outcomes = await Promise.all(
         [...selected].map(async (technicianId): Promise<[string, SendStatus]> => {
@@ -147,7 +149,8 @@ const MessageTechnicianDialog = ({
       setResults(map);
 
       const okCount = outcomes.filter(([, s]) => s === 'sent').length;
-      const verb = mode === 'send' ? 'Message sent' : 'Notifications cleared';
+      const verb =
+        mode === 'send' ? 'Message sent' : mode === 'sound' ? 'Nudge sound sent' : 'Notifications cleared';
       if (okCount === outcomes.length) {
         toast.success(
           okCount === 1 ? verb : `${verb} — ${okCount} technicians`
@@ -341,6 +344,15 @@ const MessageTechnicianDialog = ({
             <Button
               variant="outline"
               className="h-11 w-full"
+              onClick={() => void dispatch('sound')}
+              disabled={sending || selected.size === 0}
+            >
+              <Volume2 className="mr-2 h-4 w-4" />
+              Play nudge sound
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11 w-full"
               onClick={() => void dispatch('clear')}
               disabled={sending || selected.size === 0}
             >
@@ -348,9 +360,9 @@ const MessageTechnicianDialog = ({
               Clear app notifications on their phone
             </Button>
             <p className="text-xs text-muted-foreground">
-              Sending a new message replaces your previous one on the phone. Clear removes
-              all this app's notifications still in their tray (job alerts, OTP requests,
-              messages) — it can't unsee anything already read.
+              Play nudge sound rings their phone with no message. Sending a new message
+              replaces your previous one. Clear removes this app's notifications still in
+              their tray.
             </p>
           </div>
         </div>

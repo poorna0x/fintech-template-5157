@@ -17,6 +17,7 @@ import {
   MessageSquare,
   Navigation,
   Phone,
+  Volume2,
 } from 'lucide-react';
 import type { Job } from '@/types';
 import {
@@ -32,6 +33,7 @@ import {
   sendJobOnTheWayNudge,
   sendJobPhotoNudge,
   sendJobStartNudge,
+  sendJobSoundNudge,
   sendJobTimeToFinishNudge,
 } from '@/lib/adminJobTechNudges';
 import { getTechPushOverlayPref, setTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
@@ -117,6 +119,20 @@ export default function JobTechNudgePickerDialog({
         </label>
 
         <div className="flex flex-col gap-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            className="justify-start h-11"
+            disabled={!!busy || !techId}
+            onClick={() => void run('sound', () => sendJobSoundNudge(techId!))}
+          >
+            {busy === 'sound' ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Volume2 className="mr-2 h-4 w-4" />
+            )}
+            Play nudge sound
+          </Button>
           {showPhoto && (
             <Button
               type="button"

@@ -84,6 +84,9 @@ exports.handler = async (event) => {
   // clear: silent data push; the app's native handler dismisses our
   // notifications from the tray instead of showing anything.
   const clear = body.clear === true;
+  // soundOnly: ring nudgetech.wav on the technician phone. No message body.
+  const soundOnly =
+    body.soundOnly === true || body.soundOnly === 'true' || body.soundOnly === 1;
   // allowReply: data-only push; native shows notification with inline Reply.
   // Accept boolean or string (defensive) so Reply isn't silently skipped.
   const allowReply =
@@ -117,6 +120,7 @@ exports.handler = async (event) => {
   if (
     !technicianId ||
     (!clear &&
+      !soundOnly &&
       !title &&
       !(allowReply && message) &&
       !(callPhone && message) &&
@@ -124,7 +128,7 @@ exports.handler = async (event) => {
   ) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId and title required' }) };
   }
-  if (!clear && !allowReply && !callPhone && !goingNow && !title) {
+  if (!clear && !soundOnly && !allowReply && !callPhone && !goingNow && !title) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId and title required' }) };
   }
   if (goingNow && !jobId) {
@@ -155,7 +159,7 @@ exports.handler = async (event) => {
     if (overlayEvent) {
       pushSource = 'job_alert';
     } else if (!pushSource) {
-      if (callPhone || goingNow) pushSource = 'nudge';
+      if (callPhone || goingNow || soundOnly) pushSource = 'nudge';
       else if (allowReply) pushSource = 'nudge';
       else pushSource = 'other';
     }
@@ -216,6 +220,15 @@ exports.handler = async (event) => {
           ...(color ? { color } : {}),
           ...overlayFlag,
           ...ack,
+        },
+        android: androidUrgentPush(),
+      });
+    } else if (soundOnly) {
+      buildMessage = (token) => ({
+        token,
+        data: {
+          type: 'nudge_sound',
+          tag: tag || 'nudge_sound',
         },
         android: androidUrgentPush(),
       });
@@ -336,8 +349,8 @@ exports.handler = async (event) => {
     let category = 'job_assigned';
     if (clear) {
       category = null;
-    } else if (callPhone || goingNow) {
-      category = 'job_nudges';
+    } else if (callPhone || goingNow || soundOnly) {
+      category = soundOnly && pushSource === 'direct_message' ? 'office_messages' : 'job_nudges';
     } else if (allowReply) {
       category = 'office_messages';
     } else if (overlayEvent === 'unassigned' || overlayEvent === 'removed') {
@@ -364,7 +377,7 @@ exports.handler = async (event) => {
     const tokens = pushResult?.tokens || 0;
 
     // Mirror nudge/office messages to WhatsApp (not assign/unassign — CRM handles those).
-    if (!clear && category) {
+    if (!clear && !soundOnly && category) {
       const waTitle =
         title ||
         (goingNow

@@ -18,6 +18,43 @@ const {
 }
 
 {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const channels = fs.readFileSync(
+    path.join(root, 'android/app/src/main/java/com/hydrogenro/technician/NotificationChannels.java'),
+    'utf8'
+  );
+  const otp = fs.readFileSync(
+    path.join(root, 'android/app/src/main/java/com/hydrogenro/technician/OtpReplyReceiver.java'),
+    'utf8'
+  );
+  assert.match(channels, /OTP_ALERTS = "otp_alerts_v1"/);
+  assert.match(channels, /"alertringtone"/);
+  assert.match(otp, /CHANNEL_ID = NotificationChannels\.OTP_ALERTS/);
+  assert.match(otp, /RESULT_CHANNEL_ID = NotificationChannels\.GENERAL_ALERTS/);
+  assert.match(channels, /NUDGE_SOUND = "nudge_sound_v1"/);
+  assert.match(channels, /"nudgetech"/);
+  const messaging = fs.readFileSync(
+    path.join(root, 'android/app/src/main/java/com/hydrogenro/technician/HroMessagingService.java'),
+    'utf8'
+  );
+  const send = fs.readFileSync(path.join(root, 'netlify/functions/send-tech-push.js'), 'utf8');
+  assert.match(messaging, /"nudge_sound"/);
+  assert.match(messaging, /NotificationChannels\.NUDGE_SOUND/);
+  assert.match(send, /soundOnly/);
+  assert.match(send, /type: 'nudge_sound'/);
+  assert.equal(
+    fs.existsSync(path.join(root, 'android/app/src/main/res/raw/nudgetech.wav')),
+    true
+  );
+  assert.equal(
+    fs.existsSync(path.join(root, 'android/app/src/main/res/raw/alertringtone.wav')),
+    true
+  );
+}
+
+{
   const id = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
   assert.equal(jobAlertTag('assigned', id), `job_alert_assigned_${id}`);
   assert.notEqual(

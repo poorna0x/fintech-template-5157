@@ -108,6 +108,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             showTechNudge(data);
             return;
         }
+        if ("nudge_sound".equals(data.get("type"))) {
+            showNudgeSound();
+            return;
+        }
         if ("wrong_line_call".equals(data.get("type"))) {
             showWrongLineCall(data);
             return;
@@ -303,6 +307,51 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         );
         TechActionOverlay.maybeShowFromPush(
             getApplicationContext(), TechActionOverlay.Mode.REPLY, data);
+    }
+
+    /** Play nudge sound only — no message, no overlay. New id each time so it rings again. */
+    private static int lastNudgeSoundId = 0;
+
+    private void showNudgeSound() {
+        Context context = getApplicationContext();
+        NotificationChannels.ensureAll(context);
+        NotificationManagerCompat nm = NotificationManagerCompat.from(context);
+        if (lastNudgeSoundId != 0) {
+            nm.cancel("nudge_sound", lastNudgeSoundId);
+        }
+        int id = (int) (System.currentTimeMillis() & 0x7fffffff);
+        if (id == 0) id = 1;
+        lastNudgeSoundId = id;
+
+        Intent openIntent =
+            new Intent(context, MainActivity.class)
+                .setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent openPending =
+            PendingIntent.getActivity(
+                context,
+                id,
+                openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification notification =
+            new NotificationCompat.Builder(context, NotificationChannels.NUDGE_SOUND)
+                .setSmallIcon(R.drawable.ic_stat_notify)
+                .setColor(Color.parseColor("#7C3AED"))
+                .setContentTitle("Nudge from office")
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setDefaults(Notification.DEFAULT_VIBRATE | Notification.DEFAULT_LIGHTS)
+                .setContentIntent(openPending)
+                .setAutoCancel(true)
+                .build();
+        try {
+            nm.notify("nudge_sound", id, notification);
+        } catch (SecurityException e) {
+            Log.w(TAG, "Notifications not permitted", e);
+        }
     }
 
     /** Simple nudge (e.g. photo) with optional overlay — no Reply actions. */

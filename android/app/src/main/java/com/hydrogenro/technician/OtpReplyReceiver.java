@@ -26,7 +26,9 @@ import java.nio.charset.StandardCharsets;
 public class OtpReplyReceiver extends BroadcastReceiver {
 
     private static final String TAG = "HroOtpReply";
-    private static final String CHANNEL_ID = NotificationChannels.GENERAL_ALERTS;
+    /** Pending Ask OTP — dedicated ringtone channel. Result toasts stay on general. */
+    private static final String CHANNEL_ID = NotificationChannels.OTP_ALERTS;
+    private static final String RESULT_CHANNEL_ID = NotificationChannels.GENERAL_ALERTS;
     private static final int COLOR_PENDING = Color.parseColor("#F59E0B");
     private static final int COLOR_SUCCESS = Color.parseColor("#16A34A");
 
@@ -100,8 +102,10 @@ public class OtpReplyReceiver extends BroadcastReceiver {
             .setContentTitle("Office needs the customer's OTP")
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setDefaults(Notification.DEFAULT_ALL)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setDefaults(Notification.DEFAULT_VIBRATE | Notification.DEFAULT_LIGHTS)
             .setContentIntent(openPending)
             .addAction(replyAction)
             .setAutoCancel(false)
@@ -180,7 +184,7 @@ public class OtpReplyReceiver extends BroadcastReceiver {
     }
 
     private void showResult(Context context, int notificationId, String text, boolean success) {
-        Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
+        Notification notification = new NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setColor(success ? COLOR_SUCCESS : COLOR_PENDING)
             .setContentTitle(success ? "OTP delivered" : "Office needs the customer's OTP")
@@ -240,7 +244,7 @@ public class OtpReplyReceiver extends BroadcastReceiver {
             if (ok) {
                 try {
                     NotificationChannels.ensureAll(context);
-                    Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
+                    Notification notification = new NotificationCompat.Builder(context, RESULT_CHANNEL_ID)
                         .setSmallIcon(R.drawable.ic_stat_notify)
                         .setColor(COLOR_SUCCESS)
                         .setContentTitle("OTP delivered")

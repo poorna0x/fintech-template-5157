@@ -2,6 +2,8 @@
  * Android notification channel ids for the technician APK.
  *
  * - Assign / reassign keep the classic tech_alert sound (job_alerts_v2).
+ * - Ask OTP uses alertringtone (otp_alerts_v1) from the native OTP tray.
+ * - Play nudge sound uses nudgetech (nudge_sound_v1) from the native nudge tray.
  * - All other technician pushes use universfield_notification (tech_general_v1).
  * Channels are created natively in NotificationChannels.java — never from JS.
  */

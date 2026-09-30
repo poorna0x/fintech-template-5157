@@ -14,12 +14,20 @@ import android.os.Build;
  * channel it would lock forever without the sound.
  *
  * - {@link #JOB_ALERTS}: assign / reassign only — current tech_alert.wav
+ * - {@link #OTP_ALERTS}: admin Ask OTP — alertringtone.wav
+ * - {@link #NUDGE_SOUND}: Play nudge sound — nudgetech.wav
  * - {@link #GENERAL_ALERTS}: all other pushes — universfield_notification.wav
  */
 public final class NotificationChannels {
 
     /** Job assign / reassign — original alert sound. */
     public static final String JOB_ALERTS = "job_alerts_v2";
+
+    /** Admin asks for customer OTP — rings alertringtone.wav. */
+    public static final String OTP_ALERTS = "otp_alerts_v1";
+
+    /** Play nudge sound from Message / Nudge technician — nudgetech.wav. */
+    public static final String NUDGE_SOUND = "nudge_sound_v1";
 
     /** Office messages, nudges, cash, wrong-line, updates, etc. */
     public static final String GENERAL_ALERTS = "tech_general_v1";
@@ -42,7 +50,26 @@ public final class NotificationChannels {
             JOB_ALERTS,
             "Job assigned",
             "New job assignments and reassignments",
-            "tech_alert"
+            "tech_alert",
+            false
+        );
+        ensureChannel(
+            nm,
+            context,
+            OTP_ALERTS,
+            "OTP requests",
+            "When the office asks for the customer's OTP",
+            "alertringtone",
+            true
+        );
+        ensureChannel(
+            nm,
+            context,
+            NUDGE_SOUND,
+            "Nudge sound",
+            "Short sound when the office taps Play nudge sound",
+            "nudgetech",
+            true
         );
         ensureChannel(
             nm,
@@ -50,7 +77,8 @@ public final class NotificationChannels {
             GENERAL_ALERTS,
             "Other alerts",
             "Office messages, nudges, cash, and other updates",
-            "universfield_notification"
+            "universfield_notification",
+            false
         );
     }
 
@@ -80,14 +108,17 @@ public final class NotificationChannels {
         String channelId,
         String name,
         String description,
-        String rawSoundName
+        String rawSoundName,
+        boolean ringtone
     ) {
         if (nm.getNotificationChannel(channelId) != null) return;
 
         Uri sound = Uri.parse(
             "android.resource://" + context.getPackageName() + "/raw/" + rawSoundName);
         AudioAttributes attrs = new AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setUsage(ringtone
+                ? AudioAttributes.USAGE_NOTIFICATION_RINGTONE
+                : AudioAttributes.USAGE_NOTIFICATION)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build();
 
