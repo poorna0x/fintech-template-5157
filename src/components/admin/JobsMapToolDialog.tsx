@@ -8,14 +8,13 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Car, ExternalLink, Loader2, LocateFixed, MapPinned, Moon, Navigation, Radio, RefreshCw, Search, Sun } from 'lucide-react';
+import { ExternalLink, Loader2, MapPinned, Navigation, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Technician } from '@/types';
 import DraggableMap from '@/components/DraggableMap';
-import { DARK_DISPATCH_BG, DARK_DISPATCH_MAP_STYLES } from '@/lib/darkMapStyle';
 import { fetchDrivingRoute } from '@/lib/googleMapsDistance';
 import { openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
@@ -141,25 +140,6 @@ const FILTERS: Array<{ id: JobsMapFilter; label: string }> = [
   { id: 'all', label: 'All' },
 ];
 
-function readJobsMapPref(key: string, fallback: boolean): boolean {
-  try {
-    const raw = sessionStorage.getItem(`hro-jobs-map-${key}`);
-    if (raw === '1') return true;
-    if (raw === '0') return false;
-  } catch {
-    /* ignore */
-  }
-  return fallback;
-}
-
-function writeJobsMapPref(key: string, value: boolean) {
-  try {
-    sessionStorage.setItem(`hro-jobs-map-${key}`, value ? '1' : '0');
-  } catch {
-    /* ignore */
-  }
-}
-
 type Selection = { kind: 'job'; id: string } | { kind: 'tech'; id: string } | null;
 
 type DrawnRoute = {
@@ -283,14 +263,10 @@ export default function JobsMapToolDialog({
   const [routing, setRouting] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [query, setQuery] = useState('');
-  const [darkMap, setDarkMap] = useState(() => readJobsMapPref('dark', true));
-  const [liveOnly, setLiveOnly] = useState(() => readJobsMapPref('livegps', false));
-  const [trafficOn, setTrafficOn] = useState(() => readJobsMapPref('traffic', false));
 
   const mapRef = useRef<google.maps.Map | null>(null);
   const overlaysRef = useRef<google.maps.MVCObject[]>([]);
   const routeOverlaysRef = useRef<google.maps.MVCObject[]>([]);
-  const trafficRef = useRef<google.maps.TrafficLayer | null>(null);
   const mapClickRef = useRef<google.maps.MapsEventListener | null>(null);
   const fitKeyRef = useRef('');
   const forceFitRef = useRef(false);
@@ -303,7 +279,6 @@ export default function JobsMapToolDialog({
   const selectionRef = useRef(selection);
   const filterRef = useRef(filter);
   const queryRef = useRef(query);
-  const liveOnlyRef = useRef(liveOnly);
   const techniciansRef = useRef(technicians);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const pingPullRef = useRef<number[]>([]);
@@ -311,7 +286,6 @@ export default function JobsMapToolDialog({
   selectionRef.current = selection;
   filterRef.current = filter;
   queryRef.current = query;
-  liveOnlyRef.current = liveOnly;
   techniciansRef.current = technicians;
 
   const techs = useMemo(
@@ -325,8 +299,8 @@ export default function JobsMapToolDialog({
     [jobs, filter, query]
   );
   const visibleTechs = useMemo(
-    () => visibleTechsForJobsMap(visibleJobs, techs, liveOnly),
-    [visibleJobs, techs, liveOnly]
+    () => visibleTechsForJobsMap(visibleJobs, techs, false),
+    [visibleJobs, techs]
   );
   const selectedJob = selection?.kind === 'job' ? jobs.find((job) => job.id === selection.id) || null : null;
   const selectedTech = selection?.kind === 'tech' ? techs.find((tech) => tech.id === selection.id) || null : null;
@@ -467,7 +441,7 @@ export default function JobsMapToolDialog({
       filterJobsMapJobs(jobsRef.current, filterRef.current),
       queryRef.current
     );
-    const shownTechs = visibleTechsForJobsMap(shownJobs, techsRef.current, liveOnlyRef.current);
+    const shownTechs = visibleTechsForJobsMap(shownJobs, techsRef.current, false);
     const cameraJobs = queryRef.current.trim()
       ? shownJobs
       : jobsMapCameraJobs(shownJobs, filterRef.current);
@@ -526,7 +500,6 @@ export default function JobsMapToolDialog({
     const fitKey = [
       filterRef.current,
       queryRef.current,
-      liveOnlyRef.current ? '1' : '0',
       cameraJobs.map((job) => `${job.id}:${job.lat.toFixed(3)},${job.lng.toFixed(3)}`).join('|'),
       fitTechs.map((tech) => tech.id).join('|'),
     ].join('~');
@@ -541,38 +514,13 @@ export default function JobsMapToolDialog({
         /* ignore */
       }
     }
-  }, [filter, query, liveOnly, visibleJobs.length]);
+  }, [filter, query, visibleJobs.length]);
 
   paintRef.current = paint;
 
   useEffect(() => {
     paint();
-  }, [paint, jobs, techs, selection, query, liveOnly]);
-
-  useEffect(() => {
-    writeJobsMapPref('dark', darkMap);
-    writeJobsMapPref('livegps', liveOnly);
-    writeJobsMapPref('traffic', trafficOn);
-  }, [darkMap, liveOnly, trafficOn]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    map.setOptions({
-      styles: darkMap ? DARK_DISPATCH_MAP_STYLES : [],
-      backgroundColor: darkMap ? DARK_DISPATCH_BG : '#e8eaed',
-    });
-  }, [darkMap, mapReady]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !window.google?.maps?.TrafficLayer) return;
-    if (!trafficRef.current) trafficRef.current = new window.google.maps.TrafficLayer();
-    trafficRef.current.setMap(trafficOn && open ? map : null);
-    return () => {
-      if (!open) trafficRef.current?.setMap(null);
-    };
-  }, [trafficOn, mapReady, open]);
+  }, [paint, jobs, techs, selection, query]);
 
   useEffect(() => {
     if (!open) {
@@ -598,7 +546,7 @@ export default function JobsMapToolDialog({
       if (job) {
         for (const tech of nearestTechsForJob(
           job,
-          visibleTechsForJobsMap(jobsRef.current, techsRef.current, liveOnlyRef.current)
+          visibleTechsForJobsMap(jobsRef.current, techsRef.current, false)
         )
           .filter((row) => row.isAssigned || row.distance_m <= 40_000)
           .slice(0, MAX_JOB_ROUTES)) {
@@ -778,7 +726,7 @@ export default function JobsMapToolDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <div className={cn('relative min-h-[220px] flex-1 overflow-hidden md:order-2', darkMap ? 'bg-[#3d4248]' : 'bg-muted')}>
+          <div className="relative min-h-[220px] flex-1 overflow-hidden bg-muted md:order-2">
             <DraggableMap
               center={BENGALURU}
               zoom={14}
@@ -789,7 +737,7 @@ export default function JobsMapToolDialog({
               mapTypeControl={false}
               streetViewControl={false}
               fullscreenControl={false}
-              styles={DARK_DISPATCH_MAP_STYLES}
+              styles={[]}
               onLayout={() => {
                 if (layoutTimerRef.current) window.clearTimeout(layoutTimerRef.current);
                 layoutTimerRef.current = window.setTimeout(() => {
@@ -834,80 +782,7 @@ export default function JobsMapToolDialog({
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : null}
-            <div className="absolute right-3 top-3 z-20 flex flex-col items-end gap-1.5">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="h-11 cursor-pointer gap-1.5 bg-white/90 text-foreground shadow-sm hover:bg-white"
-              onClick={() => void load()}
-              disabled={loading}
-            >
-              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
-              Refresh
-            </Button>
-            <div className="flex gap-1.5">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                title={trafficOn ? 'Hide traffic' : 'Show traffic'}
-                className={cn(
-                  'h-11 w-11 cursor-pointer bg-white/90 p-0 text-foreground shadow-sm hover:bg-white',
-                  trafficOn && 'ring-2 ring-sky-500'
-                )}
-                onClick={() => setTrafficOn((on) => !on)}
-              >
-                <Car className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                title={liveOnly ? 'Showing live GPS only' : 'Showing all technician pins'}
-                className={cn(
-                  'h-11 w-11 cursor-pointer bg-white/90 p-0 text-foreground shadow-sm hover:bg-white',
-                  liveOnly && 'ring-2 ring-teal-600'
-                )}
-                onClick={() => {
-                  setLiveOnly((on) => !on);
-                  forceFitRef.current = true;
-                }}
-              >
-                <Radio className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                title={darkMap ? 'Light map' : 'Dark map'}
-                className="h-11 w-11 cursor-pointer bg-white/90 p-0 text-foreground shadow-sm hover:bg-white"
-                onClick={() => setDarkMap((on) => !on)}
-              >
-                {darkMap ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                title="Fit pins"
-                className="h-11 w-11 cursor-pointer bg-white/90 p-0 text-foreground shadow-sm hover:bg-white"
-                onClick={() => {
-                  forceFitRef.current = true;
-                  if (selection) setSelection(null);
-                  else paint();
-                }}
-              >
-                <LocateFixed className="h-4 w-4" />
-              </Button>
-            </div>
-            </div>
-            <div
-              className={cn(
-                'pointer-events-none absolute bottom-3 left-3 z-20 max-w-[min(100%,16rem)] rounded-lg px-2.5 py-2 text-[11px] leading-5 shadow-sm',
-                darkMap ? 'bg-zinc-700/80 text-white/90' : 'bg-white/90 text-foreground'
-              )}
-            >
+            <div className="pointer-events-none absolute bottom-3 left-3 z-20 max-w-[min(100%,16rem)] rounded-lg bg-white/90 px-2.5 py-2 text-[11px] leading-5 text-foreground shadow-sm">
               <p>P unassigned · A assigned · F follow-up</p>
               <p>Photos are technicians · faded = stale GPS</p>
             </div>
