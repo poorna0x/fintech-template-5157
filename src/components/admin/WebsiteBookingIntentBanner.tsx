@@ -143,8 +143,21 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert, onSearchCusto
     const lastFocusFetchAt = { t: 0 };
     const subscribedRef = { ok: false };
     let fallbackInterval: ReturnType<typeof setInterval> | null = null;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let generation = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryMs = 30_000;
 
-    const channel = supabase
+    const subscribe = async () => {
+      const myGen = ++generation;
+      if (channel) {
+        const previous = channel;
+        channel = null;
+        await supabase.removeChannel(previous);
+      }
+      if (myGen !== generation) return;
+
+      channel = supabase
       .channel('admin-website-booking-intent')
       .on(
         'postgres_changes',
@@ -207,8 +220,10 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert, onSearchCusto
         }
       )
       .subscribe((status) => {
+        if (myGen !== generation) return;
         if (status === 'SUBSCRIBED') {
           subscribedRef.ok = true;
+          retryMs = 30_000;
           if (fallbackInterval) {
             clearInterval(fallbackInterval);
             fallbackInterval = null;
@@ -216,10 +231,21 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert, onSearchCusto
           return;
         }
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          subscribedRef.ok = false;
           console.warn('[WebsiteBookingIntentBanner] realtime subscribe:', status);
           void load();
+          if (retryTimer) clearTimeout(retryTimer);
+          const wait = retryMs;
+          retryMs = Math.min(retryMs * 2, 120_000);
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            void subscribe();
+          }, wait);
         }
       });
+    };
+
+    void subscribe();
 
     // If realtime doesn't subscribe, poll lightly while tab is visible.
     // This keeps the banner usable without requiring a manual refresh.
@@ -248,11 +274,13 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert, onSearchCusto
     window.addEventListener('online', onOnline);
 
     return () => {
+      generation += 1;
       clearTimeout(fallbackTimer);
+      if (retryTimer) clearTimeout(retryTimer);
       if (fallbackInterval) clearInterval(fallbackInterval);
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('online', onOnline);
-      supabase.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [load, playAlert]);
 

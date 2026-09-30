@@ -118,3 +118,83 @@ export const supabase = createClient(buildTimeUrl, buildTimeKey, {
     },
   },
 });
+
+/**
+ * Realtime's auth callback falls back to the anon key when getSession() is
+ * briefly empty. Anon has no GRANT on admin tables, so Postgres logs
+ * 42501 "permission denied for table …" for every live subscription.
+ * Keep the last signed-in JWT instead, and never join a channel without one.
+ */
+const realtimeClient = supabase as unknown as {
+  _getSessionToken: () => Promise<string | null>;
+  _getAccessToken: () => Promise<string>;
+};
+
+let realtimeUserJwt: string | null = null;
+
+function isUserJwt(token: string | null | undefined): token is string {
+  return !!token && token !== supabaseAnonKey && token !== buildTimeKey;
+}
+
+realtimeClient._getAccessToken = async () => {
+  try {
+    const sessionToken = await realtimeClient._getSessionToken();
+    if (isUserJwt(sessionToken)) {
+      realtimeUserJwt = sessionToken;
+      return sessionToken;
+    }
+  } catch {
+    /* keep the last signed-in token */
+  }
+  return realtimeUserJwt ?? '';
+};
+
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT') {
+    realtimeUserJwt = null;
+    return;
+  }
+  if (isUserJwt(session?.access_token)) realtimeUserJwt = session.access_token;
+});
+
+const openRealtimeChannel = supabase.channel.bind(supabase);
+const realtimeJwtGuard = Symbol('realtimeUserJwt');
+
+supabase.channel = ((name: string, opts?: Parameters<typeof openRealtimeChannel>[1]) => {
+  const channel = openRealtimeChannel(name, opts);
+  const guarded = channel as typeof channel & { [realtimeJwtGuard]?: boolean };
+  if (guarded[realtimeJwtGuard]) return channel;
+  guarded[realtimeJwtGuard] = true;
+
+  const originalSubscribe = channel.subscribe.bind(channel);
+  const originalUnsubscribe = channel.unsubscribe.bind(channel);
+  let cancelled = false;
+
+  channel.unsubscribe = (async () => {
+    cancelled = true;
+    return originalUnsubscribe();
+  }) as typeof channel.unsubscribe;
+
+  channel.subscribe = ((callback, timeout) => {
+    void (async () => {
+      let token: string | null = null;
+      try {
+        const { data } = await supabase.auth.getSession();
+        token = isUserJwt(data.session?.access_token) ? data.session.access_token : realtimeUserJwt;
+      } catch {
+        token = realtimeUserJwt;
+      }
+      if (cancelled) return;
+      if (!isUserJwt(token)) {
+        callback?.('CHANNEL_ERROR', new Error('No signed-in session for realtime'));
+        return;
+      }
+      await supabase.realtime.setAuth(token);
+      if (cancelled) return;
+      originalSubscribe(callback, timeout);
+    })();
+    return channel;
+  }) as typeof channel.subscribe;
+
+  return channel;
+}) as typeof supabase.channel;

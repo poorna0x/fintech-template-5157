@@ -215,6 +215,8 @@ export function initAdminSharedCallLookup(
   let disposed = false;
   let appListener: PluginListenerHandle | null = null;
   let resubTimer: ReturnType<typeof setTimeout> | null = null;
+  let generation = 0;
+  let retryMs = 15_000;
 
   let lastResumeCheckAt = 0;
   const deliver = () => {
@@ -237,12 +239,26 @@ export function initAdminSharedCallLookup(
   };
   document.addEventListener('visibilitychange', onVisible);
 
-  const subscribe = () => {
+  const scheduleRetry = () => {
     if (disposed) return;
+    if (resubTimer) clearTimeout(resubTimer);
+    const wait = retryMs;
+    retryMs = Math.min(retryMs * 2, 60_000);
+    resubTimer = setTimeout(() => {
+      resubTimer = null;
+      void subscribe();
+    }, wait);
+  };
+
+  const subscribe = async () => {
+    if (disposed) return;
+    const myGen = ++generation;
     if (channel) {
-      void supabase.removeChannel(channel);
+      const previous = channel;
       channel = null;
+      await supabase.removeChannel(previous);
     }
+    if (disposed || myGen !== generation) return;
 
     channel = supabase
       .channel(CHANNEL_NAME)
@@ -260,17 +276,21 @@ export function initAdminSharedCallLookup(
         }
       )
       .subscribe((status) => {
-        if (disposed) return;
-        // WebView / flaky networks drop the socket — resubscribe so live
-        // updates keep working without needing a tab switch.
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          if (resubTimer) clearTimeout(resubTimer);
-          resubTimer = setTimeout(subscribe, 1500);
+        if (disposed || myGen !== generation) return;
+        if (status === 'SUBSCRIBED') {
+          retryMs = 15_000;
+          return;
+        }
+        // CLOSED also fires when we remove this channel to resubscribe.
+        // Retrying it opened a new database connection every 1.5s and filled
+        // Realtime's pool ("Too many database timeouts").
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          scheduleRetry();
         }
       });
   };
 
-  subscribe();
+  void subscribe();
 
   // APK: visibilitychange alone can miss resumes on some OEMs.
   if (Capacitor.isNativePlatform()) {

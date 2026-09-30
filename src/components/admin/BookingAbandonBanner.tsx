@@ -132,13 +132,12 @@ export function BookingAbandonBanner() {
       .channel('admin-booking-abandonments')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'booking_abandonments' },
-        (payload) => mergeRealtimeRow(payload.new as Record<string, unknown>)
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'booking_abandonments' },
-        (payload) => mergeRealtimeRow(payload.new as Record<string, unknown>)
+        { event: '*', schema: 'public', table: 'booking_abandonments' },
+        (payload) => {
+          const row = payload.new as Record<string, unknown> | null;
+          if (!row) return;
+          mergeRealtimeRow(row);
+        }
       )
       .subscribe();
 

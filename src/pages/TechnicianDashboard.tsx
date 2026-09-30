@@ -2273,8 +2273,9 @@ const TechnicianDashboard = () => {
     let broadcastChannel: ReturnType<typeof supabase.channel> | null = null;
     let jobsRetryTimeout: ReturnType<typeof setTimeout> | null = null;
     let jobsRetryCount = 0;
+    let jobsGeneration = 0;
     const maxRetries = 3;
-    const retryDelay = 2000;
+    const retryDelays = [15_000, 30_000, 60_000];
     const isMounted = { current: true };
     let jobsSubscribed = false;
     let broadcastSubscribed = false;
@@ -2335,16 +2336,23 @@ const TechnicianDashboard = () => {
       }
     };
 
-    const setupJobsChannel = () => {
+    const setupJobsChannel = async () => {
       if (!isMounted.current) return;
+      const myGen = ++jobsGeneration;
+      if (jobsRetryTimeout) {
+        clearTimeout(jobsRetryTimeout);
+        jobsRetryTimeout = null;
+      }
       if (jobsChannel) {
-        try {
-          supabase.removeChannel(jobsChannel);
-        } catch (_) {}
+        const previous = jobsChannel;
         jobsChannel = null;
         jobsSubscribed = false;
         markRealtimeHealth();
+        try {
+          await supabase.removeChannel(previous);
+        } catch (_) {}
       }
+      if (!isMounted.current || myGen !== jobsGeneration) return;
 
       const jobRowChangeOpts = {
         schema: 'public' as const,
@@ -2352,44 +2360,34 @@ const TechnicianDashboard = () => {
         filter: `assigned_technician_id=eq.${technicianId}`,
       };
 
+      const scheduleJobsRetry = () => {
+        if (!isMounted.current || myGen !== jobsGeneration) return;
+        if (jobsRetryTimeout || jobsRetryCount >= maxRetries) return;
+        const wait = retryDelays[jobsRetryCount] ?? 60_000;
+        jobsRetryCount++;
+        jobsRetryTimeout = setTimeout(() => {
+          jobsRetryTimeout = null;
+          void setupJobsChannel();
+        }, wait);
+      };
+
       jobsChannel = supabase
         .channel(`technician-jobs-${technicianId}`)
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', ...jobRowChangeOpts },
-          (payload) => {
-            void handleAssignedJobRowChange(payload as { new: Record<string, unknown> });
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', ...jobRowChangeOpts },
-          (payload) => {
-            void handleAssignedJobRowChange(payload as { new: Record<string, unknown> });
-          }
-        )
+        .on('postgres_changes', { event: '*', ...jobRowChangeOpts }, (payload) => {
+          void handleAssignedJobRowChange(payload as { new: Record<string, unknown> });
+        })
         .subscribe((status, err) => {
-          if (!isMounted.current) return;
-          if (err) {
-            jobsSubscribed = false;
-            markRealtimeHealth();
-            if (jobsRetryCount < maxRetries) {
-              jobsRetryCount++;
-              jobsRetryTimeout = setTimeout(setupJobsChannel, retryDelay);
-            }
-            return;
-          }
+          if (!isMounted.current || myGen !== jobsGeneration) return;
           if (status === 'SUBSCRIBED') {
             jobsRetryCount = 0;
             jobsSubscribed = true;
             markRealtimeHealth();
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            return;
+          }
+          if (err || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             jobsSubscribed = false;
             markRealtimeHealth();
-            if (jobsRetryCount < maxRetries) {
-              jobsRetryCount++;
-              jobsRetryTimeout = setTimeout(setupJobsChannel, retryDelay);
-            }
+            scheduleJobsRetry();
           }
         });
     };
