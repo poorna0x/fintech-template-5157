@@ -304,7 +304,7 @@ export default function JobsMapToolDialog({
     : [];
   const canQuickAssign = selectedJob ? jobsMapCanQuickAssign(selectedJob) : false;
   const bestNext = canQuickAssign ? jobsMapBestNextTech(nearby) : null;
-  const techJobs = selectedTech ? jobsForTechnician(jobs, selectedTech.id) : [];
+  const techJobs = selectedTech ? jobsForTechnician(visibleJobs, selectedTech.id) : [];
   const followupCount = jobs.filter((job) => isJobsMapFollowUpStatus(job.status)).length;
   const ongoingCount = jobs.length - followupCount;
   const unassignedCount = jobs.filter((job) => job.status === 'PENDING' || !job.assigned_technician_id).length;
@@ -566,7 +566,10 @@ export default function JobsMapToolDialog({
     } else {
       const tech = techsRef.current.find((row) => row.id === selection.id);
       if (tech) {
-        for (const job of jobsForTechnician(jobsRef.current, tech.id).slice(0, MAX_TECH_ROUTES)) {
+        for (const job of jobsForTechnician(
+          filterJobsMapJobs(jobsRef.current, filterRef.current),
+          tech.id
+        ).slice(0, MAX_TECH_ROUTES)) {
           pairs.push({
             fromId: tech.id,
             toId: job.id,
