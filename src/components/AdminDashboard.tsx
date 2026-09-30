@@ -3794,6 +3794,52 @@ const AdminDashboard = () => {
     openAdminModal('customer-photos', { customerId: customer.id });
   };
 
+  const openJobsMapCustomerSurface = useCallback(
+    async (jobId: string, surface: 'gallery' | 'report') => {
+      const job =
+        jobs.find((row) => row.id === jobId) || allFollowUpJobs.find((row) => row.id === jobId);
+      const customerId = String(
+        (job as { customer_id?: string | null; customerId?: string | null } | undefined)?.customer_id
+          || (job as { customerId?: string | null } | undefined)?.customerId
+          || ''
+      ).trim();
+      if (!customerId) {
+        toast.error('This job has no customer');
+        return;
+      }
+      let customer = resolveCustomerForModal(customerId);
+      const nested = (job as { customer?: unknown } | undefined)?.customer;
+      if (!customer && nested && typeof nested === 'object') {
+        customer = transformCustomerData(nested);
+      }
+      if (!customer) {
+        const { data, error } = await db.customers.getById(customerId);
+        if (!error && data) customer = transformCustomerData(data);
+      }
+      if (!customer) {
+        toast.error('Could not open this customer');
+        return;
+      }
+      setCustomers((prev) => (prev.some((row) => row.id === customer.id) ? prev : [customer, ...prev]));
+      if (surface === 'gallery') setSelectedCustomerForPhotos(customer);
+      else setSelectedCustomerForReport(customer);
+      navigate(
+        adminDashboardLocation(
+          buildAdminDashboardSearch(
+            {
+              clearTool: true,
+              modal: surface === 'gallery' ? 'customer-photos' : 'report',
+              customerId: customer.id,
+              jobId: null,
+            },
+            location.search
+          )
+        )
+      );
+    },
+    [jobs, allFollowUpJobs, resolveCustomerForModal, navigate, location.search]
+  );
+
   const handleClosePhotoGallery = () => {
     setCustomerPhotoGalleryOpen(false);
     closeAdminModal();
@@ -8316,6 +8362,12 @@ const AdminDashboard = () => {
             setSelectedTechnicianId,
             loadFilteredJobs,
           });
+        }}
+        onOpenGallery={(jobId) => {
+          void openJobsMapCustomerSurface(jobId, 'gallery');
+        }}
+        onOpenReports={(jobId) => {
+          void openJobsMapCustomerSurface(jobId, 'report');
         }}
       />
 
