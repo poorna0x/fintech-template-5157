@@ -12,7 +12,7 @@ const src = fs.readFileSync(
 );
 
 assert.match(src, /function getSharedBrowser/);
-assert.match(src, /SHARED_BROWSER_IDLE_MS/);
+assert.match(src, /__hroSharedPdfBrowser/);
 assert.match(src, /scheduleSharedBrowserIdleClose/);
 assert.match(src, /page\.close\(\)/);
 assert.doesNotMatch(src, /await browser\.close\(\)/);

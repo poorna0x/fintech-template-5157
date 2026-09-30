@@ -260,16 +260,24 @@ async function waitForDocumentImages(page, timeoutMs = 1500) {
   ]);
 }
 
-let sharedBrowserPromise = null;
-let sharedBrowserIdleTimer = null;
 const SHARED_BROWSER_IDLE_MS = 60_000;
+const SHARED_BROWSER_GLOBAL_KEY = '__hroSharedPdfBrowser';
+
+function getSharedBrowserState() {
+  const g = globalThis;
+  if (!g[SHARED_BROWSER_GLOBAL_KEY]) {
+    g[SHARED_BROWSER_GLOBAL_KEY] = { promise: null, idleTimer: null };
+  }
+  return g[SHARED_BROWSER_GLOBAL_KEY];
+}
 
 function scheduleSharedBrowserIdleClose() {
-  if (sharedBrowserIdleTimer) clearTimeout(sharedBrowserIdleTimer);
-  sharedBrowserIdleTimer = setTimeout(() => {
-    sharedBrowserIdleTimer = null;
-    const pending = sharedBrowserPromise;
-    sharedBrowserPromise = null;
+  const state = getSharedBrowserState();
+  if (state.idleTimer) clearTimeout(state.idleTimer);
+  state.idleTimer = setTimeout(() => {
+    state.idleTimer = null;
+    const pending = state.promise;
+    state.promise = null;
     if (!pending) return;
     pending
       .then((browser) => (browser?.isConnected() ? browser.close() : undefined))
@@ -278,24 +286,25 @@ function scheduleSharedBrowserIdleClose() {
 }
 
 async function getSharedBrowser() {
-  if (sharedBrowserIdleTimer) {
-    clearTimeout(sharedBrowserIdleTimer);
-    sharedBrowserIdleTimer = null;
+  const state = getSharedBrowserState();
+  if (state.idleTimer) {
+    clearTimeout(state.idleTimer);
+    state.idleTimer = null;
   }
-  if (sharedBrowserPromise) {
+  if (state.promise) {
     try {
-      const existing = await sharedBrowserPromise;
+      const existing = await state.promise;
       if (existing?.isConnected()) return existing;
     } catch {
       /* relaunch below */
     }
-    sharedBrowserPromise = null;
+    state.promise = null;
   }
-  sharedBrowserPromise = launchBrowser().catch((error) => {
-    sharedBrowserPromise = null;
+  state.promise = launchBrowser().catch((error) => {
+    state.promise = null;
     throw error;
   });
-  return sharedBrowserPromise;
+  return state.promise;
 }
 
 async function renderHtmlToPdf(html, requestOrigin, options = {}) {
