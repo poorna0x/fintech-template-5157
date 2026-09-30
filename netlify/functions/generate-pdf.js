@@ -219,26 +219,26 @@ async function launchBrowser() {
 async function waitForDocumentFonts(page, timeoutMs = 2500) {
   await Promise.race([
     page
-      .evaluate(async () => {
-        if (document.fonts?.ready) {
-          await document.fonts.ready;
-        }
-        const families = ['Poppins', 'Inter'];
-        const weights = [300, 400, 500, 600, 700];
-        for (const family of families) {
-          for (const weight of weights) {
-            try {
-              await document.fonts.load(`${weight} 16px "${family}"`);
-            } catch {
-              /* ignore missing family */
-            }
+    .evaluate(async () => {
+      if (document.fonts?.ready) {
+        await document.fonts.ready;
+      }
+      const families = ['Poppins', 'Inter'];
+      const weights = [300, 400, 500, 600, 700];
+      for (const family of families) {
+        for (const weight of weights) {
+          try {
+            await document.fonts.load(`${weight} 16px "${family}"`);
+          } catch {
+            /* ignore missing family */
           }
         }
-        if (document.fonts?.ready) {
-          await document.fonts.ready;
-        }
-      })
-      .catch(() => undefined),
+      }
+      if (document.fonts?.ready) {
+        await document.fonts.ready;
+      }
+    })
+    .catch(() => undefined),
     new Promise((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
   await new Promise((resolve) => setTimeout(resolve, 300));
@@ -247,81 +247,34 @@ async function waitForDocumentFonts(page, timeoutMs = 2500) {
 async function waitForDocumentImages(page, timeoutMs = 2500) {
   await Promise.race([
     page
-      .evaluate(async () => {
-        const imgs = Array.from(document.images || []);
-        await Promise.all(
-          imgs.map(
-            (img) =>
-              new Promise((resolve) => {
-                if (img.complete) {
-                  resolve();
-                  return;
-                }
-                const done = () => resolve();
-                img.addEventListener('load', done, { once: true });
-                img.addEventListener('error', done, { once: true });
-              })
-          )
-        );
-      })
-      .catch(() => undefined),
+    .evaluate(async () => {
+      const imgs = Array.from(document.images || []);
+      await Promise.all(
+        imgs.map(
+          (img) =>
+            new Promise((resolve) => {
+              if (img.complete) {
+                resolve();
+                return;
+              }
+              const done = () => resolve();
+              img.addEventListener('load', done, { once: true });
+              img.addEventListener('error', done, { once: true });
+            })
+        )
+      );
+    })
+    .catch(() => undefined),
     new Promise((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
   await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
-const SHARED_BROWSER_IDLE_MS = 60_000;
-const SHARED_BROWSER_GLOBAL_KEY = '__hroSharedPdfBrowser';
-
-function getSharedBrowserState() {
-  const g = globalThis;
-  if (!g[SHARED_BROWSER_GLOBAL_KEY]) {
-    g[SHARED_BROWSER_GLOBAL_KEY] = { promise: null, idleTimer: null };
-  }
-  return g[SHARED_BROWSER_GLOBAL_KEY];
-}
-
-function scheduleSharedBrowserIdleClose() {
-  const state = getSharedBrowserState();
-  if (state.idleTimer) clearTimeout(state.idleTimer);
-  state.idleTimer = setTimeout(() => {
-    state.idleTimer = null;
-    const pending = state.promise;
-    state.promise = null;
-    if (!pending) return;
-    pending
-      .then((browser) => (browser?.isConnected() ? browser.close() : undefined))
-      .catch(() => undefined);
-  }, SHARED_BROWSER_IDLE_MS);
-}
-
-async function getSharedBrowser() {
-  const state = getSharedBrowserState();
-  if (state.idleTimer) {
-    clearTimeout(state.idleTimer);
-    state.idleTimer = null;
-  }
-  if (state.promise) {
-    try {
-      const existing = await state.promise;
-      if (existing?.isConnected()) return existing;
-    } catch {
-      /* relaunch below */
-    }
-    state.promise = null;
-  }
-  state.promise = launchBrowser().catch((error) => {
-    state.promise = null;
-    throw error;
-  });
-  return state.promise;
-}
-
 async function renderHtmlToPdf(html, requestOrigin, options = {}) {
-  const browser = await getSharedBrowser();
-  let page;
+  let browser;
   try {
-    page = await browser.newPage();
+    browser = await launchBrowser();
+    const page = await browser.newPage();
 
     await page.setRequestInterception(true);
     page.on('request', (req) => {
@@ -367,10 +320,9 @@ async function renderHtmlToPdf(html, requestOrigin, options = {}) {
     const raw = Buffer.from(pdfBuffer);
     return raw;
   } finally {
-    if (page) {
-      await page.close().catch(() => undefined);
+    if (browser) {
+      await browser.close();
     }
-    scheduleSharedBrowserIdleClose();
   }
 }
 
@@ -449,10 +401,8 @@ exports.handler = async (event) => {
   const filename = sanitizeFilename(body.filename);
 
   try {
-    const [shouldCompress, rawPdf] = await Promise.all([
-      isPdfCompressionEnabled(),
-      renderHtmlToPdf(html, requestOrigin, { filename }),
-    ]);
+    const shouldCompress = await isPdfCompressionEnabled();
+    const rawPdf = await renderHtmlToPdf(html, requestOrigin, { filename });
     // Never run iLovePDF here. Production Chromium usually uses the whole 26s
     // budget; leftover-time compress fails and used to skip the follow-up.
     // Local Chromium is fast, so the same function appeared to "work".
