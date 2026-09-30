@@ -786,10 +786,6 @@ export default function JobsMapToolDialog({
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : null}
-            <div className="pointer-events-none absolute bottom-3 left-3 z-20 max-w-[min(100%,16rem)] rounded-lg bg-white/90 px-2.5 py-2 text-[11px] leading-5 text-foreground shadow-sm">
-              <p>P unassigned · A assigned · F follow-up</p>
-              <p>Photos are technicians · faded = stale GPS</p>
-            </div>
           </div>
 
           <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden border-t md:order-1 md:w-[min(100%,22rem)] md:flex-none md:border-r md:border-t-0">
