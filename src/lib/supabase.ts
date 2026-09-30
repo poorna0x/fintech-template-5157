@@ -1877,7 +1877,7 @@ export const db = {
       if (!error) {
         cacheInvalidate('job_counts_v1');
         if ((job as { status?: string })?.status === 'COMPLETED') {
-          cacheInvalidate('completed_customers_map_v1');
+          cacheInvalidate('completed_customers_map');
           queueSyncCustomerLastServiceDate(
             (job as { customer_id?: string }).customer_id ||
               (data as { customer_id?: string } | null)?.customer_id
@@ -2731,7 +2731,7 @@ export const db = {
           });
         cacheInvalidate('job_counts_v1');
         if ((updates as { status?: string }).status !== undefined) {
-          cacheInvalidate('completed_customers_map_v1');
+          cacheInvalidate('completed_customers_map');
         }
         if (jobChangeAffectsLastService(updates)) {
           const cid = (updates as { customer_id?: string }).customer_id;
@@ -2759,7 +2759,7 @@ export const db = {
         
         cacheInvalidate('job_counts_v1');
         if ((updates as { status?: string }).status !== undefined) {
-          cacheInvalidate('completed_customers_map_v1');
+          cacheInvalidate('completed_customers_map');
         }
         if (jobChangeAffectsLastService(updates)) {
           queueSyncCustomerLastServiceDate(
@@ -3013,7 +3013,7 @@ export const db = {
 
       if (!rpcError) {
         cacheInvalidate('job_counts_v1');
-        cacheInvalidate('completed_customers_map_v1');
+        cacheInvalidate('completed_customers_map');
         queueSyncCustomerLastServiceDate(deletedCustomerId);
         return { data: null, error: null };
       }
@@ -3036,7 +3036,7 @@ export const db = {
       const { error } = await supabase.from('jobs').delete().eq('id', id);
       if (!error) {
         cacheInvalidate('job_counts_v1');
-        cacheInvalidate('completed_customers_map_v1');
+        cacheInvalidate('completed_customers_map');
         queueSyncCustomerLastServiceDate(deletedCustomerId);
       }
       return { data: null, error };
@@ -8983,44 +8983,75 @@ function mapFromCustomerIdRows(rows: { customer_id?: string | null }[] | null): 
   return map;
 }
 
+/** Visible-card probe: which of these UUIDs already have a COMPLETED job. */
+export async function fetchCompletedCustomerIdFlags(
+  customerIds: string[]
+): Promise<Record<string, boolean>> {
+  const ids = [...new Set(customerIds.filter(Boolean))];
+  const map: Record<string, boolean> = {};
+  if (ids.length === 0) return map;
+  const CHUNK = 80;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('customer_id')
+      .eq('status', 'COMPLETED')
+      .in('customer_id', chunk);
+    if (error) {
+      console.warn('[fetchCompletedCustomerIdFlags]', error.message);
+      break;
+    }
+    Object.assign(map, mapFromCustomerIdRows(data as { customer_id: string | null }[]));
+  }
+  return map;
+}
+
 /** Customer UUID → true if they have at least one COMPLETED job (returning / prior service). */
 export async function fetchCustomerIdsWithCompletedJobsMap(): Promise<Record<string, boolean>> {
-  const cacheKey = 'completed_customers_map_v1';
+  const cacheKey = 'completed_customers_map_v2';
   const hit = cacheGet<Record<string, boolean>>(cacheKey);
   if (hit) return hit;
 
-  // Prefer DISTINCT in Postgres (one row per customer) vs paginating every completed job.
+  const POSTGREST_MAX_ROWS = 1000;
+
   const { data: distinctRows, error: distinctError } = await supabase.rpc(
     'get_distinct_completed_customer_ids'
   );
-
-  if (!distinctError && distinctRows) {
+  // PostgREST caps RPC results at 1000. 1772+ serviced customers were truncated.
+  if (
+    !distinctError &&
+    Array.isArray(distinctRows) &&
+    distinctRows.length > 0 &&
+    distinctRows.length < POSTGREST_MAX_ROWS
+  ) {
     const map = mapFromCustomerIdRows(distinctRows as { customer_id: string }[]);
     cacheSet(cacheKey, map, 120_000);
     return map;
   }
-
   if (distinctError && !isRpcNotFoundError(distinctError)) {
     console.warn('[fetchCustomerIdsWithCompletedJobsMap] distinct RPC failed:', distinctError);
   }
 
-  // Calling page RPC: still one row per customer (more columns, less egress than full job scan).
-  if (!distinctError || isRpcNotFoundError(distinctError)) {
-    const { data: lastPerCustomer, error: lastError } = await supabase.rpc(
-      'get_last_completed_job_per_customer'
-    );
-    if (!lastError && lastPerCustomer) {
-      const map = mapFromCustomerIdRows(lastPerCustomer as { customer_id: string }[]);
-      cacheSet(cacheKey, map, 120_000);
-      return map;
-    }
-    if (lastError && !isRpcNotFoundError(lastError) && import.meta.env.DEV) {
-      console.warn('[fetchCustomerIdsWithCompletedJobsMap] last-job RPC failed:', lastError);
-    }
+  const { data: lastPerCustomer, error: lastError } = await supabase.rpc(
+    'get_last_completed_job_per_customer'
+  );
+  if (
+    !lastError &&
+    Array.isArray(lastPerCustomer) &&
+    lastPerCustomer.length > 0 &&
+    lastPerCustomer.length < POSTGREST_MAX_ROWS
+  ) {
+    const map = mapFromCustomerIdRows(lastPerCustomer as { customer_id: string }[]);
+    cacheSet(cacheKey, map, 120_000);
+    return map;
+  }
+  if (lastError && !isRpcNotFoundError(lastError) && import.meta.env.DEV) {
+    console.warn('[fetchCustomerIdsWithCompletedJobsMap] last-job RPC failed:', lastError);
   }
 
   const map: Record<string, boolean> = {};
-  const pageSize = 2500;
+  const jobPageSize = 2500;
   let from = 0;
   for (;;) {
     const { data, error } = await supabase
@@ -9028,7 +9059,7 @@ export async function fetchCustomerIdsWithCompletedJobsMap(): Promise<Record<str
       .select('customer_id')
       .eq('status', 'COMPLETED')
       .not('customer_id', 'is', null)
-      .range(from, from + pageSize - 1);
+      .range(from, from + jobPageSize - 1);
 
     if (error) {
       console.warn('[fetchCustomerIdsWithCompletedJobsMap] paginated fallback failed:', error);
@@ -9037,8 +9068,8 @@ export async function fetchCustomerIdsWithCompletedJobsMap(): Promise<Record<str
     if (!data?.length) break;
 
     Object.assign(map, mapFromCustomerIdRows(data as { customer_id: string | null }[]));
-    if (data.length < pageSize) break;
-    from += pageSize;
+    if (data.length < jobPageSize) break;
+    from += jobPageSize;
   }
   cacheSet(cacheKey, map, 120_000);
   return map;

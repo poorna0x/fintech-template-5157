@@ -185,7 +185,7 @@ export async function invalidateAdminDashboardCaches(): Promise<void> {
   try {
     const { cacheInvalidate } = await import('./supabaseQueryCache');
     cacheInvalidate('job_counts_v1');
-    cacheInvalidate('completed_customers_map_v1');
+    cacheInvalidate('completed_customers_map');
   } catch {
     /* ignore */
   }

@@ -76,12 +76,13 @@ import {
   ShoppingCart,
   Lock
 } from 'lucide-react';
-import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
+import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, fetchCompletedCustomerIdFlags, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
 import { preloadDocumentGeneratorModals, scheduleDocumentGeneratorPreload } from '@/lib/document-generator-preload';
 import { registerAdminPWA } from '@/lib/pwa';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { saveAdminCompletedJobEdit } from '@/lib/adminSaveCompletedJobEdit';
 import { transformCustomerData, transformTechnicianData } from '@/lib/adminDashboardTransforms';
+import { queueSyncCustomerLastServiceDate } from '@/lib/customerLastService';
 import {
   followUpDateToStr,
   getJobCompletionDate,
@@ -2356,6 +2357,7 @@ const AdminDashboard = () => {
             const { data: completedRows } = await db.jobs.getByCustomerIdForReport(customerUuid);
             if (completedRows?.length) {
               setCustomerPriorServiceStatus((prev) => ({ ...prev, [customerUuid]: true }));
+              queueSyncCustomerLastServiceDate(customerUuid);
               setCustomers((prev) =>
                 prev.map((row) =>
                   row.id === customerUuid
@@ -4844,6 +4846,21 @@ const AdminDashboard = () => {
 
         const results = Array.from(customerMap.values()).map((row) => transformCustomerData(row));
         setSearchResults(results);
+        void (async () => {
+          const fromRow: Record<string, boolean> = {};
+          const missing: string[] = [];
+          for (const c of results) {
+            if (!c.id || !String(c.id).includes('-')) continue;
+            if (c.lastServiceDate || (c as { last_service_date?: string }).last_service_date) {
+              fromRow[c.id] = true;
+            } else {
+              missing.push(c.id);
+            }
+          }
+          const fromJobs = missing.length ? await fetchCompletedCustomerIdFlags(missing) : {};
+          if (!Object.keys(fromRow).length && !Object.keys(fromJobs).length) return;
+          setCustomerPriorServiceStatus((prev) => ({ ...prev, ...fromRow, ...fromJobs }));
+        })();
 
         if (jobHits?.length) {
           setJobs((prev) => {
