@@ -87,6 +87,27 @@ export default function JobDistanceMeasurementDialog({
     !customDistanceToId ||
     customDistanceFromId === customDistanceToId;
 
+  const HOLD_MS = 3000;
+  const holdTimerRef = React.useRef<number | null>(null);
+  const holdRafRef = React.useRef<number | null>(null);
+  const holdStartRef = React.useRef<{ x: number; y: number; t: number } | null>(null);
+  const [holdProgress, setHoldProgress] = React.useState(0);
+
+  const clearHold = React.useCallback(() => {
+    if (holdTimerRef.current != null) window.clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = null;
+    if (holdRafRef.current != null) cancelAnimationFrame(holdRafRef.current);
+    holdRafRef.current = null;
+    holdStartRef.current = null;
+    setHoldProgress(0);
+  }, []);
+
+  React.useEffect(() => () => clearHold(), [clearHold]);
+
+  React.useEffect(() => {
+    if (!open) clearHold();
+  }, [open, clearHold]);
+
   React.useEffect(() => {
     if (!open || !onRefreshLiveLocation) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -102,6 +123,42 @@ export default function JobDistanceMeasurementDialog({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onRefreshLiveLocation, busy]);
+
+  const beginLiveHold = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!onRefreshLiveLocation || busy || e.button !== 0) return;
+    clearHold();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    const started = performance.now();
+    holdStartRef.current = { x: e.clientX, y: e.clientY, t: started };
+    const tick = () => {
+      const start = holdStartRef.current;
+      if (!start) return;
+      const p = Math.min(1, (performance.now() - start.t) / HOLD_MS);
+      setHoldProgress(p);
+      if (p < 1) holdRafRef.current = requestAnimationFrame(tick);
+    };
+    holdRafRef.current = requestAnimationFrame(tick);
+    holdTimerRef.current = window.setTimeout(() => {
+      holdTimerRef.current = null;
+      if (holdRafRef.current != null) cancelAnimationFrame(holdRafRef.current);
+      holdRafRef.current = null;
+      holdStartRef.current = null;
+      setHoldProgress(0);
+      onRefreshLiveLocation();
+    }, HOLD_MS);
+  };
+
+  const moveLiveHold = (e: React.PointerEvent<HTMLDivElement>) => {
+    const start = holdStartRef.current;
+    if (!start || holdTimerRef.current == null) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (dx * dx + dy * dy > 144) clearHold();
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -135,13 +192,18 @@ export default function JobDistanceMeasurementDialog({
                 {technicianDistances.map((item) => (
                   <div
                     key={item.technician.id}
-                    className={`p-4 border rounded-lg ${
+                    className={`relative overflow-hidden p-4 border rounded-lg select-none ${
                       item.isAssigned
                         ? 'border-blue-500 bg-blue-50 hover:bg-blue-100'
                         : item.hasLocation && item.distance
                           ? 'border-gray-200 hover:border-blue-300 bg-white'
                           : 'border-gray-100 bg-gray-50'
                     }`}
+                    onContextMenu={item.isAssigned ? (e) => e.preventDefault() : undefined}
+                    onPointerDown={item.isAssigned ? beginLiveHold : undefined}
+                    onPointerMove={item.isAssigned ? moveLiveHold : undefined}
+                    onPointerUp={item.isAssigned ? clearHold : undefined}
+                    onPointerCancel={item.isAssigned ? clearHold : undefined}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
@@ -246,6 +308,14 @@ export default function JobDistanceMeasurementDialog({
                         )}
                       </div>
                     </div>
+                    {item.isAssigned && holdProgress > 0 && (
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-blue-200">
+                        <div
+                          className="h-full bg-blue-600"
+                          style={{ width: `${holdProgress * 100}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
