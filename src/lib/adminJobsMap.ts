@@ -282,6 +282,39 @@ export function parseJobsMapLastLocation(row: unknown): JobsMapLastLoc | null {
   return { id, lat: last.lat, lng: last.lng, updatedAt };
 }
 
+function jobsMapPinTime(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  const time = new Date(iso).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+/**
+ * Same pin as Technician location / measure distance: the live GPS row, unless
+ * technicians.current_location was written later (that is what a live-location
+ * refresh saves).
+ */
+export function pickJobsMapTechLocation(
+  live: { lat: number; lng: number; updatedAt: string | null; isTracking: boolean } | null,
+  last: { lat: number; lng: number; updatedAt: string | null } | null
+): { lat: number; lng: number; updatedAt: string | null; source: 'live' | 'last'; isTracking: boolean } | null {
+  if (live && last && jobsMapPinTime(last.updatedAt) > jobsMapPinTime(live.updatedAt)) {
+    return { lat: last.lat, lng: last.lng, updatedAt: last.updatedAt, source: 'last', isTracking: false };
+  }
+  if (live) {
+    return {
+      lat: live.lat,
+      lng: live.lng,
+      updatedAt: live.updatedAt,
+      source: 'live',
+      isTracking: live.isTracking,
+    };
+  }
+  if (last) {
+    return { lat: last.lat, lng: last.lng, updatedAt: last.updatedAt, source: 'last', isTracking: false };
+  }
+  return null;
+}
+
 export function buildJobsMapTechs(
   technicians: Technician[],
   liveRows: JobsMapLiveRow[],
@@ -295,19 +328,6 @@ export function buildJobsMapTechs(
     if (!isActiveTechnicianAccount(tech)) continue;
     const live = liveById.get(tech.id);
     const fromLive = liveCoords(live);
-    if (fromLive) {
-      out.push({
-        id: tech.id,
-        name: techDisplayName(tech),
-        lat: fromLive.lat,
-        lng: fromLive.lng,
-        source: 'live',
-        updatedAt: fromLive.updatedAt,
-        isTracking: Boolean(live?.is_tracking),
-        photo: techPhoto(tech),
-      });
-      continue;
-    }
     const fallback = lastById.get(tech.id);
     const last =
       fallback ||
@@ -327,15 +347,21 @@ export function buildJobsMapTechs(
             : null;
         return { id: tech.id, lat: coords.lat, lng: coords.lng, updatedAt };
       })();
-    if (!last) continue;
+    const picked = pickJobsMapTechLocation(
+      fromLive
+        ? { lat: fromLive.lat, lng: fromLive.lng, updatedAt: fromLive.updatedAt, isTracking: Boolean(live?.is_tracking) }
+        : null,
+      last
+    );
+    if (!picked) continue;
     out.push({
       id: tech.id,
       name: techDisplayName(tech),
-      lat: last.lat,
-      lng: last.lng,
-      source: 'last',
-      updatedAt: last.updatedAt,
-      isTracking: false,
+      lat: picked.lat,
+      lng: picked.lng,
+      source: picked.source,
+      updatedAt: picked.updatedAt,
+      isTracking: picked.isTracking,
       photo: techPhoto(tech),
     });
   }

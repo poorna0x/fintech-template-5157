@@ -237,6 +237,26 @@ describe('jobsMap last-known GPS', () => {
     });
   });
 
+  it('uses the newer current_location pin when a live-location refresh is later than the GPS row', () => {
+    const placed = buildJobsMapTechs(
+      [{ id: 't1', fullName: 'Srujan', account_status: 'ACTIVE', photo: null } as never],
+      [
+        {
+          technician_id: 't1',
+          latitude: 12.9,
+          longitude: 77.6,
+          is_tracking: true,
+          updated_at: '2026-09-30T12:00:00.000Z',
+          fix_time: '2026-09-30T12:00:00.000Z',
+        },
+      ],
+      [{ id: 't1', lat: 12.97, lng: 77.64, updatedAt: '2026-09-30T13:10:00.000Z' }]
+    );
+    expect(placed[0].lat).toBe(12.97);
+    expect(placed[0].lng).toBe(77.64);
+    expect(placed[0].source).toBe('last');
+  });
+
   it('places a technician from last-known GPS when there is no live row', () => {
     const placed = buildJobsMapTechs(
       [

@@ -42,6 +42,7 @@ import {
   mergeJobsMapLiveRows,
   nearestTechsForJob,
   parseJobsMapJobs,
+  parseJobsMapLastLocation,
   searchJobsMapJobs,
   techsNearJobs,
   visibleTechsForJobsMap,
@@ -386,6 +387,15 @@ export default function JobsMapToolDialog({
         (payload) => {
           const incoming = payload.eventType === 'DELETE' ? payload.old : payload.new;
           setLiveRows((prev) => mergeJobsMapLiveRows(prev, incoming, payload.eventType));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'technicians' },
+        (payload) => {
+          const parsed = parseJobsMapLastLocation(payload.new);
+          if (!parsed) return;
+          setLastKnown((prev) => [...prev.filter((row) => row.id !== parsed.id), parsed]);
         }
       )
       .subscribe((status) => {
