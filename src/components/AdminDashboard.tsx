@@ -3795,11 +3795,12 @@ const AdminDashboard = () => {
   };
 
   const openJobsMapCustomerSurface = useCallback(
-    async (jobId: string, surface: 'gallery' | 'report') => {
+    async (jobId: string, customerIdFromMap: string | null, surface: 'gallery' | 'report') => {
       const job =
         jobs.find((row) => row.id === jobId) || allFollowUpJobs.find((row) => row.id === jobId);
       const customerId = String(
-        (job as { customer_id?: string | null; customerId?: string | null } | undefined)?.customer_id
+        customerIdFromMap
+          || (job as { customer_id?: string | null; customerId?: string | null } | undefined)?.customer_id
           || (job as { customerId?: string | null } | undefined)?.customerId
           || ''
       ).trim();
@@ -8363,11 +8364,11 @@ const AdminDashboard = () => {
             loadFilteredJobs,
           });
         }}
-        onOpenGallery={(jobId) => {
-          void openJobsMapCustomerSurface(jobId, 'gallery');
+        onOpenGallery={(jobId, customerId) => {
+          void openJobsMapCustomerSurface(jobId, customerId, 'gallery');
         }}
-        onOpenReports={(jobId) => {
-          void openJobsMapCustomerSurface(jobId, 'report');
+        onOpenReports={(jobId, customerId) => {
+          void openJobsMapCustomerSurface(jobId, customerId, 'report');
         }}
       />
 

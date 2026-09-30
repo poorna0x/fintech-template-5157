@@ -157,8 +157,8 @@ type Props = {
   initialFollowUpJobs?: unknown[];
   onAssignJob?: (jobId: string) => void;
   onAssignNearest?: (jobId: string, technicianId: string) => Promise<boolean | void>;
-  onOpenGallery?: (jobId: string) => void;
-  onOpenReports?: (jobId: string) => void;
+  onOpenGallery?: (jobId: string, customerId: string | null) => void;
+  onOpenReports?: (jobId: string, customerId: string | null) => void;
 };
 
 function agoLabel(iso: string | null): string {
@@ -308,6 +308,7 @@ export default function JobsMapToolDialog({
   const jobsRef = useRef(jobs);
   const techsRef = useRef<JobsMapTech[]>([]);
   const selectionRef = useRef(selection);
+  const listScrollRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef(filter);
   const queryRef = useRef(query);
   const techniciansRef = useRef(technicians);
@@ -334,6 +335,10 @@ export default function JobsMapToolDialog({
     [visibleJobs, techs]
   );
   const selectedJob = selection?.kind === 'job' ? jobs.find((job) => job.id === selection.id) || null : null;
+  useEffect(() => {
+    if (!selectedJob) return;
+    listScrollRef.current?.scrollTo({ top: 0 });
+  }, [selectedJob]);
   const selectedTech = selection?.kind === 'tech' ? techs.find((tech) => tech.id === selection.id) || null : null;
   const nearby = selectedJob
     ? nearestTechsForJob(selectedJob, visibleTechs).filter((tech) => tech.isAssigned || tech.distance_m <= 40_000)
@@ -829,6 +834,8 @@ export default function JobsMapToolDialog({
           </div>
 
           <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden border-t md:order-1 md:w-[min(100%,22rem)] md:flex-none md:border-r md:border-t-0">
+            {selectedJob ? null : (
+            <>
             <div className="flex shrink-0 flex-wrap gap-1.5 border-b px-3 py-2">
               {FILTERS.map((item) => (
                 <button
@@ -894,8 +901,10 @@ export default function JobsMapToolDialog({
                 })}
               </div>
             ) : null}
+            </>
+            )}
 
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto">
             {selectedJob ? (
               <div className="space-y-3 border-b px-3 py-3">
                 <div className="flex items-start justify-between gap-2">
@@ -923,7 +932,7 @@ export default function JobsMapToolDialog({
                     type="button"
                     variant="outline"
                     className="h-11 cursor-pointer"
-                    onClick={() => onOpenGallery?.(selectedJob.id)}
+                    onClick={() => onOpenGallery?.(selectedJob.id, selectedJob.customer_id)}
                   >
                     <Images className="mr-1.5 h-4 w-4" />
                     Gallery
@@ -932,7 +941,7 @@ export default function JobsMapToolDialog({
                     type="button"
                     variant="outline"
                     className="h-11 cursor-pointer"
-                    onClick={() => onOpenReports?.(selectedJob.id)}
+                    onClick={() => onOpenReports?.(selectedJob.id, selectedJob.customer_id)}
                   >
                     <FileText className="mr-1.5 h-4 w-4" />
                     Reports
