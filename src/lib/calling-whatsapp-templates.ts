@@ -13,6 +13,7 @@ import { resolveColdMissedCall } from '@/lib/whatsappUtilityTemplates';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 
 export type CallingWhatsAppTemplate =
+  | 'filter_due'
   | 'service_due'
   | 'easy_booking'
   | 'missed_call'
@@ -22,6 +23,7 @@ export type CallingWhatsAppTemplate =
   | 'custom';
 
 export const CALLING_WA_TEMPLATE_ORDER: CallingWhatsAppTemplate[] = [
+  'filter_due',
   'service_due',
   'easy_booking',
   'missed_call',
@@ -35,6 +37,10 @@ export const CALLING_WA_TEMPLATE_META: Record<
   CallingWhatsAppTemplate,
   { label: string; description: string }
 > = {
+  filter_due: {
+    label: 'Filter due',
+    description: 'Names the filter that is due from the last visit',
+  },
   service_due: {
     label: 'Service due',
     description: 'Friendly reminder when service is due',
@@ -142,6 +148,34 @@ function serviceTypeLabel(ctx: CallingMessageContext): string {
   return 'RO service';
 }
 
+/** Which consumable is likely due from days since the last completed visit. */
+export function suggestCallingFilterDue(days?: number | null): {
+  due: boolean;
+  part: string;
+  whenLabel: string;
+  badge: string;
+} {
+  if (days == null || days < 90) {
+    return { due: false, part: 'service', whenLabel: 'your next RO service', badge: '' };
+  }
+  if (days >= 365) {
+    return { due: true, part: 'RO membrane', whenLabel: 'RO membrane service', badge: 'Membrane due' };
+  }
+  if (days >= 180) {
+    return {
+      due: true,
+      part: 'carbon filter',
+      whenLabel: 'carbon filter service',
+      badge: 'Carbon due',
+    };
+  }
+  return { due: true, part: 'prefilter', whenLabel: 'prefilter replacement', badge: 'Prefilter due' };
+}
+
+export function filterDueColdTemplateName(documentBrand: DocumentBrand): string {
+  return documentBrand === 'elevenro' ? 'filter_due_notice_ero_v1' : 'filter_due_notice_hro_v1';
+}
+
 export function buildCallingWhatsAppMessage(
   ctx: CallingMessageContext,
   template: CallingWhatsAppTemplate,
@@ -155,6 +189,31 @@ export function buildCallingWhatsAppMessage(
   const device = deviceLine(ctx);
 
   switch (template) {
+    case 'filter_due': {
+      const due = suggestCallingFilterDue(ctx.daysSinceService);
+      const lines = [
+        `Hi ${name},`,
+        `This is an update from ${brandName} regarding your water purifier.`,
+        '',
+        `Your ${due.part} is due.`,
+      ];
+      if (ctx.daysSinceService != null && ctx.daysSinceService > 0) {
+        lines.push(
+          `It's been about ${formatDaysAgo(ctx.daysSinceService)} since your last ${serviceTypeLabel(ctx).toLowerCase()}.`
+        );
+      }
+      lines.push(
+        '',
+        'Changing it on time keeps the water safe and protects the purifier.',
+        ...(device ? ['', device] : []),
+        '',
+        ...brandExistingCustomerBookLines(documentBrand),
+        '',
+        ...brandLetterClosingLines(documentBrand, { skipChatHint: true })
+      );
+      return lines.join('\n');
+    }
+
     case 'service_due': {
       const lines = [
         `Hi ${name},`,
@@ -291,6 +350,14 @@ export function callingColdTemplateFor(
   const when =
     String(whenLabel || '').trim() ||
     'your upcoming visit';
+  if (template === 'filter_due') {
+    const part = String(whenLabel || '').trim() || 'filter replacement';
+    return {
+      name: filterDueColdTemplateName(documentBrand),
+      languageCode: 'en',
+      bodyParams: [name, part],
+    };
+  }
   if (template === 'service_due') {
     // Prefer letter v4 (Book now QR) → v3 → … via cold fallback.
     return {

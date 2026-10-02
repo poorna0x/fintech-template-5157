@@ -172,11 +172,11 @@ export async function sendCallingWhatsAppOne(opts: {
     (approved == null ||
       approved.size === 0 ||
       approved.has(coldName.toLowerCase()) ||
-      (opts.template === 'service_due' &&
+      ((opts.template === 'service_due' || opts.template === 'filter_due') &&
         serviceDueFallbacks.some((n) => approved.has(n.toLowerCase()))));
 
   const seedPending =
-    opts.template === 'service_due' || opts.template === 'easy_booking'
+    opts.template === 'service_due' || opts.template === 'easy_booking' || opts.template === 'filter_due'
       ? 'book_service'
       : null;
   const inboundAt = await fetchLastInboundAt(to, supabase);

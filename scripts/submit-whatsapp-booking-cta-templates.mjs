@@ -10,7 +10,7 @@
  *   node scripts/submit-whatsapp-booking-cta-templates.mjs --submit
  *   node scripts/submit-whatsapp-booking-cta-templates.mjs --submit --only-existing
  *   node scripts/submit-whatsapp-booking-cta-templates.mjs --submit --only-missed-call
- *   node scripts/submit-whatsapp-booking-cta-templates.mjs --submit --only-new-customer
+ *   node scripts/submit-whatsapp-booking-cta-templates.mjs --submit --only-filter-due
  */
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -31,6 +31,7 @@ const doSubmit = process.argv.includes('--submit');
 const onlyExisting = process.argv.includes('--only-existing');
 const onlyMissedCall = process.argv.includes('--only-missed-call');
 const onlyNewCustomer = process.argv.includes('--only-new-customer');
+const onlyFilterDue = process.argv.includes('--only-filter-due');
 const { eleven: CALL_PHONE_ELEVEN, hydrogen: CALL_PHONE_HYDROGEN } = resolveWhatsAppCallPhones();
 
 const DELETE_BY_FLAG = {
@@ -124,6 +125,22 @@ const ALL_TEMPLATES = [
     body: 'Hi {{1}}, your Hydrogen RO visit is set for {{2}}. To reschedule, reply on this chat or use Call / Book online below.',
     examples: ['Rahul', 'Mon 12 Aug, 10:00 AM'],
   },
+  {
+    name: 'filter_due_notice_ero_v1',
+    kind: 'filterDue',
+    brand: 'Eleven RO',
+    bookUrl: 'https://elevenro.com/book',
+    body: 'Hi {{1}}, this is Eleven RO. Our records show your {{2}} can be scheduled. Please reply BOOK on this chat to confirm a convenient time, or use Call / Book below for assistance.',
+    examples: ['Rahul', 'prefilter replacement'],
+  },
+  {
+    name: 'filter_due_notice_hro_v1',
+    kind: 'filterDue',
+    brand: 'Hydrogen RO',
+    bookUrl: 'https://hydrogenro.com/book',
+    body: 'Hi {{1}}, this is Hydrogen RO. Our records show your {{2}} can be scheduled. Please reply BOOK on this chat to confirm a convenient time, or use Call / Book below for assistance.',
+    examples: ['Rahul', 'prefilter replacement'],
+  },
 ];
 
 let TEMPLATES = ALL_TEMPLATES;
@@ -141,7 +158,10 @@ let DELETE_NAMES = [
   'customer_update_notice_cta',
   'amc_renewal',
 ];
-if (onlyExisting) {
+if (onlyFilterDue) {
+  TEMPLATES = ALL_TEMPLATES.filter((t) => t.kind === 'filterDue');
+  DELETE_NAMES = [];
+} else if (onlyExisting) {
   TEMPLATES = ALL_TEMPLATES.filter((t) => t.kind === 'existing');
   DELETE_NAMES = DELETE_BY_FLAG.existing;
 } else if (onlyMissedCall) {
@@ -204,7 +224,9 @@ async function submitOne(payload) {
 }
 
 async function main() {
-  const mode = onlyExisting
+  const mode = onlyFilterDue
+    ? 'filter-due-only'
+    : onlyExisting
     ? 'existing-only'
     : onlyMissedCall
       ? 'missed-call-only'
@@ -242,7 +264,7 @@ async function main() {
 
   if (!doSubmit) {
     console.log(
-      'Dry-run. Example: node scripts/submit-whatsapp-booking-cta-templates.mjs --submit --only-new-customer'
+      'Dry-run. Example: node scripts/submit-whatsapp-booking-cta-templates.mjs --submit --only-filter-due'
     );
   }
 }

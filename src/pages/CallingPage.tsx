@@ -57,6 +57,7 @@ import {
   callingContextFromCustomer,
   CALLING_WA_TEMPLATE_META,
   CALLING_WA_TEMPLATE_ORDER,
+  suggestCallingFilterDue,
   type CallingWhatsAppTemplate,
 } from '@/lib/calling-whatsapp-templates';
 import type { DocumentBrand } from '@/lib/service-brands';
@@ -1113,6 +1114,36 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           </Card>
         </div>
 
+        <div className="flex gap-1.5 overflow-x-auto pb-3 sm:pb-4 -mx-1 px-1">
+          {(
+            [
+              { id: '3months', label: 'Prefilter due' },
+              { id: '6months', label: 'Carbon due' },
+              { id: '1year', label: 'Membrane due' },
+            ] as const
+          ).map((chip) => {
+            const on = serviceFilter === chip.id;
+            return (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => {
+                  setServiceFilter(on ? 'all' : chip.id);
+                  setCurrentPage(1);
+                }}
+                className={cn(
+                  'h-9 shrink-0 rounded-full border px-3 text-xs font-medium touch-manipulation',
+                  on
+                    ? 'border-foreground bg-foreground text-background'
+                    : 'border-border bg-card text-muted-foreground hover:bg-muted/70'
+                )}
+              >
+                {chip.label}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Customer List */}
         <div className="space-y-2 sm:space-y-3">
           {totalCount === 0 && !listLoading ? (
@@ -1221,6 +1252,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
               {pageRows.map((customer) => {
                 const serviceDays = customer.daysSinceService;
+                const filterDue = suggestCallingFilterDue(serviceDays);
                 const recentlyContacted =
                   customer.daysSinceContact != null &&
                   customer.daysSinceContact < recentContactDays;
@@ -1299,6 +1331,11 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                               <span className="hidden sm:inline">{formatDaysAgo(serviceDays)}</span>
                             </span>
                           )}
+                          {filterDue.badge ? (
+                            <span className="shrink-0 rounded bg-violet-600 px-1 py-px text-[9px] font-medium text-white whitespace-nowrap">
+                              {filterDue.badge}
+                            </span>
+                          ) : null}
                         </span>
                       </div>
 
@@ -1438,6 +1475,14 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           primaryPhone={selectedCustomerForWhatsApp.phone}
           alternatePhone={selectedCustomerForWhatsApp.alternatePhone}
           source="calling"
+          defaultTemplate={
+            suggestCallingFilterDue(selectedCustomerForWhatsApp.daysSinceService).due
+              ? 'filter_due'
+              : 'service_due'
+          }
+          serviceWhenLabel={
+            suggestCallingFilterDue(selectedCustomerForWhatsApp.daysSinceService).whenLabel
+          }
           messageContext={waMessageContext || undefined}
           onSent={async ({ phone, message }) => {
             await recordCall(
@@ -1460,6 +1505,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           if (!open) setBulkQueue([]);
         }}
         customers={bulkQueue}
+        defaultTemplate={serviceFilter === 'all' ? 'service_due' : 'filter_due'}
         onRecordSent={async (customerId, phone, message) => {
           await recordCall(customerId, 'WHATSAPP', phone, message, 'COMPLETED', undefined, {
             quiet: true,

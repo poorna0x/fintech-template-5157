@@ -429,6 +429,16 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(VISIT, [name, when]);
   }
 
+  // Filter-due notice → service-due letter. Same {{1}} name and {{2}} what is due.
+  if (/^filter_due_notice_(ero|hro)_v1$/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    const part = String(bodyParams?.[1] || '').trim() || 'filter replacement';
+    push(`svc_service_due_letter_${suffix}_v4`, [name, part]);
+    push(`svc_service_due_letter_${suffix}_v3`, [name, part]);
+    push(`svc_service_due_${suffix}_cta_v2`, [name, part]);
+    push(VISIT, [name, part]);
+  }
+
   // Service-due Book-only CTA v2 → v1 → schedule CTA → visit reminder
   if (/^svc_service_due_(ero|hro)_cta(_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';

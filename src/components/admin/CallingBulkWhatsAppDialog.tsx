@@ -36,6 +36,7 @@ import {
   callingContextFromCustomer,
   CALLING_WA_TEMPLATE_META,
   CALLING_WA_TEMPLATE_ORDER,
+  suggestCallingFilterDue,
   type CallingWhatsAppTemplate,
 } from '@/lib/calling-whatsapp-templates';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
@@ -53,6 +54,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   customers: CallingBulkCustomer[];
+  defaultTemplate?: CallingWhatsAppTemplate;
   onRecordSent: (customerId: string, phone: string, message: string) => Promise<void>;
 };
 
@@ -62,6 +64,7 @@ export default function CallingBulkWhatsAppDialog({
   open,
   onOpenChange,
   customers,
+  defaultTemplate = 'service_due',
   onRecordSent,
 }: Props) {
   const { cloudApiOn } = useWhatsAppCloudApiGate('calling');
@@ -90,7 +93,7 @@ export default function CallingBulkWhatsAppDialog({
       setRows([]);
       setCurrentIndex(0);
       setDraftTouched(false);
-      setTemplate('service_due');
+      setTemplate(defaultTemplate);
       setBrandMode('auto');
       pauseRef.current = false;
       stopRef.current = false;
@@ -103,7 +106,7 @@ export default function CallingBulkWhatsAppDialog({
     setDraft(
       buildCallingWhatsAppMessage(callingContextFromCustomer(sample as any), template, brand)
     );
-  }, [open, sample, template, brandMode, draftTouched]);
+  }, [open, sample, template, brandMode, draftTouched, defaultTemplate]);
 
   const selectableWithPhone = useMemo(
     () => customers.filter((c) => String(c.phone || '').replace(/\D/g, '').length >= 10),
@@ -187,6 +190,10 @@ export default function CallingBulkWhatsAppDialog({
         brand,
         deliveryMode: cloudApiOn ? 'api' : 'wa_me',
         approvedTemplateNames: approvedNames,
+        serviceWhenLabel:
+          template === 'filter_due'
+            ? suggestCallingFilterDue(customer.daysSinceService).whenLabel
+            : undefined,
       });
       if (!result.ok) {
         patchRow(customer.id, {
