@@ -619,6 +619,149 @@ export function jobsMapRouteColorAt(index: number): string {
   return JOBS_MAP_ROUTE_COLORS[slot];
 }
 
+/** Color used where two technician routes follow the same road. */
+export const JOBS_MAP_SHARED_ROUTE_COLOR = '#6d28d9';
+
+type MapPoint = { lat: number; lng: number };
+
+function jobsMapXY(point: MapPoint, origin: MapPoint): { x: number; y: number } {
+  const cos = Math.cos((origin.lat * Math.PI) / 180) || 1e-6;
+  return {
+    x: (point.lng - origin.lng) * 111_320 * cos,
+    y: (point.lat - origin.lat) * 111_320,
+  };
+}
+
+function jobsMapPointSegmentMeters(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function jobsMapPathMeters(path: MapPoint[], from: number, to: number): number {
+  let meters = 0;
+  const origin = path[from] || { lat: 0, lng: 0 };
+  for (let i = from + 1; i <= to && i < path.length; i += 1) {
+    const a = jobsMapXY(path[i - 1], origin);
+    const b = jobsMapXY(path[i], origin);
+    meters += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  return meters;
+}
+
+/**
+ * Points within `thresholdMeters` of another route, kept only when that
+ * shared stretch is long enough to be the same road rather than a crossing.
+ */
+export function jobsMapSharedRouteMasks(
+  paths: MapPoint[][],
+  thresholdMeters = 80,
+  minSharedMeters = 180
+): boolean[][] {
+  const origin = paths.find((path) => path.length)?.[0] || { lat: 0, lng: 0 };
+  const cell = Math.max(40, thresholdMeters);
+  const indexes = paths.map((path) => {
+    const segs: Array<{ ax: number; ay: number; bx: number; by: number }> = [];
+    const grid = new Map<string, number[]>();
+    for (let i = 1; i < path.length; i += 1) {
+      const a = jobsMapXY(path[i - 1], origin);
+      const b = jobsMapXY(path[i], origin);
+      const id = segs.length;
+      segs.push({ ax: a.x, ay: a.y, bx: b.x, by: b.y });
+      const x0 = Math.floor(Math.min(a.x, b.x) / cell);
+      const x1 = Math.floor(Math.max(a.x, b.x) / cell);
+      const y0 = Math.floor(Math.min(a.y, b.y) / cell);
+      const y1 = Math.floor(Math.max(a.y, b.y) / cell);
+      for (let x = x0; x <= x1; x += 1) {
+        for (let y = y0; y <= y1; y += 1) {
+          const key = `${x},${y}`;
+          const bucket = grid.get(key);
+          if (bucket) bucket.push(id);
+          else grid.set(key, [id]);
+        }
+      }
+    }
+    return { segs, grid };
+  });
+
+  const nearOther = (pathIndex: number, point: MapPoint) => {
+    const p = jobsMapXY(point, origin);
+    const cx = Math.floor(p.x / cell);
+    const cy = Math.floor(p.y / cell);
+    for (let other = 0; other < indexes.length; other += 1) {
+      if (other === pathIndex) continue;
+      const index = indexes[other];
+      const seen = new Set<number>();
+      for (let dx = -1; dx <= 1; dx += 1) {
+        for (let dy = -1; dy <= 1; dy += 1) {
+          const bucket = index.grid.get(`${cx + dx},${cy + dy}`);
+          if (!bucket) continue;
+          for (const id of bucket) {
+            if (seen.has(id)) continue;
+            seen.add(id);
+            const seg = index.segs[id];
+            if (jobsMapPointSegmentMeters(p.x, p.y, seg.ax, seg.ay, seg.bx, seg.by) <= thresholdMeters) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  };
+
+  return paths.map((path, pathIndex) => {
+    const flags = path.map((point) => nearOther(pathIndex, point));
+    let cursor = 0;
+    while (cursor < flags.length) {
+      if (!flags[cursor]) {
+        cursor += 1;
+        continue;
+      }
+      let end = cursor;
+      while (end < flags.length && flags[end]) end += 1;
+      if (jobsMapPathMeters(path, cursor, end - 1) < minSharedMeters) {
+        for (let i = cursor; i < end; i += 1) flags[i] = false;
+      }
+      cursor = end;
+    }
+    return flags;
+  });
+}
+
+export function jobsMapRouteRuns(
+  path: MapPoint[],
+  shared: boolean[]
+): Array<{ shared: boolean; path: MapPoint[] }> {
+  if (path.length < 2) return [];
+  const runs: Array<{ shared: boolean; path: MapPoint[] }> = [];
+  let current = Boolean(shared[0]);
+  let run = [path[0]];
+  for (let i = 1; i < path.length; i += 1) {
+    const next = Boolean(shared[i]);
+    if (next === current) {
+      run.push(path[i]);
+      continue;
+    }
+    run.push(path[i]);
+    runs.push({ shared: current, path: run });
+    current = next;
+    run = [path[i]];
+  }
+  if (run.length >= 2) runs.push({ shared: current, path: run });
+  return runs;
+}
+
 /** Meters to shift route `index` sideways when several roads are drawn together. */
 export function jobsMapRouteOffsetMeters(index: number, count: number, gapMeters = 14): number {
   if (count <= 1) return 0;

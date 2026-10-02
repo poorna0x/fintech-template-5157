@@ -33,7 +33,10 @@ import {
   jobsMapPinColor,
   jobsMapReachLabel,
   jobsMapRouteColorAt,
+  jobsMapRouteRuns,
+  jobsMapSharedRouteMasks,
   jobsMapTechColor,
+  JOBS_MAP_SHARED_ROUTE_COLOR,
   jobsMapStatusLabel,
   jobsMapSuggestedZoom,
   jobsMapTechPhotoThumb,
@@ -351,6 +354,11 @@ export default function JobsMapToolDialog({
   const ongoingCount = jobs.length - followupCount;
   const unassignedCount = jobs.filter((job) => job.status === 'PENDING' || !job.assigned_technician_id).length;
   const liveCount = techs.filter((tech) => tech.source === 'live' && isJobsMapFixFresh(tech.updatedAt)).length;
+  const sharedMasks = useMemo(
+    () => jobsMapSharedRouteMasks(routes.map((route) => route.path)),
+    [routes]
+  );
+  const hasSharedRoad = sharedMasks.some((mask) => mask.some(Boolean));
   const routeLiveKey = useMemo(() => {
     if (!selection) return '';
     if (selection.kind === 'tech') {
@@ -688,17 +696,22 @@ export default function JobsMapToolDialog({
     clearRouteOverlays();
     if (!map || !window.google?.maps || !routes.length) return;
     const ends: Array<{ lat: number; lng: number }> = [];
-    for (const route of routes) {
-      const line = new window.google.maps.Polyline({
-        map,
-        path: route.path,
-        strokeColor: route.color,
-        strokeOpacity: 1,
-        strokeWeight: 5,
-        zIndex: 8,
-        geodesic: false,
-      });
-      routeOverlaysRef.current.push(line);
+    routes.forEach((route, index) => {
+      const runs = jobsMapRouteRuns(route.path, sharedMasks[index] || []);
+      const pieces = runs.length ? runs : [{ shared: false, path: route.path }];
+      for (const run of pieces) {
+        if (run.path.length < 2) continue;
+        const line = new window.google.maps.Polyline({
+          map,
+          path: run.path,
+          strokeColor: run.shared ? JOBS_MAP_SHARED_ROUTE_COLOR : route.color,
+          strokeOpacity: 1,
+          strokeWeight: 5,
+          zIndex: run.shared ? 14 : 8,
+          geodesic: false,
+        });
+        routeOverlaysRef.current.push(line);
+      }
       const reach = jobsMapReachLabel(route.durationText, route.durationSeconds);
       if (reach && route.path.length) {
         const mid = route.path[Math.floor(route.path.length / 2)];
@@ -716,13 +729,13 @@ export default function JobsMapToolDialog({
       const last = route.path[route.path.length - 1];
       if (first) ends.push(first);
       if (last) ends.push(last);
-    }
+    });
     try {
       scheduleJobsMapCamera(map, jobsMapFitPoints(ends), cameraIdleRef);
     } catch {
       /* ignore */
     }
-  }, [routes, mapReady]);
+  }, [routes, sharedMasks, mapReady]);
 
   const pingTech = async (technicianId: string) => {
     setPingingId(technicianId);
@@ -945,6 +958,15 @@ export default function JobsMapToolDialog({
                         </li>
                       );
                     })}
+                    {hasSharedRoad ? (
+                      <li className="flex items-center gap-1.5 text-xs text-foreground">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: JOBS_MAP_SHARED_ROUTE_COLOR, boxShadow: '0 0 0 1px rgba(0,0,0,0.2)' }}
+                        />
+                        Shared road
+                      </li>
+                    ) : null}
                   </ul>
                 ) : null}
                 <div className="grid grid-cols-2 gap-2">

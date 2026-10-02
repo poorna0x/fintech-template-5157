@@ -12,7 +12,9 @@ import {
   jobsMapMetersPerPixel,
   jobsMapRouteColorAt,
   jobsMapRouteOffsetMeters,
+  jobsMapRouteRuns,
   jobsMapRouteSpreadMeters,
+  jobsMapSharedRouteMasks,
   offsetJobsMapRoute,
   jobsMapReachLabel,
   jobsMapSuggestedZoom,
@@ -358,6 +360,27 @@ describe('jobsMap live GPS merge', () => {
     const tight = offsetJobsMapRoute(road, jobsMapRouteSpreadMeters(1, 2, 12.97, 16));
     expect(Math.abs(wide[0].lng - road[0].lng)).toBeGreaterThan(Math.abs(tight[0].lng - road[0].lng));
     expect(Math.abs(wide[0].lat - road[0].lat)).toBeLessThan(Math.abs(wide[0].lng - road[0].lng));
+  });
+
+  it('paints the shared part of two technician routes in one stretch', () => {
+    const north = [12.9, 12.91, 12.92, 12.93, 12.94].map((lat) => ({ lat, lng: 77.6 }));
+    const join = [
+      { lat: 12.9, lng: 77.64 },
+      { lat: 12.91, lng: 77.62 },
+      { lat: 12.92, lng: 77.6 },
+      { lat: 12.93, lng: 77.6 },
+      { lat: 12.94, lng: 77.6 },
+    ];
+    const [northMask, joinMask] = jobsMapSharedRouteMasks([north, join]);
+    expect(northMask[0]).toBe(false);
+    expect(northMask[northMask.length - 1]).toBe(true);
+    expect(joinMask[0]).toBe(false);
+    expect(joinMask[joinMask.length - 1]).toBe(true);
+
+    const runs = jobsMapRouteRuns(north, northMask);
+    expect(runs.some((run) => run.shared)).toBe(true);
+    expect(runs.some((run) => !run.shared)).toBe(true);
+    expect(runs.filter((run) => run.shared).every((run) => run.path.length >= 2)).toBe(true);
   });
 
   it('parses string coordinates from a live row', () => {
