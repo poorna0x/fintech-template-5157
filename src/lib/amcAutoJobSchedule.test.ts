@@ -166,6 +166,30 @@ describe('planAmcNextVisit', () => {
     ]);
   });
 
+  it('ignores a service completed before the AMC started', () => {
+    const plan = planAmcNextVisit({
+      startDate: '2026-01-01',
+      endDate: '2026-12-31',
+      periodMonths: 4,
+      referenceDate: '2025-06-01',
+      today: '2026-01-02',
+    });
+    expect(plan.nextDue).toBe('2026-05-01');
+    expect(plan.shouldCreate).toBe(false);
+  });
+
+  it('does not create a second job after the final visit is done', () => {
+    const plan = planAmcNextVisit({
+      startDate: '2026-01-01',
+      endDate: '2026-12-31',
+      periodMonths: 4,
+      referenceDate: '2026-12-25',
+      today: '2026-12-25',
+    });
+    expect(plan.visitKind).toBe('pre_expiry');
+    expect(plan.shouldCreate).toBe(false);
+  });
+
   it('clears the pin after a visit near the pushed date', () => {
     const plan = planAmcNextVisit({
       startDate: '2026-01-01',

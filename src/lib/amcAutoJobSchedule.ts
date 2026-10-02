@@ -167,8 +167,8 @@ export function listAmcContractSlots(
 }
 
 /**
- * Next AMC visit. Calendar slots stay fixed. A pinned `pushedDate` replaces
- * only the next visit (for example, move it onto the 1-year end date).
+ * Next AMC visit. Counted from the last completed service.
+ * A pinned `pushedDate` replaces only the next visit.
  */
 export function planAmcNextVisit(args: {
   startDate: string;
@@ -201,7 +201,9 @@ export function planAmcNextVisit(args: {
     };
   }
 
-  const rolled = addMonthsToDate(args.referenceDate, Math.max(1, args.periodMonths));
+  // A service from before this AMC does not start the clock. The first visit is the start date plus the period.
+  const anchor = args.referenceDate < args.startDate ? args.startDate : args.referenceDate;
+  const rolled = addMonthsToDate(anchor, Math.max(1, args.periodMonths));
   if (!endDate || rolled <= endDate) {
     const reminderStart = subtractDaysFromDate(rolled, AMC_REMINDER_DAYS_BEFORE);
     const shouldCreate = args.today >= reminderStart;
@@ -218,11 +220,14 @@ export function planAmcNextVisit(args: {
 
   if (endDate) {
     const preExpiry = computeAmcPreExpiryAutoCreate(endDate, args.today);
+    const finalVisitDone =
+      args.referenceDate > args.startDate && args.referenceDate >= preExpiry.preExpiryWindowStart;
+    const shouldCreate = preExpiry.shouldCreate && !finalVisitDone;
     return {
       nextDue: endDate,
       reminderStart: preExpiry.preExpiryWindowStart,
-      shouldCreate: preExpiry.shouldCreate,
-      createReason: preExpiry.shouldCreate ? 'pre_expiry' : null,
+      shouldCreate,
+      createReason: shouldCreate ? 'pre_expiry' : null,
       visitKind: 'pre_expiry',
       preExpiryWindowStart: preExpiry.preExpiryWindowStart,
       pushedConsumed,
