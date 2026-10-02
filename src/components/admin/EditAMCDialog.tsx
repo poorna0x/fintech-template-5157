@@ -105,7 +105,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
   });
 
   useEffect(() => {
-    if (!open || !amcContract) return;
+    if (!open || !amcContract?.id) return;
     const meta = parseAdditionalInfoMetadata(amcContract.additional_info);
     const notes =
       (typeof meta.description === 'string' && meta.description) ||
@@ -124,7 +124,10 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
       givenByTechnicianId: amcContract.given_by_technician_id || 'NONE',
       amount: amount != null ? String(amount) : '',
     });
-  }, [open, amcContract]);
+    // Reset only when the dialog opens or a different contract is shown.
+    // A parent refresh must not wipe a technician the user just picked.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, amcContract?.id]);
 
   const handleSave = async () => {
     if (!amcContract?.id) return;
@@ -164,6 +167,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
               ? 6
               : Math.max(1, form.servicePeriodCustomMonths);
 
+      const givenById = form.givenByTechnicianId === 'NONE' ? null : form.givenByTechnicianId;
       const { data: updated, error: updateErr } = await db.amcContracts.update(amcContract.id, {
         start_date: form.startDate,
         end_date: endDate,
@@ -171,11 +175,15 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
         includes_prefilter: form.includesPrefilter,
         additional_info: JSON.stringify(metadataWithAmount),
         service_period_months: servicePeriodMonths,
-        given_by_technician_id:
-          form.givenByTechnicianId === 'NONE' ? null : form.givenByTechnicianId,
+        given_by_technician_id: givenById,
       });
 
       if (updateErr) throw updateErr;
+      const storedGivenBy = (updated as { given_by_technician_id?: string | null } | null)
+        ?.given_by_technician_id || null;
+      if (storedGivenBy !== givenById) {
+        throw new Error('AMC given by was not saved');
+      }
 
       toast.success('AMC updated successfully');
       onSaved?.(updated);
@@ -291,6 +299,10 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="NONE">Unknown / Not assigned</SelectItem>
+                    {form.givenByTechnicianId !== 'NONE' &&
+                      !technicians.some((tech) => tech.id === form.givenByTechnicianId) && (
+                        <SelectItem value={form.givenByTechnicianId}>Selected technician</SelectItem>
+                      )}
                     {technicians.map((tech) => (
                       <SelectItem key={tech.id} value={tech.id}>
                         {getTechnicianDisplayName(tech)}

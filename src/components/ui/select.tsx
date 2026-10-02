@@ -150,7 +150,7 @@ const SelectContent = React.forwardRef<
         className={cn(
           "p-1 [scrollbar-gutter:stable]",
           position === "popper" &&
-            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+            "max-h-60 w-full min-w-[var(--radix-select-trigger-width)] overflow-y-auto"
         )}
       >
         {children}

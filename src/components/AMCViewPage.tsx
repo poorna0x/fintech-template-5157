@@ -33,6 +33,7 @@ import { toast } from 'sonner';
 import AdminHeader from './AdminHeader';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAmcDocumentBrand } from '@/lib/amc-brand';
+import { readCustomerEquipmentSlot } from '@/lib/equipment-suggestions';
 import { DocumentBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   deriveAmcServicePeriodKind,
@@ -167,24 +168,6 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
   const getTechnicianDisplayName = (technician: any): string => {
     if (!technician) return '';
     return technician.full_name || technician.fullName || 'Unknown';
-  };
-
-  const parseJobRequirements = (requirements: any): any[] => {
-    if (!requirements) return [];
-    if (Array.isArray(requirements)) return requirements;
-    if (typeof requirements === 'string') {
-      try {
-        const parsed = JSON.parse(requirements);
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  };
-
-  const getJobAMCInfo = (job: any): any | null => {
-    return parseJobRequirements(job?.requirements).find((req: any) => req?.amc_info)?.amc_info || null;
   };
 
   const toDateOnly = (value: unknown): string | null => {
@@ -377,16 +360,13 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
       // Transform current page of AMC contracts to AMCRecord format
       const amcList: AMCRecord[] = [];
       const customerIds = [...new Set((amcContracts || []).map((amc: any) => amc.customer_id).filter(Boolean))] as string[];
-      const jobIds = [...new Set((amcContracts || []).map((amc: any) => amc.job_id).filter(Boolean))] as string[];
       const lastCompletedByCustomer = new Map<string, string>();
       const openAMCCustomerIds = new Set<string>();
-      const jobTechnicianByJobId = new Map<string, string>();
-      const completedJobsByCustomer = new Map<string, any[]>();
 
       if (customerIds.length > 0) {
         const { data: completedJobs } = await supabase
           .from('jobs')
-          .select('id, customer_id, assigned_technician_id, completed_at, end_time, requirements, service_sub_type')
+          .select('customer_id, completed_at')
           .in('customer_id', customerIds)
           .eq('status', 'COMPLETED')
           .not('completed_at', 'is', null)
@@ -396,9 +376,6 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
           if (!lastCompletedByCustomer.has(job.customer_id)) {
             lastCompletedByCustomer.set(job.customer_id, job.completed_at);
           }
-          const jobsForCustomer = completedJobsByCustomer.get(job.customer_id) || [];
-          jobsForCustomer.push(job);
-          completedJobsByCustomer.set(job.customer_id, jobsForCustomer);
         });
 
         const { data: openAMCJobs } = await supabase
@@ -411,19 +388,6 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
         (openAMCJobs || []).forEach((job: any) => openAMCCustomerIds.add(job.customer_id));
       }
 
-      if (jobIds.length > 0) {
-        const { data: linkedJobs } = await supabase
-          .from('jobs')
-          .select('id, assigned_technician_id')
-          .in('id', jobIds);
-
-        (linkedJobs || []).forEach((job: any) => {
-          if (job.assigned_technician_id) {
-            jobTechnicianByJobId.set(job.id, job.assigned_technician_id);
-          }
-        });
-      }
-      
       if (amcContracts) {
         for (const amc of amcContracts) {
           const customer = (amc as any).customers;
@@ -465,39 +429,18 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
             amcAmount = (amc as any).amount || undefined;
           }
 
-          const fallbackJobForTechnician = (() => {
-            const customerJobs = completedJobsByCustomer.get(amc.customer_id) || [];
-            const matchingAMCJob = customerJobs.find((job: any) => {
-              const amcInfo = getJobAMCInfo(job);
-              if (!amcInfo) return false;
-              const dateGiven = amcInfo.date_given || amcInfo.start_date;
-              const endDate = amcInfo.end_date;
-              return (
-                (dateGiven && dateGiven === amc.start_date) ||
-                (endDate && endDate === amc.end_date)
-              );
-            });
-            if (matchingAMCJob) return matchingAMCJob;
-
-            const amcStartTime = new Date(`${amc.start_date}T23:59:59`).getTime();
-            return customerJobs
-              .filter((job: any) => job.assigned_technician_id)
-              .filter((job: any) => {
-                const completedTime = new Date(job.completed_at || job.end_time || 0).getTime();
-                return Number.isFinite(completedTime) && completedTime <= amcStartTime;
-              })
-              .sort((a: any, b: any) => {
-                return new Date(b.completed_at || b.end_time || 0).getTime() - new Date(a.completed_at || a.end_time || 0).getTime();
-              })[0];
-          })();
-          const givenByTechnicianId =
-            (amc as any).given_by_technician_id ||
-            (amc.job_id ? jobTechnicianByJobId.get(amc.job_id) : null) ||
-            fallbackJobForTechnician?.assigned_technician_id ||
-            null;
-          const givenByTechnicianName = givenByTechnicianId
-            ? getTechnicianDisplayName(technicianById.get(givenByTechnicianId)) || 'Unknown'
-            : 'Unknown';
+          const savedGivenById = (amc as any).given_by_technician_id || null;
+          const givenByTechnicianName = savedGivenById
+            ? getTechnicianDisplayName(technicianById.get(savedGivenById)) || 'Unknown'
+            : 'Not set';
+          const roEquipment = readCustomerEquipmentSlot(
+            {
+              brand: customer?.brand || '',
+              model: customer?.model || '',
+              service_type: customer?.service_type || 'RO',
+            },
+            'RO',
+          );
           const autoGenerationInfo = getAutoGenerationInfo(
             amc,
             customer,
@@ -514,11 +457,11 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
             customerEmail: customer?.email || metadata.customer_email || '',
             customerLocation: getCustomerOneWordLocation(customer, metadata),
             customerAddress: customer?.address || metadata.customer_address || {},
-            givenByTechnicianId,
-            givenByTechnicianName,
-            serviceType: customer?.service_type || 'RO',
-            brand: customer?.brand || metadata.brand || '',
-            model: customer?.model || metadata.ro_model || '',
+            givenByTechnicianId: savedGivenById,
+            givenByTechnicianName: savedGivenById ? givenByTechnicianName : 'Not set',
+            serviceType: 'RO',
+            brand: roEquipment.brand || metadata.brand || '',
+            model: roEquipment.model || metadata.ro_model || '',
             dateGiven: amc.start_date,
             endDate: amc.end_date,
             years: amc.years,
@@ -669,8 +612,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
     const kind = sp == null || sp === undefined ? '4' : sp === 0 ? 'no_auto' : sp === 4 ? '4' : sp === 6 ? '6' : 'custom';
     const customMonths = (sp != null && sp > 0 && sp !== 4 && sp !== 6) ? sp : 4;
     setEditFormData({
-      dateGiven: amc.dateGiven,
-      endDate: amc.endDate,
+      dateGiven: toDateOnly(amc.dateGiven) || amc.dateGiven,
+      endDate: toDateOnly(amc.endDate) || amc.endDate,
       years: amc.years,
       includesPrefilter: amc.includesPrefilter,
       additionalNotes: amc.additionalNotes || '',
@@ -730,18 +673,26 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
           : Math.max(1, editFormData.servicePeriodCustomMonths);
 
       // Update AMC contract
-      const { error: updateError } = await db.amcContracts.update(selectedAMC.id, {
+      const givenById =
+        editFormData.givenByTechnicianId === 'NONE' ? null : editFormData.givenByTechnicianId;
+      const { data: updatedAmc, error: updateError } = await db.amcContracts.update(selectedAMC.id, {
         start_date: editFormData.dateGiven,
         end_date: endDate,
         years: editFormData.years,
         includes_prefilter: editFormData.includesPrefilter,
         additional_info: JSON.stringify(metadata),
         service_period_months: editFormData.servicePeriodKind === 'no_auto' ? 0 : servicePeriodMonths,
-        given_by_technician_id: editFormData.givenByTechnicianId === 'NONE' ? null : editFormData.givenByTechnicianId,
+        given_by_technician_id: givenById,
       });
 
       if (updateError) {
         throw updateError;
+      }
+
+      const storedGivenBy = (updatedAmc as { given_by_technician_id?: string | null } | null)
+        ?.given_by_technician_id || null;
+      if (storedGivenBy !== givenById) {
+        throw new Error('AMC given by was not saved');
       }
 
       toast.success('AMC updated successfully');
@@ -960,7 +911,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                             </span>
                           </TableCell>
                           <TableCell>
-                            <span className={amc.givenByTechnicianName === 'Unknown' ? 'text-sm text-gray-500' : 'text-sm font-medium text-gray-900'}>
+                            <span className={amc.givenByTechnicianName === 'Unknown' || amc.givenByTechnicianName === 'Not set' ? 'text-sm text-gray-500' : 'text-sm font-medium text-gray-900'}>
                               {amc.givenByTechnicianName}
                             </span>
                           </TableCell>
@@ -1318,11 +1269,11 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                     <DatePicker
                         value={editFormData.dateGiven || undefined}
                         onChange={(newDate) => {
-                          setEditFormData({
-                            ...editFormData,
-                            dateGiven: newDate,
-                            endDate: newDate ? calculateEndDate(newDate, editFormData.years) : editFormData.endDate,
-                          });
+                          setEditFormData((prev) => ({
+                            ...prev,
+                            dateGiven: newDate || '',
+                            endDate: newDate ? calculateEndDate(newDate, prev.years) : prev.endDate,
+                          }));
                         }}
                         placeholder="Pick date"
                         className="mt-1"
@@ -1337,11 +1288,11 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                       value={editFormData.years}
                       onChange={(e) => {
                         const years = parseInt(e.target.value) || 1;
-                        setEditFormData({
-                          ...editFormData,
+                        setEditFormData((prev) => ({
+                          ...prev,
                           years,
-                          endDate: editFormData.dateGiven ? calculateEndDate(editFormData.dateGiven, years) : editFormData.endDate,
-                        });
+                          endDate: prev.dateGiven ? calculateEndDate(prev.dateGiven, years) : prev.endDate,
+                        }));
                       }}
                       required
                     />
@@ -1358,7 +1309,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                       className="mt-1"
                       placeholder="e.g. 7000"
                       onChange={(e) =>
-                        setEditFormData({ ...editFormData, amount: e.target.value })
+                        setEditFormData((prev) => ({ ...prev, amount: e.target.value }))
                       }
                     />
                   </div>
@@ -1366,7 +1317,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                     <Label htmlFor="edit-end-date">End Date</Label>
                     <DatePicker
                         value={editFormData.endDate || undefined}
-                        onChange={(v) => setEditFormData({ ...editFormData, endDate: v })}
+                        onChange={(v) => setEditFormData((prev) => ({ ...prev, endDate: v || '' }))}
                         placeholder="Pick date"
                         className="mt-1"
                       />
@@ -1380,7 +1331,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                         id="edit-includes-prefilter"
                         checked={editFormData.includesPrefilter}
                         onCheckedChange={(checked) =>
-                          setEditFormData({ ...editFormData, includesPrefilter: checked === true })
+                          setEditFormData((prev) => ({ ...prev, includesPrefilter: checked === true }))
                         }
                       />
                       <Label htmlFor="edit-includes-prefilter" className="cursor-pointer">
@@ -1391,15 +1342,24 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                   <div className="sm:col-span-2">
                     <Label className="text-sm font-medium">AMC Given By</Label>
                     <Select
-                      value={editFormData.givenByTechnicianId}
-                      onValueChange={(value) => setEditFormData({ ...editFormData, givenByTechnicianId: value })}
+                      value={editFormData.givenByTechnicianId || 'NONE'}
+                      onValueChange={(value) =>
+                        setEditFormData((prev) => ({ ...prev, givenByTechnicianId: value }))
+                      }
                     >
                       <SelectTrigger className="mt-1">
                         <SelectValue placeholder="Select technician" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="NONE">Unknown / Not assigned</SelectItem>
-                        {technicians.map((tech: any) => (
+                        {editFormData.givenByTechnicianId &&
+                          editFormData.givenByTechnicianId !== 'NONE' &&
+                          !technicians.some((tech: any) => tech.id === editFormData.givenByTechnicianId) && (
+                            <SelectItem value={editFormData.givenByTechnicianId}>
+                              {selectedAMC?.givenByTechnicianName || 'Selected technician'}
+                            </SelectItem>
+                          )}
+                        {technicians.filter((tech: any) => tech?.id).map((tech: any) => (
                           <SelectItem key={tech.id} value={tech.id}>
                             {getTechnicianDisplayName(tech)}
                           </SelectItem>
@@ -1407,7 +1367,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-gray-500 mt-1">
-                      Use this for manually created AMCs. Job-linked AMCs can still be corrected here.
+                      Choose who gave this AMC, then save. This is stored on the contract.
                     </p>
                   </div>
                   <div className="sm:col-span-2">
@@ -1415,7 +1375,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                     <Textarea
                       id="edit-additional-notes"
                       value={editFormData.additionalNotes}
-                      onChange={(e) => setEditFormData({ ...editFormData, additionalNotes: e.target.value })}
+                      onChange={(e) => setEditFormData((prev) => ({ ...prev, additionalNotes: e.target.value }))}
                       placeholder="Enter a description or summary of this AMC contract for future reference..."
                       rows={4}
                       className="mt-1"
@@ -1429,7 +1389,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                     <Select
                       value={editFormData.servicePeriodKind}
                       onValueChange={(v: '4' | '6' | 'custom' | 'no_auto') =>
-                        setEditFormData({ ...editFormData, servicePeriodKind: v })
+                        setEditFormData((prev) => ({ ...prev, servicePeriodKind: v }))
                       }
                     >
                       <SelectTrigger className="mt-1">
@@ -1449,10 +1409,10 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                         max={24}
                         value={editFormData.servicePeriodCustomMonths}
                         onChange={(e) =>
-                          setEditFormData({
-                            ...editFormData,
+                          setEditFormData((prev) => ({
+                            ...prev,
                             servicePeriodCustomMonths: Math.max(1, parseInt(e.target.value, 10) || 1),
-                          })
+                          }))
                         }
                         className="mt-1"
                         placeholder="Months"
