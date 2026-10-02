@@ -1,8 +1,8 @@
 import { getAmcDocumentBrand, parseAmcAdditionalInfo } from '@/lib/amc-brand';
 import {
-  addMonthsToDate,
   formatAmcDateEnIN,
   getDefaultAmcServicePeriodMonths,
+  planAmcNextVisit,
 } from '@/lib/amcAutoJobSchedule';
 import type { AdminDocumentEmailData, AdminEmailTemplateType } from '@/lib/admin-email-templates';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
@@ -124,11 +124,17 @@ function computeAmcNextServiceDate(amc: Record<string, unknown>): string {
     typeof amc.service_period_months === 'number' && amc.service_period_months > 0
       ? amc.service_period_months
       : getDefaultAmcServicePeriodMonths();
-  const reference =
-    toDateOnly(customers?.last_service_date) ||
-    toDateOnly(amc.start_date) ||
-    todayIsoDate();
-  return addMonthsToDate(reference, periodMonths);
+  const start = toDateOnly(amc.start_date) || todayIsoDate();
+  const reference = toDateOnly(customers?.last_service_date) || start;
+  const plan = planAmcNextVisit({
+    startDate: start,
+    endDate: toDateOnly(amc.end_date) || null,
+    periodMonths,
+    referenceDate: reference,
+    pushedDate: toDateOnly(amc.next_service_on) || null,
+    today: todayIsoDate(),
+  });
+  return plan.nextDue || start;
 }
 
 function buildServiceReminderMessage(
@@ -361,7 +367,7 @@ async function searchActiveAmcByCustomer(
   const { data, error } = await supabase
     .from('amc_contracts')
     .select(
-      'id,customer_id,start_date,end_date,status,service_period_months,additional_info,customers(id,full_name,phone,email,customer_id,last_service_date)'
+      'id,customer_id,start_date,end_date,status,service_period_months,next_service_on,additional_info,customers(id,full_name,phone,email,customer_id,last_service_date)'
     )
     .in('customer_id', customerIds)
     .eq('status', 'ACTIVE')

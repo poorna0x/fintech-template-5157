@@ -35,11 +35,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getAmcDocumentBrand } from '@/lib/amc-brand';
 import { DocumentBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
-  computeAmcAutoCreateDue,
-  computeAmcPreExpiryAutoCreate,
   deriveAmcServicePeriodKind,
   getDefaultAmcServicePeriodMonths,
+  planAmcNextVisit,
 } from '@/lib/amcAutoJobSchedule';
+import { notifyTechnicianAfterJobEdit } from '@/lib/notifyTechJobEdit';
 import { getLocalCalendarDateYmd } from '@/lib/pendingPaymentReminder';
 import {
   applyAmcAmountToMetadata,
@@ -81,6 +81,7 @@ interface AMCRecord {
   additionalNotes?: string;
   amount?: number | string;
   servicePeriodMonths?: number | null;
+  nextServiceOn?: string | null;
   serviceBrand: DocumentBrand;
   nextAutoGenerationDate?: string | null;
   nextAMCDueDate?: string | null;
@@ -109,6 +110,8 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [selectedAMC, setSelectedAMC] = useState<AMCRecord | null>(null);
+  const [pushDate, setPushDate] = useState<string | undefined>();
+  const [pushingVisit, setPushingVisit] = useState(false);
   const techniciansLoadedRef = useRef(false);
 
   useEffect(() => {
@@ -232,43 +235,49 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
       };
     }
 
-    const { nextDue, reminderStart, shouldCreate: regularDue } = computeAmcAutoCreateDue(
-      referenceDate,
-      periodMonths,
-      todayStr
-    );
+    const startDate = toDateOnly(amc.start_date) || referenceDate;
     const endDate = toDateOnly(amc.end_date);
-    const nextServiceAfterAmcEnds = Boolean(endDate && nextDue > endDate);
+    const plan = planAmcNextVisit({
+      startDate,
+      endDate,
+      periodMonths,
+      referenceDate,
+      pushedDate: toDateOnly(amc.next_service_on),
+      today: todayStr,
+    });
 
     if (hasOpenAMCJob) {
       return {
-        nextAutoGenerationDate: nextServiceAfterAmcEnds && endDate
-          ? computeAmcPreExpiryAutoCreate(endDate, todayStr).preExpiryWindowStart
-          : reminderStart,
-        nextAMCDueDate: nextServiceAfterAmcEnds && endDate ? endDate : nextDue,
-        autoGenerationLabel: 'Already generated',
+        nextAutoGenerationDate: plan.reminderStart,
+        nextAMCDueDate: plan.nextDue,
+        autoGenerationLabel: plan.visitKind === 'pushed' ? 'Pushed · job open' : 'Already generated',
         autoGenerationStatus: 'GENERATED',
       };
     }
 
-    if (nextServiceAfterAmcEnds && endDate) {
-      const { preExpiryWindowStart, shouldCreate: preExpiryDue } = computeAmcPreExpiryAutoCreate(
-        endDate,
-        todayStr
-      );
+    if (plan.visitKind === 'pre_expiry' && endDate) {
       return {
-        nextAutoGenerationDate: preExpiryWindowStart,
+        nextAutoGenerationDate: plan.reminderStart,
         nextAMCDueDate: endDate,
         autoGenerationLabel: `Final visit before AMC ends (${formatDate(endDate)})`,
-        autoGenerationStatus: preExpiryDue ? 'DUE' : 'SCHEDULED',
+        autoGenerationStatus: plan.shouldCreate ? 'DUE' : 'SCHEDULED',
+      };
+    }
+
+    if (plan.visitKind === 'pushed' && plan.nextDue) {
+      return {
+        nextAutoGenerationDate: plan.reminderStart,
+        nextAMCDueDate: plan.nextDue,
+        autoGenerationLabel: `Pushed to ${formatDate(plan.nextDue)}`,
+        autoGenerationStatus: plan.shouldCreate ? 'DUE' : 'SCHEDULED',
       };
     }
 
     return {
-      nextAutoGenerationDate: reminderStart,
-      nextAMCDueDate: nextDue,
-      autoGenerationLabel: formatDate(reminderStart),
-      autoGenerationStatus: regularDue ? 'DUE' : 'SCHEDULED',
+      nextAutoGenerationDate: plan.reminderStart,
+      nextAMCDueDate: plan.nextDue,
+      autoGenerationLabel: plan.reminderStart ? formatDate(plan.reminderStart) : 'N/A',
+      autoGenerationStatus: plan.shouldCreate ? 'DUE' : 'SCHEDULED',
     };
   };
 
@@ -516,6 +525,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
             additionalNotes: additionalNotes,
             amount: amcAmount,
             servicePeriodMonths: (amc as any).service_period_months ?? undefined,
+            nextServiceOn: toDateOnly((amc as any).next_service_on),
             serviceBrand: getAmcDocumentBrand(amc),
             ...autoGenerationInfo,
             createdAt: amc.created_at,
@@ -527,9 +537,11 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
 
       // Server already orders by created_at desc
       setAmcRecords(amcList);
+      return amcList;
     } catch (error: any) {
       console.error('Error loading AMC records:', error);
       toast.error('Failed to load AMC records: ' + (error.message || 'Unknown error'));
+      return [];
     } finally {
       setLoading(false);
     }
@@ -547,7 +559,107 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
 
   const handleViewAMC = (amc: AMCRecord) => {
     setSelectedAMC(amc);
+    setPushDate(amc.nextServiceOn || amc.nextAMCDueDate || amc.endDate || undefined);
     setViewDialogOpen(true);
+  };
+
+  const handlePushNextVisit = async (date: string | null) => {
+    if (!selectedAMC || pushingVisit) return;
+    const todayStr = getLocalCalendarDateYmd();
+    if (date && date < todayStr) {
+      toast.error('Pick today or a later date');
+      return;
+    }
+    if (date && selectedAMC.endDate) {
+      const latest = new Date(selectedAMC.endDate + 'T12:00:00');
+      latest.setDate(latest.getDate() + 14);
+      const latestStr = getLocalCalendarDateYmd(latest);
+      if (date > latestStr) {
+        toast.error('That date is after this AMC ends. Use the AMC end date, or a day close to it.');
+        return;
+      }
+    }
+
+    setPushingVisit(true);
+    try {
+      const { error: updateError } = await db.amcContracts.update(selectedAMC.id, {
+        next_service_on: date,
+      });
+      if (updateError) throw updateError;
+
+      const openStatuses = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS', 'FOLLOW_UP', 'RESCHEDULED'];
+      const { data: openJobs, error: jobsError } = await supabase
+        .from('jobs')
+        .select('id, scheduled_date, scheduled_time_slot, description, assigned_technician_id, service_type, service_sub_type')
+        .eq('customer_id', selectedAMC.customerId)
+        .eq('service_sub_type', 'AMC Service')
+        .in('status', openStatuses);
+      if (jobsError) throw jobsError;
+
+      if (date && openJobs && openJobs.length > 0) {
+        for (const job of openJobs) {
+          const previousDate = toDateOnly(job.scheduled_date) || '';
+          if (previousDate === date) continue;
+          const { error: jobError } = await supabase
+            .from('jobs')
+            .update({ scheduled_date: date })
+            .eq('id', job.id);
+          if (jobError) throw jobError;
+          notifyTechnicianAfterJobEdit({
+            jobId: job.id,
+            technicianId: job.assigned_technician_id,
+            customerName: selectedAMC.customerName,
+            before: {
+              description: job.description || '',
+              cost_agreed: '',
+              scheduledDate: previousDate,
+              scheduledTimeSlot: job.scheduled_time_slot || 'MORNING',
+              scheduledTimeCustom: '',
+              serviceType: job.service_type || 'RO',
+              serviceSubType: job.service_sub_type || 'AMC Service',
+            },
+            after: {
+              description: job.description || '',
+              cost_agreed: '',
+              scheduledDate: date,
+              scheduledTimeSlot: job.scheduled_time_slot || 'MORNING',
+              scheduledTimeCustom: '',
+              serviceType: job.service_type || 'RO',
+              serviceSubType: job.service_sub_type || 'AMC Service',
+            },
+          });
+        }
+      }
+
+      const windowEnd = new Date(todayStr + 'T12:00:00');
+      windowEnd.setDate(windowEnd.getDate() + 10);
+      const windowOpen = Boolean(date && date <= getLocalCalendarDateYmd(windowEnd));
+      if (date && windowOpen && (!openJobs || openJobs.length === 0)) {
+        await db.amcContracts.createAMCServiceJobs({ force: true, onlyCustomerId: selectedAMC.customerId });
+      }
+
+      const refreshed = await loadAMCRecords(currentPage);
+      const fresh = refreshed.find((row) => row.id === selectedAMC.id);
+      if (fresh) {
+        setSelectedAMC(fresh);
+        setPushDate(fresh.nextServiceOn || fresh.nextAMCDueDate || fresh.endDate || undefined);
+      }
+      const movedOpenJob = Boolean(date && openJobs && openJobs.length > 0);
+      toast.success(
+        date
+          ? movedOpenJob
+            ? `Next visit pushed to ${formatDate(date)}. The open AMC job was moved to that date.`
+            : `Next visit pushed to ${formatDate(date)}`
+          : openJobs && openJobs.length > 0
+            ? 'Later visits are back on the automatic dates. The open AMC job stays on its current date.'
+            : 'Next visit is back on the automatic dates',
+      );
+    } catch (error: any) {
+      console.error('Error pushing AMC visit:', error);
+      toast.error('Could not update the next visit: ' + (error?.message || 'Unknown error'));
+    } finally {
+      setPushingVisit(false);
+    }
   };
 
   const handleEditAMC = (amc: AMCRecord) => {
@@ -1089,6 +1201,58 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                     </div>
                   )}
                 </div>
+                {getAMCStatus(selectedAMC.endDate) === 'ACTIVE' &&
+                  selectedAMC.autoGenerationStatus !== 'NO_AUTO' && (
+                  <div className="rounded-md border border-gray-200 p-3 space-y-3">
+                    <div>
+                      <Label className="text-sm font-medium">Push next visit</Label>
+                      <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                        Regular visits stay on the AMC calendar (every 4 or 6 months from the start).
+                        A visit done late does not move the later dates. If the 1-year visit should
+                        happen on the AMC end date, or on any other day, push only this next visit there.
+                        After that visit is done, the usual dates resume.
+                      </p>
+                    </div>
+                    <DatePicker
+                      value={pushDate}
+                      onChange={setPushDate}
+                      placeholder="Visit date"
+                      disabled={pushingVisit}
+                    />
+                    <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={pushingVisit || !pushDate}
+                        onClick={() => pushDate && void handlePushNextVisit(pushDate)}
+                      >
+                        {pushingVisit ? 'Saving…' : 'Push visit to this date'}
+                      </Button>
+                      {selectedAMC.endDate && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={pushingVisit}
+                          onClick={() => void handlePushNextVisit(selectedAMC.endDate)}
+                        >
+                          Push to AMC end
+                        </Button>
+                      )}
+                      {selectedAMC.nextServiceOn && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={pushingVisit}
+                          onClick={() => void handlePushNextVisit(null)}
+                        >
+                          Use automatic dates
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {typeof selectedAMC.customerAddress === 'object' && (
                   <div>
                     <Label className="text-xs text-gray-500">Address</Label>
@@ -1273,6 +1437,9 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                         placeholder="Months"
                       />
                     )}
+                    <p className="text-xs text-gray-500 mt-1">
+                      Dates stay on this calendar even if a visit is done early or late. To move one visit, open the AMC and push it.
+                    </p>
                   </div>
                 </div>
                 <div className="flex flex-col-reverse sm:flex-row gap-2 pt-4">

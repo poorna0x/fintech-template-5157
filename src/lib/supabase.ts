@@ -524,6 +524,7 @@ export const AMC_CONTRACT_ROW_COLUMNS = [
   'status',
   'renewed_from_amc_id',
   'service_period_months',
+  'next_service_on',
   'given_by_technician_id',
   'created_at',
   'updated_at',
@@ -5442,6 +5443,7 @@ export const db = {
       includes_prefilter?: boolean;
       additional_info?: string | null;
       service_period_months?: number | null;
+      next_service_on?: string | null;
       given_by_technician_id?: string | null;
       status?: 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'RENEWED';
     }) {
@@ -5480,7 +5482,7 @@ export const db = {
       return { data, error };
     },
 
-    async createAMCServiceJobs(options?: { dryRun?: boolean; force?: boolean }) {
+    async createAMCServiceJobs(options?: { dryRun?: boolean; force?: boolean; onlyCustomerId?: string }) {
       // Independent of AMC view pagination: always scans all ACTIVE contracts still in force.
       const dryRun = options?.dryRun === true;
       // force: manual "Run now" button bypasses the 6-hour throttle WITHOUT touching the
@@ -5490,12 +5492,12 @@ export const db = {
       if (dryRun) console.log('🔵 [DRY RUN] AMC service job creation preview...');
       else if (isDev) console.log('🔵 Starting AMC service job creation...');
 
+      const onlyCustomerId = options?.onlyCustomerId || null;
       const {
-        computeAmcAutoCreateDue,
-        computeAmcPreExpiryAutoCreate,
         formatAmcDateEnIN,
         getDefaultAmcServicePeriodMonths,
         markAmcJobCreationRun,
+        planAmcNextVisit,
         shouldRunAmcJobCreationNow,
         toDateOnly,
         withAmcJobCreationLock,
@@ -5537,11 +5539,13 @@ export const db = {
       const todayStr = getLocalCalendarDateYmd();
 
       // Only contracts still in force: ACTIVE and not past end_date (avoids jobs if status was never flipped to EXPIRED)
-      const { data: activeAMCsRaw, error: amcError } = await supabase
+      let activeAmcQuery = supabase
         .from('amc_contracts')
         .select(AMC_CONTRACT_ROW_COLUMNS)
         .eq('status', 'ACTIVE')
         .gte('end_date', todayStr);
+      if (onlyCustomerId) activeAmcQuery = activeAmcQuery.eq('customer_id', onlyCustomerId);
+      const { data: activeAMCsRaw, error: amcError } = await activeAmcQuery;
 
       if (amcError) {
         console.error('❌ Error fetching AMC contracts:', amcError);
@@ -5620,10 +5624,12 @@ export const db = {
         next_due: string | null;
         would_create: boolean;
         skip_reason?: string;
+        visit_kind?: string | null;
       };
       const preview: PreviewItem[] = [];
 
       const jobsToCreate: any[] = [];
+      const pinsToClear: string[] = [];
       let createdCount = 0;
 
       for (const amc of activeAMCs) {
@@ -5703,34 +5709,34 @@ export const db = {
           continue;
         }
 
-        const { nextDue: nextDueStr, reminderStart: reminderStartStr, shouldCreate: regularDue } =
-          computeAmcAutoCreateDue(referenceDateStr, periodMonths, todayStr);
         const endDateStr = toDateOnly(amc.end_date);
+        const startDateStr = toDateOnly(amc.start_date) || referenceDateStr;
+        const plan = planAmcNextVisit({
+          startDate: startDateStr,
+          endDate: endDateStr,
+          periodMonths,
+          referenceDate: referenceDateStr,
+          pushedDate: toDateOnly(amc.next_service_on),
+          today: todayStr,
+        });
+        if (plan.pushedConsumed && amc.next_service_on) pinsToClear.push(amc.id);
+
+        const nextDueStr = plan.nextDue || '';
+        const reminderStartStr = plan.reminderStart || '';
+        const createReason = plan.createReason;
         const formattedLastServiceDate = formatAmcDateEnIN(referenceDateStr);
-
-        let createReason: 'regular' | 'pre_expiry' | null = null;
-        let preExpiryWindowStart: string | null = null;
-
-        if (regularDue) {
-          createReason = 'regular';
-        } else if (endDateStr && nextDueStr > endDateStr) {
-          const preExpiry = computeAmcPreExpiryAutoCreate(endDateStr, todayStr);
-          preExpiryWindowStart = preExpiry.preExpiryWindowStart;
-          if (preExpiry.shouldCreate) {
-            createReason = 'pre_expiry';
-          }
-        }
 
         if (isDev) {
           console.log(
-            `  📅 Reference: ${referenceDateStr}, period: ${periodMonths}mo, next due: ${nextDueStr}, AMC ends: ${endDateStr ?? 'n/a'}, regular: ${regularDue}, pre-expiry: ${createReason === 'pre_expiry'}`
+            `  📅 Reference: ${referenceDateStr}, period: ${periodMonths}mo, next due: ${nextDueStr || 'n/a'}, AMC ends: ${endDateStr ?? 'n/a'}, kind: ${plan.visitKind}, create: ${createReason || 'no'}`
           );
         }
 
-        if (!createReason) {
-          const skipReason =
-            endDateStr && nextDueStr > endDateStr && preExpiryWindowStart
-              ? `Next service (${nextDueStr}) is after AMC ends (${endDateStr}); pre-expiry window starts ${preExpiryWindowStart}`
+        if (!createReason || !plan.nextDue) {
+          const skipReason = plan.visitKind === 'pushed'
+            ? `Next visit pushed to ${nextDueStr}; job is created from ${reminderStartStr}`
+            : plan.visitKind === 'pre_expiry'
+              ? `Final visit on AMC end (${endDateStr}); window starts ${plan.preExpiryWindowStart}`
               : `Not yet within ${AMC_REMINDER_DAYS_BEFORE}-day window (next due ${nextDueStr}, window starts ${reminderStartStr})`;
           if (isDev) console.log(`  ❌ Skipping - ${skipReason}`);
           preview.push({
@@ -5738,9 +5744,10 @@ export const db = {
             customer_name: customer.full_name || 'Unknown',
             reference_date: referenceDateStr,
             period_months: periodMonths,
-            next_due: nextDueStr,
+            next_due: plan.nextDue,
             would_create: false,
             skip_reason: skipReason,
+            visit_kind: plan.visitKind,
           });
           continue;
         }
@@ -5750,9 +5757,15 @@ export const db = {
           customer_name: customer.full_name || 'Unknown',
           reference_date: referenceDateStr,
           period_months: periodMonths,
-          next_due: createReason === 'pre_expiry' ? endDateStr : nextDueStr,
+          next_due: plan.nextDue,
           would_create: true,
-          skip_reason: createReason === 'pre_expiry' ? 'Pre-expiry (AMC ending soon)' : undefined,
+          skip_reason:
+            createReason === 'pre_expiry'
+              ? 'Pre-expiry (AMC ending soon)'
+              : createReason === 'pushed'
+                ? 'Pushed visit'
+                : undefined,
+          visit_kind: plan.visitKind,
         });
 
         {
@@ -5764,13 +5777,16 @@ export const db = {
           const serviceType = 'RO' as const;
           const jobNumber = generateJobNumber(serviceType);
 
-          const scheduledDateStr = getLocalCalendarDateYmd();
+          const scheduledDateStr = createReason === 'pushed' ? nextDueStr : getLocalCalendarDateYmd();
 
           const formattedEndDate = endDateStr ? formatAmcDateEnIN(endDateStr) : '';
+          const formattedDue = formatAmcDateEnIN(nextDueStr);
           const description =
             createReason === 'pre_expiry'
-              ? `AMC Service - Final visit before AMC contract ends on ${formattedEndDate}. Last service was on ${formattedLastServiceDate}. The next scheduled service (${formatAmcDateEnIN(nextDueStr)}) would fall after the AMC end date, so this job was auto-created in the last ${AMC_REMINDER_DAYS_BEFORE} days before expiry.`
-              : `AMC Service - Scheduled maintenance service. Last service was on ${formattedLastServiceDate}. Due on ${formatAmcDateEnIN(nextDueStr)}.`;
+              ? `AMC Service - Final visit before AMC contract ends on ${formattedEndDate}. Last service was on ${formattedLastServiceDate}. No regular service date is left before the contract ends, so this job was auto-created in the last ${AMC_REMINDER_DAYS_BEFORE} days.`
+              : createReason === 'pushed'
+                ? `AMC Service - Visit pushed to ${formattedDue}. Last service was on ${formattedLastServiceDate}. This date was set so the visit lines up with the AMC year, or another date you chose.`
+                : `AMC Service - Scheduled maintenance service. Last service was on ${formattedLastServiceDate}. Due on ${formattedDue}.`;
 
           const jobData = {
             job_number: jobNumber,
@@ -5796,6 +5812,7 @@ export const db = {
                 service_due: true,
                 amc_service: true,
                 pre_expiry: createReason === 'pre_expiry',
+                pushed_visit: createReason === 'pushed',
                 amc_expires_on: endDateStr ?? undefined,
                 lead_source: 'Direct call',
               },
@@ -5813,6 +5830,14 @@ export const db = {
       if (dryRun) {
         if (isDev) console.log('ℹ️ [DRY RUN] No jobs inserted. Preview:', preview);
         return { data: null, error: null, created: 0, preview };
+      }
+
+      if (pinsToClear.length > 0) {
+        const { error: clearError } = await supabase
+          .from('amc_contracts')
+          .update({ next_service_on: null })
+          .in('id', pinsToClear);
+        if (clearError && isDev) console.warn('Could not clear consumed AMC visit pins', clearError);
       }
 
       // Insert one-by-one so a single bad row cannot block the rest of the due set
@@ -5902,7 +5927,7 @@ export const db = {
         const result = await runCreation();
         // Manual button bypasses the throttle check but still updates the timer so a
         // refresh right after doesn't immediately re-run background auto-generation.
-        if (force) {
+        if (force && !options?.onlyCustomerId) {
           markAmcJobCreationRun();
         }
         return result;
