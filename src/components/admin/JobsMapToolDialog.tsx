@@ -37,7 +37,6 @@ import {
   jobsMapTechColor,
   offsetJobsMapRoute,
   jobsMapStatusLabel,
-  jobsMapStatusShort,
   jobsMapSuggestedZoom,
   jobsMapTechPhotoThumb,
   mergeJobsMapLiveRows,
@@ -183,6 +182,18 @@ function etaMarkerIcon(label: string): google.maps.Icon {
   };
 }
 
+function jobNameMarkerIcon(fill: string, name: string): google.maps.Icon {
+  const raw = name.trim().split(/\s+/)[0] || 'Customer';
+  const text = raw.replace(/[<>&"]/g, '').slice(0, 16);
+  const width = Math.min(160, Math.max(44, 7.6 * text.length + 22));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="32"><rect x="1" y="1" width="${width - 2}" height="30" rx="15" fill="${fill}" stroke="white" stroke-width="2"/><text x="${width / 2}" y="21" text-anchor="middle" fill="white" font-size="13" font-family="system-ui,sans-serif" font-weight="700">${text}</text></svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new google.maps.Size(width, 32),
+    anchor: new google.maps.Point(width / 2, 16),
+  };
+}
+
 function markerIcon(fill: string, label: string, square = false): google.maps.Icon {
   const shape = square
     ? `<rect x="4" y="4" width="28" height="28" rx="7" fill="${fill}" stroke="white" stroke-width="3"/>`
@@ -201,14 +212,6 @@ function techRouteColor(techId: string): string {
 
 function nameInitial(name: string): string {
   return name.trim().slice(0, 1).toUpperCase() || '?';
-}
-
-function jobBadgeLetter(job: JobsMapJob, techs: Array<{ id: string; name: string }>): string {
-  const assigned = job.assigned_technician_id
-    ? techs.find((tech) => tech.id === job.assigned_technician_id)
-    : null;
-  if (assigned?.name) return nameInitial(assigned.name);
-  return jobsMapStatusShort(job.status);
 }
 
 function InitialMark({ name, color, className }: { name: string; color: string; className?: string }) {
@@ -519,8 +522,8 @@ export default function JobsMapToolDialog({
       const selected = sel?.kind === 'job' && sel.id === job.id;
       addMarker(
         { lat: job.lat, lng: job.lng },
-        markerIcon(jobsMapPinColor(job), jobBadgeLetter(job, techsRef.current)),
-        `${job.job_number || 'Job'} · ${job.customer_name}`,
+        jobNameMarkerIcon(jobsMapPinColor(job), job.customer_name),
+        job.customer_name || 'Customer',
         selected ? 24 : 8,
         () => setSelection({ kind: 'job', id: job.id })
       );
