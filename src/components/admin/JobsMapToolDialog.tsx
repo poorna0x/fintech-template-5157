@@ -21,6 +21,7 @@ import {
   buildJobsMapTechs,
   fetchJobsMapLastLocations,
   fetchJobsMapLiveRows,
+  fetchJobsMapGalleryThumbs,
   fetchOngoingJobsForMap,
   filterJobsMapJobs,
   formatJobsMapDistance,
@@ -172,6 +173,13 @@ function agoLabel(iso: string | null): string {
   return `${hours}h ago`;
 }
 
+function galleryThumb(url: string): string {
+  if (!url.includes('cloudinary.com') || !url.includes('/upload/')) return url;
+  const [prefix, rest] = url.split('/upload/');
+  if (!prefix || !rest) return url;
+  return `${prefix}/upload/w_160,h_160,c_fill,q_auto,f_auto/${rest}`;
+}
+
 function etaMarkerIcon(label: string): google.maps.Icon {
   const text = label.replace(/[<>&]/g, '');
   const width = Math.min(220, Math.max(96, 7.2 * text.length + 28));
@@ -294,6 +302,8 @@ export default function JobsMapToolDialog({
   const [selection, setSelection] = useState<Selection>(null);
   const [pingingId, setPingingId] = useState<string | null>(null);
   const [routes, setRoutes] = useState<DrawnRoute[]>([]);
+  const [galleryPhotos, setGalleryPhotos] = useState<string[]>([]);
+  const [galleryLoading, setGalleryLoading] = useState(false);
   const [routing, setRouting] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [query, setQuery] = useState('');
@@ -348,6 +358,24 @@ export default function JobsMapToolDialog({
     if (!selectedJob) return;
     listScrollRef.current?.scrollTo({ top: 0 });
   }, [selectedJob]);
+  useEffect(() => {
+    const customerId = selectedJob?.customer_id;
+    if (!customerId) {
+      setGalleryPhotos([]);
+      setGalleryLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setGalleryLoading(true);
+    void fetchJobsMapGalleryThumbs(customerId).then((urls) => {
+      if (cancelled) return;
+      setGalleryPhotos(urls);
+      setGalleryLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedJob?.customer_id]);
   const selectedTech = selection?.kind === 'tech' ? techs.find((tech) => tech.id === selection.id) || null : null;
   const techJobs = selectedTech ? jobsForTechnician(visibleJobs, selectedTech.id) : [];
   const followupCount = jobs.filter((job) => isJobsMapFollowUpStatus(job.status)).length;
@@ -969,6 +997,30 @@ export default function JobsMapToolDialog({
                     ) : null}
                   </ul>
                 ) : null}
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">Gallery</p>
+                  {galleryLoading ? (
+                    <div className="flex h-16 items-center text-xs text-muted-foreground">
+                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                      Loading photos
+                    </div>
+                  ) : galleryPhotos.length ? (
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {galleryPhotos.map((url) => (
+                        <button
+                          key={url}
+                          type="button"
+                          className="h-16 w-16 shrink-0 cursor-pointer overflow-hidden rounded-lg border bg-muted"
+                          onClick={() => onOpenGallery?.(selectedJob.id, selectedJob.customer_id)}
+                        >
+                          <img src={galleryThumb(url)} alt="" className="h-full w-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No photos for this customer yet.</p>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     type="button"
