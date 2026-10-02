@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, Edit, RefreshCw } from 'lucide-react';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
+import { getLocalCalendarDateYmd } from '@/lib/pendingPaymentReminder';
 import type { Customer } from '@/types';
 import AmcSchedulePush, { useAmcNextDue } from '@/components/admin/AmcSchedulePush';
 
@@ -80,6 +81,7 @@ export default function AmcInfoDialog({
     nextServiceOn: amcInfo?.next_service_on,
     servicePeriodMonths: amcInfo?.service_period_months,
   });
+  const today = getLocalCalendarDateYmd();
   const notes = amcInfo ? readAmcNotes(amcInfo) : { amount: null, notes: '' };
   const active = String(amcInfo?.status || '').toUpperCase() === 'ACTIVE';
 
@@ -166,7 +168,11 @@ export default function AmcInfoDialog({
                   <div>
                     <p className="text-xs text-gray-500">Next visit</p>
                     <p className="text-sm font-medium text-gray-900">
-                      {nextDue ? formatShortDate(nextDue) : '—'}
+                      {nextDue
+                        ? nextDue < today
+                          ? `Due now · ${formatShortDate(nextDue)}`
+                          : formatShortDate(nextDue)
+                        : '—'}
                     </p>
                   </div>
                   <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => setScheduleOpen(true)}>

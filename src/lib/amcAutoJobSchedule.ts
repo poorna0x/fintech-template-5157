@@ -42,16 +42,25 @@ export function resolveAmcServicePeriodMonths(
   return Math.max(1, customMonths);
 }
 
+function formatLocalYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function addMonthsToDate(dateStr: string, months: number): string {
-  const d = new Date(dateStr + 'T12:00:00');
-  d.setMonth(d.getMonth() + months);
-  return d.toISOString().split('T')[0];
+  const [year, month, day] = dateStr.split('-').map((part) => parseInt(part, 10));
+  const target = new Date(year, month - 1 + months, 1, 12);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(day, lastDay));
+  return formatLocalYmd(target);
 }
 
 export function subtractDaysFromDate(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T12:00:00');
   d.setDate(d.getDate() - days);
-  return d.toISOString().split('T')[0];
+  return formatLocalYmd(d);
 }
 
 export function toDateOnly(value: string | null | undefined): string | null {
@@ -65,7 +74,8 @@ export function toDateOnly(value: string | null | undefined): string | null {
  * Visits stay on the contract calendar: start + period, + 2 periods, and so on.
  * A late or early visit does not slide the later dates.
  * Reference is the customer's last completed job (any service type).
- * The next due date is the first calendar slot after that visit.
+ * The next due date is the first calendar slot the last visit did not already cover.
+ * If that slot is already past, the current overdue slot is used and a job is created now.
  * If no slot is left before the AMC end, the last visit is in the final 10 days.
  * Staff can pin one visit with `next_service_on` (push to the 1-year date, or any date).
  * That pin is used once, then the calendar resumes.
@@ -111,13 +121,6 @@ export type AmcNextVisitPlan = {
   /** Last completed visit already covers the pinned date — clear `next_service_on`. */
   pushedConsumed: boolean;
 };
-
-function formatLocalYmd(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 
 /** Last day of contract year N. Same rule as a saved AMC end: start + N years, minus 1 day. */
 export function amcContractYearEnd(startDateStr: string, yearIndex: number): string {
@@ -201,7 +204,16 @@ export function planAmcNextVisit(args: {
   }
 
   const slots = listAmcContractSlots(args.startDate, args.periodMonths, endDate);
-  const nextSlot = slots.find((slot) => slot > args.referenceDate) || null;
+  // A visit within 21 days before a slot already covers that slot, so we do not
+  // open another job for the same cycle. Later slots stay on the calendar.
+  const uncovered = slots.filter(
+    (slot) => subtractDaysFromDate(slot, AMC_PUSH_CONSUMED_GRACE_DAYS) > args.referenceDate,
+  );
+  let nextSlot = uncovered[0] || null;
+  if (nextSlot && nextSlot < args.today) {
+    const overdue = uncovered.filter((slot) => slot <= args.today);
+    nextSlot = overdue[overdue.length - 1] || nextSlot;
+  }
   if (nextSlot) {
     const reminderStart = subtractDaysFromDate(nextSlot, AMC_REMINDER_DAYS_BEFORE);
     const shouldCreate = args.today >= reminderStart;

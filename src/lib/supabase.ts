@@ -5777,7 +5777,10 @@ export const db = {
           const serviceType = 'RO' as const;
           const jobNumber = generateJobNumber(serviceType);
 
-          const scheduledDateStr = createReason === 'pushed' ? nextDueStr : getLocalCalendarDateYmd();
+          // A future pushed visit stays on that date. Anything already due is scheduled today
+          // so the job shows up in Ongoing instead of on a date that has passed.
+          const scheduledDateStr =
+            createReason === 'pushed' && nextDueStr > todayStr ? nextDueStr : todayStr;
 
           const formattedEndDate = endDateStr ? formatAmcDateEnIN(endDateStr) : '';
           const formattedDue = formatAmcDateEnIN(nextDueStr);

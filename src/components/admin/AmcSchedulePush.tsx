@@ -125,8 +125,9 @@ export default function AmcSchedulePush({
 
   useEffect(() => {
     if (savedPin || !plan?.nextDue) return;
-    setPushDate((current) => current || plan.nextDue || undefined);
-  }, [contractId, savedPin, plan?.nextDue]);
+    const suggested = plan.nextDue < todayStr ? todayStr : plan.nextDue;
+    setPushDate((current) => current || suggested);
+  }, [contractId, savedPin, plan?.nextDue, todayStr]);
 
   useEffect(() => {
     if (!customerId) return;
@@ -251,7 +252,9 @@ export default function AmcSchedulePush({
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-sm font-medium text-gray-900">Next visit</p>
         {plan.nextDue && (
-          <p className="text-sm text-gray-600 tabular-nums">{formatVisitDate(plan.nextDue)}</p>
+          <p className="text-sm text-gray-600 tabular-nums">
+            {plan.nextDue < todayStr ? `Due now · ${formatVisitDate(plan.nextDue)}` : formatVisitDate(plan.nextDue)}
+          </p>
         )}
       </div>
       <DatePicker
@@ -307,7 +310,11 @@ export default function AmcSchedulePush({
           </Button>
         )}
       </div>
-      <p className="text-xs text-gray-500">The job opens 10 days before this date.</p>
+      <p className="text-xs text-gray-500">
+        {plan.nextDue && plan.nextDue < todayStr
+          ? 'This visit is overdue, so the job is created now.'
+          : 'The job opens 10 days before this date.'}
+      </p>
     </div>
   );
 }

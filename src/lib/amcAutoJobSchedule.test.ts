@@ -83,6 +83,87 @@ describe('planAmcNextVisit', () => {
     expect(plan.shouldCreate).toBe(true);
   });
 
+  it('creates an overdue visit now, using the latest missed slot', () => {
+    const plan = planAmcNextVisit({
+      startDate: '2025-09-24',
+      endDate: '2027-09-23',
+      periodMonths: 6,
+      referenceDate: '2025-09-24',
+      today: '2026-10-02',
+    });
+    expect(plan.nextDue).toBe('2026-09-24');
+    expect(plan.shouldCreate).toBe(true);
+    expect(plan.createReason).toBe('regular');
+  });
+
+  it('waits until 10 days before a future slot', () => {
+    const waiting = planAmcNextVisit({
+      startDate: '2026-09-26',
+      endDate: '2028-09-25',
+      periodMonths: 6,
+      referenceDate: '2026-09-26',
+      today: '2026-10-02',
+    });
+    expect(waiting.nextDue).toBe('2027-03-26');
+    expect(waiting.reminderStart).toBe('2027-03-16');
+    expect(waiting.shouldCreate).toBe(false);
+
+    const open = planAmcNextVisit({
+      startDate: '2026-09-26',
+      endDate: '2028-09-25',
+      periodMonths: 6,
+      referenceDate: '2026-09-26',
+      today: '2027-03-16',
+    });
+    expect(open.shouldCreate).toBe(true);
+    expect(open.createReason).toBe('regular');
+  });
+
+  it('treats a visit within 21 days before a slot as that visit', () => {
+    const plan = planAmcNextVisit({
+      startDate: '2025-09-24',
+      endDate: '2027-09-23',
+      periodMonths: 6,
+      referenceDate: '2026-09-10',
+      today: '2026-10-02',
+    });
+    expect(plan.nextDue).toBe('2027-03-24');
+    expect(plan.shouldCreate).toBe(false);
+  });
+
+  it('creates a pushed visit that is already past', () => {
+    const plan = planAmcNextVisit({
+      startDate: '2026-09-26',
+      endDate: '2028-09-25',
+      periodMonths: 6,
+      referenceDate: '2026-09-26',
+      pushedDate: '2026-09-30',
+      today: '2026-10-02',
+    });
+    expect(plan.visitKind).toBe('pushed');
+    expect(plan.shouldCreate).toBe(true);
+    expect(plan.nextDue).toBe('2026-09-30');
+  });
+
+  it('keeps a 3-year contract on this year’s anniversary', () => {
+    expect(nextAmcYearServiceDate('2026-02-04', '2029-02-03', '2026-10-02')).toBe('2027-02-03');
+    expect(listAmcContractSlots('2026-02-04', 6, '2029-02-03')).toEqual([
+      '2026-08-04',
+      '2027-02-04',
+      '2027-08-04',
+      '2028-02-04',
+      '2028-08-04',
+    ]);
+  });
+
+  it('does not roll a month-end start into the following month', () => {
+    expect(listAmcContractSlots('2026-01-31', 1, '2026-04-30')).toEqual([
+      '2026-02-28',
+      '2026-03-31',
+      '2026-04-30',
+    ]);
+  });
+
   it('clears the pin after a visit near the pushed date', () => {
     const plan = planAmcNextVisit({
       startDate: '2026-01-01',
