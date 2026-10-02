@@ -933,9 +933,9 @@ export default function JobsMapToolDialog({
                   </p>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
-                    className="h-11 w-11 shrink-0 cursor-pointer"
+                    className="h-11 w-11 shrink-0 cursor-pointer border-0 shadow-none"
                     aria-label="Close"
                     onClick={() => setSelection(null)}
                   >
