@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { AlertCircle, Edit, RefreshCw, Star } from 'lucide-react';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import type { Customer } from '@/types';
+import AmcSchedulePush from '@/components/admin/AmcSchedulePush';
 
 type AmcInfoDialogProps = {
   open: boolean;
@@ -21,6 +22,7 @@ type AmcInfoDialogProps = {
   loading: boolean;
   onClose: () => void;
   onEdit: () => void;
+  onScheduleUpdated?: (nextServiceOn: string | null) => void;
 };
 
 function AmcAdditionalInfoSection({ amcInfo }: { amcInfo: any }) {
@@ -90,10 +92,11 @@ export default function AmcInfoDialog({
   loading,
   onClose,
   onEdit,
+  onScheduleUpdated,
 }: AmcInfoDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Star className="w-5 h-5 text-green-600" />
@@ -160,6 +163,19 @@ export default function AmcInfoDialog({
               </div>
 
               <AmcAdditionalInfoSection amcInfo={amcInfo} />
+
+              {customer?.id && amcInfo.id && (
+                <AmcSchedulePush
+                  contractId={String(amcInfo.id)}
+                  customerId={String(amcInfo.customer_id || customer.id)}
+                  customerName={customer.fullName || 'Customer'}
+                  startDate={String(amcInfo.start_date || '')}
+                  endDate={String(amcInfo.end_date || '')}
+                  nextServiceOn={amcInfo.next_service_on}
+                  servicePeriodMonths={amcInfo.service_period_months}
+                  onUpdated={onScheduleUpdated}
+                />
+              )}
 
               <div className="pt-3 border-t border-green-200 text-xs text-gray-500">
                 <p>Created: {new Date(amcInfo.created_at).toLocaleString('en-IN')}</p>

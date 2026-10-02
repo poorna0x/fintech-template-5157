@@ -7796,6 +7796,9 @@ const AdminDashboard = () => {
           setAmcInfoDialogOpen(false);
           setAmcEditDialogOpen(true);
         }}
+        onScheduleUpdated={(nextServiceOn) => {
+          setAmcInfo((prev: any) => (prev ? { ...prev, next_service_on: nextServiceOn } : prev));
+        }}
       />
 
       {/* Edit AMC Dialog (opens from inside AMC Info) */}
