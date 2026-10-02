@@ -1203,7 +1203,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                       />
                     )}
                     <p className="text-xs text-gray-500 mt-1">
-                      Dates stay on this calendar even if a visit is done early or late. To move one visit, open the AMC and push it.
+                      The next job is this many months after the last completed service, created 10 days before that date. If that date is after the AMC ends, the last job is created 10 days before the end.
                     </p>
                   </div>
                 </div>

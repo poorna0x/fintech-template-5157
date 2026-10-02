@@ -29,7 +29,7 @@ describe('nextAmcYearServiceDate', () => {
 });
 
 describe('planAmcNextVisit', () => {
-  it('does not slide the next visit when the previous one was done a month late', () => {
+  it('starts the next visit from the completed date when the service was done late', () => {
     const plan = planAmcNextVisit({
       startDate: '2026-01-01',
       endDate: '2026-12-31',
@@ -37,12 +37,13 @@ describe('planAmcNextVisit', () => {
       referenceDate: '2026-06-01',
       today: '2026-06-02',
     });
-    expect(plan.nextDue).toBe('2026-09-01');
+    expect(plan.nextDue).toBe('2026-10-01');
+    expect(plan.reminderStart).toBe('2026-09-21');
     expect(plan.visitKind).toBe('slot');
     expect(plan.shouldCreate).toBe(false);
   });
 
-  it('keeps the year-end visit when no calendar slot is left', () => {
+  it('creates the last job 10 days before the AMC end when the next period is past the end', () => {
     const plan = planAmcNextVisit({
       startDate: '2026-01-01',
       endDate: '2026-12-31',
@@ -83,7 +84,7 @@ describe('planAmcNextVisit', () => {
     expect(plan.shouldCreate).toBe(true);
   });
 
-  it('creates an overdue visit now, using the latest missed slot', () => {
+  it('creates the first visit from the start date when nothing has been completed', () => {
     const plan = planAmcNextVisit({
       startDate: '2025-09-24',
       endDate: '2027-09-23',
@@ -91,7 +92,7 @@ describe('planAmcNextVisit', () => {
       referenceDate: '2025-09-24',
       today: '2026-10-02',
     });
-    expect(plan.nextDue).toBe('2026-09-24');
+    expect(plan.nextDue).toBe('2026-03-24');
     expect(plan.shouldCreate).toBe(true);
     expect(plan.createReason).toBe('regular');
   });
@@ -119,7 +120,7 @@ describe('planAmcNextVisit', () => {
     expect(open.createReason).toBe('regular');
   });
 
-  it('treats a visit within 21 days before a slot as that visit', () => {
+  it('counts the next visit from the day the service was completed', () => {
     const plan = planAmcNextVisit({
       startDate: '2025-09-24',
       endDate: '2027-09-23',
@@ -127,7 +128,8 @@ describe('planAmcNextVisit', () => {
       referenceDate: '2026-09-10',
       today: '2026-10-02',
     });
-    expect(plan.nextDue).toBe('2027-03-24');
+    expect(plan.nextDue).toBe('2027-03-10');
+    expect(plan.reminderStart).toBe('2027-02-28');
     expect(plan.shouldCreate).toBe(false);
   });
 

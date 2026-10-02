@@ -71,14 +71,12 @@ export function toDateOnly(value: string | null | undefined): string | null {
 
 /**
  * AMC auto-create rule.
- * Visits stay on the contract calendar: start + period, + 2 periods, and so on.
- * A late or early visit does not slide the later dates.
- * Reference is the customer's last completed job (any service type).
- * The next due date is the first calendar slot the last visit did not already cover.
- * If that slot is already past, the current overdue slot is used and a job is created now.
- * If no slot is left before the AMC end, the last visit is in the final 10 days.
+ * The next visit is the last completed service plus the period (4 or 6 months).
+ * A visit done in the 5th month makes the next one 4 months after that completed date.
+ * If that date is after the AMC end, the last job is created in the final 10 days.
+ * Reference is the customer's last completed job (any service type), else the AMC start.
  * Staff can pin one visit with `next_service_on` (push to the 1-year date, or any date).
- * That pin is used once, then the calendar resumes.
+ * That pin is used once, then the next visit is again the period after the completed date.
  * A job is created when today is within 10 days before the due date,
  * and the customer has no open AMC Service job yet.
  */
@@ -203,22 +201,12 @@ export function planAmcNextVisit(args: {
     };
   }
 
-  const slots = listAmcContractSlots(args.startDate, args.periodMonths, endDate);
-  // A visit within 21 days before a slot already covers that slot, so we do not
-  // open another job for the same cycle. Later slots stay on the calendar.
-  const uncovered = slots.filter(
-    (slot) => subtractDaysFromDate(slot, AMC_PUSH_CONSUMED_GRACE_DAYS) > args.referenceDate,
-  );
-  let nextSlot = uncovered[0] || null;
-  if (nextSlot && nextSlot < args.today) {
-    const overdue = uncovered.filter((slot) => slot <= args.today);
-    nextSlot = overdue[overdue.length - 1] || nextSlot;
-  }
-  if (nextSlot) {
-    const reminderStart = subtractDaysFromDate(nextSlot, AMC_REMINDER_DAYS_BEFORE);
+  const rolled = addMonthsToDate(args.referenceDate, Math.max(1, args.periodMonths));
+  if (!endDate || rolled <= endDate) {
+    const reminderStart = subtractDaysFromDate(rolled, AMC_REMINDER_DAYS_BEFORE);
     const shouldCreate = args.today >= reminderStart;
     return {
-      nextDue: nextSlot,
+      nextDue: rolled,
       reminderStart,
       shouldCreate,
       createReason: shouldCreate ? 'regular' : null,
@@ -241,15 +229,12 @@ export function planAmcNextVisit(args: {
     };
   }
 
-  const rolled = addMonthsToDate(args.referenceDate, Math.max(1, args.periodMonths));
-  const reminderStart = subtractDaysFromDate(rolled, AMC_REMINDER_DAYS_BEFORE);
-  const shouldCreate = args.today >= reminderStart;
   return {
-    nextDue: rolled,
-    reminderStart,
-    shouldCreate,
-    createReason: shouldCreate ? 'regular' : null,
-    visitKind: 'slot',
+    nextDue: null,
+    reminderStart: null,
+    shouldCreate: false,
+    createReason: null,
+    visitKind: null,
     preExpiryWindowStart: null,
     pushedConsumed,
   };

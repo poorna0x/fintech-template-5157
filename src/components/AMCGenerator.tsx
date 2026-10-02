@@ -1726,7 +1726,7 @@ export default function AMCGenerator({
                 <p className="text-xs text-gray-500">
                   {servicePeriodKind === 'no_auto'
                     ? 'No automatic AMC service jobs will be created for this contract.'
-                    : `Visits stay on the AMC calendar, every ${servicePeriodKind === '4' ? '4' : servicePeriodKind === '6' ? '6' : num(servicePeriodCustomMonths)} months from the start date. A late visit does not move the later dates. Jobs are created ${AMC_REMINDER_DAYS_BEFORE} days before the next date. If no date is left before the AMC ends, a final job is created in the last ${AMC_REMINDER_DAYS_BEFORE} days. You can push one visit to the AMC end date from AMC records.`}
+                    : `The next job is ${servicePeriodKind === '4' ? '4' : servicePeriodKind === '6' ? '6' : num(servicePeriodCustomMonths)} months after the last completed service, created ${AMC_REMINDER_DAYS_BEFORE} days before that date. If that date is after the AMC ends, the last job is created in the final ${AMC_REMINDER_DAYS_BEFORE} days. You can push one visit to another date from AMC records.`}
                 </p>
               </div>
 
