@@ -1096,11 +1096,11 @@ export default function JobsMapToolDialog({
                           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
                           style={{ backgroundColor: jobsMapPinColor(job) }}
                         >
-                          {jobBadgeLetter(job, techs)}
+                          {nameInitial(job.customer_name)}
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">
-                            {job.job_number || 'Job'} · {job.customer_name}
+                            {job.customer_name || 'Customer'}
                           </span>
                           <span className="block truncate text-xs text-muted-foreground">
                             {jobsMapStatusLabel(job.status)}
