@@ -8,7 +8,6 @@ import { formatNearbyDistanceLabel } from '@/lib/adminNearbyJobs';
 import { resolveJobDestinationCoordsSync } from '@/lib/jobLocationHelpers';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 import { haversineKm, readLocationLatLng } from '@/lib/maps';
-import { extractPhotoEntryUrl } from '@/lib/adminPhotoHelpers';
 import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 import type { Technician } from '@/types';
 
@@ -594,51 +593,6 @@ export function techsNearJobs(jobs: JobsMapJob[], techs: JobsMapTech[], maxKm = 
 
 export function formatJobsMapDistance(meters: number): string {
   return formatNearbyDistanceLabel(meters);
-}
-
-function jobsMapPhotoUrls(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const out: string[] = [];
-  for (const item of value) {
-    const url = extractPhotoEntryUrl(item).trim();
-    if (url.startsWith('http')) out.push(url);
-  }
-  return out;
-}
-
-/** Latest customer visit photos for the jobs-map panel. After shots first. */
-export function jobsMapGalleryUrls(
-  rows: Array<{ before_photos?: unknown; after_photos?: unknown; images?: unknown }>,
-  limit = 12
-): string[] {
-  const urls: string[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    for (const url of [
-      ...jobsMapPhotoUrls(row.after_photos),
-      ...jobsMapPhotoUrls(row.before_photos),
-      ...jobsMapPhotoUrls(row.images),
-    ]) {
-      if (seen.has(url)) continue;
-      seen.add(url);
-      urls.push(url);
-      if (urls.length >= limit) return urls;
-    }
-  }
-  return urls;
-}
-
-export async function fetchJobsMapGalleryThumbs(customerId: string): Promise<string[]> {
-  const id = String(customerId || '').trim();
-  if (!id) return [];
-  const { data, error } = await supabase
-    .from('jobs')
-    .select('before_photos,after_photos,images')
-    .eq('customer_id', id)
-    .order('created_at', { ascending: false })
-    .limit(4);
-  if (error || !data) return [];
-  return jobsMapGalleryUrls(data);
 }
 
 /** Drawn in order so the first two routes are always blue then orange. */

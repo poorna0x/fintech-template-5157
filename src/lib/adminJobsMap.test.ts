@@ -8,7 +8,6 @@ import {
   jobsMapCameraJobs,
   jobsMapCanQuickAssign,
   jobsMapFitPoints,
-  jobsMapGalleryUrls,
   jobsMapPinColor,
   jobsMapMetersPerPixel,
   jobsMapRouteColorAt,
@@ -382,18 +381,6 @@ describe('jobsMap live GPS merge', () => {
     expect(runs.some((run) => run.shared)).toBe(true);
     expect(runs.some((run) => !run.shared)).toBe(true);
     expect(runs.filter((run) => run.shared).every((run) => run.path.length >= 2)).toBe(true);
-  });
-
-  it('collects customer gallery photos with after shots first', () => {
-    expect(
-      jobsMapGalleryUrls([
-        {
-          before_photos: ['https://cdn.example/before.jpg'],
-          after_photos: [{ secure_url: 'https://cdn.example/after.jpg' }],
-          images: ['not-a-url', 'https://cdn.example/after.jpg'],
-        },
-      ])
-    ).toEqual(['https://cdn.example/after.jpg', 'https://cdn.example/before.jpg']);
   });
 
   it('parses string coordinates from a live row', () => {
