@@ -958,7 +958,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
             {selectedAMC && (
               <div className="space-y-4">
                 <DialogHeader className="space-y-1 text-left">
-                  <div className="flex items-start justify-between gap-3 pr-6">
+                  <div className="flex items-center justify-between gap-3 pr-14">
                     <DialogTitle className="text-lg leading-tight">{selectedAMC.customerName}</DialogTitle>
                     <Badge
                       className={
