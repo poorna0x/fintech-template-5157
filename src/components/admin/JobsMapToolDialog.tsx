@@ -33,9 +33,7 @@ import {
   jobsMapPinColor,
   jobsMapReachLabel,
   jobsMapRouteColorAt,
-  jobsMapRouteSpreadMeters,
   jobsMapTechColor,
-  offsetJobsMapRoute,
   jobsMapStatusLabel,
   jobsMapSuggestedZoom,
   jobsMapTechPhotoThumb,
@@ -182,18 +180,6 @@ function etaMarkerIcon(label: string): google.maps.Icon {
   };
 }
 
-function jobNameMarkerIcon(fill: string, name: string): google.maps.Icon {
-  const raw = name.trim().split(/\s+/)[0] || 'Customer';
-  const text = raw.replace(/[<>&"]/g, '').slice(0, 16);
-  const width = Math.min(160, Math.max(44, 7.6 * text.length + 22));
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="32"><rect x="1" y="1" width="${width - 2}" height="30" rx="15" fill="${fill}" stroke="white" stroke-width="2"/><text x="${width / 2}" y="21" text-anchor="middle" fill="white" font-size="13" font-family="system-ui,sans-serif" font-weight="700">${text}</text></svg>`;
-  return {
-    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-    scaledSize: new google.maps.Size(width, 32),
-    anchor: new google.maps.Point(width / 2, 16),
-  };
-}
-
 function markerIcon(fill: string, label: string, square = false): google.maps.Icon {
   const shape = square
     ? `<rect x="4" y="4" width="28" height="28" rx="7" fill="${fill}" stroke="white" stroke-width="3"/>`
@@ -203,6 +189,22 @@ function markerIcon(fill: string, label: string, square = false): google.maps.Ic
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
     scaledSize: new google.maps.Size(36, 36),
     anchor: new google.maps.Point(18, 18),
+  };
+}
+
+function jobHoverIcon(fill: string, initial: string, name: string): google.maps.Icon {
+  const text = name.replace(/[<>&"]/g, '').slice(0, 32) || 'Customer';
+  const letter = initial.replace(/[<>&"]/g, '').slice(0, 1) || '?';
+  const pillW = Math.min(240, Math.max(72, 7.1 * text.length + 22));
+  const width = Math.max(36, pillW);
+  const height = 70;
+  const cx = width / 2;
+  const pillX = (width - pillW) / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect x="${pillX + 1}" y="1" width="${pillW - 2}" height="28" rx="14" fill="#111827"/><text x="${cx}" y="20" text-anchor="middle" fill="white" font-size="12" font-family="system-ui,sans-serif" font-weight="700">${text}</text><circle cx="${cx}" cy="52" r="14" fill="${fill}" stroke="white" stroke-width="3"/><text x="${cx}" y="56.5" text-anchor="middle" fill="white" font-size="11" font-family="system-ui,sans-serif" font-weight="700">${letter}</text></svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new google.maps.Size(width, height),
+    anchor: new google.maps.Point(cx, 52),
   };
 }
 
@@ -515,18 +517,31 @@ export default function JobsMapToolDialog({
       });
       marker.addListener('click', onClick);
       overlaysRef.current.push(marker);
+      return marker;
     };
 
     const pinnedJobs = sel?.kind === 'job' ? shownJobs.filter((job) => job.id === sel.id) : shownJobs;
     for (const job of pinnedJobs) {
       const selected = sel?.kind === 'job' && sel.id === job.id;
-      addMarker(
+      const name = job.customer_name || 'Customer';
+      const restIcon = markerIcon(jobsMapPinColor(job), nameInitial(name));
+      const hoverIcon = jobHoverIcon(jobsMapPinColor(job), nameInitial(name), name);
+      const restZ = selected ? 24 : 8;
+      const pin = addMarker(
         { lat: job.lat, lng: job.lng },
-        jobNameMarkerIcon(jobsMapPinColor(job), job.customer_name),
-        job.customer_name || 'Customer',
-        selected ? 24 : 8,
+        restIcon,
+        name,
+        restZ,
         () => setSelection({ kind: 'job', id: job.id })
       );
+      pin.addListener('mouseover', () => {
+        pin.setIcon(hoverIcon);
+        pin.setZIndex(40);
+      });
+      pin.addListener('mouseout', () => {
+        pin.setIcon(restIcon);
+        pin.setZIndex(restZ);
+      });
     }
 
     for (const tech of shownTechs) {
@@ -673,32 +688,23 @@ export default function JobsMapToolDialog({
     clearRouteOverlays();
     if (!map || !window.google?.maps || !routes.length) return;
     const ends: Array<{ lat: number; lng: number }> = [];
-    const drawn = routes.map((route, index) => {
-      const casing = new window.google.maps.Polyline({
-        map,
-        path: route.path,
-        strokeColor: '#ffffff',
-        strokeOpacity: 1,
-        strokeWeight: 7,
-        zIndex: 8,
-        geodesic: true,
-      });
+    for (const route of routes) {
       const line = new window.google.maps.Polyline({
         map,
         path: route.path,
         strokeColor: route.color,
         strokeOpacity: 1,
         strokeWeight: 5,
-        zIndex: 20 + index,
-        geodesic: true,
+        zIndex: 8,
+        geodesic: false,
       });
-      routeOverlaysRef.current.push(casing, line);
+      routeOverlaysRef.current.push(line);
       const reach = jobsMapReachLabel(route.durationText, route.durationSeconds);
-      let badge: google.maps.Marker | null = null;
       if (reach && route.path.length) {
-        badge = new window.google.maps.Marker({
+        const mid = route.path[Math.floor(route.path.length / 2)];
+        const badge = new window.google.maps.Marker({
           map,
-          position: route.path[Math.floor(route.path.length / 2)],
+          position: mid,
           icon: etaMarkerIcon(reach),
           title: `Reaches ${reach}`,
           zIndex: 30,
@@ -710,40 +716,12 @@ export default function JobsMapToolDialog({
       const last = route.path[route.path.length - 1];
       if (first) ends.push(first);
       if (last) ends.push(last);
-      return { route, index, casing, line, badge };
-    });
-
-    const applySpread = () => {
-      const zoom = map.getZoom() ?? 12;
-      for (const item of drawn) {
-        const sample = item.route.path[Math.floor(item.route.path.length / 2)] || item.route.path[0];
-        const meters = jobsMapRouteSpreadMeters(item.index, routes.length, sample?.lat ?? 12.97, zoom);
-        const path = offsetJobsMapRoute(item.route.path, meters);
-        item.casing.setPath(path);
-        item.line.setPath(path);
-        if (item.badge && path.length) item.badge.setPosition(path[Math.floor(path.length / 2)]);
-      }
-    };
-    applySpread();
-    let frame = 0;
-    const onZoom = () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        applySpread();
-      });
-    };
-    const zoomListener = map.addListener('zoom_changed', onZoom);
-
+    }
     try {
       scheduleJobsMapCamera(map, jobsMapFitPoints(ends), cameraIdleRef);
     } catch {
       /* ignore */
     }
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      zoomListener.remove();
-    };
   }, [routes, mapReady]);
 
   const pingTech = async (technicianId: string) => {
