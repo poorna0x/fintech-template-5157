@@ -21,7 +21,56 @@ type AmcSchedulePushProps = {
   nextServiceOn?: string | null;
   servicePeriodMonths?: number | null;
   onUpdated?: (nextServiceOn: string | null) => void;
+  /** Drop the card frame when this already sits inside a dialog. */
+  plain?: boolean;
 };
+
+export function useAmcNextDue(args: {
+  customerId?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  nextServiceOn?: string | null;
+  servicePeriodMonths?: number | null;
+}): string | null {
+  const start = toDateOnly(args.startDate) || '';
+  const end = toDateOnly(args.endDate) || '';
+  const savedPin = toDateOnly(args.nextServiceOn);
+  const period =
+    args.servicePeriodMonths != null ? args.servicePeriodMonths : getDefaultAmcServicePeriodMonths();
+  const todayStr = getLocalCalendarDateYmd();
+  const [lastCompleted, setLastCompleted] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!args.customerId) return;
+    let cancel = false;
+    void supabase
+      .from('jobs')
+      .select('completed_at')
+      .eq('customer_id', args.customerId)
+      .eq('status', 'COMPLETED')
+      .not('completed_at', 'is', null)
+      .order('completed_at', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (cancel) return;
+        setLastCompleted(toDateOnly(data?.[0]?.completed_at));
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [args.customerId]);
+
+  if (!start || !end || end < todayStr || period <= 0) return null;
+  const reference = lastCompleted && lastCompleted > start ? lastCompleted : start;
+  return planAmcNextVisit({
+    startDate: start,
+    endDate: end,
+    periodMonths: period,
+    referenceDate: reference,
+    pushedDate: savedPin,
+    today: todayStr,
+  }).nextDue;
+}
 
 function formatVisitDate(dateStr: string): string {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN', {
@@ -41,6 +90,7 @@ export default function AmcSchedulePush({
   nextServiceOn,
   servicePeriodMonths,
   onUpdated,
+  plain = false,
 }: AmcSchedulePushProps) {
   const start = toDateOnly(startDate) || '';
   const end = toDateOnly(endDate) || '';
@@ -55,10 +105,28 @@ export default function AmcSchedulePush({
   const [pushing, setPushing] = useState(false);
   const [lastCompleted, setLastCompleted] = useState<string | null>(null);
 
+  const reference = lastCompleted && start && lastCompleted > start ? lastCompleted : start;
+  const plan =
+    start && end
+      ? planAmcNextVisit({
+          startDate: start,
+          endDate: end,
+          periodMonths: period,
+          referenceDate: reference,
+          pushedDate: pinned,
+          today: todayStr,
+        })
+      : null;
+
   useEffect(() => {
     setPinned(savedPin);
-    setPushDate(savedPin || end || undefined);
-  }, [contractId, savedPin, end]);
+    setPushDate(savedPin || undefined);
+  }, [contractId, savedPin]);
+
+  useEffect(() => {
+    if (savedPin || !plan?.nextDue) return;
+    setPushDate((current) => current || plan.nextDue || undefined);
+  }, [contractId, savedPin, plan?.nextDue]);
 
   useEffect(() => {
     if (!customerId) return;
@@ -80,17 +148,8 @@ export default function AmcSchedulePush({
     };
   }, [customerId]);
 
-  if (!active || period <= 0 || !start) return null;
+  if (!active || period <= 0 || !start || !plan) return null;
 
-  const reference = lastCompleted && lastCompleted > start ? lastCompleted : start;
-  const plan = planAmcNextVisit({
-    startDate: start,
-    endDate: end,
-    periodMonths: period,
-    referenceDate: reference,
-    pushedDate: pinned,
-    today: todayStr,
-  });
   const yearServiceDate = nextAmcYearServiceDate(start, end, todayStr);
 
   const pushVisit = async (date: string | null) => {
@@ -167,7 +226,7 @@ export default function AmcSchedulePush({
       }
 
       setPinned(date);
-      setPushDate(date || end || undefined);
+      setPushDate(date || plan.nextDue || undefined);
       onUpdated?.(date);
       const movedOpenJob = Boolean(date && openJobs && openJobs.length > 0);
       toast.success(
@@ -188,7 +247,7 @@ export default function AmcSchedulePush({
   };
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-3 space-y-2.5">
+    <div className={plain ? 'space-y-2.5' : 'rounded-lg border border-gray-200 bg-gray-50/80 p-3 space-y-2.5'}>
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-sm font-medium text-gray-900">Next visit</p>
         {plan.nextDue && (
