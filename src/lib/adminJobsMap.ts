@@ -626,6 +626,26 @@ export function jobsMapRouteOffsetMeters(index: number, count: number, gapMeters
   return (index - mid) * gapMeters;
 }
 
+/** Web Mercator meters per screen pixel at `zoom`. */
+export function jobsMapMetersPerPixel(lat: number, zoom: number): number {
+  const safeZoom = Number.isFinite(zoom) ? Math.min(22, Math.max(0, zoom)) : 12;
+  const safeLat = Number.isFinite(lat) ? lat : 0;
+  return (156543.03392 * Math.cos((safeLat * Math.PI) / 180)) / 2 ** safeZoom;
+}
+
+/** Sideways shift in meters that stays a few pixels apart at the current zoom. */
+export function jobsMapRouteSpreadMeters(
+  index: number,
+  count: number,
+  lat: number,
+  zoom: number,
+  gapPx = 9
+): number {
+  if (count <= 1) return 0;
+  const mid = (count - 1) / 2;
+  return (index - mid) * gapPx * jobsMapMetersPerPixel(lat, zoom);
+}
+
 /**
  * Nudge a driving path left/right so two technicians on the same road
  * stay two lines instead of painting on top of each other.

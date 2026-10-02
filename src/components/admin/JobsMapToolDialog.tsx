@@ -33,7 +33,7 @@ import {
   jobsMapPinColor,
   jobsMapReachLabel,
   jobsMapRouteColorAt,
-  jobsMapRouteOffsetMeters,
+  jobsMapRouteSpreadMeters,
   jobsMapTechColor,
   offsetJobsMapRoute,
   jobsMapStatusLabel,
@@ -670,34 +670,32 @@ export default function JobsMapToolDialog({
     clearRouteOverlays();
     if (!map || !window.google?.maps || !routes.length) return;
     const ends: Array<{ lat: number; lng: number }> = [];
-    routes.forEach((route, index) => {
-      const path = offsetJobsMapRoute(route.path, jobsMapRouteOffsetMeters(index, routes.length));
-      const z = 8 + index * 2;
+    const drawn = routes.map((route, index) => {
       const casing = new window.google.maps.Polyline({
         map,
-        path,
+        path: route.path,
         strokeColor: '#ffffff',
         strokeOpacity: 1,
-        strokeWeight: 9,
-        zIndex: z,
+        strokeWeight: 7,
+        zIndex: 8,
         geodesic: true,
       });
       const line = new window.google.maps.Polyline({
         map,
-        path,
+        path: route.path,
         strokeColor: route.color,
         strokeOpacity: 1,
         strokeWeight: 5,
-        zIndex: z + 1,
+        zIndex: 20 + index,
         geodesic: true,
       });
       routeOverlaysRef.current.push(casing, line);
       const reach = jobsMapReachLabel(route.durationText, route.durationSeconds);
-      if (reach && path.length) {
-        const mid = path[Math.floor(path.length / 2)];
-        const badge = new window.google.maps.Marker({
+      let badge: google.maps.Marker | null = null;
+      if (reach && route.path.length) {
+        badge = new window.google.maps.Marker({
           map,
-          position: mid,
+          position: route.path[Math.floor(route.path.length / 2)],
           icon: etaMarkerIcon(reach),
           title: `Reaches ${reach}`,
           zIndex: 30,
@@ -705,16 +703,44 @@ export default function JobsMapToolDialog({
         });
         routeOverlaysRef.current.push(badge);
       }
-      const first = path[0];
-      const last = path[path.length - 1];
+      const first = route.path[0];
+      const last = route.path[route.path.length - 1];
       if (first) ends.push(first);
       if (last) ends.push(last);
+      return { route, index, casing, line, badge };
     });
+
+    const applySpread = () => {
+      const zoom = map.getZoom() ?? 12;
+      for (const item of drawn) {
+        const sample = item.route.path[Math.floor(item.route.path.length / 2)] || item.route.path[0];
+        const meters = jobsMapRouteSpreadMeters(item.index, routes.length, sample?.lat ?? 12.97, zoom);
+        const path = offsetJobsMapRoute(item.route.path, meters);
+        item.casing.setPath(path);
+        item.line.setPath(path);
+        if (item.badge && path.length) item.badge.setPosition(path[Math.floor(path.length / 2)]);
+      }
+    };
+    applySpread();
+    let frame = 0;
+    const onZoom = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        applySpread();
+      });
+    };
+    const zoomListener = map.addListener('zoom_changed', onZoom);
+
     try {
       scheduleJobsMapCamera(map, jobsMapFitPoints(ends), cameraIdleRef);
     } catch {
       /* ignore */
     }
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      zoomListener.remove();
+    };
   }, [routes, mapReady]);
 
   const pingTech = async (technicianId: string) => {

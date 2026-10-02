@@ -9,8 +9,10 @@ import {
   jobsMapCanQuickAssign,
   jobsMapFitPoints,
   jobsMapPinColor,
+  jobsMapMetersPerPixel,
   jobsMapRouteColorAt,
   jobsMapRouteOffsetMeters,
+  jobsMapRouteSpreadMeters,
   offsetJobsMapRoute,
   jobsMapReachLabel,
   jobsMapSuggestedZoom,
@@ -338,22 +340,24 @@ describe('jobsMap live GPS merge', () => {
     expect(jobsMapLiveStamp(merged[0])).toBe('2026-09-20T04:40:00.000Z');
   });
 
-  it('gives overlapping technician routes different colors and a sideways gap', () => {
+  it('keeps merged technician routes a few pixels apart at any zoom', () => {
     expect(jobsMapRouteColorAt(0)).toBe('#2563eb');
     expect(jobsMapRouteColorAt(1)).toBe('#ea580c');
     expect(jobsMapRouteColorAt(0)).not.toBe(jobsMapRouteColorAt(1));
     expect(jobsMapRouteOffsetMeters(0, 1)).toBe(0);
-    expect(jobsMapRouteOffsetMeters(0, 2)).toBeLessThan(0);
-    expect(jobsMapRouteOffsetMeters(1, 2)).toBeGreaterThan(0);
+    expect(jobsMapRouteSpreadMeters(0, 1, 12.97, 12)).toBe(0);
+    expect(jobsMapRouteSpreadMeters(0, 2, 12.97, 12)).toBeLessThan(0);
+    expect(jobsMapRouteSpreadMeters(1, 2, 12.97, 12)).toBeGreaterThan(0);
+    expect(jobsMapMetersPerPixel(12.97, 11)).toBeGreaterThan(jobsMapMetersPerPixel(12.97, 15));
 
     const road = [
       { lat: 12.97, lng: 77.59 },
       { lat: 12.98, lng: 77.59 },
     ];
-    const shifted = offsetJobsMapRoute(road, 14);
-    expect(shifted).toHaveLength(2);
-    expect(Math.abs(shifted[0].lng - road[0].lng)).toBeGreaterThan(0.00005);
-    expect(Math.abs(shifted[0].lat - road[0].lat)).toBeLessThan(0.0002);
+    const wide = offsetJobsMapRoute(road, jobsMapRouteSpreadMeters(1, 2, 12.97, 11));
+    const tight = offsetJobsMapRoute(road, jobsMapRouteSpreadMeters(1, 2, 12.97, 16));
+    expect(Math.abs(wide[0].lng - road[0].lng)).toBeGreaterThan(Math.abs(tight[0].lng - road[0].lng));
+    expect(Math.abs(wide[0].lat - road[0].lat)).toBeLessThan(Math.abs(wide[0].lng - road[0].lng));
   });
 
   it('parses string coordinates from a live row', () => {
