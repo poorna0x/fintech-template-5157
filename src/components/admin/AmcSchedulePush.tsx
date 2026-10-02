@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
-import { Label } from '@/components/ui/label';
 import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import {
@@ -189,14 +188,12 @@ export default function AmcSchedulePush({
   };
 
   return (
-    <div className="rounded-md border border-gray-200 bg-white p-3 space-y-3">
-      <div>
-        <Label className="text-sm font-medium">Change next AMC visit</Label>
-        <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-          {plan.nextDue
-            ? `Next visit ${plan.visitKind === 'pushed' ? 'pushed to' : 'on'} ${formatVisitDate(plan.nextDue)}. The job is created 10 days before that date.`
-            : 'Pick the date for the next AMC visit. The job is created 10 days before that date.'}
-        </p>
+    <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-3 space-y-2.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-sm font-medium text-gray-900">Next visit</p>
+        {plan.nextDue && (
+          <p className="text-sm text-gray-600 tabular-nums">{formatVisitDate(plan.nextDue)}</p>
+        )}
       </div>
       <DatePicker
         value={pushDate}
@@ -204,24 +201,26 @@ export default function AmcSchedulePush({
         placeholder="Visit date"
         disabled={pushing}
       />
-      <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         <Button
           type="button"
           size="sm"
+          className="h-8"
           disabled={pushing || !pushDate}
           onClick={() => pushDate && void pushVisit(pushDate)}
         >
-          {pushing ? 'Saving…' : 'Push visit to this date'}
+          {pushing ? 'Saving…' : 'Set this date'}
         </Button>
         {yearServiceDate && (
           <Button
             type="button"
             size="sm"
             variant="outline"
+            className="h-8 bg-white"
             disabled={pushing}
             onClick={() => void pushVisit(yearServiceDate)}
           >
-            Push to 1 year service ({formatVisitDate(yearServiceDate)})
+            1 year · {formatVisitDate(yearServiceDate)}
           </Button>
         )}
         {end && (
@@ -229,10 +228,11 @@ export default function AmcSchedulePush({
             type="button"
             size="sm"
             variant="outline"
+            className="h-8 bg-white"
             disabled={pushing}
             onClick={() => void pushVisit(end)}
           >
-            Push to AMC end
+            AMC end
           </Button>
         )}
         {pinned && (
@@ -240,13 +240,15 @@ export default function AmcSchedulePush({
             type="button"
             size="sm"
             variant="ghost"
+            className="h-8"
             disabled={pushing}
             onClick={() => void pushVisit(null)}
           >
-            Use automatic dates
+            Automatic
           </Button>
         )}
       </div>
+      <p className="text-xs text-gray-500">The job opens 10 days before this date.</p>
     </div>
   );
 }

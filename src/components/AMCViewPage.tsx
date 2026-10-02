@@ -51,6 +51,14 @@ import {
 const AMC_PAGE_SIZE = 20;
 
 /** Label for AMC service auto-job period shown under Duration. */
+function formatAmcAddress(address: any): string {
+  if (!address || typeof address !== 'object') return '';
+  return [address.street, address.area, address.city, address.pincode]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
 function formatAmcAutoGenPeriodLabel(servicePeriodMonths: number | null | undefined): string {
   const usingDefault = servicePeriodMonths == null;
   const { kind, custom } = deriveAmcServicePeriodKind(servicePeriodMonths);
@@ -946,110 +954,54 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
 
         {/* View AMC Dialog */}
         <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>AMC Details</DialogTitle>
-              <DialogDescription>
-                View complete AMC agreement information
-              </DialogDescription>
-            </DialogHeader>
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             {selectedAMC && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-xs text-gray-500">Customer Name</Label>
-                    <p className="font-medium">{selectedAMC.customerName}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">Phone</Label>
-                    <p className="font-medium">{selectedAMC.customerPhone}</p>
-                  </div>
-                  {selectedAMC.customerLocation && (
-                    <div>
-                      <Label className="text-xs text-gray-500">Location</Label>
-                      <p className="font-medium">{selectedAMC.customerLocation}</p>
-                    </div>
-                  )}
-                  <div>
-                    <Label className="text-xs text-gray-500">Email</Label>
-                    <p className="font-medium">{selectedAMC.customerEmail || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">Service brand</Label>
-                    <p className="font-medium">{getDocumentBrandLabel(selectedAMC.serviceBrand)}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">AMC Given By</Label>
-                    <p className="font-medium">{selectedAMC.givenByTechnicianName}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">Service Type</Label>
-                    <p className="font-medium">{selectedAMC.serviceType}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">Brand & Model</Label>
-                    <p className="font-medium">{selectedAMC.brand} {selectedAMC.model}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">Start Date</Label>
-                    <p className="font-medium">
-                      {selectedAMC.dateGiven ? new Date(selectedAMC.dateGiven).toLocaleDateString('en-IN') : 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">End Date</Label>
-                    <p className="font-medium">
-                      {selectedAMC.endDate ? new Date(selectedAMC.endDate).toLocaleDateString('en-IN') : 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">Duration</Label>
-                    <p className="font-medium">
-                      {selectedAMC.years} {selectedAMC.years === 1 ? 'year' : 'years'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {formatAmcAutoGenPeriodLabel(selectedAMC.servicePeriodMonths)}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">Next Auto Generation</Label>
-                    <p className="font-medium">{selectedAMC.autoGenerationLabel}</p>
-                    {selectedAMC.nextAMCDueDate && (
-                      <p className="text-xs text-gray-500">
-                        Service due: {formatDate(selectedAMC.nextAMCDueDate)}
-                      </p>
-                    )}
-                    {selectedAMC.autoGenerationStatus === 'DUE' && (
-                      <p className="text-xs text-amber-700">Due now</p>
-                    )}
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">Includes Prefilter</Label>
-                    <p className="font-medium">{selectedAMC.includesPrefilter ? 'Yes' : 'No'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-gray-500">Status</Label>
+                <DialogHeader className="space-y-1 text-left">
+                  <div className="flex items-start justify-between gap-3 pr-6">
+                    <DialogTitle className="text-lg leading-tight">{selectedAMC.customerName}</DialogTitle>
                     <Badge
                       className={
                         getAMCStatus(selectedAMC.endDate) === 'ACTIVE'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
+                          ? 'bg-green-100 text-green-800 shrink-0'
+                          : 'bg-red-100 text-red-800 shrink-0'
                       }
                     >
                       {getAMCStatus(selectedAMC.endDate) === 'ACTIVE' ? 'Active' : 'Expired'}
                     </Badge>
                   </div>
-                  {selectedAMC.amount && (
-                    <div>
-                      <Label className="text-xs text-gray-500">AMC Amount</Label>
-                      <p className="font-medium text-lg text-blue-600 font-semibold">
-                        ₹{typeof selectedAMC.amount === 'number' 
-                          ? selectedAMC.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                          : parseFloat(selectedAMC.amount.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  )}
+                  <DialogDescription>
+                    {[selectedAMC.customerPhone, selectedAMC.customerLocation].filter(Boolean).join(' · ') || 'AMC'}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-gray-900">
+                    {[selectedAMC.brand, selectedAMC.model].filter(Boolean).join(' ') || 'RO'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {selectedAMC.dateGiven ? formatDate(selectedAMC.dateGiven) : '—'}
+                    {' – '}
+                    {selectedAMC.endDate ? formatDate(selectedAMC.endDate) : '—'}
+                    {' · '}
+                    {selectedAMC.years} {selectedAMC.years === 1 ? 'year' : 'years'}
+                    {' · '}
+                    {formatAmcAutoGenPeriodLabel(selectedAMC.servicePeriodMonths)
+                      .replace(' (app default)', '')
+                      .replace(/^Auto /, '')}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {getDocumentBrandLabel(selectedAMC.serviceBrand)}
+                    {selectedAMC.givenByTechnicianName && selectedAMC.givenByTechnicianName !== 'Not set'
+                      ? ` · ${selectedAMC.givenByTechnicianName}`
+                      : ''}
+                    {selectedAMC.includesPrefilter ? ' · Prefilter' : ''}
+                    {selectedAMC.amount
+                      ? ` · ₹${Number(selectedAMC.amount).toLocaleString('en-IN')}`
+                      : ''}
+                  </p>
                 </div>
+
                 {getAMCStatus(selectedAMC.endDate) === 'ACTIVE' &&
                   selectedAMC.autoGenerationStatus !== 'NO_AUTO' && (
                   <AmcSchedulePush
@@ -1068,28 +1020,17 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                     }}
                   />
                 )}
-                {typeof selectedAMC.customerAddress === 'object' && (
-                  <div>
-                    <Label className="text-xs text-gray-500">Address</Label>
-                    <p className="font-medium">
-                      {selectedAMC.customerAddress.street || ''}, {selectedAMC.customerAddress.area || ''}, {' '}
-                      {selectedAMC.customerAddress.city || ''} - {selectedAMC.customerAddress.pincode || ''}
-                    </p>
-                  </div>
+
+                {formatAmcAddress(selectedAMC.customerAddress) && (
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    {formatAmcAddress(selectedAMC.customerAddress)}
+                  </p>
                 )}
                 {selectedAMC.additionalNotes && (
-                  <div>
-                    <Label className="text-xs text-gray-500 font-semibold">AMC Summary</Label>
-                    <p className="font-medium whitespace-pre-wrap mt-1 p-3 bg-gray-50 rounded-md border border-gray-200">
-                      {selectedAMC.additionalNotes}
-                    </p>
-                  </div>
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">
+                    {selectedAMC.additionalNotes}
+                  </p>
                 )}
-                <div className="flex justify-end pt-4">
-                  <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                    Close
-                  </Button>
-                </div>
               </div>
             )}
           </DialogContent>
