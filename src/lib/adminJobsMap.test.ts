@@ -9,6 +9,9 @@ import {
   jobsMapCanQuickAssign,
   jobsMapFitPoints,
   jobsMapPinColor,
+  jobsMapRouteColorAt,
+  jobsMapRouteOffsetMeters,
+  offsetJobsMapRoute,
   jobsMapReachLabel,
   jobsMapSuggestedZoom,
   jobsMapTechPhotoThumb,
@@ -333,6 +336,24 @@ describe('jobsMap live GPS merge', () => {
     );
     expect(merged[0].latitude).toBe(12.92);
     expect(jobsMapLiveStamp(merged[0])).toBe('2026-09-20T04:40:00.000Z');
+  });
+
+  it('gives overlapping technician routes different colors and a sideways gap', () => {
+    expect(jobsMapRouteColorAt(0)).toBe('#2563eb');
+    expect(jobsMapRouteColorAt(1)).toBe('#ea580c');
+    expect(jobsMapRouteColorAt(0)).not.toBe(jobsMapRouteColorAt(1));
+    expect(jobsMapRouteOffsetMeters(0, 1)).toBe(0);
+    expect(jobsMapRouteOffsetMeters(0, 2)).toBeLessThan(0);
+    expect(jobsMapRouteOffsetMeters(1, 2)).toBeGreaterThan(0);
+
+    const road = [
+      { lat: 12.97, lng: 77.59 },
+      { lat: 12.98, lng: 77.59 },
+    ];
+    const shifted = offsetJobsMapRoute(road, 14);
+    expect(shifted).toHaveLength(2);
+    expect(Math.abs(shifted[0].lng - road[0].lng)).toBeGreaterThan(0.00005);
+    expect(Math.abs(shifted[0].lat - road[0].lat)).toBeLessThan(0.0002);
   });
 
   it('parses string coordinates from a live row', () => {

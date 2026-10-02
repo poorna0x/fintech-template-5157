@@ -32,6 +32,10 @@ import {
   jobsMapFitPoints,
   jobsMapPinColor,
   jobsMapReachLabel,
+  jobsMapRouteColorAt,
+  jobsMapRouteOffsetMeters,
+  jobsMapTechColor,
+  offsetJobsMapRoute,
   jobsMapStatusLabel,
   jobsMapStatusShort,
   jobsMapSuggestedZoom,
@@ -191,12 +195,8 @@ function markerIcon(fill: string, label: string, square = false): google.maps.Ic
   };
 }
 
-const TECH_ROUTE_COLORS = ['#2563eb', '#ea580c', '#7c3aed', '#db2777', '#0891b2', '#ca8a04', '#dc2626', '#0f766e'];
-
 function techRouteColor(techId: string): string {
-  let hash = 0;
-  for (let i = 0; i < techId.length; i += 1) hash = (hash * 33 + techId.charCodeAt(i)) >>> 0;
-  return TECH_ROUTE_COLORS[hash % TECH_ROUTE_COLORS.length];
+  return jobsMapTechColor(techId);
 }
 
 function nameInitial(name: string): string {
@@ -227,9 +227,9 @@ function InitialMark({ name, color, className }: { name: string; color: string; 
 
 const photoIconCache = new Map<string, google.maps.Icon>();
 
-function techMarkerIcon(tech: { id: string; name: string; photo: string | null }): google.maps.Icon {
+function techMarkerIcon(tech: { id: string; name: string; photo: string | null }, color: string): google.maps.Icon {
   const thumb = tech.photo ? jobsMapTechPhotoThumb(tech.photo) : '';
-  if (!thumb) return markerIcon(techRouteColor(tech.id), nameInitial(tech.name), true);
+  if (!thumb) return markerIcon(color, nameInitial(tech.name), true);
   const cacheKey = `${tech.id}:${thumb}`;
   const cached = photoIconCache.get(cacheKey);
   if (cached) return cached;
@@ -309,11 +309,17 @@ export default function JobsMapToolDialog({
   const techniciansRef = useRef(technicians);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const pingPullRef = useRef<number[]>([]);
+  const routeColorRef = useRef(new Map<string, string>());
   jobsRef.current = jobs;
   selectionRef.current = selection;
   filterRef.current = filter;
   queryRef.current = query;
   techniciansRef.current = technicians;
+  const nextRouteColors = new Map<string, string>();
+  for (const route of routes) {
+    if (!nextRouteColors.has(route.fromId)) nextRouteColors.set(route.fromId, route.color);
+  }
+  routeColorRef.current = nextRouteColors;
 
   const techs = useMemo(
     () => buildJobsMapTechs(technicians, liveRows, lastKnown),
@@ -525,7 +531,7 @@ export default function JobsMapToolDialog({
       const fresh = isJobsMapFixFresh(tech.updatedAt);
       addMarker(
         { lat: tech.lat, lng: tech.lng },
-        techMarkerIcon(tech),
+        techMarkerIcon(tech, routeColorRef.current.get(tech.id) || techRouteColor(tech.id)),
         `${tech.name} · ${agoLabel(tech.updatedAt)}`,
         selected ? 26 : 12,
         () => setSelection({ kind: 'tech', id: tech.id }),
@@ -556,7 +562,7 @@ export default function JobsMapToolDialog({
 
   useEffect(() => {
     paint();
-  }, [paint, jobs, techs, selection, query]);
+  }, [paint, jobs, techs, selection, query, routes]);
 
   useEffect(() => {
     if (!open) {
@@ -591,7 +597,7 @@ export default function JobsMapToolDialog({
             toId: job.id,
             origin: { lat: tech.lat, lng: tech.lng },
             dest: { lat: job.lat, lng: job.lng },
-            color: techRouteColor(tech.id),
+            color: '',
           });
         }
       }
@@ -607,11 +613,15 @@ export default function JobsMapToolDialog({
             toId: job.id,
             origin: { lat: tech.lat, lng: tech.lng },
             dest: { lat: job.lat, lng: job.lng },
-            color: techRouteColor(tech.id),
+            color: '',
           });
         }
       }
     }
+
+    pairs.forEach((pair, index) => {
+      pair.color = jobsMapRouteColorAt(index);
+    });
 
     if (!pairs.length) {
       setRoutes([]);
@@ -660,19 +670,31 @@ export default function JobsMapToolDialog({
     clearRouteOverlays();
     if (!map || !window.google?.maps || !routes.length) return;
     const ends: Array<{ lat: number; lng: number }> = [];
-    for (const route of routes) {
+    routes.forEach((route, index) => {
+      const path = offsetJobsMapRoute(route.path, jobsMapRouteOffsetMeters(index, routes.length));
+      const z = 8 + index * 2;
+      const casing = new window.google.maps.Polyline({
+        map,
+        path,
+        strokeColor: '#ffffff',
+        strokeOpacity: 1,
+        strokeWeight: 9,
+        zIndex: z,
+        geodesic: true,
+      });
       const line = new window.google.maps.Polyline({
         map,
-        path: route.path,
+        path,
         strokeColor: route.color,
-        strokeOpacity: 0.95,
-        strokeWeight: 6,
-        zIndex: 7,
+        strokeOpacity: 1,
+        strokeWeight: 5,
+        zIndex: z + 1,
+        geodesic: true,
       });
-      routeOverlaysRef.current.push(line);
+      routeOverlaysRef.current.push(casing, line);
       const reach = jobsMapReachLabel(route.durationText, route.durationSeconds);
-      if (reach && route.path.length) {
-        const mid = route.path[Math.floor(route.path.length / 2)];
+      if (reach && path.length) {
+        const mid = path[Math.floor(path.length / 2)];
         const badge = new window.google.maps.Marker({
           map,
           position: mid,
@@ -683,11 +705,11 @@ export default function JobsMapToolDialog({
         });
         routeOverlaysRef.current.push(badge);
       }
-      const first = route.path[0];
-      const last = route.path[route.path.length - 1];
+      const first = path[0];
+      const last = path[path.length - 1];
       if (first) ends.push(first);
       if (last) ends.push(last);
-    }
+    });
     try {
       scheduleJobsMapCamera(map, jobsMapFitPoints(ends), cameraIdleRef);
     } catch {
@@ -864,7 +886,7 @@ export default function JobsMapToolDialog({
                         mapRef.current?.panTo({ lat: tech.lat, lng: tech.lng });
                       }}
                     >
-                      <TechPhoto url={tech.photo} name={tech.name} color={techRouteColor(tech.id)} className="h-10 w-10" />
+                      <TechPhoto url={tech.photo} name={tech.name} color={routes.find((route) => route.fromId === tech.id)?.color || techRouteColor(tech.id)} className="h-10 w-10" />
                       <span className="max-w-[4.5rem] truncate text-[10px] text-muted-foreground">
                         {tech.name.split(' ')[0]}
                       </span>
@@ -899,6 +921,25 @@ export default function JobsMapToolDialog({
                   {jobsMapDueLabel(selectedJob) ? ` · ${jobsMapDueLabel(selectedJob)}` : ''}
                   {selectedJob.visible_address ? ` · ${selectedJob.visible_address}` : ''}
                 </p>
+                {routes.length ? (
+                  <ul className="flex flex-wrap gap-x-3 gap-y-1">
+                    {routes.map((route) => {
+                      const tech = techs.find((row) => row.id === route.fromId);
+                      return (
+                        <li
+                          key={`${route.fromId}:${route.toId}`}
+                          className="flex items-center gap-1.5 text-xs text-foreground"
+                        >
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: route.color, boxShadow: '0 0 0 1px rgba(0,0,0,0.2)' }}
+                          />
+                          {tech?.name.split(' ')[0] || 'Technician'}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     type="button"
@@ -925,7 +966,7 @@ export default function JobsMapToolDialog({
             {selectedTech ? (
               <div className="space-y-3 border-b px-3 py-3">
                 <p className="flex items-center gap-2 text-sm font-semibold">
-                  <TechPhoto url={selectedTech.photo} name={selectedTech.name} color={techRouteColor(selectedTech.id)} />
+                  <TechPhoto url={selectedTech.photo} name={selectedTech.name} color={routes.find((route) => route.fromId === selectedTech.id)?.color || techRouteColor(selectedTech.id)} />
                   {selectedTech.name}
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -962,7 +1003,9 @@ export default function JobsMapToolDialog({
                 </div>
                 {techJobs.length ? (
                   <ul className="space-y-1.5">
-                    {techJobs.map((job) => (
+                    {techJobs.map((job) => {
+                      const line = routeFor(selectedTech.id, job.id);
+                      return (
                       <li key={job.id}>
                         <button
                           type="button"
@@ -972,12 +1015,22 @@ export default function JobsMapToolDialog({
                           <span className="truncate text-sm">
                             {job.job_number || 'Job'} · {job.customer_name}
                           </span>
-                          <span className="shrink-0 text-xs text-muted-foreground">
+                          <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                            {line ? (
+                              <span
+                                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                style={{
+                                  backgroundColor: line.color,
+                                  boxShadow: '0 0 0 1px rgba(0,0,0,0.2)',
+                                }}
+                              />
+                            ) : null}
                             {routeCaption(selectedTech.id, job.id)}
                           </span>
                         </button>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 ) : (
                   <p className="text-xs text-muted-foreground">No open jobs assigned to this technician.</p>

@@ -595,6 +595,63 @@ export function formatJobsMapDistance(meters: number): string {
   return formatNearbyDistanceLabel(meters);
 }
 
+/** Drawn in order so the first two routes are always blue then orange. */
+export const JOBS_MAP_ROUTE_COLORS = [
+  '#2563eb',
+  '#ea580c',
+  '#16a34a',
+  '#db2777',
+  '#ca8a04',
+  '#7c3aed',
+  '#0891b2',
+  '#dc2626',
+] as const;
+
+export function jobsMapTechColor(techId: string): string {
+  let hash = 0;
+  for (let i = 0; i < techId.length; i += 1) hash = (hash * 33 + techId.charCodeAt(i)) >>> 0;
+  return JOBS_MAP_ROUTE_COLORS[hash % JOBS_MAP_ROUTE_COLORS.length];
+}
+
+export function jobsMapRouteColorAt(index: number): string {
+  const count = JOBS_MAP_ROUTE_COLORS.length;
+  const slot = ((index % count) + count) % count;
+  return JOBS_MAP_ROUTE_COLORS[slot];
+}
+
+/** Meters to shift route `index` sideways when several roads are drawn together. */
+export function jobsMapRouteOffsetMeters(index: number, count: number, gapMeters = 14): number {
+  if (count <= 1) return 0;
+  const mid = (count - 1) / 2;
+  return (index - mid) * gapMeters;
+}
+
+/**
+ * Nudge a driving path left/right so two technicians on the same road
+ * stay two lines instead of painting on top of each other.
+ */
+export function offsetJobsMapRoute(
+  path: Array<{ lat: number; lng: number }>,
+  meters: number
+): Array<{ lat: number; lng: number }> {
+  if (path.length < 2 || Math.abs(meters) < 0.5) return path;
+  let bearing = 0;
+  return path.map((point, i) => {
+    const prev = path[Math.max(0, i - 1)];
+    const next = path[Math.min(path.length - 1, i + 1)];
+    const dLat = next.lat - prev.lat;
+    const dLng = (next.lng - prev.lng) * Math.cos((point.lat * Math.PI) / 180);
+    if (Math.hypot(dLat, dLng) > 1e-8) bearing = Math.atan2(dLng, dLat);
+    const side = bearing + Math.PI / 2;
+    const latRad = (point.lat * Math.PI) / 180;
+    const cosLat = Math.cos(latRad) || 1e-6;
+    return {
+      lat: point.lat + (meters * Math.cos(side)) / 111_320,
+      lng: point.lng + (meters * Math.sin(side)) / (111_320 * cosLat),
+    };
+  });
+}
+
 /** Clock time the technician would arrive if they left now. */
 export function jobsMapReachAt(durationSeconds: number, now = Date.now()): string {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return '';
