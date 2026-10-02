@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { listAmcContractSlots, planAmcNextVisit } from './amcAutoJobSchedule';
+import { listAmcContractSlots, nextAmcYearServiceDate, planAmcNextVisit } from './amcAutoJobSchedule';
 
 describe('listAmcContractSlots', () => {
   it('places 4-month visits on the contract calendar and stops at the end date', () => {
@@ -11,6 +11,20 @@ describe('listAmcContractSlots', () => {
 
   it('places a 6-month visit once inside a 1-year contract', () => {
     expect(listAmcContractSlots('2026-01-01', 6, '2026-12-31')).toEqual(['2026-07-01']);
+  });
+});
+
+describe('nextAmcYearServiceDate', () => {
+  it('uses this contract year on a 3-year AMC, not the final end date', () => {
+    expect(nextAmcYearServiceDate('2026-01-01', '2028-12-31', '2026-10-02')).toBe('2026-12-31');
+  });
+
+  it('moves to the next anniversary after this year’s date has passed', () => {
+    expect(nextAmcYearServiceDate('2026-01-01', '2028-12-31', '2027-01-15')).toBe('2027-12-31');
+  });
+
+  it('matches a 1-year contract end', () => {
+    expect(nextAmcYearServiceDate('2026-01-01', '2026-12-31', '2026-06-01')).toBe('2026-12-31');
   });
 });
 

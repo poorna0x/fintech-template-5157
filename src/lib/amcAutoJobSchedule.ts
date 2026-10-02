@@ -112,6 +112,42 @@ export type AmcNextVisitPlan = {
   pushedConsumed: boolean;
 };
 
+function formatLocalYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Last day of contract year N. Same rule as a saved AMC end: start + N years, minus 1 day. */
+export function amcContractYearEnd(startDateStr: string, yearIndex: number): string {
+  const d = new Date(startDateStr + 'T12:00:00');
+  d.setFullYear(d.getFullYear() + yearIndex);
+  d.setDate(d.getDate() - 1);
+  return formatLocalYmd(d);
+}
+
+/**
+ * Next 1-year service date: the upcoming contract anniversary (year 1, then year 2, …),
+ * not the final end of a 2- or 3-year AMC. Null when every anniversary is already past.
+ */
+export function nextAmcYearServiceDate(
+  startDateStr: string,
+  endDateStr: string | null,
+  todayStr: string,
+): string | null {
+  if (!startDateStr) return null;
+  for (let year = 1; year <= 15; year++) {
+    const yearEnd = amcContractYearEnd(startDateStr, year);
+    if (endDateStr && yearEnd > endDateStr) {
+      return endDateStr >= todayStr ? endDateStr : null;
+    }
+    if (yearEnd >= todayStr) return yearEnd;
+  }
+  if (endDateStr && endDateStr >= todayStr) return endDateStr;
+  return null;
+}
+
 /** Due dates from the AMC start, every `periodMonths`, stopping at the contract end. */
 export function listAmcContractSlots(
   startDateStr: string,

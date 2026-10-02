@@ -37,6 +37,7 @@ import { DocumentBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   deriveAmcServicePeriodKind,
   getDefaultAmcServicePeriodMonths,
+  nextAmcYearServiceDate,
   planAmcNextVisit,
 } from '@/lib/amcAutoJobSchedule';
 import { notifyTechnicianAfterJobEdit } from '@/lib/notifyTechJobEdit';
@@ -1208,9 +1209,10 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                       <Label className="text-sm font-medium">Push next visit</Label>
                       <p className="text-xs text-gray-500 mt-1 leading-relaxed">
                         Regular visits stay on the AMC calendar (every 4 or 6 months from the start).
-                        A visit done late does not move the later dates. If the 1-year visit should
-                        happen on the AMC end date, or on any other day, push only this next visit there.
-                        After that visit is done, the usual dates resume.
+                        A visit done late does not move the later dates. Push to 1 year service moves
+                        only this next visit to this contract year’s date. The job is created 10 days
+                        before that date. On a 2- or 3-year AMC that date is the next anniversary, not
+                        the final contract end. After that visit is done, the usual dates resume.
                       </p>
                     </div>
                     <DatePicker
@@ -1228,6 +1230,25 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted, onLogoC
                       >
                         {pushingVisit ? 'Saving…' : 'Push visit to this date'}
                       </Button>
+                      {(() => {
+                        const yearServiceDate = nextAmcYearServiceDate(
+                          selectedAMC.dateGiven,
+                          selectedAMC.endDate || null,
+                          getLocalCalendarDateYmd(),
+                        );
+                        if (!yearServiceDate) return null;
+                        return (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={pushingVisit}
+                            onClick={() => void handlePushNextVisit(yearServiceDate)}
+                          >
+                            Push to 1 year service ({formatDate(yearServiceDate)})
+                          </Button>
+                        );
+                      })()}
                       {selectedAMC.endDate && (
                         <Button
                           type="button"
