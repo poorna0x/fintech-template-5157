@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Edit, RefreshCw } from 'lucide-react';
+import { AlertCircle, Edit, RefreshCw, Star } from 'lucide-react';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { getLocalCalendarDateYmd } from '@/lib/pendingPaymentReminder';
 import type { Customer } from '@/types';
@@ -36,7 +36,7 @@ function formatShortDate(value?: string | null): string {
   });
 }
 
-function readAmcNotes(amcInfo: any): { amount: number | null; notes: string } {
+function readAmcNotes(amcInfo: any): { amount: number | null; amountLabel: string; notes: string } {
   let description = '';
   let additionalInfo = '';
   let amcCost: number | null = null;
@@ -60,7 +60,8 @@ function readAmcNotes(amcInfo: any): { amount: number | null; notes: string } {
   }
 
   const amount = agreedAmount || amcCost || totalAmount || amcInfo?.amount || null;
-  return { amount, notes: description || additionalInfo };
+  const amountLabel = agreedAmount ? 'Agreed Amount' : 'AMC Amount';
+  return { amount, amountLabel, notes: description || additionalInfo };
 }
 
 export default function AmcInfoDialog({
@@ -99,7 +100,7 @@ export default function AmcInfoDialog({
         }}
       >
         <DialogContent
-          className="sm:max-w-md max-h-[90vh] overflow-y-auto"
+          className="sm:max-w-lg max-h-[90vh] overflow-y-auto"
           onInteractOutside={(event) => {
             if (scheduleOpen) event.preventDefault();
           }}
@@ -107,67 +108,87 @@ export default function AmcInfoDialog({
             if (scheduleOpen) event.preventDefault();
           }}
         >
-          <DialogHeader className="space-y-1 text-left">
-              <div className="flex items-center justify-between gap-3 pr-14">
-              <DialogTitle className="text-lg leading-tight">
-                {customer?.fullName || 'AMC'}
-              </DialogTitle>
-              {amcInfo && !loading && (
-                <Badge
-                  className={
-                    active
-                      ? 'bg-green-100 text-green-800 shrink-0'
-                      : 'bg-gray-100 text-gray-700 shrink-0'
-                  }
-                >
-                  {active ? 'Active' : amcInfo.status || 'AMC'}
-                </Badge>
-              )}
-            </div>
-            <DialogDescription>
-              {amcInfo && !loading
-                ? getAmcDocumentBrandLabel(amcInfo)
-                : `AMC details for ${customer?.fullName || 'customer'}`}
-            </DialogDescription>
+          <DialogHeader className="text-left">
+            <DialogTitle className="flex items-center gap-2 pr-10">
+              <Star className="w-5 h-5 text-green-600" />
+              AMC Information
+            </DialogTitle>
+            <DialogDescription>AMC details for {customer?.fullName || 'customer'}</DialogDescription>
           </DialogHeader>
 
           {loading ? (
             <div className="py-8 text-center">
               <div className="flex items-center justify-center gap-2">
                 <RefreshCw className="w-5 h-5 animate-spin text-gray-400" />
-                <span className="text-gray-600">Loading AMC…</span>
+                <span className="text-gray-600">Loading AMC information...</span>
               </div>
             </div>
           ) : amcInfo ? (
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <p className="text-sm text-gray-600">
-                  {formatShortDate(amcInfo.start_date)}
-                  {' – '}
-                  {formatShortDate(amcInfo.end_date)}
-                  {' · '}
-                  {amcInfo.years} {amcInfo.years === 1 ? 'year' : 'years'}
-                  {amcInfo.includes_prefilter ? ' · Prefilter' : ''}
-                </p>
-                {notes.amount != null && (
-                  <p className="text-sm font-medium text-gray-900">
-                    ₹{Number(notes.amount).toLocaleString('en-IN')}
-                  </p>
-                )}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Status</span>
+                <Badge className={active ? 'bg-green-600 text-white border-0' : 'bg-gray-200 text-gray-800 border-0'}>
+                  {active ? 'Active' : amcInfo.status || 'AMC'}
+                </Badge>
               </div>
 
+              <div className="flex items-center justify-between text-sm gap-3">
+                <span className="text-gray-600 font-medium">Service brand</span>
+                <span className="text-gray-900 font-semibold text-right">{getAmcDocumentBrandLabel(amcInfo)}</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-600 font-medium">Start date</span>
+                  <p className="text-gray-900 font-semibold mt-1">{formatShortDate(amcInfo.start_date)}</p>
+                </div>
+                <div>
+                  <span className="text-gray-600 font-medium">End date</span>
+                  <p className="text-gray-900 font-semibold mt-1">{formatShortDate(amcInfo.end_date)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-600 font-medium">Duration</span>
+                  <p className="text-gray-900 font-semibold mt-1">
+                    {amcInfo.years} {amcInfo.years === 1 ? 'year' : 'years'}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-gray-600 font-medium">Includes prefilter</span>
+                  <p className="text-gray-900 font-semibold mt-1">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</p>
+                </div>
+              </div>
+
+              {notes.amount != null && (
+                <div className="text-sm">
+                  <span className="text-gray-600 font-medium">{notes.amountLabel}</span>
+                  <p className="text-gray-900 font-semibold mt-1">
+                    ₹
+                    {Number(notes.amount).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                </div>
+              )}
+
               {notes.notes && (
-                <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{notes.notes}</p>
+                <div className="pt-3 border-t border-green-200">
+                  <span className="text-gray-600 font-medium text-sm">Description</span>
+                  <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">{notes.notes}</p>
+                </div>
               )}
 
               {customer?.id &&
                 amcInfo.id &&
                 active &&
                 (amcInfo.service_period_months == null || Number(amcInfo.service_period_months) > 0) && (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3 rounded-md border border-green-200 bg-white px-3 py-2.5">
                   <div>
                     <p className="text-xs text-gray-500">Next visit</p>
-                    <p className="text-sm font-medium text-gray-900">
+                    <p className="text-sm font-semibold text-gray-900">
                       {nextDue
                         ? nextDue < today
                           ? `Due now · ${formatShortDate(nextDue)}`
@@ -175,7 +196,7 @@ export default function AmcInfoDialog({
                         : '—'}
                     </p>
                   </div>
-                  <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => setScheduleOpen(true)}>
+                  <Button type="button" size="sm" variant="outline" className="h-8 bg-white" onClick={() => setScheduleOpen(true)}>
                     Change
                   </Button>
                 </div>
@@ -193,7 +214,7 @@ export default function AmcInfoDialog({
               Close
             </Button>
             {amcInfo && !loading && (
-              <Button onClick={onEdit}>
+              <Button onClick={onEdit} className="bg-green-600 hover:bg-green-700 text-white">
                 <Edit className="w-4 h-4 mr-2" />
                 Edit AMC
               </Button>
