@@ -50,12 +50,14 @@ public final class CallerOverlay {
         return Settings.canDrawOverlays(context);
     }
 
-    public static void show(Context context, String name, String customerId) {
-        if (context == null || customerId == null || customerId.isEmpty()) return;
+    public static void show(Context context, String name, String rawNumber) {
+        if (context == null) return;
+        String phone = CallerDirectoryDb.phoneKey(rawNumber);
+        if (phone.isEmpty()) return;
         Context app = context.getApplicationContext();
         if (!canDraw(app)) return;
         String safeName = name == null || name.trim().isEmpty() ? "Customer" : name.trim();
-        mainHandler.post(() -> showOnMain(app, safeName, customerId));
+        mainHandler.post(() -> showOnMain(app, safeName, phone));
     }
 
     public static void dismiss() {
@@ -75,7 +77,7 @@ public final class CallerOverlay {
         currentView = null;
     }
 
-    private static void showOnMain(Context context, String name, String customerId) {
+    private static void showOnMain(Context context, String name, String phone) {
         dismissOnMain();
 
         float density = context.getResources().getDisplayMetrics().density;
@@ -177,25 +179,6 @@ public final class CallerOverlay {
         titleView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         content.addView(titleView);
 
-        LinearLayout bodyPanel = new LinearLayout(context);
-        bodyPanel.setOrientation(LinearLayout.VERTICAL);
-        bodyPanel.setPadding(dp(density, 14), dp(density, 12), dp(density, 14), dp(density, 12));
-        GradientDrawable bodyBg = new GradientDrawable();
-        bodyBg.setColor(WHITE);
-        bodyBg.setCornerRadius(dp(density, 14));
-        bodyBg.setStroke(dp(density, 1), border);
-        bodyPanel.setBackground(bodyBg);
-        LinearLayout.LayoutParams bodyPanelLp =
-            new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        bodyPanelLp.topMargin = dp(density, 12);
-        TextView bodyView = new TextView(context);
-        bodyView.setText("Saved customer");
-        bodyView.setTextColor(BODY);
-        bodyView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        bodyPanel.addView(bodyView);
-        content.addView(bodyPanel, bodyPanelLp);
-
         LinearLayout actions = new LinearLayout(context);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams actionsLp =
@@ -209,17 +192,17 @@ public final class CallerOverlay {
         dismissLp.rightMargin = gap;
         actions.addView(dismissBtn, dismissLp);
 
-        TextView reportsBtn = makeButton(context, density, "Reports", true, accent, border);
+        TextView openBtn = makeButton(context, density, "Open", true, accent, border);
         actions.addView(
-            reportsBtn, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            openBtn, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         content.addView(actions, actionsLp);
         card.addView(content);
 
         dismissBtn.setOnClickListener(v -> dismiss());
-        reportsBtn.setOnClickListener(
+        openBtn.setOnClickListener(
             v -> {
                 dismiss();
-                openReports(context, customerId);
+                openSearch(context, phone);
             });
 
         FrameLayout root = new FrameLayout(context);
@@ -272,24 +255,24 @@ public final class CallerOverlay {
         } catch (Throwable t) {
             Log.w(TAG, "Failed to add overlay", t);
             currentView = null;
-            CallerBanner.showTray(context, new CallerDirectoryDb.Match(customerId, name));
+            CallerBanner.showTray(context, new CallerDirectoryDb.Match("", name), phone);
         }
     }
 
-    private static void openReports(Context context, String customerId) {
+    private static void openSearch(Context context, String phone) {
         try {
-            Intent reports = new Intent(context, MainActivity.class);
-            reports.setAction("com.hydrogenro.admin.CALLER_REPORT");
-            reports.setFlags(
+            Intent open = new Intent(context, MainActivity.class);
+            open.setAction("com.hydrogenro.admin.CALLER_SEARCH");
+            open.setFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK
                     | Intent.FLAG_ACTIVITY_SINGLE_TOP
                     | Intent.FLAG_ACTIVITY_CLEAR_TOP
             );
-            reports.putExtra("type", "caller_report");
-            reports.putExtra("customerId", customerId);
-            context.startActivity(reports);
+            open.putExtra("type", "caller_search");
+            open.putExtra("phone", phone);
+            context.startActivity(open);
         } catch (Throwable t) {
-            Log.w(TAG, "Open reports failed", t);
+            Log.w(TAG, "Open search failed", t);
         }
     }
 

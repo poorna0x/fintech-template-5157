@@ -21,7 +21,6 @@ public final class CallerBanner {
 
     private static final String TAG = "HroCallerBanner";
     static final int NOTIFICATION_ID = 0x0C411;
-    private static final int OPEN_REQUEST = 0x0C411;
     private static final int REPORTS_REQUEST = 0x0C412;
 
     private CallerBanner() {}
@@ -40,7 +39,7 @@ public final class CallerBanner {
             db.close();
         }
         if (match == null) return;
-        show(app, match);
+        show(app, match, rawNumber);
     }
 
     /** OEM rings sometimes omit the number. Look at the latest incoming row only. */
@@ -53,15 +52,15 @@ public final class CallerBanner {
         }, "hro-caller-banner").start();
     }
 
-    private static void show(Context context, CallerDirectoryDb.Match match) {
+    private static void show(Context context, CallerDirectoryDb.Match match, String rawNumber) {
         if (CallerOverlay.canDraw(context)) {
-            CallerOverlay.show(context, match.name, match.id);
+            CallerOverlay.show(context, match.name, rawNumber);
             return;
         }
-        showTray(context, match);
+        showTray(context, match, rawNumber);
     }
 
-    static void showTray(Context context, CallerDirectoryDb.Match match) {
+    static void showTray(Context context, CallerDirectoryDb.Match match, String rawNumber) {
         if (Build.VERSION.SDK_INT >= 33) {
             if (
                 ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
@@ -72,32 +71,20 @@ public final class CallerBanner {
         }
         NotificationChannels.ensureCallerBanner(context);
 
-        Intent open = new Intent(context, MainActivity.class);
-        open.setFlags(
+        String phone = CallerDirectoryDb.phoneKey(rawNumber);
+        Intent search = new Intent(context, MainActivity.class);
+        search.setAction("com.hydrogenro.admin.CALLER_SEARCH");
+        search.setFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_SINGLE_TOP
                 | Intent.FLAG_ACTIVITY_CLEAR_TOP
         );
-        PendingIntent openPi = PendingIntent.getActivity(
-            context,
-            OPEN_REQUEST,
-            open,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
-
-        Intent reports = new Intent(context, MainActivity.class);
-        reports.setAction("com.hydrogenro.admin.CALLER_REPORT");
-        reports.setFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                | Intent.FLAG_ACTIVITY_CLEAR_TOP
-        );
-        reports.putExtra("type", "caller_report");
-        reports.putExtra("customerId", match.id);
-        PendingIntent reportsPi = PendingIntent.getActivity(
+        search.putExtra("type", "caller_search");
+        search.putExtra("phone", phone);
+        PendingIntent searchPi = PendingIntent.getActivity(
             context,
             REPORTS_REQUEST,
-            reports,
+            search,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
@@ -113,8 +100,8 @@ public final class CallerBanner {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setOnlyAlertOnce(false)
-            .setContentIntent(openPi)
-            .addAction(0, "Reports", reportsPi);
+            .setContentIntent(searchPi)
+            .addAction(0, "Open", searchPi);
 
         try {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build());

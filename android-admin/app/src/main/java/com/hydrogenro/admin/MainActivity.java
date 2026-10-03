@@ -88,7 +88,7 @@ public class MainActivity extends BridgeActivity {
         attachBootLoader();
         releaseSplashWhenBootDrawn();
         deliverExpenseReviewIfNeeded(getIntent());
-        deliverCallerReportIfNeeded(getIntent());
+        deliverCallerSearchIfNeeded(getIntent());
 
         getWindow()
             .getDecorView()
@@ -284,19 +284,15 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         deliverExpenseReviewIfNeeded(intent);
-        deliverCallerReportIfNeeded(intent);
+        deliverCallerSearchIfNeeded(intent);
     }
 
-    /** Reports button on the incoming-call banner. Opens that customer's report. */
-    private void deliverCallerReportIfNeeded(Intent intent) {
+    /** Open on the caller card searches that phone on the dashboard. */
+    private void deliverCallerSearchIfNeeded(Intent intent) {
         if (intent == null) return;
-        if (!"caller_report".equals(intent.getStringExtra("type"))) return;
-        String customerId = intent.getStringExtra("customerId");
-        if (customerId == null || !customerId.matches(
-            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-        )) {
-            return;
-        }
+        if (!"caller_search".equals(intent.getStringExtra("type"))) return;
+        String phone = CallerDirectoryDb.phoneKey(intent.getStringExtra("phone"));
+        if (phone.isEmpty()) return;
 
         try {
             NotificationManagerCompat.from(this).cancel(CallerBanner.NOTIFICATION_ID);
@@ -305,10 +301,10 @@ public class MainActivity extends BridgeActivity {
         }
 
         intent.removeExtra("type");
-        intent.removeExtra("customerId");
+        intent.removeExtra("phone");
         setIntent(intent);
 
-        final String safeId = customerId;
+        final String safePhone = phone;
         final int[] attempts = { 0 };
         final Runnable[] injectHolder = new Runnable[1];
         injectHolder[0] = () -> {
@@ -322,14 +318,13 @@ public class MainActivity extends BridgeActivity {
             }
             String js =
                 "(function(){try{"
-                    + "var id="
-                    + jsonString(safeId)
+                    + "var phone="
+                    + jsonString(safePhone)
                     + ";"
-                    + "var key='hro_caller_report';"
-                    + "if(sessionStorage.getItem(key)===id && location.search.indexOf('modal=report')>=0"
-                    + " && location.search.indexOf(id)>=0)return;"
-                    + "sessionStorage.setItem(key,id);"
-                    + "location.replace('/admin?modal=report&customer='+encodeURIComponent(id));"
+                    + "var key='hro_caller_search';"
+                    + "if(sessionStorage.getItem(key)===phone && location.search.indexOf('search='+phone)>=0)return;"
+                    + "sessionStorage.setItem(key,phone);"
+                    + "location.replace('/admin?search='+encodeURIComponent(phone));"
                     + "}catch(e){}})();";
             webView.evaluateJavascript(js, null);
         };
