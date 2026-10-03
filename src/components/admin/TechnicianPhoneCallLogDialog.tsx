@@ -58,9 +58,11 @@ function formatLength(seconds: number): string {
 export default function TechnicianPhoneCallLogDialog({
   technicianId,
   technicianName,
+  compact = false,
 }: {
   technicianId: string;
   technicianName: string;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -150,12 +152,13 @@ export default function TechnicianPhoneCallLogDialog({
       <Button
         type="button"
         variant="outline"
-        className="h-11 w-full"
+        size={compact ? 'sm' : 'default'}
+        className={compact ? 'w-full text-xs sm:text-sm' : 'h-11 w-full'}
         disabled={!technicianId}
         onClick={() => setOpen(true)}
       >
-        <Phone className="h-4 w-4" />
-        Get call log
+        <Phone className={compact ? 'w-3 h-3 sm:w-4 sm:h-4 mr-1' : 'h-4 w-4'} />
+        Call log
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">

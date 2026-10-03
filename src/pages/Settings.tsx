@@ -60,6 +60,7 @@ import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technici
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { TechnicianIdCardLinks } from '@/components/admin/TechnicianIdCardLinks';
+import TechnicianPhoneCallLogDialog from '@/components/admin/TechnicianPhoneCallLogDialog';
 import TechnicianFamilyOfficeStatusCard from '@/components/admin/TechnicianFamilyOfficeStatusCard';
 import { CommonQrCode, invalidateQrCodesCache, cacheQrCodes, getCachedQrCodes, normalizeTechnicianAssignedCommonQrIds, mapCommonQrRow } from '@/lib/qrCodeManager';
 import { isValidUpiId, normalizeUpiId, normalizePaymentPhone } from '@/lib/upiPaymentAccounts';
@@ -2759,15 +2760,22 @@ const Settings = () => {
         </div>
 
         {!isManager ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleEditTechnician(technician)}
-          className="w-full text-xs sm:text-sm"
-        >
-          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-          Edit
-        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <TechnicianPhoneCallLogDialog
+            technicianId={technician.id}
+            technicianName={technician.fullName}
+            compact
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleEditTechnician(technician)}
+            className="w-full text-xs sm:text-sm"
+          >
+            <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+            Edit
+          </Button>
+        </div>
         ) : null}
       </CardContent>
     </Card>
