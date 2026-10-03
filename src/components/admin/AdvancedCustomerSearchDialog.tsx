@@ -8,6 +8,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +37,8 @@ import {
   MapPin,
   RotateCcw,
   ChevronDown,
+  ChevronsUpDown,
+  Check,
   FileText,
   Image as ImageIcon,
   ArrowLeft,
@@ -51,6 +62,7 @@ import {
   parseNearRadiusKm,
 } from '@/lib/advancedCustomerSearch';
 import { db } from '@/lib/supabase';
+import { technicianAccountStatusSuffix } from '@/lib/technicianAccountStatus';
 import { cn, formatPhoneForWhatsApp } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
@@ -205,7 +217,14 @@ type TechRow = {
   phone?: string;
   employee_id?: string;
   employeeId?: string;
+  account_status?: string;
 };
+
+function technicianPickerLabel(tech: TechRow): string {
+  const name = String(tech.full_name || '').trim();
+  const employee = tech.employee_id ? ` (${tech.employee_id})` : '';
+  return `${name}${employee}${technicianAccountStatusSuffix(tech)}`;
+}
 
 /** Build a Customer-shaped object the existing CustomerReportDialog can consume from a slim row. */
 function rowToReportCustomer(row: AdvancedSearchRow): Customer {
@@ -297,11 +316,16 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     if (techsLoaded) return technicianRows;
     setReportTechniciansLoading(true);
     try {
-      const { data } = await db.technicians.getList(500, { activeRosterOnly: false });
-      const rows = (data || []).filter((t: any) => t && t.id && t.full_name) as TechRow[];
+      const { data } = await db.technicians.getList(1000, { activeRosterOnly: false });
+      const rows = ((data || []).filter((t: any) => t && t.id && t.full_name) as TechRow[]).sort(
+        (a, b) =>
+          String(a.full_name || '').localeCompare(String(b.full_name || ''), undefined, {
+            sensitivity: 'base',
+          })
+      );
       const opts = rows.map((t) => ({
         id: t.id,
-        label: `${t.full_name ?? ''}${t.employee_id ? ` (${t.employee_id})` : ''}`,
+        label: technicianPickerLabel(t),
       }));
       setTechnicianRows(rows);
       setTechnicians(opts);
@@ -1271,26 +1295,12 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                     </Select>
                   </Field>
                   <Field label="Completed by">
-                    <Select
-                      value={filters.completedByTechnicianId || 'any'}
-                      onValueChange={(v) =>
-                        update('completedByTechnicianId', v === 'any' ? '' : v)
-                      }
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue
-                          placeholder={techsLoaded ? 'Any' : 'Loading…'}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="any">Any</SelectItem>
-                        {technicians.map((t) => (
-                          <SelectItem key={t.id} value={t.id}>
-                            {t.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <CompletedByTechnicianPicker
+                      value={filters.completedByTechnicianId}
+                      options={technicians}
+                      loading={!techsLoaded && reportTechniciansLoading}
+                      onChange={(id) => update('completedByTechnicianId', id)}
+                    />
                   </Field>
                   <Field label="Bill min (₹)">
                     <Input
@@ -1673,6 +1683,80 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     </Dialog>
   );
 };
+
+function CompletedByTechnicianPicker({
+  value,
+  options,
+  loading,
+  onChange,
+}: {
+  value: string;
+  options: TechOption[];
+  loading: boolean;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((tech) => tech.id === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen} modal>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-9 w-full justify-between px-3 font-normal"
+        >
+          <span className="truncate text-left">
+            {selected?.label || (loading ? 'Loading…' : 'Any')}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] min-w-[16rem] p-0"
+        align="start"
+      >
+        <Command>
+          <CommandInput placeholder="Search technician" className="h-9" />
+          <CommandList className="max-h-[min(24rem,60vh)]">
+            <CommandEmpty>No technician found</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="any technician"
+                onSelect={() => {
+                  onChange('');
+                  setOpen(false);
+                }}
+              >
+                <Check className={cn('mr-2 h-4 w-4', value ? 'opacity-0' : 'opacity-100')} />
+                Any
+              </CommandItem>
+              {options.map((tech) => (
+                <CommandItem
+                  key={tech.id}
+                  value={`${tech.label} ${tech.id}`}
+                  onSelect={() => {
+                    onChange(tech.id);
+                    setOpen(false);
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      'mr-2 h-4 w-4',
+                      value === tech.id ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                  {tech.label}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function Field({
   label,
