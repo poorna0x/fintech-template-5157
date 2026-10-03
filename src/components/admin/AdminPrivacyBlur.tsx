@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { adminPrivacyChord, ADMIN_PRIVACY_IDLE_MS, isMacPrivacyPlatform } from '@/lib/adminPrivacyBlur';
+import { adminPrivacyChord, ADMIN_PRIVACY_IDLE_MS, isDesktopPrivacyTarget, isMacPrivacyPlatform } from '@/lib/adminPrivacyBlur';
+import { isNativeApp } from '@/lib/isNativeApp';
 
 /** Survives Admin Portal remounts (dashboard ↔ settings). Refresh clears it. */
 let privacyBlurred = false;
@@ -18,7 +19,7 @@ function setPrivacyBlurred(next: boolean) {
 
 /**
  * Blurs the admin website in place. Jobs, calls, and live phone updates keep
- * running behind the cover. Command+Shift+L locks on Mac; Control+Shift+L on
+ * running behind the cover. Desktop only. Command+Shift+L locks on Mac; Control+Shift+L on
  * Windows. U instead of L unlocks. No pointer or key use for 3 minutes locks too.
  */
 export function AdminPrivacyBlur() {
@@ -27,6 +28,17 @@ export function AdminPrivacyBlur() {
   useEffect(() => {
     const sync = () => setBlurred(privacyBlurred);
     privacyListeners.add(sync);
+    const desktop = isDesktopPrivacyTarget({
+      nativeApp: isNativeApp(),
+      hover: window.matchMedia('(hover: hover)').matches,
+      finePointer: window.matchMedia('(pointer: fine)').matches,
+    });
+    if (!desktop) {
+      setPrivacyBlurred(false);
+      return () => {
+        privacyListeners.delete(sync);
+      };
+    }
     const mac = isMacPrivacyPlatform(navigator.platform || navigator.userAgent || '');
 
     const onKey = (event: KeyboardEvent) => {

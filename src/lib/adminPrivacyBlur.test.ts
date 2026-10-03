@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ADMIN_PRIVACY_IDLE_MS, adminPrivacyChord } from './adminPrivacyBlur';
+import { ADMIN_PRIVACY_IDLE_MS, adminPrivacyChord, isDesktopPrivacyTarget } from './adminPrivacyBlur';
 
 const base = { shiftKey: true, altKey: false, repeat: false, metaKey: false, ctrlKey: false };
 
@@ -25,5 +25,12 @@ describe('adminPrivacyChord', () => {
 
   it('auto-blurs after 3 minutes without use', () => {
     expect(ADMIN_PRIVACY_IDLE_MS).toBe(3 * 60 * 1000);
+  });
+
+  it('blurs on a desktop with a mouse and skips phones and the admin app', () => {
+    expect(isDesktopPrivacyTarget({ nativeApp: false, hover: true, finePointer: true })).toBe(true);
+    expect(isDesktopPrivacyTarget({ nativeApp: true, hover: true, finePointer: true })).toBe(false);
+    expect(isDesktopPrivacyTarget({ nativeApp: false, hover: false, finePointer: false })).toBe(false);
+    expect(isDesktopPrivacyTarget({ nativeApp: false, hover: true, finePointer: false })).toBe(false);
   });
 });

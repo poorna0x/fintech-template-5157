@@ -18,6 +18,16 @@ export function isMacPrivacyPlatform(platform = ''): boolean {
   return /Mac|iPhone|iPad|iPod/i.test(platform);
 }
 
+/** Phones, tablets, and the admin app do not get the blur. */
+export function isDesktopPrivacyTarget(opts: {
+  nativeApp: boolean;
+  hover: boolean;
+  finePointer: boolean;
+}): boolean {
+  if (opts.nativeApp) return false;
+  return opts.hover && opts.finePointer;
+}
+
 /** Mac: Command+Shift+L / U. Windows: Control+Shift+L / U. */
 export function adminPrivacyChord(event: ChordEvent, mac: boolean): AdminPrivacyChord | null {
   if (event.repeat || event.altKey || !event.shiftKey) return null;
