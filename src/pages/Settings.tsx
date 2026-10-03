@@ -79,6 +79,7 @@ import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings'
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
 import { BookingLeaveSettings } from '@/components/admin/BookingLeaveSettings';
 import { ScreenLockSetting } from '@/components/admin/ScreenLockSetting';
+import { CallerDirectorySettings } from '@/components/admin/CallerDirectorySettings';
 import { DeviceTrackerSettings } from '@/components/admin/DeviceTrackerSettings';
 import {
   defaultTechPushPrefs,
@@ -4096,6 +4097,8 @@ const Settings = () => {
               ) : null}
             </CardContent>
           </Card>
+
+          <CallerDirectorySettings />
 
           {!isManager ? <EmailTrackingSettings /> : null}
 

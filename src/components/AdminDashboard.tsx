@@ -1252,6 +1252,8 @@ const AdminDashboard = () => {
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
+  /** Customer loaded by id for a report link when they are not already on screen. */
+  const [reportLinkCustomer, setReportLinkCustomer] = useState<Customer | null>(null);
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
   const [reportViewerPhoto, setReportViewerPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
   const [reportViewerBillPhotos, setReportViewerBillPhotos] = useState<string[] | null>(null);
@@ -2208,6 +2210,7 @@ const AdminDashboard = () => {
   const resolveCustomerForModal = useCallback(
     (customerId: string | null): Customer | null => {
       if (!customerId) return null;
+      if (reportLinkCustomer?.id === customerId) return reportLinkCustomer;
       const fromSearch = searchResults?.find((c) => c.id === customerId);
       if (fromSearch) return fromSearch;
       const fromList = customers.find((c) => c.id === customerId);
@@ -2218,8 +2221,31 @@ const AdminDashboard = () => {
       }
       return null;
     },
-    [searchResults, customers, jobs]
+    [searchResults, customers, jobs, reportLinkCustomer]
   );
+
+  // Report deep link (call banner): fetch that one customer when the open list
+  // does not already have them. Normal report opens still use the list.
+  useEffect(() => {
+    if (!location.pathname.startsWith('/admin')) return;
+    const parsed = parseAdminDashboardUrl(location.search);
+    if (parsed.modal !== 'report' || !parsed.customerId) {
+      setReportLinkCustomer((prev) => (prev ? null : prev));
+      return;
+    }
+    const id = parsed.customerId;
+    const already =
+      searchResults?.some((c) => c.id === id) || customers.some((c) => c.id === id);
+    if (already) return;
+    let cancelled = false;
+    void db.customers.getById(id).then(({ data, error }) => {
+      if (cancelled || error || !data) return;
+      setReportLinkCustomer(transformCustomerData(data));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname, location.search, customers, searchResults]);
 
   // Job-list modals (?modal=) — swipe-back closes overlay instead of exiting the PWA.
   useEffect(() => {
@@ -2236,12 +2262,15 @@ const AdminDashboard = () => {
         scheduleAdminScrollRestore(y);
       }
     }
-    prevAdminModalRef.current = modal;
-
     const job =
       parsed.jobId != null ? jobs.find((j) => j.id === parsed.jobId) ?? null : null;
 
     const resolveCustomer = resolveCustomerForModal;
+    const reportCustomerMissing =
+      modal === 'report' && !!parsed.customerId && !resolveCustomer(parsed.customerId);
+    if (!reportCustomerMissing) {
+      prevAdminModalRef.current = modal;
+    }
 
     setAssignJobDialogOpen(modal === 'assign' && !!job);
     setReassignDialogOpen(modal === 'reassign' && !!job);

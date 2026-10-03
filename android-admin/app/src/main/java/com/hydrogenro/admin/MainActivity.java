@@ -50,6 +50,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(IncomingCallPlugin.class);
+        registerPlugin(CallerDirectoryPlugin.class);
         registerPlugin(AdminClipboardPlugin.class);
         registerPlugin(PdfSavePlugin.class);
         registerPlugin(DevicePrefsPlugin.class);
@@ -87,6 +88,7 @@ public class MainActivity extends BridgeActivity {
         attachBootLoader();
         releaseSplashWhenBootDrawn();
         deliverExpenseReviewIfNeeded(getIntent());
+        deliverCallerReportIfNeeded(getIntent());
 
         getWindow()
             .getDecorView()
@@ -239,6 +241,56 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         deliverExpenseReviewIfNeeded(intent);
+        deliverCallerReportIfNeeded(intent);
+    }
+
+    /** Reports button on the incoming-call banner. Opens that customer's report. */
+    private void deliverCallerReportIfNeeded(Intent intent) {
+        if (intent == null) return;
+        if (!"caller_report".equals(intent.getStringExtra("type"))) return;
+        String customerId = intent.getStringExtra("customerId");
+        if (customerId == null || !customerId.matches(
+            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+        )) {
+            return;
+        }
+
+        try {
+            NotificationManagerCompat.from(this).cancel(CallerBanner.NOTIFICATION_ID);
+        } catch (Throwable ignored) {
+            /* */
+        }
+
+        intent.removeExtra("type");
+        intent.removeExtra("customerId");
+        setIntent(intent);
+
+        final String safeId = customerId;
+        final int[] attempts = { 0 };
+        final Runnable[] injectHolder = new Runnable[1];
+        injectHolder[0] = () -> {
+            attempts[0] += 1;
+            WebView webView = webViewOrNull();
+            if (webView == null) {
+                if (attempts[0] < 8) {
+                    getWindow().getDecorView().postDelayed(injectHolder[0], 400);
+                }
+                return;
+            }
+            String js =
+                "(function(){try{"
+                    + "var id="
+                    + jsonString(safeId)
+                    + ";"
+                    + "var key='hro_caller_report';"
+                    + "if(sessionStorage.getItem(key)===id && location.search.indexOf('modal=report')>=0"
+                    + " && location.search.indexOf(id)>=0)return;"
+                    + "sessionStorage.setItem(key,id);"
+                    + "location.replace('/admin?modal=report&customer='+encodeURIComponent(id));"
+                    + "}catch(e){}})();";
+            webView.evaluateJavascript(js, null);
+        };
+        getWindow().getDecorView().post(injectHolder[0]);
     }
 
     /**

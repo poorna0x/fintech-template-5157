@@ -170,6 +170,13 @@ export default function AdminPortal() {
     };
   }, [adminUserId, isAdmin, navigate]);
 
+  useEffect(() => {
+    if (!adminUserId || !isAdmin) return;
+    void import('@/lib/adminCallerDirectory').then(({ syncAdminCallerDirectoryIfStale }) =>
+      syncAdminCallerDirectoryIfStale()
+    );
+  }, [adminUserId, isAdmin]);
+
   // Returning from Settings (or landing on /admin): pick up a ring that was
   // stored natively while the dashboard was unmounted and never resumed.
   useEffect(() => {

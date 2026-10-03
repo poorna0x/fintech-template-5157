@@ -99,6 +99,11 @@ public class CallCaptureReceiver extends BroadcastReceiver {
                     .putLong(KEY_AT, now)
                     .putString(KEY_RING_NUMBER, number);
                 ed.apply();
+                try {
+                    CallerBanner.showIfKnown(context, number);
+                } catch (Exception bannerError) {
+                    Log.w(TAG, "caller banner: " + bannerError.getMessage());
+                }
 
                 String lastPub = prefs.getString(KEY_PUB_NUMBER, null);
                 long lastPubAt = prefs.getLong(KEY_PUB_AT, 0L);
@@ -108,6 +113,11 @@ public class CallCaptureReceiver extends BroadcastReceiver {
             } else {
                 ed.apply();
                 Log.i(TAG, "RINGING — no EXTRA yet (Truecaller/OEM); will use CallLog on miss");
+                try {
+                    CallerBanner.showFromRecentCallLog(context);
+                } catch (Exception bannerError) {
+                    Log.w(TAG, "caller banner: " + bannerError.getMessage());
+                }
             }
             return;
         }

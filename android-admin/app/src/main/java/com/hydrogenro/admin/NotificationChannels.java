@@ -25,12 +25,16 @@ public final class NotificationChannels {
     /** Silent tech seen acks — no sound, but DEFAULT so they still show in the tray. */
     public static final String TECH_ACKS_SILENT = "tech_acks_silent_v2";
 
+    /** Incoming-call customer banner. High importance so it pops while the phone rings. */
+    public static final String CALLER_BANNER = "caller_banner_v1";
+
     private NotificationChannels() {}
 
     public static void ensureAll(Context context) {
         ensureJobAlerts(context);
         ensureJobComplete(context);
         ensureTechAcksSilent(context);
+        ensureCallerBanner(context);
     }
 
     public static void ensureJobAlerts(Context context) {
@@ -80,6 +84,24 @@ public final class NotificationChannels {
         channel.setSound(null, null);
         channel.enableVibration(false);
         channel.enableLights(true);
+        nm.createNotificationChannel(channel);
+    }
+
+    public static void ensureCallerBanner(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager nm = context.getSystemService(NotificationManager.class);
+        if (nm == null || nm.getNotificationChannel(CALLER_BANNER) != null) return;
+
+        Uri sound = android.media.RingtoneManager.getDefaultUri(
+            android.media.RingtoneManager.TYPE_NOTIFICATION
+        );
+        NotificationChannel channel = new NotificationChannel(
+            CALLER_BANNER, "Incoming customer", NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("Customer name when this phone rings");
+        channel.setSound(sound, notificationAttrs());
+        channel.enableVibration(true);
+        channel.enableLights(true);
+        channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
         nm.createNotificationChannel(channel);
     }
 
