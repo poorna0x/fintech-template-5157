@@ -182,6 +182,21 @@ interface FormData {
   images: File[];
 }
 
+/** Website booking choices. Inspection is stored as Service. */
+const BOOKING_SERVICE_CHOICES = [
+  { id: 'inspection', label: 'Inspection / Check up' },
+  { id: 'service', label: 'Service' },
+  { id: 'installation', label: 'Installation' },
+] as const;
+
+function bookingServiceLabel(id: string): string {
+  return BOOKING_SERVICE_CHOICES.find((item) => item.id === id)?.label || id;
+}
+
+function bookingStoredServiceSubType(id: string): string {
+  return id === 'installation' ? 'Installation' : 'Service';
+}
+
 const Booking: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
@@ -407,35 +422,6 @@ const Booking: React.FC = () => {
     return timeMap[timeSlot] || timeSlot;
   };
   const cameraInputRef = useRef<HTMLInputElement>(null);
-
-  // Service options based on service type
-  const serviceOptions = {
-    'RO': [
-      'Service',
-      'Installation',
-      'Reinstallation',
-      'Return Complaint',
-      'Return Service',
-      'AMC Service',
-      'New Purifier Installation',
-      'Un-Installation',
-      'Repair',
-      'General Maintenance',
-      'Full Filter Change',
-      'Inspection',
-      'Other'
-    ],
-    'SOFTENER': [
-      'Installation',
-      'New Softener Installation',
-      'Reinstallation',
-      'Un-Installation',
-      'General Service',
-      'Resin Change',
-      'Inspection',
-      'Other'
-    ]
-  };
 
   const steps = [
     { id: 1, title: 'Personal Info', icon: User, emoji: '👤' },
@@ -873,7 +859,6 @@ const Booking: React.FC = () => {
             break;
           case 2:
             if (!formData.service) { firstMissingField = 'service'; }
-            else if (formData.service === 'Other' && !formData.customService) { firstMissingField = 'customService'; }
             break;
           case 3:
             if (!hasValidMapCoordinates(formData.coordinates) || !formData.address) {
@@ -1687,7 +1672,7 @@ const Booking: React.FC = () => {
         job_number: generateJobNumber(formData.serviceType),
         customer_id: customer.id,
         service_type: formData.serviceType,
-        service_sub_type: formData.service === 'Other' ? formData.customService : formData.service,
+        service_sub_type: bookingStoredServiceSubType(formData.service),
         brand: formData.brandName || 'Not specified',
         model: formData.modelName || 'Not specified',
         status: 'PENDING' as const,
@@ -1783,7 +1768,7 @@ const Booking: React.FC = () => {
             email: formData.email,
             jobNumber: (job as any)?.job_number || (job as any)?.jobNumber || 'N/A',
             serviceType: formData.serviceType,
-            serviceSubType: formData.service === 'Other' ? formData.customService : formData.service,
+            serviceSubType: bookingServiceLabel(formData.service),
             brand: formData.brandName || 'Not specified',
             model: formData.modelName || 'Not specified',
             scheduledDate: formData.serviceDate
@@ -1809,7 +1794,7 @@ const Booking: React.FC = () => {
         phone: formData.phone,
         email: formData.email,
         serviceType: formData.serviceType,
-        service: formData.service === 'Other' ? formData.customService : formData.service,
+        service: bookingServiceLabel(formData.service),
         brandName: formData.brandName || 'Not specified',
         modelName: formData.modelName || 'Not specified',
         address: displayAddress,
@@ -2004,46 +1989,24 @@ const Booking: React.FC = () => {
                     <SelectValue placeholder="Select service" />
                   </SelectTrigger>
                   <SelectContent>
-                    {serviceOptions[formData.serviceType].map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
+                    {BOOKING_SERVICE_CHOICES.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              {/* Installation policy note */}
-              {(formData.service === 'Installation' ||
-                formData.service === 'New Purifier Installation' ||
-                formData.service === 'New Softener Installation') && (
+              {formData.service === 'installation' && (
                 <div className="flex items-start gap-2.5 rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-800/60 dark:bg-sky-950/40">
                   <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden="true" />
                   <p className="text-xs sm:text-sm leading-relaxed text-sky-800 dark:text-sky-200">
                     <span className="font-medium">Please note:</span>{' '}
-                    {formData.serviceType === 'SOFTENER' || formData.service === 'New Softener Installation'
+                    {formData.serviceType === 'SOFTENER'
                       ? 'We primarily install existing (previously used) softeners. For brand-new softeners not purchased from us, installation is taken up on a model-by-model basis — our team will review your model and confirm before the visit.'
                       : 'We primarily install existing (previously used) purifiers. For brand-new purifiers not purchased from us, installation is taken up on a model-by-model basis — our team will review your model and confirm before the visit.'}
                   </p>
-                </div>
-              )}
-
-              {/* Show custom service input when "Other" is selected */}
-              {formData.service === 'Other' && (
-                <div>
-                  <Label htmlFor="customService">Please specify the service *</Label>
-                  <Input
-                    id="customService"
-                    value={formData.customService}
-                    onChange={(e) => handleInputChange('customService', e.target.value)}
-                    placeholder="Describe the specific service you need..."
-                    className={`mt-1 ${
-                      showValidation && formData.service === 'Other' && !formData.customService 
-                        ? 'border-2 border-red-500' 
-                        : ''
-                    }`}
-                    aria-invalid={showValidation && formData.service === 'Other' && !formData.customService}
-                  />
                 </div>
               )}
               
@@ -2572,7 +2535,6 @@ const Booking: React.FC = () => {
                   value={formData.serviceDate || undefined}
                   minDate={istTodayIso()}
                   disabledDates={leaveDates}
-                  blockedMessage={bookingLeaveMessage()}
                   onBlockedDate={() => {
                     toast.error(bookingLeaveMessage(), { id: 'booking-leave-day' });
                   }}
@@ -2788,7 +2750,7 @@ const Booking: React.FC = () => {
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
                   <div><strong>Type:</strong> {formData.serviceType}</div>
-                  <div><strong>Service:</strong> {formData.service === 'Other' ? formData.customService : formData.service}</div>
+                  <div><strong>Service:</strong> {bookingServiceLabel(formData.service)}</div>
                   {formData.brandName && <div><strong>Brand:</strong> {formData.brandName}</div>}
                   {formData.modelName && <div><strong>Model:</strong> {formData.modelName}</div>}
                   {formData.description && <div><strong>Details:</strong> {formData.description}</div>}
@@ -3036,7 +2998,7 @@ const Booking: React.FC = () => {
                validateEmail(formData.email) &&
                (formData.alternatePhone === '' || validatePhoneNumber(formData.alternatePhone));
       case 2: {
-        const serviceValid = formData.service && (formData.service !== 'Other' || formData.customService);
+        const serviceValid = Boolean(formData.service);
         return serviceValid; // Brand name and model name are now optional
       }
       case 3:
