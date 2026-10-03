@@ -58,6 +58,7 @@ public final class CallerBanner {
             lastShownAt = now;
         }
         show(app, match, rawNumber);
+        RingAlert.send(app, match.name, rawNumber);
     }
 
     /** OEM rings sometimes omit the number. Look at the latest incoming row only. */
