@@ -8432,6 +8432,7 @@ const AdminDashboard = () => {
           closeAdminTool();
         }}
         unknownCaller={unknownCallerChip}
+        onSearchPhone={handleSearchFromBookingIntent}
       />
 
       <QuickCustomerCreateDialog

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,7 +6,22 @@ import { Customer } from '@/types';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { Plus, Edit, Phone, PhoneOff, PhoneForwarded, Search, Trash2 } from 'lucide-react';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { supabase } from '@/lib/supabase';
 import type { AdminRecentTechCall } from '@/lib/adminRecentTechCallAlerts';
+
+type KnownCustomerCall = {
+  id: string;
+  source: 'technician' | 'admin';
+  actor_id: string | null;
+  phone: string;
+  customer_name: string;
+  direction: 'in' | 'out';
+  outcome: 'answered' | 'missed';
+  call_at: string;
+  actorName: string;
+};
+
+const KNOWN_CALL_PAGE = 40;
 
 export type UnknownCallerRowProps = {
   phone: string;
@@ -29,6 +44,8 @@ interface RecentAccountsDialogProps {
   recentTechCalls?: AdminRecentTechCall[];
   onOpenTechCall?: (row: AdminRecentTechCall) => void;
   onClearTechCalls?: () => void;
+  /** Search this phone on the dashboard and close the dialog. */
+  onSearchPhone?: (phone: string) => void;
 }
 
 function formatWhen(at: number): string {
@@ -67,7 +84,70 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
   recentTechCalls = [],
   onOpenTechCall,
   onClearTechCalls,
+  onSearchPhone,
 }) => {
+  const [knownCalls, setKnownCalls] = useState<KnownCustomerCall[]>([]);
+  const [knownLoading, setKnownLoading] = useState(false);
+  const [knownLoadingMore, setKnownLoadingMore] = useState(false);
+  const [knownHasMore, setKnownHasMore] = useState(false);
+  const [knownMissing, setKnownMissing] = useState(false);
+
+  const loadKnownCalls = useCallback(async (olderThan?: string) => {
+    if (olderThan) setKnownLoadingMore(true);
+    else setKnownLoading(true);
+    let query = supabase
+      .from('known_customer_calls')
+      .select('id,source,actor_id,phone,customer_name,direction,outcome,call_at')
+      .order('call_at', { ascending: false })
+      .limit(KNOWN_CALL_PAGE);
+    if (olderThan) query = query.lt('call_at', olderThan);
+    const { data, error } = await query;
+    if (error) {
+      const missing =
+        String(error.code || '') === '42P01' ||
+        String(error.code || '') === 'PGRST205' ||
+        /known_customer_calls/i.test(String(error.message || ''));
+      if (!olderThan) {
+        setKnownCalls([]);
+        setKnownMissing(missing);
+        setKnownHasMore(false);
+      }
+      setKnownLoading(false);
+      setKnownLoadingMore(false);
+      return;
+    }
+    const rows = (data || []) as Omit<KnownCustomerCall, 'actorName'>[];
+    const techIds = [
+      ...new Set(
+        rows.filter((row) => row.source === 'technician' && row.actor_id).map((row) => row.actor_id as string)
+      ),
+    ];
+    const names = new Map<string, string>();
+    if (techIds.length > 0) {
+      const { data: techs } = await supabase.from('technicians').select('id, full_name').in('id', techIds);
+      for (const tech of techs || []) {
+        const name = String(tech.full_name || '').trim();
+        if (name) names.set(tech.id, name);
+      }
+    }
+    const mapped = rows.map((row) => ({
+      ...row,
+      actorName:
+        row.source === 'admin'
+          ? 'Admin'
+          : names.get(row.actor_id || '') || 'Technician',
+    }));
+    setKnownMissing(false);
+    setKnownHasMore(mapped.length === KNOWN_CALL_PAGE);
+    setKnownCalls((prev) => (olderThan ? [...prev, ...mapped] : mapped));
+    setKnownLoading(false);
+    setKnownLoadingMore(false);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void loadKnownCalls();
+  }, [open, loadKnownCalls]);
   const todayCustomers = useCustomersAsIs
     ? customers
     : customers
@@ -95,9 +175,7 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
         <DialogHeader>
           <DialogTitle>Recent Accounts</DialogTitle>
           <DialogDescription>
-            {callRows.length > 0
-              ? `Customer call alerts and accounts created today (${new Date().toLocaleDateString()})`
-              : `Accounts created today (${new Date().toLocaleDateString()})`}
+            Known customer calls, plus accounts created today ({new Date().toLocaleDateString()})
           </DialogDescription>
         </DialogHeader>
 
@@ -145,6 +223,80 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
               </div>
             </div>
           ) : null}
+
+          <section className="space-y-2">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-foreground">Recent callers</h3>
+              <p className="text-xs text-muted-foreground">
+                Customer calls from technician and admin phones · Tap a row to search
+              </p>
+            </div>
+            {knownLoading ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">Loading calls…</p>
+            ) : knownMissing ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                Run the known-customer calls script in Supabase, then reopen this list.
+              </p>
+            ) : knownCalls.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">No customer calls saved yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {knownCalls.map((row) => {
+                  const badge =
+                    row.direction === 'out' ? 'Wrong line' : row.outcome === 'missed' ? 'Missed' : 'Call';
+                  const Icon =
+                    row.direction === 'out' ? PhoneForwarded : row.outcome === 'missed' ? PhoneOff : Phone;
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className="w-full text-left border border-border rounded-lg p-3 sm:p-4 transition-colors hover:bg-muted/40 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => {
+                        if (!onSearchPhone) return;
+                        onSearchPhone(row.phone);
+                        onOpenChange(false);
+                      }}
+                    >
+                      <div className="flex gap-2 min-w-0">
+                        <Icon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                            <Badge variant="outline" className="text-[10px] uppercase">
+                              {badge}
+                            </Badge>
+                            <span className="text-sm font-semibold text-foreground">{row.customer_name}</span>
+                            <Search className="h-3.5 w-3.5 text-muted-foreground ml-auto shrink-0" />
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            <span className="font-mono tabular-nums font-semibold text-foreground">{row.phone}</span>
+                            <span> · {row.actorName}</span>
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {new Date(row.call_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+                {knownHasMore ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={knownLoadingMore}
+                    onClick={() => {
+                      const oldest = knownCalls[knownCalls.length - 1]?.call_at;
+                      if (oldest) void loadKnownCalls(oldest);
+                    }}
+                  >
+                    {knownLoadingMore ? 'Loading…' : 'Load older calls'}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </section>
 
           {callRows.length > 0 ? (
             <section className="space-y-2">
