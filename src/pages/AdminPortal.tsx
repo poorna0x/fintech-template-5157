@@ -7,6 +7,7 @@ import { preloadLeadCatalog } from '@/lib/leadCatalog';
 import { markNativeBootReady } from '@/lib/nativeBootReady';
 import { AdminScreenLoader } from '@/components/admin/AdminLoaders';
 import { AdminBiometricLockScreen } from '@/components/admin/AdminBiometricLockScreen';
+import { AdminPrivacyBlur } from '@/components/admin/AdminPrivacyBlur';
 import {
   startAdminBiometricLockController,
   stopAdminBiometricLockController,
@@ -257,11 +258,21 @@ export default function AdminPortal() {
   }, [booting, user, isAdmin, onSettings]);
 
   if (booting) {
-    return <AdminScreenLoader message={onSettings ? 'Loading settings...' : ''} />;
+    return (
+      <>
+        <AdminScreenLoader message={onSettings ? 'Loading settings...' : ''} />
+        <AdminPrivacyBlur />
+      </>
+    );
   }
 
   if (!user || !isAdmin) {
-    return <AdminLogin />;
+    return (
+      <>
+        <AdminLogin />
+        <AdminPrivacyBlur />
+      </>
+    );
   }
 
   const shell = onSettings
@@ -278,6 +289,7 @@ export default function AdminPortal() {
       <SettingsCommandPalette />
       <WhatsAppAdminNotifier />
       <AdminBiometricLockScreen />
+      <AdminPrivacyBlur />
     </>
   );
 }
