@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
 import {
   addBookingLeaveDate,
+  deletePassedBookingLeaveDates,
   fetchBookingLeaveDates,
   istTodayIso,
   removeBookingLeaveDate,
@@ -30,9 +31,11 @@ export function BookingLeaveSettings() {
 
   useEffect(() => {
     let active = true;
-    void fetchBookingLeaveDates().then((rows) => {
+    void (async () => {
+      await deletePassedBookingLeaveDates();
+      const rows = await fetchBookingLeaveDates();
       if (active) setDates(rows);
-    });
+    })();
     return () => {
       active = false;
     };
@@ -74,7 +77,7 @@ export function BookingLeaveSettings() {
     <div id="section-booking-leave" className="scroll-mt-24 space-y-3">
       <SettingsActionCard
         title="Booking leave"
-        description="Add a day off. Website and WhatsApp booking cannot pick that date. Existing jobs stay as they are."
+        description="Add a day off. Website and WhatsApp booking cannot pick that date. The day drops off by itself after it has passed."
         icon={<CalendarOff />}
         actions={
           <div className="flex w-full sm:w-auto items-center gap-2">

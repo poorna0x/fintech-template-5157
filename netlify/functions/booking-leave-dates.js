@@ -16,10 +16,16 @@ async function loadBookingLeaveDateSet(db) {
   const now = Date.now();
   if (cache.dates && now - cache.at < CACHE_MS) return cache.dates;
   if (!db) return new Set();
+  const today = todayIso();
+  try {
+    await db.from('booking_leave_dates').delete().lt('leave_date', today);
+  } catch {
+    /* keep going; the list below still ignores past days */
+  }
   const { data, error } = await db
     .from('booking_leave_dates')
     .select('leave_date')
-    .gte('leave_date', todayIso())
+    .gte('leave_date', today)
     .limit(120);
   if (error) return cache.dates || new Set();
   const dates = new Set(

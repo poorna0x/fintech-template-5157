@@ -37,6 +37,12 @@ export function bookingLeaveMessage(): string {
   return LEAVE_MESSAGE;
 }
 
+/** Drop leave rows from before today (IST). Today stays until the day is over. */
+export async function deletePassedBookingLeaveDates(): Promise<void> {
+  const today = istTodayIso();
+  await supabase.from('booking_leave_dates').delete().lt('leave_date', today);
+}
+
 /** Upcoming leave days for the public calendar. Empty if the table is not created yet. */
 export async function fetchBookingLeaveDates(): Promise<string[]> {
   const today = istTodayIso();
