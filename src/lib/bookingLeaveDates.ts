@@ -20,6 +20,19 @@ export function isBookingLeaveDate(date: unknown, leaveDates: Iterable<string>):
   return false;
 }
 
+/** First bookable day on or after `from`, skipping leave dates. */
+export function nextOpenBookingDate(leaveDates: Iterable<string>, from: string): string {
+  const closed = new Set(Array.from(leaveDates, (day) => normalizeLeaveDate(day)).filter(Boolean));
+  const start = normalizeLeaveDate(from) || istTodayIso();
+  const cursor = new Date(`${start}T12:00:00+05:30`);
+  for (let i = 0; i < 90; i += 1) {
+    const iso = cursor.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    if (!closed.has(iso)) return iso;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return start;
+}
+
 export function bookingLeaveMessage(): string {
   return LEAVE_MESSAGE;
 }

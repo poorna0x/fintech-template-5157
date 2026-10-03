@@ -28,7 +28,10 @@ import {
   bookingLeaveMessage,
   fetchBookingLeaveDates,
   isBookingLeaveDate,
+  istTodayIso,
+  nextOpenBookingDate,
 } from '@/lib/bookingLeaveDates';
+import { DatePicker } from '@/components/ui/date-picker';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
 import {
   OTP_ENABLED,
@@ -235,7 +238,12 @@ const Booking: React.FC = () => {
   useEffect(() => {
     let active = true;
     void fetchBookingLeaveDates().then((rows) => {
-      if (active) setLeaveDates(rows);
+      if (!active) return;
+      setLeaveDates(rows);
+      setFormData((prev) => {
+        if (!isBookingLeaveDate(prev.serviceDate, rows)) return prev;
+        return { ...prev, serviceDate: nextOpenBookingDate(rows, istTodayIso()) };
+      });
     });
     return () => {
       active = false;
@@ -2560,27 +2568,21 @@ const Booking: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <Label htmlFor="serviceDate">Service Date *</Label>
-                <Input
-                  id="serviceDate"
-                  type="date"
-                  value={formData.serviceDate}
-                  onChange={(e) => handleInputChange('serviceDate', e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
-                  className={`mt-1 text-left ${
-                    (showValidation && !formData.serviceDate) ||
-                    isBookingLeaveDate(formData.serviceDate, leaveDates)
+                <DatePicker
+                  value={formData.serviceDate || undefined}
+                  minDate={istTodayIso()}
+                  disabledDates={leaveDates}
+                  placeholder="Pick a date"
+                  className={`mt-1 ${
+                    showValidation && !formData.serviceDate
                       ? 'border-2 border-black dark:border-white'
                       : ''
                   }`}
-                  style={{
-                    WebkitAppearance: 'none',
-                    appearance: 'none',
-                    fontSize: '16px', // Prevents zoom on iOS
+                  onChange={(value) => {
+                    if (!value || isBookingLeaveDate(value, leaveDates)) return;
+                    handleInputChange('serviceDate', value);
                   }}
                 />
-                {isBookingLeaveDate(formData.serviceDate, leaveDates) ? (
-                  <p className="text-sm text-red-600 mt-1">{bookingLeaveMessage()}</p>
-                ) : null}
               </div>
               
               <div>

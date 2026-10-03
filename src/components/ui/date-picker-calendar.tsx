@@ -9,6 +9,10 @@ export interface DatePickerCalendarProps {
   value?: string;
   /** Called with the selected date as a YYYY-MM-DD string */
   onSelect: (value: string) => void;
+  /** YYYY-MM-DD days that cannot be chosen */
+  disabledDates?: readonly string[];
+  /** Earliest YYYY-MM-DD that can be chosen */
+  minDate?: string;
 }
 
 /**
@@ -20,18 +24,30 @@ export interface DatePickerCalendarProps {
  * Lazy-loaded by date-picker.tsx (with prefetch) so MUI + emotion + dayjs stay
  * out of the shared vendor chunk.
  */
-export default function DatePickerCalendar({ value, onSelect }: DatePickerCalendarProps) {
+export default function DatePickerCalendar({
+  value,
+  onSelect,
+  disabledDates,
+  minDate,
+}: DatePickerCalendarProps) {
   const parsed = value ? dayjs(value, "YYYY-MM-DD", true) : null;
   const dayjsValue = parsed && parsed.isValid() ? parsed : null;
+  const blocked = React.useMemo(() => new Set(disabledDates || []), [disabledDates]);
+  const min = minDate ? dayjs(minDate, "YYYY-MM-DD", true) : null;
+  const minDay = min && min.isValid() ? min : undefined;
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <DateCalendar
         value={dayjsValue}
+        minDate={minDay}
+        shouldDisableDate={(day) => blocked.has(dayjs(day).format("YYYY-MM-DD"))}
         onChange={(d) => {
-          if (d) {
-            onSelect(dayjs(d).format("YYYY-MM-DD"));
-          }
+          if (!d) return;
+          const iso = dayjs(d).format("YYYY-MM-DD");
+          if (blocked.has(iso)) return;
+          if (minDay && iso < minDay.format("YYYY-MM-DD")) return;
+          onSelect(iso);
         }}
         sx={{
           width: 320,

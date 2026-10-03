@@ -20,6 +20,10 @@ export interface DatePickerProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  /** YYYY-MM-DD days the calendar will not accept */
+  disabledDates?: readonly string[];
+  /** Earliest YYYY-MM-DD that can be chosen */
+  minDate?: string;
 }
 
 function formatDisplayDate(value: string | undefined): string {
@@ -42,6 +46,8 @@ export function DatePicker({
   placeholder = "Pick a date",
   className,
   disabled,
+  disabledDates,
+  minDate,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
   const [side, setSide] = React.useState<"top" | "bottom">("bottom");
@@ -125,7 +131,11 @@ export function DatePicker({
         >
           <DatePickerCalendar
             value={value}
+            disabledDates={disabledDates}
+            minDate={minDate}
             onSelect={(d) => {
+              if (disabledDates?.includes(d)) return;
+              if (minDate && d < minDate) return;
               onChange?.(d);
               setOpen(false);
             }}
