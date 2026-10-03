@@ -1403,8 +1403,8 @@ const TechnicianDashboard = () => {
     navigate('/technician/login', { replace: true });
   }, [navigate, user, authInitializing, authGraceExpired]);
 
-  // Phone list for the incoming-call card. First open downloads everyone;
-  // later opens add only new or edited customers.
+  // Phone list for the incoming-call card. Opens by itself: first open saves
+  // every customer with a phone, later opens add new or edited ones.
   useEffect(() => {
     if (user?.role !== 'technician' || !user.technicianId) return;
     const timer = window.setTimeout(() => {
@@ -6900,34 +6900,6 @@ const TechnicianDashboard = () => {
               <RefreshCw className="w-5 h-5 mr-3" />
               Reload App
             </Button>
-            {Capacitor.isPluginAvailable('CallerDirectory') ? (
-              <Button
-                variant="ghost"
-                className="justify-start h-12 px-4 text-base"
-                onClick={() => {
-                  setHeaderOptionsDialogOpen(false);
-                  void import('@/lib/techCallerDirectory').then(
-                    async ({ downloadTechCallerDirectory, isTechCallerDirectoryAvailable }) => {
-                      if (!isTechCallerDirectoryAvailable()) return;
-                      toast.message('Updating caller list…');
-                      try {
-                        const count = await downloadTechCallerDirectory();
-                        toast.success(
-                          count > 0
-                            ? `Caller list saved (${count} customers)`
-                            : 'Caller list saved'
-                        );
-                      } catch {
-                        toast.error('Could not update the caller list');
-                      }
-                    }
-                  );
-                }}
-              >
-                <Phone className="w-5 h-5 mr-3" />
-                Update caller list
-              </Button>
-            ) : null}
             {!Capacitor.isNativePlatform() ? (
               <Button
                 variant="ghost"
