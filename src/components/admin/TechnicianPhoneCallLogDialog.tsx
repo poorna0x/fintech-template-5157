@@ -59,12 +59,16 @@ export default function TechnicianPhoneCallLogDialog({
   technicianId,
   technicianName,
   compact = false,
+  embedded = false,
 }: {
   technicianId: string;
   technicianName: string;
   compact?: boolean;
+  /** Render inside another dialog instead of opening a second one. */
+  embedded?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [requestNonce, setRequestNonce] = useState(0);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [calls, setCalls] = useState<CallRow[]>([]);
@@ -145,21 +149,72 @@ export default function TechnicianPhoneCallLogDialog({
       stopped = true;
       if (timer) clearTimeout(timer);
     };
-  }, [open, technicianId]);
+  }, [open, technicianId, requestNonce]);
+
+  const requestButton = (
+    <Button
+      type="button"
+      variant="outline"
+      size={compact || embedded ? 'sm' : 'default'}
+      className={embedded ? 'w-full sm:w-auto' : compact ? 'w-full text-xs sm:text-sm' : 'h-11 w-full'}
+      disabled={!technicianId || loading}
+      onClick={() => {
+        setOpen(true);
+        setRequestNonce((n) => n + 1);
+      }}
+    >
+      <Phone className={compact || embedded ? 'w-3 h-3 sm:w-4 sm:h-4 mr-1' : 'h-4 w-4'} />
+      {loading ? 'Asking the phone…' : open && calls.length ? 'Get call log again' : 'Get call log'}
+    </Button>
+  );
+
+  const result = (
+    <>
+      {loading && (
+        <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Asking the phone…
+        </div>
+      )}
+      {!loading && message && <p className="text-sm text-muted-foreground">{message}</p>}
+      {!loading && calls.length > 0 && (
+        <ul className="divide-y rounded-lg border">
+          {calls.map((call) => (
+            <li key={`${call.at}-${call.number}`} className="px-3 py-2 text-sm">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-medium">{call.name || call.number}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{callLabel(call.type)}</span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {call.name ? `${call.number} · ` : ''}
+                {formatWhen(call.at)}
+                {formatLength(call.seconds) ? ` · ${formatLength(call.seconds)}` : ''}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="rounded-lg border p-4 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold">Phone call log</h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            {technicianName || 'Technician'} · last 45 days, saved on their phone and sent only when you ask.
+          </p>
+        </div>
+        {requestButton}
+        {open ? result : null}
+      </div>
+    );
+  }
 
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        size={compact ? 'sm' : 'default'}
-        className={compact ? 'w-full text-xs sm:text-sm' : 'h-11 w-full'}
-        disabled={!technicianId}
-        onClick={() => setOpen(true)}
-      >
-        <Phone className={compact ? 'w-3 h-3 sm:w-4 sm:h-4 mr-1' : 'h-4 w-4'} />
-        Call log
-      </Button>
+      {requestButton}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader className="pr-10 text-left">
@@ -168,30 +223,7 @@ export default function TechnicianPhoneCallLogDialog({
               {technicianName || 'Technician'} · last 45 days, saved on their phone and sent only when you ask.
             </DialogDescription>
           </DialogHeader>
-          {loading && (
-            <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Asking the phone…
-            </div>
-          )}
-          {!loading && message && <p className="text-sm text-muted-foreground">{message}</p>}
-          {!loading && calls.length > 0 && (
-            <ul className="divide-y rounded-lg border">
-              {calls.map((call) => (
-                <li key={`${call.at}-${call.number}`} className="px-3 py-2 text-sm">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="font-medium">{call.name || call.number}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{callLabel(call.type)}</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {call.name ? `${call.number} · ` : ''}
-                    {formatWhen(call.at)}
-                    {formatLength(call.seconds) ? ` · ${formatLength(call.seconds)}` : ''}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          {result}
         </DialogContent>
       </Dialog>
     </>

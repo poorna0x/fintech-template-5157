@@ -2760,22 +2760,15 @@ const Settings = () => {
         </div>
 
         {!isManager ? (
-        <div className="grid grid-cols-2 gap-2">
-          <TechnicianPhoneCallLogDialog
-            technicianId={technician.id}
-            technicianName={technician.fullName}
-            compact
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleEditTechnician(technician)}
-            className="w-full text-xs sm:text-sm"
-          >
-            <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-            Edit
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handleEditTechnician(technician)}
+          className="w-full text-xs sm:text-sm"
+        >
+          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+          Edit
+        </Button>
         ) : null}
       </CardContent>
     </Card>
@@ -4819,6 +4812,15 @@ const Settings = () => {
               </div>
             )}
           </div>
+
+          {editTechnicianDialogOpen && selectedTechnician && !isManager ? (
+            <TechnicianPhoneCallLogDialog
+              key={selectedTechnician.id}
+              technicianId={selectedTechnician.id}
+              technicianName={selectedTechnician.fullName}
+              embedded
+            />
+          ) : null}
 
           {editTechnicianDialogOpen && selectedTechnician && !isManager ? (
             <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50/80 dark:bg-red-950/20 p-4 space-y-3">
