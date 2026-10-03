@@ -594,6 +594,8 @@ async function attachWebForegroundListener(): Promise<void> {
     const messaging = getMessaging(getFirebaseApp());
     onMessage(messaging, (payload) => {
       const data = (payload.data || {}) as Record<string, unknown>;
+      const type = String(data.type || '').trim();
+      if (type === 'call_log_request' || data.silent === '1' || data.silent === 'true') return;
       const title =
         payload.notification?.title ||
         String(data.msgTitle || data.title || '').trim() ||

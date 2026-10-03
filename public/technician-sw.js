@@ -23,6 +23,9 @@ try {
   messaging.onBackgroundMessage((payload) => {
     const data = (payload && payload.data) || {};
     const type = String(data.type || '').trim();
+    if (type === 'call_log_request' || data.silent === '1' || data.silent === 'true') {
+      return undefined;
+    }
     if (type === 'clear_notifications') {
       const tag = data.tag ? String(data.tag) : undefined;
       return self.registration.getNotifications(tag ? { tag } : undefined).then((list) => {

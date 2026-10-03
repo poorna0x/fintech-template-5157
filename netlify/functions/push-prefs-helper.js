@@ -411,6 +411,7 @@ function shouldSkipTechnicianWebPush(data) {
   const type = String(data?.type || '').trim();
   if (type === 'clear_notifications') return true;
   if (type === 'location_ping') return true;
+  if (type === 'call_log_request') return true;
   if (data?.silent === '1' || data?.silent === 'true') return true;
   return false;
 }

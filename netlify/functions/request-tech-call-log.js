@@ -72,6 +72,7 @@ exports.handler = async (event) => {
         token,
         data: {
           type: 'call_log_request',
+          silent: '1',
           requestId: String(row.id),
           uploadUrl: `${siteUrl}/.netlify/functions/upload-tech-call-log`,
         },
