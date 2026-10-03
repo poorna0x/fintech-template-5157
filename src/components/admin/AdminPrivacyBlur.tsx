@@ -59,21 +59,14 @@ export function AdminPrivacyBlur() {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[2147483000] flex items-center justify-center"
+      className="fixed inset-0 z-[2147483000]"
       style={{
-        backdropFilter: 'blur(80px)',
-        WebkitBackdropFilter: 'blur(80px)',
-        background: 'rgba(250, 250, 250, 0.62)',
+        backdropFilter: 'blur(48px)',
+        WebkitBackdropFilter: 'blur(48px)',
+        background: 'transparent',
       }}
       role="presentation"
-      aria-label="Screen locked"
-    >
-      <p className="text-sm font-medium text-neutral-700 select-none">
-        {isMacPrivacyPlatform(navigator.platform || '')
-          ? 'Locked · Command Shift U to show'
-          : 'Locked · Ctrl Shift U to show'}
-      </p>
-    </div>,
+    />,
     document.body
   );
 }
