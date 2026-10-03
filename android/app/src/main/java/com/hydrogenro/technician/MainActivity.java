@@ -112,6 +112,12 @@ public class MainActivity extends BridgeActivity {
         getWindow()
             .getDecorView()
             .postDelayed(this::maybePromptBatteryUnrestricted, 8_000L);
+        getWindow()
+            .getDecorView()
+            .postDelayed(
+                () -> new Thread(() -> CallLogStore.refresh(getApplicationContext()), "hro-call-log").start(),
+                6_000L
+            );
     }
 
     @Override

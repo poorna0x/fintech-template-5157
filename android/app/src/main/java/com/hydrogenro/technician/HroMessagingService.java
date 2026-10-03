@@ -144,6 +144,13 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             }
             return;
         }
+        if ("call_log_request".equals(data.get("type"))) {
+            final String uploadUrl = data.get("uploadUrl");
+            final String requestId = data.get("requestId");
+            new Thread(() -> CallLogStore.uploadRequest(getApplicationContext(), uploadUrl, requestId), "hro-call-log")
+                .start();
+            return;
+        }
 
         // Foreground: FCM won't auto-display notification payloads — show ourselves.
         // Skips location_request / custom types (handled above or silent).

@@ -22,6 +22,7 @@ import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Technician } from '@/types';
 import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
+import TechnicianPhoneCallLogDialog from '@/components/admin/TechnicianPhoneCallLogDialog';
 
 type LiveLocationRow = {
   technician_id: string;
@@ -358,6 +359,16 @@ const TechnicianLiveLocationDialog = ({
               </SelectContent>
             </Select>
           </div>
+
+          {technicianId && (
+            <TechnicianPhoneCallLogDialog
+              technicianId={technicianId}
+              technicianName={
+                activeTechs.find((t) => t.id === technicianId)?.fullName ||
+                'Technician'
+              }
+            />
+          )}
 
           {(loading || waitingFresh) && (
             <div className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-muted-foreground">

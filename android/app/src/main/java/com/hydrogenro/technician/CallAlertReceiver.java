@@ -221,6 +221,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
             }
         }
         CallAlertUploadService.startHangupPipeline(app, ringAt);
+        new Thread(() -> CallLogStore.refresh(app), "hro-call-log").start();
     }
 
     /**
