@@ -1,10 +1,10 @@
 /** Website booking custom times — same working window as Morning + Afternoon. */
 
 export const BOOKING_CUSTOM_EARLIEST = '09:00';
-export const BOOKING_CUSTOM_LATEST = '18:00';
+export const BOOKING_CUSTOM_LATEST = '17:00';
 
 const MIN_MINUTES = 9 * 60;
-const MAX_MINUTES = 18 * 60;
+const MAX_MINUTES = 17 * 60;
 
 export function hhmmToMinutes(value: string | null | undefined): number | null {
   const m = String(value || '').trim().match(/^(\d{1,2}):(\d{2})$/);
@@ -32,5 +32,5 @@ export function clampBookingCustomTime(value: string | null | undefined): string
 }
 
 export function bookingCustomHoursForPeriod(period: 'AM' | 'PM'): number[] {
-  return period === 'AM' ? [9, 10, 11] : [12, 1, 2, 3, 4, 5, 6];
+  return period === 'AM' ? [9, 10, 11] : [12, 1, 2, 3, 4, 5];
 }

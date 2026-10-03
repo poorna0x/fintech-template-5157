@@ -398,11 +398,11 @@ const Booking: React.FC = () => {
     
     const timeMap: { [key: string]: string } = {
       'FIRST_HALF': 'Morning (9 AM - 1 PM)',
-      'SECOND_HALF': 'Afternoon (1 PM - 6 PM)',
+      'SECOND_HALF': 'Afternoon (1 PM - 5 PM)',
       'MORNING': 'Morning (9 AM - 1 PM)',
-      'AFTERNOON': 'Afternoon (1 PM - 6 PM)',
+      'AFTERNOON': 'Afternoon (1 PM - 5 PM)',
       'EVENING': 'Evening (6 PM - 9 PM)',
-      'CUSTOM': 'Custom Time (9 AM - 6 PM)'
+      'CUSTOM': 'Custom Time (9 AM - 5 PM)'
     };
     return timeMap[timeSlot] || timeSlot;
   };
@@ -1471,7 +1471,7 @@ const Booking: React.FC = () => {
         formData.preferredTime === 'CUSTOM' &&
         !isBookingCustomTimeAllowed(formData.preferredTimeCustom)
       ) {
-        throw new Error('Please choose a custom time between 9:00 AM and 6:00 PM.');
+        throw new Error('Please choose a custom time between 9:00 AM and 5:00 PM.');
       }
       const pinUrl = googleMapsPinUrl(formData.coordinates.lat, formData.coordinates.lng);
       const shortLocation = await resolveBookingVisibleAddress({
@@ -2613,8 +2613,8 @@ const Booking: React.FC = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="FIRST_HALF">Morning (9 AM - 1 PM)</SelectItem>
-                    <SelectItem value="SECOND_HALF">Afternoon (1 PM - 6 PM)</SelectItem>
-                    <SelectItem value="CUSTOM">Custom Time (9 AM - 6 PM)</SelectItem>
+                    <SelectItem value="SECOND_HALF">Afternoon (1 PM - 5 PM)</SelectItem>
+                    <SelectItem value="CUSTOM">Custom Time (9 AM - 5 PM)</SelectItem>
                   </SelectContent>
                 </Select>
                 {formData.preferredTime === 'CUSTOM' && (() => {
@@ -2654,7 +2654,7 @@ const Booking: React.FC = () => {
                   const timeParts = parseTime(formData.preferredTimeCustom || '10:00');
                   const hoursForPeriod = bookingCustomHoursForPeriod(timeParts.period);
                   const minuteOptions =
-                    timeParts.period === 'PM' && timeParts.hour === '6'
+                    timeParts.period === 'PM' && timeParts.hour === '5'
                       ? ['00']
                       : Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
 
@@ -2662,7 +2662,7 @@ const Booking: React.FC = () => {
                     const allowedHours = bookingCustomHoursForPeriod(period);
                     const hourNum = hour ? parseInt(hour, 10) : NaN;
                     const nextHour = allowedHours.includes(hourNum) ? String(hourNum) : String(allowedHours[0]);
-                    const nextMinute = period === 'PM' && nextHour === '6' ? '00' : (minute || '00');
+                    const nextMinute = period === 'PM' && nextHour === '5' ? '00' : (minute || '00');
                     handleInputChange('preferredTimeCustom', formatTime24(nextHour, nextMinute, period));
                   };
 
@@ -2729,11 +2729,11 @@ const Booking: React.FC = () => {
                       </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Custom times are 9:00 AM to 6:00 PM only.
+                        Custom times are 9:00 AM to 5:00 PM only.
                       </p>
                       {showValidation && !isBookingCustomTimeAllowed(formData.preferredTimeCustom) ? (
                         <p className="text-sm text-red-600 dark:text-red-400">
-                          Please choose a time between 9:00 AM and 6:00 PM.
+                          Please choose a time between 9:00 AM and 5:00 PM.
                         </p>
                       ) : null}
                     </div>
