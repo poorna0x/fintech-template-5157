@@ -78,6 +78,7 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
 import { BookingLeaveSettings } from '@/components/admin/BookingLeaveSettings';
+import { ScreenLockSetting } from '@/components/admin/ScreenLockSetting';
 import { DeviceTrackerSettings } from '@/components/admin/DeviceTrackerSettings';
 import {
   defaultTechPushPrefs,
@@ -3910,10 +3911,11 @@ const Settings = () => {
                 Dashboard Settings
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                Dashboard display, live booking banner, Add Customer resume, PDF compression, and job WhatsApp preferences
+                Dashboard display, live booking banner, Add Customer resume, PDF compression, job WhatsApp preferences, and screen lock
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 space-y-3">
+              <ScreenLockSetting />
               <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
                 <div className="flex-1">
                   <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">

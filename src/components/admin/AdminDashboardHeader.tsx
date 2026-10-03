@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,17 +33,9 @@ import {
   X,
 } from 'lucide-react';
 import { hapticTap } from '@/lib/haptics';
-import { focusAndroidInputWithoutScroll, isNativeApp } from '@/lib/isNativeApp';
+import { focusAndroidInputWithoutScroll } from '@/lib/isNativeApp';
 import { settingsPath } from '@/lib/settingsSections';
 import { settingsPanelPath } from '@/lib/settingsUrl';
-import {
-  isDesktopPrivacyTarget,
-  isMacPrivacyPlatform,
-  readAdminPrivacyBlurEnabled,
-  setAdminPrivacyBlurEnabled,
-  subscribeAdminPrivacyBlurEnabled,
-} from '@/lib/adminPrivacyBlur';
-import { Switch } from '@/components/ui/switch';
 import { requestOpenSettingsSearch } from '@/components/admin/SettingsSearch';
 import { useWhatsAppChatCount } from '@/lib/whatsappInboxActivity';
 import { cn } from '@/lib/utils';
@@ -107,41 +99,6 @@ function AdminSearchField({
         className={inputClassName}
       />
     </div>
-  );
-}
-
-function ScreenLockToggle() {
-  const [desktop, setDesktop] = useState(false);
-  const [enabled, setEnabled] = useState(readAdminPrivacyBlurEnabled);
-
-  useEffect(() => {
-    setDesktop(
-      isDesktopPrivacyTarget({
-        nativeApp: isNativeApp(),
-        hover: window.matchMedia('(hover: hover)').matches,
-        finePointer: window.matchMedia('(pointer: fine)').matches,
-      })
-    );
-    return subscribeAdminPrivacyBlurEnabled(() => setEnabled(readAdminPrivacyBlurEnabled()));
-  }, []);
-
-  if (!desktop) return null;
-
-  const mac = isMacPrivacyPlatform(navigator.platform || '');
-  const shortcut = mac ? '⌘⇧L locks, ⌘⇧U unlocks' : 'Ctrl+Shift+L locks, Ctrl+Shift+U unlocks';
-
-  return (
-    <label
-      className="hidden sm:inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-gray-300 bg-white px-2.5 text-sm text-gray-700"
-      title={`Blurs this screen after 3 minutes of no use. ${shortcut}.`}
-    >
-      Screen lock
-      <Switch
-        checked={enabled}
-        onCheckedChange={(next) => setAdminPrivacyBlurEnabled(next)}
-        aria-label="Screen lock"
-      />
-    </label>
   );
 }
 
@@ -214,7 +171,6 @@ export function AdminDashboardHeader({
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 sm:flex-wrap sm:items-center">
-            <ScreenLockToggle />
             <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2 w-full sm:w-auto">
               <Button
                 variant="outline"
