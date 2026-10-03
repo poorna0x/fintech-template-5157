@@ -3,6 +3,8 @@ import dayjs from "dayjs";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { DateCalendar } from "@mui/x-date-pickers/DateCalendar";
+import { PickersDay, pickersDayClasses } from "@mui/x-date-pickers/PickersDay";
+import type { PickersDayProps } from "@mui/x-date-pickers/PickersDay";
 
 export interface DatePickerCalendarProps {
   /** Value as YYYY-MM-DD string or undefined */
@@ -11,6 +13,8 @@ export interface DatePickerCalendarProps {
   onSelect: (value: string) => void;
   /** YYYY-MM-DD days that cannot be chosen */
   disabledDates?: readonly string[];
+  /** Called when a disabled day is tapped, so the calendar can explain why. */
+  onBlockedDate?: (value: string) => void;
   /** Earliest YYYY-MM-DD that can be chosen */
   minDate?: string;
 }
@@ -28,13 +32,45 @@ export default function DatePickerCalendar({
   value,
   onSelect,
   disabledDates,
+  onBlockedDate,
   minDate,
 }: DatePickerCalendarProps) {
   const parsed = value ? dayjs(value, "YYYY-MM-DD", true) : null;
   const dayjsValue = parsed && parsed.isValid() ? parsed : null;
   const blocked = React.useMemo(() => new Set(disabledDates || []), [disabledDates]);
+  const blockedRef = React.useRef(blocked);
+  blockedRef.current = blocked;
+  const onBlockedRef = React.useRef(onBlockedDate);
+  onBlockedRef.current = onBlockedDate;
   const min = minDate ? dayjs(minDate, "YYYY-MM-DD", true) : null;
   const minDay = min && min.isValid() ? min : undefined;
+
+  const DaySlot = React.useCallback(function DaySlot(props: PickersDayProps) {
+    const iso = dayjs(props.day).format("YYYY-MM-DD");
+    if (!blockedRef.current.has(iso)) return <PickersDay {...props} />;
+    return (
+      <PickersDay
+        {...props}
+        disabled={false}
+        selected={false}
+        today={false}
+        disableHighlightToday
+        className={`${props.className ?? ""} ${pickersDayClasses.disabled}`}
+        sx={{ color: "text.disabled" }}
+        onDaySelect={() => {
+          onBlockedRef.current?.(iso);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onBlockedRef.current?.(iso);
+            return;
+          }
+          props.onKeyDown?.(event, props.day);
+        }}
+      />
+    );
+  }, []);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -42,10 +78,14 @@ export default function DatePickerCalendar({
         value={dayjsValue}
         minDate={minDay}
         shouldDisableDate={(day) => blocked.has(dayjs(day).format("YYYY-MM-DD"))}
+        slots={{ day: DaySlot }}
         onChange={(d) => {
           if (!d) return;
           const iso = dayjs(d).format("YYYY-MM-DD");
-          if (blocked.has(iso)) return;
+          if (blocked.has(iso)) {
+            onBlockedDate?.(iso);
+            return;
+          }
           if (minDay && iso < minDay.format("YYYY-MM-DD")) return;
           onSelect(iso);
         }}

@@ -2572,6 +2572,10 @@ const Booking: React.FC = () => {
                   value={formData.serviceDate || undefined}
                   minDate={istTodayIso()}
                   disabledDates={leaveDates}
+                  blockedMessage={bookingLeaveMessage()}
+                  onBlockedDate={() => {
+                    toast.error(bookingLeaveMessage(), { id: 'booking-leave-day' });
+                  }}
                   placeholder="Pick a date"
                   className={`mt-1 ${
                     showValidation && !formData.serviceDate
