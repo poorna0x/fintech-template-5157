@@ -3,7 +3,7 @@ import dayjs from "dayjs";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { DateCalendar } from "@mui/x-date-pickers/DateCalendar";
-import { PickersDay, pickersDayClasses } from "@mui/x-date-pickers/PickersDay";
+import { PickersDay } from "@mui/x-date-pickers/PickersDay";
 import type { PickersDayProps } from "@mui/x-date-pickers/PickersDay";
 
 export interface DatePickerCalendarProps {
@@ -55,8 +55,16 @@ export default function DatePickerCalendar({
         selected={false}
         today={false}
         disableHighlightToday
-        className={`${props.className ?? ""} ${pickersDayClasses.disabled}`}
-        sx={{ color: "text.disabled" }}
+        sx={{
+          color: "text.disabled",
+          pointerEvents: "auto",
+          cursor: "pointer",
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onBlockedRef.current?.(iso);
+        }}
         onDaySelect={() => {
           onBlockedRef.current?.(iso);
         }}

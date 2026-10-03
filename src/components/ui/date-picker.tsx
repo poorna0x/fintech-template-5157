@@ -137,6 +137,11 @@ export function DatePicker({
             </div>
           }
         >
+          {blockedNote ? (
+            <p className="border-b px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400" role="status">
+              {blockedNote}
+            </p>
+          ) : null}
           <DatePickerCalendar
             value={value}
             disabledDates={disabledDates}
@@ -157,11 +162,6 @@ export function DatePicker({
               setOpen(false);
             }}
           />
-          {blockedNote ? (
-            <p className="border-t px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400" role="status">
-              {blockedNote}
-            </p>
-          ) : null}
         </React.Suspense>
       </PopoverContent>
     </Popover>
