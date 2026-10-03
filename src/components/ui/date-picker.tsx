@@ -22,8 +22,6 @@ export interface DatePickerProps {
   disabled?: boolean;
   /** YYYY-MM-DD days the calendar will not accept */
   disabledDates?: readonly string[];
-  /** Shown when a disabled day is tapped */
-  blockedMessage?: string;
   /** Fired when a disabled day is tapped */
   onBlockedDate?: () => void;
   /** Earliest YYYY-MM-DD that can be chosen */
@@ -51,12 +49,10 @@ export function DatePicker({
   className,
   disabled,
   disabledDates,
-  blockedMessage,
   onBlockedDate,
   minDate,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
-  const [blockedNote, setBlockedNote] = React.useState("");
   const [side, setSide] = React.useState<"top" | "bottom">("bottom");
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const displayText = formatDisplayDate(value) || placeholder;
@@ -87,7 +83,6 @@ export function DatePicker({
       void loadDatePickerCalendar();
       if (triggerRef.current) setSide(pickPopoverSide(triggerRef.current));
     }
-    if (!next) setBlockedNote("");
     setOpen(next);
   };
 
@@ -137,27 +132,19 @@ export function DatePicker({
             </div>
           }
         >
-          {blockedNote ? (
-            <p className="border-b px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400" role="status">
-              {blockedNote}
-            </p>
-          ) : null}
           <DatePickerCalendar
             value={value}
             disabledDates={disabledDates}
             minDate={minDate}
             onBlockedDate={() => {
-              if (blockedMessage) setBlockedNote(blockedMessage);
               onBlockedDate?.();
             }}
             onSelect={(d) => {
               if (disabledDates?.includes(d)) {
-                if (blockedMessage) setBlockedNote(blockedMessage);
                 onBlockedDate?.();
                 return;
               }
               if (minDate && d < minDate) return;
-              setBlockedNote("");
               onChange?.(d);
               setOpen(false);
             }}
