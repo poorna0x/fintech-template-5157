@@ -74,6 +74,7 @@ import {
 } from '@/lib/technicianOtpRequests';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
+import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
 import { rawWaterTdsForJobComplete, jobVisitRawWaterTdsPpm } from '@/lib/jobRawWaterTds';
 import { applyOtherEnRouteResetLocal, revertOtherEnRouteJobsToAssigned } from '@/lib/revertOtherEnRouteJobs';
 import { mapCustomerGstFields } from '@/lib/customerGst';
@@ -1664,7 +1665,10 @@ const TechnicianDashboard = () => {
           setAllTechniciansForReports(allTechniciansForReportsData);
 
           allTechniciansData = roster
-            .filter((tech: any) => tech.qr_code && tech.qr_code.trim() !== '')
+            .filter(
+              (tech: any) =>
+                isActiveTechnicianAccount(tech) && tech.qr_code && tech.qr_code.trim() !== ''
+            )
             .map((tech: any) => ({
               id: tech.id,
               fullName: tech.full_name,

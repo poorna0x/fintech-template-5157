@@ -1,4 +1,5 @@
 -- Technician PWA: roster for QR picker + "Completed by" names in reports (no GPS/salary).
+-- Includes SUSPENDED so a completed job still shows that technician's name. Inactive stays out.
 -- Fixes: POST .../rpc/get_technician_roster_for_app 404
 -- Run in Supabase SQL Editor after secure-technicians-rls.sql (needs auth_user_role).
 -- Safe to re-run.
@@ -53,7 +54,7 @@ AS $$
     AND public.auth_user_role() = 'technician'
     AND (
       t.account_status IS NULL
-      OR t.account_status = 'ACTIVE'
+      OR t.account_status IN ('ACTIVE', 'SUSPENDED')
     )
   ORDER BY t.created_at DESC;
 $$;

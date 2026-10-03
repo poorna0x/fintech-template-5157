@@ -1,4 +1,5 @@
 -- Include technician Dynamic UPI fields on the app roster RPC.
+-- Suspended technicians stay in the roster so completed jobs still show their name.
 -- Run AFTER scripts/add-technician-dynamic-upi.sql
 -- Must DROP first: Postgres won't change OUT/return columns via CREATE OR REPLACE.
 
@@ -62,7 +63,7 @@ AS $$
     AND public.auth_user_role() = 'technician'
     AND (
       t.account_status IS NULL
-      OR t.account_status = 'ACTIVE'
+      OR t.account_status IN ('ACTIVE', 'SUSPENDED')
     )
   ORDER BY t.created_at DESC;
 $$;

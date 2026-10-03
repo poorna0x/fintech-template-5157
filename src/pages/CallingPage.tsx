@@ -363,7 +363,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   useEffect(() => {
     if (!customerReportDialogOpen || technicians.length > 0) return;
     const loadTechnicians = async () => {
-      const { data, error } = await db.technicians.getList(100);
+      const { data, error } = await db.technicians.getList(500, { activeRosterOnly: false });
       if (!error && data) setTechnicians(data);
     };
     loadTechnicians();

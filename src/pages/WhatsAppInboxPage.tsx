@@ -2239,7 +2239,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         db.customers.getById(activeThread.customer_id),
         reportTechnicians.length
           ? Promise.resolve({ data: reportTechnicians })
-          : db.technicians.getList(100),
+          : db.technicians.getList(500, { activeRosterOnly: false }),
       ]);
       if (error || !customer) {
         toast.error(error?.message || 'Could not load customer');

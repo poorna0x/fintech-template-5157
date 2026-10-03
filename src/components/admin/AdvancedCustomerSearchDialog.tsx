@@ -297,7 +297,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     if (techsLoaded) return technicianRows;
     setReportTechniciansLoading(true);
     try {
-      const { data } = await db.technicians.getList(100);
+      const { data } = await db.technicians.getList(500, { activeRosterOnly: false });
       const rows = (data || []).filter((t: any) => t && t.id && t.full_name) as TechRow[];
       const opts = rows.map((t) => ({
         id: t.id,

@@ -40,6 +40,7 @@ import { buildCompletedJobsDateOrFilter } from './jobAnalytics';
 import {
   isActiveTechnicianAccount,
   isSalaryListedTechnician,
+  technicianAccountStatus,
 } from './technicianAccountStatus';
 import {
   jobChangeAffectsLastService,
@@ -4281,12 +4282,16 @@ export const db = {
       if (error && isRpcNotFoundError(error)) {
         if (import.meta.env.DEV) {
           console.warn(
-            '[technicians] get_technician_roster_for_app missing — run scripts/patch-technician-roster-rpc.sql in Supabase'
+            '[technicians] get_technician_roster_for_app missing — run scripts/patch-technician-roster-dynamic-upi.sql in Supabase'
           );
         }
         return { data: [] as Record<string, unknown>[], error: null };
       }
-      const rows = Array.isArray(data) ? data.filter((t) => isActiveTechnicianAccount(t as any)) : data;
+      // Keep Suspended so completed-job reports can still show the name.
+      // Inactive stays off the roster. QR / assign pickers filter to Active separately.
+      const rows = Array.isArray(data)
+        ? data.filter((t) => technicianAccountStatus(t as any) !== 'INACTIVE')
+        : data;
       return { data: rows, error };
     },
     

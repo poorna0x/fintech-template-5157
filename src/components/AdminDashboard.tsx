@@ -6765,9 +6765,10 @@ const AdminDashboard = () => {
     ...MASTER_SERVICE_SUB_TYPES,
     ...dataServiceSubTypeOptions
   ])).sort((a, b) => a.localeCompare(b));
+  const completedByNameSource = techniciansForReports.length > 0 ? techniciansForReports : technicians;
   const completedByOptions = Array.from(new Set(
-    technicians
-      .map((tech) => (tech.fullName || '').trim())
+    completedByNameSource
+      .map((tech) => (tech.fullName || (tech as any).full_name || '').trim())
       .filter(Boolean)
   )).sort((a, b) => a.localeCompare(b));
   const hasCompletedClientFilters =
