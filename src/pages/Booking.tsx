@@ -2546,6 +2546,7 @@ const Booking: React.FC = () => {
                   }`}
                   onChange={(value) => {
                     if (!value || isBookingLeaveDate(value, leaveDates)) return;
+                    toast.dismiss('booking-leave-day');
                     handleInputChange('serviceDate', value);
                   }}
                 />
