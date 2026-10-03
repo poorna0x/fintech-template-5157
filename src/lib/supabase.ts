@@ -8373,6 +8373,22 @@ export const db = {
         .limit(100);
       return { data: data || [], error };
     },
+
+    /** Technician customer report. Direct SELECT is admin-only. */
+    async listByCustomerIdAsTechnician(customerId: string) {
+      const authMode = await getCustomerTableAuthMode();
+      if (authMode !== 'technician') {
+        return this.listByCustomerId(customerId);
+      }
+      const { data, error } = await supabase.rpc('get_technician_customer_job_deletes', {
+        p_customer_id: customerId,
+      });
+      if (error) {
+        if (isCallingRpcNotFoundError(error)) return { data: [], error: null };
+        return { data: [], error };
+      }
+      return { data: parseJsonbRpcJobRows(data), error: null };
+    },
   },
 
   /**

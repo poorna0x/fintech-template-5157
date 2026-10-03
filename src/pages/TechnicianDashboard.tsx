@@ -60,6 +60,7 @@ import {
   Pencil,
   Search,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
@@ -648,6 +649,16 @@ const TechnicianDashboard = () => {
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<any>(null);
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
+  const [deletedJobEvents, setDeletedJobEvents] = useState<
+    Array<{
+      id: string;
+      job_number?: string | null;
+      job_status?: string | null;
+      service_type?: string | null;
+      remark?: string | null;
+      created_at?: string | null;
+    }>
+  >([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
   const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
   const [selectedJobForParts, setSelectedJobForParts] = useState<Job | null>(null);
@@ -2214,6 +2225,7 @@ const TechnicianDashboard = () => {
         // Photo viewer temporarily hides the report — keep cached jobs for instant resume.
         if (suspendedDialogRef.current?.type === 'report') return;
         setCustomerReportJobs([]);
+        setDeletedJobEvents([]);
         return;
       }
 
@@ -2227,7 +2239,16 @@ const TechnicianDashboard = () => {
         const customerUuid = await resolveCustomerUuidForQueries(selectedCustomerForReport);
 
         if (customerUuid) {
-          const { data, error } = await db.jobs.getByCustomerIdForReportEnrichedAsTechnician(customerUuid);
+          const [{ data, error }, deletedRes] = await Promise.all([
+            db.jobs.getByCustomerIdForReportEnrichedAsTechnician(customerUuid),
+            db.customerJobDeleteEvents.listByCustomerIdAsTechnician(customerUuid),
+          ]);
+          if (deletedRes.error) {
+            console.warn('Error loading deleted job events:', deletedRes.error);
+            setDeletedJobEvents([]);
+          } else {
+            setDeletedJobEvents((deletedRes.data || []) as typeof deletedJobEvents);
+          }
           if (error) {
             console.error('Error fetching customer jobs for report:', error);
             setCustomerReportJobs(mergeCustomerReportJobsForUuid([], customerUuid));
@@ -2242,6 +2263,7 @@ const TechnicianDashboard = () => {
           }
         } else {
           setCustomerReportJobs([]);
+          setDeletedJobEvents([]);
         }
       } catch (error) {
         console.error('Error fetching customer jobs for report:', error);
@@ -11747,6 +11769,51 @@ const TechnicianDashboard = () => {
                     </div>
                   )}
                 </div>
+
+                {!loadingCustomerReportJobs && deletedJobEvents.length > 0 && (
+                  <div>
+                    <h3 className="font-semibold text-lg mb-3">
+                      Deleted Jobs ({deletedJobEvents.length})
+                    </h3>
+                    <div className="space-y-3">
+                      {deletedJobEvents.map((ev) => {
+                        const whenLabel = ev.created_at ? formatCompletedWhen(ev.created_at) : null;
+                        const remarkText = (ev.remark || '').trim();
+                        return (
+                          <div key={ev.id} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                            <div className="flex items-start gap-2">
+                              <Trash2 className="w-4 h-4 mt-0.5 text-gray-500 shrink-0" />
+                              <div className="min-w-0 flex-1 space-y-1 text-sm">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-medium">{ev.job_number || 'Job'}</span>
+                                  {ev.job_status ? (
+                                    <Badge variant="outline" className="text-xs">
+                                      {ev.job_status}
+                                    </Badge>
+                                  ) : null}
+                                  {ev.service_type ? (
+                                    <Badge variant="secondary" className="text-xs">
+                                      {ev.service_type}
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                                {whenLabel ? (
+                                  <div className="text-gray-500 text-xs">Deleted {whenLabel}</div>
+                                ) : null}
+                                {remarkText ? (
+                                  <div className="pt-1">
+                                    <span className="text-gray-500">Remark:</span>{' '}
+                                    <span className="whitespace-pre-wrap break-words">{remarkText}</span>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
