@@ -27,6 +27,8 @@ type CallerDirectoryPluginApi = {
 const CallerDirectory = registerPlugin<CallerDirectoryPluginApi>('CallerDirectory');
 
 const PAGE = 1000;
+let adminSyncInFlight = false;
+let adminSyncDone = false;
 /** Re-read a few minutes so a customer saved during the last check is not skipped. */
 const OVERLAP_MS = 5 * 60 * 1000;
 
@@ -101,6 +103,8 @@ async function fetchSlimCustomers(): Promise<SlimCaller[]> {
     const { data, error } = await supabase
       .from('customers')
       .select('id, full_name, phone, alternate_phone')
+      .or('phone.not.is.null,alternate_phone.not.is.null')
+      .order('id', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const page = data || [];
@@ -124,6 +128,7 @@ async function fetchChangedCustomers(sinceIso: string): Promise<SlimCaller[]> {
       .select('id, full_name, phone, alternate_phone, updated_at')
       .gte('updated_at', sinceIso)
       .order('updated_at', { ascending: true })
+      .order('id', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const page = data || [];
@@ -160,14 +165,10 @@ async function upsertChangedCustomers(sinceIso: string, cursor: string): Promise
     return;
   }
   const rows = await fetchChangedCustomers(sinceIso);
-  try {
-    await CallerDirectory.upsertDirectory({
-      customersJson: JSON.stringify(rows),
-      cursor,
-    });
-  } catch {
-    await downloadAdminCallerDirectory();
-  }
+  await CallerDirectory.upsertDirectory({
+    customersJson: JSON.stringify(rows),
+    cursor,
+  });
 }
 
 /**
@@ -176,21 +177,23 @@ async function upsertChangedCustomers(sinceIso: string, cursor: string): Promise
  */
 export async function syncAdminCallerDirectoryIfStale(): Promise<void> {
   if (!isAdminCallerDirectoryAvailable()) return;
+  if (adminSyncInFlight || adminSyncDone) return;
+  adminSyncInFlight = true;
   try {
     const status = await CallerDirectory.getStatus();
     const count = Number(status?.count || 0);
     const cursor = String(status?.cursor || '');
     if (callerDirectoryNeedsFullSync(count, cursor)) {
       await downloadAdminCallerDirectory();
-      return;
+    } else {
+      const since = callerChangesSince(cursor);
+      if (!since) await downloadAdminCallerDirectory();
+      else await upsertChangedCustomers(since, new Date().toISOString());
     }
-    const since = callerChangesSince(cursor);
-    if (!since) {
-      await downloadAdminCallerDirectory();
-      return;
-    }
-    await upsertChangedCustomers(since, new Date().toISOString());
+    adminSyncDone = true;
   } catch {
-    /* keep the list already on the phone; Download again can retry */
+    /* keep the list already on the phone; the next open retries this check */
+  } finally {
+    adminSyncInFlight = false;
   }
 }

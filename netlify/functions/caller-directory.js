@@ -70,10 +70,18 @@ exports.handler = async (event) => {
   for (let page = 0; page < MAX_PAGES; page += 1) {
     let query = admin
       .from('customers')
-      .select('id, full_name, phone, alternate_phone, updated_at')
-      .order('updated_at', { ascending: true })
+      .select('id, full_name, phone, alternate_phone')
       .range(page * PAGE, page * PAGE + PAGE - 1);
-    if (since) query = query.gte('updated_at', since);
+    if (since) {
+      query = query
+        .gte('updated_at', since)
+        .order('updated_at', { ascending: true })
+        .order('id', { ascending: true });
+    } else {
+      query = query
+        .or('phone.not.is.null,alternate_phone.not.is.null')
+        .order('id', { ascending: true });
+    }
     const { data, error } = await query;
     if (error) {
       console.error('[caller-directory] select failed', error.message);

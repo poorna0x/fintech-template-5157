@@ -1407,9 +1407,12 @@ const TechnicianDashboard = () => {
   // later opens add only new or edited customers.
   useEffect(() => {
     if (user?.role !== 'technician' || !user.technicianId) return;
-    void import('@/lib/techCallerDirectory').then(({ syncTechCallerDirectoryIfStale }) =>
-      syncTechCallerDirectoryIfStale()
-    );
+    const timer = window.setTimeout(() => {
+      void import('@/lib/techCallerDirectory').then(({ syncTechCallerDirectoryIfStale }) =>
+        syncTechCallerDirectoryIfStale()
+      );
+    }, 4000);
+    return () => window.clearTimeout(timer);
   }, [user?.role, user?.technicianId]);
 
   // Incoming-call card Open → existing Search Customer for that phone.

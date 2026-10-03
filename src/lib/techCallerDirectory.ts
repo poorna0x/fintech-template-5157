@@ -29,6 +29,9 @@ type CallerDirectoryPluginApi = {
 
 const CallerDirectory = registerPlugin<CallerDirectoryPluginApi>('CallerDirectory');
 
+let techSyncInFlight = false;
+let techSyncDone = false;
+
 type SlimCaller = { id: string; name: string; phone: string; alt: string };
 
 export function isTechCallerDirectoryAvailable(): boolean {
@@ -92,39 +95,33 @@ async function upsertChanged(since: string): Promise<void> {
     await downloadTechCallerDirectory();
     return;
   }
-  try {
-    const { customers, cursor } = await fetchDirectory(since);
-    if (customers.length === 0) {
-      await CallerDirectory.upsertDirectory({ customersJson: '[]', cursor });
-      return;
-    }
-    await CallerDirectory.upsertDirectory({
-      customersJson: JSON.stringify(customers),
-      cursor,
-    });
-  } catch {
-    await downloadTechCallerDirectory();
-  }
+  const { customers, cursor } = await fetchDirectory(since);
+  await CallerDirectory.upsertDirectory({
+    customersJson: JSON.stringify(customers),
+    cursor,
+  });
 }
 
 /** Full list the first time. Later opens update only new or edited customers. */
 export async function syncTechCallerDirectoryIfStale(): Promise<void> {
   if (!isTechCallerDirectoryAvailable()) return;
+  if (techSyncInFlight || techSyncDone) return;
+  techSyncInFlight = true;
   try {
     const status = await CallerDirectory.getStatus();
     const count = Number(status?.count ?? 0);
     const cursor = String(status?.cursor || '');
     if (callerDirectoryNeedsFullSync(count, cursor)) {
       await downloadTechCallerDirectory();
-      return;
+    } else {
+      const since = callerChangesSince(cursor);
+      if (!since) await downloadTechCallerDirectory();
+      else await upsertChanged(since);
     }
-    const since = callerChangesSince(cursor);
-    if (!since) {
-      await downloadTechCallerDirectory();
-      return;
-    }
-    await upsertChanged(since);
+    techSyncDone = true;
   } catch {
-    /* keep the list already on the phone */
+    /* keep the list already on the phone; the next open retries this check */
+  } finally {
+    techSyncInFlight = false;
   }
 }

@@ -172,9 +172,12 @@ export default function AdminPortal() {
 
   useEffect(() => {
     if (!adminUserId || !isAdmin) return;
-    void import('@/lib/adminCallerDirectory').then(({ syncAdminCallerDirectoryIfStale }) =>
-      syncAdminCallerDirectoryIfStale()
-    );
+    const timer = window.setTimeout(() => {
+      void import('@/lib/adminCallerDirectory').then(({ syncAdminCallerDirectoryIfStale }) =>
+        syncAdminCallerDirectoryIfStale()
+      );
+    }, 4000);
+    return () => window.clearTimeout(timer);
   }, [adminUserId, isAdmin]);
 
   // Returning from Settings (or landing on /admin): pick up a ring that was

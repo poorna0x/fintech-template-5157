@@ -99,17 +99,18 @@ public class CallCaptureReceiver extends BroadcastReceiver {
                     .putLong(KEY_AT, now)
                     .putString(KEY_RING_NUMBER, number);
                 ed.apply();
+
+                String lastPub = prefs.getString(KEY_PUB_NUMBER, null);
+                long lastPubAt = prefs.getLong(KEY_PUB_AT, 0L);
+                if (!(number.equals(lastPub) && now - lastPubAt < PUBLISH_DEDUPE_MS)) {
+                    prefs.edit().putString(KEY_PUB_NUMBER, number).putLong(KEY_PUB_AT, now).apply();
+                    postWithToken(PUBLISH_URL, buildPublishPayload(number), number);
+                }
                 try {
                     CallerBanner.showIfKnown(context, number);
                 } catch (Exception bannerError) {
                     Log.w(TAG, "caller banner: " + bannerError.getMessage());
                 }
-
-                String lastPub = prefs.getString(KEY_PUB_NUMBER, null);
-                long lastPubAt = prefs.getLong(KEY_PUB_AT, 0L);
-                if (number.equals(lastPub) && now - lastPubAt < PUBLISH_DEDUPE_MS) return;
-                prefs.edit().putString(KEY_PUB_NUMBER, number).putLong(KEY_PUB_AT, now).apply();
-                postWithToken(PUBLISH_URL, buildPublishPayload(number), number);
             } else {
                 ed.apply();
                 Log.i(TAG, "RINGING — no EXTRA yet (Truecaller/OEM); will use CallLog on miss");

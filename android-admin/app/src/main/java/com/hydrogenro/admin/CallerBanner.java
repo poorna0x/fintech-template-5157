@@ -25,9 +25,21 @@ public final class CallerBanner {
 
     private CallerBanner() {}
 
+    private static final long RESHOW_GAP_MS = 12_000L;
+    private static String lastShownKey = "";
+    private static long lastShownAt = 0L;
+
+    /** Returns immediately. Lookup and the card run off the call-state path. */
     public static void showIfKnown(Context context, String rawNumber) {
         if (context == null || rawNumber == null || rawNumber.trim().isEmpty()) return;
-        Context app = context.getApplicationContext();
+        final Context app = context.getApplicationContext();
+        final String number = rawNumber.trim();
+        new Thread(() -> lookupAndShow(app, number), "hro-caller-banner").start();
+    }
+
+    private static void lookupAndShow(Context app, String rawNumber) {
+        String key = CallerDirectoryDb.phoneKey(rawNumber);
+        if (key.isEmpty()) return;
         CallerDirectoryDb.Match match;
         CallerDirectoryDb db = new CallerDirectoryDb(app);
         try {
@@ -39,6 +51,12 @@ public final class CallerBanner {
             db.close();
         }
         if (match == null) return;
+        long now = System.currentTimeMillis();
+        synchronized (CallerBanner.class) {
+            if (key.equals(lastShownKey) && now - lastShownAt < RESHOW_GAP_MS) return;
+            lastShownKey = key;
+            lastShownAt = now;
+        }
         show(app, match, rawNumber);
     }
 
@@ -48,7 +66,7 @@ public final class CallerBanner {
         new Thread(() -> {
             String number = latestIncomingNumber(app, System.currentTimeMillis() - 20_000L);
             if (number == null || number.isEmpty()) return;
-            showIfKnown(app, number);
+            lookupAndShow(app, number);
         }, "hro-caller-banner").start();
     }
 

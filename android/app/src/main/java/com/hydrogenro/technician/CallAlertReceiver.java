@@ -123,16 +123,18 @@ public class CallAlertReceiver extends BroadcastReceiver {
                     .putLong(KEY_LAST_AT, now)
                     .remove(KEY_CONSUMED_AT);
                 Log.i(TAG, "RINGING — cached number, wait for hangup");
-                try {
-                    CallerBanner.showIfKnown(app, cleaned);
-                } catch (Throwable bannerErr) {
-                    Log.w(TAG, "Caller banner failed", bannerErr);
-                }
             } else {
                 ed.putLong(KEY_SESSION_NUMBER_RING, ringAt);
                 Log.i(TAG, "RINGING — no EXTRA yet, will use CallLog after hangup");
             }
             ed.apply();
+            if (number != null && !number.trim().isEmpty()) {
+                try {
+                    CallerBanner.showIfKnown(app, number.trim());
+                } catch (Throwable bannerErr) {
+                    Log.w(TAG, "Caller banner failed", bannerErr);
+                }
+            }
             // Do NOT upload / start FGS here — hangup path is the single sender.
             return;
         }

@@ -55,7 +55,7 @@ const TechnicianCustomerSearchDialog = ({
   const [results, setResults] = useState<TechnicianSearchCustomer[] | null>(null);
   const [searching, setSearching] = useState(false);
 
-  const runSearch = async (rawQuery?: string) => {
+  const runSearch = async (rawQuery?: string, alertAdmins = true) => {
     const trimmed = (rawQuery ?? query).trim();
     if (trimmed.length < 3) {
       toast.error('Type at least 3 characters (name or phone)');
@@ -72,7 +72,7 @@ const TechnicianCustomerSearchDialog = ({
         setResults(rows);
         // Silent admin ping when the search actually found someone — includes
         // the query string. Technician sees nothing.
-        if (rows.length > 0) {
+        if (rows.length > 0 && alertAdmins) {
           notifyAdminsTechnicianSearch(trimmed, rows.length);
         }
       }
@@ -85,7 +85,7 @@ const TechnicianCustomerSearchDialog = ({
     const trimmed = initialQuery.trim();
     if (!open || trimmed.length < 3) return;
     setQuery(trimmed);
-    void runSearch(trimmed);
+    void runSearch(trimmed, false);
     // Run once per opened phone, not on every parent render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialQuery]);
