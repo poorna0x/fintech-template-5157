@@ -59,6 +59,7 @@ exports.handler = async (event) => {
 
   const phone = normalizePhone(body.number);
   const name = cleanName(body.name);
+  const missed = body.missed === true;
   const deviceToken = String(body.token || '').trim();
   if (!phone || !name) return json(200, { sent: 0, reason: 'incomplete' });
   if (deviceToken.length < 20) return json(401, { error: 'Unauthorized' });
@@ -98,7 +99,7 @@ exports.handler = async (event) => {
   }
   if (!technicianId) return json(401, { error: 'Unauthorized' });
 
-  if (recentlySent(`${technicianId}:${phone}`)) {
+  if (recentlySent(`${technicianId}:${phone}:${missed ? 'missed' : 'ring'}`)) {
     return json(200, { sent: 0, reason: 'deduped' });
   }
 
@@ -119,12 +120,14 @@ exports.handler = async (event) => {
       phone,
       techName,
       technicianId: String(technicianId),
-      missed: 'false',
-      ringing: 'true',
-      title: `${techName} — customer calling now`,
+      missed: missed ? 'true' : 'false',
+      ringing: missed ? 'false' : 'true',
+      title: missed
+        ? `${techName} missed a customer call`
+        : `${techName} — customer calling now`,
       body: `${name} (${phone})`,
-      color: '#0369A1',
-      tag: `tech_call_${technicianId}_${phone}`,
+      color: missed ? '#DC2626' : '#0369A1',
+      tag: `tech_call_${technicianId}_${phone}${missed ? '_missed' : ''}`,
       channelId: 'job_alerts_v2',
       callAt: String(Date.now()),
     },

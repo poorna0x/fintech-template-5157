@@ -97,9 +97,47 @@ async function processOneAlert(db, opts) {
     authVia,
     /** Late open-app catch-up — never auto WhatsApp (stale callbacks). */
     catchup,
+    /** Phone already pushed from its local customer list. Skip another lookup. */
+    localPush,
   } = opts;
 
   let callId = String(callIdIn || '').trim().slice(0, 80);
+
+  if (localPush && technicianId && !isAdminDevice) {
+    if (!callId) {
+      callId = callAt > 0 ? `${phone}:${callAt}` : `${phone}:t${Math.floor(Date.now() / 20_000)}`;
+    }
+    const { error: dedupeErr } = await db.from('tech_call_alert_events').insert({
+      technician_id: technicianId,
+      call_id: callId,
+      phone,
+    });
+    if (dedupeErr) {
+      const code = String(dedupeErr.code || '');
+      const msg = String(dedupeErr.message || '');
+      if (!(code === '23505' || /duplicate|unique/i.test(msg))) {
+        console.warn('[tech-call-customer-alert] local-push dedupe failed:', msg);
+      }
+    }
+    let whatsapp = null;
+    if (missed && !catchup) {
+      try {
+        const { maybeSendMissedCallCallbackWhatsApp } = require('./missed-call-whatsapp-helper');
+        whatsapp = await maybeSendMissedCallCallbackWhatsApp(db, { phone });
+      } catch (waErr) {
+        console.warn('[tech-call-customer-alert] missed-call WhatsApp skipped', waErr?.message || waErr);
+        whatsapp = { sent: false, reason: 'error' };
+      }
+    }
+    return {
+      found: true,
+      sent: 0,
+      reason: 'local_push',
+      callId,
+      ...(whatsapp ? { whatsapp } : {}),
+      authVia,
+    };
+  }
 
   const customer = await findCustomerByPhoneDigits(db, phone, 'id,full_name');
   if (!customer) {
@@ -552,6 +590,7 @@ exports.handler = async (event) => {
       isAdminDevice: auth.isAdminDevice,
       authVia: auth.authVia,
       catchup: false,
+      localPush: body.localPush === true,
     });
     return {
       statusCode: 200,

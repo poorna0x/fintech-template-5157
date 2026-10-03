@@ -58,7 +58,33 @@ public final class CallerBanner {
             lastShownAt = now;
         }
         show(app, match, rawNumber);
-        RingAlert.send(app, match.name, rawNumber);
+        RingAlert.send(app, match.name, rawNumber, false);
+    }
+
+    /** Missed call for a saved customer. Push the local name; do not look it up. */
+    public static void notifyMissedIfKnown(Context context, String rawNumber) {
+        if (context == null || rawNumber == null || rawNumber.trim().isEmpty()) return;
+        final Context app = context.getApplicationContext();
+        final String number = rawNumber.trim();
+        new Thread(() -> notifyMissedNow(app, number), "hro-caller-missed").start();
+    }
+
+    /** Same lookup, on the caller's thread. True when a local missed push was sent. */
+    static boolean notifyMissedNow(Context context, String rawNumber) {
+        if (context == null || rawNumber == null || rawNumber.trim().isEmpty()) return false;
+        CallerDirectoryDb.Match match;
+        CallerDirectoryDb db = new CallerDirectoryDb(context.getApplicationContext());
+        try {
+            match = db.findByNumber(rawNumber);
+        } catch (Exception e) {
+            Log.w(TAG, "missed lookup failed: " + e.getMessage());
+            return false;
+        } finally {
+            db.close();
+        }
+        if (match == null) return false;
+        RingAlert.send(context.getApplicationContext(), match.name, rawNumber, true);
+        return RingAlert.alreadySent(CallerDirectoryDb.phoneKey(rawNumber), true);
     }
 
     /** OEM rings sometimes omit the number. Look at the latest incoming row only. */

@@ -207,6 +207,19 @@ public class CallAlertReceiver extends BroadcastReceiver {
         // is often blocked on Android 12+).
         Log.i(TAG, "IDLE after inbound — hangup pipeline for ring " + ringAt);
         prefs.edit().putLong(KEY_PENDING_RING_AT, ringAt).apply();
+        if (!prefs.getBoolean(KEY_INCOMING_ANSWERED, false)) {
+            String cached = null;
+            if (prefs.getLong(KEY_SESSION_NUMBER_RING, 0L) == ringAt) {
+                cached = prefs.getString(KEY_PENDING_NUMBER, null);
+            }
+            if (cached != null && !cached.trim().isEmpty()) {
+                try {
+                    CallerBanner.notifyMissedIfKnown(app, cached.trim());
+                } catch (Throwable bannerErr) {
+                    Log.w(TAG, "Missed local push failed", bannerErr);
+                }
+            }
+        }
         CallAlertUploadService.startHangupPipeline(app, ringAt);
     }
 
@@ -307,6 +320,18 @@ public class CallAlertReceiver extends BroadcastReceiver {
         if (ringAt <= 0) ringAt = callAt;
 
         String phone10 = normalize10(cleaned);
+        if (missed && !phone10.isEmpty() && !RingAlert.alreadySent(phone10, true)) {
+            try {
+                CallerBanner.notifyMissedNow(context, cleaned);
+            } catch (Throwable bannerErr) {
+                Log.w(TAG, "Missed local push failed", bannerErr);
+            }
+        }
+        boolean localPush = phone10.isEmpty()
+            ? false
+            : (missed
+                ? RingAlert.alreadySent(phone10, true)
+                : RingAlert.alreadySent(phone10, false));
         String callId = phone10.isEmpty()
             ? ("ring:" + ringAt)
             : (phone10 + ":" + callAt);
@@ -368,7 +393,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
             return;
         }
 
-        int code = postOnce(token, cleaned, callId, callAt, missed);
+        int code = postOnce(token, cleaned, callId, callAt, missed, localPush);
         Log.i(TAG, "Alert POST code=" + code + " callId=" + callId);
         if (code == 401) {
             try {
@@ -379,7 +404,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
                         TimeUnit.SECONDS
                     );
                 if (fresh != null && fresh.length() >= 20) {
-                    code = postOnce(fresh.trim(), cleaned, callId, callAt, missed);
+                    code = postOnce(fresh.trim(), cleaned, callId, callAt, missed, localPush);
                     Log.i(TAG, "Alert POST retry fresh code=" + code);
                     if (code >= 200 && code < 300) {
                         DevicePrefsPlugin.saveFcmToken(context, fresh.trim());
@@ -529,7 +554,8 @@ public class CallAlertReceiver extends BroadcastReceiver {
         String number,
         String callId,
         long callAt,
-        boolean missed
+        boolean missed,
+        boolean localPush
     ) {
         HttpURLConnection conn = null;
         try {
@@ -538,7 +564,8 @@ public class CallAlertReceiver extends BroadcastReceiver {
                 "\"number\":\"" + jsonEscape(number) + "\"," +
                 "\"callId\":\"" + jsonEscape(callId) + "\"," +
                 "\"callAt\":" + callAt + "," +
-                "\"missed\":" + missed + "}";
+                "\"missed\":" + missed + "," +
+                "\"localPush\":" + localPush + "}";
             conn = (HttpURLConnection) new URL(ALERT_URL).openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
