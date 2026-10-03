@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { adminPrivacyChord, isMacPrivacyPlatform } from '@/lib/adminPrivacyBlur';
+import { adminPrivacyChord, ADMIN_PRIVACY_IDLE_MS, isMacPrivacyPlatform } from '@/lib/adminPrivacyBlur';
 
 /** Survives Admin Portal remounts (dashboard ↔ settings). Refresh clears it. */
 let privacyBlurred = false;
@@ -17,9 +17,9 @@ function setPrivacyBlurred(next: boolean) {
 }
 
 /**
- * Blurs the admin website in place. Jobs, calls, and timers keep running
- * behind the cover. Command+Shift+L locks on Mac; Control+Shift+L on Windows.
- * U instead of L unlocks.
+ * Blurs the admin website in place. Jobs, calls, and live phone updates keep
+ * running behind the cover. Command+Shift+L locks on Mac; Control+Shift+L on
+ * Windows. U instead of L unlocks. No pointer or key use for 3 minutes locks too.
  */
 export function AdminPrivacyBlur() {
   const [blurred, setBlurred] = useState(privacyBlurred);
@@ -49,9 +49,44 @@ export function AdminPrivacyBlur() {
     };
 
     window.addEventListener('keydown', onKey, true);
+
+    let idleTimer = 0;
+    const armIdle = () => {
+      window.clearTimeout(idleTimer);
+      if (privacyBlurred) return;
+      idleTimer = window.setTimeout(() => setPrivacyBlurred(true), ADMIN_PRIVACY_IDLE_MS);
+    };
+    const onIdleChange = () => armIdle();
+    privacyListeners.add(onIdleChange);
+    const onActivity = () => {
+      if (privacyBlurred) return;
+      armIdle();
+    };
+    let lastMove = 0;
+    const onMove = () => {
+      const now = Date.now();
+      if (now - lastMove < 1000) return;
+      lastMove = now;
+      onActivity();
+    };
+    const activityOpts: AddEventListenerOptions = { capture: true, passive: true };
+    window.addEventListener('pointerdown', onActivity, activityOpts);
+    window.addEventListener('keydown', onActivity, activityOpts);
+    window.addEventListener('wheel', onActivity, activityOpts);
+    window.addEventListener('touchstart', onActivity, activityOpts);
+    window.addEventListener('pointermove', onMove, activityOpts);
+    armIdle();
+
     return () => {
       privacyListeners.delete(sync);
+      privacyListeners.delete(onIdleChange);
+      window.clearTimeout(idleTimer);
       window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerdown', onActivity, activityOpts);
+      window.removeEventListener('keydown', onActivity, activityOpts);
+      window.removeEventListener('wheel', onActivity, activityOpts);
+      window.removeEventListener('touchstart', onActivity, activityOpts);
+      window.removeEventListener('pointermove', onMove, activityOpts);
     };
   }, []);
 

@@ -1,5 +1,7 @@
 /** Screen blur for the admin website. The page keeps running underneath. */
 
+export const ADMIN_PRIVACY_IDLE_MS = 3 * 60 * 1000;
+
 export type AdminPrivacyChord = 'lock' | 'unlock';
 
 type ChordEvent = {

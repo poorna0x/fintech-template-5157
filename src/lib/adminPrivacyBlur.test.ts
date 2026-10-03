@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adminPrivacyChord } from './adminPrivacyBlur';
+import { ADMIN_PRIVACY_IDLE_MS, adminPrivacyChord } from './adminPrivacyBlur';
 
 const base = { shiftKey: true, altKey: false, repeat: false, metaKey: false, ctrlKey: false };
 
@@ -21,5 +21,9 @@ describe('adminPrivacyChord', () => {
     expect(
       adminPrivacyChord({ ...base, metaKey: true, code: 'KeyL', shiftKey: false }, true)
     ).toBeNull();
+  });
+
+  it('auto-blurs after 3 minutes without use', () => {
+    expect(ADMIN_PRIVACY_IDLE_MS).toBe(3 * 60 * 1000);
   });
 });
