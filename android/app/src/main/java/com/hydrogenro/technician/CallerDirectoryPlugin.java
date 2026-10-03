@@ -50,6 +50,22 @@ public class CallerDirectoryPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void lookupName(PluginCall call) {
+        String number = call.getString("number", "");
+        CallerDirectoryDb db = new CallerDirectoryDb(getContext());
+        try {
+            CallerDirectoryDb.Match match = db.findByNumber(number);
+            JSObject ret = new JSObject();
+            ret.put("name", match == null ? "" : match.name);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Could not look up the caller");
+        } finally {
+            db.close();
+        }
+    }
+
+    @PluginMethod
     public void upsertDirectory(PluginCall call) {
         String json = call.getString("customersJson", "[]");
         String cursor = call.getString("cursor", "");

@@ -9,8 +9,6 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { checkRateLimit, checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
-const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
-
 const HEADERS = { 'Content-Type': 'application/json' };
 
 /** Any format → bare 10-digit Indian number ('' when too short to match). */
@@ -79,12 +77,9 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: false, reason: 'call_detect_off' }) };
   }
 
-  // Only publish known customers — unknown callers stay local to the phone that
-  // rang (it shows the "not found / send WhatsApp intro" prompt); no point
-  // broadcasting an unknown number to every admin.
-  const customer = await findCustomerByPhoneDigits(db, phone, 'id');
-  if (!customer) {
-    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: false, reason: 'no_customer' }) };
+  // The admin phone already matched this number in its local list.
+  if (body.known !== true) {
+    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: false, reason: 'not_on_phone' }) };
   }
 
   const { error: insErr } = await db.from('admin_incoming_calls').insert({ phone });

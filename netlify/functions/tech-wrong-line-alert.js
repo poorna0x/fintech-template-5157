@@ -10,7 +10,6 @@ const {
   sendToTechnicianDevices,
 } = require('./fcm-helper');
 const { checkRateLimit, checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
-const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
 
 const HEADERS = { 'Content-Type': 'application/json' };
@@ -189,7 +188,11 @@ exports.handler = async (event) => {
     };
   }
 
-  const customer = await findCustomerByPhoneDigits(db, customerPhone, 'id,full_name');
+  const localName = String(body.customerName || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  const customer = localName ? { id: '', full_name: localName } : null;
   if (!customer) {
     return {
       statusCode: 200,

@@ -120,6 +120,17 @@ public class WrongLineCallReceiver {
             Log.i(TAG, "Dedupe skip (same CallLog row)");
             return;
         }
+        CallerDirectoryDb.Match known = null;
+        CallerDirectoryDb directory = new CallerDirectoryDb(context);
+        try {
+            known = directory.findByNumber(dialed);
+        } finally {
+            directory.close();
+        }
+        if (known == null) {
+            prefs.edit().putString(KEY_LAST_ALERT_KEY, dedupeKey).apply();
+            return;
+        }
         long now = System.currentTimeMillis();
 
         String token = DevicePrefsPlugin.readFcmToken(context);
@@ -152,7 +163,7 @@ public class WrongLineCallReceiver {
 
         // Customer check MUST run before any local warning — dialing friends/family
         // on the personal SIM must not say "you called a customer".
-        String body = postOnce(token, dialed, from, company, call.fromSimSlot, companySlot);
+        String body = postOnce(token, dialed, from, company, call.fromSimSlot, companySlot, known.name);
         boolean found = body != null && body.contains("\"found\":true");
         Log.i(TAG, "Wrong-line POST found=" + found + " body=" + body);
 
@@ -225,7 +236,8 @@ public class WrongLineCallReceiver {
         String from,
         String company,
         int fromSimSlot,
-        int companySimSlot
+        int companySimSlot,
+        String customerName
     ) {
         HttpURLConnection conn = null;
         try {
@@ -234,6 +246,7 @@ public class WrongLineCallReceiver {
                 "\"number\":\"" + jsonEscape(dialed) + "\"," +
                 "\"fromNumber\":\"" + jsonEscape(from) + "\"," +
                 "\"companyPhone\":\"" + jsonEscape(company) + "\"," +
+                "\"customerName\":\"" + jsonEscape(customerName) + "\"," +
                 "\"fromSimSlot\":" + Math.max(0, fromSimSlot) + "," +
                 "\"companySimSlot\":" + Math.max(0, companySimSlot) + "}";
             conn = (HttpURLConnection) new URL(ALERT_URL).openConnection();

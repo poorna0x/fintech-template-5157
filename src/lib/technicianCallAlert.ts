@@ -8,8 +8,22 @@
  *
  * Open-app path: one batch POST for many CallLog rows (≤20) = one Netlify invoke.
  */
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { supabase } from '@/lib/supabase';
 import { normalizePhoneForSearch } from '@/lib/utils';
+
+type CallerLookup = { lookupName(opts: { number: string }): Promise<{ name?: string }> };
+const CallerDirectory = registerPlugin<CallerLookup>('CallerDirectory');
+
+async function localCustomerName(number: string): Promise<string> {
+  try {
+    if (!Capacitor.isPluginAvailable('CallerDirectory')) return '';
+    const row = await CallerDirectory.lookupName({ number });
+    return String(row?.name || '').trim();
+  } catch {
+    return '';
+  }
+}
 
 const recentlyNotified = new Map<string, number>();
 const POSTED_IDS_KEY = 'hro_tech_call_posted_ids_v1';
@@ -114,6 +128,8 @@ export function notifyAdminsTechnicianCall(
         recentlyNotified.delete(callId);
         return;
       }
+      const name = await localCustomerName(digits);
+      if (!name) return;
       const res = await fetch('/.netlify/functions/tech-call-customer-alert', {
         method: 'POST',
         headers: {
@@ -122,6 +138,7 @@ export function notifyAdminsTechnicianCall(
         },
         body: JSON.stringify({
           number: digits,
+          name,
           callId,
           callAt: callAt || undefined,
           missed: opts?.missed === true,
@@ -159,7 +176,7 @@ export function notifyAdminsTechnicianCallsBatch(items: TechCallCatchupItem[]): 
   }
 
   const posted = loadPostedIds();
-  const calls: Array<{ number: string; callId: string; callAt: number; missed: boolean }> = [];
+  const calls: Array<{ number: string; callId: string; callAt: number; missed: boolean; name: string }> = [];
   const seen = new Set<string>();
 
   for (const raw of items) {
@@ -182,6 +199,7 @@ export function notifyAdminsTechnicianCallsBatch(items: TechCallCatchupItem[]): 
       callId,
       callAt,
       missed: raw.missed === true,
+      name: '',
     });
   }
 
@@ -195,10 +213,20 @@ export function notifyAdminsTechnicianCallsBatch(items: TechCallCatchupItem[]): 
 
   void (async () => {
     try {
+      const named = [];
+      for (const call of calls) {
+        const name = await localCustomerName(call.number);
+        if (!name) {
+          recentlyNotified.delete(call.callId);
+          continue;
+        }
+        named.push({ ...call, name });
+      }
+      if (named.length === 0) return;
       const { data } = await supabase.auth.getSession();
       const token = data?.session?.access_token;
       if (!token) {
-        for (const c of calls) recentlyNotified.delete(c.callId);
+        for (const c of named) recentlyNotified.delete(c.callId);
         return;
       }
       const res = await fetch('/.netlify/functions/tech-call-customer-alert', {
@@ -207,7 +235,7 @@ export function notifyAdminsTechnicianCallsBatch(items: TechCallCatchupItem[]): 
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ calls }),
+        body: JSON.stringify({ calls: named }),
         keepalive: true,
       });
       if (!res.ok) {

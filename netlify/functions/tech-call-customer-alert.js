@@ -18,14 +18,10 @@ const {
   pruneAdminFcmTokens,
 } = require('./fcm-helper');
 const { checkRateLimit, checkRateLimitForKey } = require('./rate-limiter');
-const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
 
 const HEADERS = { 'Content-Type': 'application/json' };
 const BATCH_MAX = 20;
-
-/** Actively assigned / working — treat customer call as expected and skip admin push. */
-const ACTIVE_JOB_STATUSES = ['ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'];
 
 /** Any format → bare 10-digit Indian number ('' when too short to match). */
 function normalizePhone(raw) {
@@ -139,24 +135,14 @@ async function processOneAlert(db, opts) {
     };
   }
 
-  const customer = await findCustomerByPhoneDigits(db, phone, 'id,full_name');
-  if (!customer) {
-    return { found: false, reason: 'no_customer', callId: callId || undefined };
+  const providedName = String(opts.name || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  if (!providedName) {
+    return { found: false, reason: 'not_on_phone', callId: callId || undefined };
   }
-
-  if (technicianId && !isAdminDevice) {
-    const { data: activeJob } = await db
-      .from('jobs')
-      .select('id')
-      .eq('assigned_technician_id', technicianId)
-      .eq('customer_id', customer.id)
-      .in('status', ACTIVE_JOB_STATUSES)
-      .limit(1)
-      .maybeSingle();
-    if (activeJob?.id) {
-      return { found: true, sent: 0, reason: 'active_job', callId: callId || undefined };
-    }
-  }
+  const customer = { id: '', full_name: providedName };
 
   if (technicianId && !isAdminDevice) {
     if (!callId) {
@@ -514,6 +500,7 @@ exports.handler = async (event) => {
         callAt,
         callId,
         missed: row.missed === true,
+        name: typeof row.name === 'string' ? row.name : '',
       });
     }
 
@@ -538,6 +525,7 @@ exports.handler = async (event) => {
           isAdminDevice: false,
           authVia: auth.authVia,
           catchup: true,
+          name: item.name,
         });
         results.push({
           callId: item.callId,
@@ -591,6 +579,7 @@ exports.handler = async (event) => {
       authVia: auth.authVia,
       catchup: false,
       localPush: body.localPush === true,
+      name: typeof body.name === 'string' ? body.name : '',
     });
     return {
       statusCode: 200,

@@ -102,7 +102,11 @@ public class CallCaptureReceiver extends BroadcastReceiver {
 
                 String lastPub = prefs.getString(KEY_PUB_NUMBER, null);
                 long lastPubAt = prefs.getLong(KEY_PUB_AT, 0L);
-                if (!(number.equals(lastPub) && now - lastPubAt < PUBLISH_DEDUPE_MS)) {
+                String localName = localCustomerName(context, number);
+                if (
+                    !localName.isEmpty()
+                        && !(number.equals(lastPub) && now - lastPubAt < PUBLISH_DEDUPE_MS)
+                ) {
                     prefs.edit().putString(KEY_PUB_NUMBER, number).putLong(KEY_PUB_AT, now).apply();
                     postWithToken(PUBLISH_URL, buildPublishPayload(number), number);
                 }
@@ -162,7 +166,9 @@ public class CallCaptureReceiver extends BroadcastReceiver {
                         .putString(KEY_NUMBER, number)
                         .putLong(KEY_AT, System.currentTimeMillis())
                         .apply();
-                    postWithTokenSync(ALERT_URL, buildMissedPayload(number), number);
+                    String localName = localCustomerName(app, number);
+                    if (localName.isEmpty()) return;
+                    postWithTokenSync(ALERT_URL, buildMissedPayload(number, localName), number);
                 } finally {
                     pending.finish();
                 }
@@ -213,12 +219,22 @@ public class CallCaptureReceiver extends BroadcastReceiver {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private static String buildPublishPayload(String number) {
-        return "{\"token\":\"%TOKEN%\",\"number\":\"" + jsonEscape(number) + "\"}";
+    private static String localCustomerName(Context context, String number) {
+        CallerDirectoryDb db = new CallerDirectoryDb(context);
+        try {
+            CallerDirectoryDb.Match match = db.findByNumber(number);
+            return match == null ? "" : match.name;
+        } finally {
+            db.close();
+        }
     }
 
-    private static String buildMissedPayload(String number) {
-        return "{\"token\":\"%TOKEN%\",\"number\":\"" + jsonEscape(number) + "\",\"missed\":true}";
+    private static String buildPublishPayload(String number) {
+        return "{\"token\":\"%TOKEN%\",\"number\":\"" + jsonEscape(number) + "\",\"known\":true}";
+    }
+
+    private static String buildMissedPayload(String number, String name) {
+        return "{\"token\":\"%TOKEN%\",\"number\":\"" + jsonEscape(number) + "\",\"missed\":true,\"name\":\"" + jsonEscape(name) + "\"}";
     }
 
     /** Fetch the FCM token, substitute it into the payload template, and POST. */
