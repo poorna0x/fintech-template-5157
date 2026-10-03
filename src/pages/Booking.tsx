@@ -2710,7 +2710,6 @@ const Booking: React.FC = () => {
                   <p>• We'll call you to confirm the exact time</p>
                   <p>• Our technician will arrive within the selected time slot</p>
                   <p>• Service typically takes 1-2 hours</p>
-                  <p>• Free consultation and quote provided</p>
                 </div>
               </div>
             </div>
