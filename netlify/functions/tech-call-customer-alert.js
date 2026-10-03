@@ -90,6 +90,7 @@ async function processOneAlert(db, opts) {
     callId: callIdIn,
     technicianId,
     isAdminDevice,
+    adminUserId,
     authVia,
     /** Late open-app catch-up — never auto WhatsApp (stale callbacks). */
     catchup,
@@ -100,6 +101,26 @@ async function processOneAlert(db, opts) {
   let callId = String(callIdIn || '').trim().slice(0, 80);
 
   if (localPush && technicianId && !isAdminDevice) {
+    const localName = String(opts.name || '')
+      .replace(/[\r\n\t]+/g, ' ')
+      .trim()
+      .slice(0, 80);
+    if (localName) {
+      try {
+        const { recordKnownCustomerCall } = require('./known-customer-call');
+        await recordKnownCustomerCall(db, {
+          source: 'technician',
+          actorId: technicianId,
+          phone,
+          customerName: localName,
+          direction: 'in',
+          outcome: missed ? 'missed' : 'answered',
+          callAt,
+        });
+      } catch (err) {
+        console.warn('[tech-call-customer-alert] call log skipped', err?.message || err);
+      }
+    }
     if (!callId) {
       callId = callAt > 0 ? `${phone}:${callAt}` : `${phone}:t${Math.floor(Date.now() / 20_000)}`;
     }
@@ -143,6 +164,24 @@ async function processOneAlert(db, opts) {
     return { found: false, reason: 'not_on_phone', callId: callId || undefined };
   }
   const customer = { id: '', full_name: providedName };
+
+  try {
+    const { recordKnownCustomerCall } = require('./known-customer-call');
+    const actorId = isAdminDevice ? adminUserId : technicianId;
+    if (actorId) {
+      await recordKnownCustomerCall(db, {
+        source: isAdminDevice ? 'admin' : 'technician',
+        actorId,
+        phone,
+        customerName: providedName,
+        direction: 'in',
+        outcome: missed ? 'missed' : 'answered',
+        callAt,
+      });
+    }
+  } catch (err) {
+    console.warn('[tech-call-customer-alert] call log skipped', err?.message || err);
+  }
 
   if (technicianId && !isAdminDevice) {
     if (!callId) {
@@ -289,6 +328,7 @@ async function resolveCaller(db, event, body) {
 
   let technicianId = null;
   let isAdminDevice = false;
+  let adminRowUserId = null;
   let authVia = null;
 
   if (bearer) {
@@ -372,10 +412,11 @@ async function resolveCaller(db, event, body) {
     if (!technicianId && missed) {
       const { data: adminRow } = await db
         .from('admin_push_tokens')
-        .select('token, call_alerts_enabled')
+        .select('token, user_id, call_alerts_enabled')
         .eq('token', deviceToken)
         .maybeSingle();
       isAdminDevice = Boolean(adminRow);
+      adminRowUserId = adminRow?.user_id || null;
       if (isAdminDevice && adminRow.call_alerts_enabled === false) {
         return {
           errorResponse: {
@@ -436,7 +477,7 @@ async function resolveCaller(db, event, body) {
     }
   }
 
-  return { technicianId, isAdminDevice, authVia };
+  return { technicianId, isAdminDevice, adminUserId: adminRowUserId, authVia };
 }
 
 exports.handler = async (event) => {
@@ -525,6 +566,7 @@ exports.handler = async (event) => {
           isAdminDevice: false,
           authVia: auth.authVia,
           catchup: true,
+          adminUserId: auth.adminUserId || null,
           name: item.name,
         });
         results.push({
@@ -576,6 +618,7 @@ exports.handler = async (event) => {
       callId,
       technicianId: auth.technicianId,
       isAdminDevice: auth.isAdminDevice,
+      adminUserId: auth.adminUserId || null,
       authVia: auth.authVia,
       catchup: false,
       localPush: body.localPush === true,

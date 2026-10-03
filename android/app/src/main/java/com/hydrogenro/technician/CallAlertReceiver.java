@@ -394,7 +394,8 @@ public class CallAlertReceiver extends BroadcastReceiver {
             return;
         }
 
-        int code = postOnce(token, cleaned, callId, callAt, missed, localPush);
+        String localName = localCustomerName(context, cleaned);
+        int code = postOnce(token, cleaned, callId, callAt, missed, localPush, localName);
         Log.i(TAG, "Alert POST code=" + code + " callId=" + callId);
         if (code == 401) {
             try {
@@ -405,7 +406,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
                         TimeUnit.SECONDS
                     );
                 if (fresh != null && fresh.length() >= 20) {
-                    code = postOnce(fresh.trim(), cleaned, callId, callAt, missed, localPush);
+                    code = postOnce(fresh.trim(), cleaned, callId, callAt, missed, localPush, localName);
                     Log.i(TAG, "Alert POST retry fresh code=" + code);
                     if (code >= 200 && code < 300) {
                         DevicePrefsPlugin.saveFcmToken(context, fresh.trim());
@@ -550,13 +551,26 @@ public class CallAlertReceiver extends BroadcastReceiver {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    private static String localCustomerName(Context context, String number) {
+        CallerDirectoryDb db = new CallerDirectoryDb(context);
+        try {
+            CallerDirectoryDb.Match match = db.findByNumber(number);
+            return match == null || match.name == null ? "" : match.name;
+        } catch (Throwable ignored) {
+            return "";
+        } finally {
+            db.close();
+        }
+    }
+
     private static int postOnce(
         String token,
         String number,
         String callId,
         long callAt,
         boolean missed,
-        boolean localPush
+        boolean localPush,
+        String name
     ) {
         HttpURLConnection conn = null;
         try {
@@ -566,7 +580,8 @@ public class CallAlertReceiver extends BroadcastReceiver {
                 "\"callId\":\"" + jsonEscape(callId) + "\"," +
                 "\"callAt\":" + callAt + "," +
                 "\"missed\":" + missed + "," +
-                "\"localPush\":" + localPush + "}";
+                "\"localPush\":" + localPush + "," +
+                "\"name\":\"" + jsonEscape(name) + "\"}";
             conn = (HttpURLConnection) new URL(ALERT_URL).openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");

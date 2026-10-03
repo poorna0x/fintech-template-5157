@@ -66,7 +66,7 @@ exports.handler = async (event) => {
   // Authenticate: FCM token must belong to a registered admin device.
   const { data: adminRow } = await db
     .from('admin_push_tokens')
-    .select('token, call_alerts_enabled')
+    .select('token, user_id, call_alerts_enabled')
     .eq('token', deviceToken)
     .maybeSingle();
   if (!adminRow) {
@@ -80,6 +80,27 @@ exports.handler = async (event) => {
   // The admin phone already matched this number in its local list.
   if (body.known !== true) {
     return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: false, reason: 'not_on_phone' }) };
+  }
+
+  const localName = String(body.name || '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  if (localName && adminRow.user_id) {
+    try {
+      const { recordKnownCustomerCall } = require('./known-customer-call');
+      await recordKnownCustomerCall(db, {
+        source: 'admin',
+        actorId: adminRow.user_id,
+        phone,
+        customerName: localName,
+        direction: 'in',
+        outcome: 'answered',
+        callAt: body.callAt,
+      });
+    } catch (err) {
+      console.warn('[admin-incoming-call-publish] call log skipped', err?.message || err);
+    }
   }
 
   const { error: insErr } = await db.from('admin_incoming_calls').insert({ phone });

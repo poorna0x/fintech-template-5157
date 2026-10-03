@@ -201,6 +201,21 @@ exports.handler = async (event) => {
     };
   }
 
+  try {
+    const { recordKnownCustomerCall } = require('./known-customer-call');
+    await recordKnownCustomerCall(db, {
+      source: 'technician',
+      actorId: technicianId,
+      phone: customerPhone,
+      customerName: customer.full_name,
+      direction: 'out',
+      outcome: 'answered',
+      callAt: body.callAt,
+    });
+  } catch (err) {
+    console.warn('[tech-wrong-line-alert] call log skipped', err?.message || err);
+  }
+
   const techName = tech.full_name || 'Technician';
   const usedLine =
     fromLabel ||

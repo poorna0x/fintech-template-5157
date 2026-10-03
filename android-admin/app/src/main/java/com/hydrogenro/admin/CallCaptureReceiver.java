@@ -108,7 +108,7 @@ public class CallCaptureReceiver extends BroadcastReceiver {
                         && !(number.equals(lastPub) && now - lastPubAt < PUBLISH_DEDUPE_MS)
                 ) {
                     prefs.edit().putString(KEY_PUB_NUMBER, number).putLong(KEY_PUB_AT, now).apply();
-                    postWithToken(PUBLISH_URL, buildPublishPayload(number), number);
+                    postWithToken(PUBLISH_URL, buildPublishPayload(number, localName, now), number);
                 }
                 try {
                     CallerBanner.showIfKnown(context, number);
@@ -168,7 +168,7 @@ public class CallCaptureReceiver extends BroadcastReceiver {
                         .apply();
                     String localName = localCustomerName(app, number);
                     if (localName.isEmpty()) return;
-                    postWithTokenSync(ALERT_URL, buildMissedPayload(number, localName), number);
+                    postWithTokenSync(ALERT_URL, buildMissedPayload(number, localName, session), number);
                 } finally {
                     pending.finish();
                 }
@@ -229,12 +229,12 @@ public class CallCaptureReceiver extends BroadcastReceiver {
         }
     }
 
-    private static String buildPublishPayload(String number) {
-        return "{\"token\":\"%TOKEN%\",\"number\":\"" + jsonEscape(number) + "\",\"known\":true}";
+    private static String buildPublishPayload(String number, String name, long callAt) {
+        return "{\"token\":\"%TOKEN%\",\"number\":\"" + jsonEscape(number) + "\",\"known\":true,\"name\":\"" + jsonEscape(name) + "\",\"callAt\":" + callAt + "}";
     }
 
-    private static String buildMissedPayload(String number, String name) {
-        return "{\"token\":\"%TOKEN%\",\"number\":\"" + jsonEscape(number) + "\",\"missed\":true,\"name\":\"" + jsonEscape(name) + "\"}";
+    private static String buildMissedPayload(String number, String name, long callAt) {
+        return "{\"token\":\"%TOKEN%\",\"number\":\"" + jsonEscape(number) + "\",\"missed\":true,\"name\":\"" + jsonEscape(name) + "\",\"callAt\":" + callAt + "}";
     }
 
     /** Fetch the FCM token, substitute it into the payload template, and POST. */

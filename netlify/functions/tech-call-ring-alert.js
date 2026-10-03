@@ -99,6 +99,21 @@ exports.handler = async (event) => {
   }
   if (!technicianId) return json(401, { error: 'Unauthorized' });
 
+  try {
+    const { recordKnownCustomerCall } = require('./known-customer-call');
+    await recordKnownCustomerCall(db, {
+      source: 'technician',
+      actorId: technicianId,
+      phone,
+      customerName: name,
+      direction: 'in',
+      outcome: missed ? 'missed' : 'answered',
+      callAt: Date.now(),
+    });
+  } catch (err) {
+    console.warn('[tech-call-ring-alert] call log skipped', err?.message || err);
+  }
+
   if (recentlySent(`${technicianId}:${phone}:${missed ? 'missed' : 'ring'}`)) {
     return json(200, { sent: 0, reason: 'deduped' });
   }
