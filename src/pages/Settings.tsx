@@ -77,6 +77,7 @@ import { tryNativeBackHandlers } from '@/lib/nativeBackButton';
 import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
+import { BookingLeaveSettings } from '@/components/admin/BookingLeaveSettings';
 import { DeviceTrackerSettings } from '@/components/admin/DeviceTrackerSettings';
 import {
   defaultTechPushPrefs,
@@ -4095,6 +4096,8 @@ const Settings = () => {
           </Card>
 
           {!isManager ? <EmailTrackingSettings /> : null}
+
+          {!isManager ? <BookingLeaveSettings /> : null}
 
           {!isManager ? <BookingIntentArchiveSettings /> : null}
 

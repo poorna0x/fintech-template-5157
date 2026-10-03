@@ -15,6 +15,7 @@ const { maybeSendOnlineBookingConfirmationWhatsApp } = require('./booking-confir
 const { isOtpEnforced, verifyFirebasePhoneToken, warmFirebaseAdmin } = require('./otp-guard');
 const { isProduction } = require('./cors-helper');
 const { assertBookingRowInServiceHub } = require('./booking-service-hub-helper');
+const { isBookingLeaveDate } = require('./booking-leave-dates');
 
 // Trigger the owner notification as a Netlify background function so the booking
 // response returns immediately — the (slow) SMTP send no longer blocks the
@@ -212,6 +213,18 @@ exports.handler = async (event) => {
   const client = getServiceClient();
   if (client.error) {
     return jsonResponse(500, corsHeaders, { error: client.error });
+  }
+
+  try {
+    const closed = await isBookingLeaveDate(client.admin, row.scheduled_date);
+    if (closed) {
+      return jsonResponse(422, corsHeaders, {
+        error: 'We are closed that day. Please pick another date.',
+        code: 'BOOKING_LEAVE',
+      });
+    }
+  } catch (err) {
+    console.warn('[booking-job-create] leave check failed, allowing booking:', err && err.message);
   }
 
   try {

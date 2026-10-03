@@ -24,6 +24,11 @@ import {
   markWebsiteBookingIntentBooked,
 } from '@/lib/bookingIntent';
 import { createBookingJob } from '@/lib/bookingJob';
+import {
+  bookingLeaveMessage,
+  fetchBookingLeaveDates,
+  isBookingLeaveDate,
+} from '@/lib/bookingLeaveDates';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
 import {
   OTP_ENABLED,
@@ -181,6 +186,7 @@ const Booking: React.FC = () => {
   const [locationPickerStart, setLocationPickerStart] = useState<'search' | 'map'>('search');
   const [locationEditing, setLocationEditing] = useState(false);
   const [serviceHubs, setServiceHubs] = useState<BookingServiceHub[]>([]);
+  const [leaveDates, setLeaveDates] = useState<string[]>([]);
   const [hubMatch, setHubMatch] = useState<HubMatchResult>({ ok: true, enforced: false });
   const [outOfAreaMessage, setOutOfAreaMessage] = useState(DEFAULT_OUT_OF_AREA_MESSAGE);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -225,6 +231,17 @@ const Booking: React.FC = () => {
     const id = setInterval(() => setOtpNow(Date.now()), 500);
     return () => clearInterval(id);
   }, [otpSent, otpVerified, otpResendAt]);
+
+  useEffect(() => {
+    let active = true;
+    void fetchBookingLeaveDates().then((rows) => {
+      if (active) setLeaveDates(rows);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const otpResendRemaining = Math.max(0, Math.ceil((otpResendAt - otpNow) / 1000));
 
   // Pre-warm Firebase + reCAPTCHA on the Review step so the first send is fast.
@@ -862,7 +879,9 @@ const Booking: React.FC = () => {
             }
             break;
           case 4:
-            if (!formData.serviceDate) { firstMissingField = 'serviceDate'; }
+            if (!formData.serviceDate || isBookingLeaveDate(formData.serviceDate, leaveDates)) {
+              firstMissingField = 'serviceDate';
+            }
             else if (!formData.preferredTime) { firstMissingField = 'preferredTime'; }
             else if (
               formData.preferredTime === 'CUSTOM' &&
@@ -1350,6 +1369,12 @@ const Booking: React.FC = () => {
       setShowSecurityStep(true);
       toast.error('Please complete the security check before submitting your booking.');
       nudgeLegalConsent();
+      return;
+    }
+
+    if (isBookingLeaveDate(formData.serviceDate, leaveDates)) {
+      toast.error(bookingLeaveMessage());
+      setCurrentStep(4);
       return;
     }
     
@@ -2542,7 +2567,8 @@ const Booking: React.FC = () => {
                   onChange={(e) => handleInputChange('serviceDate', e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
                   className={`mt-1 text-left ${
-                    showValidation && !formData.serviceDate
+                    (showValidation && !formData.serviceDate) ||
+                    isBookingLeaveDate(formData.serviceDate, leaveDates)
                       ? 'border-2 border-black dark:border-white'
                       : ''
                   }`}
@@ -2552,6 +2578,9 @@ const Booking: React.FC = () => {
                     fontSize: '16px', // Prevents zoom on iOS
                   }}
                 />
+                {isBookingLeaveDate(formData.serviceDate, leaveDates) ? (
+                  <p className="text-sm text-red-600 mt-1">{bookingLeaveMessage()}</p>
+                ) : null}
               </div>
               
               <div>
@@ -3014,6 +3043,7 @@ const Booking: React.FC = () => {
       case 4:
         return Boolean(
           formData.serviceDate &&
+            !isBookingLeaveDate(formData.serviceDate, leaveDates) &&
             formData.preferredTime &&
             (formData.preferredTime !== 'CUSTOM' ||
               isBookingCustomTimeAllowed(formData.preferredTimeCustom))

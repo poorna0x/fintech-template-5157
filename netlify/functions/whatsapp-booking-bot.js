@@ -33,6 +33,7 @@ const {
 } = require('./whatsapp-eleven-support');
 const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
 const { assertLocationInServiceHub } = require('./booking-service-hub-helper');
+const { loadBookingLeaveDateSet } = require('./booking-leave-dates');
 const {
   extractCoordinatesFromUrl,
   extractMapsUrlFromText,
@@ -2338,6 +2339,10 @@ async function createAutoBookingJob(db, {
   leadCost,
   requireOtp,
 }) {
+  const leaveDates = await loadBookingLeaveDateSet(db);
+  if (leaveDates.has(String(dateIso || '').slice(0, 10))) {
+    return { ok: false, code: 'BOOKING_LEAVE' };
+  }
   const phone10 =
     phone10FromE164(customer?.phone) ||
     phone10FromE164(customer?.alternate_phone) ||
@@ -3135,12 +3140,13 @@ async function sendDatePicker(ctx, state) {
   if (state) await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_date' });
   const customer = await lookupCustomerFull(ctx.db, ctx.to);
   const existingFast = isExistingCustomerFastBook(state, customer);
+  const leaveDates = await loadBookingLeaveDateSet(ctx.db);
   const rows = [];
   // Skip fully-past days (e.g. after 6 PM IST today) and still offer 7 bookable dates.
-  for (let i = 0, added = 0; added < 7 && i < 14; i++) {
+  for (let i = 0, added = 0; added < 7 && i < 21; i++) {
     const id = dateId(i);
     const iso = parseDateId(id);
-    if (iso && !dateHasAnyAvailableSlot(iso)) continue;
+    if (iso && (leaveDates.has(iso) || !dateHasAnyAvailableSlot(iso))) continue;
     const label = istDateLabel(i);
     const isToday = i === 0;
     const isTomorrow = i === 1;
@@ -4878,6 +4884,15 @@ async function handleBookingBotInbound({
         requireOtp: st.requireOtp === true,
       });
 
+      if (!created.ok && created.code === 'BOOKING_LEAVE') {
+        await sendText({
+          ...ctx,
+          text: 'We are on leave that day. Please pick another date.',
+        });
+        await sendDatePicker(ctx, st);
+        return { handled: true };
+      }
+
       if (!created.ok) {
         await sendText({
           ...ctx,
@@ -5030,6 +5045,15 @@ async function handleBookingBotInbound({
 
     const dateIso = parseDateId(id);
     if (dateIso) {
+      const leaveDates = await loadBookingLeaveDateSet(ctx.db);
+      if (leaveDates.has(dateIso)) {
+        await sendText({
+          ...ctx,
+          text: 'We are on leave that day. Please pick another date.',
+        });
+        await sendDatePicker(ctx, state || null);
+        return { handled: true };
+      }
       const st = state ? { ...state, dateIso } : { dateIso };
       await sendPeriodPicker(ctx, dateIso, st);
       return { handled: true };
@@ -5174,6 +5198,15 @@ async function handleBookingBotInbound({
         leadCost: st.leadCost != null ? st.leadCost : null,
         requireOtp: st.requireOtp === true,
       });
+
+      if (!created.ok && created.code === 'BOOKING_LEAVE') {
+        await sendText({
+          ...ctx,
+          text: 'We are on leave that day. Please pick another date.',
+        });
+        await sendDatePicker(ctx, st);
+        return { handled: true };
+      }
 
       if (!created.ok) {
         await sendText({
