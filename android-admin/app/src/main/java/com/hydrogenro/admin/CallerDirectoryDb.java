@@ -28,11 +28,17 @@ public final class CallerDirectoryDb extends SQLiteOpenHelper {
         public final int count;
         public final long syncedAt;
         public final String syncedDay;
+        public final String cursor;
 
         Status(int count, long syncedAt, String syncedDay) {
+            this(count, syncedAt, syncedDay, "");
+        }
+
+        Status(int count, long syncedAt, String syncedDay, String cursor) {
             this.count = count;
             this.syncedAt = syncedAt;
             this.syncedDay = syncedDay == null ? "" : syncedDay;
+            this.cursor = cursor == null ? "" : cursor;
         }
     }
 
@@ -81,6 +87,7 @@ public final class CallerDirectoryDb extends SQLiteOpenHelper {
         }
         long syncedAt = 0L;
         String syncedDay = "";
+        String cursorIso = "";
         try (Cursor cursor = db.rawQuery("SELECT k, v FROM meta", null)) {
             while (cursor.moveToNext()) {
                 String key = cursor.getString(0);
@@ -93,10 +100,12 @@ public final class CallerDirectoryDb extends SQLiteOpenHelper {
                     }
                 } else if ("synced_day".equals(key)) {
                     syncedDay = value == null ? "" : value;
+                } else if ("synced_cursor".equals(key)) {
+                    cursorIso = value == null ? "" : value;
                 }
             }
         }
-        return new Status(count, syncedAt, syncedDay);
+        return new Status(count, syncedAt, syncedDay, cursorIso);
     }
 
     public Match findByNumber(String rawNumber) {
@@ -119,7 +128,7 @@ public final class CallerDirectoryDb extends SQLiteOpenHelper {
     }
 
     /** Replace the whole list. Called only after a full download succeeds. */
-    public int replaceAll(JSONArray rows, String syncedDay, long syncedAt) {
+    public int replaceAll(JSONArray rows, String syncedDay, long syncedAt, String cursorIso) {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
@@ -141,6 +150,49 @@ public final class CallerDirectoryDb extends SQLiteOpenHelper {
             }
             writeMeta(db, "synced_at", String.valueOf(syncedAt));
             writeMeta(db, "synced_day", syncedDay == null ? "" : syncedDay);
+            if (cursorIso != null && !cursorIso.isEmpty()) {
+                writeMeta(db, "synced_cursor", cursorIso);
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        return readStatus().count;
+    }
+
+    /**
+     * Insert or replace only the rows that changed. A customer with no phone
+     * number is removed so an old number cannot keep matching.
+     */
+    public int upsertAll(JSONArray rows, String cursorIso, long syncedAt) {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            for (int i = 0; i < rows.length(); i++) {
+                JSONObject row = rows.optJSONObject(i);
+                if (row == null) continue;
+                String id = row.optString("id", "").trim();
+                if (id.isEmpty()) continue;
+                String phone = phoneKey(row.optString("phone", ""));
+                String alt = phoneKey(row.optString("alt", ""));
+                if (phone.isEmpty() && alt.isEmpty()) {
+                    db.delete("callers", "id = ?", new String[] { id });
+                    continue;
+                }
+                String name = row.optString("name", "").trim();
+                if (name.isEmpty()) name = "Customer";
+                if (name.length() > 80) name = name.substring(0, 80);
+                ContentValues values = new ContentValues();
+                values.put("id", id);
+                values.put("name", name);
+                putKey(values, "phone_key", phone);
+                putKey(values, "alt_key", alt);
+                db.insertWithOnConflict("callers", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+            }
+            writeMeta(db, "synced_at", String.valueOf(syncedAt));
+            if (cursorIso != null && !cursorIso.isEmpty()) {
+                writeMeta(db, "synced_cursor", cursorIso);
+            }
             db.setTransactionSuccessful();
         } finally {
             db.endTransaction();

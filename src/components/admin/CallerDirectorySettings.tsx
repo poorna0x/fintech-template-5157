@@ -58,8 +58,8 @@ export function CallerDirectorySettings() {
         <CardTitle className="text-lg sm:text-xl">Caller list on this phone</CardTitle>
         <CardDescription className="text-sm mt-1">
           Names and phone numbers stay on this phone so a call can show the customer right away.
-          Opening the app downloads the list once a day. Download again after you clear the app
-          storage, or when you added customers today.
+          Opening the app adds only new or edited customers. Download again replaces the whole
+          list after you clear the app storage.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-4 sm:p-6 space-y-3">
