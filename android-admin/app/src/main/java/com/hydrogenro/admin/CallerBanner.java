@@ -54,6 +54,14 @@ public final class CallerBanner {
     }
 
     private static void show(Context context, CallerDirectoryDb.Match match) {
+        if (CallerOverlay.canDraw(context)) {
+            CallerOverlay.show(context, match.name, match.id);
+            return;
+        }
+        showTray(context, match);
+    }
+
+    static void showTray(Context context, CallerDirectoryDb.Match match) {
         if (Build.VERSION.SDK_INT >= 33) {
             if (
                 ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)

@@ -93,6 +93,49 @@ public class MainActivity extends BridgeActivity {
         getWindow()
             .getDecorView()
             .postDelayed(this::dismissBootLoader, BOOT_LOADER_MAX_MS);
+        getWindow().getDecorView().postDelayed(this::maybePromptCallerOverlay, 3_500L);
+    }
+
+    /**
+     * One-time prompt so the incoming-customer card can sit on the call screen
+     * the same way a technician job assign does.
+     */
+    private void maybePromptCallerOverlay() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return;
+            if (CallerOverlay.canDraw(this)) return;
+            android.content.SharedPreferences prefs =
+                getSharedPreferences("hro_admin_prefs", MODE_PRIVATE);
+            if (prefs.getBoolean("caller_overlay_prompted", false)) return;
+            prefs.edit().putBoolean("caller_overlay_prompted", true).apply();
+
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Show customers on incoming calls")
+                .setMessage(
+                    "Allow HydrogenRO to display over other apps so a saved customer "
+                        + "pops up on the call screen, the same way a job assign does for technicians."
+                )
+                .setPositiveButton(
+                    "Allow",
+                    (d, w) -> {
+                        try {
+                            startActivity(
+                                new Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:" + getPackageName())
+                                )
+                            );
+                        } catch (Exception e) {
+                            android.util.Log.w(TAG, "Open overlay settings failed: " + e.getMessage());
+                        }
+                    }
+                )
+                .setNegativeButton("Not now", null)
+                .setCancelable(true)
+                .show();
+        } catch (Exception e) {
+            android.util.Log.w(TAG, "Caller overlay prompt failed: " + e.getMessage());
+        }
     }
 
     @Override
