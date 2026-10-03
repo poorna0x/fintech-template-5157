@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { adminPrivacyChord, ADMIN_PRIVACY_IDLE_MS, isDesktopPrivacyTarget, isMacPrivacyPlatform } from '@/lib/adminPrivacyBlur';
+import { adminPrivacyChord, ADMIN_PRIVACY_IDLE_MS, isDesktopPrivacyTarget, isMacPrivacyPlatform, readAdminPrivacyBlurEnabled, subscribeAdminPrivacyBlurEnabled } from '@/lib/adminPrivacyBlur';
 import { isNativeApp } from '@/lib/isNativeApp';
 
 /** Survives Admin Portal remounts (dashboard ↔ settings). Refresh clears it. */
@@ -24,6 +24,9 @@ function setPrivacyBlurred(next: boolean) {
  */
 export function AdminPrivacyBlur() {
   const [blurred, setBlurred] = useState(privacyBlurred);
+  const [enabled, setEnabled] = useState(readAdminPrivacyBlurEnabled);
+
+  useEffect(() => subscribeAdminPrivacyBlurEnabled(() => setEnabled(readAdminPrivacyBlurEnabled())), []);
 
   useEffect(() => {
     const sync = () => setBlurred(privacyBlurred);
@@ -33,7 +36,7 @@ export function AdminPrivacyBlur() {
       hover: window.matchMedia('(hover: hover)').matches,
       finePointer: window.matchMedia('(pointer: fine)').matches,
     });
-    if (!desktop) {
+    if (!desktop || !enabled) {
       setPrivacyBlurred(false);
       return () => {
         privacyListeners.delete(sync);
@@ -100,7 +103,7 @@ export function AdminPrivacyBlur() {
       window.removeEventListener('touchstart', onActivity, activityOpts);
       window.removeEventListener('pointermove', onMove, activityOpts);
     };
-  }, []);
+  }, [enabled]);
 
   if (!blurred || typeof document === 'undefined') return null;
 

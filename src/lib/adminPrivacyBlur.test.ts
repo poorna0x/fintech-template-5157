@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { ADMIN_PRIVACY_IDLE_MS, adminPrivacyChord, isDesktopPrivacyTarget } from './adminPrivacyBlur';
+import { describe, expect, it, vi } from 'vitest';
+import { ADMIN_PRIVACY_IDLE_MS, adminPrivacyChord, isDesktopPrivacyTarget, readAdminPrivacyBlurEnabled, setAdminPrivacyBlurEnabled } from './adminPrivacyBlur';
 
 const base = { shiftKey: true, altKey: false, repeat: false, metaKey: false, ctrlKey: false };
 
@@ -32,5 +32,22 @@ describe('adminPrivacyChord', () => {
     expect(isDesktopPrivacyTarget({ nativeApp: true, hover: true, finePointer: true })).toBe(false);
     expect(isDesktopPrivacyTarget({ nativeApp: false, hover: false, finePointer: false })).toBe(false);
     expect(isDesktopPrivacyTarget({ nativeApp: false, hover: true, finePointer: false })).toBe(false);
+  });
+
+  it('remembers when the dashboard screen lock is turned off', () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    };
+    vi.stubGlobal('localStorage', storage);
+    expect(readAdminPrivacyBlurEnabled()).toBe(true);
+    setAdminPrivacyBlurEnabled(false);
+    expect(readAdminPrivacyBlurEnabled()).toBe(false);
+    setAdminPrivacyBlurEnabled(true);
+    expect(readAdminPrivacyBlurEnabled()).toBe(true);
+    vi.unstubAllGlobals();
   });
 });

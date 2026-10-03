@@ -2,6 +2,40 @@
 
 export const ADMIN_PRIVACY_IDLE_MS = 3 * 60 * 1000;
 
+const ENABLED_KEY = 'hro.adminPrivacyBlur';
+const enabledListeners = new Set<() => void>();
+
+function privacyBlurStorage(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** Missing value stays on, matching the lock that already ships. */
+export function readAdminPrivacyBlurEnabled(): boolean {
+  try {
+    return privacyBlurStorage()?.getItem(ENABLED_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function setAdminPrivacyBlurEnabled(enabled: boolean): void {
+  try {
+    privacyBlurStorage()?.setItem(ENABLED_KEY, enabled ? '1' : '0');
+  } catch {
+    /* private mode */
+  }
+  enabledListeners.forEach((listener) => listener());
+}
+
+export function subscribeAdminPrivacyBlurEnabled(listener: () => void): () => void {
+  enabledListeners.add(listener);
+  return () => enabledListeners.delete(listener);
+}
+
 export type AdminPrivacyChord = 'lock' | 'unlock';
 
 type ChordEvent = {
