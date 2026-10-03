@@ -642,6 +642,7 @@ const TechnicianDashboard = () => {
   const [missingPhotoSaving, setMissingPhotoSaving] = useState(false);
   // Customer search (Options menu) + technician job creation
   const [customerSearchDialogOpen, setCustomerSearchDialogOpen] = useState(false);
+  const [callerSearchPhone, setCallerSearchPhone] = useState('');
   const [techNewJobCustomer, setTechNewJobCustomer] = useState<Record<string, unknown> | null>(null);
   // Customer report dialog state
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
@@ -1401,6 +1402,28 @@ const TechnicianDashboard = () => {
     if (user?.role === 'technician') return;
     navigate('/technician/login', { replace: true });
   }, [navigate, user, authInitializing, authGraceExpired]);
+
+  // Phone list for the incoming-call card. First open downloads everyone;
+  // later opens add only new or edited customers.
+  useEffect(() => {
+    if (user?.role !== 'technician' || !user.technicianId) return;
+    void import('@/lib/techCallerDirectory').then(({ syncTechCallerDirectoryIfStale }) =>
+      syncTechCallerDirectoryIfStale()
+    );
+  }, [user?.role, user?.technicianId]);
+
+  // Incoming-call card Open → existing Search Customer for that phone.
+  useEffect(() => {
+    if (user?.role !== 'technician') return;
+    const params = new URLSearchParams(window.location.search);
+    const phone = (params.get('search') || '').replace(/\D/g, '').slice(-10);
+    if (phone.length < 10) return;
+    setCallerSearchPhone(phone);
+    setCustomerSearchDialogOpen(true);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('search');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }, [user?.role]);
 
   // Load assigned jobs and assignment requests
   useEffect(() => {
@@ -6874,6 +6897,34 @@ const TechnicianDashboard = () => {
               <RefreshCw className="w-5 h-5 mr-3" />
               Reload App
             </Button>
+            {Capacitor.isPluginAvailable('CallerDirectory') ? (
+              <Button
+                variant="ghost"
+                className="justify-start h-12 px-4 text-base"
+                onClick={() => {
+                  setHeaderOptionsDialogOpen(false);
+                  void import('@/lib/techCallerDirectory').then(
+                    async ({ downloadTechCallerDirectory, isTechCallerDirectoryAvailable }) => {
+                      if (!isTechCallerDirectoryAvailable()) return;
+                      toast.message('Updating caller list…');
+                      try {
+                        const count = await downloadTechCallerDirectory();
+                        toast.success(
+                          count > 0
+                            ? `Caller list saved (${count} customers)`
+                            : 'Caller list saved'
+                        );
+                      } catch {
+                        toast.error('Could not update the caller list');
+                      }
+                    }
+                  );
+                }}
+              >
+                <Phone className="w-5 h-5 mr-3" />
+                Update caller list
+              </Button>
+            ) : null}
             {!Capacitor.isNativePlatform() ? (
               <Button
                 variant="ghost"
@@ -11738,7 +11789,11 @@ const TechnicianDashboard = () => {
         <React.Suspense fallback={null}>
           <TechnicianCustomerSearchDialog
             open={customerSearchDialogOpen}
-            onOpenChange={setCustomerSearchDialogOpen}
+            initialQuery={callerSearchPhone}
+            onOpenChange={(open) => {
+              setCustomerSearchDialogOpen(open);
+              if (!open) setCallerSearchPhone('');
+            }}
             onViewReport={(c) => {
               setSelectedCustomerForReport({
                 ...c,

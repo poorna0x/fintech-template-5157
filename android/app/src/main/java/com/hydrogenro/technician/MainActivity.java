@@ -1,6 +1,7 @@
 package com.hydrogenro.technician;
 
 import android.content.Context;
+import android.content.Intent;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -18,6 +19,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.core.splashscreen.SplashScreenViewProvider;
+import androidx.core.app.NotificationManagerCompat;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.WebViewListener;
 import com.google.firebase.messaging.FirebaseMessaging;
@@ -53,6 +55,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(RecentCallPlugin.class);
         registerPlugin(PdfSavePlugin.class);
         registerPlugin(DevicePrefsPlugin.class);
+        registerPlugin(CallerDirectoryPlugin.class);
         final SplashScreen splash = SplashScreen.installSplashScreen(this);
         splash.setKeepOnScreenCondition(() -> !bootUiReady.get() && !pageReady.get());
         // No fade-out — cut straight to our boot overlay (logo already on splash).
@@ -88,6 +91,7 @@ public class MainActivity extends BridgeActivity {
 
         super.onCreate(savedInstanceState);
         NotificationChannels.ensureJobAlerts(this);
+        deliverCallerSearchIfNeeded(getIntent());
 
         // Bridge WebView exists after super.onCreate — configure as early as possible.
         hardenWebViewForTurnstile(webViewOrNull());
@@ -115,6 +119,64 @@ public class MainActivity extends BridgeActivity {
         super.onResume();
         // Backup path if NetworkCallback was missed while backgrounded.
         tryReloadIfOnline();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        deliverCallerSearchIfNeeded(intent);
+    }
+
+    /** Open on the caller card searches that phone in Search Customer. */
+    private void deliverCallerSearchIfNeeded(Intent intent) {
+        if (intent == null) return;
+        if (!"caller_search".equals(intent.getStringExtra("type"))) return;
+        String phone = CallerDirectoryDb.phoneKey(intent.getStringExtra("phone"));
+        if (phone.isEmpty()) return;
+
+        try {
+            NotificationManagerCompat.from(this).cancel(CallerBanner.NOTIFICATION_ID);
+        } catch (Throwable ignored) {
+            /* */
+        }
+
+        intent.removeExtra("type");
+        intent.removeExtra("phone");
+        setIntent(intent);
+
+        final String safePhone = phone;
+        final int[] attempts = { 0 };
+        final Runnable[] injectHolder = new Runnable[1];
+        injectHolder[0] = () -> {
+            attempts[0] += 1;
+            WebView webView = webViewOrNull();
+            if (webView == null) {
+                if (attempts[0] < 8) {
+                    getWindow().getDecorView().postDelayed(injectHolder[0], 400);
+                }
+                return;
+            }
+            String js =
+                "(function(){try{"
+                    + "var phone="
+                    + jsonString(safePhone)
+                    + ";"
+                    + "var key='hro_tech_caller_search';"
+                    + "if(sessionStorage.getItem(key)===phone && location.search.indexOf('search='+phone)>=0)return;"
+                    + "sessionStorage.setItem(key,phone);"
+                    + "location.replace('/technician?search='+encodeURIComponent(phone));"
+                    + "}catch(e){}})();";
+            webView.evaluateJavascript(js, null);
+        };
+        getWindow().getDecorView().post(injectHolder[0]);
+    }
+
+    private static String jsonString(String raw) {
+        if (raw == null) return "''";
+        return "'"
+            + raw.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
+            + "'";
     }
 
     @Override

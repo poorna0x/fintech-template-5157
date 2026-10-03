@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,8 @@ type TechnicianCustomerSearchDialogProps = {
   onOpenChange: (open: boolean) => void;
   onViewReport: (customer: TechnicianSearchCustomer) => void;
   onNewJob: (customer: TechnicianSearchCustomer) => void;
+  /** Phone from the incoming-call card. Runs the existing search once. */
+  initialQuery?: string;
 };
 
 function customerAreaLabel(c: TechnicianSearchCustomer): string {
@@ -47,6 +49,7 @@ const TechnicianCustomerSearchDialog = ({
   onOpenChange,
   onViewReport,
   onNewJob,
+  initialQuery = '',
 }: TechnicianCustomerSearchDialogProps) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TechnicianSearchCustomer[] | null>(null);
@@ -77,6 +80,15 @@ const TechnicianCustomerSearchDialog = ({
       setSearching(false);
     }
   };
+
+  useEffect(() => {
+    const trimmed = initialQuery.trim();
+    if (!open || trimmed.length < 3) return;
+    setQuery(trimmed);
+    void runSearch(trimmed);
+    // Run once per opened phone, not on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialQuery]);
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {

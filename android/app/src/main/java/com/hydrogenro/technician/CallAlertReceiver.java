@@ -123,6 +123,11 @@ public class CallAlertReceiver extends BroadcastReceiver {
                     .putLong(KEY_LAST_AT, now)
                     .remove(KEY_CONSUMED_AT);
                 Log.i(TAG, "RINGING — cached number, wait for hangup");
+                try {
+                    CallerBanner.showIfKnown(app, cleaned);
+                } catch (Throwable bannerErr) {
+                    Log.w(TAG, "Caller banner failed", bannerErr);
+                }
             } else {
                 ed.putLong(KEY_SESSION_NUMBER_RING, ringAt);
                 Log.i(TAG, "RINGING — no EXTRA yet, will use CallLog after hangup");
@@ -157,6 +162,11 @@ public class CallAlertReceiver extends BroadcastReceiver {
                             .putLong(RecentCallPlugin.KEY_LAST_CALLLOG_DATE, early.dateMs)
                             .apply();
                         Log.i(TAG, "OFFHOOK — cached number from CallLog");
+                        try {
+                            CallerBanner.showIfKnown(app, early.number);
+                        } catch (Throwable bannerErr) {
+                            Log.w(TAG, "Caller banner failed", bannerErr);
+                        }
                     }
                 }
             }

@@ -32,6 +32,9 @@ public final class NotificationChannels {
     /** Office messages, nudges, cash, wrong-line, updates, etc. */
     public static final String GENERAL_ALERTS = "tech_general_v1";
 
+    /** Incoming customer call card fallback when overlay permission is off. */
+    public static final String CALLER_BANNER = "caller_banner_v1";
+
     private NotificationChannels() {}
 
     /** Create both channels if missing (idempotent). */
@@ -71,6 +74,7 @@ public final class NotificationChannels {
             "nudgetech",
             true
         );
+        ensureCallerBanner(context);
         ensureChannel(
             nm,
             context,
@@ -128,6 +132,28 @@ public final class NotificationChannels {
         channel.setSound(sound, attrs);
         channel.enableVibration(true);
         channel.enableLights(true);
+        nm.createNotificationChannel(channel);
+    }
+
+    public static void ensureCallerBanner(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager nm = context.getSystemService(NotificationManager.class);
+        if (nm == null || nm.getNotificationChannel(CALLER_BANNER) != null) return;
+
+        Uri sound = android.media.RingtoneManager.getDefaultUri(
+            android.media.RingtoneManager.TYPE_NOTIFICATION
+        );
+        AudioAttributes attrs = new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build();
+        NotificationChannel channel = new NotificationChannel(
+            CALLER_BANNER, "Incoming customer", NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("Customer name when this phone rings");
+        channel.setSound(sound, attrs);
+        channel.enableVibration(true);
+        channel.enableLights(true);
+        channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
         nm.createNotificationChannel(channel);
     }
 }
