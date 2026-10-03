@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { adminPrivacyChord, ADMIN_PRIVACY_IDLE_MS, isDesktopPrivacyTarget, isMacPrivacyPlatform, readAdminPrivacyBlurEnabled, subscribeAdminPrivacyBlurEnabled } from '@/lib/adminPrivacyBlur';
+import { adminPrivacyChord, ADMIN_PRIVACY_IDLE_MS, isDesktopPrivacyTarget, isMacPrivacyPlatform, readAdminPrivacyBlurEnabled, readAdminPrivacyBlurLocked, subscribeAdminPrivacyBlurEnabled, writeAdminPrivacyBlurLocked } from '@/lib/adminPrivacyBlur';
 import { isNativeApp } from '@/lib/isNativeApp';
 
-/** Survives Admin Portal remounts (dashboard ↔ settings). Refresh clears it. */
-let privacyBlurred = false;
+/** Survives Admin Portal remounts and a reload in this tab. */
+let privacyBlurred = readAdminPrivacyBlurLocked();
 const privacyListeners = new Set<() => void>();
 
 function setPrivacyBlurred(next: boolean) {
   if (privacyBlurred === next) return;
   privacyBlurred = next;
+  writeAdminPrivacyBlurLocked(next);
   if (next) {
     const active = document.activeElement;
     if (active instanceof HTMLElement) active.blur();

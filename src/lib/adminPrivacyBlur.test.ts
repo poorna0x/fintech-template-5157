@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ADMIN_PRIVACY_IDLE_MS, adminPrivacyChord, isDesktopPrivacyTarget, readAdminPrivacyBlurEnabled, setAdminPrivacyBlurEnabled } from './adminPrivacyBlur';
+import { ADMIN_PRIVACY_IDLE_MS, adminPrivacyChord, isDesktopPrivacyTarget, readAdminPrivacyBlurEnabled, readAdminPrivacyBlurLocked, setAdminPrivacyBlurEnabled, writeAdminPrivacyBlurLocked } from './adminPrivacyBlur';
 
 const base = { shiftKey: true, altKey: false, repeat: false, metaKey: false, ctrlKey: false };
 
@@ -48,6 +48,28 @@ describe('adminPrivacyChord', () => {
     expect(readAdminPrivacyBlurEnabled()).toBe(false);
     setAdminPrivacyBlurEnabled(true);
     expect(readAdminPrivacyBlurEnabled()).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps a lock across reload in the same tab and clears it when screen lock is turned off', () => {
+    const local = new Map<string, string>();
+    const session = new Map<string, string>();
+    const storage = (store: Map<string, string>) => ({
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+    });
+    vi.stubGlobal('localStorage', storage(local));
+    vi.stubGlobal('sessionStorage', storage(session));
+    expect(readAdminPrivacyBlurLocked()).toBe(false);
+    writeAdminPrivacyBlurLocked(true);
+    expect(readAdminPrivacyBlurLocked()).toBe(true);
+    setAdminPrivacyBlurEnabled(false);
+    expect(readAdminPrivacyBlurLocked()).toBe(false);
     vi.unstubAllGlobals();
   });
 });

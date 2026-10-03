@@ -3,6 +3,8 @@
 export const ADMIN_PRIVACY_IDLE_MS = 3 * 60 * 1000;
 
 const ENABLED_KEY = 'hro.adminPrivacyBlur';
+/** Same tab only. A reload keeps the cover; a new tab starts clear. */
+const LOCKED_KEY = 'hro.adminPrivacyBlurLocked';
 const enabledListeners = new Set<() => void>();
 
 function privacyBlurStorage(): Storage | null {
@@ -28,7 +30,37 @@ export function setAdminPrivacyBlurEnabled(enabled: boolean): void {
   } catch {
     /* private mode */
   }
+  if (!enabled) writeAdminPrivacyBlurLocked(false);
   enabledListeners.forEach((listener) => listener());
+}
+
+function blurLockStorage(): Storage | null {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** True when this tab was already locked, including after a reload. */
+export function readAdminPrivacyBlurLocked(): boolean {
+  if (!readAdminPrivacyBlurEnabled()) return false;
+  try {
+    return blurLockStorage()?.getItem(LOCKED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function writeAdminPrivacyBlurLocked(locked: boolean): void {
+  try {
+    const storage = blurLockStorage();
+    if (!storage) return;
+    if (locked) storage.setItem(LOCKED_KEY, '1');
+    else storage.removeItem(LOCKED_KEY);
+  } catch {
+    /* private mode */
+  }
 }
 
 export function subscribeAdminPrivacyBlurEnabled(listener: () => void): () => void {
