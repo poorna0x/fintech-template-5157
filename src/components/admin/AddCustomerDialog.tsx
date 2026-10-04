@@ -209,6 +209,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [flatHouseNo, setFlatHouseNo] = useState('');
   const flatHouseNoRef = useRef('');
   const lastAppliedFlatHouseRef = useRef('');
+  /** Typed flat/house kept across Fetch Address. Browser address autofill must not clear it. */
+  const flatHouseHoldRef = useRef<string | null>(null);
   const [brandSuggestions, setBrandSuggestions] = useState<string[]>([]);
   const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
   const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
@@ -1015,6 +1017,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     const fromAutofill = opts?.fromAutofill === true;
     const generationAtStart = autofillGenerationRef.current;
     if (fetchingAddressRef.current) return;
+    const flatAtFetch = flatHouseNoRef.current;
+    flatHouseHoldRef.current = flatAtFetch;
     fetchingAddressRef.current = true;
     setIsFetchingAddress(true);
 
@@ -1118,7 +1122,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
         const nextAddress =
           canWriteAddress && address
-            ? withFlatHousePrefix(capitalizeFirstLetter(address), flatHouseNoRef.current)
+            ? withFlatHousePrefix(capitalizeFirstLetter(address), flatAtFetch)
             : prev.address;
         const nextVisible = canWriteVisible
           ? (() => {
@@ -1144,7 +1148,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           visible_address: nextVisible,
         };
       });
-      lastAppliedFlatHouseRef.current = flatHouseNoRef.current.trim();
+      if (flatAtFetch.trim()) {
+        flatHouseNoRef.current = flatAtFetch;
+        setFlatHouseNo(flatAtFetch);
+      }
+      lastAppliedFlatHouseRef.current = flatAtFetch.trim();
 
       if (extractedLocation && (!fromAutofill || !locationManuallyEditedRef.current)) {
         locationManuallyEditedRef.current = false;
@@ -1174,6 +1182,19 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       if (loadingToast !== undefined) toast.dismiss(loadingToast);
       fetchingAddressRef.current = false;
       setIsFetchingAddress(false);
+      const held = flatAtFetch;
+      if (held.trim()) {
+        flatHouseNoRef.current = held;
+        setFlatHouseNo(held);
+        window.setTimeout(() => {
+          if (flatHouseHoldRef.current !== held) return;
+          flatHouseNoRef.current = held;
+          setFlatHouseNo(held);
+          flatHouseHoldRef.current = null;
+        }, 400);
+      } else {
+        flatHouseHoldRef.current = null;
+      }
     }
   };
 
@@ -2459,10 +2480,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 <div className="relative">
                   <Input
                     id="add_flat_house_no"
-                    name="hro_flat_house_no"
+                    name="hro_unit_note"
                     value={flatHouseNo}
                     onChange={(e) => {
                       const value = e.target.value;
+                      const held = flatHouseHoldRef.current;
+                      if (held != null && held.trim() && value !== held) {
+                        flatHouseNoRef.current = held;
+                        setFlatHouseNo(held);
+                        return;
+                      }
+                      flatHouseHoldRef.current = null;
                       flatHouseNoRef.current = value;
                       setFlatHouseNo(value);
                       applyFlatHousePrefix(value);
@@ -2485,6 +2513,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       title="Clear flat / house no"
                       onMouseDown={(e) => {
                         e.preventDefault();
+                        flatHouseHoldRef.current = null;
                         flatHouseNoRef.current = '';
                         setFlatHouseNo('');
                         applyFlatHousePrefix('');
