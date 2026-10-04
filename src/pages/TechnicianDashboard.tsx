@@ -9688,9 +9688,28 @@ const TechnicianDashboard = () => {
                     <PendingPaymentFields
                       billAmount={parseMoneyAmount(billAmount) || 0}
                       paidTodayEnabled={pendingPaidTodayEnabled}
-                      onPaidTodayEnabledChange={setPendingPaidTodayEnabled}
+                      onPaidTodayEnabledChange={(v) => {
+                        setPendingPaidTodayEnabled(v);
+                        if (!v) {
+                          setPendingPaidTodayMode('');
+                          setPendingPaidTodayAmount('');
+                          setPartialCashAmount('');
+                          setPartialOnlineAmount('');
+                          setQrCodeType('');
+                          setSelectedQrCodeId('');
+                          setShareLinkUpiQrId('');
+                        }
+                      }}
                       paidTodayMode={pendingPaidTodayMode}
-                      onPaidTodayModeChange={setPendingPaidTodayMode}
+                      onPaidTodayModeChange={(v) => {
+                        setPendingPaidTodayMode(v);
+                        setPendingPaidTodayAmount('');
+                        setPartialCashAmount('');
+                        setPartialOnlineAmount('');
+                        setQrCodeType('');
+                        setSelectedQrCodeId('');
+                        setShareLinkUpiQrId('');
+                      }}
                       paidTodayAmount={pendingPaidTodayAmount}
                       onPaidTodayAmountChange={setPendingPaidTodayAmount}
                       partialCashAmount={partialCashAmount}

@@ -59,14 +59,7 @@ export default function PendingPaymentFields({
           id="paid-today-enabled"
           checked={paidTodayEnabled}
           onCheckedChange={(c) => {
-            const on = c === true;
-            onPaidTodayEnabledChange(on);
-            if (!on) {
-              onPaidTodayModeChange('');
-              onPaidTodayAmountChange('');
-              onPartialCashAmountChange('');
-              onPartialOnlineAmountChange('');
-            }
+            onPaidTodayEnabledChange(c === true);
           }}
         />
         <div>
@@ -87,9 +80,6 @@ export default function PendingPaymentFields({
               value={paidTodayMode || undefined}
               onValueChange={(v: PaidTodayMode) => {
                 onPaidTodayModeChange(v);
-                onPaidTodayAmountChange('');
-                onPartialCashAmountChange('');
-                onPartialOnlineAmountChange('');
               }}
             >
               <SelectTrigger className="mt-1">

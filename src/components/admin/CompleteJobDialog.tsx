@@ -1630,9 +1630,26 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                   <PendingPaymentFields
                     billAmount={parseMoneyAmount(billAmount) || 0}
                     paidTodayEnabled={pendingPaidTodayEnabled}
-                    onPaidTodayEnabledChange={setPendingPaidTodayEnabled}
+                    onPaidTodayEnabledChange={(v) => {
+                      setPendingPaidTodayEnabled(v);
+                      if (!v) {
+                        setPendingPaidTodayMode('');
+                        setPendingPaidTodayAmount('');
+                        setPartialCashAmount('');
+                        setPartialOnlineAmount('');
+                        setQrCodeType('');
+                        setSelectedQrCodeId('');
+                      }
+                    }}
                     paidTodayMode={pendingPaidTodayMode}
-                    onPaidTodayModeChange={setPendingPaidTodayMode}
+                    onPaidTodayModeChange={(v) => {
+                      setPendingPaidTodayMode(v);
+                      setPendingPaidTodayAmount('');
+                      setPartialCashAmount('');
+                      setPartialOnlineAmount('');
+                      setQrCodeType('');
+                      setSelectedQrCodeId('');
+                    }}
                     paidTodayAmount={pendingPaidTodayAmount}
                     onPaidTodayAmountChange={setPendingPaidTodayAmount}
                     partialCashAmount={partialCashAmount}

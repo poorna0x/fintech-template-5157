@@ -537,7 +537,19 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               billAmount={parseMoneyAmount(String(editData.amount ?? '')) || 0}
               paidTodayEnabled={Boolean(editData.pendingPaidTodayEnabled)}
               onPaidTodayEnabledChange={(v) =>
-                onEditDataChange({ ...editData, pendingPaidTodayEnabled: v })
+                onEditDataChange({
+                  ...editData,
+                  pendingPaidTodayEnabled: v,
+                  ...(v
+                    ? {}
+                    : {
+                        pendingPaidTodayMode: '',
+                        pendingPaidTodayAmount: '',
+                        partialCashAmount: '',
+                        partialOnlineAmount: '',
+                        qrCodeName: '',
+                      }),
+                })
               }
               paidTodayMode={(editData.pendingPaidTodayMode || '') as PaidTodayMode | ''}
               onPaidTodayModeChange={(v) =>
@@ -547,6 +559,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                   pendingPaidTodayAmount: '',
                   partialCashAmount: '',
                   partialOnlineAmount: '',
+                  qrCodeName: '',
                 })
               }
               paidTodayAmount={String(editData.pendingPaidTodayAmount ?? '')}
@@ -630,6 +643,44 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             </div>
           )}
 
+          {/* QR sits with the payment choice so Online can pick a code immediately. */}
+          {(editData.paymentMethod === 'ONLINE' ||
+            editData.paymentMethod === 'PARTIAL' ||
+            (editData.paymentMethod === 'PENDING_PAYMENT' &&
+              editData.pendingPaidTodayEnabled &&
+              (editData.pendingPaidTodayMode === 'ONLINE' ||
+                (editData.pendingPaidTodayMode === 'PARTIAL' &&
+                  (parseMoneyAmount(String(editData.partialOnlineAmount ?? '')) || 0) > 0)))) && (
+            <div>
+              <Label htmlFor="edit-qr-code">
+                QR Code Name
+                {editData.paymentMethod === 'PENDING_PAYMENT' ? (
+                  <span className="text-red-600"> *</span>
+                ) : null}
+              </Label>
+              <Select
+                value={editData.qrCodeName || '__none__'}
+                onValueChange={(value) => onEditDataChange({ ...editData, qrCodeName: value === '__none__' ? '' : value })}
+                onOpenChange={(isOpen) => { if (isOpen) loadQrCodeNames(); }}
+              >
+                <SelectTrigger id="edit-qr-code">
+                  <SelectValue placeholder={qrCodesLoading ? 'Loading...' : 'Select QR code'} />
+                </SelectTrigger>
+                <SelectContent className="z-[200]">
+                  <SelectItem value="__none__">None</SelectItem>
+                  {qrCodeNames.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                  {qrCodesFetched && qrCodeNames.length === 0 && (
+                    <SelectItem value="__empty__" disabled>No QR codes found</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* Lead Source */}
           <LeadSourceSelect
             id="edit-lead-source"
@@ -669,39 +720,6 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             />
             <p className="text-xs text-muted-foreground mt-1">Edit if you need to update lead cost for this job</p>
           </div>
-
-          {/* QR code for online portion (online, partial, or pending paid-today online) */}
-          {(editData.paymentMethod === 'ONLINE' ||
-            editData.paymentMethod === 'PARTIAL' ||
-            (editData.paymentMethod === 'PENDING_PAYMENT' &&
-              editData.pendingPaidTodayEnabled &&
-              (editData.pendingPaidTodayMode === 'ONLINE' ||
-                (editData.pendingPaidTodayMode === 'PARTIAL' &&
-                  (parseMoneyAmount(String(editData.partialOnlineAmount ?? '')) || 0) > 0)))) && (
-            <div>
-              <Label htmlFor="edit-qr-code">QR Code Name</Label>
-              <Select
-                value={editData.qrCodeName || '__none__'}
-                onValueChange={(value) => onEditDataChange({ ...editData, qrCodeName: value === '__none__' ? '' : value })}
-                onOpenChange={(isOpen) => { if (isOpen) loadQrCodeNames(); }}
-              >
-                <SelectTrigger id="edit-qr-code">
-                  <SelectValue placeholder={qrCodesLoading ? 'Loading...' : 'Select QR code'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {qrCodeNames.map((name) => (
-                    <SelectItem key={name} value={name}>
-                      {name}
-                    </SelectItem>
-                  ))}
-                  {qrCodesFetched && qrCodeNames.length === 0 && (
-                    <SelectItem value="__empty__" disabled>No QR codes found</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
 
           {/* AMC — technician may have added one; admin can keep, edit, or remove */}
           <div className="border-t pt-4">
