@@ -19,6 +19,7 @@ import {
   isDynamicUpiTechnician,
   TechnicianQrPickerRow,
 } from '@/lib/qrCodeManager';
+import { isSuspendedTechnicianAccount } from '@/lib/technicianAccountStatus';
 import {
   buildUpiPayShortHttpsLink,
   createUpiPayShortLink,
@@ -133,7 +134,11 @@ export default function ShareQrLinkPanel({
         ? (technicians || []).filter((t) => String(t.id) === String(currentTechnicianId))
         : technicians || [];
     const fromTech: ShareUpiOption[] = (techPool.length > 0 ? techPool : technicians || [])
-      .filter((t) => isDynamicUpiTechnician(t) || Boolean(t.qrCode?.trim()))
+      .filter(
+        (t) =>
+          !isSuspendedTechnicianAccount(t) &&
+          (isDynamicUpiTechnician(t) || Boolean(t.qrCode?.trim()))
+      )
       .map((t) => ({
         key: `technician_${t.id}`,
         name: `${t.fullName}'s QR`,

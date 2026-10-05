@@ -12,6 +12,7 @@ import { Job, Technician } from '@/types';
 import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { CommonQrCode, isDynamicUpiQr, isDynamicUpiTechnician, technicianHasPaymentQr } from '@/lib/qrCodeManager';
+import { isSuspendedTechnicianAccount } from '@/lib/technicianAccountStatus';
 import { fetchUpiPaymentAccounts, type UpiPaymentAccount } from '@/lib/upiPaymentAccounts';
 import DynamicUpiQrDisplay from '@/components/DynamicUpiQrDisplay';
 import { useAuth } from '@/contexts/AuthContext';
@@ -1745,7 +1746,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                         <SelectContent className="!z-[100]">
                           {localCommonQrCodes.length === 0 &&
                           upiAccounts.length === 0 &&
-                          technicians.filter((t) => technicianHasPaymentQr(t as any)).length ===
+                          technicians.filter((t) => !isSuspendedTechnicianAccount(t) && technicianHasPaymentQr(t as any)).length ===
                             0 ? (
                             <SelectItem value="no-qr" disabled>
                               No QR codes available
@@ -1776,7 +1777,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                                 </>
                               )}
                               {technicians
-                                .filter((t) => technicianHasPaymentQr(t as any))
+                                .filter((t) => !isSuspendedTechnicianAccount(t) && technicianHasPaymentQr(t as any))
                                 .map((tech) => (
                                   <SelectItem key={`technician_${tech.id}`} value={`technician_${tech.id}`}>
                                     {tech.fullName}'s QR Code
@@ -1867,7 +1868,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                           })() : selectedQrCodeId.startsWith('technician_') ? (() => {
                             const techId = selectedQrCodeId.replace('technician_', '');
                             const selectedTech = technicians.find(t => t.id === techId);
-                            if (!selectedTech || !technicianHasPaymentQr(selectedTech as any)) {
+                            if (!selectedTech || isSuspendedTechnicianAccount(selectedTech) || !technicianHasPaymentQr(selectedTech as any)) {
                               return (
                                 <div className="text-center p-4">
                                   <p className="text-sm text-red-500">QR code not found</p>

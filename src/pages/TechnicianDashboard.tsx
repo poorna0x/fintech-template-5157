@@ -75,7 +75,7 @@ import {
 } from '@/lib/technicianOtpRequests';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
-import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
+import { isActiveTechnicianAccount, isSuspendedTechnicianAccount } from '@/lib/technicianAccountStatus';
 import { rawWaterTdsForJobComplete, jobVisitRawWaterTdsPpm } from '@/lib/jobRawWaterTds';
 import { applyOtherEnRouteResetLocal, revertOtherEnRouteJobsToAssigned } from '@/lib/revertOtherEnRouteJobs';
 import { mapCustomerGstFields } from '@/lib/customerGst';
@@ -1998,7 +1998,7 @@ const TechnicianDashboard = () => {
             prevPicker.find((t) => t.id === technicianId)?.fullName ||
             '';
           let nextPicker = prevPicker.filter((t) => t.id !== technicianId);
-          if (qr) {
+          if (qr && isActiveTechnicianAccount(row)) {
             nextPicker = [
               ...nextPicker,
               {
@@ -9847,7 +9847,7 @@ const TechnicianDashboard = () => {
                           </SelectTrigger>
                           <SelectContent className="!z-[100]">
                             {commonQrCodes.length === 0 &&
-                            technicians.filter((t) => technicianHasPaymentQr(t as any)).length ===
+                            technicians.filter((t) => !isSuspendedTechnicianAccount(t as any) && technicianHasPaymentQr(t as any)).length ===
                               0 ? (
                               <SelectItem value="no-qr" disabled>
                                 No QR codes available
@@ -9867,7 +9867,7 @@ const TechnicianDashboard = () => {
                                 
                                 {/* Technician QR Codes Section */}
                                 {technicians
-                                  .filter((t) => technicianHasPaymentQr(t as any))
+                                  .filter((t) => !isSuspendedTechnicianAccount(t as any) && technicianHasPaymentQr(t as any))
                                   .map((tech) => (
                                     <SelectItem key={`technician_${tech.id}`} value={`technician_${tech.id}`}>
                                       {tech.fullName}'s QR Code
@@ -10060,7 +10060,7 @@ const TechnicianDashboard = () => {
                               const selectedTech =
                                 technicians.find((t) => t.id === techId) ||
                                 allTechnicians.find((t) => t.id === techId);
-                              if (!selectedTech || !technicianHasPaymentQr(selectedTech as any)) {
+                              if (!selectedTech || isSuspendedTechnicianAccount(selectedTech as any) || !technicianHasPaymentQr(selectedTech as any)) {
                                 return (
                                   <div className="text-center p-4">
                                     <p className="text-sm text-red-500">QR code not found</p>

@@ -17,6 +17,13 @@ export function isActiveTechnicianAccount(
   return technicianAccountStatus(tech) === 'ACTIVE';
 }
 
+/** Saved QR stays on the row, but it must not be offered while the account is suspended. */
+export function isSuspendedTechnicianAccount(
+  tech: { account_status?: unknown } | null | undefined
+): boolean {
+  return technicianAccountStatus(tech) === 'SUSPENDED';
+}
+
 /** Salary / payments lists — Active only. Suspended and Inactive are hidden. */
 export function isSalaryListedTechnician(
   tech: { account_status?: unknown } | null | undefined

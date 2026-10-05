@@ -2711,6 +2711,8 @@ const Settings = () => {
 
   const technicianAccountStatus = (t: Technician) =>
     String((t as any).account_status || 'ACTIVE').toUpperCase();
+  const technicianQrIsListed = (t: Technician) =>
+    technicianAccountStatus(t) !== 'SUSPENDED' && String((t as any).qrCode || '').trim() !== '';
   const activeTechniciansList = technicians.filter((t) => technicianAccountStatus(t) === 'ACTIVE');
   const suspendedTechniciansList = technicians.filter((t) => technicianAccountStatus(t) === 'SUSPENDED');
   const inactiveTechniciansList = technicians.filter((t) => technicianAccountStatus(t) === 'INACTIVE');
@@ -4537,6 +4539,11 @@ const Settings = () => {
               </div>
             </div>
             
+            {technicianFormData.accountStatus === 'SUSPENDED' ? (
+              <p className="text-sm text-muted-foreground border-t pt-4">
+                This account is suspended, so the payment QR is hidden. It stays saved and shows again when the account is active.
+              </p>
+            ) : (
             <div className="space-y-3 sm:space-y-4">
               <h3 className="text-base sm:text-lg font-semibold text-foreground">Payment QR Code</h3>
               <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
@@ -4636,6 +4643,7 @@ const Settings = () => {
                 )}
               </div>
             </div>
+            )}
             
             {/* QR Code Visibility Settings */}
             <div className="space-y-3 sm:space-y-4">
@@ -4704,11 +4712,11 @@ const Settings = () => {
                   )}
                   
                   {/* Technician QR Codes */}
-                  {technicians.filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '').length > 0 && (
+                  {technicians.filter((t) => technicianQrIsListed(t)).length > 0 && (
                     <div className="space-y-2">
                       <Label className="text-xs sm:text-sm font-medium text-foreground/90">Technician QR Codes:</Label>
                       {technicians
-                        .filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '')
+                        .filter((t) => technicianQrIsListed(t))
                         .map((tech) => {
                           const qrId = `technician_${tech.id}`;
                           const isChecked = technicianFormData.visibleQrCodes.includes(qrId);
@@ -4745,7 +4753,7 @@ const Settings = () => {
                     </div>
                   )}
                   
-                  {commonQrCodes.length === 0 && technicians.filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '').length === 0 && (
+                  {commonQrCodes.length === 0 && technicians.filter((t) => technicianQrIsListed(t)).length === 0 && (
                     <p className="text-xs sm:text-sm text-muted-foreground italic">No QR codes available. Add common QR codes or upload QR codes for technicians.</p>
                   )}
                 </div>

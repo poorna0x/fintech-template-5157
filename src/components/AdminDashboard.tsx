@@ -448,6 +448,7 @@ const AdminDashboard = () => {
       email: tech.email,
       employeeId: tech.employee_id,
       status: tech.status || 'AVAILABLE',
+      account_status: tech.account_status || 'ACTIVE',
       skills: tech.skills,
       serviceAreas: tech.service_areas,
       currentLocation: tech.current_location,
