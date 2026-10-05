@@ -595,6 +595,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const applyFlatHousePrefix = (rawFlat?: string) => {
+    // Fetch Address owns Complete Address until the lookup finishes.
+    if (fetchingAddressRef.current) return;
     const nextFlat = (rawFlat ?? flatHouseNoRef.current).trim();
     const prevFlat = lastAppliedFlatHouseRef.current;
     lastAppliedFlatHouseRef.current = nextFlat;
@@ -1019,8 +1021,20 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     if (fetchingAddressRef.current) return;
     const flatAtFetch = flatHouseNoRef.current;
     flatHouseHoldRef.current = flatAtFetch;
+    const addressAtStart = addFormDataRef.current.address;
     fetchingAddressRef.current = true;
     setIsFetchingAddress(true);
+    let wroteFetchedAddress = false;
+    // Flat No stays in its own box for the whole lookup. Take it off Complete Address
+    // until Google returns, and do not put it back on the fetched line.
+    if (flatAtFetch.trim()) {
+      const stripped = stripLeadingFlatHouse(addressAtStart, flatAtFetch);
+      if (stripped !== addressAtStart.trim()) {
+        lastAppliedFlatHouseRef.current = '';
+        addFormDataRef.current = { ...addFormDataRef.current, address: stripped };
+        setAddFormData((prev) => ({ ...prev, address: stripped }));
+      }
+    }
 
     let loadingToast: string | number | undefined;
     try {
@@ -1122,8 +1136,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
         const nextAddress =
           canWriteAddress && address
-            ? withFlatHousePrefix(capitalizeFirstLetter(address), flatAtFetch)
+            ? capitalizeFirstLetter(address)
             : prev.address;
+        if (canWriteAddress && address) wroteFetchedAddress = true;
         const nextVisible = canWriteVisible
           ? (() => {
               const next = nextVisibleAddressFromMapsFetch(
@@ -1152,7 +1167,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         flatHouseNoRef.current = flatAtFetch;
         setFlatHouseNo(flatAtFetch);
       }
-      lastAppliedFlatHouseRef.current = flatAtFetch.trim();
+      if (wroteFetchedAddress) {
+        lastAppliedFlatHouseRef.current = '';
+      }
 
       if (extractedLocation && (!fromAutofill || !locationManuallyEditedRef.current)) {
         locationManuallyEditedRef.current = false;
@@ -1180,6 +1197,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       if (!quiet) toast.error('Failed to fetch address. Please try again.');
     } finally {
       if (loadingToast !== undefined) toast.dismiss(loadingToast);
+      if (!wroteFetchedAddress && flatAtFetch.trim()) {
+        const stripped = stripLeadingFlatHouse(addressAtStart, flatAtFetch);
+        if (stripped !== addressAtStart.trim()) {
+          setAddFormData((prev) =>
+            prev.address.trim() === stripped.trim()
+              ? { ...prev, address: addressAtStart }
+              : prev
+          );
+          lastAppliedFlatHouseRef.current = flatAtFetch.trim();
+        }
+      }
       fetchingAddressRef.current = false;
       setIsFetchingAddress(false);
       const held = flatAtFetch;
