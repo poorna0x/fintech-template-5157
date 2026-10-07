@@ -98,9 +98,9 @@ const RECOMMENDED = [
   },
   { name: 'svc_tech_assigned', language: 'en', hint: 'Tech assigned ({{1}} name, {{2}} tech)' },
   {
-    name: 'svc_job_assigned_tech_v2',
+    name: 'svc_job_assigned_tech_v3',
     language: 'en',
-    hint: 'Job assigned to technician (fixed copy, no variables)',
+    hint: 'Job assigned to technician ({{1}} customer, {{2}} location, {{3}} time)',
   },
   { name: 'svc_job_done', language: 'en', hint: 'Service done ({{1}} name, {{2}} amount)' },
   {

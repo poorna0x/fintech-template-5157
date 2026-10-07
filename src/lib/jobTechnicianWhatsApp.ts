@@ -129,15 +129,30 @@ export function buildJobTechnicianWhatsAppPayload(
   };
 }
 
+/** First place-name only: "Gunjur Rd" → "Gunjur". */
+function oneWordLocation(location: string): string {
+  const parts = String(location || '')
+    .replace(/[,.].*$/, '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return 'Area';
+  const roadWord = /^(rd|road|cross|main|st|street|lane|layout)$/i;
+  if (parts.length >= 2 && roadWord.test(parts[1])) return parts[0];
+  return parts[0];
+}
+
 async function autoSendJobTechWhatsApp(
   phone: string,
   message: string,
   mode: JobTechWhatsAppMode,
-  cold?: { name: string; bodyParams: string[] } | null
+  cold?: { name: string; bodyParams: string[] } | null,
+  opts?: { silent?: boolean }
 ): Promise<'api' | 'failed'> {
-  const toastId = toast.loading(
-    mode === 'unassign' ? 'Sending unassign WhatsApp…' : 'Sending assign WhatsApp…'
-  );
+  const silent = opts?.silent === true;
+  const toastId = silent
+    ? ''
+    : toast.loading(mode === 'unassign' ? 'Sending unassign WhatsApp…' : 'Sending assign WhatsApp…');
   try {
     const result = cold?.name
       ? await sendAdminWhatsAppTextWithOptionalTemplate({
@@ -159,28 +174,30 @@ async function autoSendJobTechWhatsApp(
           source: 'job_assign_tech',
         });
     if (result.ok && result.via === 'api') {
-      toast.success(
-        cold?.name && 'usedTemplate' in result && result.usedTemplate
-          ? 'Assign WhatsApp template sent to technician'
-          : 'WhatsApp sent to technician',
-        { id: toastId }
-      );
+      if (!silent) {
+        toast.success(
+          cold?.name && 'usedTemplate' in result && result.usedTemplate
+            ? 'Assign WhatsApp template sent to technician'
+            : 'WhatsApp sent to technician',
+          { id: toastId }
+        );
+      }
       return 'api';
     }
     // Auto-send stays in-app: do not open wa.me (that steals focus after assign).
-    toast.message(
-      result.needsWindowOrTemplate
-        ? cold?.name
-          ? 'Assign template could not send (not approved yet or WhatsApp blocked)'
-          : 'WhatsApp API window closed — message not sent (turn on cold template in WhatsApp Settings)'
-        : result.featureDisabled
-          ? 'WhatsApp send skipped (feature off)'
-          : 'WhatsApp auto-send failed',
-      { id: toastId }
-    );
+    const failText = result.needsWindowOrTemplate
+      ? cold?.name
+        ? 'Assign template could not send (not approved yet or WhatsApp blocked)'
+        : 'WhatsApp API window closed — message not sent (turn on cold template in WhatsApp Settings)'
+      : result.featureDisabled
+        ? 'WhatsApp send skipped (feature off)'
+        : 'WhatsApp auto-send failed';
+    if (silent) console.warn('[job-wa]', failText, result.error || '');
+    else toast.message(failText, { id: toastId });
     return 'failed';
-  } catch {
-    toast.message('WhatsApp auto-send failed', { id: toastId });
+  } catch (err) {
+    if (silent) console.warn('[job-wa] auto-send failed', err);
+    else toast.message('WhatsApp auto-send failed', { id: toastId });
     return 'failed';
   }
 }
@@ -270,10 +287,14 @@ export async function notifyTechnicianJobWhatsApp(opts: {
     const cold = backgroundAssign
       ? {
           name: WA_COLD.job_assigned_tech.name,
-          bodyParams: WA_COLD.job_assigned_tech.bodyParams(),
+          bodyParams: WA_COLD.job_assigned_tech.bodyParams(
+            payload.customerName,
+            oneWordLocation(payload.location),
+            payload.customTime || 'Flexible'
+          ),
         }
       : null;
-    void autoSendJobTechWhatsApp(phone, payload.message, opts.mode, cold);
+    void autoSendJobTechWhatsApp(phone, payload.message, opts.mode, cold, { silent: true });
     return 'auto';
   }
 
