@@ -129,8 +129,8 @@ public class LocalGpsSampleService extends Service {
                 NotificationManager nm = getSystemService(NotificationManager.class);
                 if (nm != null) {
                     NotificationChannel channel = new NotificationChannel(
-                        CHANNEL_ID, "Work location", NotificationManager.IMPORTANCE_MIN);
-                    channel.setDescription("Saves a GPS point on this phone during the work day");
+                        CHANNEL_ID, "Syncing", NotificationManager.IMPORTANCE_MIN);
+                    channel.setDescription("Shown briefly while updating");
                     channel.setShowBadge(false);
                     channel.setSound(null, null);
                     nm.createNotificationChannel(channel);
@@ -138,11 +138,12 @@ public class LocalGpsSampleService extends Service {
             }
             notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_notify)
-                .setContentTitle("Saving location")
-                .setContentText("Kept on this phone for the office map")
+                .setContentTitle("Syncing…")
+                .setContentText("Updating…")
                 .setPriority(NotificationCompat.PRIORITY_MIN)
                 .setSilent(true)
                 .setOngoing(true)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
                 .build();
         } catch (Throwable t) {
             Log.w(TAG, "Could not build sample notification", t);
