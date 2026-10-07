@@ -186,5 +186,6 @@ async function buildPendingPaymentWhatsAppForPush(db, {
 module.exports = {
   buildPendingPaymentWhatsAppForPush,
   buildPendingPaymentWhatsAppMessage,
+  createShortPayHttpsLink,
   resolveBrand,
 };

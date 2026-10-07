@@ -354,6 +354,26 @@ export function setLastSelectedUpiAccountId(id: string | null): void {
   }
 }
 
+/** Account whose QR matches Settings → WhatsApp pending-payment QR mode. */
+export function pickUpiAccountForQrMode(
+  accounts: UpiPaymentAccount[],
+  mode: 'static' | 'dynamic'
+): UpiPaymentAccount | null {
+  if (!accounts.length) return null;
+  if (mode === 'static') {
+    return (
+      accounts.find((a) => Boolean(a.qrCodeUrl) && a.dynamicUpiEnabled === false) ||
+      accounts.find((a) => Boolean(a.qrCodeUrl)) ||
+      resolvePreferredUpiAccount(accounts)
+    );
+  }
+  return (
+    accounts.find((a) => a.dynamicUpiEnabled && Boolean(a.upiId)) ||
+    accounts.find((a) => Boolean(a.upiId)) ||
+    resolvePreferredUpiAccount(accounts)
+  );
+}
+
 export function resolvePreferredUpiAccount(
   accounts: UpiPaymentAccount[] = loadUpiPaymentAccounts()
 ): UpiPaymentAccount | null {

@@ -73,6 +73,7 @@ import {
   buildPendingPaymentUpiShare,
   fetchUpiPaymentAccounts,
   loadUpiPaymentAccounts,
+  pickUpiAccountForQrMode,
   resolvePreferredUpiAccount,
   setLastSelectedUpiAccountId,
   type UpiPaymentAccount,
@@ -465,7 +466,7 @@ export function SettingsPendingPaymentsDialogV2({
   initialAction?: 'list' | 'add' | 'whatsapp';
   initialReminderId?: string | null;
 }) {
-  const { cloudApiOn } = useWhatsAppCloudApiGate('pending_payment');
+  const { cloudApiOn, settings: whatsAppSettings } = useWhatsAppCloudApiGate('pending_payment');
   const navigate = useNavigate();
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -979,7 +980,8 @@ export function SettingsPendingPaymentsDialogV2({
 
   const openPendingWhatsAppDialog = async (payment: PendingPaymentReminder) => {
     const accounts = await syncUpiAccountsFromStorage();
-    const preferred = resolvePreferredUpiAccount(accounts);
+    const qrMode = whatsAppSettings?.pending_payment_qr_mode === 'static' ? 'static' : 'dynamic';
+    const preferred = pickUpiAccountForQrMode(accounts, qrMode) || resolvePreferredUpiAccount(accounts);
     setWhatsappUpiAccountId(preferred?.id ?? accounts[0]?.id ?? '');
     setWhatsappIncludeUpi(Boolean(preferred || accounts[0]));
     // Past due → show overdue option; leave unchecked so admin opts in.
@@ -1483,17 +1485,29 @@ export function SettingsPendingPaymentsDialogV2({
       setCompleteConfirmOpen(false);
       setCompleteTarget(null);
 
-      if (offerWhatsAppAfterComplete) {
+      const autoThanks =
+        whatsAppSettings?.auto_send_payment_received_whatsapp === true && cloudApiOn;
+      if (autoThanks || offerWhatsAppAfterComplete) {
         if (!customerForReceipt && entityId) {
           const { data, error: custErr } = await db.customers.getById(entityId);
           if (!custErr && data) customerForReceipt = getCustomerLabelFromRow(data);
         }
         const primary = customerForReceipt?.phone?.trim();
         const alternate = customerForReceipt?.alternatePhone?.trim();
+        const phone = primary || alternate;
         if (!customerForReceipt) {
           toast.error('Customer info not loaded — open WhatsApp from the customer profile if needed');
-        } else if (!primary && !alternate) {
+        } else if (!phone) {
           toast.error('Customer phone number is missing — add a phone to send WhatsApp');
+        } else if (autoThanks) {
+          const message = buildPaymentReceivedMessage(marked, customerForReceipt);
+          await openWhatsApp(phone, message, {
+            customerName: customerForReceipt.name,
+            amount: Number(marked.amount_pending) || 0,
+            customerId: entityId,
+            brand: brandForCustomer(entityId),
+            coldTemplateKind: 'payment_received',
+          });
         } else {
           setPostCompleteCustomerLabel(customerForReceipt);
           setPostCompleteWhatsappTarget(marked);
@@ -1994,12 +2008,19 @@ export function SettingsPendingPaymentsDialogV2({
             <div className="flex items-start gap-3 py-2 px-1">
               <Checkbox
                 id="offer-wa-after-complete"
-                checked={offerWhatsAppAfterComplete}
+                checked={
+                  whatsAppSettings?.auto_send_payment_received_whatsapp
+                    ? true
+                    : offerWhatsAppAfterComplete
+                }
+                disabled={whatsAppSettings?.auto_send_payment_received_whatsapp === true}
                 onCheckedChange={(v) => setOfferWhatsAppAfterComplete(v === true)}
                 className="mt-0.5"
               />
               <label htmlFor="offer-wa-after-complete" className="text-sm text-muted-foreground leading-snug cursor-pointer">
-                After marking, offer to send a WhatsApp message confirming the amount received (thanks)
+                {whatsAppSettings?.auto_send_payment_received_whatsapp
+                  ? 'Payment received WhatsApp will be sent automatically (WhatsApp settings).'
+                  : 'After marking, offer to send a WhatsApp message confirming the amount received (thanks)'}
               </label>
             </div>
             <AlertDialogFooter className="flex-col sm:flex-row gap-2">

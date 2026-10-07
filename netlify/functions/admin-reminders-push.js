@@ -6,7 +6,9 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, isStaleTokenError, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
-const { buildPendingPaymentWhatsAppForPush } = require('./pending-payment-whatsapp');
+const { buildPendingPaymentWhatsAppForPush, createShortPayHttpsLink } = require('./pending-payment-whatsapp');
+const { getWhatsAppCredentials, insertWhatsAppMessage, normalizePhoneE164 } = require('./whatsapp-helper');
+const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
 
 const PENDING_PAYMENT_TITLE = 'Pending payment';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -47,6 +49,134 @@ function normalizePhone(raw) {
   return digits.length >= 10 ? digits.slice(-10) : '';
 }
 
+function dueLabel(ymd) {
+  const raw = String(ymd || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return 'today';
+  const [y, m, d] = raw.split('-').map((n) => parseInt(n, 10));
+  try {
+    return new Date(y, m - 1, d).toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return raw;
+  }
+}
+
+function pickUpiForQrMode(accounts, mode) {
+  const list = Array.isArray(accounts) ? accounts : [];
+  if (mode === 'static') {
+    return (
+      list.find((a) => a.qr_code_url && a.dynamic_upi_enabled === false) ||
+      list.find((a) => a.qr_code_url) ||
+      list[0] ||
+      null
+    );
+  }
+  return (
+    list.find((a) => a.dynamic_upi_enabled && a.upi_id) ||
+    list.find((a) => a.upi_id) ||
+    list[0] ||
+    null
+  );
+}
+
+async function loadPendingAutoSend(db) {
+  const { data, error } = await db
+    .from('whatsapp_crm_settings')
+    .select(
+      'enabled, allow_pending_payment, auto_send_pending_payment_whatsapp, pending_payment_qr_mode'
+    )
+    .eq('id', 1)
+    .maybeSingle();
+  if (error || !data) return { enabled: false, qrMode: 'dynamic' };
+  const enabled =
+    data.enabled !== false &&
+    data.allow_pending_payment !== false &&
+    data.auto_send_pending_payment_whatsapp === true;
+  return {
+    enabled,
+    qrMode: data.pending_payment_qr_mode === 'static' ? 'static' : 'dynamic',
+  };
+}
+
+/** One customer reminder per phone per day when the settings toggle is on. */
+async function sendCustomerPendingReminder(db, opts) {
+  const phone = normalizePhoneE164(opts.phone);
+  if (!phone) return { sent: false, reason: 'no_phone' };
+  const since = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
+  const { data: recent } = await db
+    .from('whatsapp_messages')
+    .select('id')
+    .eq('phone_e164', phone)
+    .eq('direction', 'outbound')
+    .ilike('template_name', 'svc_balance_due%')
+    .gte('created_at', since)
+    .limit(1)
+    .maybeSingle();
+  if (recent?.id) return { sent: false, reason: 'deduped' };
+
+  const brand = String(opts.serviceBrand || '').toLowerCase() === 'elevenro' ? 'elevenro' : 'hydrogenro';
+  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
+  const account = pickUpiForQrMode(opts.upiAccounts, opts.qrMode);
+  const name = String(opts.customerName || 'Customer').trim().split(/\s+/)[0] || 'Customer';
+  const amountDigits = String(Math.round(Number(opts.amount || 0) * 100) / 100).replace(/\.0+$/, '') || '0';
+  const bodyParams = [name, amountDigits, dueLabel(opts.dueDate), 'your service visit'];
+
+  let templateName = `svc_balance_due_letter_${suffix}_v9`;
+  let headerComponents = [];
+  let buttonUrlParams = [];
+  const staticUrl = String(account?.qr_code_url || '').trim();
+  if (opts.qrMode === 'static' && /^https:\/\//i.test(staticUrl)) {
+    templateName = `svc_balance_due_letter_${suffix}_img_v5`;
+    headerComponents = [
+      { type: 'header', parameters: [{ type: 'image', image: { link: staticUrl } }] },
+    ];
+  } else if (account?.upi_id) {
+    const link = await createShortPayHttpsLink(db, {
+      upiId: account.upi_id,
+      payeeName: account.payee_name || account.label || '',
+      amount: opts.amount,
+      note: 'Pending payment',
+      phone: account.phone || '',
+      brand,
+    });
+    const code = String(link || '').split('/').filter(Boolean).pop() || '';
+    if (code) buttonUrlParams = [{ index: 1, text: code }];
+  }
+
+  const { accessToken, phoneNumberId } = await getWhatsAppCredentials(db);
+  if (!accessToken || !phoneNumberId) return { sent: false, reason: 'no_credentials' };
+
+  const sendResult = await sendTemplateWithColdFallbacks({
+    phoneNumberId,
+    accessToken,
+    to: phone,
+    templateName,
+    languageCode: 'en',
+    bodyParams,
+    headerComponents,
+    buttonUrlParams,
+    enableFallback: true,
+  });
+  const usedName = sendResult.templateName || templateName;
+  const result = sendResult.result || {};
+  const waId = result?.data?.messages?.[0]?.id || null;
+  await insertWhatsAppMessage(db, {
+    wa_message_id: waId,
+    direction: 'outbound',
+    phone_e164: phone,
+    customer_id: opts.customerId || null,
+    msg_type: 'template',
+    body: opts.whatsappText || `Pending payment reminder (${usedName})`,
+    template_name: usedName,
+    status: result.ok ? 'sent' : 'failed',
+    error_message: result.ok ? null : JSON.stringify(result.data || {}).slice(0, 500),
+  });
+  return { sent: Boolean(result.ok), reason: result.ok ? 'sent' : 'failed' };
+}
+
 exports.handler = async (event) => {
   const cron = assertScheduledInvoke(event);
   if (!cron.ok) {
@@ -66,7 +196,7 @@ exports.handler = async (event) => {
 
   const today = istTodayYmd();
 
-  const [{ data: reminders, error: remErr }, tokens, upiAccountsRes] = await Promise.all([
+  const [{ data: reminders, error: remErr }, tokens, upiAccountsRes, pendingAuto] = await Promise.all([
     db
       .from('reminders')
       .select('id,title,notes,entity_type,entity_id,reminder_at')
@@ -76,9 +206,10 @@ exports.handler = async (event) => {
     getAdminFcmTokens(db, 'reminders'),
     db
       .from('upi_payment_accounts')
-      .select('id,label,upi_id,payee_name,phone,created_at')
+      .select('id,label,upi_id,payee_name,phone,qr_code_url,dynamic_upi_enabled,created_at')
       .order('created_at', { ascending: true })
       .limit(20),
+    loadPendingAutoSend(db),
   ]);
 
   if (remErr) {
@@ -86,7 +217,7 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: 'Query failed' };
   }
 
-  if (tokens.length === 0) {
+  if (tokens.length === 0 && !pendingAuto.enabled) {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no_tokens', today }) };
   }
 
@@ -95,14 +226,22 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'none_due', today }) };
   }
 
+  let upiAccounts = upiAccountsRes.data || [];
   if (upiAccountsRes.error) {
     console.warn(
       '[admin-reminders-push] upi_payment_accounts lookup failed',
       upiAccountsRes.error.message
     );
+    const fallbackUpi = await db
+      .from('upi_payment_accounts')
+      .select('id,label,upi_id,payee_name,phone,created_at')
+      .order('created_at', { ascending: true })
+      .limit(20);
+    upiAccounts = fallbackUpi.data || [];
   }
-  const upiAccounts = upiAccountsRes.data || [];
-  const preferredUpi = upiAccounts[0] || null;
+  const preferredUpi = pendingAuto.enabled
+    ? pickUpiForQrMode(upiAccounts, pendingAuto.qrMode) || upiAccounts[0] || null
+    : upiAccounts[0] || null;
 
   const customerIds = [
     ...new Set(
@@ -149,15 +288,20 @@ exports.handler = async (event) => {
     }
   }
 
-  let messaging;
-  try {
-    messaging = await getMessaging(db);
-  } catch (err) {
-    console.error('[admin-reminders-push] FCM init failed', err?.message || err);
-    return { statusCode: 500, body: 'FCM init failed' };
+  let messaging = null;
+  if (tokens.length > 0) {
+    try {
+      messaging = await getMessaging(db);
+    } catch (err) {
+      console.error('[admin-reminders-push] FCM init failed', err?.message || err);
+      if (!pendingAuto.enabled) {
+        return { statusCode: 500, body: 'FCM init failed' };
+      }
+    }
   }
 
   let sent = 0;
+  let customerWhatsAppSent = 0;
   const staleTokens = new Set();
 
   for (const r of rows) {
@@ -213,15 +357,36 @@ exports.handler = async (event) => {
         tag,
       };
 
-      const res = await sendAdminMulticast(db, messaging, {
-        tokens,
-        data,
-        android: { priority: 'high' },
-      });
-      sent += res.successCount;
-      res.responses.forEach((resp, i) => {
-        if (!resp.success && isStaleTokenError(resp.error)) staleTokens.add(tokens[i]);
-      });
+      if (messaging && tokens.length > 0) {
+        const res = await sendAdminMulticast(db, messaging, {
+          tokens,
+          data,
+          android: { priority: 'high' },
+        });
+        sent += res.successCount;
+        res.responses.forEach((resp, i) => {
+          if (!resp.success && isStaleTokenError(resp.error)) staleTokens.add(tokens[i]);
+        });
+      }
+
+      if (pendingAuto.enabled && phone) {
+        try {
+          const wa = await sendCustomerPendingReminder(db, {
+            phone,
+            customerName,
+            customerId: r.entity_id,
+            amount,
+            dueDate,
+            serviceBrand,
+            qrMode: pendingAuto.qrMode,
+            upiAccounts,
+            whatsappText,
+          });
+          if (wa.sent) customerWhatsAppSent += 1;
+        } catch (err) {
+          console.warn('[admin-reminders-push] customer WhatsApp failed', err?.message || err);
+        }
+      }
       continue;
     }
 
@@ -239,15 +404,17 @@ exports.handler = async (event) => {
       tag,
     };
 
-    const res = await sendAdminMulticast(db, messaging, {
-      tokens,
-      data,
-      android: { priority: 'high' },
-    });
-    sent += res.successCount;
-    res.responses.forEach((resp, i) => {
-      if (!resp.success && isStaleTokenError(resp.error)) staleTokens.add(tokens[i]);
-    });
+    if (messaging && tokens.length > 0) {
+      const res = await sendAdminMulticast(db, messaging, {
+        tokens,
+        data,
+        android: { priority: 'high' },
+      });
+      sent += res.successCount;
+      res.responses.forEach((resp, i) => {
+        if (!resp.success && isStaleTokenError(resp.error)) staleTokens.add(tokens[i]);
+      });
+    }
   }
 
   if (staleTokens.size > 0) {
@@ -255,10 +422,15 @@ exports.handler = async (event) => {
   }
 
   console.log(
-    `[admin-reminders-push] ${today}: ${rows.length} reminder(s), ${sent} push(es) delivered`
+    `[admin-reminders-push] ${today}: ${rows.length} reminder(s), ${sent} push(es), ${customerWhatsAppSent} customer WhatsApp`
   );
   return {
     statusCode: 200,
-    body: JSON.stringify({ today, reminders: rows.length, sent }),
+    body: JSON.stringify({
+      today,
+      reminders: rows.length,
+      sent,
+      customerWhatsAppSent,
+    }),
   };
 };

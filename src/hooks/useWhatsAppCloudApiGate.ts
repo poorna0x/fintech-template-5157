@@ -22,6 +22,7 @@ export function useWhatsAppCloudApiGate(source?: WhatsAppSendSource | string | n
     cached ? canShowWhatsAppCloudSendUi(cached, source) : true
   );
   const [ready, setReady] = useState(() => Boolean(cached));
+  const [settings, setSettings] = useState(() => cached);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +31,7 @@ export function useWhatsAppCloudApiGate(source?: WhatsAppSendSource | string | n
         if (cancelled) return;
         setMasterEnabled(isWhatsAppCloudApiMasterEnabled(settings));
         setCloudApiOn(canShowWhatsAppCloudSendUi(settings, source));
+        setSettings(settings);
         setReady(true);
       });
     };
@@ -42,5 +44,5 @@ export function useWhatsAppCloudApiGate(source?: WhatsAppSendSource | string | n
     };
   }, [source]);
 
-  return { ready, cloudApiOn, masterEnabled };
+  return { ready, cloudApiOn, masterEnabled, settings };
 }

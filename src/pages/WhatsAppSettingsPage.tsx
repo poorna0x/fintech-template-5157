@@ -350,6 +350,43 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
             onCheckedChange={(v) => patch('allow_pending_payment', v)}
           />
           <ToggleRow
+            label="Auto-send pending payment reminder"
+            description="Each morning at 9:00 AM, send the due pending-payment WhatsApp to the customer. One send per customer per day."
+            checked={settings.auto_send_pending_payment_whatsapp}
+            disabled={!settings.enabled || !settings.allow_pending_payment}
+            onCheckedChange={(v) => patch('auto_send_pending_payment_whatsapp', v)}
+          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-sm font-medium">Pending payment QR</Label>
+              <p className="text-xs text-muted-foreground">
+                Dynamic puts the amount in a new QR. Static sends the uploaded QR photo.
+              </p>
+            </div>
+            <Select
+              value={settings.pending_payment_qr_mode}
+              disabled={!settings.enabled || !settings.allow_pending_payment}
+              onValueChange={(v) =>
+                patch('pending_payment_qr_mode', v === 'static' ? 'static' : 'dynamic')
+              }
+            >
+              <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dynamic">Dynamic QR (with amount)</SelectItem>
+                <SelectItem value="static">Static QR photo</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <ToggleRow
+            label="Send payment received when collected"
+            description="When a pending payment is marked collected, send the thank-you WhatsApp automatically."
+            checked={settings.auto_send_payment_received_whatsapp}
+            disabled={!settings.enabled || !settings.allow_pending_payment}
+            onCheckedChange={(v) => patch('auto_send_payment_received_whatsapp', v)}
+          />
+          <ToggleRow
             label="Documents (PDF)"
             description="AMC, quotation, invoice, bill, warranty WhatsApp share"
             checked={settings.allow_documents}

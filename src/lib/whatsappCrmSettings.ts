@@ -38,6 +38,12 @@ export type WhatsAppCrmSettings = {
   allow_calling: boolean;
   allow_service_reminder: boolean;
   allow_pending_payment: boolean;
+  /** Morning auto WhatsApp to the customer when a pending payment is due today. */
+  auto_send_pending_payment_whatsapp: boolean;
+  /** Which UPI QR the pending-payment reminder attaches. */
+  pending_payment_qr_mode: 'static' | 'dynamic';
+  /** After mark collected, send the payment-received WhatsApp without a second click. */
+  auto_send_payment_received_whatsapp: boolean;
   allow_documents: boolean;
   allow_composer: boolean;
   /** WhatsApp to technician phone on assign (dialog or auto). */
@@ -145,6 +151,9 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
   allow_calling: true,
   allow_service_reminder: true,
   allow_pending_payment: true,
+  auto_send_pending_payment_whatsapp: false,
+  pending_payment_qr_mode: 'dynamic',
+  auto_send_payment_received_whatsapp: false,
   allow_documents: true,
   allow_composer: true,
   allow_job_assign_whatsapp: true,
@@ -172,7 +181,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
 };
 
 const SETTINGS_COLUMNS =
-  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_assign_cold_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, allow_salary_slip_whatsapp, auto_send_salary_slip_whatsapp, auto_send_missed_call_whatsapp, allow_online_booking_whatsapp, auto_send_online_booking_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
+  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, auto_send_pending_payment_whatsapp, pending_payment_qr_mode, auto_send_payment_received_whatsapp, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_assign_cold_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, allow_salary_slip_whatsapp, auto_send_salary_slip_whatsapp, auto_send_missed_call_whatsapp, allow_online_booking_whatsapp, auto_send_online_booking_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
 
 function num(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v);
@@ -201,6 +210,9 @@ export function normalizeWhatsAppCrmSettings(
     allow_calling: bool(row.allow_calling, true),
     allow_service_reminder: bool(row.allow_service_reminder, true),
     allow_pending_payment: bool(row.allow_pending_payment, true),
+    auto_send_pending_payment_whatsapp: row.auto_send_pending_payment_whatsapp === true,
+    pending_payment_qr_mode: row.pending_payment_qr_mode === 'static' ? 'static' : 'dynamic',
+    auto_send_payment_received_whatsapp: row.auto_send_payment_received_whatsapp === true,
     allow_documents: bool(row.allow_documents, true),
     allow_composer: bool(row.allow_composer, true),
     allow_job_assign_whatsapp: bool(row.allow_job_assign_whatsapp, true),
@@ -525,6 +537,9 @@ export async function saveWhatsAppCrmSettings(
     allow_calling: bool(patch.allow_calling, true),
     allow_service_reminder: bool(patch.allow_service_reminder, true),
     allow_pending_payment: bool(patch.allow_pending_payment, true),
+    auto_send_pending_payment_whatsapp: patch.auto_send_pending_payment_whatsapp === true,
+    pending_payment_qr_mode: patch.pending_payment_qr_mode === 'static' ? 'static' : 'dynamic',
+    auto_send_payment_received_whatsapp: patch.auto_send_payment_received_whatsapp === true,
     allow_documents: bool(patch.allow_documents, true),
     allow_composer: bool(patch.allow_composer, true),
     allow_job_assign_whatsapp: bool(patch.allow_job_assign_whatsapp, true),
@@ -568,6 +583,44 @@ export async function saveWhatsAppCrmSettings(
     .single();
 
   if (error) {
+    if (/auto_send_pending_payment|pending_payment_qr_mode|auto_send_payment_received/i.test(error.message)) {
+      const {
+        auto_send_pending_payment_whatsapp: _autoPending,
+        pending_payment_qr_mode: _qrMode,
+        auto_send_payment_received_whatsapp: _autoReceived,
+        ...legacyPayload
+      } = payload;
+      const retry = await supabase
+        .from('whatsapp_crm_settings')
+        .update(legacyPayload)
+        .eq('id', 1)
+        .select(
+          SETTINGS_COLUMNS.replace(
+            ', auto_send_pending_payment_whatsapp, pending_payment_qr_mode, auto_send_payment_received_whatsapp',
+            ''
+          )
+        )
+        .single();
+      if (retry.error) return { ok: false, error: retry.error.message };
+      const settings = normalizeWhatsAppCrmSettings(retry.data as WhatsAppCrmSettings);
+      const { syncJobWhatsAppNotifyCacheFromCrmSettings } = await import(
+        '@/lib/jobAssignWhatsAppSettingsCache'
+      );
+      syncJobWhatsAppNotifyCacheFromCrmSettings(settings);
+      const cached = { ok: true as const, settings, at: Date.now() };
+      settingsCacheMem = cached;
+      const wantedNew =
+        payload.auto_send_pending_payment_whatsapp ||
+        payload.auto_send_payment_received_whatsapp ||
+        payload.pending_payment_qr_mode === 'static';
+      if (!wantedNew) return { ok: true, settings };
+      return {
+        ok: false,
+        settings,
+        error:
+          'Pending-payment WhatsApp columns are missing — run scripts/add-whatsapp-pending-payment-autosend.sql in Supabase',
+      };
+    }
     if (/auto_send_job_assign_cold/i.test(error.message)) {
       const { auto_send_job_assign_cold_whatsapp: _cold, ...legacyPayload } = payload;
       const retry = await supabase
