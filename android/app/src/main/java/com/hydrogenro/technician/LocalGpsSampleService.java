@@ -142,7 +142,8 @@ public class LocalGpsSampleService extends Service {
                 .setContentText("Updating…")
                 .setPriority(NotificationCompat.PRIORITY_MIN)
                 .setSilent(true)
-                .setOngoing(true)
+                .setOngoing(false)
+                .setAutoCancel(true)
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
                 .build();
         } catch (Throwable t) {
@@ -177,15 +178,27 @@ public class LocalGpsSampleService extends Service {
         finished = true;
         handler.removeCallbacksAndMessages(null);
         try {
-            stopForeground(true);
+            stopForeground(STOP_FOREGROUND_REMOVE);
         } catch (Throwable ignored) {
             /* never was foreground */
+        }
+        try {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null) nm.cancel(NOTIFICATION_ID);
+        } catch (Throwable ignored) {
+            /* already gone */
         }
         try {
             stopSelf();
         } catch (Throwable ignored) {
             /* already destroyed */
         }
+    }
+
+    @Override
+    public void onDestroy() {
+        stopEverything();
+        super.onDestroy();
     }
 
     @Override

@@ -9,6 +9,10 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.util.Log;
 import androidx.core.content.ContextCompat;
+import com.google.android.gms.location.Granularity;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.Priority;
 import java.util.Calendar;
 import java.util.TimeZone;
 
@@ -21,9 +25,11 @@ final class LocalGpsSampler {
 
     private static final String TAG = "HroLocalGps";
     static final String ACTION_SAMPLE = "com.hydrogenro.technician.LOCAL_GPS_SAMPLE";
+    static final String ACTION_FIX = "com.hydrogenro.technician.LOCAL_GPS_FIX";
     private static final long INTERVAL_MS = 5 * 60 * 1000L;
     private static final TimeZone ZONE = TimeZone.getTimeZone("Asia/Kolkata");
     private static final int REQUEST_CODE = 7402;
+    private static final int FIX_REQUEST_CODE = 7404;
 
     private LocalGpsSampler() {}
 
@@ -70,11 +76,57 @@ final class LocalGpsSampler {
         boolean coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
             == PackageManager.PERMISSION_GRANTED;
         if (!fine && !coarse) return;
+        Context app = context.getApplicationContext();
         try {
-            LocalGpsSampleService.start(context.getApplicationContext());
+            requestSilentSample(app, fine);
         } catch (Throwable t) {
-            Log.w(TAG, "Local GPS sample service refused", t);
+            Log.w(TAG, "Silent GPS sample refused", t);
+            try {
+                LocalGpsSampleService.start(app);
+            } catch (Throwable t2) {
+                Log.w(TAG, "Local GPS sample service refused", t2);
+            }
         }
+    }
+
+    /**
+     * One GPS point delivered by Play Services to {@link #ACTION_FIX}. No
+     * foreground service, so the phone does not show a status. Needs location
+     * allowed all the time; otherwise the short service fallback is used.
+     */
+    private static void requestSilentSample(Context context, boolean fine) {
+        int priority = fine
+            ? Priority.PRIORITY_HIGH_ACCURACY
+            : Priority.PRIORITY_BALANCED_POWER_ACCURACY;
+        LocationRequest request = new LocationRequest.Builder(priority, INTERVAL_MS)
+            .setMinUpdateIntervalMillis(0L)
+            .setMaxUpdates(1)
+            .setDurationMillis(25_000L)
+            .setMaxUpdateAgeMillis(0L)
+            .setGranularity(fine ? Granularity.GRANULARITY_FINE : Granularity.GRANULARITY_COARSE)
+            .setWaitForAccurateLocation(false)
+            .build();
+        PendingIntent delivery = fixPending(context);
+        LocationServices.getFusedLocationProviderClient(context)
+            .requestLocationUpdates(request, delivery)
+            .addOnFailureListener(error -> {
+                Log.w(TAG, "Silent GPS sample refused", error);
+                try {
+                    LocalGpsSampleService.start(context);
+                } catch (Throwable t) {
+                    Log.w(TAG, "Local GPS sample service refused", t);
+                }
+            });
+    }
+
+    static PendingIntent fixPending(Context context) {
+        Intent intent = new Intent(context, LocalGpsSampleReceiver.class);
+        intent.setAction(ACTION_FIX);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            flags |= PendingIntent.FLAG_MUTABLE;
+        }
+        return PendingIntent.getBroadcast(context, FIX_REQUEST_CODE, intent, flags);
     }
 
     private static long nextTriggerMillis(long nowMillis) {
