@@ -597,10 +597,13 @@ export function SettingsPendingPaymentsDialogV2({
         })();
       const payButtonParams = buildPendingPaymentLetterButtonUrlParams(payHttpsLink);
 
+      const isPaymentReceived = opts?.coldTemplateKind === 'payment_received';
+      // Only a real /p/ pay link. The thanks message includes the website and Text us URLs.
       const hasPayLink =
-        opts?.includePayLink === true ||
-        Boolean(payHttpsLink) ||
-        /https?:\/\/[^\s]+/i.test(trimmed);
+        !isPaymentReceived &&
+        (opts?.includePayLink === true ||
+          Boolean(payHttpsLink) ||
+          /https?:\/\/[^\s]+\/p\/[a-zA-Z0-9]+/i.test(trimmed));
 
       const brand = resolvePendingPaymentMessageBrand(opts?.brand);
       // Only when Pending Payments checkbox chose overdue notice (not merely past due date).
@@ -919,7 +922,6 @@ export function SettingsPendingPaymentsDialogV2({
         coldTemplate: coldTemplate || undefined,
       });
 
-      const isPaymentReceived = opts?.coldTemplateKind === 'payment_received';
       if (result.ok) {
         if (result.usedTemplate) {
           toast.success(
