@@ -27,7 +27,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { format } from 'date-fns';
-import { Check, ChevronsUpDown, Edit3, FileText, ImagePlus, Loader2, PhoneCall, Plus, RefreshCw, Search, UserRound, X } from 'lucide-react';
+import { Ban, Check, ChevronsUpDown, Edit3, FileText, ImagePlus, Loader2, PhoneCall, Plus, RefreshCw, Search, UserRound, X } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Customer, Reminder, Technician } from '@/types';
 import { db, supabase, REMINDER_ROW_COLUMNS } from '@/lib/supabase';
@@ -67,6 +67,11 @@ import {
   resolvePendingPaymentMessageBrand,
 } from '@/lib/pendingPaymentReminder';
 import { markPendingPaymentSettledInRequirements } from '@/lib/jobPendingPayment';
+import {
+  applyDeniedPendingPayment,
+  loadDeniedPendingPaymentPlan,
+  type DeniedPaymentPlan,
+} from '@/lib/denyPendingPayment';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
 import {
@@ -514,6 +519,11 @@ export function SettingsPendingPaymentsDialogV2({
   const [completeConfirmBusy, setCompleteConfirmBusy] = useState(false);
   const [completeTarget, setCompleteTarget] = useState<PendingPaymentReminder | null>(null);
   const [offerWhatsAppAfterComplete, setOfferWhatsAppAfterComplete] = useState(true);
+  const [denyOpen, setDenyOpen] = useState(false);
+  const [denyBusy, setDenyBusy] = useState(false);
+  const [denyLoading, setDenyLoading] = useState(false);
+  const [denyTarget, setDenyTarget] = useState<PendingPaymentReminder | null>(null);
+  const [denyPlan, setDenyPlan] = useState<DeniedPaymentPlan | null>(null);
 
   const [postCompleteWhatsappOpen, setPostCompleteWhatsappOpen] = useState(false);
   const [postCompleteWhatsappTarget, setPostCompleteWhatsappTarget] = useState<PendingPaymentReminder | null>(null);
@@ -1433,6 +1443,56 @@ export function SettingsPendingPaymentsDialogV2({
     setFormOpen(true);
   };
 
+  const handleDenyPayment = (r: Reminder) => {
+    const marked = r as PendingPaymentReminder;
+    setDenyTarget(marked);
+    setDenyPlan(null);
+    setDenyOpen(true);
+    setDenyLoading(true);
+    const jobId = marked.job_id || parsePendingPaymentReminderNotes(marked.notes).job_id;
+    void loadDeniedPendingPaymentPlan({
+      jobId,
+      amountPending: Number(marked.amount_pending) || 0,
+    })
+      .then((plan) => setDenyPlan(plan))
+      .catch((err: any) => {
+        toast.error(err?.message || 'Could not prepare the denial');
+        setDenyOpen(false);
+      })
+      .finally(() => setDenyLoading(false));
+  };
+
+  const confirmDenyPayment = async () => {
+    if (!denyTarget || !denyPlan) return;
+    const jobId = denyTarget.job_id || parsePendingPaymentReminderNotes(denyTarget.notes).job_id;
+    setDenyBusy(true);
+    try {
+      const plan = await applyDeniedPendingPayment({
+        reminderId: denyTarget.id,
+        reminderNotes: denyTarget.notes,
+        jobId,
+        amountPending: Number(denyTarget.amount_pending) || 0,
+      });
+      if (!plan.linkedJob) {
+        toast.success('Pending payment closed. No job bill was linked.');
+      } else if (plan.deductNextMonth > 0) {
+        toast.success(
+          `Bill is now ₹${plan.kept.toLocaleString('en-IN')}. ₹${plan.deductNextMonth.toLocaleString('en-IN')} commission comes off ${plan.nextMonthLabel} salary.`
+        );
+      } else {
+        toast.success(`Bill is now ₹${plan.kept.toLocaleString('en-IN')}.`);
+      }
+      setDenyOpen(false);
+      setDenyTarget(null);
+      setDenyPlan(null);
+      await load();
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not mark payment as denied');
+    } finally {
+      setDenyBusy(false);
+    }
+  };
+
   const handleMarkCompleted = (r: Reminder) => {
     setOfferWhatsAppAfterComplete(true);
     setCompleteTarget(r as PendingPaymentReminder);
@@ -1764,7 +1824,7 @@ export function SettingsPendingPaymentsDialogV2({
                         )}
                       </div>
 
-                      <div className="grid grid-cols-5 gap-2 sm:flex sm:shrink-0 sm:items-center sm:gap-2 border-t pt-2.5 sm:border-0 sm:pt-0">
+                      <div className="grid grid-cols-6 gap-2 sm:flex sm:shrink-0 sm:items-center sm:gap-2 border-t pt-2.5 sm:border-0 sm:pt-0">
                         <Button
                           variant="outline"
                           size="icon"
@@ -1790,6 +1850,15 @@ export function SettingsPendingPaymentsDialogV2({
                           title="Completed"
                         >
                           <Check className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="outline"
+                          onClick={() => handleDenyPayment(p)}
+                          className="h-10 w-full sm:h-9 sm:w-9 text-red-700 border-red-200 hover:bg-red-50"
+                          title="Customer denied payment"
+                        >
+                          <Ban className="w-4 h-4" />
                         </Button>
                         <Button
                           size="icon"
@@ -1992,6 +2061,64 @@ export function SettingsPendingPaymentsDialogV2({
             }}
           />
         )}
+
+        <AlertDialog
+          open={denyOpen}
+          onOpenChange={(o) => {
+            if (denyBusy) return;
+            setDenyOpen(o);
+            if (!o) {
+              setDenyTarget(null);
+              setDenyPlan(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Customer denied payment?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The unpaid balance is removed. The bill keeps only what was already received. Technician commission on the denied amount is deducted from next month’s salary, not this month.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-1.5 px-1 text-sm text-muted-foreground">
+              {denyLoading || !denyPlan ? (
+                <div className="flex items-center gap-2 py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Checking the job bill…
+                </div>
+              ) : denyPlan.alreadyDenied ? (
+                <p>This job bill was already corrected. Confirming only closes this reminder.</p>
+              ) : !denyPlan.linkedJob ? (
+                <p>This reminder is not linked to a job. It will be closed. The bill and salary stay as they are.</p>
+              ) : (
+                <>
+                  <p>Bill was ₹{denyPlan.oldBill.toLocaleString('en-IN')}. It becomes ₹{denyPlan.kept.toLocaleString('en-IN')}.</p>
+                  <p>Denied: ₹{denyPlan.denied.toLocaleString('en-IN')}.</p>
+                  {denyPlan.deductNextMonth > 0 ? (
+                    <p>
+                      Commission on this job goes from ₹{denyPlan.oldCommission.toLocaleString('en-IN')} to ₹{denyPlan.newCommission.toLocaleString('en-IN')}. ₹{denyPlan.deductNextMonth.toLocaleString('en-IN')} is deducted in {denyPlan.nextMonthLabel}.
+                    </p>
+                  ) : (
+                    <p>No technician commission to deduct.</p>
+                  )}
+                </>
+              )}
+            </div>
+            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+              <AlertDialogCancel disabled={denyBusy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
+                disabled={denyBusy || denyLoading || !denyPlan}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void confirmDenyPayment();
+                }}
+              >
+                {denyBusy ? 'Updating...' : 'Deny payment'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <AlertDialog
           open={completeConfirmOpen}

@@ -13,6 +13,9 @@ export type JobPendingPaymentPayload = {
   paid_today_mode: PaidTodayMode | null;
   reminder_id?: string | null;
   settled_at?: string | null;
+  denied_at?: string | null;
+  denied_amount?: number | null;
+  kept_amount?: number | null;
 };
 
 export type PendingPaymentReminderNotes = {
@@ -60,6 +63,9 @@ export function parseJobPendingPayment(requirements: unknown): JobPendingPayment
     paid_today_mode,
     reminder_id: typeof p.reminder_id === 'string' ? p.reminder_id : null,
     settled_at: typeof p.settled_at === 'string' ? p.settled_at : null,
+    denied_at: typeof p.denied_at === 'string' ? p.denied_at : null,
+    denied_amount: p.denied_amount == null ? null : Number(p.denied_amount) || 0,
+    kept_amount: p.kept_amount == null ? null : Number(p.kept_amount) || 0,
   };
 }
 
@@ -79,6 +85,9 @@ export function buildJobPendingPaymentRequirement(
       paid_today_mode: payload.paid_today_mode,
       reminder_id: payload.reminder_id ?? null,
       settled_at: payload.settled_at ?? null,
+      denied_at: payload.denied_at ?? null,
+      denied_amount: payload.denied_amount ?? null,
+      kept_amount: payload.kept_amount ?? null,
     },
   };
 }
