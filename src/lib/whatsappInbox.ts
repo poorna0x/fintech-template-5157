@@ -25,6 +25,14 @@ export function whatsAppReactionTargetWaId(
   return id || null;
 }
 
+/** Emoji only. Empty when the row is the word "reaction" with no emoji stored. */
+export function whatsAppReactionEmoji(body: string | null | undefined): string {
+  let emoji = String(body || '').trim();
+  emoji = emoji.replace(/^(reacted\s+)+/i, '').trim();
+  if (!emoji || /^reactions?$/i.test(emoji)) return '';
+  return emoji;
+}
+
 export type WhatsAppMessageRow = {
   id: string;
   wa_message_id?: string | null;
@@ -746,7 +754,7 @@ export function invalidateInboundWindowCache(phoneE164?: string | null): void {
 /* —— Inbox list + open-chat message cache (session + localStorage + memory) —— */
 
 const INBOX_LIST_CACHE_KEY = 'wa_inbox_threads_cache_v2';
-const THREAD_MSGS_CACHE_KEY = 'wa_thread_msgs_cache_v1';
+const THREAD_MSGS_CACHE_KEY = 'wa_thread_msgs_cache_v2';
 /** Soft refresh / pull can still update; open-from-cache never expires by time. */
 export const WHATSAPP_INBOX_LIST_CACHE_TTL_MS = 45_000;
 /** @deprecated Kept for callers; local chat cache no longer expires by age. */
@@ -1974,8 +1982,7 @@ export function previewMessageBody(
   const isLocation = looksLikeWhatsAppLocationPreview(bodyRaw, row.msg_type);
 
   if (String(row.msg_type || '').toLowerCase() === 'reaction') {
-    const emoji = bodyRaw.trim();
-    return emoji ? `Reacted ${emoji}` : 'Reaction';
+    return whatsAppReactionEmoji(bodyRaw) || 'Reaction';
   }
 
   if (isLocation) {

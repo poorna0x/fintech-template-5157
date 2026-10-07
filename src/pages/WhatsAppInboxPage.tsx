@@ -99,6 +99,7 @@ import {
   isWhatsAppThreadUnread,
   isWithinCustomerServiceWindow,
   isWhatsAppMessageDeletedLocally,
+  whatsAppReactionEmoji,
   whatsAppReactionTargetWaId,
   invalidateWhatsAppInboxThreadsCache,
   invalidateWhatsAppThreadMessagesCache,
@@ -437,7 +438,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     const map = new Map<string, string[]>();
     for (const row of threadMessages) {
       const target = whatsAppReactionTargetWaId(row);
-      const emoji = String(row.body || '').trim();
+      const emoji = whatsAppReactionEmoji(row.body);
       if (!target || !emoji) continue;
       const list = map.get(target) || [];
       if (!list.includes(emoji)) list.push(emoji);
@@ -3029,7 +3030,21 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       </div>
                     ) : null}
                   {threadMessages.map((m, i) => {
-                    if (String(m.msg_type || '').toLowerCase() === 'reaction') return null;
+                    if (String(m.msg_type || '').toLowerCase() === 'reaction') {
+                      const target = whatsAppReactionTargetWaId(m);
+                      const emoji = whatsAppReactionEmoji(m.body);
+                      const attached =
+                        Boolean(target && emoji) &&
+                        threadMessages.some((row) => row.wa_message_id && row.wa_message_id === target);
+                      if (attached) return null;
+                      return (
+                        <div key={`m-${m.id}`} className="my-1 flex justify-start px-1">
+                          <span className="rounded-full bg-[#202c33] px-2 py-0.5 text-[13px] leading-none text-[#e9edef]">
+                            {emoji || 'Reaction'}
+                          </span>
+                        </div>
+                      );
+                    }
                     const outbound = m.direction === 'outbound';
                     const failed =
                       outbound &&
