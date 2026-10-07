@@ -84,6 +84,21 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- 7:00–21:00 IST: one GPS point about every 5 minutes, stored on the
+             phone. Live location sends that point first, then a fresh fix. -->
+        <service
+            android:name=".LocalGpsSampleService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+        <receiver
+            android:name=".LocalGpsSampleReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Branded push notifications: white logo silhouette + accent color -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"

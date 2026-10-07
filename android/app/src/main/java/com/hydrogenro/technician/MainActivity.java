@@ -1,6 +1,7 @@
 package com.hydrogenro.technician;
 
 import android.content.Context;
+import android.util.Log;
 import android.content.Intent;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -91,6 +92,11 @@ public class MainActivity extends BridgeActivity {
 
         super.onCreate(savedInstanceState);
         NotificationChannels.ensureJobAlerts(this);
+        try {
+            LocalGpsSampler.ensureScheduled(this);
+        } catch (Throwable t) {
+            Log.w(TAG, "local gps schedule failed", t);
+        }
         deliverCallerSearchIfNeeded(getIntent());
 
         // Bridge WebView exists after super.onCreate — configure as early as possible.

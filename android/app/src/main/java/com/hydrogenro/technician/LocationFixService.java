@@ -145,6 +145,7 @@ public class LocationFixService extends Service {
                 try {
                     Location location = task.isSuccessful() ? task.getResult() : null;
                     if (location != null) {
+                        LocalGpsStore.save(this, location);
                         LocationUploader.upload(uploadUrl, technicianId, nonce, location);
                         finish();
                         return;
@@ -163,6 +164,7 @@ public class LocationFixService extends Service {
                         try {
                             Location loc = t2.isSuccessful() ? t2.getResult() : null;
                             if (loc != null) {
+                                LocalGpsStore.save(this, loc);
                                 LocationUploader.upload(uploadUrl, technicianId, nonce, loc);
                             }
                         } catch (Throwable t) {

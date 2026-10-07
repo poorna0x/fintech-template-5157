@@ -197,11 +197,31 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             return;
         }
 
-        // Last known fix first: instant, so the admin sees something right away
-        // even if the fresh fix below takes a while or the process dies.
+        // Saved background sample first (about every 5 minutes, 7:00–21:00).
+        // It is already on the phone, so the office map updates before the
+        // fresh GPS lock, which can take about a minute when the app is closed.
+        long storedTime = 0L;
+        try {
+            Location stored = LocalGpsStore.load(context);
+            if (stored != null) {
+                storedTime = stored.getTime();
+                long age = System.currentTimeMillis() - storedTime;
+                if (age >= 0 && age <= 15 * 60 * 1000L) {
+                    upload(uploadUrl, technicianId, nonce, stored);
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Saved GPS upload failed", t);
+        }
+
+        final long savedAt = storedTime;
         try {
             fused.getLastLocation().addOnSuccessListener(location -> {
-                if (location != null) upload(uploadUrl, technicianId, nonce, location);
+                if (location == null) return;
+                long t = location.getTime();
+                if (savedAt > 0 && Math.abs(t - savedAt) < 1_000L) return;
+                if (savedAt > 0 && t + 1_000L < savedAt) return;
+                upload(uploadUrl, technicianId, nonce, location);
             });
         } catch (Throwable t) {
             Log.w(TAG, "getLastLocation failed", t);
@@ -249,6 +269,7 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             fused.getCurrentLocation(request, null).addOnCompleteListener(task -> {
                 Location location = task.isSuccessful() ? task.getResult() : null;
                 if (location != null) {
+                    LocalGpsStore.save(getApplicationContext(), location);
                     upload(uploadUrl, technicianId, nonce, location);
                     return;
                 }
@@ -261,7 +282,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                         .setDurationMillis(15_000)
                         .build();
                     fused.getCurrentLocation(fallback, null).addOnSuccessListener(loc -> {
-                        if (loc != null) upload(uploadUrl, technicianId, nonce, loc);
+                        if (loc != null) {
+                            LocalGpsStore.save(getApplicationContext(), loc);
+                            upload(uploadUrl, technicianId, nonce, loc);
+                        }
                     });
                 } catch (Throwable t) {
                     Log.w(TAG, "Fallback getCurrentLocation failed", t);
