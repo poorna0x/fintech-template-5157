@@ -13,14 +13,22 @@ export function parseLatLngFromWhatsAppLocationBody(
   return { lat, lng };
 }
 
+function looksLikeGpsPair(body: string | null | undefined): boolean {
+  const m = String(body || '').match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (!m) return false;
+  // "₹12,000" and "15,000" are money, not a pin. Real WhatsApp locations
+  // include several decimal places (12.90402, 77.60658).
+  return /\.\d{3,}/.test(m[1]) || /\.\d{3,}/.test(m[2]);
+}
+
 export function isWhatsAppLocationMessage(row: {
   msg_type?: string | null;
   body?: string | null;
 }): boolean {
   if (String(row.msg_type || '').toLowerCase() === 'location') return true;
-  if (parseLatLngFromWhatsAppLocationBody(row.body) != null) return true;
   const mapsUrl = extractMapsUrlFromText(row.body || '');
-  return Boolean(mapsUrl && isGoogleMapsUrl(mapsUrl));
+  if (mapsUrl && isGoogleMapsUrl(mapsUrl)) return true;
+  return looksLikeGpsPair(row.body);
 }
 
 export function isWhatsAppImageMessage(row: {

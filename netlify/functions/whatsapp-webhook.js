@@ -56,6 +56,19 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
     }
 
     const customerId = await findCustomerIdByPhone(db, phone);
+    const reactionTarget =
+      msgType === 'reaction' ? String(msg.reaction?.message_id || '').trim() : '';
+    const reactionEmoji =
+      msgType === 'reaction' ? String(msg.reaction?.emoji || '').trim() : '';
+    if (msgType === 'reaction' && reactionTarget) {
+      await db
+        .from('whatsapp_messages')
+        .delete()
+        .eq('phone_e164', phone)
+        .eq('msg_type', 'reaction')
+        .eq('template_name', `reaction:${reactionTarget}`);
+      if (!reactionEmoji) continue;
+    }
     const body = extractInboundBody(msg);
     let priorBotState = null;
     try {
@@ -78,7 +91,11 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       filename: media.filename || msg.document?.filename || null,
       status: 'received',
       created_at: tsToIso(msg.timestamp),
-      ...(skipBotFlowAlert ? { template_name: BOOKING_FLOW_ALERT_MARKER } : {}),
+      ...(msgType === 'reaction' && reactionTarget
+        ? { template_name: `reaction:${reactionTarget}` }
+        : skipBotFlowAlert
+          ? { template_name: BOOKING_FLOW_ALERT_MARKER }
+          : {}),
     });
 
     summaries.push({
@@ -160,6 +177,7 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
 
     // 24h-window booking bot (reply buttons). Failures must not break webhook ACK.
     if (
+      msgType !== 'reaction' &&
       !authenticityOtpHandled &&
       !documentAcceptHandled &&
       !skipBookingBot &&
@@ -180,7 +198,7 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       }
     }
 
-    const skipAdminPush = authenticityOtpHandled || skipBotFlowAlert;
+    const skipAdminPush = authenticityOtpHandled || skipBotFlowAlert || msgType === 'reaction';
     if (!skipAdminPush) {
       const { pushWhatsAppInboundToAdmins } = require('./admin-whatsapp-inbound-push');
       try {

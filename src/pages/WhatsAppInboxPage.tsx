@@ -99,6 +99,7 @@ import {
   isWhatsAppThreadUnread,
   isWithinCustomerServiceWindow,
   isWhatsAppMessageDeletedLocally,
+  whatsAppReactionTargetWaId,
   invalidateWhatsAppInboxThreadsCache,
   invalidateWhatsAppThreadMessagesCache,
   loadWhatsAppReadMap,
@@ -432,6 +433,18 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     initialPhone ? String(initialPhone).replace(/\D/g, '') : null
   );
   const [threadMessages, setThreadMessages] = useState<WhatsAppMessageRow[]>([]);
+  const reactionEmojisByWaId = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const row of threadMessages) {
+      const target = whatsAppReactionTargetWaId(row);
+      const emoji = String(row.body || '').trim();
+      if (!target || !emoji) continue;
+      const list = map.get(target) || [];
+      if (!list.includes(emoji)) list.push(emoji);
+      map.set(target, list);
+    }
+    return map;
+  }, [threadMessages]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [threadLoadingOlder, setThreadLoadingOlder] = useState(false);
   const [threadHasMoreOlder, setThreadHasMoreOlder] = useState(false);
@@ -3016,11 +3029,16 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       </div>
                     ) : null}
                   {threadMessages.map((m, i) => {
+                    if (String(m.msg_type || '').toLowerCase() === 'reaction') return null;
                     const outbound = m.direction === 'outbound';
                     const failed =
                       outbound &&
                       (isFailedDeliveryStatus(m.status) || Boolean(m.error_message?.trim()));
-                    const prev = threadMessages[i - 1];
+                    let prev = threadMessages[i - 1];
+                    while (prev && String(prev.msg_type || '').toLowerCase() === 'reaction') {
+                      const prevIndex = threadMessages.indexOf(prev);
+                      prev = prevIndex > 0 ? threadMessages[prevIndex - 1] : undefined;
+                    }
                     const showDay = !prev || dayKey(prev.created_at) !== dayKey(m.created_at);
                     const botState = isBookingBotStateMessage(m.body);
                     const imageSrcRaw =
@@ -3196,6 +3214,18 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               );
                             })()
                             )}
+                            {m.wa_message_id && reactionEmojisByWaId.get(m.wa_message_id)?.length ? (
+                              <div className="mt-1 flex flex-wrap gap-1 px-1">
+                                {reactionEmojisByWaId.get(m.wa_message_id)!.map((emoji) => (
+                                  <span
+                                    key={emoji}
+                                    className="rounded-full bg-black/20 px-1.5 py-0.5 text-sm leading-none"
+                                  >
+                                    {emoji}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
                             <div className="mt-0.5 flex items-center justify-end gap-1 px-1">
                               <span className="text-[11px] leading-none text-[#667781]">
                                 {formatBubbleTime(m.created_at)}

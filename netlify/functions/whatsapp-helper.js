@@ -691,6 +691,10 @@ function extractInboundBody(msg) {
     const reply = msg.interactive?.button_reply || msg.interactive?.list_reply;
     return reply?.title || reply?.id || null;
   }
+  if (type === 'reaction') {
+    const emoji = String(msg.reaction?.emoji || '').trim();
+    return emoji || null;
+  }
   if (type === 'location' && msg.location) {
     const { latitude, longitude, name, address } = msg.location;
     const coords =

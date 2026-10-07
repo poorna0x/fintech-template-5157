@@ -9,9 +9,21 @@ import { whatsappPhoneLookupKeys } from '@/lib/whatsappPhoneTarget';
 export const WHATSAPP_INBOX_COLUMNS =
   'id, wa_message_id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
 
-/** Slimmer columns for open-chat fetch (drops unused wa_message_id). */
+/** Open-chat fetch. wa_message_id is required so reactions can sit on the message. */
 export const WHATSAPP_THREAD_COLUMNS =
-  'id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
+  'id, wa_message_id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
+
+export const WHATSAPP_REACTION_PREFIX = 'reaction:';
+
+export function whatsAppReactionTargetWaId(
+  row: Pick<WhatsAppMessageRow, 'msg_type' | 'template_name'>
+): string | null {
+  if (String(row.msg_type || '').toLowerCase() !== 'reaction') return null;
+  const raw = String(row.template_name || '');
+  if (!raw.startsWith(WHATSAPP_REACTION_PREFIX)) return null;
+  const id = raw.slice(WHATSAPP_REACTION_PREFIX.length).trim();
+  return id || null;
+}
 
 export type WhatsAppMessageRow = {
   id: string;
@@ -1960,6 +1972,11 @@ export function previewMessageBody(
     row.msg_type === 'image' || Boolean(row.media_mime?.startsWith('image/'));
   const bodyRaw = String(row.body || '');
   const isLocation = looksLikeWhatsAppLocationPreview(bodyRaw, row.msg_type);
+
+  if (String(row.msg_type || '').toLowerCase() === 'reaction') {
+    const emoji = bodyRaw.trim();
+    return emoji ? `Reacted ${emoji}` : 'Reaction';
+  }
 
   if (isLocation) {
     const formatted = formatAdminWhatsAppBody(row.body, { compact: true });
