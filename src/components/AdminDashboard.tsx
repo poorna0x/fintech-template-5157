@@ -7446,7 +7446,10 @@ const AdminDashboard = () => {
       {/* Photo Gallery Dialog */}
       <PhotoGalleryDialog
         open={photoGalleryOpen}
-        onOpenChange={bindAdminModalDismiss('photos', () => setPhotoGalleryOpen(false))}
+        onOpenChange={(open) => {
+          if (!open && deletePhotoDialogOpen) return;
+          bindAdminModalDismiss('photos', () => setPhotoGalleryOpen(false))(open);
+        }}
         selectedJobPhotos={selectedJobPhotos}
         onViewPhoto={openPhotoViewer}
         onDeletePhoto={handleDeletePhoto}
@@ -7606,6 +7609,7 @@ const AdminDashboard = () => {
       <CustomerPhotoGalleryDialog
         open={customerPhotoGalleryOpen}
         onOpenChange={(open) => {
+          if (!open && deleteCustomerPhotoDialogOpen) return;
           if (!open) handleClosePhotoGallery();
         }}
         customer={selectedCustomerForPhotos}

@@ -63,34 +63,23 @@ const PhotoGalleryDialog: React.FC<PhotoGalleryDialogProps> = ({
                         </div>
                       </div>
                     )}
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                        <Button 
-                          variant="secondary" 
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (photo && photo.trim()) {
-                              onViewPhoto(photo, index, selectedJobPhotos.photos.length);
-                            } else {
-                              toast.error('Invalid photo URL');
-                            }
-                          }}
-                        >
-                          View Full Size
-                        </Button>
-                        <Button 
-                          variant="destructive" 
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeletePhoto(selectedJobPhotos.jobId, index, photo);
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
+                    {isValidUrl ? (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="absolute right-2 top-2 z-20 h-8 w-8 p-0 shadow-lg"
+                        aria-label="Delete photo"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onDeletePhoto(selectedJobPhotos.jobId, index, photo);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    ) : null}
                   </div>
                 );
               })}

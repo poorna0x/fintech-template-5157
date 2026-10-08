@@ -574,17 +574,21 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                         </div>
                       </div>
                       {/* Delete button - always visible on mobile, hover on desktop */}
-                      <div className="absolute top-1 right-1 sm:top-2 sm:right-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                      <div className="absolute top-1 right-1 z-20 sm:top-2 sm:right-2">
                         <Button
+                          type="button"
                           variant="destructive"
                           size="sm"
-                          className="h-7 w-7 sm:h-8 sm:w-8 p-0 touch-manipulation shadow-lg"
+                          className="h-8 w-8 p-0 touch-manipulation shadow-lg"
+                          aria-label="Delete photo"
+                          onPointerDown={(e) => e.stopPropagation()}
                           onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             onDeletePhoto(photo, index);
                           }}
                         >
-                          <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     </div>

@@ -26,12 +26,38 @@ export function isPortaledOverlayInteraction(target: EventTarget | null): boolea
   );
 }
 
-/** Call from Dialog onPointerDownOutside / onInteractOutside — returns true if handled. */
+function elementInAlertDialog(node: EventTarget | null): boolean {
+  if (!(node instanceof Element)) return false;
+  return Boolean(
+    node.closest('[role="alertdialog"]') || node.closest('[data-alert-dialog-layer]')
+  );
+}
+
+/** Confirm dialogs portal outside the gallery dialog. Treat them as inside so the gallery stays open. */
+export function isAlertDialogInteraction(event: {
+  target: EventTarget | null;
+  detail?: { originalEvent?: Event };
+}): boolean {
+  const related = (event.detail?.originalEvent as FocusEvent | undefined)?.relatedTarget ?? null;
+  const active = typeof document !== 'undefined' ? document.activeElement : null;
+  return (
+    elementInAlertDialog(event.target) ||
+    elementInAlertDialog(related) ||
+    elementInAlertDialog(active)
+  );
+}
+
+/** Call from Dialog onPointerDownOutside / onInteractOutside / onFocusOutside — returns true if handled. */
 export function guardDialogFromSonnerOutsideEvent(event: {
   preventDefault: () => void;
   target: EventTarget | null;
+  detail?: { originalEvent?: Event };
 }): boolean {
-  if (isSonnerToastInteraction(event.target) || isPortaledOverlayInteraction(event.target)) {
+  if (
+    isSonnerToastInteraction(event.target) ||
+    isPortaledOverlayInteraction(event.target) ||
+    isAlertDialogInteraction(event)
+  ) {
     event.preventDefault();
     return true;
   }

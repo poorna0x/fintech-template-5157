@@ -139,9 +139,18 @@ export function AdminDeleteConfirmDialogs({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeletingPhoto}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel
+              disabled={isDeletingPhoto}
+              onClick={(e) => e.stopPropagation()}
+            >
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
-              onClick={onConfirmDeletePhoto}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onConfirmDeletePhoto();
+              }}
               disabled={isDeletingPhoto}
               className="bg-red-600 hover:bg-red-700"
             >
@@ -170,9 +179,18 @@ export function AdminDeleteConfirmDialogs({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeletingCustomerPhoto}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel
+              disabled={isDeletingCustomerPhoto}
+              onClick={(e) => e.stopPropagation()}
+            >
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
-              onClick={onConfirmDeleteCustomerPhoto}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onConfirmDeleteCustomerPhoto();
+              }}
               disabled={isDeletingCustomerPhoto}
               className="bg-red-600 hover:bg-red-700"
             >
