@@ -11,7 +11,7 @@
 import { supabase } from './supabaseClient';
 import { completedJobLeadSourceContainVariants } from './adminUtils';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
-import { tokenizeLocationQuery, isHouseNumberToken } from './locationSearch';
+import { locationPlaceGroups, isHouseNumberToken } from './locationSearch';
 
 /**
  * Slim column set returned to the dialog. Trimmed aggressively to keep response
@@ -47,8 +47,9 @@ export type AdvancedSearchFilters = {
   brandSource?: 'customer' | 'jobs' | 'either';
   /** Model on the customer profile or past jobs (OR). */
   modelContains?: string;
-  /** Comma- or space-separated areas. Tokens are OR-matched; filler words (road, layout)
-   * are ignored and long names also match a short prefix so a near-miss spelling still hits. */
+  /** Area text. A comma means either place. Words in one place must all match
+   * (so "Rohan Upavan" is that society). Filler words are ignored, and a long
+   * name also matches a short prefix so a near-miss spelling still hits. */
   locationContains?: string;
   serviceType?: 'RO' | 'SOFTENER' | '';
   status?: 'ACTIVE' | 'INACTIVE' | 'BLOCKED' | '';
@@ -124,7 +125,6 @@ const DEFAULT_LIMIT = 200;
 const ID_IN_CHUNK = 100;
 const FETCH_PAGE_SIZE = 1000;
 const MAX_JOB_LOOKUP_ROWS = 20_000;
-const MAX_OR_PARTS = 96;
 
 export const DEFAULT_NEAR_RADIUS_KM = 2;
 export const MAX_NEAR_RADIUS_KM = 50;
@@ -672,7 +672,26 @@ function addressMatchOrParts(tokenE: string): string[] {
     `alternate_address->>landmark.ilike.%${tokenE}%`,
     `alternate_address->>houseNumber.ilike.%${tokenE}%`,
     `alternate_address->>fullAddress.ilike.%${tokenE}%`,
+    `location->>formattedAddress.ilike.%${tokenE}%`,
+    `alternate_location->>formattedAddress.ilike.%${tokenE}%`,
   ];
+}
+
+/** PostgREST logic tree: comma-separated places OR, words inside a place AND. */
+export function buildLocationFilterExpression(input: string): string | null {
+  const groups = locationPlaceGroups(input);
+  if (groups.length === 0) return null;
+  const groupSql = groups.map((words) => {
+    const wordSql = words.map((variants) => {
+      const variantSql = variants.map((variant) => {
+        const fields = addressMatchOrParts(escapeForLike(variant));
+        return fields.length === 1 ? fields[0] : `or(${fields.join(',')})`;
+      });
+      return variantSql.length === 1 ? variantSql[0] : `or(${variantSql.join(',')})`;
+    });
+    return wordSql.length === 1 ? wordSql[0] : `and(${wordSql.join(',')})`;
+  });
+  return groupSql.length === 1 ? groupSql[0] : `or(${groupSql.join(',')})`;
 }
 
 function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: CustomerQueryOptions) {
@@ -701,22 +720,22 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
         orParts.push(`phone.ilike.%${norm}%`, `alternate_phone.ilike.%${norm}%`);
       }
     }
-    const extraLoc = tokenizeLocationQuery(free).filter((t) => t !== free.toLowerCase());
-    for (const token of extraLoc.slice(0, 4)) {
-      orParts.push(...addressMatchOrParts(escapeForLike(token)));
-    }
+    const placeExpr = buildLocationFilterExpression(free);
+    const placeGroups = locationPlaceGroups(free);
+    const multiWordPlace = placeGroups.some((words) => words.length >= 2) || placeGroups.length > 1;
+    if (placeExpr && multiWordPlace) orParts.push(placeExpr);
     q = q.or(orParts.join(','));
   }
 
-  const locTokens = tokenizeLocationQuery(filters.locationContains ?? '');
-  if (locTokens.length > 0) {
-    const orParts = locTokens.flatMap((token) => addressMatchOrParts(escapeForLike(token)));
-    if (orParts.length > MAX_OR_PARTS) {
+  const locExpr = buildLocationFilterExpression(filters.locationContains ?? '');
+  if (locExpr) {
+    const locGroups = locationPlaceGroups(filters.locationContains ?? '');
+    if (locGroups.length > 6) {
       throw new Error(
-        `Too many location terms (${locTokens.length}) — use fewer area names`
+        `Too many location terms (${locGroups.length}) — use fewer area names`
       );
     }
-    q = q.or(orParts.join(','));
+    q = q.or(locExpr);
   }
 
   if ((opts.brandProfileMatch && opts.brand) || (opts.brand && opts.brandSource === 'customer')) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   billAmountOrClause,
+  buildLocationFilterExpression,
   clampNearRadiusKm,
   customerServiceTypeOrClause,
   formatNearbyDistanceLabel,
@@ -48,6 +49,20 @@ describe('clampNearRadiusKm', () => {
   it('keeps 50 m and caps at 50 km', () => {
     expect(clampNearRadiusKm(0.05)).toBe(0.05);
     expect(clampNearRadiusKm(80)).toBe(50);
+  });
+});
+
+describe('buildLocationFilterExpression', () => {
+  it('requires both words of a society name', () => {
+    const expr = buildLocationFilterExpression('Rohan Upavan');
+    expect(expr?.startsWith('and(')).toBe(true);
+    expect(expr).toContain('%rohan%');
+    expect(expr).toContain('%upavan%');
+  });
+
+  it('keeps comma-separated areas as alternatives', () => {
+    const expr = buildLocationFilterExpression('Kasavanahalli, Haralur');
+    expect(expr?.startsWith('or(')).toBe(true);
   });
 });
 

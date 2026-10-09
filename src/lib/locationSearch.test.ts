@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   filterLocationSuggestions,
   isHouseNumberToken,
+  locationPlaceGroups,
   locationQueryMatchesText,
+  searchMatchAddressLine,
   tokenizeLocationQuery,
 } from './locationSearch';
 
@@ -62,6 +64,26 @@ describe('locationQueryMatchesText', () => {
 
   it('matches a flat number in an address line', () => {
     expect(locationQueryMatchesText('123', '123, Kasavanahalli')).toBe(true);
+  });
+});
+
+describe('locationPlaceGroups', () => {
+  it('requires every word of one place, and treats a comma as another place', () => {
+    const groups = locationPlaceGroups('Rohan Upavan, Haralur');
+    expect(groups[0]?.map((w) => w[0])).toEqual(['rohan', 'upavan']);
+    expect(groups[1]?.[0]?.[0]).toBe('haralur');
+  });
+});
+
+describe('searchMatchAddressLine', () => {
+  it('shows the street when the short area hides the searched place', () => {
+    const line = searchMatchAddressLine(
+      'Rohan Upavan',
+      'Byrathi',
+      '#1602 I Block, Rohan Upavan, Bileshivale Main Rd, Byrathi'
+    );
+    expect(line.toLowerCase()).toContain('rohan upavan');
+    expect(line).toContain('Byrathi');
   });
 });
 

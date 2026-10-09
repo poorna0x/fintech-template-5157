@@ -75,15 +75,13 @@ export function isHouseNumberToken(token: string): boolean {
   return false;
 }
 
-/**
- * Expand a typed area string into OR-match tokens.
- * "Kasavanahalli main road Haralur" → kasavanahalli, kasavana, haralur, haralu
- * "123 Haralur" keeps 123 as a flat/house token.
- */
-export function tokenizeLocationQuery(input: string): string[] {
-  const collapsed = input.trim().toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
-  if (!collapsed) return [];
+function collapseLocationText(input: string): string {
+  return input.trim().toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+}
 
+function segmentSeeds(segment: string): string[] {
+  const collapsed = collapseLocationText(segment);
+  if (!collapsed) return [];
   const raw = collapsed
     .split(/[^a-z0-9\/\-]+/)
     .map((t) => t.replace(/^\/+|\/+$/g, '').replace(/^-+|-+$/g, '').trim())
@@ -104,22 +102,69 @@ export function tokenizeLocationQuery(input: string): string[] {
     if (t.length < 3) continue;
     meaningful.push(t);
   }
+  if (meaningful.length > 0) return meaningful;
+  return collapsed.length >= 2 ? [collapsed] : [];
+}
 
-  const seeds =
-    meaningful.length > 0
-      ? meaningful
-      : collapsed.length >= 2
-        ? [collapsed]
-        : [];
-
-  const variants: string[] = [];
-  for (const t of seeds) {
-    variants.push(t);
-    const prefix = locationPrefix(t);
-    if (prefix) variants.push(prefix);
+/**
+ * Comma-separated places are alternatives.
+ * Words inside one place must all match (so "Rohan Upavan" is that society,
+ * not every address that contains Rohan). Each word includes a short prefix
+ * so a near-miss spelling still hits.
+ */
+export function locationPlaceGroups(input: string): string[][][] {
+  const segments = input
+    .split(/[,;|]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const groups: string[][][] = [];
+  for (const segment of segments) {
+    const words = segmentSeeds(segment).map((seed) => {
+      const variants = [seed];
+      const prefix = locationPrefix(seed);
+      if (prefix) variants.push(prefix);
+      return variants;
+    });
+    if (words.length) groups.push(words);
   }
+  return groups;
+}
 
-  return [...new Set(variants)].slice(0, MAX_LOCATION_TOKENS);
+/**
+ * Expand a typed area string into match tokens.
+ * "Kasavanahalli main road, Haralur" → kasavanahalli, kasavana, haralur, haralu
+ * "123 Haralur" keeps 123 as a flat/house token.
+ */
+export function tokenizeLocationQuery(input: string): string[] {
+  const flat = locationPlaceGroups(input).flat(2);
+  return [...new Set(flat)].slice(0, MAX_LOCATION_TOKENS);
+}
+
+/** Street line to show when the short area name hides the place that was searched. */
+export function searchMatchAddressLine(
+  query: string,
+  visibleAddress: string | null | undefined,
+  street: string | null | undefined
+): string {
+  const short = (visibleAddress || '').trim();
+  const line = (street || '').trim();
+  if (!line) return short || '—';
+  const words = collapseLocationText(query)
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 3);
+  if (words.length === 0) return short || line;
+  const lineL = line.toLowerCase();
+  const shortL = short.toLowerCase();
+  const lineHits = words.every((w) => lineL.includes(w));
+  const shortHits = words.every((w) => shortL.includes(w));
+  if (!lineHits || shortHits) return short || line;
+  const first = words
+    .map((w) => lineL.indexOf(w))
+    .filter((i) => i >= 0)
+    .sort((a, b) => a - b)[0];
+  const start = Math.max(0, first - 24);
+  const snippet = (start > 0 ? '…' : '') + line.slice(start, start + 72).trim() + (start + 72 < line.length ? '…' : '');
+  return short ? `${snippet} · ${short}` : snippet;
 }
 
 /** Client-side: area name matches a fuzzy location query (suggestions). */

@@ -61,6 +61,7 @@ import {
   isNearRadiusDraft,
   parseNearRadiusKm,
 } from '@/lib/advancedCustomerSearch';
+import { searchMatchAddressLine } from '@/lib/locationSearch';
 import { db } from '@/lib/supabase';
 import { technicianAccountStatusSuffix } from '@/lib/technicianAccountStatus';
 import { cn, formatPhoneForWhatsApp } from '@/lib/utils';
@@ -1003,7 +1004,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                       if (e.key === 'Enter') void handleSearch();
                     }}
                     className="h-9"
-                    title="Spaces or commas: any area matches. Extra words like road/layout are ignored. A slightly wrong spelling still hits."
+                    title="A comma means either place. Words in one name, like Rohan Upavan, must all match. Extra words like road/layout are ignored."
                   />
                 </Field>
                 <Field label="Service type">
@@ -1471,6 +1472,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                         <ResultRow
                           key={row.id}
                           row={row}
+                          query={[filters.freeText, filters.locationContains].filter(Boolean).join(' ')}
                           onOpen={() => handleOpenInAdmin(row)}
                           onCopyPhone={() => handleCopyPhone(row.phone)}
                           onMap={() => handleOpenMap(row)}
@@ -1775,6 +1777,7 @@ function Field({
 
 interface ResultRowProps {
   row: AdvancedSearchRow;
+  query?: string;
   onOpen: () => void;
   onCopyPhone: () => void;
   onMap: () => void;
@@ -1785,6 +1788,7 @@ interface ResultRowProps {
 
 const ResultRow: React.FC<ResultRowProps> = ({
   row,
+  query = '',
   onOpen,
   onCopyPhone,
   onMap,
@@ -1840,7 +1844,11 @@ const ResultRow: React.FC<ResultRowProps> = ({
               <span className="text-foreground/90 tabular-nums">{phone || '—'}</span>
               {row.email ? <span className="truncate">· {row.email}</span> : null}
             </div>
-            <div className="truncate">{formatLocation(row)}</div>
+            <div className="truncate">
+              {query.trim()
+                ? searchMatchAddressLine(query, row.visible_address, row.address?.street)
+                : formatLocation(row)}
+            </div>
             <div className="flex flex-wrap gap-x-3 gap-y-0.5">
               {meta ? <span className="truncate">{meta}</span> : null}
               <span>
