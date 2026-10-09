@@ -88,6 +88,7 @@ interface AdvancedCustomerSearchDialogProps {
 
 const EMPTY_FILTERS: AdvancedSearchFilters = {
   freeText: '',
+  matchMode: 'all',
   brandContains: '',
   brandSource: 'either',
   modelContains: '',
@@ -149,6 +150,7 @@ function loadPersistedFilters(): AdvancedSearchFilters {
       sort,
       limit,
       neverServiced: parsed.neverServiced === 'yes' ? 'yes' : '',
+      matchMode: parsed.matchMode === 'any' ? 'any' : 'all',
       nearLat: null,
       nearLng: null,
     };
@@ -391,8 +393,10 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     }
   }, [filters]);
 
-  const handleSearch = async (opts?: { radiusKm?: number }) => {
+  const handleSearch = async (opts?: { radiusKm?: number; matchMode?: 'all' | 'any' }) => {
     const filters = filtersRef.current;
+    const matchMode = opts?.matchMode ?? filters.matchMode ?? 'all';
+    if (matchMode !== filters.matchMode) update('matchMode', matchMode);
     const gen = ++searchGenRef.current;
 
     let committedRadiusKm = DEFAULT_NEAR_RADIUS_KM;
@@ -417,6 +421,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     try {
       let searchFilters: AdvancedSearchFilters = {
         ...filters,
+        matchMode,
         nearRadiusKm: committedRadiusKm,
         nearLat: null,
         nearLng: null,
@@ -645,6 +650,13 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
       update(key, empty);
     };
 
+    if (filters.matchMode === 'any') {
+      chips.push({
+        key: 'approx',
+        label: 'Approximate',
+        clear: () => clearKey('matchMode', 'all'),
+      });
+    }
     if (filters.freeText?.trim()) {
       chips.push({
         key: 'free',
@@ -864,7 +876,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
             Advanced search
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Combine filters to find customers. Filters stay until Reset or you close the tab.
+            Search matches every word. Approx matches any word, including a slightly wrong spelling.
           </DialogDescription>
         </DialogHeader>
 
@@ -886,7 +898,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
             <div className="flex gap-2 shrink-0">
               <Button
                 type="button"
-                onClick={() => void handleSearch()}
+                onClick={() => void handleSearch({ matchMode: 'all' })}
                 disabled={busy}
                 className="h-10 flex-1 sm:flex-none sm:min-w-[7.5rem]"
               >
@@ -895,7 +907,23 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                 ) : (
                   <Search className="w-4 h-4 mr-2" />
                 )}
-                {isResolvingNear ? 'Resolving…' : isSearching ? 'Searching…' : resultsStale ? 'Update' : 'Search'}
+                {isResolvingNear
+                  ? 'Resolving…'
+                  : isSearching
+                    ? 'Searching…'
+                    : resultsStale && filters.matchMode !== 'any'
+                      ? 'Update'
+                      : 'Search'}
+              </Button>
+              <Button
+                type="button"
+                variant={filters.matchMode === 'any' ? 'secondary' : 'outline'}
+                onClick={() => void handleSearch({ matchMode: 'any' })}
+                disabled={busy}
+                className="h-10 px-3"
+                title="Any word matches, including a slightly wrong spelling"
+              >
+                {resultsStale && filters.matchMode === 'any' && !isSearching ? 'Update' : 'Approx'}
               </Button>
               <Button
                 type="button"

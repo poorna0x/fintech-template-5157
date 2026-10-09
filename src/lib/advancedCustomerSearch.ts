@@ -11,7 +11,7 @@
 import { supabase } from './supabaseClient';
 import { completedJobLeadSourceContainVariants } from './adminUtils';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
-import { locationPlaceGroups, isHouseNumberToken } from './locationSearch';
+import { locationPlaceGroups, tokenizeLocationQuery, isHouseNumberToken } from './locationSearch';
 
 /**
  * Slim column set returned to the dialog. Trimmed aggressively to keep response
@@ -42,6 +42,11 @@ const SLIM_COLS = [
 export type AdvancedSearchFilters = {
   /** Free-text matched against id / name / phone / email / notes / address / brand / model / GST. */
   freeText?: string;
+  /**
+   * all: every word of a name or place must match (Search).
+   * any: any word matches, including a short prefix for a near-miss spelling (Approx).
+   */
+  matchMode?: 'all' | 'any';
   brandContains?: string;
   /** Where to look for brand matches. Default 'either'. */
   brandSource?: 'customer' | 'jobs' | 'either';
@@ -169,9 +174,25 @@ export function formatNearbyDistanceLabel(km: number): string {
   return formatNearRadiusLabel(km);
 }
 
-function customerBrandOrClause(brand: string): string {
-  const e = escapeForLike(brand);
-  return `brand.ilike.%${e}%,alternate_brand.ilike.%${e}%`;
+function customerBrandOrClause(brand: string, mode: 'all' | 'any' = 'all'): string {
+  return columnTokenOr(['brand', 'alternate_brand'], brand, mode);
+}
+
+function searchTokens(input: string): string[] {
+  const tokens = tokenizeLocationQuery(input);
+  if (tokens.length > 0) return tokens.slice(0, 6);
+  const raw = input.trim().toLowerCase();
+  return raw ? [raw] : [];
+}
+
+function columnTokenOr(columns: string[], input: string, mode: 'all' | 'any'): string {
+  const tokens = mode === 'any' ? searchTokens(input) : [input.trim()];
+  return tokens
+    .flatMap((token) => {
+      const e = escapeForLike(token);
+      return columns.map((column) => `${column}.ilike.%${e}%`);
+    })
+    .join(',');
 }
 
 function newestCustomerStamp(row: AdvancedSearchRow): string {
@@ -482,9 +503,9 @@ async function fetchCustomerIdsForJobFilters(
       q = q.or(billOr);
     }
     if (applyJobBrand && jobBrandIfAny) {
-      const e = escapeForLike(jobBrandIfAny);
-      if (billOr) q = q.ilike('brand', `%${e}%`);
-      else q = q.or(`brand.ilike.%${e}%,service_brand.ilike.%${e}%`);
+      const mode = filters.matchMode === 'any' ? 'any' : 'all';
+      if (billOr) q = q.ilike('brand', `%${escapeForLike(jobBrandIfAny)}%`);
+      else q = q.or(columnTokenOr(['brand', 'service_brand'], jobBrandIfAny, mode));
     }
     return q;
   });
@@ -525,18 +546,18 @@ async function fetchCustomerIdsForProfileServiceType(
   return ids;
 }
 
-async function fetchCustomerIdsForModelContains(model: string): Promise<Set<string>> {
-  const e = escapeForLike(model);
+async function fetchCustomerIdsForModelContains(
+  model: string,
+  mode: 'all' | 'any'
+): Promise<Set<string>> {
+  const profileOr = columnTokenOr(['model', 'alternate_model'], model, mode);
+  const jobOr = columnTokenOr(['model'], model, mode);
   const [profile, fromJobs] = await Promise.all([
     paginateJobCustomerIds((from, to) =>
-      supabase
-        .from('customers')
-        .select('id')
-        .or(`model.ilike.%${e}%,alternate_model.ilike.%${e}%`)
-        .range(from, to)
+      supabase.from('customers').select('id').or(profileOr).range(from, to)
     ),
     paginateJobCustomerIds((from, to) =>
-      supabase.from('jobs').select('customer_id').ilike('model', `%${e}%`).range(from, to)
+      supabase.from('jobs').select('customer_id').or(jobOr).range(from, to)
     ),
   ]);
   if (profile.error) {
@@ -551,7 +572,8 @@ async function fetchCustomerIdsForModelContains(model: string): Promise<Set<stri
 /** Customers (within base job set) whose profile brand matches — for brand "either" + technician, etc. */
 async function fetchCustomerIdsWithProfileBrand(
   baseJobIds: Set<string>,
-  brand: string
+  brand: string,
+  mode: 'all' | 'any' = 'all'
 ): Promise<Set<string>> {
   const ids = Array.from(baseJobIds);
   if (ids.length === 0) return new Set();
@@ -561,7 +583,7 @@ async function fetchCustomerIdsWithProfileBrand(
       .from('customers')
       .select('id')
       .in('id', chunk)
-      .or(customerBrandOrClause(brand))
+      .or(customerBrandOrClause(brand, mode))
       .limit(ID_IN_CHUNK);
     if (error) {
       console.warn('[advancedCustomerSearch] customer-brand fetch failed', error);
@@ -677,10 +699,17 @@ function addressMatchOrParts(tokenE: string): string[] {
   ];
 }
 
-/** PostgREST logic tree: comma-separated places OR, words inside a place AND. */
-export function buildLocationFilterExpression(input: string): string | null {
+/** PostgREST logic tree. all: words in one place must all match. any: any word matches. */
+export function buildLocationFilterExpression(
+  input: string,
+  mode: 'all' | 'any' = 'all'
+): string | null {
   const groups = locationPlaceGroups(input);
   if (groups.length === 0) return null;
+  if (mode === 'any') {
+    const tokens = [...new Set(groups.flat(2))].slice(0, 8);
+    return tokens.flatMap((token) => addressMatchOrParts(escapeForLike(token))).join(',');
+  }
   const groupSql = groups.map((words) => {
     const wordSql = words.map((variants) => {
       const variantSql = variants.map((variant) => {
@@ -697,37 +726,45 @@ export function buildLocationFilterExpression(input: string): string | null {
 function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: CustomerQueryOptions) {
   const { filters } = opts;
 
+  const mode = filters.matchMode === 'any' ? 'any' : 'all';
   const free = (filters.freeText ?? '').trim();
   if (free) {
-    const e = escapeForLike(free);
-    const orParts = [
-      `customer_id.ilike.%${e}%`,
-      `full_name.ilike.%${e}%`,
-      `email.ilike.%${e}%`,
-      `notes.ilike.%${e}%`,
-      `brand.ilike.%${e}%`,
-      `model.ilike.%${e}%`,
-      `alternate_brand.ilike.%${e}%`,
-      `alternate_model.ilike.%${e}%`,
-      `gst_number.ilike.%${e}%`,
-      ...addressMatchOrParts(e),
-    ];
-    const houseLike = isHouseNumberToken(free.toLowerCase()) || /^\d{2,5}$/.test(free);
-    if (!houseLike) {
-      orParts.push(`phone.ilike.%${e}%`, `alternate_phone.ilike.%${e}%`);
-      const norm = normalizePhoneForSearch(free);
-      if (norm.length >= 10) {
-        orParts.push(`phone.ilike.%${norm}%`, `alternate_phone.ilike.%${norm}%`);
+    const tokens = mode === 'any' ? searchTokens(free) : [free];
+    const orParts: string[] = [];
+    for (const token of tokens) {
+      const e = escapeForLike(token);
+      orParts.push(
+        `customer_id.ilike.%${e}%`,
+        `full_name.ilike.%${e}%`,
+        `email.ilike.%${e}%`,
+        `notes.ilike.%${e}%`,
+        `brand.ilike.%${e}%`,
+        `model.ilike.%${e}%`,
+        `alternate_brand.ilike.%${e}%`,
+        `alternate_model.ilike.%${e}%`,
+        `gst_number.ilike.%${e}%`,
+        ...addressMatchOrParts(e)
+      );
+      const houseLike = isHouseNumberToken(token.toLowerCase()) || /^\d{2,5}$/.test(token);
+      if (!houseLike) {
+        orParts.push(`phone.ilike.%${e}%`, `alternate_phone.ilike.%${e}%`);
+        const norm = normalizePhoneForSearch(token);
+        if (norm.length >= 10) {
+          orParts.push(`phone.ilike.%${norm}%`, `alternate_phone.ilike.%${norm}%`);
+        }
       }
     }
-    const placeExpr = buildLocationFilterExpression(free);
-    const placeGroups = locationPlaceGroups(free);
-    const multiWordPlace = placeGroups.some((words) => words.length >= 2) || placeGroups.length > 1;
-    if (placeExpr && multiWordPlace) orParts.push(placeExpr);
+    if (mode === 'all') {
+      const placeExpr = buildLocationFilterExpression(free, 'all');
+      const placeGroups = locationPlaceGroups(free);
+      const multiWordPlace =
+        placeGroups.some((words) => words.length >= 2) || placeGroups.length > 1;
+      if (placeExpr && multiWordPlace) orParts.push(placeExpr);
+    }
     q = q.or(orParts.join(','));
   }
 
-  const locExpr = buildLocationFilterExpression(filters.locationContains ?? '');
+  const locExpr = buildLocationFilterExpression(filters.locationContains ?? '', mode);
   if (locExpr) {
     const locGroups = locationPlaceGroups(filters.locationContains ?? '');
     if (locGroups.length > 6) {
@@ -739,7 +776,7 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
   }
 
   if ((opts.brandProfileMatch && opts.brand) || (opts.brand && opts.brandSource === 'customer')) {
-    q = q.or(customerBrandOrClause(opts.brand));
+    q = q.or(customerBrandOrClause(opts.brand, mode));
   }
 
   if (filters.serviceType && !opts.jobIdSet) {
@@ -863,7 +900,7 @@ export async function advancedCustomerSearch(
       ? fetchNearbyCustomerDistances(near.lat, near.lng, near.radiusKm, MAX_LIMIT)
       : Promise.resolve(null);
     const modelPromise = modelNeedle
-      ? fetchCustomerIdsForModelContains(modelNeedle)
+      ? fetchCustomerIdsForModelContains(modelNeedle, filters.matchMode === 'any' ? 'any' : 'all')
       : Promise.resolve(null);
 
     if (brand && brandSource === 'either' && restrictive) {
@@ -882,7 +919,11 @@ export async function advancedCustomerSearch(
       }
       const profileBrandIds =
         baseJobIds && baseJobIds.size > 0
-          ? await fetchCustomerIdsWithProfileBrand(baseJobIds, brand)
+          ? await fetchCustomerIdsWithProfileBrand(
+              baseJobIds,
+              brand,
+              filters.matchMode === 'any' ? 'any' : 'all'
+            )
           : new Set<string>();
       jobIdSet = unionSets(jobBrandIds, profileBrandIds);
       activeAMCIds = amcIds;

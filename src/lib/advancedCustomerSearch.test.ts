@@ -64,6 +64,13 @@ describe('buildLocationFilterExpression', () => {
     const expr = buildLocationFilterExpression('Kasavanahalli, Haralur');
     expect(expr?.startsWith('or(')).toBe(true);
   });
+
+  it('lets approximate search match any word', () => {
+    const expr = buildLocationFilterExpression('Rohan Upavan', 'any');
+    expect(expr?.includes('and(')).toBe(false);
+    expect(expr).toContain('%rohan%');
+    expect(expr).toContain('%upavan%');
+  });
 });
 
 describe('service type and bill clauses', () => {

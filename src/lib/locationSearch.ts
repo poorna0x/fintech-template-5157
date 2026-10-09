@@ -155,10 +155,10 @@ export function searchMatchAddressLine(
   if (words.length === 0) return short || line;
   const lineL = line.toLowerCase();
   const shortL = short.toLowerCase();
-  const lineHits = words.every((w) => lineL.includes(w));
-  const shortHits = words.every((w) => shortL.includes(w));
-  if (!lineHits || shortHits) return short || line;
-  const first = words
+  const missingFromShort = words.filter((w) => !shortL.includes(w));
+  const streetHasMissing = missingFromShort.some((w) => lineL.includes(w));
+  if (!streetHasMissing) return short || line;
+  const first = missingFromShort
     .map((w) => lineL.indexOf(w))
     .filter((i) => i >= 0)
     .sort((a, b) => a - b)[0];
