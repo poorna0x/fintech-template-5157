@@ -3,6 +3,7 @@ import {
   addMonthsToDate,
   amcVisitDueFromDescription,
   formatAmcJobDueNote,
+  isAmcVisitAlreadyDue,
   listAmcContractSlots,
   nextAmcYearServiceDate,
   planAmcNextVisit,
@@ -223,5 +224,8 @@ describe('AMC follow-up due note', () => {
     expect(formatAmcJobDueNote('2026-10-13', '2026-10-10')).toBe('AMC job due in 3 days');
     expect(formatAmcJobDueNote('2026-10-13', '2026-10-13')).toBe('AMC job due today');
     expect(formatAmcJobDueNote('2026-09-28', '2026-10-09')).toBe('AMC job due 11 days ago');
+    expect(isAmcVisitAlreadyDue('2026-10-13', '2026-10-10')).toBe(false);
+    expect(isAmcVisitAlreadyDue('2026-10-13', '2026-10-13')).toBe(true);
+    expect(isAmcVisitAlreadyDue('2026-09-28', '2026-10-09')).toBe(true);
   });
 });

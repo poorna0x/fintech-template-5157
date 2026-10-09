@@ -74,6 +74,11 @@ import {
   isOpenAmcServiceJob,
 } from '@/lib/adminUtils';
 import type { Job } from '@/types';
+import {
+  amcVisitDueFromDescription,
+  formatAmcJobDueNote,
+  isAmcVisitAlreadyDue,
+} from '@/lib/amcAutoJobSchedule';
 import { useFollowUpGlowEnabled } from '@/hooks/useFollowUpGlowEnabled';
 import { fetchSubmittedJobReviewRatingsByJobIds } from '@/lib/jobReviews';
 
@@ -785,6 +790,35 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                             </div>
                           </div>
                         </div>
+
+                        {(() => {
+                          const serviceSubType = String(job.service_sub_type || job.serviceSubType || '')
+                            .toLowerCase()
+                            .replace(/[\s_-]+/g, '');
+                          if (serviceSubType !== 'amcservice') return null;
+                          const visitDue = amcVisitDueFromDescription(job.description);
+                          if (!visitDue) return null;
+                          const dueNote = formatAmcJobDueNote(visitDue, todayDateStr).replace(
+                            /^AMC job due\s*/i,
+                            ''
+                          );
+                          const alreadyDue = isAmcVisitAlreadyDue(visitDue, todayDateStr);
+                          return (
+                            <div className="flex items-start gap-2 sm:items-center">
+                              <Calendar
+                                className={`w-4 h-4 flex-shrink-0 mt-0.5 sm:mt-0 ${alreadyDue ? 'text-red-500' : 'text-gray-400'}`}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs text-gray-500">AMC job due</div>
+                                <div
+                                  className={`font-medium break-words ${alreadyDue ? 'text-red-600' : 'text-gray-900'}`}
+                                >
+                                  {dueNote}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         
                         {/* Agreed Price - Only show if it exists and is greater than 0 */}
                         {(() => {

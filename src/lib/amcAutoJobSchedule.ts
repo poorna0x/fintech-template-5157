@@ -314,6 +314,11 @@ export function formatAmcJobDueNote(dueYmd: string, todayYmd: string): string {
   return ago === 1 ? 'AMC job due 1 day ago' : `AMC job due ${ago} days ago`;
 }
 
+/** True when the visit date is today or already past. */
+export function isAmcVisitAlreadyDue(dueYmd: string, todayYmd: string): boolean {
+  return calendarDaysFrom(todayYmd, dueYmd) <= 0;
+}
+
 export function formatAmcDateEnIN(dateStr: string): string {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN', {
     day: 'numeric',
