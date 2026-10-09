@@ -27,6 +27,7 @@ export interface AdminDashboardListData {
   tomorrowDateStr: string;
   followUpDateToStr: (followUpDate: string | null | undefined) => string | null;
   customerAMCStatus: Record<string, boolean>;
+  customerExpiredAmcStatus: Record<string, boolean>;
   customerPriorServiceStatus: Record<string, boolean>;
   isLoadingPhotos: boolean;
   selectedCustomerForPhotos: Customer | null;

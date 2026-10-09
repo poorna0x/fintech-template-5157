@@ -9,6 +9,11 @@ import { transformTechnicianData } from '@/lib/adminDashboardTransforms';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import type { LoadFilteredJobsOptions } from '@/lib/adminLoadFilteredJobs';
 import { fetchCustomerIdsWithCompletedJobsMap, db, supabase } from '@/lib/supabase';
+import {
+  buildCustomerAmcIndicatorMaps,
+  type CustomerAmcIndicatorRow,
+} from '@/lib/customerAmcIndicator';
+import { getTodayLocalDate } from '@/lib/adminDashboardDateHelpers';
 import type { Job, Technician } from '@/types';
 
 export type LoadFilteredJobsFn = (
@@ -41,8 +46,30 @@ export function applyAdminDashboardSnapshot(
   handlers.setJobCounts(snap.jobCounts);
 }
 
+/** Page past the default 1000-row cap so a later contract is not dropped. */
+export async function fetchAmcIndicatorContractRows(): Promise<{
+  data: CustomerAmcIndicatorRow[] | null;
+  error: { message?: string } | null;
+}> {
+  const pageSize = 1000;
+  const rows: CustomerAmcIndicatorRow[] = [];
+  for (let from = 0; from < 8000; from += pageSize) {
+    const { data, error } = await supabase
+      .from('amc_contracts')
+      .select('customer_id, status, end_date')
+      .order('id', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    const page = (data || []) as CustomerAmcIndicatorRow[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return { data: rows, error: null };
+}
+
 export async function loadAdminDashboardSecondary(handlers: {
   setCustomerAMCStatus: Dispatch<SetStateAction<Record<string, boolean>>>;
+  setCustomerExpiredAmcStatus: Dispatch<SetStateAction<Record<string, boolean>>>;
   setCustomerPriorServiceStatus: Dispatch<SetStateAction<Record<string, boolean>>>;
   setTechniciansForReports: Dispatch<SetStateAction<Technician[]>>;
   setAllFollowUpJobs: Dispatch<SetStateAction<Job[]>>;
@@ -52,17 +79,16 @@ export async function loadAdminDashboardSecondary(handlers: {
     const [techniciansAllResult, amcContractsResult, priorCompletedMap] =
       await Promise.all([
         db.technicians.getList(500, { activeRosterOnly: false }),
-        supabase.from('amc_contracts').select('customer_id, status').eq('status', 'ACTIVE'),
+        fetchAmcIndicatorContractRows(),
         fetchCustomerIdsWithCompletedJobsMap(),
       ]);
 
-    const amcStatusMap: Record<string, boolean> = {};
-    if (amcContractsResult.data) {
-      amcContractsResult.data.forEach((amc: any) => {
-        amcStatusMap[amc.customer_id] = true;
-      });
-    }
-    handlers.setCustomerAMCStatus(amcStatusMap);
+    const amcIndicators = buildCustomerAmcIndicatorMaps(
+      amcContractsResult.data,
+      getTodayLocalDate()
+    );
+    handlers.setCustomerAMCStatus(amcIndicators.active);
+    handlers.setCustomerExpiredAmcStatus(amcIndicators.expired);
     handlers.setCustomerPriorServiceStatus((prev) => ({
       ...prev,
       ...priorCompletedMap,

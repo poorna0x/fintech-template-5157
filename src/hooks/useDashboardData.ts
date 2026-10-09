@@ -2,6 +2,8 @@ import { useState, useCallback } from 'react';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
 import { mapCustomerGstFields } from '@/lib/customerGst';
 import { db, supabase } from '@/lib/supabase';
+import { buildCustomerAmcIndicatorMaps } from '@/lib/customerAmcIndicator';
+import { getTodayLocalDate } from '@/lib/adminDashboardDateHelpers';
 import { Customer, Technician } from '@/types';
 import { toast } from 'sonner';
 
@@ -125,19 +127,14 @@ export const useDashboardData = () => {
         db.technicians.getAll(100, { activeRosterOnly: true }),
         supabase
           .from('amc_contracts')
-          .select('customer_id, status')
-          .eq('status', 'ACTIVE'),
+          .select('customer_id, status, end_date'),
         db.jobs.getCounts()
       ]);
       
       // Process AMC contracts
-      const amcStatusMap: Record<string, boolean> = {};
-      if (amcContractsResult.data) {
-        amcContractsResult.data.forEach((amc: any) => {
-          amcStatusMap[amc.customer_id] = true;
-        });
-      }
-      setCustomerAMCStatus(amcStatusMap);
+      setCustomerAMCStatus(
+        buildCustomerAmcIndicatorMaps(amcContractsResult.data, getTodayLocalDate()).active
+      );
 
       // Process job counts
       if (jobCountsResult.data) {

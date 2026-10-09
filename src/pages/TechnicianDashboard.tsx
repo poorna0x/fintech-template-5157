@@ -75,6 +75,8 @@ import {
 } from '@/lib/technicianOtpRequests';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
+import { buildCustomerAmcIndicatorMaps } from '@/lib/customerAmcIndicator';
+import { getTodayLocalDate } from '@/lib/adminDashboardDateHelpers';
 import { isActiveTechnicianAccount, isSuspendedTechnicianAccount } from '@/lib/technicianAccountStatus';
 import { rawWaterTdsForJobComplete, jobVisitRawWaterTdsPpm } from '@/lib/jobRawWaterTds';
 import { applyOtherEnRouteResetLocal, revertOtherEnRouteJobsToAssigned } from '@/lib/revertOtherEnRouteJobs';
@@ -399,10 +401,16 @@ function mergeActiveDashboardJobRefresh(existing: Job[], incoming: Job[]): Job[]
   return Array.from(byId.values());
 }
 
-/** Main square color for AMC / Google review / prior (returning) customer — Technician lists. Blue only when no AMC and no Google review (green/red/orange unchanged). */
-function technicianCustomerIndicatorMainClass(hasAmc: boolean, hasG: boolean, hasPrior: boolean): string {
+/** Main square color for AMC / Google review / prior (returning) customer — Technician lists. Amber when the AMC end date has passed and nothing newer is still in force. */
+function technicianCustomerIndicatorMainClass(
+  hasAmc: boolean,
+  hasG: boolean,
+  hasPrior: boolean,
+  hasExpired = false
+): string {
   if (hasAmc && hasG) return 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]';
   if (hasAmc) return 'bg-green-500';
+  if (hasExpired) return 'bg-amber-600';
   if (hasG) return 'bg-red-500';
   if (hasPrior && !hasAmc && !hasG) return 'bg-blue-500';
   return 'bg-gray-400';
@@ -514,6 +522,7 @@ const TechnicianDashboard = () => {
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false); // Start as false to prevent flash
   const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
+  const [customerExpiredAmcStatus, setCustomerExpiredAmcStatus] = useState<Record<string, boolean>>({});
   const [customerPriorServiceStatus, setCustomerPriorServiceStatus] = useState<Record<string, boolean>>({}); // ≥1 completed job (returning)
   const [customerLastServiceBrand, setCustomerLastServiceBrand] = useState<Record<string, ServiceBrand | null>>({});
   const loadedLastBrandCustomerIdsRef = useRef<Set<string>>(new Set());
@@ -1256,17 +1265,12 @@ const TechnicianDashboard = () => {
               // This prevents false timeout errors on fast networks
               const { data: amcContracts } = await supabase
                 .from('amc_contracts')
-                .select('customer_id, status')
-                .in('customer_id', customerIds)
-                .eq('status', 'ACTIVE');
+                .select('customer_id, status, end_date')
+                .in('customer_id', customerIds);
               
-              const amcStatusMap: Record<string, boolean> = {};
-              if (amcContracts) {
-                amcContracts.forEach((amc: any) => {
-                  amcStatusMap[amc.customer_id] = true;
-                });
-              }
-              setCustomerAMCStatus(amcStatusMap);
+              const amcIndicators = buildCustomerAmcIndicatorMaps(amcContracts, getTodayLocalDate());
+              setCustomerAMCStatus(amcIndicators.active);
+              setCustomerExpiredAmcStatus(amcIndicators.expired);
             }
           } catch (amcError) {
             // Silently fail AMC loading - it's not critical for displaying jobs
@@ -3179,18 +3183,20 @@ const TechnicianDashboard = () => {
         if (customerIds.length > 0) {
           const { data: amcContracts } = await supabase
             .from('amc_contracts')
-            .select('customer_id, status')
-            .in('customer_id', customerIds)
-            .eq('status', 'ACTIVE');
+            .select('customer_id, status, end_date')
+            .in('customer_id', customerIds);
           
-          const amcStatusMap: Record<string, boolean> = {};
-          if (amcContracts) {
-            amcContracts.forEach((amc: any) => {
-              amcStatusMap[amc.customer_id] = true;
-            });
-          }
-          // Merge with existing AMC status
-          setCustomerAMCStatus(prev => ({ ...prev, ...amcStatusMap }));
+          const amcIndicators = buildCustomerAmcIndicatorMaps(amcContracts, getTodayLocalDate());
+          setCustomerAMCStatus((prev) => {
+            const next = { ...prev };
+            for (const id of customerIds) next[id] = Boolean(amcIndicators.active[id]);
+            return next;
+          });
+          setCustomerExpiredAmcStatus((prev) => {
+            const next = { ...prev };
+            for (const id of customerIds) next[id] = Boolean(amcIndicators.expired[id]);
+            return next;
+          });
         }
       }
     } catch (error) {
@@ -3856,6 +3862,7 @@ const TechnicianDashboard = () => {
     if (result.ok) {
       amcContractPersistedKeyRef.current = `${selectedJobForComplete.id}:${documentBrand}`;
       setCustomerAMCStatus((prev) => ({ ...prev, [completeJobCustomerDoc.id]: true }));
+      setCustomerExpiredAmcStatus((prev) => ({ ...prev, [completeJobCustomerDoc.id]: false }));
     }
     return result;
   }, [
@@ -7083,6 +7090,7 @@ const TechnicianDashboard = () => {
                   const job = request.job as any;
                   const customer = job?.customer as any;
                   const hasAmcR = Boolean(customerAMCStatus[customer?.id]);
+                  const hasExpiredR = Boolean(customerExpiredAmcStatus[customer?.id]);
                   const hasGR = Boolean(customer?.has_google_review);
                   const hasPriorR = techCustomerHasPriorService(customer, {
                     excludeJobId: (job as any)?.id,
@@ -7095,7 +7103,7 @@ const TechnicianDashboard = () => {
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-2">
-                              <div className={`w-4 h-4 ${technicianCustomerIndicatorMainClass(hasAmcR, hasGR, hasPriorR)} rounded-sm flex items-center justify-center relative`}>
+                              <div className={`w-4 h-4 ${technicianCustomerIndicatorMainClass(hasAmcR, hasGR, hasPriorR, hasExpiredR)} rounded-sm flex items-center justify-center relative`} title={hasExpiredR ? 'AMC expired' : undefined}>
                                 <div className="w-2 h-2 bg-white rounded-sm"></div>
                                 {showPriorCornerR && (
                                   <div className="absolute -top-0.5 -left-0.5 w-1.5 h-1.5 bg-blue-600 rounded-full border border-white" title="Prior service (returning customer)"></div>
@@ -7107,7 +7115,7 @@ const TechnicianDashboard = () => {
                                   <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
                                 )}
                                 {Boolean(customer?.has_google_review) && !customerAMCStatus[customer?.id] && (
-                                  <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-white rounded-full border border-red-200" title="Google reviewed"></div>
+                                  <div className={`absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 rounded-full ${hasExpiredR ? 'bg-red-600 border border-white' : 'bg-white border border-red-200'}`} title="Google reviewed"></div>
                                 )}
                               </div>
                               <span className={`font-bold text-lg text-gray-900 ${customerNameClassName(customer)}`}>
@@ -7616,11 +7624,12 @@ const TechnicianDashboard = () => {
                           {(() => {
                             const jc = job.customer as any;
                             const hasAmcJ = Boolean(customerAMCStatus[jc?.id]);
+                            const hasExpiredJ = Boolean(customerExpiredAmcStatus[jc?.id]);
                             const hasGJ = Boolean(jc?.has_google_review);
                             const hasPriorJ = techCustomerHasPriorService(jc, { excludeJobId: job.id });
                             const showPriorCornerJ = hasPriorJ && hasAmcJ && !hasGJ;
                             return (
-                          <div className={`w-4 h-4 ${technicianCustomerIndicatorMainClass(hasAmcJ, hasGJ, hasPriorJ)} rounded-sm flex items-center justify-center relative`}>
+                          <div className={`w-4 h-4 ${technicianCustomerIndicatorMainClass(hasAmcJ, hasGJ, hasPriorJ, hasExpiredJ)} rounded-sm flex items-center justify-center relative`} title={hasExpiredJ ? 'AMC expired' : undefined}>
                             <div className="w-2 h-2 bg-white rounded-sm"></div>
                             {showPriorCornerJ && (
                               <div className="absolute -top-0.5 -left-0.5 w-1.5 h-1.5 bg-blue-600 rounded-full border border-white" title="Prior service (returning customer)"></div>
@@ -7632,7 +7641,7 @@ const TechnicianDashboard = () => {
                               <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
                             )}
                             {Boolean(jc?.has_google_review) && !customerAMCStatus[jc?.id] && (
-                              <div className="absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 bg-white rounded-full border border-red-200" title="Google reviewed"></div>
+                              <div className={`absolute -bottom-0.5 -left-0.5 w-1.5 h-1.5 rounded-full ${hasExpiredJ ? 'bg-red-600 border border-white' : 'bg-white border border-red-200'}`} title="Google reviewed"></div>
                             )}
                           </div>
                             );
@@ -8217,6 +8226,7 @@ const TechnicianDashboard = () => {
                   const job = selectedRequest.job as any;
                   const customer = job?.customer as any;
                   const hasAmcD = Boolean(customerAMCStatus[customer?.id]);
+                  const hasExpiredD = Boolean(customerExpiredAmcStatus[customer?.id]);
                   const hasGD = Boolean(customer?.has_google_review);
                   const hasPriorD = techCustomerHasPriorService(customer);
                   const showPriorCornerD = hasPriorD && hasAmcD && !hasGD;
@@ -8226,7 +8236,7 @@ const TechnicianDashboard = () => {
                       {/* Job Info */}
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <div className="flex items-center gap-2 mb-3">
-                          <div className={`w-5 h-5 ${technicianCustomerIndicatorMainClass(hasAmcD, hasGD, hasPriorD)} rounded-sm flex items-center justify-center relative`}>
+                          <div className={`w-5 h-5 ${technicianCustomerIndicatorMainClass(hasAmcD, hasGD, hasPriorD, hasExpiredD)} rounded-sm flex items-center justify-center relative`} title={hasExpiredD ? 'AMC expired' : undefined}>
                             <div className="w-2.5 h-2.5 bg-white rounded-sm"></div>
                             {showPriorCornerD && (
                               <div className="absolute -top-0.5 -left-0.5 w-2 h-2 bg-blue-600 rounded-full border border-white" title="Prior service (returning customer)"></div>
@@ -8238,7 +8248,7 @@ const TechnicianDashboard = () => {
                               <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-orange-600 rounded-full border border-white" title="Google reviewed"></div>
                             )}
                             {Boolean(customer?.has_google_review) && !customerAMCStatus[customer?.id] && (
-                              <div className="absolute -bottom-0.5 -left-0.5 w-2 h-2 bg-white rounded-full border border-red-200" title="Google reviewed"></div>
+                              <div className={`absolute -bottom-0.5 -left-0.5 w-2 h-2 rounded-full ${hasExpiredD ? 'bg-red-600 border border-white' : 'bg-white border border-red-200'}`} title="Google reviewed"></div>
                             )}
                           </div>
                           <span className={`font-bold text-xl text-gray-900 ${customerNameClassName(customer)}`}>

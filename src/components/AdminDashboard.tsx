@@ -108,9 +108,11 @@ import {
 import { Switch } from '@/components/ui/switch';
 import {
   applyAdminDashboardSnapshot,
+  fetchAmcIndicatorContractRows,
   loadAdminDashboardData,
   loadAdminDashboardSecondary,
 } from '@/lib/adminLoadDashboardData';
+import { buildCustomerAmcIndicatorMaps } from '@/lib/customerAmcIndicator';
 import {
   scheduleAdminAmcJobCreation,
   scheduleAdminFollowUpPromotion,
@@ -477,6 +479,7 @@ const AdminDashboard = () => {
   const [tabCachesStale, setTabCachesStale] = useState(false);
   const [isResumeListSyncing, setIsResumeListSyncing] = useState(false);
   const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
+  const [customerExpiredAmcStatus, setCustomerExpiredAmcStatus] = useState<Record<string, boolean>>({});
   const [customerPriorServiceStatus, setCustomerPriorServiceStatus] = useState<Record<string, boolean>>({}); // ≥1 completed job
   const [searchTerm, setSearchTerm] = useState('');
   const [searchQuery, setSearchQuery] = useState(''); // For the input field
@@ -1998,6 +2001,7 @@ const AdminDashboard = () => {
     () =>
       loadAdminDashboardSecondary({
         setCustomerAMCStatus,
+        setCustomerExpiredAmcStatus,
         setCustomerPriorServiceStatus,
         setTechniciansForReports,
         setAllFollowUpJobs,
@@ -5438,23 +5442,16 @@ const AdminDashboard = () => {
   // Reload AMC status from database
   const reloadAMCStatus = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('amc_contracts')
-        .select('customer_id, status')
-        .eq('status', 'ACTIVE');
+      const { data, error } = await fetchAmcIndicatorContractRows();
 
       if (error) {
         console.error('Error reloading AMC status:', error);
         return;
       }
 
-      const amcStatusMap: Record<string, boolean> = {};
-      if (data) {
-        data.forEach((amc: any) => {
-          amcStatusMap[amc.customer_id] = true;
-        });
-      }
-      setCustomerAMCStatus(amcStatusMap);
+      const amcIndicators = buildCustomerAmcIndicatorMaps(data, getTodayLocalDate());
+      setCustomerAMCStatus(amcIndicators.active);
+      setCustomerExpiredAmcStatus(amcIndicators.expired);
     } catch (error) {
       console.error('Error reloading AMC status:', error);
     }
@@ -6619,6 +6616,7 @@ const AdminDashboard = () => {
       tomorrowDateStr,
       followUpDateToStr,
       customerAMCStatus,
+      customerExpiredAmcStatus,
       customerPriorServiceStatus,
       isLoadingPhotos,
       selectedCustomerForPhotos,
@@ -6647,6 +6645,7 @@ const AdminDashboard = () => {
       tomorrowDateStr,
       followUpDateToStr,
       customerAMCStatus,
+      customerExpiredAmcStatus,
       customerPriorServiceStatus,
       isLoadingPhotos,
       selectedCustomerForPhotos,

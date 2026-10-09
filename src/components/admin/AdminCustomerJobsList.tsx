@@ -91,6 +91,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
     tomorrowDateStr,
     followUpDateToStr,
     customerAMCStatus,
+    customerExpiredAmcStatus,
     customerPriorServiceStatus,
     isLoadingPhotos,
     selectedCustomerForPhotos,
@@ -189,6 +190,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
     <CustomerCardHeader
       customer={customer}
       customerAMCStatus={customerAMCStatus}
+      customerExpiredAmcStatus={customerExpiredAmcStatus}
       customerPriorServiceStatus={customerPriorServiceStatus}
       priorServiceFromJobs={priorServiceFromJobs}
       isLoadingPhotos={isLoadingPhotos}

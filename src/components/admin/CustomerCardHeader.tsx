@@ -9,6 +9,8 @@ import { preloadDocumentGeneratorModals } from '@/lib/document-generator-preload
 interface CustomerCardHeaderProps {
   customer: Customer;
   customerAMCStatus: Record<string, boolean>;
+  /** End date passed and no newer contract is still in force. */
+  customerExpiredAmcStatus?: Record<string, boolean>;
   /** True if customer has had at least one completed service (returning customer). */
   customerPriorServiceStatus: Record<string, boolean>;
   isLoadingPhotos: boolean;
@@ -34,6 +36,7 @@ interface CustomerCardHeaderProps {
 export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   customer,
   customerAMCStatus,
+  customerExpiredAmcStatus = {},
   customerPriorServiceStatus,
   isLoadingPhotos,
   selectedCustomerForPhotos,
@@ -75,38 +78,44 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
       (customer as any).last_service_date
   );
   const hasAmc = Boolean(customerUuid && customerAMCStatus[customerUuid]);
+  const hasExpiredAmc = Boolean(customerUuid && customerExpiredAmcStatus[customerUuid]);
   /** Blue side dot: returning + AMC only — if they left a Google review, that already means they're a repeat customer. */
   const showPriorCornerDot = hasPriorService && hasAmc && !hasGoogleReview;
+  const indicatorTitle = hasExpiredAmc ? 'AMC expired' : undefined;
 
-  // Blue (returning customer) only when no active AMC and no Google review — green/red/orange behave as before.
+  // Amber when the AMC end date has passed and nothing newer is still in force.
   const mainIndicatorClass =
     hasAmc && hasGoogleReview
       ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_12px_rgba(249,115,22,0.9)]'
       : hasAmc
         ? 'bg-green-500'
-        : hasGoogleReview
-          ? 'bg-red-500'
-          : hasPriorService && !hasAmc && !hasGoogleReview
-            ? 'bg-blue-500'
-            : 'bg-gray-600';
+        : hasExpiredAmc
+          ? 'bg-amber-600'
+          : hasGoogleReview
+            ? 'bg-red-500'
+            : hasPriorService && !hasAmc && !hasGoogleReview
+              ? 'bg-blue-500'
+              : 'bg-gray-600';
 
   const mainIndicatorClassDesktop =
     hasAmc && hasGoogleReview
       ? 'bg-orange-500 ring-2 ring-orange-300 shadow-[0_0_10px_rgba(249,115,22,0.9)]'
       : hasAmc
         ? 'bg-green-500'
-        : hasGoogleReview
-          ? 'bg-red-500'
-          : hasPriorService && !hasAmc && !hasGoogleReview
-            ? 'bg-blue-500'
-            : 'bg-gray-600';
+        : hasExpiredAmc
+          ? 'bg-amber-600'
+          : hasGoogleReview
+            ? 'bg-red-500'
+            : hasPriorService && !hasAmc && !hasGoogleReview
+              ? 'bg-blue-500'
+              : 'bg-gray-600';
 
   return (
     <div className="bg-gray-50 p-4 border-b border-gray-200">
       {/* Mobile Customer Info */}
       <div className="mb-4 sm:hidden">
         <div className="flex items-center gap-3 mb-2">
-          <div className={`w-6 h-6 ${mainIndicatorClass} rounded-sm flex items-center justify-center relative`}>
+          <div className={`w-6 h-6 ${mainIndicatorClass} rounded-sm flex items-center justify-center relative`} title={indicatorTitle}>
             <div className="w-3 h-3 bg-white rounded-sm"></div>
             {showPriorCornerDot && (
               <div className="absolute -top-0.5 -left-0.5 z-20 w-2 h-2 bg-blue-600 rounded-full border border-white shadow-sm" title="Prior service (returning customer)"></div>
@@ -199,7 +208,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <div className={`w-5 h-5 ${mainIndicatorClassDesktop} rounded-sm flex items-center justify-center relative`}>
+              <div className={`w-5 h-5 ${mainIndicatorClassDesktop} rounded-sm flex items-center justify-center relative`} title={indicatorTitle}>
                 <div className="w-2 h-2 bg-white rounded-sm"></div>
                 {showPriorCornerDot && (
                   <div className="absolute -top-0.5 -left-0.5 z-20 w-2 h-2 bg-blue-600 rounded-full border border-white shadow-sm" title="Prior service (returning customer)"></div>
