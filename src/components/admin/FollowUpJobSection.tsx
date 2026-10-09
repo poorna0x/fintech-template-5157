@@ -1,6 +1,8 @@
 import React from 'react';
 import { CalendarPlus } from 'lucide-react';
 import { Job } from '@/types';
+import { amcVisitDueFromDescription, formatAmcJobDueNote } from '@/lib/amcAutoJobSchedule';
+import { getTodayLocalDate } from '@/lib/adminDashboardDateHelpers';
 
 interface FollowUpJobSectionProps {
   job: Job;
@@ -23,6 +25,15 @@ export const FollowUpJobSection: React.FC<FollowUpJobSectionProps> = ({
     return null;
   }
 
+  const serviceSubType = String(job.serviceSubType || job.service_sub_type || '')
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '');
+  const visitDue =
+    serviceSubType === 'amcservice'
+      ? amcVisitDueFromDescription(job.description)
+      : null;
+  const dueNote = visitDue ? formatAmcJobDueNote(visitDue, getTodayLocalDate()) : null;
+
   return (
     <div className="mt-4 mb-2">
       <div className="flex items-start gap-2 sm:gap-3 rounded-md border border-gray-200 px-2 py-2 sm:px-3">
@@ -43,6 +54,9 @@ export const FollowUpJobSection: React.FC<FollowUpJobSectionProps> = ({
           <div className="text-gray-700 break-words">
             <span className="text-gray-500">Reason:</span> {followUpNotes || 'Not confirmed'}
           </div>
+          {dueNote ? (
+            <div className="font-medium text-sky-800 break-words">{dueNote}</div>
+          ) : null}
           <div className="text-xs text-gray-500 break-words">
             Scheduled by {followUpScheduledByName}
             {formattedFollowUpScheduledAt && (

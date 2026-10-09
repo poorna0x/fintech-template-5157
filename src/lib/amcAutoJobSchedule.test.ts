@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { listAmcContractSlots, nextAmcYearServiceDate, planAmcNextVisit } from './amcAutoJobSchedule';
+import {
+  addMonthsToDate,
+  amcVisitDueFromDescription,
+  formatAmcJobDueNote,
+  listAmcContractSlots,
+  nextAmcYearServiceDate,
+  planAmcNextVisit,
+} from './amcAutoJobSchedule';
 
 describe('listAmcContractSlots', () => {
   it('places 4-month visits on the contract calendar and stops at the end date', () => {
@@ -201,5 +208,20 @@ describe('planAmcNextVisit', () => {
     });
     expect(plan.pushedConsumed).toBe(true);
     expect(plan.visitKind).not.toBe('pushed');
+  });
+});
+
+describe('AMC follow-up due note', () => {
+  it('reads the visit date from the job text, not the day the job was opened', () => {
+    const description =
+      'AMC Service - Scheduled maintenance service. Last service was on 13 Apr 2026. Due on 13 Oct 2026.';
+    expect(amcVisitDueFromDescription(description)).toBe('2026-10-13');
+    expect(addMonthsToDate('2026-04-13', 6)).toBe('2026-10-13');
+  });
+
+  it('says due in 3 days when a 6-month visit is 3 days away', () => {
+    expect(formatAmcJobDueNote('2026-10-13', '2026-10-10')).toBe('AMC job due in 3 days');
+    expect(formatAmcJobDueNote('2026-10-13', '2026-10-13')).toBe('AMC job due today');
+    expect(formatAmcJobDueNote('2026-09-28', '2026-10-09')).toBe('AMC job due 11 days ago');
   });
 });

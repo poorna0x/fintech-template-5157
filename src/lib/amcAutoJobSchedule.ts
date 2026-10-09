@@ -245,6 +245,75 @@ export function planAmcNextVisit(args: {
   };
 }
 
+const AMC_MONTH_INDEX: Record<string, number> = {
+  jan: 1,
+  feb: 2,
+  mar: 3,
+  apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  aug: 8,
+  sep: 9,
+  oct: 10,
+  nov: 11,
+  dec: 12,
+};
+
+/** "13 Oct 2026" or "28 Sept 2026" from an AMC job description. */
+export function parseAmcDisplayDate(fragment: string): string | null {
+  const iso = fragment.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (iso) return iso[1];
+  const match = fragment.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
+  if (!match) return null;
+  const month = AMC_MONTH_INDEX[match[2].slice(0, 3).toLowerCase()];
+  const day = Number(match[1]);
+  const year = Number(match[3]);
+  if (!month || day < 1 || day > 31 || year < 2000) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** Real AMC visit day written on the auto-created job. Not the day the job was opened. */
+export function amcVisitDueFromDescription(description: string | null | undefined): string | null {
+  const text = String(description || '');
+  if (!text) return null;
+  const due = text.match(/Due on\s+([^.\n]+)/i);
+  if (due) {
+    const parsed = parseAmcDisplayDate(due[1]);
+    if (parsed) return parsed;
+  }
+  const pushed = text.match(/Visit pushed to\s+([^.\n]+)/i);
+  if (pushed) {
+    const parsed = parseAmcDisplayDate(pushed[1]);
+    if (parsed) return parsed;
+  }
+  const ends = text.match(/ends on\s+([^.\n]+)/i);
+  if (ends) return parseAmcDisplayDate(ends[1]);
+  return null;
+}
+
+function calendarDaysFrom(startYmd: string, endYmd: string): number {
+  const [sy, sm, sd] = startYmd.split('-').map(Number);
+  const [ey, em, ed] = endYmd.split('-').map(Number);
+  const start = Date.UTC(sy, sm - 1, sd);
+  const end = Date.UTC(ey, em - 1, ed);
+  return Math.round((end - start) / 86400000);
+}
+
+/**
+ * Note for an AMC follow-up: how long until the visit, counted from the real due date.
+ * A 6-month visit that is 5 months and 28 days along reads as due in a few days.
+ */
+export function formatAmcJobDueNote(dueYmd: string, todayYmd: string): string {
+  const days = calendarDaysFrom(todayYmd, dueYmd);
+  if (days === 0) return 'AMC job due today';
+  if (days > 0) {
+    return days === 1 ? 'AMC job due in 1 day' : `AMC job due in ${days} days`;
+  }
+  const ago = -days;
+  return ago === 1 ? 'AMC job due 1 day ago' : `AMC job due ${ago} days ago`;
+}
+
 export function formatAmcDateEnIN(dateStr: string): string {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN', {
     day: 'numeric',
