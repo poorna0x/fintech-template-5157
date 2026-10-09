@@ -878,7 +878,7 @@ export function normalizeServiceSubType(value: string): string {
   );
 }
 
-/** Open AMC Service jobs — red border on ongoing / follow-up / tech cards. */
+/** Open AMC Service jobs (pending through follow-up). */
 const OPEN_AMC_JOB_STATUSES = new Set([
   'PENDING',
   'ASSIGNED',
@@ -904,6 +904,53 @@ export function isOpenAmcServiceJob(job: {
     )
   );
   return sub === 'AMC Service';
+}
+
+function jobCalendarYmd(value: unknown): string | null {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (raw.includes('T')) {
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  const part = raw.split('T')[0].trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(part) ? part : null;
+}
+
+/** Visit date for an open AMC Service job. Follow-up date wins once the job is on Follow-up. */
+export function openAmcServiceDueYmd(job: {
+  status?: string;
+  service_sub_type?: string;
+  serviceSubType?: string;
+  follow_up_date?: string | null;
+  followUpDate?: string | null;
+  scheduled_date?: string | null;
+  scheduledDate?: string | null;
+} | null | undefined): string | null {
+  if (!isOpenAmcServiceJob(job)) return null;
+  const status = String(job?.status || '').toUpperCase();
+  const followUp = jobCalendarYmd(job?.follow_up_date ?? job?.followUpDate);
+  const scheduled = jobCalendarYmd(job?.scheduled_date ?? job?.scheduledDate);
+  if (status === 'FOLLOW_UP' || status === 'RESCHEDULED') return followUp || scheduled;
+  return scheduled || followUp;
+}
+
+/** Customer-card border from open AMC Service visits. Later dates get no highlight. */
+export function amcCustomerCardBorder(
+  jobs: Array<Parameters<typeof openAmcServiceDueYmd>[0]>,
+  todayYmd: string,
+  tomorrowYmd: string
+): 'due' | 'tomorrow' | null {
+  let dueTomorrow = false;
+  for (const job of jobs) {
+    const due = openAmcServiceDueYmd(job);
+    if (!due) continue;
+    if (due <= todayYmd) return 'due';
+    if (due === tomorrowYmd) dueTomorrow = true;
+  }
+  return dueTomorrow ? 'tomorrow' : null;
 }
 
 const LEAD_TYPE_NORMALIZE_MAP: Record<string, string> = {

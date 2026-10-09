@@ -57,7 +57,6 @@ import { WhatsAppIcon } from '../WhatsAppIcon';
 import { useAdminDashboardList } from '@/contexts/AdminDashboardListContext';
 import { parseAdminDashboardUrl } from '@/lib/adminDashboardUrl';
 import {
-  findLeadSource,
   getLeadSourceFromJob,
   getJobCustomTimeLabel,
   normalizeLeadType,
@@ -71,7 +70,8 @@ import {
   isOfficeCompletedJob,
   ZERO_COMMISSION_EMPLOYEE_ID,
   resolveJobEquipment,
-  isOpenAmcServiceJob,
+  amcCustomerCardBorder,
+  openAmcServiceDueYmd,
 } from '@/lib/adminUtils';
 import type { Job } from '@/types';
 import { useFollowUpGlowEnabled } from '@/hooks/useFollowUpGlowEnabled';
@@ -142,36 +142,20 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
   return (
     <>
       {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => {
-  // Check if this customer has followup jobs scheduled for today or tomorrow (for card border)
-  const hasTodayFollowup = statusFilter === 'RESCHEDULED' && allJobs.some(job => {
-    if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
-    const dateStr = followUpDateToStr(job.followUpDate || (job as any).follow_up_date);
-    return dateStr === todayDateStr;
-  });
-  const hasTomorrowFollowup = statusFilter === 'RESCHEDULED' && !hasTodayFollowup && allJobs.some(job => {
-    if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
-    const dateStr = followUpDateToStr(job.followUpDate || (job as any).follow_up_date);
-    return dateStr === tomorrowDateStr;
-  });
-  // Check if this customer has any job with lead source Website
-  const hasWebsiteLead = allJobs.some(job => {
-    const reqs = (job as any).requirements;
-    const arr = Array.isArray(reqs) ? reqs : reqs && typeof reqs === 'object' ? [reqs] : [];
-    const lead = (findLeadSource(arr) || '').toLowerCase();
-    return lead.includes('website');
-  });
-  const hasOpenAmcServiceJob = allJobs.some((job) => isOpenAmcServiceJob(job));
-  // AMC due / open AMC Service jobs → blue border.
-  const borderClass = hasOpenAmcServiceJob
-    ? 'border-blue-500 border-2'
-    : followUpGlowEnabled && hasTodayFollowup
+  // AMC due today or earlier → red. Due tomorrow → yellow. Any later date stays plain.
+  const amcBorder = amcCustomerCardBorder(allJobs, todayDateStr, tomorrowDateStr);
+  const borderClass =
+    amcBorder === 'due'
       ? 'border-red-400 border-2'
-      : followUpGlowEnabled && hasTomorrowFollowup
+      : amcBorder === 'tomorrow'
         ? 'border-yellow-400 border-2'
-        : hasWebsiteLead
-          ? 'border-red-400 border-2'
-          : 'border-gray-300';
-  const hoverBorderClass = hasWebsiteLead || hasOpenAmcServiceJob ? 'hover:border-green-400' : 'hover:border-gray-400';
+        : 'border-gray-300';
+  const hoverBorderClass =
+    amcBorder === 'due'
+      ? 'hover:border-red-500'
+      : amcBorder === 'tomorrow'
+        ? 'hover:border-yellow-500'
+        : 'hover:border-gray-400';
   const priorServiceFromJobs =
     completedJobs.length > 0 ||
     allJobs.some(
@@ -669,20 +653,33 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                   const jobFollowUpDateStr = followUpDateToStr(followUpDate);
                   const isFollowUpToday = statusFilter === 'RESCHEDULED' && ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status) && jobFollowUpDateStr === todayDateStr;
                   const isFollowUpTomorrow = statusFilter === 'RESCHEDULED' && ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status) && jobFollowUpDateStr === tomorrowDateStr;
-                  const isAmcDueJob = isOpenAmcServiceJob(job);
-                  const jobBorderClass = isAmcDueJob
-                    ? 'border-blue-500 border-2'
-                    : followUpGlowEnabled && isFollowUpToday
-                      ? 'border-red-400 border-2'
-                      : followUpGlowEnabled && isFollowUpTomorrow
-                        ? 'border-yellow-400 border-2'
-                        : job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId)
-                          ? 'border-blue-500 border-2'
-                          : 'border-gray-300';
+                  const amcDueYmd = openAmcServiceDueYmd(job);
+                  const amcJobUrgent =
+                    amcDueYmd != null && amcDueYmd <= todayDateStr
+                      ? 'due'
+                      : amcDueYmd === tomorrowDateStr
+                        ? 'tomorrow'
+                        : null;
+                  const jobBorderClass = amcJobUrgent === 'due'
+                    ? 'border-red-400 border-2'
+                    : amcJobUrgent === 'tomorrow'
+                      ? 'border-yellow-400 border-2'
+                      : followUpGlowEnabled && isFollowUpToday
+                        ? 'border-red-400 border-2'
+                        : followUpGlowEnabled && isFollowUpTomorrow
+                          ? 'border-yellow-400 border-2'
+                          : job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId)
+                            ? 'border-blue-500 border-2'
+                            : 'border-gray-300';
+                  const jobHoverClass = amcJobUrgent === 'due'
+                    ? 'hover:border-red-500'
+                    : amcJobUrgent === 'tomorrow'
+                      ? 'hover:border-yellow-500'
+                      : 'hover:border-gray-400';
                   return (
                 <div
                   data-admin-job-id={job.id}
-                  className={`bg-white rounded-lg border ${jobBorderClass} hover:border-gray-400 hover:shadow-sm transition-all duration-200 overflow-hidden group${
+                  className={`bg-white rounded-lg border ${jobBorderClass} ${jobHoverClass} hover:shadow-sm transition-all duration-200 overflow-hidden group${
                     highlightJobId === job.id
                       ? ' ring-2 ring-sky-500 ring-offset-2 shadow-md'
                       : ''
