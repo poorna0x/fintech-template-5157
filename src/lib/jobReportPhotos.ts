@@ -1,4 +1,5 @@
 import { extractPhotoUrls, normalizePhotoUrl, parseJobRequirements } from '@/lib/adminUtils';
+import { stickerPhotoUrlsFromJob } from '@/lib/brandSticker';
 import { db } from '@/lib/supabase';
 import {
   billPhotosRequirement,
@@ -347,6 +348,7 @@ export function collectAllPhotoUrlsFromJob(job: {
   add(extractPhotoUrls(Array.isArray(afterRaw) ? afterRaw : []));
   add(extractPhotoUrls(Array.isArray(job.images) ? job.images : []));
   add(resolveJobBillAndPaymentPhotos(job).allPhotos);
+  add(stickerPhotoUrlsFromJob(job));
 
   return ordered;
 }

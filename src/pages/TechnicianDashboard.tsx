@@ -195,6 +195,7 @@ function resolveLatestAcceptablePayQrPhoto(
 }
 import { resolveJobBillingAmount } from '@/lib/jobAnalytics';
 import { compareJobsByVisitOrder, getJobVisitOrder, getVisitOrderVisibleForTechnician } from '@/lib/adminVisitOrder';
+import { collectStickerSkipNotes, loadBrandStickerRequired } from '@/lib/brandSticker';
 import {
   aggregateCustomerPhotoUrls,
   collectAllPhotoUrlsFromJob,
@@ -605,6 +606,8 @@ const TechnicianDashboard = () => {
   }>({ open: false, job: null, action: null, rank: 0, firstJob: null });
   /** Admin Tools → Arrange order per-technician switch (default off). */
   const [visitOrderVisible, setVisitOrderVisible] = useState(false);
+  /** Settings → Edit technician. Off until the column is on for this login. */
+  const [brandStickerRequired, setBrandStickerRequired] = useState(false);
   const [confirmCompleteJobDialog, setConfirmCompleteJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const statusFilterRef = useRef(statusFilter);
@@ -751,11 +754,15 @@ const TechnicianDashboard = () => {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5 | 6 | 7>(1);
+  const [completeJobStep, setCompleteJobStep] = useState<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8>(1);
   const completeJobScrollRef = useRef<HTMLDivElement>(null);
   const [billAmount, setBillAmount] = useState<string>('');
   const [billPhotos, setBillPhotos] = useState<string[]>([]);
   const [billPhotoSources, setBillPhotoSources] = useState<Record<string, PhotoCaptureSource>>({});
+  const [stickerPhotos, setStickerPhotos] = useState<string[]>([]);
+  const [stickerSkipped, setStickerSkipped] = useState(false);
+  const [stickerSkipConfirmOpen, setStickerSkipConfirmOpen] = useState(false);
+  const stickerSkipsRef = useRef<string[]>([]);
   const [otpInput, setOtpInput] = useState<string[]>(['', '', '', '']);
   const [otpError, setOtpError] = useState<string>('');
   const [serviceBrand, setServiceBrand] = useState<ServiceBrand | null>(null);
@@ -799,6 +806,7 @@ const TechnicianDashboard = () => {
   const [promisedPaymentDate, setPromisedPaymentDate] = useState('');
   const [isSubmittingJobCompletion, setIsSubmittingJobCompletion] = useState(false);
   const [isBillPhotosUploading, setIsBillPhotosUploading] = useState(false);
+  const [isStickerPhotosUploading, setIsStickerPhotosUploading] = useState(false);
   const [isPaymentScreenshotUploading, setIsPaymentScreenshotUploading] = useState(false);
   const [optionalCompletionPhotos, setOptionalCompletionPhotos] = useState<string[]>([]);
   /** Ask for optional job photos only when this customer has zero photos across profile + all jobs. */
@@ -855,7 +863,7 @@ const TechnicianDashboard = () => {
 
   // Photos dialog state
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
-  const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], customerId?: string} | null>(null);
+  const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], customerId?: string, stickerSkips?: string[]} | null>(null);
   const [loadingCustomerPhotos, setLoadingCustomerPhotos] = useState(false);
 
   // Photo viewer — completed jobs, job gallery, and customer report
@@ -1551,6 +1559,21 @@ const TechnicianDashboard = () => {
     return () => {
       cancelled = true;
       document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [user?.technicianId]);
+
+  useEffect(() => {
+    const techId = user?.technicianId;
+    if (!techId) {
+      setBrandStickerRequired(false);
+      return;
+    }
+    let cancelled = false;
+    void loadBrandStickerRequired(techId).then((on) => {
+      if (!cancelled) setBrandStickerRequired(on);
+    });
+    return () => {
+      cancelled = true;
     };
   }, [user?.technicianId]);
 
@@ -3999,6 +4022,10 @@ const TechnicianDashboard = () => {
     setBillAmount('');
     setBillPhotos([]);
     setBillPhotoSources({});
+    setStickerPhotos([]);
+    setStickerSkipped(false);
+    setStickerSkipConfirmOpen(false);
+    setIsStickerPhotosUploading(false);
     setOptionalCompletionPhotos([]);
     setCustomerHasZeroPhotosAltogether(false);
     setExtraPhotosStep6([]);
@@ -4154,6 +4181,8 @@ const TechnicianDashboard = () => {
       billAmount,
       billPhotos,
       billPhotoSources,
+      stickerPhotos,
+      stickerSkipped,
       optionalCompletionPhotos,
       extraPhotosStep6,
       dontSendMessageToCustomer,
@@ -4199,6 +4228,8 @@ const TechnicianDashboard = () => {
     billAmount,
     billPhotos,
     billPhotoSources,
+    stickerPhotos,
+    stickerSkipped,
     optionalCompletionPhotos,
     extraPhotosStep6,
     dontSendMessageToCustomer,
@@ -4238,6 +4269,8 @@ const TechnicianDashboard = () => {
     setBillAmount(draft.billAmount);
     setBillPhotos(draft.billPhotos);
     setBillPhotoSources(draft.billPhotoSources || {});
+    setStickerPhotos(draft.stickerPhotos || []);
+    setStickerSkipped(draft.stickerSkipped === true);
     setOptionalCompletionPhotos(draft.optionalCompletionPhotos);
     setExtraPhotosStep6(draft.extraPhotosStep6);
     setDontSendMessageToCustomer(draft.dontSendMessageToCustomer);
@@ -5118,6 +5151,16 @@ const TechnicianDashboard = () => {
     setCompleteJobStep(nextStep);
   };
 
+  /** Bill step is done. Sticker sits between the bill and whatever came next. */
+  const leaveBillStep = (billPhotosForSave: string[]) => {
+    if (brandStickerRequired) {
+      setBillPhotos(billPhotosForSave);
+      setCompleteJobStep(8);
+      return;
+    }
+    advanceFromStep2(billPhotosForSave);
+  };
+
   const afterJobCompletionSaved = useCallback(
     async (uploadedBillPhotos: string[]) => {
       if (!selectedJobForComplete) return;
@@ -5375,9 +5418,29 @@ const TechnicianDashboard = () => {
       }
       const hasAnyBillSlot = billPhotos.some((u) => typeof u === 'string' && u.trim() !== '');
       if (hasAnyBillSlot) {
-        advanceFromStep2([...billPhotos]);
+        leaveBillStep([...billPhotos]);
       } else {
         setBillPhotosSkipConfirmOpen(true);
+      }
+      return;
+    }
+
+    if (!completionRetryPhaseBOnly && completeJobStep === 8) {
+      if (isStickerPhotosUploading || stickerPhotos.some(hasPendingLocalOrUploadingPhoto)) {
+        toast.error(
+          isStickerPhotosUploading
+            ? 'Sticker photo is still uploading.'
+            : 'Sticker photo must finish uploading before continuing.',
+          TOAST_VALIDATION
+        );
+        return;
+      }
+      const hasSticker = stickerPhotos.some((u) => typeof u === 'string' && u.trim() !== '');
+      if (hasSticker) {
+        setStickerSkipped(false);
+        advanceFromStep2([...billPhotos]);
+      } else {
+        setStickerSkipConfirmOpen(true);
       }
       return;
     }
@@ -5851,6 +5914,7 @@ const TechnicianDashboard = () => {
         requirements = requirements.filter((req: any) => {
           if (!req || typeof req !== 'object') return true;
           if (req.bill_photos !== undefined) return false;
+          if (brandStickerRequired && (req.sticker_photos !== undefined || req.sticker_skipped === true)) return false;
           if (req.payment_photos !== undefined) return false;
           if (req.qr_photos !== undefined) return false;
           if (req.completion_draft !== undefined) return false;
@@ -5865,6 +5929,15 @@ const TechnicianDashboard = () => {
         if (uploadedBillPhotos.length > 0) {
           requirements.push(billPhotosRequirement(uploadedBillPhotos, billPhotoSources));
           console.log('✅ Added bill photos to requirements:', uploadedBillPhotos);
+        }
+
+        if (brandStickerRequired) {
+          const uploadedStickers = stickerPhotos.filter(isUploadedMediaUrl);
+          if (uploadedStickers.length > 0) {
+            requirements.push({ sticker_photos: uploadedStickers });
+          } else if (stickerSkipped) {
+            requirements.push({ sticker_skipped: true });
+          }
         }
 
         // Collect all photos for after_photos array (bill photos + payment screenshot)
@@ -6370,6 +6443,9 @@ const TechnicianDashboard = () => {
     if (completeJobStep === 2 && (isBillPhotosUploading || billPhotos.some(hasPendingLocalOrUploadingPhoto))) {
       return true;
     }
+    if (completeJobStep === 8 && (isStickerPhotosUploading || stickerPhotos.some(hasPendingLocalOrUploadingPhoto))) {
+      return true;
+    }
     const billZero =
       billAmount === '' || isNaN(parseFloat(billAmount)) || parseFloat(billAmount) === 0;
     if (completeJobStep === 5 && !billZero) {
@@ -6386,6 +6462,8 @@ const TechnicianDashboard = () => {
     optionalCompletionPhotos,
     isBillPhotosUploading,
     billPhotos,
+    isStickerPhotosUploading,
+    stickerPhotos,
     billAmount,
     isPaymentScreenshotUploading,
     paymentScreenshot,
@@ -6403,6 +6481,7 @@ const TechnicianDashboard = () => {
       const customerUuid = await resolveCustomerUuidForQueries(customerIdOrCustomer);
       if (!customerUuid) {
         console.error('Error resolving customer UUID for photos');
+        stickerSkipsRef.current = [];
         return [];
       }
 
@@ -6430,6 +6509,7 @@ const TechnicianDashboard = () => {
 
       let allCustomerJobs = Array.from(jobById.values());
       if (allCustomerJobs.length === 0 && error) {
+        stickerSkipsRef.current = [];
         return [];
       }
 
@@ -6452,6 +6532,7 @@ const TechnicianDashboard = () => {
         }
       }
 
+      stickerSkipsRef.current = collectStickerSkipNotes(allCustomerJobs);
       const uniquePhotos = aggregateCustomerPhotoUrls(allCustomerJobs, customerRecord);
       if (import.meta.env.DEV) {
         console.log(
@@ -6461,6 +6542,7 @@ const TechnicianDashboard = () => {
       return uniquePhotos;
     } catch (error) {
       console.error('Error in getAllCustomerPhotos:', error);
+      stickerSkipsRef.current = [];
       return [];
     } finally {
       setLoadingCustomerPhotos(false);
@@ -7240,6 +7322,7 @@ const TechnicianDashboard = () => {
                                                   jobId: job.id,
                                                   photos: allCustomerPhotos,
                                                   customerId: resolvedId ?? undefined,
+                                                  stickerSkips: [...stickerSkipsRef.current],
                                                 });
                                                 setPhotosDialogOpen(true);
                                                 setLoadingCustomerPhotos(false);
@@ -8058,6 +8141,7 @@ const TechnicianDashboard = () => {
                                               jobId: job.id,
                                               photos: allCustomerPhotos,
                                               customerId: resolvedId ?? undefined,
+                                              stickerSkips: [...stickerSkipsRef.current],
                                             });
                                             setPhotosDialogOpen(true);
                                           } finally {
@@ -8786,11 +8870,36 @@ const TechnicianDashboard = () => {
               <AlertDialogAction
                 onClick={() => {
                   setBillPhotosSkipConfirmOpen(false);
-                  advanceFromStep2([]);
+                  leaveBillStep([]);
                 }}
                 className="bg-black hover:bg-gray-800 !text-white font-semibold"
               >
                 Yes
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={stickerSkipConfirmOpen} onOpenChange={setStickerSkipConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Skip the brand sticker photo?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The customer gallery will show that the sticker photo was skipped.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setStickerSkipConfirmOpen(false);
+                  setStickerPhotos([]);
+                  setStickerSkipped(true);
+                  advanceFromStep2([...billPhotos]);
+                }}
+                className="bg-black hover:bg-gray-800 !text-white font-semibold"
+              >
+                Yes, skip
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -9118,6 +9227,7 @@ const TechnicianDashboard = () => {
                   <>
                     {completeJobStep === 1 && 'Select service brand & enter bill amount'}
                     {completeJobStep === 2 && 'Upload bill photo (optional)'}
+                    {completeJobStep === 8 && 'Upload brand sticker photo (optional)'}
                     {completeJobStep === 3 && 'AMC Information (Optional - Can Skip)'}
                     {completeJobStep === 4 && 'Select payment mode and QR code'}
                     {completeJobStep === 5 && 'Upload payment screenshot (optional)'}
@@ -9209,14 +9319,35 @@ const TechnicianDashboard = () => {
                     )}
                     <span className="relative z-10">2</span>
                   </div>
+                  {brandStickerRequired ? (
+                    <>
+                      <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
+                        completeJobStep === 8 || (completeJobStep !== 8 && completeJobStep >= 3) ? 'bg-black' : 'bg-gray-200'
+                      }`}></div>
+                      <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-[10px] font-medium flex-shrink-0 relative ${
+                        completeJobStep === 8 ? 'bg-black text-white' :
+                        completeJobStep !== 8 && completeJobStep > 2 ? 'bg-black text-white' :
+                        'bg-gray-200 text-gray-600'
+                      }`}>
+                        {completeJobStep === 8 && (
+                          <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
+                        )}
+                        <span className="relative z-10">S</span>
+                      </div>
+                      <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
+                        completeJobStep !== 8 && completeJobStep >= 3 ? 'bg-black' : 'bg-gray-200'
+                      }`}></div>
+                    </>
+                  ) : (
                   <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
                     completeJobStep >= 3 ? 'bg-black' : 'bg-gray-200'
                   }`}></div>
+                  )}
                   
                   {/* Step 3 - AMC Info */}
                   <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                     completeJobStep === 3 ? 'bg-black text-white' : 
-                    completeJobStep > 3 ? 'bg-black text-white' : 
+                    completeJobStep !== 8 && completeJobStep > 3 ? 'bg-black text-white' : 
                     'bg-gray-200 text-gray-600'
                   }`}>
                     {completeJobStep === 3 && (
@@ -9225,13 +9356,13 @@ const TechnicianDashboard = () => {
                     <span className="relative z-10">3</span>
                   </div>
                   <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
-                    completeJobStep >= 4 ? 'bg-black' : 'bg-gray-200'
+                    completeJobStep !== 8 && completeJobStep >= 4 ? 'bg-black' : 'bg-gray-200'
                   }`}></div>
                   
                   {/* Step 4 - Payment Mode */}
                   <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                     completeJobStep === 4 ? 'bg-black text-white' : 
-                    completeJobStep > 4 ? 'bg-black text-white' : 
+                    completeJobStep !== 8 && completeJobStep > 4 ? 'bg-black text-white' : 
                     'bg-gray-200 text-gray-600'
                   }`}>
                     {completeJobStep === 4 && (
@@ -9240,13 +9371,13 @@ const TechnicianDashboard = () => {
                     <span className="relative z-10">4</span>
                   </div>
                   <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
-                    completeJobStep >= 5 ? 'bg-black' : 'bg-gray-200'
+                    completeJobStep !== 8 && completeJobStep >= 5 ? 'bg-black' : 'bg-gray-200'
                   }`}></div>
                   
                   {/* Step 5 - Payment Screenshot */}
                   <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                     completeJobStep === 5 ? 'bg-black text-white' : 
-                    completeJobStep > 5 ? 'bg-black text-white' : 
+                    completeJobStep !== 8 && completeJobStep > 5 ? 'bg-black text-white' : 
                     'bg-gray-200 text-gray-600'
                   }`}>
                     {completeJobStep === 5 && (
@@ -9255,7 +9386,7 @@ const TechnicianDashboard = () => {
                     <span className="relative z-10">5</span>
                   </div>
                   <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
-                    completeJobStep >= (needsOtpStep() ? 7 : 6) ? 'bg-black' : 'bg-gray-200'
+                    completeJobStep !== 8 && completeJobStep >= (needsOtpStep() ? 7 : 6) ? 'bg-black' : 'bg-gray-200'
                   }`}></div>
                   
                   {/* Step 6 - Prefilter (or Step 7 - OTP if required) */}
@@ -9264,7 +9395,7 @@ const TechnicianDashboard = () => {
                       {/* Step 7 - OTP Verification */}
                       <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                         completeJobStep === 7 ? 'bg-black text-white' : 
-                        completeJobStep > 7 ? 'bg-black text-white' : 
+                        completeJobStep !== 8 && completeJobStep > 7 ? 'bg-black text-white' : 
                         'bg-gray-200 text-gray-600'
                       }`}>
                         {completeJobStep === 7 && (
@@ -9273,7 +9404,7 @@ const TechnicianDashboard = () => {
                         <span className="relative z-10">7</span>
                       </div>
                       <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
-                        completeJobStep >= 6 ? 'bg-black' : 'bg-gray-200'
+                        completeJobStep !== 8 && completeJobStep >= 6 ? 'bg-black' : 'bg-gray-200'
                       }`}></div>
                       
                       {/* Step 6 - Prefilter */}
@@ -9392,6 +9523,26 @@ const TechnicianDashboard = () => {
                   folder="bills"
                   jobId={selectedJobForComplete?.id}
                   photoType="bill"
+                />
+              )}
+
+              {completeJobStep === 8 && (
+                <CompletionPhotoStep
+                  label="Brand sticker (optional)"
+                  hint="Photo of our brand sticker on the unit. You can skip this."
+                  images={stickerPhotos}
+                  onImagesChange={(images) => {
+                    setStickerPhotos(images);
+                    if (images.some((u) => typeof u === 'string' && u.trim() !== '')) {
+                      setStickerSkipped(false);
+                    }
+                  }}
+                  onUploadStateChange={setIsStickerPhotosUploading}
+                  maxImages={3}
+                  folder="stickers"
+                  jobId={selectedJobForComplete?.id}
+                  photoType="other"
+                  useSecondaryAccount
                 />
               )}
 
@@ -10364,15 +10515,33 @@ const TechnicianDashboard = () => {
                       setCompletionSubmitError(null);
                     }
                     setCompleteJobStep((prev) => {
+                      if (prev === 8) return 2;
+                      if (brandStickerRequired && prev === 3) return 8;
+                      if (
+                        brandStickerRequired &&
+                        prev === 4 &&
+                        (isBillAmountZero() || isSoftenerService())
+                      ) {
+                        return 8;
+                      }
+                      if (
+                        brandStickerRequired &&
+                        prev === 6 &&
+                        isBillAmountZero() &&
+                        !needsOtpStep()
+                      ) {
+                        return 8;
+                      }
                       // If going back from step 6 and OTP is required, go to step 7, not step 5
                       if (prev === 6 && needsOtpStep()) {
                         return 7;
                       }
-                      // If going back from step 7, go to step 5
+                      // If going back from step 7, go to step 5 (or the sticker when the bill was zero)
                       if (prev === 7) {
+                        if (brandStickerRequired && isBillAmountZero()) return 8;
                         return 5;
                       }
-                      return (prev - 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
+                      return (prev - 1) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
                     });
                     setOtpError(''); // Clear OTP error when going back
                     if (completeJobStep === 7) {
@@ -10402,6 +10571,24 @@ const TechnicianDashboard = () => {
                     if (isSubmittingJobCompletion) return;
                     if (isBillPhotosUploading || billPhotos.some(hasPendingLocalOrUploadingPhoto)) return;
                     setBillPhotosSkipConfirmOpen(true);
+                  }}
+                >
+                  Skip
+                </Button>
+              )}
+              {completeJobStep === 8 && (
+                <Button
+                  variant="outline"
+                  disabled={
+                    isSubmittingJobCompletion ||
+                    isStickerPhotosUploading ||
+                    stickerPhotos.some(hasPendingLocalOrUploadingPhoto)
+                  }
+                  onClick={() => {
+                    if (!selectedJobForComplete) return;
+                    if (isSubmittingJobCompletion) return;
+                    if (isStickerPhotosUploading || stickerPhotos.some(hasPendingLocalOrUploadingPhoto)) return;
+                    setStickerSkipConfirmOpen(true);
                   }}
                 >
                   Skip
@@ -10642,6 +10829,13 @@ const TechnicianDashboard = () => {
                   : 'All photos associated with this job'}
               </DialogDescription>
             </DialogHeader>
+            {selectedJobPhotos?.stickerSkips && selectedJobPhotos.stickerSkips.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                {selectedJobPhotos.stickerSkips.map((note) => (
+                  <p key={note}>{note}</p>
+                ))}
+              </div>
+            )}
             {selectedJobPhotos && selectedJobPhotos.photos.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 py-4">
                 {selectedJobPhotos.photos.map((photo, index) => (

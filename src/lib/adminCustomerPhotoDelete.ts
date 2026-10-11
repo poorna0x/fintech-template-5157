@@ -136,6 +136,17 @@ export async function deleteAdminCustomerPhoto(
                 return { ...req, bill_photos: filtered };
               }
             }
+            if (req.sticker_photos && Array.isArray(req.sticker_photos)) {
+              const filtered = req.sticker_photos.filter((photo: unknown) => {
+                const url = extractPhotoEntryUrl(photo);
+                return normalizeUrlForPhotoMatch(url) !== normalizedPhotoUrl;
+              });
+              if (filtered.length !== (req.sticker_photos as unknown[]).length) {
+                requirementsChanged = true;
+                photoFound = true;
+                return { ...req, sticker_photos: filtered };
+              }
+            }
             return req;
           });
 

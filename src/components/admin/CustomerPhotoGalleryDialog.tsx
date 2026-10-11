@@ -46,6 +46,8 @@ interface CustomerPhotoGalleryDialogProps {
   onDrop: (e: React.DragEvent) => void;
   onPhotoClick: (photo: string, index: number, total: number) => void;
   onDeletePhoto: (photoUrl: string, photoIndex: number) => void;
+  /** Shown only in this gallery when a technician skipped the brand sticker. */
+  stickerSkipNotes?: string[];
 }
 
 function directHttpsUrl(ref: string | null | undefined): string | null {
@@ -89,7 +91,8 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
   onDragOver,
   onDragLeave,
   onPhotoClick,
-  onDeletePhoto
+  onDeletePhoto,
+  stickerSkipNotes = [],
 }) => {
   const [tab, setTab] = useState('photos');
   const [waDocs, setWaDocs] = useState<WhatsAppCustomerDocument[]>([]);
@@ -392,6 +395,13 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
           )}
 
           <TabsContent value="photos" className="mt-4 space-y-4 sm:space-y-6">
+          {!isLoadingPhotos && stickerSkipNotes.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              {stickerSkipNotes.map((note) => (
+                <p key={note}>{note}</p>
+              ))}
+            </div>
+          )}
           {/* Upload Area - Only show if no photos and no uploading thumbnails */}
           {!hasPhotos && (
             <div

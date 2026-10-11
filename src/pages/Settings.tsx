@@ -340,6 +340,7 @@ const Settings = () => {
     pushPrefs: defaultTechPushPrefs() as TechPushPrefs,
     whatsappPrefs: defaultTechWhatsAppPrefs() as TechWhatsAppPrefs,
     salarySlipAutoSend: false,
+    brandStickerRequired: false,
     visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
     commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
   });
@@ -614,6 +615,7 @@ const Settings = () => {
           pushPrefs: normalizeTechPushPrefs((tech as any).push_prefs),
           whatsappPrefs: normalizeTechWhatsAppPrefs((tech as any).whatsapp_prefs),
           salarySlipAutoSend: (tech as any).salary_slip_auto_send === true,
+          brandStickerRequired: (tech as any).brand_sticker_required === true,
         });
         setNewlyCreatedTechnicianId(null);
       }
@@ -915,6 +917,7 @@ const Settings = () => {
     whatsapp_prefs:
       tech.whatsapp_prefs && typeof tech.whatsapp_prefs === 'object' ? tech.whatsapp_prefs : {},
     salary_slip_auto_send: tech.salary_slip_auto_send === true,
+    brand_sticker_required: tech.brand_sticker_required === true,
     skills: tech.skills,
     serviceAreas: tech.service_areas,
     status: tech.status,
@@ -1037,6 +1040,7 @@ const Settings = () => {
       pushPrefs: defaultTechPushPrefs(),
       whatsappPrefs: defaultTechWhatsAppPrefs(),
       salarySlipAutoSend: false,
+      brandStickerRequired: false,
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('add-technician');
@@ -1072,6 +1076,7 @@ const Settings = () => {
       pushPrefs: normalizeTechPushPrefs((technician as any).push_prefs),
       whatsappPrefs: normalizeTechWhatsAppPrefs((technician as any).whatsapp_prefs),
       salarySlipAutoSend: (technician as any).salary_slip_auto_send === true,
+      brandStickerRequired: (technician as any).brand_sticker_required === true,
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('edit-technician', { id: technician.id });
@@ -1174,6 +1179,7 @@ const Settings = () => {
         technicianData.push_prefs = normalizeTechPushPrefs(technicianFormData.pushPrefs);
         technicianData.whatsapp_prefs = normalizeTechWhatsAppPrefs(technicianFormData.whatsappPrefs);
         technicianData.salary_slip_auto_send = technicianFormData.salarySlipAutoSend === true;
+        technicianData.brand_sticker_required = technicianFormData.brandStickerRequired === true;
       } else {
         technicianData.status = 'OFFLINE';
         technicianData.performance = {
@@ -1189,6 +1195,7 @@ const Settings = () => {
         technicianData.push_prefs = defaultTechPushPrefs();
         technicianData.whatsapp_prefs = defaultTechWhatsAppPrefs();
         technicianData.salary_slip_auto_send = technicianFormData.salarySlipAutoSend === true;
+        technicianData.brand_sticker_required = technicianFormData.brandStickerRequired === true;
       }
 
       const password = technicianFormData.password?.trim() || '';
@@ -1321,6 +1328,11 @@ const Settings = () => {
       }
     } catch (error) {
       console.error('Error saving technician:', error);
+      const message = String((error as { message?: string })?.message || error || '');
+      if (/brand_sticker_required/i.test(message)) {
+        toast.error('Run scripts/add-technician-brand-sticker.sql in Supabase, then save again.');
+        return;
+      }
       toast.error('Failed to save technician');
     }
   };
@@ -4374,6 +4386,27 @@ const Settings = () => {
                       setTechnicianFormData((prev) => ({
                         ...prev,
                         salarySlipAutoSend: checked,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 sm:col-span-2">
+                  <div className="min-w-0 space-y-0.5">
+                    <Label htmlFor="brandStickerRequired" className="text-sm font-medium">
+                      Brand sticker photo
+                    </Label>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      After the bill photo, this technician must upload a photo of our brand sticker
+                      on the unit. They can skip. The photo shows only in the customer gallery.
+                    </p>
+                  </div>
+                  <Switch
+                    id="brandStickerRequired"
+                    checked={technicianFormData.brandStickerRequired === true}
+                    onCheckedChange={(checked) =>
+                      setTechnicianFormData((prev) => ({
+                        ...prev,
+                        brandStickerRequired: checked,
                       }))
                     }
                   />

@@ -238,6 +238,7 @@ import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, e
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
+import { collectStickerSkipNotes, stickerPhotoUrlsFromJob } from '@/lib/brandSticker';
 import {
   readAdminDashboardCache,
   clearAdminDashboardCache,
@@ -1046,6 +1047,7 @@ const AdminDashboard = () => {
   const [customerPhotoGalleryOpen, setCustomerPhotoGalleryOpen] = useState(false);
   const [selectedCustomerForPhotos, setSelectedCustomerForPhotos] = useState<Customer | null>(null);
   const [customerPhotos, setCustomerPhotos] = useState<{[customerId: string]: string[]}>({});
+  const [stickerSkipNotes, setStickerSkipNotes] = useState<Record<string, string[]>>({});
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
   const [isDragOverPhotos, setIsDragOverPhotos] = useState(false);
@@ -4026,6 +4028,8 @@ const AdminDashboard = () => {
             }
           }
           
+          for (const url of stickerPhotoUrlsFromJob(job)) photoSet.add(url);
+
           // Log for debugging
           if (extractedBeforePhotos.length > 0 || extractedAfterPhotos.length > 0 || extractedImages.length > 0) {
             console.log(`Job ${job.job_number || job.jobNumber || index + 1}: ${extractedBeforePhotos.length} before, ${extractedAfterPhotos.length} after, ${extractedImages.length} images`);
@@ -4058,6 +4062,10 @@ const AdminDashboard = () => {
         };
         return newState;
       });
+      setStickerSkipNotes((prev) => ({
+        ...prev,
+        [customerId]: collectStickerSkipNotes(jobs || []),
+      }));
     } catch (error) {
       toast.error('Failed to load photos');
     } finally {
@@ -7613,6 +7621,13 @@ const AdminDashboard = () => {
         }}
         customer={selectedCustomerForPhotos}
         customerPhotos={customerPhotos}
+        stickerSkipNotes={
+          stickerSkipNotes[
+            selectedCustomerForPhotos?.customer_id ||
+              selectedCustomerForPhotos?.customerId ||
+              ''
+          ] || []
+        }
         uploadingThumbnails={uploadingThumbnails}
         isUploadingPhoto={isUploadingPhoto}
         isLoadingPhotos={isLoadingPhotos}

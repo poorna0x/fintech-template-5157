@@ -240,6 +240,8 @@ export interface Technician {
   whatsapp_prefs?: Record<string, boolean> | null;
   /** Month-end salary-slip WhatsApp (last calendar day ~9 PM IST). Default false. */
   salary_slip_auto_send?: boolean;
+  /** Brand-sticker photo step after the bill photo in technician job complete. Default false. */
+  brand_sticker_required?: boolean;
 
   /** When true, this technician sees visit-order stop numbers on their app. Default false. */
   visit_order_visible?: boolean;

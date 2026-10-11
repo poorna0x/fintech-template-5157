@@ -8,7 +8,7 @@ const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 /** Hard cap so a stuck device cannot blow up localStorage. Oldest drafts are evicted first. */
 const DRAFT_MAX_COUNT = 30;
 
-export type CompleteJobDraftStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type CompleteJobDraftStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
 export type TechnicianCompleteJobDraft = {
   version: 1;
@@ -19,6 +19,8 @@ export type TechnicianCompleteJobDraft = {
   billAmount: string;
   billPhotos: string[];
   billPhotoSources?: Record<string, 'camera' | 'gallery'>;
+  stickerPhotos?: string[];
+  stickerSkipped?: boolean;
   optionalCompletionPhotos: string[];
   extraPhotosStep6: string[];
   dontSendMessageToCustomer: boolean;

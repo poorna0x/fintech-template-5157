@@ -119,7 +119,8 @@ BEGIN
     'upi_id',
     'payee_name',
     'upi_phone',
-    'dynamic_upi_enabled'
+    'dynamic_upi_enabled',
+    'brand_sticker_required'
   ]
   LOOP
     IF EXISTS (
