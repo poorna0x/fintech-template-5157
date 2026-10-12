@@ -838,7 +838,7 @@ const AdminDashboard = () => {
 
         if (!jobId) return;
 
-        if (event === 'completed') {
+        if (event === 'completed' || event === 'sticker_skipped') {
           const dateStr =
             completedDate && /^\d{4}-\d{2}-\d{2}$/.test(completedDate)
               ? completedDate

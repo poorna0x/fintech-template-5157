@@ -5172,6 +5172,15 @@ const TechnicianDashboard = () => {
       void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
         notifyAdminsJobEvent(jobId, 'completed')
       );
+      const skippedBrandSticker =
+        brandStickerRequired &&
+        stickerSkipped &&
+        stickerPhotos.filter(isUploadedMediaUrl).length === 0;
+      if (skippedBrandSticker) {
+        void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
+          notifyAdminsJobEvent(jobId, 'sticker_skipped')
+        );
+      }
 
       // Brand completion WhatsApp (Settings → auto-send). Creates review invite when asked.
       void (async () => {
@@ -5357,6 +5366,9 @@ const TechnicianDashboard = () => {
     [
       selectedJobForComplete,
       paymentScreenshot,
+      brandStickerRequired,
+      stickerSkipped,
+      stickerPhotos,
       billAmount,
       serviceBrand,
       dontSendMessageToCustomer,

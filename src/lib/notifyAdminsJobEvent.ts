@@ -16,7 +16,8 @@ export function notifyAdminsJobEvent(
     | 'otp_entered'
     | 'job_created'
     | 'bill_photo_added'
-    | 'payment_screenshot_added',
+    | 'payment_screenshot_added'
+    | 'sticker_skipped',
   extra?: { otp?: string }
 ): void {
   if (!jobId) return;

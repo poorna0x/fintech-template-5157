@@ -205,7 +205,7 @@ exports.handler = async (event) => {
   const jobId = String(body.jobId || '').trim();
   const evt = String(body.event || '').trim();
   const otp = String(body.otp || '').trim();
-  if (!jobId || !['en_route', 'completed', 'otp_entered', 'job_created', 'bill_photo_added', 'payment_screenshot_added'].includes(evt)) {
+  if (!jobId || !['en_route', 'completed', 'otp_entered', 'job_created', 'bill_photo_added', 'payment_screenshot_added', 'sticker_skipped'].includes(evt)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'jobId and event required' }) };
   }
   if (evt === 'otp_entered' && !/^\d{4}$/.test(otp)) {
@@ -310,6 +310,33 @@ exports.handler = async (event) => {
     if (job.job_number) lines.push(`Job #${job.job_number}`);
     message = lines.join('\n');
     color = COLOR_PHOTO_ADDED;
+  } else if (evt === 'sticker_skipped') {
+    const skipped = parseRequirements(job).some((r) => r.sticker_skipped === true);
+    const hasStickerPhoto = parseRequirements(job).some(
+      (r) =>
+        Array.isArray(r.sticker_photos) &&
+        r.sticker_photos.some((p) => {
+          const url =
+            typeof p === 'string'
+              ? p
+              : p && typeof p === 'object'
+                ? String(p.url || p.secure_url || '')
+                : '';
+          return url.trim().startsWith('http');
+        })
+    );
+    if (!skipped || hasStickerPhoto) {
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ sent: 0, reason: 'not_skipped' }),
+      };
+    }
+    title = `${techName} skipped brand sticker`;
+    const lines = [`${service} — ${customerName}`];
+    if (job.job_number) lines.push(`Job #${job.job_number}`);
+    message = lines.join('\n');
+    color = COLOR_BILL_MISSING;
   } else {
     const billing = buildCompletedBillingLines(job);
     title = billMissing
@@ -380,6 +407,7 @@ exports.handler = async (event) => {
       event: evt,
       jobId: String(jobId),
       ...(evt === 'completed' ||
+      evt === 'sticker_skipped' ||
       evt === 'bill_photo_added' ||
       evt === 'payment_screenshot_added'
         ? { completedDate: formatIstDateYmd() }
