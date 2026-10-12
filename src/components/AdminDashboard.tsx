@@ -131,6 +131,7 @@ import {
 } from '@/lib/adminMoveToOngoing';
 import { removeAdminTeamMember, saveAdminTeamMember } from '@/lib/adminJobTeam';
 import { submitAdminJobReassign, unassignAdminJob } from '@/lib/adminJobReassign';
+import { ongoingJobMatchesFilters, shouldClearOngoingAssignmentFilters } from '@/lib/ongoingJobsFilters';
 import { shareAdminJobViaWhatsApp } from '@/lib/adminShareJobWhatsApp';
 import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { prepareAdminDenyJob, submitAdminJobDeny } from '@/lib/adminJobDeny';
@@ -5685,7 +5686,7 @@ const AdminDashboard = () => {
   };
 
   const handleUnassignJob = async (job: Job) => {
-    await unassignAdminJob(job, {
+    const ok = await unassignAdminJob(job, {
       setJobs,
       setCustomerJobs,
       technicians,
@@ -5703,6 +5704,29 @@ const AdminDashboard = () => {
         openAdminWhatsappModal,
       },
     });
+    if (!ok) return;
+    const patched = jobs.map((row) => {
+      if (row.id !== job.id) return row;
+      const { assignedTechnician: _dropped, ...rest } = row;
+      return {
+        ...rest,
+        assigned_technician_id: null,
+        assignedTechnicianId: null,
+        status: 'PENDING' as const,
+      };
+    });
+    if (
+      shouldClearOngoingAssignmentFilters(patched, {
+        assignment: ongoingAssignmentFilter,
+        technicianId: ongoingAssignedTechnicianFilter,
+        serviceSubType: ongoingServiceSubTypeFilter,
+      })
+    ) {
+      setOngoingAssignmentFilter('all');
+      setOngoingAssignedTechnicianFilter('all');
+      setDraftOngoingAssignmentFilter('all');
+      setDraftOngoingAssignedTechnicianFilter('all');
+    }
   };
 
   const handleEditJob = (job: Job) => {
@@ -6457,36 +6481,12 @@ const AdminDashboard = () => {
   const getJobServiceSubTypeLabel = (job: any): string => {
     return normalizeServiceSubType(String(job?.service_sub_type ?? job?.serviceSubType ?? '').trim()) || '';
   };
-  const getJobAssignedTechnicianId = (job: any): string => {
-    return String(
-      job?.assigned_technician_id ??
-        job?.assignedTechnicianId ??
-        job?.assignedTechnician?.id ??
-        ''
-    ).trim();
-  };
   const doesOngoingJobMatchFilters = useCallback((job: any): boolean => {
-    // status gate (Ongoing section only)
-    if (!['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job?.status)) return false;
-
-    const assignedTechnicianId = getJobAssignedTechnicianId(job);
-    const isAssigned = Boolean(assignedTechnicianId);
-
-    if (ongoingAssignmentFilter === 'assigned' && !isAssigned) return false;
-    if (ongoingAssignmentFilter === 'unassigned' && isAssigned) return false;
-
-    if (ongoingAssignedTechnicianFilter !== 'all') {
-      if (!assignedTechnicianId) return false;
-      if (assignedTechnicianId !== String(ongoingAssignedTechnicianFilter)) return false;
-    }
-
-    if (ongoingServiceSubTypeFilter !== 'all') {
-      const st = getJobServiceSubTypeLabel(job);
-      if (!st) return false;
-      if (st !== String(ongoingServiceSubTypeFilter)) return false;
-    }
-
-    return true;
+    return ongoingJobMatchesFilters(job, {
+      assignment: ongoingAssignmentFilter,
+      technicianId: ongoingAssignedTechnicianFilter,
+      serviceSubType: ongoingServiceSubTypeFilter,
+    });
   }, [ongoingAssignmentFilter, ongoingAssignedTechnicianFilter, ongoingServiceSubTypeFilter]);
 
   const customersWithJobs = useMemo(

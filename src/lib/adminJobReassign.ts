@@ -185,7 +185,7 @@ export async function unassignAdminJob(
 
     if (error) {
       toast.error('Failed to unassign job');
-      return;
+      return false;
     }
 
     // Drop unanswered Ask OTP so it does not stay on the old technician's screen.
@@ -202,39 +202,39 @@ export async function unassignAdminJob(
     }
 
     ctx.setJobs((prev) =>
-      prev.map((j) =>
-        j.id === job.id
-          ? {
-              ...j,
-              assigned_technician_id: null,
-              assignedTechnicianId: null,
-              assigned_date: null,
-              assignedDate: null,
-              visit_order: null,
-              visitOrder: null,
-              status: 'PENDING' as const,
-            }
-          : j
-      )
+      prev.map((j) => {
+        if (j.id !== job.id) return j;
+        const { assignedTechnician: _dropped, ...rest } = j;
+        return {
+          ...rest,
+          assigned_technician_id: null,
+          assignedTechnicianId: null,
+          assigned_date: null,
+          assignedDate: null,
+          visit_order: null,
+          visitOrder: null,
+          status: 'PENDING' as const,
+        };
+      })
     );
 
     ctx.setCustomerJobs((prev) => {
       const updated = { ...prev };
       Object.keys(updated).forEach((customerId) => {
-        updated[customerId] = updated[customerId].map((j) =>
-          j.id === job.id
-            ? {
-                ...j,
-                assigned_technician_id: null,
-                assignedTechnicianId: null,
-                assigned_date: null,
-                assignedDate: null,
-                visit_order: null,
-                visitOrder: null,
-                status: 'PENDING' as any,
-              }
-            : j
-        );
+        updated[customerId] = updated[customerId].map((j) => {
+          if (j.id !== job.id) return j;
+          const { assignedTechnician: _dropped, ...rest } = j;
+          return {
+            ...rest,
+            assigned_technician_id: null,
+            assignedTechnicianId: null,
+            assigned_date: null,
+            assignedDate: null,
+            visit_order: null,
+            visitOrder: null,
+            status: 'PENDING' as any,
+          };
+        });
       });
       return updated;
     });
@@ -257,8 +257,10 @@ export async function unassignAdminJob(
         );
       }
     }
+    return true;
   } catch (error) {
     console.error('Error unassigning job:', error);
     toast.error('Failed to unassign job');
+    return false;
   }
 }
