@@ -195,7 +195,7 @@ function resolveLatestAcceptablePayQrPhoto(
 }
 import { resolveJobBillingAmount } from '@/lib/jobAnalytics';
 import { compareJobsByVisitOrder, getJobVisitOrder, getVisitOrderVisibleForTechnician } from '@/lib/adminVisitOrder';
-import { loadBrandStickerRequired } from '@/lib/brandSticker';
+import { loadBrandStickerSettings } from '@/lib/brandSticker';
 import {
   aggregateCustomerPhotoUrls,
   collectAllPhotoUrlsFromJob,
@@ -608,6 +608,7 @@ const TechnicianDashboard = () => {
   const [visitOrderVisible, setVisitOrderVisible] = useState(false);
   /** Settings → Edit technician. Off until the column is on for this login. */
   const [brandStickerRequired, setBrandStickerRequired] = useState(false);
+  const [brandStickerNoSkip, setBrandStickerNoSkip] = useState(false);
   const [confirmCompleteJobDialog, setConfirmCompleteJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const statusFilterRef = useRef(statusFilter);
@@ -1565,11 +1566,14 @@ const TechnicianDashboard = () => {
     const techId = user?.technicianId;
     if (!techId) {
       setBrandStickerRequired(false);
+      setBrandStickerNoSkip(false);
       return;
     }
     let cancelled = false;
-    void loadBrandStickerRequired(techId).then((on) => {
-      if (!cancelled) setBrandStickerRequired(on);
+    void loadBrandStickerSettings(techId).then((settings) => {
+      if (cancelled) return;
+      setBrandStickerRequired(settings.required);
+      setBrandStickerNoSkip(settings.noSkip);
     });
     return () => {
       cancelled = true;
@@ -5450,6 +5454,8 @@ const TechnicianDashboard = () => {
       if (hasSticker) {
         setStickerSkipped(false);
         advanceFromStep2([...billPhotos]);
+      } else if (brandStickerNoSkip) {
+        toast.error('Upload the brand sticker photo. You can’t skip this step.', TOAST_VALIDATION);
       } else {
         setStickerSkipConfirmOpen(true);
       }
@@ -5713,6 +5719,16 @@ const TechnicianDashboard = () => {
 
     // Step 6: Prefilter - submit the form (or submit directly if softener service skipped this step)
     if (completeJobStep === 6 || completionRetryPhaseBOnly) {
+      if (
+        brandStickerRequired &&
+        brandStickerNoSkip &&
+        stickerPhotos.filter(isUploadedMediaUrl).length === 0
+      ) {
+        toast.error('Upload the brand sticker photo before finishing.', TOAST_VALIDATION);
+        setStickerSkipped(false);
+        setCompleteJobStep(8);
+        return;
+      }
       // If softener service, customerHasPrefilter should be null (not applicable)
       if (isSoftenerService()) {
         setCustomerHasPrefilter(null);
@@ -5946,7 +5962,7 @@ const TechnicianDashboard = () => {
           const uploadedStickers = stickerPhotos.filter(isUploadedMediaUrl);
           if (uploadedStickers.length > 0) {
             requirements.push({ sticker_photos: uploadedStickers });
-          } else if (stickerSkipped) {
+          } else if (stickerSkipped && !brandStickerNoSkip) {
             requirements.push({ sticker_skipped: true });
           }
         }
@@ -9533,8 +9549,12 @@ const TechnicianDashboard = () => {
 
               {completeJobStep === 8 && (
                 <CompletionPhotoStep
-                  label="Brand sticker (optional)"
-                  hint="Photo of our brand sticker on the unit. You can skip this."
+                  label={brandStickerNoSkip ? 'Brand sticker' : 'Brand sticker (optional)'}
+                  hint={
+                    brandStickerNoSkip
+                      ? 'Photo of our brand sticker on the unit. This step cannot be skipped.'
+                      : 'Photo of our brand sticker on the unit. You can skip this.'
+                  }
                   images={stickerPhotos}
                   onImagesChange={(images) => {
                     setStickerPhotos(images);
@@ -10581,7 +10601,7 @@ const TechnicianDashboard = () => {
                   Skip
                 </Button>
               )}
-              {completeJobStep === 8 && (
+              {completeJobStep === 8 && !brandStickerNoSkip && (
                 <Button
                   variant="outline"
                   disabled={

@@ -77,16 +77,36 @@ export function stickerSkipLabel(job: {
   return label;
 }
 
-/** Soft-fails to false when the column is not on the database yet. */
-export async function loadBrandStickerRequired(technicianId: string): Promise<boolean> {
+export type BrandStickerSettings = {
+  required: boolean;
+  /** True only when the step is on and skip is blocked. */
+  noSkip: boolean;
+};
+
+/** Soft-fails to off when a column is not on the database yet. */
+export async function loadBrandStickerSettings(technicianId: string): Promise<BrandStickerSettings> {
+  const off: BrandStickerSettings = { required: false, noSkip: false };
   const { data, error } = await supabase
     .from('technicians')
-    .select('brand_sticker_required')
+    .select('brand_sticker_required, brand_sticker_no_skip')
     .eq('id', technicianId)
     .maybeSingle();
   if (error) {
-    if (/brand_sticker_required/i.test(error.message || '')) return false;
-    return false;
+    if (/brand_sticker_no_skip/i.test(error.message || '')) {
+      const { data: fallback, error: fallbackError } = await supabase
+        .from('technicians')
+        .select('brand_sticker_required')
+        .eq('id', technicianId)
+        .maybeSingle();
+      if (fallbackError || !fallback) return off;
+      return {
+        required: (fallback as { brand_sticker_required?: boolean }).brand_sticker_required === true,
+        noSkip: false,
+      };
+    }
+    return off;
   }
-  return (data as { brand_sticker_required?: boolean } | null)?.brand_sticker_required === true;
+  const row = data as { brand_sticker_required?: boolean; brand_sticker_no_skip?: boolean } | null;
+  const required = row?.brand_sticker_required === true;
+  return { required, noSkip: required && row?.brand_sticker_no_skip === true };
 }

@@ -341,6 +341,7 @@ const Settings = () => {
     whatsappPrefs: defaultTechWhatsAppPrefs() as TechWhatsAppPrefs,
     salarySlipAutoSend: false,
     brandStickerRequired: false,
+    brandStickerNoSkip: false,
     visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
     commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
   });
@@ -616,6 +617,7 @@ const Settings = () => {
           whatsappPrefs: normalizeTechWhatsAppPrefs((tech as any).whatsapp_prefs),
           salarySlipAutoSend: (tech as any).salary_slip_auto_send === true,
           brandStickerRequired: (tech as any).brand_sticker_required === true,
+          brandStickerNoSkip: (tech as any).brand_sticker_no_skip === true,
         });
         setNewlyCreatedTechnicianId(null);
       }
@@ -918,6 +920,7 @@ const Settings = () => {
       tech.whatsapp_prefs && typeof tech.whatsapp_prefs === 'object' ? tech.whatsapp_prefs : {},
     salary_slip_auto_send: tech.salary_slip_auto_send === true,
     brand_sticker_required: tech.brand_sticker_required === true,
+    brand_sticker_no_skip: tech.brand_sticker_no_skip === true,
     skills: tech.skills,
     serviceAreas: tech.service_areas,
     status: tech.status,
@@ -1041,6 +1044,7 @@ const Settings = () => {
       whatsappPrefs: defaultTechWhatsAppPrefs(),
       salarySlipAutoSend: false,
       brandStickerRequired: false,
+      brandStickerNoSkip: false,
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('add-technician');
@@ -1077,6 +1081,7 @@ const Settings = () => {
       whatsappPrefs: normalizeTechWhatsAppPrefs((technician as any).whatsapp_prefs),
       salarySlipAutoSend: (technician as any).salary_slip_auto_send === true,
       brandStickerRequired: (technician as any).brand_sticker_required === true,
+      brandStickerNoSkip: (technician as any).brand_sticker_no_skip === true,
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('edit-technician', { id: technician.id });
@@ -1180,6 +1185,9 @@ const Settings = () => {
         technicianData.whatsapp_prefs = normalizeTechWhatsAppPrefs(technicianFormData.whatsappPrefs);
         technicianData.salary_slip_auto_send = technicianFormData.salarySlipAutoSend === true;
         technicianData.brand_sticker_required = technicianFormData.brandStickerRequired === true;
+        technicianData.brand_sticker_no_skip =
+          technicianFormData.brandStickerRequired === true &&
+          technicianFormData.brandStickerNoSkip === true;
       } else {
         technicianData.status = 'OFFLINE';
         technicianData.performance = {
@@ -1196,6 +1204,9 @@ const Settings = () => {
         technicianData.whatsapp_prefs = defaultTechWhatsAppPrefs();
         technicianData.salary_slip_auto_send = technicianFormData.salarySlipAutoSend === true;
         technicianData.brand_sticker_required = technicianFormData.brandStickerRequired === true;
+        technicianData.brand_sticker_no_skip =
+          technicianFormData.brandStickerRequired === true &&
+          technicianFormData.brandStickerNoSkip === true;
       }
 
       const password = technicianFormData.password?.trim() || '';
@@ -1329,6 +1340,10 @@ const Settings = () => {
     } catch (error) {
       console.error('Error saving technician:', error);
       const message = String((error as { message?: string })?.message || error || '');
+      if (/brand_sticker_no_skip/i.test(message)) {
+        toast.error('Run scripts/add-technician-brand-sticker-no-skip.sql in Supabase, then save again.');
+        return;
+      }
       if (/brand_sticker_required/i.test(message)) {
         toast.error('Run scripts/add-technician-brand-sticker.sql in Supabase, then save again.');
         return;
@@ -4396,8 +4411,8 @@ const Settings = () => {
                       Brand sticker photo
                     </Label>
                     <p className="text-xs text-muted-foreground leading-snug">
-                      After the bill photo, this technician must upload a photo of our brand sticker
-                      on the unit. They can skip. The photo shows only in the customer gallery.
+                      After the bill photo, this technician uploads a photo of our brand sticker on
+                      the unit. The photo shows only in the customer gallery.
                     </p>
                   </div>
                   <Switch
@@ -4407,6 +4422,32 @@ const Settings = () => {
                       setTechnicianFormData((prev) => ({
                         ...prev,
                         brandStickerRequired: checked,
+                        brandStickerNoSkip: checked ? prev.brandStickerNoSkip : false,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 sm:col-span-2">
+                  <div className="min-w-0 space-y-0.5">
+                    <Label htmlFor="brandStickerNoSkip" className="text-sm font-medium">
+                      Don’t allow sticker skip
+                    </Label>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      They must upload the sticker photo. Skip is hidden, and the job cannot be
+                      finished without it.
+                    </p>
+                  </div>
+                  <Switch
+                    id="brandStickerNoSkip"
+                    checked={
+                      technicianFormData.brandStickerRequired === true &&
+                      technicianFormData.brandStickerNoSkip === true
+                    }
+                    disabled={technicianFormData.brandStickerRequired !== true}
+                    onCheckedChange={(checked) =>
+                      setTechnicianFormData((prev) => ({
+                        ...prev,
+                        brandStickerNoSkip: checked,
                       }))
                     }
                   />

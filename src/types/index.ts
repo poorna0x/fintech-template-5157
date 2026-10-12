@@ -242,6 +242,8 @@ export interface Technician {
   salary_slip_auto_send?: boolean;
   /** Brand-sticker photo step after the bill photo in technician job complete. Default false. */
   brand_sticker_required?: boolean;
+  /** When true with brand_sticker_required, the technician cannot skip the sticker photo. Default false. */
+  brand_sticker_no_skip?: boolean;
 
   /** When true, this technician sees visit-order stop numbers on their app. Default false. */
   visit_order_visible?: boolean;
