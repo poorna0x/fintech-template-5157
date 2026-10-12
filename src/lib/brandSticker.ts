@@ -57,31 +57,24 @@ export function jobStickerSkipped(job: { requirements?: unknown }): boolean {
   return requirementEntries(job.requirements).some((req) => req.sticker_skipped === true);
 }
 
-export function collectStickerSkipNotes(
-  jobs: Array<{
-    requirements?: unknown;
-    completed_at?: string | null;
-    created_at?: string | null;
-    job_number?: string | null;
-    jobNumber?: string | null;
-  }>
-): string[] {
-  const notes: string[] = [];
-  for (const job of jobs) {
-    if (!jobStickerSkipped(job)) continue;
-    const num = String(job.job_number || job.jobNumber || '').trim();
-    const when = job.completed_at || job.created_at;
-    let label = 'Brand sticker skipped';
-    if (num) label += ` · ${num}`;
-    if (when) {
-      const d = new Date(when);
-      if (!Number.isNaN(d.getTime())) {
-        label += ` · ${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`;
-      }
+/** Completed-job card only. Null when a sticker photo was uploaded. */
+export function stickerSkipLabel(job: {
+  requirements?: unknown;
+  completed_at?: string | null;
+  completedAt?: string | null;
+  end_time?: string | null;
+  created_at?: string | null;
+}): string | null {
+  if (!jobStickerSkipped(job)) return null;
+  const when = job.completed_at || job.completedAt || job.end_time || job.created_at;
+  let label = 'Brand sticker skipped';
+  if (when) {
+    const d = new Date(when);
+    if (!Number.isNaN(d.getTime())) {
+      label += ` · ${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`;
     }
-    notes.push(label);
   }
-  return notes;
+  return label;
 }
 
 /** Soft-fails to false when the column is not on the database yet. */

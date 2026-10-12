@@ -45,7 +45,7 @@ import { Customer } from '@/types';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
-import { collectStickerSkipNotes, stickerPhotoUrlsFromJob } from '@/lib/brandSticker';
+import { stickerPhotoUrlsFromJob } from '@/lib/brandSticker';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import CallingBulkWhatsAppDialog from '@/components/admin/CallingBulkWhatsAppDialog';
@@ -236,7 +236,6 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [customerPhotoGalleryOpen, setCustomerPhotoGalleryOpen] = useState(false);
   const [selectedCustomerForPhotos, setSelectedCustomerForPhotos] = useState<Customer | null>(null);
   const [customerPhotos, setCustomerPhotos] = useState<string[]>([]);
-  const [stickerSkipNotes, setStickerSkipNotes] = useState<string[]>([]);
   const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
@@ -687,7 +686,6 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       
       const uniquePhotos = Array.from(photoSet);
       setCustomerPhotos(uniquePhotos);
-      setStickerSkipNotes(collectStickerSkipNotes(jobs || []));
     } catch (error) {
       console.error('Error loading customer photos:', error);
       toast.error('Failed to load photos');
@@ -1585,14 +1583,12 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
             if (!open) {
               setSelectedCustomerForPhotos(null);
               setCustomerPhotos([]);
-              setStickerSkipNotes([]);
             }
           }}
           customer={selectedCustomerForPhotos}
           customerPhotos={{
             [selectedCustomerForPhotos.customer_id || selectedCustomerForPhotos.customerId || '']: customerPhotos
           }}
-          stickerSkipNotes={stickerSkipNotes}
           uploadingThumbnails={{}}
           isUploadingPhoto={false}
           isLoadingPhotos={isLoadingPhotos}

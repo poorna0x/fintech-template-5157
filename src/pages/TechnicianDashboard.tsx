@@ -195,7 +195,7 @@ function resolveLatestAcceptablePayQrPhoto(
 }
 import { resolveJobBillingAmount } from '@/lib/jobAnalytics';
 import { compareJobsByVisitOrder, getJobVisitOrder, getVisitOrderVisibleForTechnician } from '@/lib/adminVisitOrder';
-import { collectStickerSkipNotes, loadBrandStickerRequired } from '@/lib/brandSticker';
+import { loadBrandStickerRequired } from '@/lib/brandSticker';
 import {
   aggregateCustomerPhotoUrls,
   collectAllPhotoUrlsFromJob,
@@ -762,7 +762,6 @@ const TechnicianDashboard = () => {
   const [stickerPhotos, setStickerPhotos] = useState<string[]>([]);
   const [stickerSkipped, setStickerSkipped] = useState(false);
   const [stickerSkipConfirmOpen, setStickerSkipConfirmOpen] = useState(false);
-  const stickerSkipsRef = useRef<string[]>([]);
   const [otpInput, setOtpInput] = useState<string[]>(['', '', '', '']);
   const [otpError, setOtpError] = useState<string>('');
   const [serviceBrand, setServiceBrand] = useState<ServiceBrand | null>(null);
@@ -863,7 +862,7 @@ const TechnicianDashboard = () => {
 
   // Photos dialog state
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
-  const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], customerId?: string, stickerSkips?: string[]} | null>(null);
+  const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], customerId?: string} | null>(null);
   const [loadingCustomerPhotos, setLoadingCustomerPhotos] = useState(false);
 
   // Photo viewer — completed jobs, job gallery, and customer report
@@ -6481,7 +6480,6 @@ const TechnicianDashboard = () => {
       const customerUuid = await resolveCustomerUuidForQueries(customerIdOrCustomer);
       if (!customerUuid) {
         console.error('Error resolving customer UUID for photos');
-        stickerSkipsRef.current = [];
         return [];
       }
 
@@ -6509,7 +6507,6 @@ const TechnicianDashboard = () => {
 
       let allCustomerJobs = Array.from(jobById.values());
       if (allCustomerJobs.length === 0 && error) {
-        stickerSkipsRef.current = [];
         return [];
       }
 
@@ -6532,7 +6529,6 @@ const TechnicianDashboard = () => {
         }
       }
 
-      stickerSkipsRef.current = collectStickerSkipNotes(allCustomerJobs);
       const uniquePhotos = aggregateCustomerPhotoUrls(allCustomerJobs, customerRecord);
       if (import.meta.env.DEV) {
         console.log(
@@ -6542,7 +6538,6 @@ const TechnicianDashboard = () => {
       return uniquePhotos;
     } catch (error) {
       console.error('Error in getAllCustomerPhotos:', error);
-      stickerSkipsRef.current = [];
       return [];
     } finally {
       setLoadingCustomerPhotos(false);
@@ -7322,7 +7317,6 @@ const TechnicianDashboard = () => {
                                                   jobId: job.id,
                                                   photos: allCustomerPhotos,
                                                   customerId: resolvedId ?? undefined,
-                                                  stickerSkips: [...stickerSkipsRef.current],
                                                 });
                                                 setPhotosDialogOpen(true);
                                                 setLoadingCustomerPhotos(false);
@@ -8141,7 +8135,6 @@ const TechnicianDashboard = () => {
                                               jobId: job.id,
                                               photos: allCustomerPhotos,
                                               customerId: resolvedId ?? undefined,
-                                              stickerSkips: [...stickerSkipsRef.current],
                                             });
                                             setPhotosDialogOpen(true);
                                           } finally {
@@ -10829,13 +10822,6 @@ const TechnicianDashboard = () => {
                   : 'All photos associated with this job'}
               </DialogDescription>
             </DialogHeader>
-            {selectedJobPhotos?.stickerSkips && selectedJobPhotos.stickerSkips.length > 0 && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                {selectedJobPhotos.stickerSkips.map((note) => (
-                  <p key={note}>{note}</p>
-                ))}
-              </div>
-            )}
             {selectedJobPhotos && selectedJobPhotos.photos.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 py-4">
                 {selectedJobPhotos.photos.map((photo, index) => (

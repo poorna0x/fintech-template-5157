@@ -47,6 +47,7 @@ import { getCompanyInfoForBrand, getDocumentBrandLabel, normalizeDocumentBrand }
 import { forceLightSelectContentClass, forceLightThemeClass } from '@/lib/force-light-theme';
 
 import { isZeroCommissionCompletedJob } from '@/lib/adminCompletedJobProfit';
+import { stickerSkipLabel } from '@/lib/brandSticker';
 
 function formatSentAt(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', {
@@ -367,6 +368,12 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const otpVerifiedAt = otpRequirement?.otp_verified_at
     ? formatSentAt(String(otpRequirement.otp_verified_at))
     : null;
+  const brandStickerSkipNote = stickerSkipLabel({
+    requirements: requirements.length > 0 ? requirements : (job as any).requirements,
+    completed_at: (job as any).completed_at || (job as any).completedAt,
+    end_time: (job as any).end_time,
+    created_at: (job as any).created_at || (job as any).createdAt,
+  });
 
   // Advanced completed filters mode: show only minimal info until explicitly loaded.
   if (minimalMode && !detailsLoaded) {
@@ -385,6 +392,9 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             <div className="text-gray-700 break-words">
               <span className="text-gray-500 font-medium">Amount:</span> ₹{billAmount || 0}
             </div>
+            {brandStickerSkipNote && (
+              <div className="text-xs text-amber-800 break-words">{brandStickerSkipNote}</div>
+            )}
           </div>
           <div className="flex flex-shrink-0 flex-nowrap items-center gap-2 mt-2 sm:mt-0 w-full sm:w-auto">
             <Button
@@ -680,6 +690,9 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             <div className="text-xs text-gray-500 mt-1 break-words flex items-center gap-2">
               <span>Completed on {formattedCompletedAt}</span>
             </div>
+          )}
+          {brandStickerSkipNote && (
+            <div className="text-xs text-amber-800 mt-1 break-words">{brandStickerSkipNote}</div>
           )}
           
           {/* OTP Verification Status */}
