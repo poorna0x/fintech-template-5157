@@ -1,6 +1,10 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { toast } from 'sonner';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
+import {
+  adjustCachedAdminOngoingCount,
+  ongoingCountDeltaForDeletedStatus,
+} from '@/lib/adminDashboardCache';
 import { broadcastTechnicianJobListRefreshForJob } from '@/lib/technicianJobListSync';
 import { db, supabase } from '@/lib/supabase';
 import type { Job } from '@/types';
@@ -14,7 +18,9 @@ function removeJobFromLocalState(
     setLoadedCompletedJobDetails: Dispatch<SetStateAction<Record<string, Job>>>;
     setLoadingCompletedJobDetails: Dispatch<SetStateAction<Record<string, boolean>>>;
     setTotalCount: Dispatch<SetStateAction<number>>;
-  }
+    setJobCounts: Dispatch<SetStateAction<{ ongoing: number; followup: number; denied: number; completed: number }>>;
+  },
+  ongoingDelta: number
 ) {
   ctx.setJobs((prev) => prev.filter((job) => job.id !== deletedId));
   ctx.setCustomerJobs((prev) => {
@@ -39,6 +45,13 @@ function removeJobFromLocalState(
   if (ctx.statusFilter === 'COMPLETED' || ctx.statusFilter === 'CANCELLED') {
     ctx.setTotalCount((prev) => Math.max(0, prev - 1));
   }
+  if (ongoingDelta > 0) {
+    ctx.setJobCounts((prev) => ({
+      ...prev,
+      ongoing: Math.max(0, prev.ongoing - ongoingDelta),
+    }));
+    adjustCachedAdminOngoingCount(-ongoingDelta);
+  }
 }
 
 function restoreJobToLocalState(
@@ -48,7 +61,9 @@ function restoreJobToLocalState(
     setJobs: Dispatch<SetStateAction<Job[]>>;
     setCustomerJobs: Dispatch<SetStateAction<Record<string, Job[]>>>;
     setTotalCount: Dispatch<SetStateAction<number>>;
-  }
+    setJobCounts: Dispatch<SetStateAction<{ ongoing: number; followup: number; denied: number; completed: number }>>;
+  },
+  ongoingDelta: number
 ) {
   const deletedId = job.id;
   ctx.setJobs((prev) => (prev.some((j) => j.id === deletedId) ? prev : [job, ...prev]));
@@ -62,6 +77,13 @@ function restoreJobToLocalState(
   }
   if (ctx.statusFilter === 'COMPLETED' || ctx.statusFilter === 'CANCELLED') {
     ctx.setTotalCount((prev) => prev + 1);
+  }
+  if (ongoingDelta > 0) {
+    ctx.setJobCounts((prev) => ({
+      ...prev,
+      ongoing: prev.ongoing + ongoingDelta,
+    }));
+    adjustCachedAdminOngoingCount(ongoingDelta);
   }
 }
 
@@ -107,17 +129,20 @@ export async function deleteAdminJob(
     closeAdminModal: () => void;
     setDeleteJobDialogOpen: Dispatch<SetStateAction<boolean>>;
     setJobToDelete: Dispatch<SetStateAction<Job | null>>;
+    setJobCounts: Dispatch<SetStateAction<{ ongoing: number; followup: number; denied: number; completed: number }>>;
+    reloadJobCounts?: () => void;
   },
   remark?: string
-) {
-  if (!jobToDelete) return;
+): Promise<boolean> {
+  if (!jobToDelete) return false;
 
   const deletedId = jobToDelete.id;
   const trimmedRemark = remark?.trim() || '';
   const jobNumber = jobToDelete.job_number || jobToDelete.jobNumber;
+  const ongoingDelta = ongoingCountDeltaForDeletedStatus(jobToDelete.status);
 
   // Optimistic: close dialog + remove from UI immediately, then finish on the server.
-  removeJobFromLocalState(deletedId, ctx);
+  removeJobFromLocalState(deletedId, ctx, ongoingDelta);
   ctx.closeAdminModal();
   ctx.setDeleteJobDialogOpen(false);
   ctx.setJobToDelete(null);
@@ -144,9 +169,12 @@ export async function deleteAdminJob(
       }
       throw new Error(msg);
     }
+    ctx.reloadJobCounts?.();
+    return true;
   } catch (err) {
-    restoreJobToLocalState(jobToDelete, ctx);
+    restoreJobToLocalState(jobToDelete, ctx, ongoingDelta);
     const message = err instanceof Error ? err.message : 'Failed to delete job';
     toast.error(message);
+    return false;
   }
 }

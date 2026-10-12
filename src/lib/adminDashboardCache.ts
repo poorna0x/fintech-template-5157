@@ -152,6 +152,26 @@ export function readAdminDashboardCache(): AdminDashboardSnapshot | null {
   }
 }
 
+const ONGOING_COUNT_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
+
+/** How many to subtract from the Ongoing card when this job is deleted. */
+export function ongoingCountDeltaForDeletedStatus(status: string | null | undefined): number {
+  return ONGOING_COUNT_STATUSES.has(String(status || '')) ? 1 : 0;
+}
+
+/** Keep the 5-minute boot snapshot in step with an optimistic Ongoing count change. */
+export function adjustCachedAdminOngoingCount(delta: number): void {
+  const snap = readAdminDashboardCache();
+  if (!snap?.jobCounts) return;
+  writeAdminDashboardCache({
+    ...snap,
+    jobCounts: {
+      ...snap.jobCounts,
+      ongoing: Math.max(0, (snap.jobCounts.ongoing || 0) + delta),
+    },
+  });
+}
+
 export function writeAdminDashboardCache(snapshot: AdminDashboardSnapshot): void {
   if (typeof window === 'undefined') return;
   try {

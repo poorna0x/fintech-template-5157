@@ -245,6 +245,7 @@ import {
   clearAdminDashboardCache,
   invalidateAdminDashboardCaches,
   getModuleOngoingJobsSnapshot,
+  setModuleOngoingJobsSnapshot,
   getModuleJobsListCache,
   setModuleJobsListCache,
   clearModuleJobsListCache,
@@ -6333,8 +6334,15 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteJob = async (remark?: string) => {
-    await deleteAdminJob(
-      jobToDelete,
+    const deleted = jobToDelete;
+    const snapshotBefore = ongoingJobsSnapshotRef.current;
+    if (deleted) {
+      const nextSnapshot = snapshotBefore.filter((job) => job.id !== deleted.id);
+      ongoingJobsSnapshotRef.current = nextSnapshot;
+      setModuleOngoingJobsSnapshot(nextSnapshot);
+    }
+    const ok = await deleteAdminJob(
+      deleted,
       {
         statusFilter,
         setJobs,
@@ -6342,12 +6350,20 @@ const AdminDashboard = () => {
         setLoadedCompletedJobDetails,
         setLoadingCompletedJobDetails,
         setTotalCount,
+        setJobCounts,
         closeAdminModal,
         setDeleteJobDialogOpen,
         setJobToDelete,
+        reloadJobCounts: () => {
+          void loadJobCounts({ bypassCache: true });
+        },
       },
       remark
     );
+    if (!ok && deleted) {
+      ongoingJobsSnapshotRef.current = snapshotBefore;
+      setModuleOngoingJobsSnapshot(snapshotBefore);
+    }
   };
 
   const handleCustomerStatusUpdate = async (
