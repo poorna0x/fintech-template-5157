@@ -1019,7 +1019,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                       if (e.key === 'Enter') void handleSearch();
                     }}
                     className="h-9"
-                    title="Matches customer model, second site, or past jobs"
+                    title="Matches brand and model together, including a label like Hydrogen RO - AquaSmart"
                   />
                 </Field>
                 <Field label="Area / location">

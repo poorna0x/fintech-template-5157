@@ -195,6 +195,67 @@ function columnTokenOr(columns: string[], input: string, mode: 'all' | 'any'): s
     .join(',');
 }
 
+const PROFILE_EQUIPMENT_COLUMNS = ['brand', 'alternate_brand', 'model', 'alternate_model'] as const;
+const JOB_EQUIPMENT_COLUMNS = ['brand', 'model'] as const;
+
+const MODEL_GLUE_SUFFIXES = ['smart', 'pure', 'guard', 'grand', 'fresh', 'pearl', 'copper', 'plus'];
+
+/** "aquasmart" also matches "Aqua Smart" via aqua%smart. */
+function modelPatternBodies(token: string): string[] {
+  const bodies = new Set<string>([token]);
+  const lower = token.toLowerCase();
+  for (const suffix of MODEL_GLUE_SUFFIXES) {
+    if (lower.length <= suffix.length + 2 || !lower.endsWith(suffix)) continue;
+    const prefix = lower.slice(0, -suffix.length);
+    if (prefix.length >= 3) bodies.add(`${prefix}%${suffix}`);
+  }
+  return [...bodies];
+}
+
+function equipmentIlike(column: string, patternBody: string): string {
+  const escaped = patternBody.split('%').map((part) => escapeForLike(part)).join('%');
+  return `${column}.ilike.%${escaped}%`;
+}
+
+function equipmentVariantOr(columns: readonly string[], variants: string[]): string {
+  const parts = variants.flatMap((variant) =>
+    modelPatternBodies(variant).flatMap((body) => columns.map((column) => equipmentIlike(column, body)))
+  );
+  return parts.length === 1 ? parts[0] : `or(${parts.join(',')})`;
+}
+
+/**
+ * Model box is typed as people see it ("Hydrogen RO - AquaSmart") while the
+ * row stores brand and model apart.
+ * all: every word must hit brand or model.
+ * any: any word hits brand or model.
+ */
+export function buildEquipmentFilterExpression(
+  input: string,
+  columns: readonly string[],
+  mode: 'all' | 'any'
+): string | null {
+  const trimmed = input.trim();
+  if (!trimmed || columns.length === 0) return null;
+  const groups = locationPlaceGroups(trimmed);
+  if (groups.length === 0) return equipmentVariantOr(columns, [trimmed]);
+  if (mode === 'any') {
+    const tokens = [...new Set(groups.flat(2))].slice(0, 8);
+    return tokens
+      .flatMap((token) =>
+        modelPatternBodies(token).flatMap((body) => columns.map((column) => equipmentIlike(column, body)))
+      )
+      .join(',');
+  }
+  const segmentSql = groups.map((words) => {
+    const wordSql = words.map((variants) => equipmentVariantOr(columns, variants));
+    return wordSql.length === 1 ? wordSql[0] : `and(${wordSql.join(',')})`;
+  });
+  const allWords = segmentSql.length === 1 ? segmentSql[0] : `or(${segmentSql.join(',')})`;
+  const phrase = equipmentVariantOr(columns, [trimmed]);
+  return `or(${allWords},${phrase})`;
+}
+
 function newestCustomerStamp(row: AdvancedSearchRow): string {
   return row.created_at || row.customer_since || '';
 }
@@ -550,8 +611,12 @@ async function fetchCustomerIdsForModelContains(
   model: string,
   mode: 'all' | 'any'
 ): Promise<Set<string>> {
-  const profileOr = columnTokenOr(['model', 'alternate_model'], model, mode);
-  const jobOr = columnTokenOr(['model'], model, mode);
+  const profileColumns =
+    mode === 'any' ? (['model', 'alternate_model'] as const) : PROFILE_EQUIPMENT_COLUMNS;
+  const jobColumns = mode === 'any' ? (['model'] as const) : JOB_EQUIPMENT_COLUMNS;
+  const profileOr = buildEquipmentFilterExpression(model, profileColumns, mode);
+  const jobOr = buildEquipmentFilterExpression(model, jobColumns, mode);
+  if (!profileOr || !jobOr) return new Set();
   const [profile, fromJobs] = await Promise.all([
     paginateJobCustomerIds((from, to) =>
       supabase.from('customers').select('id').or(profileOr).range(from, to)
@@ -760,6 +825,8 @@ function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: C
       const multiWordPlace =
         placeGroups.some((words) => words.length >= 2) || placeGroups.length > 1;
       if (placeExpr && multiWordPlace) orParts.push(placeExpr);
+      const equipmentExpr = buildEquipmentFilterExpression(free, PROFILE_EQUIPMENT_COLUMNS, 'all');
+      if (equipmentExpr && multiWordPlace) orParts.push(equipmentExpr);
     }
     q = q.or(orParts.join(','));
   }

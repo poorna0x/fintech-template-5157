@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   billAmountOrClause,
+  buildEquipmentFilterExpression,
   buildLocationFilterExpression,
   clampNearRadiusKm,
   customerServiceTypeOrClause,
@@ -70,6 +71,33 @@ describe('buildLocationFilterExpression', () => {
     expect(expr?.includes('and(')).toBe(false);
     expect(expr).toContain('%rohan%');
     expect(expr).toContain('%upavan%');
+  });
+});
+
+describe('buildEquipmentFilterExpression', () => {
+  it('requires every word of a brand-model label, on brand or model', () => {
+    const expr = buildEquipmentFilterExpression(
+      'Hydrogen RO - AquaSmart',
+      ['brand', 'model'],
+      'all'
+    );
+    expect(expr?.startsWith('or(and(')).toBe(true);
+    expect(expr).toContain('brand.ilike.%hydrogen%');
+    expect(expr).toContain('model.ilike.%hydrogen%');
+    expect(expr).toContain('brand.ilike.%aquasmart%');
+    expect(expr).toContain('model.ilike.%aquasmart%');
+    expect(expr).toContain('model.ilike.%aqua%smart%');
+  });
+
+  it('lets approximate search match any word, including Aqua Smart', () => {
+    const expr = buildEquipmentFilterExpression(
+      'Hydrogen RO - AquaSmart',
+      ['model'],
+      'any'
+    );
+    expect(expr?.includes('and(')).toBe(false);
+    expect(expr).toContain('model.ilike.%aquasmart%');
+    expect(expr).toContain('model.ilike.%aqua%smart%');
   });
 });
 
