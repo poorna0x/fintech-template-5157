@@ -4,11 +4,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Wrench, Filter, RefreshCw, Settings, CheckCircle, Clock, Shield, Phone, AlertCircle } from 'lucide-react';
+import { markWebsiteBookDoor } from '@/lib/websiteBookingDoor';
 
 const ServicesSection = () => {
   const navigate = useNavigate();
 
   const handleBookService = () => {
+    markWebsiteBookDoor();
     navigate('/book');
   };
 

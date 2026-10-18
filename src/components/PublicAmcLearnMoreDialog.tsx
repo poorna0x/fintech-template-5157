@@ -23,6 +23,7 @@ import {
   getPublicAmcTermsBullets,
 } from '@/lib/public-amc-info';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
+import { markWebsiteBookDoor } from '@/lib/websiteBookingDoor';
 
 interface PublicAmcLearnMoreDialogProps {
   open: boolean;
@@ -40,6 +41,7 @@ const PublicAmcLearnMoreDialog: React.FC<PublicAmcLearnMoreDialogProps> = ({
 
   const handleBook = () => {
     onOpenChange(false);
+    markWebsiteBookDoor();
     navigate('/book');
   };
 

@@ -3,6 +3,7 @@ import { Building2, Droplets, Factory, Phone, Settings, Wrench } from 'lucide-re
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
+import { markWebsiteBookDoor } from '@/lib/websiteBookingDoor';
 import {
   productServiceFaqs,
   productServicePageCopy,
@@ -285,7 +286,10 @@ export default function PublicProductServiceBody({
               <Button
                 type="button"
                 className="h-11 bg-sky-700 hover:bg-sky-800 text-white"
-                onClick={() => navigate('/book')}
+                onClick={() => {
+                  markWebsiteBookDoor();
+                  navigate('/book');
+                }}
               >
                 Book installation or service
               </Button>
@@ -350,7 +354,7 @@ export default function PublicProductServiceBody({
               </>
             )}
             {' · '}
-            <Link to="/book" className="text-sky-700 dark:text-sky-400 hover:underline">
+            <Link to="/book" onClick={() => markWebsiteBookDoor()} className="text-sky-700 dark:text-sky-400 hover:underline">
               book online
             </Link>
             .

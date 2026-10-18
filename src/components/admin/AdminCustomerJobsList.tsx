@@ -55,6 +55,8 @@ import { FollowUpJobSection } from './FollowUpJobSection';
 import { StatusBadge } from './StatusBadge';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { useAdminDashboardList } from '@/contexts/AdminDashboardListContext';
+import { jobBookedViaQr } from '@/lib/websiteBookingDoor';
+import { QrBookingBadge } from './QrBookingBadge';
 import { parseAdminDashboardUrl } from '@/lib/adminDashboardUrl';
 import {
   findLeadSource,
@@ -1001,7 +1003,10 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                                   <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
                                   <div className="min-w-0 flex-1">
                                     <div className="text-xs text-gray-500">Lead Source</div>
-                                    <div className="font-medium text-gray-900 break-words">{ls}</div>
+                                    <div className="font-medium text-gray-900 break-words">
+                                      {ls}
+                                      {jobBookedViaQr((job as any).requirements) ? <QrBookingBadge /> : null}
+                                    </div>
                                     {isWebsite && bookedAt && (
                                       <div className="text-xs text-gray-500 mt-0.5">Booked at: {new Date(bookedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</div>
                                     )}
@@ -1090,7 +1095,10 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                                   <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
                                   <div className="min-w-0 flex-1">
                                     <div className="text-xs text-gray-500">Lead Source</div>
-                                    <div className="font-medium text-gray-900 break-words">{leadSource}</div>
+                                    <div className="font-medium text-gray-900 break-words">
+                                      {leadSource}
+                                      {jobBookedViaQr((job as any).requirements) ? <QrBookingBadge /> : null}
+                                    </div>
                                     <div className="text-xs text-gray-500 mt-0.5">Booked at: {formatted}</div>
                                   </div>
                                 </div>

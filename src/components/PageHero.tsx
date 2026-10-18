@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
+import { markWebsiteBookDoor } from '@/lib/websiteBookingDoor';
 
 interface PageHeroProps {
   badge?: string;
@@ -34,6 +35,7 @@ const PageHero: React.FC<PageHeroProps> = ({
     : {};
 
   const handleBookService = () => {
+    markWebsiteBookDoor();
     navigate('/book');
   };
 

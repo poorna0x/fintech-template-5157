@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
+import { markWebsiteBookDoor } from '@/lib/websiteBookingDoor';
 import { getPublicSiteLabel, getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 const Header = () => {
@@ -74,6 +75,7 @@ const Header = () => {
         navigate('/');
       }
     } else if (page === 'booking') {
+      markWebsiteBookDoor();
       navigate('/book');
     } else if (page === 'contact') {
       // Navigate to contact page
@@ -334,6 +336,7 @@ const Header = () => {
           ) : (
             <Button 
               onClick={() => {
+                markWebsiteBookDoor();
                 navigate('/book');
               }}
               className="bg-sky-700 text-white hover:bg-sky-800 shadow-lg whitespace-nowrap"

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Star, ShieldCheck, Clock, Phone, Droplets, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
+import { markWebsiteBookDoor } from '@/lib/websiteBookingDoor';
 
 const HeroSection = () => {
   const [copyVisible, setCopyVisible] = useState(false);
@@ -14,6 +15,7 @@ const HeroSection = () => {
   }, []);
 
   const handleBookService = () => {
+    markWebsiteBookDoor();
     navigate('/book');
   };
   const handleCall = () => openPublicPhoneCall('+919886944288');

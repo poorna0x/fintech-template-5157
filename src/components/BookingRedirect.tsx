@@ -3,11 +3,13 @@ import { Button } from '@/components/ui/button';
 import { Clock, MapPin, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
+import { markWebsiteBookDoor } from '@/lib/websiteBookingDoor';
 
 const BookingRedirect: React.FC = () => {
   const navigate = useNavigate();
 
   const handleBookService = () => {
+    markWebsiteBookDoor();
     navigate('/book');
   };
 

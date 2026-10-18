@@ -24,6 +24,7 @@ import {
   markWebsiteBookingIntentBooked,
 } from '@/lib/bookingIntent';
 import { createBookingJob } from '@/lib/bookingJob';
+import { publicBookingVia } from '@/lib/websiteBookingDoor';
 import {
   bookingLeaveMessage,
   fetchBookingLeaveDates,
@@ -1686,6 +1687,7 @@ const Booking: React.FC = () => {
         service_location: jobServiceLocation,
         requirements: [{
           lead_source: websiteLeadSource,
+          booking_via: publicBookingVia(),
           custom_time: formData.preferredTime === 'CUSTOM' && formData.preferredTimeCustom ? formData.preferredTimeCustom : null
         }],
         estimated_cost: 0,

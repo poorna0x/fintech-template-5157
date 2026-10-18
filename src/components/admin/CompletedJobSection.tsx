@@ -15,6 +15,8 @@ import {
 import { Job, Technician } from '@/types';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { extractPhotoUrls, findLeadSource, normalizePhotoUrl, isOfficeCompletedJob } from '@/lib/adminUtils';
+import { jobBookedViaQr } from '@/lib/websiteBookingDoor';
+import { QrBookingBadge } from './QrBookingBadge';
 import { extractBillPhotoSources } from '@/lib/billPhotoCapture';
 import { toast } from 'sonner';
 import JobPartsUsedDialog from './JobPartsUsedDialog';
@@ -498,6 +500,9 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           {/* Lead Source */}
           <div className="text-gray-700 break-words">
             <span className="text-gray-500 font-medium">Lead Source:</span> {leadSource || 'Direct call'}
+            {jobBookedViaQr(requirements.length > 0 ? requirements : (job as any).requirements) ? (
+              <QrBookingBadge />
+            ) : null}
           </div>
 
           {/* Service Brand */}
