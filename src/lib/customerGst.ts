@@ -13,6 +13,11 @@ export function getCustomerGstNumber(customer: CustomerGstFields): string {
   return normalizeCustomerGstNumber(customer?.gstNumber || customer?.gst_number || '');
 }
 
+/** New tax invoices for a customer with a GSTIN are B2B. */
+export function defaultTaxInvoiceType(gst: string | null | undefined): 'B2B' | 'B2C' {
+  return normalizeCustomerGstNumber(gst) ? 'B2B' : 'B2C';
+}
+
 /**
  * Map DB / API customer row GST into both field names once (avoid double normalize).
  * Empty GSTIN omits both keys so list payloads stay small.

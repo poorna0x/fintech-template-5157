@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer, Eye, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
-import { getCustomerGstNumber, normalizeCustomerGstNumber } from '@/lib/customerGst';
+import { defaultTaxInvoiceType, getCustomerGstNumber, normalizeCustomerGstNumber } from '@/lib/customerGst';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
 import {
   type EditableNumber,
@@ -315,7 +315,11 @@ export default function TaxInvoiceGenerator({
   } | null>(null);
   const [roundOff, setRoundOff] = useState(true);
   const [customerGstRequired, setCustomerGstRequired] = useState(false);
-  const [invoiceType, setInvoiceType] = useState<'B2B' | 'B2C'>('B2C'); // B2B = Business to Business, B2C = Business to Consumer
+  /** Set when the user, a draft, or a saved invoice picks B2B/B2C. */
+  const invoiceTypeChosenRef = useRef(Boolean(editInvoiceId));
+  const [invoiceType, setInvoiceType] = useState<'B2B' | 'B2C'>(
+    editInvoiceId ? 'B2C' : defaultTaxInvoiceType(customerGst)
+  );
   const [bankDetails, setBankDetails] = useState(defaultBankDetails);
   const [showBankDetails, setShowBankDetails] = useState(false);
   const [showComputerGeneratedText, setShowComputerGeneratedText] = useState(true);
@@ -420,6 +424,13 @@ export default function TaxInvoiceGenerator({
       },
     }));
   }, [customer, editInvoiceId, addressChoice]);
+
+  // GSTIN often arrives after the form opens (document customer fetch).
+  useEffect(() => {
+    if (editInvoiceId || invoiceTypeChosenRef.current) return;
+    const gst = getCustomerGstNumber(customer) || editableCustomer.gst;
+    if (defaultTaxInvoiceType(gst) === 'B2B') setInvoiceType('B2B');
+  }, [customer, editInvoiceId, editableCustomer.gst]);
 
   const editAddress = normalizeCustomerAddress(editableCustomer.address);
 
@@ -1070,7 +1081,10 @@ export default function TaxInvoiceGenerator({
     if (typeof snap.vehicleNo === 'string') setVehicleNo(snap.vehicleNo);
     if (typeof snap.roundOff === 'boolean') setRoundOff(snap.roundOff);
     if (typeof snap.customerGstRequired === 'boolean') setCustomerGstRequired(snap.customerGstRequired);
-    if (snap.invoiceType === 'B2B' || snap.invoiceType === 'B2C') setInvoiceType(snap.invoiceType);
+    if (snap.invoiceType === 'B2B' || snap.invoiceType === 'B2C') {
+      invoiceTypeChosenRef.current = true;
+      setInvoiceType(snap.invoiceType);
+    }
     if (snap.bankDetails && typeof snap.bankDetails === 'object')
       setBankDetails({ ...defaultBankDetails, ...snap.bankDetails });
     if (typeof snap.showBankDetails === 'boolean') setShowBankDetails(snap.showBankDetails);
@@ -1262,7 +1276,10 @@ export default function TaxInvoiceGenerator({
                 <Label htmlFor="invoiceType">Invoice Type <span className="text-red-500">*</span></Label>
                 <Select
                   value={invoiceType}
-                  onValueChange={(value: 'B2B' | 'B2C') => setInvoiceType(value)}
+                  onValueChange={(value: 'B2B' | 'B2C') => {
+                    invoiceTypeChosenRef.current = true;
+                    setInvoiceType(value);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select invoice type" />
