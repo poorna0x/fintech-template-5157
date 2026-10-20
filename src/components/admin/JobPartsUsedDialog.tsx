@@ -75,12 +75,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
   const [technicianInventory, setTechnicianInventory] = useState<TechnicianInventoryItem[]>([]);
   const [partsUsed, setPartsUsed] = useState<JobPartUsed[]>([]);
-  const [addPartDialogOpen, setAddPartDialogOpen] = useState(false);
   const [addBundleDialogOpen, setAddBundleDialogOpen] = useState(false);
   const [bundles, setBundles] = useState<{ id: string; name: string; description: string | null }[]>([]);
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  /** Part row waiting for a quantity before it is added. + used to skip this step. */
+  const [pendingAddKey, setPendingAddKey] = useState<string | null>(null);
+  const [pendingQty, setPendingQty] = useState('1');
   const [hasLoadedParts, setHasLoadedParts] = useState(false);
   const [applyingBundle, setApplyingBundle] = useState(false);
   const [addPartInventoryLoading, setAddPartInventoryLoading] = useState(false);
@@ -144,14 +145,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   }, []);
 
-  // Debounce search query
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(inventorySearchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [inventorySearchQuery]);
-
   // Load technician inventory (updates cache; used for initial load and background revalidate)
   const loadTechnicianInventory = useCallback(async () => {
     if (!technician?.id) return;
@@ -203,16 +196,17 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setMainInventoryItems([]);
       setMainInventoryLoaded(false);
       setInventorySearchQuery('');
-      setDebouncedSearchQuery('');
+      setPendingAddKey(null);
+      setPendingQty('1');
       setAddBundleDialogOpen(false);
       setAddPartInventoryLoading(false);
       resetCustomForm();
     }
   }, [open, job?.id, technician?.id, loadPartsUsedOnDemand, resetCustomForm]);
 
-  // Lazy-load technician inventory only when Add Part or Add Bundle dialog opens (reduces load when user only views parts)
+  // Catalog for the search box on this screen (no separate Add Part dialog).
   useEffect(() => {
-    if (!(addPartDialogOpen || addBundleDialogOpen) || !technician?.id) return;
+    if (!open || !technician?.id) return;
 
     const cacheKey = `tech_inventory_${technician.id}`;
     const cached = inventoryCache.get<TechnicianInventoryItem[]>(cacheKey);
@@ -225,7 +219,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
     setAddPartInventoryLoading(true);
     loadTechnicianInventory().finally(() => setAddPartInventoryLoading(false));
-  }, [addPartDialogOpen, addBundleDialogOpen, technician?.id, loadTechnicianInventory]);
+  }, [open, technician?.id, loadTechnicianInventory]);
 
   // Flush pending recalc when dialog closes so job parts_cost_total is up to date
   useEffect(() => {
@@ -265,13 +259,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     setMainInventoryLoaded(true);
   }, [mainInventoryLoaded]);
 
-  // Main catalog only needed for Add Part picker — revalidate so restocks/new SKUs show up
+  // Main catalog for the on-screen search — revalidate so restocks/new SKUs show up
   useEffect(() => {
-    if (!addPartDialogOpen) return;
+    if (!open) return;
     void loadMainInventory({ revalidate: true });
     // Once per open; don't re-run when mainInventoryLoaded flips (would double-fetch)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open-only
-  }, [addPartDialogOpen]);
+  }, [open]);
 
   // Memoize inventory lookup map for O(1) access
   const inventoryMap = useMemo(() => {
@@ -345,7 +339,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       }
     }
 
-    const q = debouncedSearchQuery.trim();
+    const q = inventorySearchQuery.trim();
     let filtered = rows;
     if (q) {
       const scored = rows
@@ -368,7 +362,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
 
     return filtered;
-  }, [technicianInventory, mainInventoryItems, debouncedSearchQuery, inventoryMap]);
+  }, [technicianInventory, mainInventoryItems, inventorySearchQuery, inventoryMap]);
 
   // Deduct from main inventory (warehouse). Returns error message if insufficient.
   // If existingMainItem is provided (e.g. from a prior getById for price), skip the fetch to avoid double getById.
@@ -521,12 +515,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     if (data) {
       setTechnicianInventoryAndCache((prev) => [data as TechnicianInventoryItem, ...prev]);
     }
-  };
-
-  // Handle add part - opens dialog with search
-  const handleAddPart = () => {
-    setInventorySearchQuery('');
-    setAddPartDialogOpen(true);
   };
 
   // Add a custom (one-off) item not in any inventory. No stock movement on the
@@ -758,13 +746,15 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   };
 
-  // Quick add 1 qty — tech bag when available; main only when tech has none/zero.
+  // Add a chosen qty — tech bag when available; main only when tech has none/zero.
   // Tech path does NOT touch main inventory.
   const handleQuickAddPart = async (
     inventoryId: string,
-    source: 'technician' | 'main' = 'technician'
+    source: 'technician' | 'main' = 'technician',
+    quantity = 1
   ) => {
     if (!job?.id || !technician?.id) return;
+    const qty = Math.max(1, Math.floor(Number(quantity) || 1));
     const flightKey = `${source}:${inventoryId}`;
     if (quickAddInFlightRef.current.has(flightKey)) return;
     quickAddInFlightRef.current.add(flightKey);
@@ -792,12 +782,12 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         }
 
         const mainQty = Number(mainCached?.quantity ?? NaN);
-        if (!Number.isNaN(mainQty) && mainQty < 1) {
-          toast.error('Insufficient main inventory');
+        if (!Number.isNaN(mainQty) && mainQty < qty) {
+          toast.error(`Insufficient main inventory. Available: ${Number.isNaN(mainQty) ? 0 : mainQty}`);
           return;
         }
 
-        const mainErr = await deductMainInventory(inventoryId, 1, mainCached ?? null);
+        const mainErr = await deductMainInventory(inventoryId, qty, mainCached ?? null);
         if (mainErr) {
           toast.error(`Main inventory: ${mainErr}`);
           const { data } = await db.inventory.getById(inventoryId);
@@ -811,7 +801,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           );
           let nextParts = partsUsed;
           if (existingPart) {
-            const newQuantity = existingPart.quantity_used + 1;
+            const newQuantity = existingPart.quantity_used + qty;
             const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(
               existingPart.id,
               { quantity_used: newQuantity, technician_id: partsOwnerId || technician.id }
@@ -828,7 +818,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
               job_id: job.id,
               technician_id: partsOwnerId || technician.id,
               inventory_id: inventoryId,
-              quantity_used: 1,
+              quantity_used: qty,
               price_at_time_of_use: currentPrice ?? 0,
               source: 'main',
             });
@@ -838,20 +828,20 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
               setPartsUsed(nextParts);
             }
           }
-          bumpMainLocalQty(inventoryId, -1);
+          bumpMainLocalQty(inventoryId, -qty);
           scheduleRecalcJobPartsCost(job.id, nextParts);
         } catch (writeErr) {
-          await restoreMainInventory(inventoryId, 1);
+          await restoreMainInventory(inventoryId, qty);
           throw writeErr;
         }
 
-        toast.success('Part added (1 qty) from main inventory.');
+        toast.success(`Part added (${qty} qty) from main inventory.`);
         return;
       }
 
       // Technician bag path — no main inventory check or deduct
-      if (!techItem || techItem.quantity < 1) {
-        toast.error('Insufficient technician quantity');
+      if (!techItem || techItem.quantity < qty) {
+        toast.error(`Insufficient technician quantity. Available: ${techItem?.quantity || 0}`);
         return;
       }
 
@@ -861,8 +851,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
       let nextParts = partsUsed;
       if (existingPart) {
-        const newQuantity = existingPart.quantity_used + 1;
-        const newTechQuantity = techItem.quantity - 1;
+        const newQuantity = existingPart.quantity_used + qty;
+        const newTechQuantity = techItem.quantity - qty;
         const { error: updateTechError } = await db.technicianInventory.updateQuantity(
           techItem.id,
           newTechQuantity
@@ -895,7 +885,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           throw partErr;
         }
       } else {
-        const newTechQuantity = techItem.quantity - 1;
+        const newTechQuantity = techItem.quantity - qty;
         const { error: updateTechError } = await db.technicianInventory.updateQuantity(
           techItem.id,
           newTechQuantity
@@ -907,7 +897,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             job_id: job.id,
             technician_id: partsOwnerId || technician.id,
             inventory_id: inventoryId,
-            quantity_used: 1,
+            quantity_used: qty,
             price_at_time_of_use: currentPrice ?? 0,
             source: 'technician',
           });
@@ -927,7 +917,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       }
 
       scheduleRecalcJobPartsCost(job.id, nextParts);
-      toast.success('Part added (1 qty) from technician bag.');
+      toast.success(`Part added (${qty} qty) from technician bag.`);
     } catch (error: any) {
       console.error('Error quick adding part:', error);
       toast.error(error?.message || 'Failed to add part');
@@ -1045,23 +1035,199 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto space-y-4 -mx-1 px-1">
-            {/* Add Part / Add Bundle */}
-            <div className="flex justify-end gap-2">
-              <Button
-                onClick={handleAddPart}
-                size="sm"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Part
-              </Button>
+            {/* Search is on this screen — typing filters; + asks for a quantity before adding. */}
+            <div className="flex justify-end">
               <Button
                 onClick={() => setAddBundleDialogOpen(true)}
                 size="sm"
                 variant="outline"
+                type="button"
               >
                 <Layers className="w-4 h-4 mr-2" />
                 Add Bundle
               </Button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="Search parts by name or code..."
+                  value={inventorySearchQuery}
+                  onChange={(e) => {
+                    setInventorySearchQuery(e.target.value);
+                    setPendingAddKey(null);
+                  }}
+                  className="pl-9 h-10 text-sm"
+                />
+              </div>
+              <div className="rounded-lg border overflow-hidden">
+                {addPartInventoryLoading && !mainInventoryLoaded ? (
+                  <div className="py-8 px-4 text-center text-sm text-muted-foreground">
+                    Loading parts...
+                  </div>
+                ) : filteredInventoryItems.length === 0 ? (
+                  <div className="py-8 px-4 text-center text-sm text-muted-foreground">
+                    {inventorySearchQuery.trim()
+                      ? 'No parts match your search.'
+                      : technicianInventory.length === 0 && mainInventoryItems.every((m) => Number(m.quantity ?? 0) < 1)
+                      ? 'No parts in technician or main inventory.'
+                      : 'No parts with available quantity.'}
+                  </div>
+                ) : (
+                  <div className="max-h-[min(40vh,240px)] overflow-y-auto">
+                    {filteredInventoryItems.map((item) => {
+                      const selected = pendingAddKey === item.key;
+                      return (
+                        <div key={item.key} className="border-b last:border-b-0">
+                          <div className="flex items-center gap-2 px-3 py-2.5">
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <span className="text-sm font-medium truncate block">
+                                {item.product_name}
+                                {item.source === 'main' && (
+                                  <span className="ml-1.5 align-middle rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-800 dark:bg-sky-900/40 dark:text-sky-200">
+                                    Main
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-xs text-muted-foreground truncate block">
+                                {item.code ? `Code: ${item.code} · ` : ''}
+                                {item.source === 'main' ? 'Main stock' : 'Tech bag'}: {item.available}
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 w-8 min-w-[2rem] shrink-0"
+                              onClick={() => {
+                                hapticTap();
+                                setShowCustom(false);
+                                setPendingAddKey(item.key);
+                                setPendingQty('1');
+                              }}
+                              disabled={item.available < 1}
+                              title="Choose quantity"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          {selected && (
+                            <div className="flex items-end gap-2 px-3 pb-3">
+                              <div className="w-24 space-y-1">
+                                <label className="text-[11px] text-muted-foreground">Qty</label>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  max={item.available}
+                                  inputMode="numeric"
+                                  value={pendingQty}
+                                  onChange={(e) => setPendingQty(e.target.value)}
+                                  className="h-9 text-sm"
+                                  autoFocus
+                                />
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-9"
+                                onClick={() => {
+                                  const n = Math.floor(Number(pendingQty) || 0);
+                                  if (n < 1) {
+                                    toast.error('Enter a quantity of at least 1.');
+                                    return;
+                                  }
+                                  if (n > item.available) {
+                                    toast.error(`Only ${item.available} available.`);
+                                    return;
+                                  }
+                                  hapticTap();
+                                  void handleQuickAddPart(item.inventory_id, item.source, n);
+                                  setPendingAddKey(null);
+                                  setPendingQty('1');
+                                }}
+                              >
+                                Add
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {showCustom ? (
+                <div className="space-y-2 rounded-lg border p-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Custom item (not in inventory)
+                  </p>
+                  <Input
+                    placeholder="Item name"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    className="h-9 text-sm"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <div className="flex-1 space-y-1">
+                      <label className="text-[11px] text-muted-foreground">Qty</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        inputMode="numeric"
+                        value={customQty}
+                        onChange={(e) => setCustomQty(e.target.value)}
+                        className="h-9 text-sm"
+                      />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <label className="text-[11px] text-muted-foreground">Unit price (₹)</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={customPrice}
+                        onChange={(e) => setCustomPrice(e.target.value)}
+                        placeholder="0"
+                        className="h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button type="button" variant="outline" className="flex-1" onClick={resetCustomForm} disabled={savingCustom}>
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      className="flex-1"
+                      onClick={handleAddCustomPart}
+                      disabled={savingCustom || !customName.trim()}
+                    >
+                      <Plus className="w-4 h-4 mr-1.5" />
+                      Add item
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full justify-center text-sm border border-dashed"
+                  onClick={() => {
+                    setPendingAddKey(null);
+                    setShowCustom(true);
+                    setCustomName(inventorySearchQuery.trim().toUpperCase());
+                    setCustomQty('1');
+                    setCustomPrice('');
+                  }}
+                  disabled={savingCustom}
+                >
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Add custom item{inventorySearchQuery.trim() ? ` "${inventorySearchQuery.trim()}"` : ''}
+                </Button>
+              )}
             </div>
 
             {/* Parts List */}
@@ -1076,7 +1242,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
               <div className="text-center py-8 text-muted-foreground">
                 <Package className="w-12 h-12 mx-auto mb-2 text-muted-foreground/70" />
                 <p>No parts added yet.</p>
-                <p className="text-sm mt-2">Click "Add Part" to add parts used for this job.</p>
+                <p className="text-sm mt-2">Search above, tap +, then enter the quantity.</p>
               </div>
             ) : (
               <div className="border rounded-lg overflow-x-auto">
@@ -1170,186 +1336,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                 </Table>
               </div>
             )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Part Dialog - search and click + to add 1 qty directly */}
-      <Dialog open={addPartDialogOpen} onOpenChange={(open) => {
-        if (!open) {
-          setAddPartDialogOpen(false);
-          setInventorySearchQuery('');
-          resetCustomForm();
-        }
-      }}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-md sm:max-w-lg p-4 sm:p-6 max-h-[90vh] overflow-hidden [&>div]:min-w-0 flex flex-col [&>button]:shrink-0 [&>button]:z-10 [&>button]:!top-[max(1rem,env(safe-area-inset-top,0px))]">
-          <div className="flex flex-col min-h-0 min-w-0 gap-4 flex-1 max-w-full">
-          <DialogHeader className="space-y-1.5 shrink-0">
-            <DialogTitle className="text-base sm:text-lg">Add Part Used</DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
-              Search and click + to add 1 qty from {technician.fullName || technician.full_name}&apos;s bag.
-              Parts the tech doesn&apos;t have (or has 0 of) appear from main inventory. You can also add a custom item.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col min-h-0 min-w-0 flex-1 py-0 overflow-hidden">
-            <div className="relative shrink-0 mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-              <Input
-                placeholder="Search parts by name or code..."
-                value={inventorySearchQuery}
-                onChange={(e) => setInventorySearchQuery(e.target.value)}
-                className="pl-9 h-10 sm:h-11 text-sm"
-              />
-            </div>
-            <div className="rounded-lg border flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden w-full">
-              {addPartInventoryLoading && !mainInventoryLoaded ? (
-                <div className="py-8 px-4 text-center text-sm text-muted-foreground">
-                  Loading parts...
-                </div>
-              ) : filteredInventoryItems.length === 0 && !inventorySearchQuery.trim() ? (
-                <div className="py-8 px-4 text-center text-sm text-muted-foreground">
-                  {technicianInventory.length === 0 && mainInventoryItems.every(m => Number(m.quantity ?? 0) < 1)
-                    ? 'No parts in technician or main inventory.'
-                    : 'No parts with available quantity.'}
-                </div>
-              ) : (
-                <div className="overflow-y-auto overflow-x-hidden max-h-[min(50vh,280px)] sm:max-h-[320px] w-full min-w-0 pl-0 pr-0 [scrollbar-gutter:stable] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                  {filteredInventoryItems.map((item) => {
-                    const productName = item.product_name;
-                    const code = item.code || '';
-                    return (
-                      <div
-                        key={item.key}
-                        className="group flex items-center gap-2 sm:gap-3 px-3 py-2.5 border-b last:border-b-0 bg-background hover:bg-muted/50 w-full max-w-full overflow-hidden"
-                      >
-                        <div className="min-w-0 flex-1 overflow-hidden">
-                          <span className="text-sm font-medium truncate block">
-                            {productName}
-                            {item.source === 'main' && (
-                              <span className="ml-1.5 align-middle rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-800 dark:bg-sky-900/40 dark:text-sky-200">
-                                Main
-                              </span>
-                            )}
-                          </span>
-                          <span className="text-xs text-muted-foreground truncate block">
-                            {code ? `Code: ${code} · ` : ''}
-                            {item.source === 'main' ? 'Main stock' : 'Tech bag'}: {item.available}
-                          </span>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 w-8 min-w-[2rem] shrink-0 bg-card text-foreground transition-colors hover:!bg-gray-800 hover:!text-white hover:!border-gray-800"
-                          onClick={() => {
-                            hapticTap();
-                            handleQuickAddPart(item.inventory_id, item.source);
-                          }}
-                          disabled={item.available < 1}
-                          title={item.source === 'main' ? 'Add 1 qty from main' : 'Add 1 qty from tech bag'}
-                        >
-                          <Plus className="w-4 h-4 text-current" />
-                        </Button>
-                      </div>
-                    );
-                  })}
-
-                  {/* When searching, offer the typed text as a custom (non-inventory) item. */}
-                  {inventorySearchQuery.trim() && (
-                    <div className="group flex items-center gap-2 sm:gap-3 px-3 py-2.5 border-b last:border-b-0 bg-muted/30 w-full max-w-full overflow-hidden">
-                      <div className="min-w-0 flex-1 overflow-hidden">
-                        <span className="text-sm font-medium truncate block">
-                          {inventorySearchQuery.trim()}
-                        </span>
-                        <span className="text-xs text-muted-foreground truncate block">
-                          Custom item (not in inventory)
-                        </span>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 w-8 min-w-[2rem] shrink-0 bg-card text-foreground transition-colors hover:!bg-gray-800 hover:!text-white hover:!border-gray-800"
-                        onClick={() => {
-                          hapticTap();
-                          setShowCustom(true);
-                          setCustomName(inventorySearchQuery.trim().toUpperCase());
-                          setCustomQty('1');
-                          setCustomPrice('');
-                        }}
-                        disabled={savingCustom}
-                        title="Add as custom item"
-                      >
-                        <Plus className="w-4 h-4 text-current" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="shrink-0 pt-3 border-t mt-2 space-y-3">
-            {showCustom && (
-              <div className="space-y-2 rounded-lg border p-3">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Custom item (not in inventory)
-                </p>
-                <Input
-                  placeholder="Item name"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  className="h-9 text-sm"
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <div className="flex-1 space-y-1">
-                    <label className="text-[11px] text-muted-foreground">Qty</label>
-                    <Input
-                      type="number"
-                      min={1}
-                      inputMode="numeric"
-                      value={customQty}
-                      onChange={(e) => setCustomQty(e.target.value)}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <label className="text-[11px] text-muted-foreground">Unit price (₹)</label>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      inputMode="decimal"
-                      value={customPrice}
-                      onChange={(e) => setCustomPrice(e.target.value)}
-                      placeholder="0"
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2 pt-1">
-                  <Button variant="outline" className="flex-1" onClick={resetCustomForm} disabled={savingCustom}>
-                    Cancel
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    onClick={handleAddCustomPart}
-                    disabled={savingCustom || !customName.trim()}
-                  >
-                    <Plus className="w-4 h-4 mr-1.5" />
-                    Add item
-                  </Button>
-                </div>
-              </div>
-            )}
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto"
-                onClick={() => setAddPartDialogOpen(false)}
-              >
-                Done
-              </Button>
-            </div>
-          </div>
           </div>
         </DialogContent>
       </Dialog>
