@@ -31,6 +31,14 @@ export function isSalaryListedTechnician(
   return technicianAccountStatus(tech) === 'ACTIVE';
 }
 
+/** Analytics salary — Active and already-suspended technicians. Inactive stays out. */
+export function isAnalyticsSalaryTechnician(
+  tech: { account_status?: unknown } | null | undefined
+): boolean {
+  const status = technicianAccountStatus(tech);
+  return status === 'ACTIVE' || status === 'SUSPENDED';
+}
+
 export function technicianAccountStatusSuffix(
   tech: { account_status?: unknown } | null | undefined
 ): string {

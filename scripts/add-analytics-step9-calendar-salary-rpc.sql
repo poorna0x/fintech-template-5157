@@ -220,7 +220,7 @@ BEGIN
   FOR tech IN
     SELECT t.id, t.employee_id, t.salary
     FROM public.technicians t
-    WHERE coalesce(t.account_status, 'ACTIVE') = 'ACTIVE'
+    WHERE coalesce(t.account_status, 'ACTIVE') IN ('ACTIVE', 'SUSPENDED')
     ORDER BY t.created_at DESC
   LOOP
     monthly_base := public.analytics_technician_monthly_base_salary(tech.salary, month_key, 8000);
@@ -286,7 +286,8 @@ BEGIN
 
   RETURN jsonb_build_object(
     'total_salary_before_advance', round(total_before, 2),
-    'total_salary_before_advance_including_all', round(total_before_all, 2)
+    'total_salary_before_advance_including_all', round(total_before_all, 2),
+    'includes_suspended', true
   );
 END;
 $$;

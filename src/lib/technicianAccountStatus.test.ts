@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isActiveTechnicianAccount,
+  isAnalyticsSalaryTechnician,
   isSalaryListedTechnician,
   isSuspendedTechnicianAccount,
   technicianAccountStatus,
@@ -21,6 +22,13 @@ describe('technicianAccountStatus', () => {
   it('keeps active technicians on salary lists', () => {
     expect(isSalaryListedTechnician({ account_status: 'ACTIVE' })).toBe(true);
     expect(isSalaryListedTechnician({})).toBe(true);
+  });
+
+  it('keeps suspended technicians in analytics salary and leaves inactive out', () => {
+    expect(isAnalyticsSalaryTechnician({ account_status: 'SUSPENDED' })).toBe(true);
+    expect(isAnalyticsSalaryTechnician({ account_status: 'ACTIVE' })).toBe(true);
+    expect(isAnalyticsSalaryTechnician({})).toBe(true);
+    expect(isAnalyticsSalaryTechnician({ account_status: 'INACTIVE' })).toBe(false);
   });
 
   it('flags only suspended accounts for QR hiding', () => {

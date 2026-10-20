@@ -18,7 +18,7 @@ export type AnalyticsCacheKeyInput = {
 };
 
 /** Bump when analytics aggregation rules change so stale tab cache is ignored. */
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 export function buildAnalyticsCacheKey(input: AnalyticsCacheKeyInput): string {
   return JSON.stringify({ v: CACHE_VERSION, ...input });

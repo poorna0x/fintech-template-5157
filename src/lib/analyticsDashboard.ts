@@ -434,16 +434,19 @@ export function parseAnalyticsCommissionTotalsRpc(data: unknown): {
 export function parseAnalyticsCalendarSalaryTotalsRpc(data: unknown): {
   totalSalaryBeforeAdvance: number;
   totalSalaryBeforeAdvanceIncludingAll: number;
+  includesSuspended: boolean;
 } | null {
   if (!data || typeof data !== 'object') return null;
   const row = data as {
     total_salary_before_advance?: number;
     total_salary_before_advance_including_all?: number;
+    includes_suspended?: boolean;
   };
   return {
     totalSalaryBeforeAdvance: Number(row.total_salary_before_advance) || 0,
     totalSalaryBeforeAdvanceIncludingAll:
       Number(row.total_salary_before_advance_including_all) || 0,
+    includesSuspended: row.includes_suspended === true,
   };
 }
 

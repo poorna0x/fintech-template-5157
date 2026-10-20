@@ -3,7 +3,7 @@
  * Analytics uses salary before advance (adjusted base + commission + extra).
  */
 import { db, supabase } from '@/lib/supabase';
-import { isSalaryListedTechnician } from '@/lib/technicianAccountStatus';
+import { isAnalyticsSalaryTechnician, isSalaryListedTechnician } from '@/lib/technicianAccountStatus';
 
 const EXCLUDED_EMPLOYEE_ID = 'TECH851703400'; // Excluded from Total Salary / profit (same as Analytics)
 const BILLING_SLAB_COMMISSION_EFFECTIVE_MONTH = '2026-04';
@@ -223,7 +223,7 @@ export interface TotalSalaryForMonthResult {
 export async function getTotalSalaryForCalendarMonth(
   year: number,
   month: number, // 1-12
-  options?: { technicians?: any[] }
+  options?: { technicians?: any[]; includeSuspended?: boolean }
 ): Promise<TotalSalaryForMonthResult> {
   const monthIndex = month - 1;
   const startDate = new Date(year, monthIndex, 1, 0, 0, 0, 0);
@@ -233,6 +233,19 @@ export async function getTotalSalaryForCalendarMonth(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayStr = formatDateString(today);
+
+  const scopedIds = (options?.technicians || [])
+    .map((tech: { id?: string }) => tech.id)
+    .filter((id): id is string => Boolean(id));
+
+  let paymentsQuery = supabase
+    .from('technician_payments')
+    .select('technician_id, job_id, commission_amount, job:jobs!inner(end_time, status)')
+    .eq('jobs.status', 'COMPLETED')
+    .not('jobs.end_time', 'is', null)
+    .gte('jobs.end_time', startDate.toISOString())
+    .lte('jobs.end_time', endDate.toISOString());
+  if (scopedIds.length > 0) paymentsQuery = paymentsQuery.in('technician_id', scopedIds);
 
   const [
     techniciansResult,
@@ -245,26 +258,25 @@ export async function getTotalSalaryForCalendarMonth(
       : db.technicians.getAllForAnalytics(100, { activeRosterOnly: false }),
     // Commission follows job completion (end_time), not payment-row created_at.
     // Saving/backfilling an old job this month must not move that commission into this month.
-    supabase
-      .from('technician_payments')
-      .select('technician_id, job_id, commission_amount, job:jobs!inner(end_time, status)')
-      .eq('jobs.status', 'COMPLETED')
-      .not('jobs.end_time', 'is', null)
-      .gte('jobs.end_time', startDate.toISOString())
-      .lte('jobs.end_time', endDate.toISOString()),
+    paymentsQuery,
     db.technicianExtraCommissions.getAll(undefined, periodStartStr, periodEndStr),
     db.technicianHolidays.getAll(undefined, periodStartStr, periodEndStr),
   ]);
 
-  const { data: completedJobsData } = await supabase
+  let jobsQuery = supabase
     .from('jobs')
     .select('id, assigned_technician_id, end_time, completed_at, actual_cost, payment_amount')
     .eq('status', 'COMPLETED')
     .not('end_time', 'is', null)
     .gte('end_time', startDate.toISOString())
     .lte('end_time', endDate.toISOString());
+  if (scopedIds.length > 0) jobsQuery = jobsQuery.in('assigned_technician_id', scopedIds);
+  const { data: completedJobsData } = await jobsQuery;
 
-  const allTechnicians = (techniciansResult.data || []).filter(isSalaryListedTechnician);
+  const keepTechnician = options?.includeSuspended
+    ? isAnalyticsSalaryTechnician
+    : isSalaryListedTechnician;
+  const allTechnicians = (techniciansResult.data || []).filter(keepTechnician);
   const payments = paymentsData || [];
   const extraCommissions = extraCommissionsData || [];
   const holidays = holidaysData || [];

@@ -12,7 +12,7 @@ import {
   resolveJobBillingAmount,
 } from '@/lib/jobAnalytics';
 import { getTotalSalaryForCalendarMonth, getTechnicianMonthlyBaseSalary, TECHNICIAN_SALARY_PAYROLL_START } from '@/lib/technicianSalaryForPeriod';
-import { technicianAccountStatusSuffix, isSalaryListedTechnician } from '@/lib/technicianAccountStatus';
+import { technicianAccountStatusSuffix, isAnalyticsSalaryTechnician, isSuspendedTechnicianAccount } from '@/lib/technicianAccountStatus';
 import { toast } from 'sonner';
 import {
   BarChart3,
@@ -617,7 +617,7 @@ async function loadAnalyticsSalaryTotals(
   startStr: string,
   endStr: string
 ): Promise<{ totalSalaryDeductions: number; totalSalaryIncludingAll: number }> {
-  const salaryTechnicians = (technicians || []).filter(isSalaryListedTechnician);
+  const salaryTechnicians = (technicians || []).filter(isAnalyticsSalaryTechnician);
   const usePaymentsSalary =
     (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') &&
     startDate &&
@@ -633,16 +633,28 @@ async function loadAnalyticsSalaryTotals(
       });
       const parsed = parseAnalyticsCalendarSalaryTotalsRpc(rpcRes.data);
       if (!rpcRes.error && parsed) {
-        return {
-          totalSalaryDeductions: parsed.totalSalaryBeforeAdvance,
-          totalSalaryIncludingAll: parsed.totalSalaryBeforeAdvanceIncludingAll,
-        };
+        let totalSalaryDeductions = parsed.totalSalaryBeforeAdvance;
+        let totalSalaryIncludingAll = parsed.totalSalaryBeforeAdvanceIncludingAll;
+        // Older salary RPC counts Active technicians only. Add people already suspended.
+        if (!parsed.includesSuspended) {
+          const suspended = (technicians || []).filter(isSuspendedTechnicianAccount);
+          if (suspended.length > 0) {
+            const extra = await getTotalSalaryForCalendarMonth(
+              startDate.getFullYear(),
+              startDate.getMonth() + 1,
+              { technicians: suspended, includeSuspended: true }
+            );
+            totalSalaryDeductions += extra.totalSalaryBeforeAdvance;
+            totalSalaryIncludingAll += extra.totalSalaryBeforeAdvanceIncludingAll;
+          }
+        }
+        return { totalSalaryDeductions, totalSalaryIncludingAll };
       }
 
       const result = await getTotalSalaryForCalendarMonth(
         startDate.getFullYear(),
         startDate.getMonth() + 1,
-        { technicians: salaryTechnicians }
+        { technicians: salaryTechnicians, includeSuspended: true }
       );
       return {
         totalSalaryDeductions: result.totalSalaryBeforeAdvance,

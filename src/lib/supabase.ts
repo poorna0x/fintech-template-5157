@@ -37,6 +37,7 @@ import {
   type SentEmailLogQueryFilters,
 } from './sent-email-log-filters';
 import { buildCompletedJobsDateOrFilter } from './jobAnalytics';
+import { clearAnalyticsSessionCache } from './analyticsSessionCache';
 import {
   isActiveTechnicianAccount,
   isSalaryListedTechnician,
@@ -5973,7 +5974,7 @@ export const db = {
         .insert(expense)
         .select()
         .single();
-      
+      if (!error) clearAnalyticsSessionCache();
       return { data, error };
     },
 
@@ -5984,7 +5985,7 @@ export const db = {
         .eq('id', id)
         .select()
         .single();
-      
+      if (!error) clearAnalyticsSessionCache();
       return { data, error };
     },
 
@@ -5993,6 +5994,7 @@ export const db = {
         .from('technician_expenses')
         .delete()
         .eq('id', id);
+      if (!error) clearAnalyticsSessionCache();
       
       return { error };
     }
@@ -6195,7 +6197,7 @@ export const db = {
         .insert(expense)
         .select()
         .single();
-      
+      if (!error) clearAnalyticsSessionCache();
       return { data, error };
     },
 
@@ -6206,7 +6208,7 @@ export const db = {
         .eq('id', id)
         .select()
         .single();
-      
+      if (!error) clearAnalyticsSessionCache();
       return { data, error };
     },
 
@@ -6215,6 +6217,7 @@ export const db = {
         .from('business_expenses')
         .delete()
         .eq('id', id);
+      if (!error) clearAnalyticsSessionCache();
       
       return { error };
     }
@@ -6249,6 +6252,7 @@ export const db = {
         .insert(expense)
         .select()
         .single();
+      if (!error) clearAnalyticsSessionCache();
       return { data, error };
     },
     async update(id: string, updates: any) {
@@ -6258,6 +6262,7 @@ export const db = {
         .eq('id', id)
         .select()
         .single();
+      if (!error) clearAnalyticsSessionCache();
       return { data, error };
     },
     async delete(id: string) {
@@ -6265,6 +6270,7 @@ export const db = {
         .from('other_expenses')
         .delete()
         .eq('id', id);
+      if (!error) clearAnalyticsSessionCache();
       return { error };
     }
   },
