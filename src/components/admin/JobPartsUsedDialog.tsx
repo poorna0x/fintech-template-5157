@@ -79,7 +79,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const [addBundleDialogOpen, setAddBundleDialogOpen] = useState(false);
   const [bundles, setBundles] = useState<{ id: string; name: string; description: string | null }[]>([]);
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [hasLoadedParts, setHasLoadedParts] = useState(false);
   const [applyingBundle, setApplyingBundle] = useState(false);
@@ -144,14 +144,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   }, []);
 
-  // Debounce search query
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(inventorySearchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [inventorySearchQuery]);
-
   // Load technician inventory (updates cache; used for initial load and background revalidate)
   const loadTechnicianInventory = useCallback(async () => {
     if (!technician?.id) return;
@@ -203,7 +195,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setMainInventoryItems([]);
       setMainInventoryLoaded(false);
       setInventorySearchQuery('');
-      setDebouncedSearchQuery('');
       setAddBundleDialogOpen(false);
       setAddPartInventoryLoading(false);
       resetCustomForm();
@@ -345,7 +336,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       }
     }
 
-    const q = debouncedSearchQuery.trim();
+    const q = inventorySearchQuery.trim();
     let filtered = rows;
     if (q) {
       const scored = rows
@@ -368,7 +359,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
 
     return filtered;
-  }, [technicianInventory, mainInventoryItems, debouncedSearchQuery, inventoryMap]);
+  }, [technicianInventory, mainInventoryItems, inventorySearchQuery, inventoryMap]);
 
   // Deduct from main inventory (warehouse). Returns error message if insufficient.
   // If existingMainItem is provided (e.g. from a prior getById for price), skip the fetch to avoid double getById.
@@ -1182,7 +1173,15 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           resetCustomForm();
         }
       }}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-md sm:max-w-lg p-4 sm:p-6 max-h-[90vh] overflow-hidden [&>div]:min-w-0 flex flex-col [&>button]:shrink-0 [&>button]:z-10 [&>button]:!top-[max(1rem,env(safe-area-inset-top,0px))]">
+        <DialogContent
+          className="w-[calc(100%-2rem)] max-w-md sm:max-w-lg p-4 sm:p-6 max-h-[90vh] overflow-hidden [&>div]:min-w-0 flex flex-col [&>button]:shrink-0 [&>button]:z-10 [&>button]:!top-[max(1rem,env(safe-area-inset-top,0px))]"
+          onOpenAutoFocus={(event) => {
+            const laptop = window.matchMedia('(min-width: 1024px) and (pointer: fine)').matches;
+            if (!laptop) return;
+            event.preventDefault();
+            searchInputRef.current?.focus();
+          }}
+        >
           <div className="flex flex-col min-h-0 min-w-0 gap-4 flex-1 max-w-full">
           <DialogHeader className="space-y-1.5 shrink-0">
             <DialogTitle className="text-base sm:text-lg">Add Part Used</DialogTitle>
@@ -1195,6 +1194,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             <div className="relative shrink-0 mb-3">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
+                ref={searchInputRef}
                 placeholder="Search parts by name or code..."
                 value={inventorySearchQuery}
                 onChange={(e) => setInventorySearchQuery(e.target.value)}
