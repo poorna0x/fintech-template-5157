@@ -80,6 +80,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const [bundles, setBundles] = useState<{ id: string; name: string; description: string | null }[]>([]);
   const [inventorySearchQuery, setInventorySearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
+  /** True while the Add Part picker is open, including the frame before React re-renders. */
+  const addPartOpenRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [hasLoadedParts, setHasLoadedParts] = useState(false);
   const [applyingBundle, setApplyingBundle] = useState(false);
@@ -195,6 +197,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setMainInventoryItems([]);
       setMainInventoryLoaded(false);
       setInventorySearchQuery('');
+      setAddPartDialogOpen(false);
+      addPartOpenRef.current = false;
       setAddBundleDialogOpen(false);
       setAddPartInventoryLoading(false);
       resetCustomForm();
@@ -263,6 +267,42 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     // Once per open; don't re-run when mainInventoryLoaded flips (would double-fetch)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open-only
   }, [addPartDialogOpen]);
+
+  addPartOpenRef.current = addPartDialogOpen;
+
+  // Laptop: typing on the Parts Used screen opens the same Add Part search.
+  // Phones still use the Add Part button. + still adds 1 qty.
+  useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!window.matchMedia('(min-width: 1024px) and (pointer: fine)').matches) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+      if (event.key.length !== 1) return;
+
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (addBundleDialogOpen) return;
+      if (document.querySelector('[role="alertdialog"]')) return;
+      if (searchInputRef.current && document.activeElement === searchInputRef.current) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!addPartOpenRef.current) {
+        addPartOpenRef.current = true;
+        setInventorySearchQuery(event.key);
+        setAddPartDialogOpen(true);
+        return;
+      }
+
+      setInventorySearchQuery((current) => current + event.key);
+      searchInputRef.current?.focus();
+    };
+
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [open, addBundleDialogOpen]);
 
   // Memoize inventory lookup map for O(1) access
   const inventoryMap = useMemo(() => {
@@ -516,6 +556,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
   // Handle add part - opens dialog with search
   const handleAddPart = () => {
+    addPartOpenRef.current = true;
     setInventorySearchQuery('');
     setAddPartDialogOpen(true);
   };
@@ -1166,8 +1207,9 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       </Dialog>
 
       {/* Add Part Dialog - search and click + to add 1 qty directly */}
-      <Dialog open={addPartDialogOpen} onOpenChange={(open) => {
-        if (!open) {
+      <Dialog open={addPartDialogOpen} onOpenChange={(next) => {
+        if (!next) {
+          addPartOpenRef.current = false;
           setAddPartDialogOpen(false);
           setInventorySearchQuery('');
           resetCustomForm();
