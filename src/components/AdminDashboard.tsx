@@ -238,7 +238,6 @@ import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, e
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
-import { saveOfflineCustomers, searchOfflineCustomers } from '@/lib/adminOfflineReports';
 import { stickerPhotoUrlsFromJob } from '@/lib/brandSticker';
 import {
   readAdminDashboardCache,
@@ -4851,14 +4850,11 @@ const AdminDashboard = () => {
   };
 
   const adminSearchSyncedRef = useRef<string | null>(null);
-  const adminSearchSlowTimerRef = useRef<number | null>(null);
-  const adminSearchGenRef = useRef(0);
 
   const runCustomerSearch = useCallback(async (
     rawQuery: string,
     opts?: { skipNavigate?: boolean; silent?: boolean; clearTool?: boolean }
   ): Promise<Customer[]> => {
-    const searchGen = ++adminSearchGenRef.current;
     const trimmedQuery = rawQuery.trim();
     if (!opts?.silent) {
       hapticTap();
@@ -4896,73 +4892,18 @@ const AdminDashboard = () => {
       }
     }
 
-    if (trimmedQuery && typeof navigator !== 'undefined' && navigator.onLine === false) {
-      const rows = await searchOfflineCustomers(trimmedQuery, 50);
-      const results = rows.map((row) => transformCustomerData(row));
-      setSearchResults(results);
-      setIsSearching(false);
-      if (!opts?.silent) {
-        toast.message(
-          results.length
-            ? 'Showing customers saved on this phone'
-            : 'No customers saved on this phone yet. Search once while connected.'
-        );
-      }
-      return results;
-    }
-
     if (trimmedQuery) {
       const runJobSearch = shouldRunAdminJobNumberSearch(trimmedQuery);
-      let liveSettled = false;
-      if (adminSearchSlowTimerRef.current) window.clearTimeout(adminSearchSlowTimerRef.current);
-      let showedSaved = false;
-      adminSearchSlowTimerRef.current = window.setTimeout(() => {
-        void (async () => {
-          if (liveSettled || searchGen !== adminSearchGenRef.current) return;
-          const saved = await searchOfflineCustomers(trimmedQuery, 50);
-          if (liveSettled || searchGen !== adminSearchGenRef.current || !saved.length) return;
-          showedSaved = true;
-          setSearchResults(saved.map((row) => transformCustomerData(row)));
-          setIsSearching(false);
-          if (!opts?.silent) toast.message('Showing customers saved on this phone');
-        })();
-      }, 2000);
-      let data: Awaited<ReturnType<typeof db.customers.searchSlim>>['data'] = [];
-      let error: Awaited<ReturnType<typeof db.customers.searchSlim>>['error'] = null;
-      let jobHits: Record<string, unknown>[] = [];
-      let jobSearchError: unknown = null;
-      try {
-        const [customerResult, jobSearchResult] = await Promise.all([
-          db.customers.searchSlim(trimmedQuery, 50, { includeAddressAndLocation: true }),
-          runJobSearch
-            ? db.jobs.searchByJobNumberForAdmin(trimmedQuery, 25)
-            : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
-        ]);
-        if (searchGen !== adminSearchGenRef.current) return [];
-        data = customerResult.data;
-        error = customerResult.error;
-        jobHits = jobSearchResult.data || [];
-        jobSearchError = jobSearchResult.error;
-      } catch (searchError) {
-        console.error('Customer search failed:', searchError);
-        error = searchError;
-      }
-      liveSettled = true;
-      if (adminSearchSlowTimerRef.current) {
-        window.clearTimeout(adminSearchSlowTimerRef.current);
-        adminSearchSlowTimerRef.current = null;
-      }
+      const [{ data, error }, jobSearchResult] = await Promise.all([
+        db.customers.searchSlim(trimmedQuery, 50, { includeAddressAndLocation: true }),
+        runJobSearch
+          ? db.jobs.searchByJobNumberForAdmin(trimmedQuery, 25)
+          : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+      ]);
+      const jobHits = jobSearchResult.data;
+      const jobSearchError = jobSearchResult.error;
 
       if (error || jobSearchError) {
-        const saved = await searchOfflineCustomers(trimmedQuery, 50);
-        if (searchGen !== adminSearchGenRef.current) return [];
-        if (saved.length) {
-          const results = saved.map((row) => transformCustomerData(row));
-          setSearchResults(results);
-          setIsSearching(false);
-          if (!opts?.silent) toast.message('Showing customers saved on this phone');
-          return results;
-        }
         toast.error('Search failed');
         setSearchResults([]);
         setIsSearching(false);
@@ -4998,15 +4939,8 @@ const AdminDashboard = () => {
             })
           );
         }
-        if (searchGen !== adminSearchGenRef.current) return [];
 
-        const resultRows = Array.from(customerMap.values());
-        void saveOfflineCustomers(resultRows);
-        const results = resultRows.map((row) => transformCustomerData(row));
-        if (!results.length && showedSaved) {
-          setIsSearching(false);
-          return [];
-        }
+        const results = Array.from(customerMap.values()).map((row) => transformCustomerData(row));
         setSearchResults(results);
         void (async () => {
           const fromRow: Record<string, boolean> = {};

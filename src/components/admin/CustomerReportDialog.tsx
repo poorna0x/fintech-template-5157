@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Customer, Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
-import { readOfflineReportJobs, saveOfflineReportJobs, setAdminOfflineReportSyncPaused } from '@/lib/adminOfflineReports';
 import { getCustomerGstNumber } from '@/lib/customerGst';
 import { CheckCircle, Star, Trash2 } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
@@ -58,7 +57,6 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
   const [reviewRatings, setReviewRatings] = useState<Record<string, number>>({});
-  const [reportFromPhone, setReportFromPhone] = useState(false);
   const [deletedJobEvents, setDeletedJobEvents] = useState<CustomerJobDeleteEvent[]>([]);
   const loadedCustomerIdRef = useRef<string | null>(null);
 
@@ -72,7 +70,6 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
       setCustomerReportJobs([]);
       setReviewRatings({});
       setDeletedJobEvents([]);
-      setReportFromPhone(false);
       return;
     }
     if (!customerId) return;
@@ -81,54 +78,28 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
 
     let cancelled = false;
     const loadCustomerReportJobs = async () => {
-      const cached = await readOfflineReportJobs(customerId);
-      if (cancelled) return;
-      if (cached.length) {
-        setCustomerReportJobs(cached);
-        setReportFromPhone(true);
-        setLoadingCustomerReportJobs(false);
-      } else {
-        setLoadingCustomerReportJobs(true);
-        setReportFromPhone(false);
-      }
-
-      const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-      if (offline) {
-        if (!cached.length) setCustomerReportJobs([]);
-        setReportFromPhone(true);
-        loadedCustomerIdRef.current = customerId;
-        setLoadingCustomerReportJobs(false);
-        return;
-      }
-
+      setLoadingCustomerReportJobs(true);
       try {
-        const [reportRes, deletedRes] = await Promise.all([
+        const [{ data, error }, deletedRes] = await Promise.all([
           db.jobs.getByCustomerIdForReportEnriched(customerId),
           db.customerJobDeleteEvents.listByCustomerId(customerId),
         ]);
         if (cancelled) return;
-
-        const liveJobs = reportRes.error ? [] : reportRes.data || [];
-        if (liveJobs.length) {
-          setCustomerReportJobs(liveJobs);
-          setReportFromPhone(false);
+        if (error) {
+          console.error('Error loading customer report jobs:', error);
+        } else {
+          setCustomerReportJobs(data || []);
           loadedCustomerIdRef.current = customerId;
-          void saveOfflineReportJobs(liveJobs as Record<string, unknown>[]);
-          const ids = liveJobs.map((j: { id?: string }) => String(j.id || '')).filter(Boolean);
+          const ids = (data || []).map((j: { id?: string }) => String(j.id || '')).filter(Boolean);
           if (ids.length) {
             const ratings = await fetchSubmittedJobReviewRatingsByJobIds(ids);
             if (!cancelled) setReviewRatings(ratings);
           } else if (!cancelled) {
             setReviewRatings({});
           }
-        } else {
-          if (!cached.length) setCustomerReportJobs([]);
-          setReportFromPhone(cached.length > 0);
-          loadedCustomerIdRef.current = customerId;
-          if (!cancelled) setReviewRatings({});
         }
-
         if (deletedRes.error) {
+          // Table may not exist until SQL is run — soft-fail.
           console.warn('Error loading deleted job events:', deletedRes.error);
           setDeletedJobEvents([]);
         } else {
@@ -137,15 +108,11 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
       } catch (error) {
         if (!cancelled) {
           console.error('Error loading customer report jobs:', error);
-          if (!cached.length) {
-            const again = await readOfflineReportJobs(customerId);
-            if (!cancelled) setCustomerReportJobs(again);
-          }
-          setReportFromPhone(true);
-          loadedCustomerIdRef.current = customerId;
         }
       } finally {
-        if (!cancelled) setLoadingCustomerReportJobs(false);
+        if (!cancelled) {
+          setLoadingCustomerReportJobs(false);
+        }
       }
     };
 
@@ -154,12 +121,6 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
       cancelled = true;
     };
   }, [open, customerId, preserveDataRef]);
-
-  useEffect(() => {
-    if (!open) return;
-    setAdminOfflineReportSyncPaused(true);
-    return () => setAdminOfflineReportSyncPaused(false);
-  }, [open]);
 
   if (!customer) return null;
 
@@ -250,13 +211,6 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
             <h3 className="font-semibold text-lg mb-3">
               Completed Jobs ({loadingCustomerReportJobs ? '…' : completedJobs.length})
             </h3>
-            {reportFromPhone && !loadingCustomerReportJobs ? (
-              <p className="text-xs text-muted-foreground mb-3">
-                {completedJobs.length
-                  ? 'Saved on this phone. Photos open when you are connected.'
-                  : 'No saved report on this phone yet. Open this customer once while connected.'}
-              </p>
-            ) : null}
             {loadingCustomerReportJobs ? (
               <div className="text-center py-8 text-muted-foreground">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-3"></div>
@@ -291,11 +245,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                       completedByName = 'Admin';
                     } else {
                       const completedByTechnician = technicians.find(tech => (tech.id || (tech as any).id) === completedBy);
-                      completedByName =
-                        completedByTechnician?.fullName ||
-                        (completedByTechnician as any)?.full_name ||
-                        (job as any).completed_by_name ||
-                        'Technician';
+                      completedByName = completedByTechnician?.fullName || (completedByTechnician as any)?.full_name || 'Technician';
                     }
                   }
                   

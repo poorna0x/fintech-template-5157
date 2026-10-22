@@ -89,22 +89,6 @@ export default function AdminPortal() {
     }
   }, [user, isAdmin]);
 
-  // Save customer search + report text on this phone after the dashboard is up.
-  useEffect(() => {
-    if (!user || !isAdmin) return;
-    const start = () => {
-      void import('@/lib/adminOfflineReports').then(({ startAdminOfflineReportSync }) =>
-        startAdminOfflineReportSync()
-      );
-    };
-    const timer = window.setTimeout(start, 5000);
-    window.addEventListener('online', start);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener('online', start);
-    };
-  }, [user, isAdmin]);
-
   // Register FCM early on portal (not only AdminDashboard) so taps work from Settings
   // and cold-start WhatsApp inbound deep-links are delivered.
   useEffect(() => {
