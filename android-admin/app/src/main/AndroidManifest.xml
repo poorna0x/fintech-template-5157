@@ -104,6 +104,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- navigator.geolocation in the WebView (distance Calculate button) needs these;
          Capacitor's WebChromeClient requests them at runtime when the page asks for location -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />

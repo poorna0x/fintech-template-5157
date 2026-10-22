@@ -102,14 +102,23 @@ public class MainActivity extends BridgeActivity {
      */
     private void maybePromptCallerOverlay() {
         try {
-            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return;
-            if (CallerOverlay.canDraw(this)) return;
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) {
+                maybePromptBatteryUnrestricted();
+                return;
+            }
+            if (CallerOverlay.canDraw(this)) {
+                maybePromptBatteryUnrestricted();
+                return;
+            }
             android.content.SharedPreferences prefs =
                 getSharedPreferences("hro_admin_prefs", MODE_PRIVATE);
-            if (prefs.getBoolean("caller_overlay_prompted", false)) return;
+            if (prefs.getBoolean("caller_overlay_prompted", false)) {
+                maybePromptBatteryUnrestricted();
+                return;
+            }
             prefs.edit().putBoolean("caller_overlay_prompted", true).apply();
 
-            new android.app.AlertDialog.Builder(this)
+            android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
                 .setTitle("Show customers on incoming calls")
                 .setMessage(
                     "Allow HydrogenRO to display over other apps so a saved customer "
@@ -132,9 +141,82 @@ public class MainActivity extends BridgeActivity {
                 )
                 .setNegativeButton("Not now", null)
                 .setCancelable(true)
-                .show();
+                .create();
+            dialog.setOnDismissListener(d -> maybePromptBatteryUnrestricted());
+            dialog.show();
         } catch (Exception e) {
             android.util.Log.w(TAG, "Caller overlay prompt failed: " + e.getMessage());
+            maybePromptBatteryUnrestricted();
+        }
+    }
+
+    /**
+     * POCO / Xiaomi HyperOS holds FCM until the screen wakes when the app is
+     * battery-restricted. Ask once, same as the technician app.
+     */
+    private void maybePromptBatteryUnrestricted() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return;
+            android.content.SharedPreferences prefs =
+                getSharedPreferences("hro_admin_prefs", MODE_PRIVATE);
+            if (prefs.getBoolean("battery_unrestricted_prompted", false)) return;
+            android.os.PowerManager pm =
+                (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null && pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                prefs.edit().putBoolean("battery_unrestricted_prompted", true).apply();
+                return;
+            }
+            prefs.edit().putBoolean("battery_unrestricted_prompted", true).apply();
+
+            String mfr = android.os.Build.MANUFACTURER == null
+                ? ""
+                : android.os.Build.MANUFACTURER.toLowerCase();
+            String brand = android.os.Build.BRAND == null
+                ? ""
+                : android.os.Build.BRAND.toLowerCase();
+            boolean xiaomi =
+                mfr.contains("xiaomi")
+                    || mfr.contains("poco")
+                    || mfr.contains("redmi")
+                    || brand.contains("xiaomi")
+                    || brand.contains("poco")
+                    || brand.contains("redmi");
+            String message = xiaomi
+                ? "POCO and Xiaomi hold alerts until the phone wakes. Tap Allow, then set "
+                    + "Battery saver to No restrictions and turn Autostart on for HydrogenRO."
+                : "Allow unrestricted battery so admin alerts arrive immediately even when the phone is idle.";
+
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Alerts may arrive late")
+                .setMessage(message)
+                .setPositiveButton(
+                    "Allow",
+                    (d, w) -> {
+                        try {
+                            startActivity(
+                                new android.content.Intent(
+                                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    android.net.Uri.parse("package:" + getPackageName())
+                                )
+                            );
+                        } catch (Exception e) {
+                            try {
+                                startActivity(
+                                    new android.content.Intent(
+                                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                                    )
+                                );
+                            } catch (Exception e2) {
+                                android.util.Log.w(TAG, "Open battery settings failed: " + e2.getMessage());
+                            }
+                        }
+                    }
+                )
+                .setNegativeButton("Not now", null)
+                .setCancelable(true)
+                .show();
+        } catch (Exception e) {
+            android.util.Log.w(TAG, "Battery prompt failed: " + e.getMessage());
         }
     }
 
