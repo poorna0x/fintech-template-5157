@@ -63,6 +63,9 @@ type Meta = {
   customersDone: boolean;
   jobsDone: boolean;
   syncedAt: string;
+  customerSyncedAt: string;
+  jobSyncedAt: string;
+  lastDeltaAt: string;
 };
 
 const EMPTY_META: Meta = {
@@ -71,7 +74,13 @@ const EMPTY_META: Meta = {
   customersDone: false,
   jobsDone: false,
   syncedAt: '',
+  customerSyncedAt: '',
+  jobSyncedAt: '',
+  lastDeltaAt: '',
 };
+
+/** Caught-up phones wait this long before asking the server what changed. */
+const DELTA_COOLDOWN_MS = 30 * 60 * 1000;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 let searchIndex: Array<{ row: Record<string, unknown>; hay: string }> | null = null;
@@ -199,7 +208,33 @@ export async function saveOfflineCustomers(rows: Record<string, unknown>[]): Pro
       delete copy.alternate_location;
       return copy;
     });
-  await putAll('customers', slim);
+  if (!slim.length) return;
+  const db = await openDb();
+  const tx = db.transaction('customers', 'readwrite');
+  const store = tx.objectStore('customers');
+  await Promise.all(
+    slim.map(
+      (row) =>
+        new Promise<void>((resolve, reject) => {
+          const req = store.get(row.id as IDBValidKey);
+          req.onsuccess = () => {
+            const prev = { ...((req.result || {}) as Record<string, unknown>) };
+            delete prev.photos;
+            delete prev.location;
+            delete prev.alternate_location;
+            const merged: Record<string, unknown> = { ...prev, id: row.id };
+            for (const [key, value] of Object.entries(row)) {
+              if (value !== undefined && value !== null && value !== '') merged[key] = value;
+            }
+            store.put(merged);
+            resolve();
+          };
+          req.onerror = () => reject(req.error);
+        })
+    )
+  );
+  await txDone(tx);
+  searchIndex = null;
 }
 
 export async function saveOfflineReportJobs(rows: Record<string, unknown>[]): Promise<void> {
@@ -300,8 +335,15 @@ async function pageChangedSince(
   return (data || []) as Record<string, unknown>[];
 }
 
-async function ensureTechNames(): Promise<Map<string, string>> {
-  if (techNamesCache) return techNamesCache;
+async function ensureTechNames(refresh: boolean): Promise<Map<string, string>> {
+  if (!refresh && techNamesCache?.size) return techNamesCache;
+  if (!refresh) {
+    const existing = await readTechNames();
+    if (existing.size) {
+      techNamesCache = existing;
+      return existing;
+    }
+  }
   const { data: techs } = await supabase.from('technicians').select('id, full_name').limit(300);
   if (techs?.length) {
     await putAll(
@@ -313,20 +355,36 @@ async function ensureTechNames(): Promise<Map<string, string>> {
   return techNamesCache;
 }
 
-async function syncOneRound(): Promise<boolean> {
+function deltaIsFresh(meta: Meta): boolean {
+  if (!meta.customersDone || !meta.jobsDone || !meta.lastDeltaAt) return false;
+  const age = Date.now() - Date.parse(meta.lastDeltaAt);
+  return age >= 0 && age < DELTA_COOLDOWN_MS;
+}
+
+function advanceCursor(rows: Record<string, unknown>[], full: boolean, previous: string): { cursor: string; more: boolean } {
+  if (!full) return { cursor: new Date().toISOString(), more: false };
+  const stamp = String(rows[rows.length - 1]?.updated_at || '');
+  if (!stamp || stamp === previous) return { cursor: previous, more: false };
+  return { cursor: stamp, more: true };
+}
+
+async function syncOneRound(refreshTechs: boolean): Promise<boolean> {
   const meta = await readMeta();
-  const techNames = await ensureTechNames();
+  if (deltaIsFresh(meta)) return false;
+  const techNames = await ensureTechNames(refreshTechs);
   const next = { ...meta };
 
   if (!meta.customersDone || !meta.jobsDone) {
+    if (!next.syncedAt) next.syncedAt = new Date().toISOString();
     if (!meta.customersDone) {
       const customers = await pageById('customers', CUSTOMER_COLS, meta.customerAfterId);
       if (customers.rows.length) await saveOfflineCustomers(customers.rows);
       next.customerAfterId = customers.afterId;
       next.customersDone = !customers.more;
+      await writeMeta(next);
     }
-    if (!meta.jobsDone) {
-      const jobs = await pageById('jobs', JOB_COLS, meta.jobAfterId);
+    if (!next.jobsDone) {
+      const jobs = await pageById('jobs', JOB_COLS, next.jobAfterId);
       if (jobs.rows.length) {
         await putAll(
           'jobs',
@@ -335,18 +393,24 @@ async function syncOneRound(): Promise<boolean> {
       }
       next.jobAfterId = jobs.afterId;
       next.jobsDone = !jobs.more;
+      await writeMeta(next);
     }
-    if (next.customersDone && next.jobsDone && !next.syncedAt) {
-      next.syncedAt = new Date().toISOString();
+    if (next.customersDone && next.jobsDone) {
+      const now = new Date().toISOString();
+      next.customerSyncedAt = next.customerSyncedAt || next.syncedAt || now;
+      next.jobSyncedAt = next.jobSyncedAt || next.syncedAt || now;
+      next.syncedAt = next.customerSyncedAt;
+      next.lastDeltaAt = now;
+      await writeMeta(next);
     }
-    await writeMeta(next);
     return !(next.customersDone && next.jobsDone);
   }
 
-  const startedAt = new Date().toISOString();
+  const customerSince = meta.customerSyncedAt || meta.syncedAt;
+  const jobSince = meta.jobSyncedAt || meta.syncedAt;
   const [customers, jobs] = await Promise.all([
-    pageChangedSince('customers', CUSTOMER_COLS, meta.syncedAt),
-    pageChangedSince('jobs', JOB_COLS, meta.syncedAt),
+    pageChangedSince('customers', CUSTOMER_COLS, customerSince),
+    pageChangedSince('jobs', JOB_COLS, jobSince),
   ]);
   if (customers.length) await saveOfflineCustomers(customers);
   if (jobs.length) {
@@ -355,21 +419,14 @@ async function syncOneRound(): Promise<boolean> {
       jobs.map((row) => slimJob(row, techNames))
     );
   }
-  const lastStamp = (rows: Record<string, unknown>[]) =>
-    rows.length ? String(rows[rows.length - 1]?.updated_at || '') : '';
-  const more = customers.length >= 200 || jobs.length >= 80;
-  if (more) {
-    const stamps = [lastStamp(customers), lastStamp(jobs)].filter(Boolean).sort();
-    const nextStamp = stamps[0] || '';
-    if (nextStamp && nextStamp !== meta.syncedAt) {
-      next.syncedAt = nextStamp;
-      await writeMeta(next);
-      return true;
-    }
-  }
-  next.syncedAt = startedAt;
+  const customerCursor = advanceCursor(customers, customers.length >= 200, customerSince);
+  const jobCursor = advanceCursor(jobs, jobs.length >= 80, jobSince);
+  next.customerSyncedAt = customerCursor.cursor;
+  next.jobSyncedAt = jobCursor.cursor;
+  next.syncedAt = next.customerSyncedAt;
+  if (!customerCursor.more && !jobCursor.more) next.lastDeltaAt = new Date().toISOString();
   await writeMeta(next);
-  return false;
+  return customerCursor.more || jobCursor.more;
 }
 
 /** Pull report text in the background. Resumes from the last saved row. */
@@ -377,14 +434,17 @@ export function startAdminOfflineReportSync(): void {
   if (syncing || typeof indexedDB === 'undefined') return;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   syncing = true;
-  techNamesCache = null;
   void (async () => {
     let resume = false;
     try {
+      const meta = await readMeta();
+      if (deltaIsFresh(meta)) return;
       let more = true;
       let rounds = 0;
+      let refreshTechs = meta.customersDone && meta.jobsDone;
       while (more && rounds < 25 && navigator.onLine !== false) {
-        more = await syncOneRound();
+        more = await syncOneRound(refreshTechs);
+        refreshTechs = false;
         rounds += 1;
         await new Promise((r) => setTimeout(r, 250));
       }
