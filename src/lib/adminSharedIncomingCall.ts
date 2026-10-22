@@ -1,7 +1,7 @@
 /**
  * Shared incoming-call board (admin_incoming_calls): a call received on ONE
  * admin phone becomes searchable on EVERY admin page for 1.5 minutes.
- * The auto-filled search also clears itself when that window ends.
+ * Once the customer search is on screen it stays until the admin clears it.
  *
  *  - fetch-on-open / resume: one slim SELECT (backup path).
  *  - realtime INSERT: immediately refetch the latest row (do NOT trust the
@@ -89,15 +89,6 @@ export function markIncomingAutoSearch(
     /* ignore */
   }
   return record;
-}
-
-/** True when ?search= matches a past incoming-call auto-search older than the window. */
-export function isIncomingAutoSearchStale(phone: string, now = Date.now()): boolean {
-  const parsed = readIncomingAutoSearch();
-  if (!parsed) return false;
-  const q = normalizePhoneForSearch(phone);
-  if (q !== parsed.phone) return false;
-  return now - parsed.at > WINDOW_MS;
 }
 
 export function clearIncomingAutoSearch(): void {

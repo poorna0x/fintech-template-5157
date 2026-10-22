@@ -21,6 +21,13 @@ import {
 } from '@/lib/adminIncomingCallBridge';
 import { adminDashboardLocation, buildAdminDashboardSearch } from '@/lib/adminDashboardUrl';
 import { isSettingsPath } from '@/lib/settingsUrl';
+import { normalizePhoneForSearch } from '@/lib/utils';
+
+declare global {
+  interface Window {
+    __hroOpenCallerSearch?: (phone: string) => void;
+  }
+}
 
 const adminDashboardImport = () => import('@/components/AdminDashboard');
 const settingsImport = () => import('./Settings');
@@ -90,6 +97,27 @@ export default function AdminPortal() {
       registerAdminPushToken()
     );
   }, [user, isAdmin]);
+
+  // Call-screen Open uses this so the already-loaded admin page searches
+  // without a second full WebView reload.
+  useEffect(() => {
+    window.__hroOpenCallerSearch = (raw: string) => {
+      const digits = normalizePhoneForSearch(raw) || String(raw || '').trim();
+      if (digits.length < 7) return;
+      navigate(
+        adminDashboardLocation(
+          buildAdminDashboardSearch(
+            { search: digits, clearTool: true, clearModal: true, clearView: true },
+            ''
+          )
+        ),
+        { replace: true }
+      );
+    };
+    return () => {
+      delete window.__hroOpenCallerSearch;
+    };
+  }, [navigate]);
 
   // Keep caller lookup alive on Settings too — AdminDashboard unmounts there, so
   // without this a ring while in Settings never stashes/searches on return.

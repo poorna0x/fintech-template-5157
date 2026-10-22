@@ -254,7 +254,6 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
                       onClick={() => {
                         if (!onSearchPhone) return;
                         onSearchPhone(row.phone);
-                        onOpenChange(false);
                       }}
                     >
                       <div className="flex gap-2 min-w-0">

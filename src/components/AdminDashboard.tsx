@@ -208,7 +208,6 @@ import {
 import {
   clearIncomingAutoSearch,
   INCOMING_CALL_SEARCH_WINDOW_MS,
-  isIncomingAutoSearchStale,
   markIncomingAutoSearch,
   markIncomingCallPhoneHandled,
   readIncomingAutoSearch,
@@ -4854,7 +4853,7 @@ const AdminDashboard = () => {
 
   const runCustomerSearch = useCallback(async (
     rawQuery: string,
-    opts?: { skipNavigate?: boolean; silent?: boolean }
+    opts?: { skipNavigate?: boolean; silent?: boolean; clearTool?: boolean }
   ): Promise<Customer[]> => {
     const trimmedQuery = rawQuery.trim();
     if (!opts?.silent) {
@@ -4872,7 +4871,13 @@ const AdminDashboard = () => {
         adminSearchSyncedRef.current = trimmedQuery;
         navigate(
           adminDashboardLocation(
-            buildAdminDashboardSearch({ search: trimmedQuery }, location.search)
+            buildAdminDashboardSearch(
+              {
+                search: trimmedQuery,
+                ...(opts?.clearTool ? { clearTool: true } : {}),
+              },
+              location.search
+            )
           ),
           { replace: currentSearch === trimmedQuery }
         );
@@ -4992,8 +4997,10 @@ const AdminDashboard = () => {
   const handleSearchFromBookingIntent = useCallback((phone: string) => {
     const query = normalizePhoneForSearch(phone) || phone.trim();
     if (!query) return;
+    clearIncomingAutoSearch();
+    setIncomingAutoSearch(null);
     setHighlightJobId(null);
-    void runCustomerSearch(query);
+    void runCustomerSearch(query, { clearTool: true });
     requestAnimationFrame(() => {
       scrollVisibleAdminSearchIntoView();
     });
@@ -5076,52 +5083,6 @@ const AdminDashboard = () => {
     }, Math.max(remaining, 0));
     return () => window.clearTimeout(timer);
   }, [unknownCaller]);
-
-  // Auto-filled incoming-call search: clear box/results/?search= when the
-  // 1.5-min window ends. Always clear — manual search already nulls this state
-  // (so this timer is cancelled). Match-checks were too brittle and left the
-  // UI stuck with no timer. Also re-check on focus/visibility (Android WebView
-  // often pauses setTimeout while backgrounded).
-  useEffect(() => {
-    if (!incomingAutoSearch) return;
-    const ringAt = incomingAutoSearch.at;
-
-    const clearAutoFill = () => {
-      clearIncomingAutoSearch();
-      setIncomingAutoSearch(null);
-      adminSearchSyncedRef.current = null;
-      setSearchQuery('');
-      setSearchTerm('');
-      setSearchResults(null);
-      if (new URLSearchParams(window.location.search).get('search')) {
-        navigate(
-          adminDashboardLocation(
-            buildAdminDashboardSearch({ clearSearch: true }, window.location.search)
-          ),
-          { replace: true }
-        );
-      }
-    };
-
-    const maybeClear = () => {
-      if (Date.now() - ringAt < INCOMING_CALL_SEARCH_WINDOW_MS) return;
-      clearAutoFill();
-    };
-
-    maybeClear();
-    const remaining = ringAt + INCOMING_CALL_SEARCH_WINDOW_MS - Date.now();
-    if (remaining <= 0) return;
-
-    const timer = window.setTimeout(maybeClear, remaining);
-    const onResume = () => maybeClear();
-    document.addEventListener('visibilitychange', onResume);
-    window.addEventListener('focus', onResume);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener('visibilitychange', onResume);
-      window.removeEventListener('focus', onResume);
-    };
-  }, [incomingAutoSearch, navigate]);
 
   const unknownCallerChip = useMemo(() => {
     if (!isAdminCallerLookupAvailable() || !unknownCaller || !isUnknownCallerFresh(unknownCaller)) {
@@ -5223,22 +5184,6 @@ const AdminDashboard = () => {
     const searchParam = parsed.search?.trim() ?? '';
 
     if (searchParam) {
-      if (isIncomingAutoSearchStale(searchParam)) {
-        clearIncomingAutoSearch();
-        setIncomingAutoSearch(null);
-        adminSearchSyncedRef.current = null;
-        setSearchQuery('');
-        setSearchTerm('');
-        setSearchResults(null);
-        navigate(
-          adminDashboardLocation(
-            buildAdminDashboardSearch({ clearSearch: true }, location.search)
-          ),
-          { replace: true }
-        );
-        return;
-      }
-
       if (adminSearchSyncedRef.current === searchParam) {
         return;
       }
