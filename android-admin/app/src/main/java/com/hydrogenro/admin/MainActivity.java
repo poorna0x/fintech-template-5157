@@ -629,6 +629,9 @@ public class MainActivity extends BridgeActivity {
         wv.post(() -> {
             try {
                 wv.stopLoading();
+                wv.setFocusable(true);
+                wv.setFocusableInTouchMode(true);
+                wv.requestFocus();
                 wv.getSettings().setJavaScriptEnabled(true);
                 wv.addJavascriptInterface(new OfflineBridge(), "HroOffline");
                 wv.loadDataWithBaseURL(

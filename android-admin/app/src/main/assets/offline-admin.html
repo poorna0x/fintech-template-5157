@@ -49,18 +49,71 @@
       letter-spacing: -0.01em;
     }
     .live:active { transform: translateY(1px); }
-    label { display: block; margin: 18px 0 8px; font-size: 12px; font-weight: 650; color: var(--muted); }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .field {
+      position: relative;
+      flex: 1;
+      min-width: 0;
+    }
+    .field svg {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      width: 16px;
+      height: 16px;
+      margin-top: -8px;
+      fill: none;
+      stroke: #94a3b8;
+      stroke-width: 2;
+      pointer-events: none;
+    }
     input {
       width: 100%;
-      border: 1px solid var(--line);
+      height: 40px;
+      border: 1px solid #d1d5db;
       background: white;
-      border-radius: 14px;
-      padding: 14px 16px;
+      border-radius: 8px;
+      padding: 0 12px 0 36px;
       font-size: 16px;
       color: var(--ink);
       outline: none;
     }
-    input:focus { border-color: #7dd3fc; box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.15); }
+    input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
+    .search, .clear {
+      height: 40px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 650;
+      flex: 0 0 auto;
+    }
+    .search {
+      border: 0;
+      background: #2563eb;
+      color: white;
+      padding: 0 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .search:disabled { opacity: 0.45; }
+    .search svg { width: 16px; height: 16px; fill: none; stroke: white; stroke-width: 2; }
+    .clear {
+      width: 40px;
+      border: 1px solid #d1d5db;
+      background: white;
+      color: #334155;
+    }
+    .hint {
+      min-height: 18px;
+      margin: 8px 2px 0;
+      color: #b45309;
+      font-size: 13px;
+    }
     #list { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
     .card {
       background: var(--card);
@@ -112,10 +165,20 @@
       </div>
       <button class="live" type="button" id="liveBtn">Connect to live</button>
     </header>
-    <label for="q">Search name or phone</label>
-    <input id="q" type="search" enterkeyhint="search" placeholder="Name or mobile number" autocomplete="off" />
+    <form id="searchForm" class="row" action="#" autocomplete="off">
+      <div class="field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="q" type="text" inputmode="text" enterkeyhint="search" placeholder="Search by name, phone, or alternate number" autocomplete="off" autocapitalize="off" />
+      </div>
+      <button class="search" id="searchBtn" type="submit" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        Search
+      </button>
+      <button class="clear" id="clearBtn" type="button" hidden aria-label="Clear">×</button>
+    </form>
+    <p class="hint" id="hint"></p>
     <div id="list"></div>
-    <p class="empty" id="empty">Type at least 2 letters or part of a number.</p>
+    <p class="empty" id="empty">Enter a name or phone number, then tap Search.</p>
   </div>
   <div class="mask" id="mask">
     <div class="ask">
@@ -132,22 +195,31 @@
     var q = document.getElementById('q');
     var list = document.getElementById('list');
     var empty = document.getElementById('empty');
+    var hint = document.getElementById('hint');
+    var searchBtn = document.getElementById('searchBtn');
+    var clearBtn = document.getElementById('clearBtn');
     var mask = document.getElementById('mask');
 
-    function phoneText(row) {
-      var parts = [];
-      if (row.phone) parts.push(row.phone);
-      if (row.alt && row.alt !== row.phone) parts.push(row.alt);
-      return parts.join(' · ');
+    function digitsOnly(value) {
+      return String(value || '').replace(/\D/g, '');
     }
 
-    function render(rows) {
+    function syncButtons() {
+      var text = q.value.trim();
+      searchBtn.disabled = text.length === 0;
+      clearBtn.hidden = q.value.length === 0;
+    }
+
+    function showHint(message) {
+      hint.textContent = message || '';
+    }
+
+    function render(rows, message) {
       list.innerHTML = '';
+      showHint('');
       if (!rows.length) {
         empty.style.display = 'block';
-        empty.textContent = q.value.trim().length < 2
-          ? 'Type at least 2 letters or part of a number.'
-          : 'No saved customer matches that search.';
+        empty.textContent = message || 'No saved customer matches that search.';
         return;
       }
       empty.style.display = 'none';
@@ -167,16 +239,80 @@
     }
 
     function runSearch() {
-      var value = q.value || '';
-      if (!window.HroOffline || value.trim().length < 2) {
-        render([]);
+      var value = q.value.trim();
+      if (value !== q.value) q.value = value;
+      syncButtons();
+      if (!value) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        empty.textContent = 'Enter a name or phone number, then tap Search.';
+        showHint('Enter a name or phone number.');
+        return;
+      }
+      if (value.length < 2) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        empty.textContent = 'Type at least 2 characters.';
+        showHint('Type at least 2 characters.');
+        return;
+      }
+      var digits = digitsOnly(value);
+      if (digits.length > 0 && digits.length < 4 && digits === value.replace(/\s/g, '')) {
+        list.innerHTML = '';
+        empty.style.display = 'block';
+        empty.textContent = 'Enter at least 4 digits of the phone number.';
+        showHint('Enter at least 4 digits of the phone number.');
+        return;
+      }
+      if (!window.HroOffline) {
+        showHint('Search is not ready. Close the app and open it again.');
         return;
       }
       try {
-        render(JSON.parse(window.HroOffline.search(value) || '[]'));
+        var rows = JSON.parse(window.HroOffline.search(value) || '[]');
+        render(rows);
       } catch (e) {
-        render([]);
+        render([], 'Search failed. Try again.');
       }
+    }
+
+    q.addEventListener('input', function () {
+      syncButtons();
+      showHint('');
+    });
+    q.addEventListener('touchend', function (event) {
+      event.preventDefault();
+      q.focus();
+    });
+    q.addEventListener('paste', function (event) {
+      var pasted = (event.clipboardData && event.clipboardData.getData('text')) || '';
+      var digits = digitsOnly(pasted);
+      if (digits.length >= 10) {
+        event.preventDefault();
+        q.value = digits.slice(-10);
+        syncButtons();
+        runSearch();
+      }
+    });
+    document.getElementById('searchForm').addEventListener('submit', function (event) {
+      event.preventDefault();
+      runSearch();
+    });
+    clearBtn.addEventListener('click', function () {
+      q.value = '';
+      syncButtons();
+      list.innerHTML = '';
+      empty.style.display = 'block';
+      empty.textContent = 'Enter a name or phone number, then tap Search.';
+      showHint('');
+      q.focus();
+    });
+
+    function phoneText(row) {
+      var parts = [];
+      if (row.phone) parts.push(row.phone);
+      if (row.alt && row.alt !== row.phone) parts.push(row.alt);
+      return parts.join(' · ');
     }
 
     function askLive() {
@@ -190,7 +326,6 @@
       mask.classList.add('show');
     }
 
-    q.addEventListener('input', runSearch);
     document.getElementById('liveBtn').addEventListener('click', askLive);
     document.getElementById('stay').addEventListener('click', function () {
       mask.classList.remove('show');
