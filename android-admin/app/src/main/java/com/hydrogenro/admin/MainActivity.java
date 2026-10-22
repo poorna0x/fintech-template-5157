@@ -311,22 +311,33 @@ public class MainActivity extends BridgeActivity {
             attempts[0] += 1;
             WebView webView = webViewOrNull();
             if (webView == null) {
-                if (attempts[0] < 8) {
-                    getWindow().getDecorView().postDelayed(injectHolder[0], 400);
+                if (attempts[0] < 40) {
+                    getWindow().getDecorView().postDelayed(injectHolder[0], 250);
                 }
                 return;
             }
+            // Ask the loaded admin page to search. location.replace reloaded the
+            // whole CRM, which is why Open felt slow and then the search vanished.
             String js =
                 "(function(){try{"
                     + "var phone="
                     + jsonString(safePhone)
                     + ";"
-                    + "var key='hro_caller_search';"
-                    + "if(sessionStorage.getItem(key)===phone && location.search.indexOf('search='+phone)>=0)return;"
-                    + "sessionStorage.setItem(key,phone);"
-                    + "location.replace('/admin?search='+encodeURIComponent(phone));"
-                    + "}catch(e){}})();";
-            webView.evaluateJavascript(js, null);
+                    + "if(typeof window.__hroOpenCallerSearch==='function'){"
+                    + "window.__hroOpenCallerSearch(phone);return 'ok';}"
+                    + "return 'wait';"
+                    + "}catch(e){return 'wait';}})();";
+            webView.evaluateJavascript(js, value -> {
+                if ("\"ok\"".equals(value)) return;
+                if (attempts[0] < 40) {
+                    getWindow().getDecorView().postDelayed(injectHolder[0], 250);
+                    return;
+                }
+                // Older site build has no helper. One navigation still opens the search.
+                webView.loadUrl(
+                    "https://hydrogenro.com/admin?search=" + android.net.Uri.encode(safePhone)
+                );
+            });
         };
         getWindow().getDecorView().post(injectHolder[0]);
     }
