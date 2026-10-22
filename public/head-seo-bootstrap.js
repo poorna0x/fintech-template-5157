@@ -591,6 +591,13 @@
       '/spare-parts': 'RO Spare Parts Bengaluru',
       '/warranty': 'RO Warranty & AMC Bengaluru',
     };
+    if (clean === '/careers') {
+      return {
+        title: 'Service Technician Job in Bengaluru | ' + profile.brandName,
+        description: 'Apply for a full-time RO and water purifier service technician role with ' + profile.brandName + ' in Bengaluru. Freshers and experienced candidates welcome.',
+        keywords: profile.keywords,
+      };
+    }
     if (serviceTitles[clean]) {
       var serviceDesc =
         clean.indexOf('commercial') !== -1

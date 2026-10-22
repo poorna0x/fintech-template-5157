@@ -3215,7 +3215,7 @@ const Settings = () => {
           {!isManager ? (
           <SettingsActionCard
             title="Job applications"
-            description="Eleven RO careers page. Turn hiring on or off, and see who applied."
+            description="Hydrogen RO and Eleven RO careers pages. Turn hiring on or off, and see who applied."
             icon={<Briefcase />}
             actions={
               <Button

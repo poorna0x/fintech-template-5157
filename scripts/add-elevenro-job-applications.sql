@@ -30,13 +30,26 @@ CREATE TABLE IF NOT EXISTS public.elevenro_job_applications (
   note text,
   status text NOT NULL DEFAULT 'new',
   admin_notes text,
+  brand text NOT NULL DEFAULT 'elevenro',
   CONSTRAINT elevenro_job_applications_experience_chk
     CHECK (experience IN ('fresher', 'experienced')),
   CONSTRAINT elevenro_job_applications_education_chk
     CHECK (education IN ('iti', 'diploma', 'electrical', 'electronics', 'mechanical', 'plumbing', 'other', 'none')),
   CONSTRAINT elevenro_job_applications_status_chk
-    CHECK (status IN ('new', 'contacted', 'hired', 'not_selected'))
+    CHECK (status IN ('new', 'contacted', 'hired', 'not_selected')),
+  CONSTRAINT elevenro_job_applications_brand_chk
+    CHECK (brand IN ('elevenro', 'hydrogenro'))
 );
+
+ALTER TABLE public.elevenro_job_applications
+  ADD COLUMN IF NOT EXISTS brand text NOT NULL DEFAULT 'elevenro';
+
+ALTER TABLE public.elevenro_job_applications
+  DROP CONSTRAINT IF EXISTS elevenro_job_applications_brand_chk;
+
+ALTER TABLE public.elevenro_job_applications
+  ADD CONSTRAINT elevenro_job_applications_brand_chk
+  CHECK (brand IN ('elevenro', 'hydrogenro'));
 
 CREATE INDEX IF NOT EXISTS elevenro_job_applications_created_at_idx
   ON public.elevenro_job_applications (created_at DESC);
@@ -51,6 +64,6 @@ REVOKE ALL ON TABLE public.elevenro_hiring_settings FROM PUBLIC, anon, authentic
 REVOKE ALL ON TABLE public.elevenro_job_applications FROM PUBLIC, anon, authenticated;
 
 COMMENT ON TABLE public.elevenro_job_applications IS
-  'Eleven RO technician job applications from elevenro.com/careers. Service role only.';
+  'Technician job applications from elevenro.com/careers and hydrogenro.com/careers. Service role only.';
 COMMENT ON TABLE public.elevenro_hiring_settings IS
-  'Singleton. is_open false shows the not-hiring page on elevenro.com/careers.';
+  'Singleton. is_open false shows the not-hiring page on both careers pages.';

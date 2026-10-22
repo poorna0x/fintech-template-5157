@@ -13,7 +13,7 @@ const COLOR = '#0284C7';
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} db
- * @param {{ id: string, name?: string, phone?: string, area?: string }} details
+ * @param {{ id: string, name?: string, phone?: string, area?: string, brand?: string }} details
  */
 async function notifyAdminsJobApplication(db, details) {
   try {
@@ -23,9 +23,10 @@ async function notifyAdminsJobApplication(db, details) {
     const name = String(details.name || '').trim() || 'Someone';
     const phone = String(details.phone || '').replace(/\D/g, '').slice(-10);
     const area = String(details.area || '').trim();
+    const brandLabel = details.brand === 'hydrogenro' ? 'Hydrogen RO' : 'Eleven RO';
     const tail = phone ? `···${phone.slice(-4)}` : '';
     const title = 'New job application';
-    const body = [name, tail, area].filter(Boolean).join(' · ');
+    const body = [brandLabel, name, tail, area].filter(Boolean).join(' · ');
     const tag = `job_app_${details.id || phone || 'new'}`;
 
     const messaging = await getMessaging(db);

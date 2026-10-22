@@ -33,6 +33,7 @@ type JobApplication = {
   note: string | null;
   status: ApplicationStatus;
   admin_notes: string | null;
+  brand?: 'elevenro' | 'hydrogenro' | null;
 };
 
 const STATUS_LABELS: Record<ApplicationStatus, string> = {
@@ -197,7 +198,7 @@ const JobApplicationsPage = ({ onBack }: Props) => {
           </Button>
           <div className="min-w-0">
             <h1 className="truncate text-lg font-semibold text-foreground">Job applications</h1>
-            <p className="truncate text-xs text-muted-foreground">Eleven RO careers</p>
+            <p className="truncate text-xs text-muted-foreground">Hydrogen RO and Eleven RO</p>
           </div>
         </div>
       </div>
@@ -212,8 +213,8 @@ const JobApplicationsPage = ({ onBack }: Props) => {
               </div>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
                 {openHiring
-                  ? 'elevenro.com/careers shows the job and the apply form.'
-                  : 'The page says we are not looking for new hires right now.'}
+                  ? 'hydrogenro.com/careers and elevenro.com/careers show the job and the apply form.'
+                  : 'Both careers pages say we are not looking for new hires right now.'}
               </p>
             </div>
             <Switch
@@ -263,6 +264,9 @@ const JobApplicationsPage = ({ onBack }: Props) => {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-base font-semibold text-foreground">{row.full_name}</p>
+                    <p className="text-xs font-medium text-sky-700">
+                      {row.brand === 'hydrogenro' ? 'Hydrogen RO' : 'Eleven RO'}
+                    </p>
                     <p className="text-xs text-muted-foreground">{formatWhen(row.created_at)}</p>
                   </div>
                   <button

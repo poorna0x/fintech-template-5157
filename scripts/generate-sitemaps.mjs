@@ -77,6 +77,7 @@ const staticPaths = [
   { path: '/book', priority: '0.95', changefreq: 'daily' },
   { path: '/about', priority: '0.8', changefreq: 'monthly' },
   { path: '/contact', priority: '0.8', changefreq: 'monthly' },
+  { path: '/careers', priority: '0.7', changefreq: 'weekly' },
   { path: '/blog', priority: '0.75', changefreq: 'weekly' },
   { path: '/blog/maintain-ro-purifier-home-guide', priority: '0.7', changefreq: 'monthly' },
   { path: '/blog/ro-vs-uv-vs-uf-bengaluru-water', priority: '0.7', changefreq: 'monthly' },

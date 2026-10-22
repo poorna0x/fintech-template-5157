@@ -28,6 +28,8 @@ const Header = () => {
       setActivePage('booking');
     } else if (location.pathname === '/contact') {
       setActivePage('contact');
+    } else if (location.pathname === '/careers') {
+      setActivePage('careers');
     } else if (location.pathname === '/about') {
       setActivePage('about');
     } else if (location.pathname === '/services') {
@@ -80,6 +82,8 @@ const Header = () => {
     } else if (page === 'contact') {
       // Navigate to contact page
       navigate('/contact');
+    } else if (page === 'careers') {
+      navigate('/careers');
     } else if (page === 'about') {
       // Navigate to about page
       navigate('/about');
@@ -190,6 +194,16 @@ const Header = () => {
               >
                 Contact
               </ToggleGroupItem>
+              <ToggleGroupItem
+                value="careers"
+                className={cn(
+                  "px-3 lg:px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white whitespace-nowrap",
+                  activePage === 'careers' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                )}
+                onClick={handleNavClick('careers')}
+              >
+                Careers
+              </ToggleGroupItem>
             </ToggleGroup>
           </div>
         </nav>
@@ -292,6 +306,15 @@ const Header = () => {
                 onClick={handleNavClick('contact')}
               >
                 Contact
+              </a>
+              <a
+                href="/careers"
+                className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
+                  activePage === 'careers' ? 'bg-sky-700 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                }`}
+                onClick={handleNavClick('careers')}
+              >
+                Careers
               </a>
             </div>
             

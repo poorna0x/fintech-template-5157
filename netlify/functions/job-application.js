@@ -23,8 +23,10 @@ const EDUCATION = new Set([
 ]);
 const STATUS = new Set(['new', 'contacted', 'hired', 'not_selected']);
 
+const BRANDS = new Set(['elevenro', 'hydrogenro']);
+
 const APPLICATION_COLUMNS =
-  'id,created_at,full_name,phone,email,area,experience,experience_detail,education,has_two_wheeler,has_licence,field_work_ok,note,status,admin_notes';
+  'id,created_at,full_name,phone,email,area,experience,experience_detail,education,has_two_wheeler,has_licence,field_work_ok,note,status,admin_notes,brand';
 
 function json(statusCode, headers, body) {
   return { statusCode, headers, body: JSON.stringify(body) };
@@ -261,8 +263,11 @@ exports.handler = async (event) => {
     return json(429, headers, { error: 'An application from this number was already sent today.' });
   }
 
+  const brand = BRANDS.has(String(body.brand || '').trim()) ? String(body.brand).trim() : 'elevenro';
+
   const row = {
     full_name: fullName,
+    brand,
     phone,
     email: email || null,
     area,
@@ -279,7 +284,7 @@ exports.handler = async (event) => {
   const { data, error } = await db
     .from('elevenro_job_applications')
     .insert(row)
-    .select('id,full_name,phone,area')
+    .select('id,full_name,phone,area,brand')
     .maybeSingle();
   if (error || !data) {
     console.warn('[job-application] insert failed', error?.message || error);
@@ -292,6 +297,7 @@ exports.handler = async (event) => {
       name: data.full_name,
       phone: data.phone,
       area: data.area,
+      brand: data.brand,
     });
   } catch (err) {
     console.warn('[job-application] notify soft-fail', err?.message || err);
