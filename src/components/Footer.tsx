@@ -89,7 +89,6 @@ const Footer = () => {
               <li><Link to="/warranty" className="text-muted-foreground hover:text-foreground transition-colors">Check Warranty Status</Link></li>
               <li><a href="#about" className="text-muted-foreground hover:text-foreground transition-colors">RO Maintenance Tips</a></li>
               <li><a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">Service Support</a></li>
-              <li><Link to="/careers" className="text-muted-foreground hover:text-foreground transition-colors">Careers</Link></li>
             </ul>
           </div>
         </div>
@@ -98,7 +97,6 @@ const Footer = () => {
           {/* Mobile Policy Links - Keep as is */}
           <div className="flex justify-center md:hidden mb-8">
             <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm w-full max-w-sm justify-items-center">
-              <Link to="/careers" className="text-muted-foreground hover:text-foreground transition-colors text-center">Careers</Link>
               <Link to="/privacy-policy" className="text-muted-foreground hover:text-foreground transition-colors text-center">Privacy Policy</Link>
               <Link to="/privacy-request" className="text-muted-foreground hover:text-foreground transition-colors text-center">Privacy Request</Link>
               <Link to="/terms-of-service" className="text-muted-foreground hover:text-foreground transition-colors text-center">Terms of Service</Link>
