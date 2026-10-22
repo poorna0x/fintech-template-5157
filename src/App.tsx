@@ -164,7 +164,8 @@ function isPublicSecurityPath(pathname: string): boolean {
     pathname === '/booking' ||
     pathname === '/warranty' ||
     pathname === '/authenticity' ||
-    pathname === '/privacy-request'
+    pathname === '/privacy-request' ||
+    pathname === '/careers'
   );
 }
 

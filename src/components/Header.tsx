@@ -114,7 +114,14 @@ const Header = () => {
 
 
   return (
-    <div className="sticky top-0 z-50 pt-8 px-4 bg-sky-50/80 dark:bg-sky-950/30 backdrop-blur-md border-b border-sky-100/80 dark:border-sky-500/15">
+    <div
+      className={cn(
+        'z-50 border-b border-sky-100/80 px-4 pt-8 dark:border-sky-500/15',
+        location.pathname === '/careers'
+          ? 'relative bg-sky-50 dark:bg-sky-950'
+          : 'sticky top-0 bg-sky-50/80 backdrop-blur-md dark:bg-sky-950/30',
+      )}
+    >
       <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center gap-3 md:gap-4">
         <div className={`shrink-0 ${mobileMenuOpen ? 'hidden md:block' : 'block'}`}>
           <Logo brandName={getPublicSiteLabel(getPublicSiteKey())} />

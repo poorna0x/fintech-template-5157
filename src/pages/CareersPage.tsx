@@ -160,7 +160,7 @@ const ROLE_POINTS = [
 
 function RoleIntro() {
   return (
-    <header className="lg:sticky lg:top-24">
+    <header className="lg:sticky lg:top-6">
       <p className="inline-flex items-center gap-2 rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-sky-800">
         <span className="h-1.5 w-1.5 rounded-full bg-current" />
         Careers
@@ -658,10 +658,12 @@ const CareersPage = () => {
                   ) : (
                     <Button
                       type="submit"
-                      disabled={submitting}
+                      disabled={submitting || !altchaToken || (isTurnstileEnabled() && !turnstileToken)}
                       className="h-12 w-full cursor-pointer rounded-xl bg-sky-700 text-base font-semibold text-white hover:bg-sky-800"
                     >
-                      Submit application
+                      {!altchaToken || (isTurnstileEnabled() && !turnstileToken)
+                        ? 'Checking…'
+                        : 'Submit application'}
                     </Button>
                   )}
                   {visibleErrors.length > 0 ? <span className="sr-only">{visibleErrors.length} fields need attention</span> : null}
