@@ -237,7 +237,6 @@ import ImageUpload from '@/components/ImageUpload';
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso, ZERO_COMMISSION_EMPLOYEE_ID, jobsMatchOngoingTab, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
-import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import { stickerPhotoUrlsFromJob } from '@/lib/brandSticker';
 import {
   readAdminDashboardCache,
@@ -246,6 +245,8 @@ import {
   getModuleOngoingJobsSnapshot,
   setModuleOngoingJobsSnapshot,
   getModuleJobsListCache,
+  getModuleJobsListCacheAge,
+  JOBS_LIST_FRESH_MS,
   setModuleJobsListCache,
   clearModuleJobsListCache,
   getModuleAdminUiState,
@@ -1342,6 +1343,9 @@ const AdminDashboard = () => {
   const [completedRangeEndDate, setCompletedRangeEndDate] = useState<string>(
     () => savedUi.completedRangeEndDate
   );
+  const [completedLeadTypeFilter, setCompletedLeadTypeFilter] = useState<string>('all');
+  const [completedServiceSubTypeFilter, setCompletedServiceSubTypeFilter] = useState<string>('all');
+  const [completedByFilter, setCompletedByFilter] = useState<string>('all');
 
   useEffect(() => {
     setModuleAdminUiState({
@@ -1351,6 +1355,9 @@ const AdminDashboard = () => {
       completedDateFilter,
       completedRangeStartDate,
       completedRangeEndDate,
+      completedLeadTypeFilter,
+      completedServiceSubTypeFilter,
+      completedByFilter,
     });
   }, [
     statusFilter,
@@ -1359,10 +1366,10 @@ const AdminDashboard = () => {
     completedDateFilter,
     completedRangeStartDate,
     completedRangeEndDate,
+    completedLeadTypeFilter,
+    completedServiceSubTypeFilter,
+    completedByFilter,
   ]);
-  const [completedLeadTypeFilter, setCompletedLeadTypeFilter] = useState<string>('all');
-  const [completedServiceSubTypeFilter, setCompletedServiceSubTypeFilter] = useState<string>('all');
-  const [completedByFilter, setCompletedByFilter] = useState<string>('all');
   const [completedFilterDialogOpen, setCompletedFilterDialogOpen] = useState(false);
   const [completedFilterSourceJobs, setCompletedFilterSourceJobs] = useState<any[]>([]);
   const [draftCompletedDatePreset, setDraftCompletedDatePreset] = useState<'day' | 'week' | 'month' | 'custom'>('day');
@@ -1802,14 +1809,18 @@ const AdminDashboard = () => {
       completedDateFilter,
       completedRangeStartDate,
       completedRangeEndDate,
-      hideAmcFollowUps: followUpDisplaySettings.hideAmcFollowUps,
+      completedLeadTypeFilter,
+      completedServiceSubTypeFilter,
+      completedByFilter,
     });
   }, [
     completedDatePreset,
     completedDateFilter,
     completedRangeStartDate,
     completedRangeEndDate,
-    followUpDisplaySettings.hideAmcFollowUps,
+    completedLeadTypeFilter,
+    completedServiceSubTypeFilter,
+    completedByFilter,
   ]);
 
   const loadFilteredJobs = useCallback(
@@ -2570,6 +2581,7 @@ const AdminDashboard = () => {
     const prevFilter = prevStatusFilterRef.current;
     const filterChanged = prevFilter !== null && prevFilter !== statusFilter;
     prevStatusFilterRef.current = statusFilter;
+    if (prevFilter === statusFilter) return;
 
     const page = filterChanged ? 1 : currentPage;
     if (filterChanged) {
@@ -2582,7 +2594,16 @@ const AdminDashboard = () => {
         const cached =
           jobsListCacheRef.current.get(cacheKey) ??
           (getModuleJobsListCache(cacheKey) as Job[] | undefined);
+        const cachedAt = getModuleJobsListCacheAge(cacheKey);
+        const fresh =
+          cached != null &&
+          cachedAt != null &&
+          Date.now() - cachedAt < JOBS_LIST_FRESH_MS;
         setJobs(cached ?? []);
+        if (fresh) {
+          if (statusFilter === 'RESCHEDULED') scheduleFollowUpPromotion();
+          return;
+        }
       } else {
         setJobs([]);
       }
@@ -2644,7 +2665,7 @@ const AdminDashboard = () => {
     }
   }, [followUpDisplaySettings, isInitialLoad, loadFilteredJobs, loadJobCounts, statusFilter]);
 
-  const resumeAdminSync = useCallback(async (opts?: { invalidateTabCaches?: boolean }) => {
+  const resumeAdminSync = useCallback(async (_opts?: { invalidateTabCaches?: boolean }) => {
     if (isInitialLoad || !dashboardLoadedWithSessionRef.current) return;
 
     const session = await ensureSupabaseSessionForWrite();
@@ -2653,31 +2674,31 @@ const AdminDashboard = () => {
       return;
     }
 
-    const invalidate = opts?.invalidateTabCaches === true;
-    if (invalidate) {
-      clearModuleJobsListCache();
-      jobsListCacheRef.current.clear();
-      setTabCachesStale(true);
-      setIsResumeListSyncing(true);
-      if (statusFilter !== 'ONGOING') {
-        setJobs([]);
-      }
-    }
+    const onOngoing = statusFilter === 'ONGOING' || statusFilter === 'ALL';
+    const listKey =
+      statusFilter === 'COMPLETED' || statusFilter === 'RESCHEDULED'
+        ? getJobsListCacheKey(statusFilter, currentPage)
+        : null;
+    const cachedAt = listKey ? getModuleJobsListCacheAge(listKey) : null;
+    const openListFresh =
+      cachedAt != null && Date.now() - cachedAt < JOBS_LIST_FRESH_MS;
+    const refreshOpenList = !onOngoing && !openListFresh;
 
     try {
       await Promise.all([
         loadJobCounts(),
-        loadFilteredJobs(statusFilter, currentPage, { silent: true }),
+        loadFilteredJobs('ONGOING', 1, { silent: true, cacheOnly: !onOngoing }),
+        refreshOpenList
+          ? loadFilteredJobs(statusFilter, currentPage, { silent: true })
+          : Promise.resolve(),
         db.jobs.getFollowUpForGlow({
           excludeAmc: followUpDisplaySettings.countOnlyNonAmcFollowUps,
         }).then(({ data }) => {
           if (data) setAllFollowUpJobs(data as Job[]);
         }).catch(() => {}),
       ]);
-    } finally {
-      if (invalidate) {
-        setIsResumeListSyncing(false);
-      }
+    } catch (error) {
+      console.warn('[AdminDashboard] Resume sync failed', error);
     }
   }, [
     isInitialLoad,
@@ -2685,6 +2706,7 @@ const AdminDashboard = () => {
     currentPage,
     loadJobCounts,
     loadFilteredJobs,
+    getJobsListCacheKey,
     followUpDisplaySettings.countOnlyNonAmcFollowUps,
   ]);
 
@@ -2780,18 +2802,26 @@ const AdminDashboard = () => {
     completedByFilter
   ]);
 
-  // Reset to first page when completed sub-filters change. Lead / service / completed-by are client-side;
-  // for a single day with one page of results, skip refetch (same jobs; doesCompletedJobMatchFilters narrows UI).
+  // Lead / service / completed-by are applied on the server, so a filter change needs a new page.
+  const prevCompletedServerFiltersRef = useRef({
+    lead: completedLeadTypeFilter,
+    sub: completedServiceSubTypeFilter,
+    by: completedByFilter,
+  });
   useEffect(() => {
     if (isInitialLoad || statusFilter !== 'COMPLETED') return;
+    const prev = prevCompletedServerFiltersRef.current;
+    const same =
+      prev.lead === completedLeadTypeFilter &&
+      prev.sub === completedServiceSubTypeFilter &&
+      prev.by === completedByFilter;
+    prevCompletedServerFiltersRef.current = {
+      lead: completedLeadTypeFilter,
+      sub: completedServiceSubTypeFilter,
+      by: completedByFilter,
+    };
+    if (same) return;
     setCurrentPage(1);
-    const completedSingleDay =
-      completedDatePreset === 'day' ||
-      (completedDatePreset === 'custom' &&
-        completedRangeStartDate === completedRangeEndDate);
-    if (completedSingleDay && totalPages === 1) {
-      return;
-    }
     loadFilteredJobs(statusFilter, 1);
   }, [
     completedLeadTypeFilter,
@@ -2800,7 +2830,6 @@ const AdminDashboard = () => {
     isInitialLoad,
     statusFilter,
     loadFilteredJobs,
-    totalPages,
   ]);
 
   // Restore scroll position when WhatsApp dialog opens (after assign/reassign) so page doesn't jump to top

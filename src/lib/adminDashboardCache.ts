@@ -23,6 +23,9 @@ let inflightPrefetch: Promise<AdminDashboardSnapshot | null> | null = null;
 let moduleOngoingJobsSnapshot: unknown[] = [];
 /** Survives remounts for instant Completed / Follow-up tab restore. */
 const moduleJobsListCache = new Map<string, unknown[]>();
+const moduleJobsListCacheAt = new Map<string, number>();
+/** Skip another download of the same Completed / Follow-up page inside this window. */
+export const JOBS_LIST_FRESH_MS = 2 * 60 * 1000;
 /** True after first successful dashboard boot this browser session (skips cold boot on /settings return). */
 let moduleDashboardSessionReady = false;
 
@@ -44,6 +47,9 @@ export type AdminDashboardUiState = {
   completedDateFilter: string;
   completedRangeStartDate: string;
   completedRangeEndDate: string;
+  completedLeadTypeFilter: string;
+  completedServiceSubTypeFilter: string;
+  completedByFilter: string;
 };
 
 const defaultUiState = (): AdminDashboardUiState => {
@@ -55,6 +61,9 @@ const defaultUiState = (): AdminDashboardUiState => {
     completedDateFilter: today,
     completedRangeStartDate: today,
     completedRangeEndDate: today,
+    completedLeadTypeFilter: 'all',
+    completedServiceSubTypeFilter: 'all',
+    completedByFilter: 'all',
   };
 };
 
@@ -81,14 +90,24 @@ export function buildJobsListCacheKey(
   page: number,
   ui: Pick<
     AdminDashboardUiState,
-    'completedDatePreset' | 'completedDateFilter' | 'completedRangeStartDate' | 'completedRangeEndDate'
+    | 'completedDatePreset'
+    | 'completedDateFilter'
+    | 'completedRangeStartDate'
+    | 'completedRangeEndDate'
+    | 'completedLeadTypeFilter'
+    | 'completedServiceSubTypeFilter'
+    | 'completedByFilter'
   >
 ): string {
   if (filter === 'COMPLETED') {
+    const lead = ui.completedLeadTypeFilter || 'all';
+    const sub = ui.completedServiceSubTypeFilter || 'all';
+    const by = ui.completedByFilter || 'all';
+    const filters = `${lead}:${sub}:${by}`;
     if (ui.completedDatePreset === 'day') {
-      return `COMPLETED:day:${ui.completedDateFilter}:p${page}`;
+      return `COMPLETED:day:${ui.completedDateFilter}:${filters}:p${page}`;
     }
-    return `COMPLETED:${ui.completedDatePreset}:${ui.completedRangeStartDate}:${ui.completedRangeEndDate}:p${page}`;
+    return `COMPLETED:${ui.completedDatePreset}:${ui.completedRangeStartDate}:${ui.completedRangeEndDate}:${filters}:p${page}`;
   }
   return `RESCHEDULED:p${page}`;
 }
@@ -130,10 +149,17 @@ export function getModuleJobsListCache(key: string): unknown[] | undefined {
 
 export function setModuleJobsListCache(key: string, jobs: unknown[]): void {
   moduleJobsListCache.set(key, jobs);
+  moduleJobsListCacheAt.set(key, Date.now());
+}
+
+export function getModuleJobsListCacheAge(key: string): number | null {
+  const at = moduleJobsListCacheAt.get(key);
+  return at == null ? null : at;
 }
 
 export function clearModuleJobsListCache(): void {
   moduleJobsListCache.clear();
+  moduleJobsListCacheAt.clear();
 }
 
 export function readAdminDashboardCache(): AdminDashboardSnapshot | null {
