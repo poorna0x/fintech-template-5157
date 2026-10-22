@@ -171,17 +171,11 @@ const CareersPage = () => {
                 We are not looking for new hires right now
               </h2>
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                When a technician opening comes up, it will be on this page. If you need an RO
-                service, book a visit instead.
+                When a technician opening comes up, it will be on this page.
               </p>
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
-                <Link to="/book" onClick={() => markWebsiteBookDoor()}>
-                  <Button type="button" className="h-11 w-full rounded-xl bg-sky-700 text-white hover:bg-sky-800 sm:w-auto">
-                    Book a service
-                  </Button>
-                </Link>
+              <div className="mt-6 flex justify-center">
                 <Link to="/contact">
-                  <Button type="button" variant="outline" className="h-11 w-full rounded-xl sm:w-auto">
+                  <Button type="button" variant="outline" className="h-11 rounded-xl">
                     Contact
                   </Button>
                 </Link>
