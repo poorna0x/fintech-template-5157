@@ -21,6 +21,18 @@ const EDUCATION = [
 
 type LoadState = 'loading' | 'open' | 'closed' | 'error';
 
+/** Indian mobile: 10 digits starting 6–9. Also accepts 0 or +91 in front. */
+function mobileNumberError(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return 'Enter a 10-digit mobile number.';
+  let ten = digits;
+  if (digits.length === 12 && digits.startsWith('91')) ten = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith('0')) ten = digits.slice(1);
+  else if (digits.length !== 10) return 'Enter a 10-digit mobile number.';
+  if (!/^[6-9]\d{9}$/.test(ten)) return 'Mobile number must start with 6, 7, 8, or 9.';
+  return null;
+}
+
 function Field({
   label,
   children,
@@ -46,6 +58,7 @@ const CareersPage = () => {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
+  const [phoneTouched, setPhoneTouched] = useState(false);
   const [email, setEmail] = useState('');
   const [area, setArea] = useState('');
   const [experience, setExperience] = useState<'fresher' | 'experienced' | ''>('');
@@ -95,8 +108,14 @@ const CareersPage = () => {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError('');
-    if (!fullName.trim() || !phone.trim() || !area.trim() || !experience || !education) {
-      setError('Fill in name, phone, where you live, experience, and background.');
+    if (!fullName.trim() || !area.trim() || !experience || !education) {
+      setError('Fill in name, where you live, experience, and background.');
+      return;
+    }
+    const phoneError = mobileNumberError(phone);
+    if (phoneError) {
+      setPhoneTouched(true);
+      setError(phoneError);
       return;
     }
     if (hasTwoWheeler === null || hasLicence === null) {
@@ -210,13 +229,18 @@ const CareersPage = () => {
                       <Input
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
+                        onBlur={() => setPhoneTouched(true)}
                         inputMode="numeric"
                         autoComplete="tel"
                         className="h-12 rounded-xl text-base"
                         placeholder="10-digit mobile"
-                        maxLength={14}
+                        maxLength={16}
+                        aria-invalid={phoneTouched && !!mobileNumberError(phone)}
                         required
                       />
+                      {phoneTouched && mobileNumberError(phone) ? (
+                        <span className="text-sm text-destructive">{mobileNumberError(phone)}</span>
+                      ) : null}
                     </Field>
                     <Field label="Email (optional)">
                       <Input
