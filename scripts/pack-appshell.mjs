@@ -1,6 +1,6 @@
 /**
- * Download the live portal shell (app.html + the JS/CSS it reaches) into both
- * APK asset folders. Cold start serves these from disk. Run before an APK build:
+ * Download the live portal shell (app.html + the JS/CSS it reaches) into the
+ * admin APK. Cold start serves these from disk. Run before an admin APK build:
  *   node scripts/pack-appshell.mjs
  *
  * Generated files are gitignored. A later cold start refreshes them in the
@@ -21,10 +21,7 @@ const MAX_FILES = 500;
 const MAX_BYTES = 60 * 1024 * 1024;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const destinations = [
-  path.join(root, 'android/app/src/main/assets/appshell'),
-  path.join(root, 'android-admin/app/src/main/assets/appshell'),
-];
+const destinations = [path.join(root, 'android-admin/app/src/main/assets/appshell')];
 
 function isShellFile(rel) {
   if (rel === 'app.html') return true;
@@ -117,4 +114,4 @@ for (const dest of destinations) {
 }
 
 const mb = (total / (1024 * 1024)).toFixed(1);
-console.log(`[pack-appshell] ${files.size} files, ${mb} MB → both APK asset folders`);
+console.log(`[pack-appshell] ${files.size} files, ${mb} MB → admin APK assets`);

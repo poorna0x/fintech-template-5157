@@ -39,6 +39,5 @@ NETLIFY_ENV*.txt
 # Built Android APKs (copied here for easy sharing; rebuildable anytime)
 apks/
 
-# Live portal shell packed into APKs by scripts/pack-appshell.mjs
-android/app/src/main/assets/appshell/
+# Live portal shell packed into the admin APK by scripts/pack-appshell.mjs
 android-admin/app/src/main/assets/appshell/
