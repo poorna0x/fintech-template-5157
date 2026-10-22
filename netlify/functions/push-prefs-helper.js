@@ -217,11 +217,27 @@ async function sendAdminMulticast(db, messaging, opts = {}) {
   const resultByToken = new Map();
 
   const data = opts.data ? stringifyFcmData(opts.data) : undefined;
+  // POCO / Xiaomi / Samsung batch "high" FCM that has no ttl. Same urgent
+  // shape the technician app uses so the tray is not held until the screen wakes.
+  const urgentAndroid = {
+    priority: 'high',
+    ttl: 60 * 60 * 1000,
+    directBootOk: true,
+    ...(opts.android || {}),
+  };
+  if (opts.notification || urgentAndroid.notification) {
+    urgentAndroid.notification = {
+      notificationPriority: 'PRIORITY_MAX',
+      visibility: 'public',
+      defaultVibrateTimings: true,
+      ...(urgentAndroid.notification || {}),
+    };
+  }
   const androidPayload = {
     tokens: androidTokens,
     ...(opts.notification ? { notification: opts.notification } : {}),
     ...(data ? { data } : {}),
-    ...(opts.android ? { android: opts.android } : {}),
+    android: urgentAndroid,
     ...(opts.apns ? { apns: opts.apns } : {}),
   };
 
