@@ -238,6 +238,7 @@ import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, e
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
+import { saveOfflineCustomers, searchOfflineCustomers } from '@/lib/adminOfflineReports';
 import { stickerPhotoUrlsFromJob } from '@/lib/brandSticker';
 import {
   readAdminDashboardCache,
@@ -4892,6 +4893,21 @@ const AdminDashboard = () => {
       }
     }
 
+    if (trimmedQuery && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      const rows = await searchOfflineCustomers(trimmedQuery, 50);
+      const results = rows.map((row) => transformCustomerData(row));
+      setSearchResults(results);
+      setIsSearching(false);
+      if (!opts?.silent) {
+        toast.message(
+          results.length
+            ? 'Showing customers saved on this phone'
+            : 'No customers saved on this phone yet. Search once while connected.'
+        );
+      }
+      return results;
+    }
+
     if (trimmedQuery) {
       const runJobSearch = shouldRunAdminJobNumberSearch(trimmedQuery);
       const [{ data, error }, jobSearchResult] = await Promise.all([
@@ -4904,6 +4920,14 @@ const AdminDashboard = () => {
       const jobSearchError = jobSearchResult.error;
 
       if (error || jobSearchError) {
+        const saved = await searchOfflineCustomers(trimmedQuery, 50);
+        if (saved.length) {
+          const results = saved.map((row) => transformCustomerData(row));
+          setSearchResults(results);
+          setIsSearching(false);
+          if (!opts?.silent) toast.message('Showing customers saved on this phone');
+          return results;
+        }
         toast.error('Search failed');
         setSearchResults([]);
         setIsSearching(false);
@@ -4940,7 +4964,9 @@ const AdminDashboard = () => {
           );
         }
 
-        const results = Array.from(customerMap.values()).map((row) => transformCustomerData(row));
+        const resultRows = Array.from(customerMap.values());
+        void saveOfflineCustomers(resultRows);
+        const results = resultRows.map((row) => transformCustomerData(row));
         setSearchResults(results);
         void (async () => {
           const fromRow: Record<string, boolean> = {};
