@@ -9,6 +9,7 @@
     "dev:server": "node netlify/functions/dev-server.cjs",
     "dev:vite": "vite",
     "build": "node scripts/sync-csp-to-netlify.mjs && node scripts/generate-sitemaps.mjs && vite build && node scripts/write-app-shell.mjs && node scripts/prerender-public-routes.mjs && node scripts/inject-security-headers.mjs",
+    "pack:appshell": "node scripts/pack-appshell.mjs",
     "check:public-bundle": "bash scripts/check-public-bundle-leaks.sh",
     "check:portal-routes": "bash scripts/test-portal-route-guard.sh",
     "check:production-security": "bash scripts/check-production-security.sh",

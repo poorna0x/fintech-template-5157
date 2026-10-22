@@ -91,6 +91,7 @@ public class MainActivity extends BridgeActivity {
         );
 
         super.onCreate(savedInstanceState);
+        AppShellCache.install(this);
         NotificationChannels.ensureJobAlerts(this);
         try {
             LocalGpsSampler.ensureScheduled(this);

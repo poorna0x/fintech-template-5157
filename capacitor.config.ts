@@ -3,10 +3,10 @@ import type { CapacitorConfig } from '@capacitor/cli';
 /**
  * HydrogenRO technician Android wrapper.
  *
- * The app loads the live site (server.url) instead of bundled assets, so web
- * deploys reach the app instantly without rebuilding the APK. Native plugins
- * (background geolocation) are still injected into the remote page by the
- * Capacitor bridge.
+ * The WebView stays on the live site (server.url) so login, Turnstile, and
+ * /.netlify/functions keep working. Cold start does not wait on that download:
+ * AppShellCache serves HTML/JS/CSS from disk, then refreshes the shell in the
+ * background for the next open. Native plugins are still injected by the bridge.
  */
 const config: CapacitorConfig = {
   appId: 'com.hydrogenro.technician',
