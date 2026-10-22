@@ -166,6 +166,7 @@ const CareersPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
   const [sent, setSent] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<FieldKey, boolean>>>({});
   const [focusKey, setFocusKey] = useState<FieldKey | null>(null);
@@ -213,6 +214,13 @@ const CareersPage = () => {
     setFocusKey(null);
   }, [focusKey]);
 
+  useEffect(() => {
+    if (!confirming) return;
+    const node = document.getElementById('career-relocate');
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    node?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+  }, [confirming]);
+
   const touch = (key: FieldKey) => setTouched((prev) => ({ ...prev, [key]: true }));
   const show = (key: FieldKey, message: string | null) =>
     message && (attempted || touched[key]) ? message : '';
@@ -230,15 +238,21 @@ const CareersPage = () => {
   const visibleErrors = FIELD_ORDER.filter((key) => show(key, errors[key] || null));
   const missingCount = FIELD_ORDER.filter((key) => errors[key]).length;
 
-  const submit = async (event: FormEvent) => {
+  const submit = (event: FormEvent) => {
     event.preventDefault();
     setServerError('');
     setAttempted(true);
     const first = FIELD_ORDER.find((key) => errors[key]);
     if (first) {
+      setConfirming(false);
       setFocusKey(first);
       return;
     }
+    setConfirming(true);
+  };
+
+  const sendApplication = async () => {
+    setServerError('');
     setSubmitting(true);
     try {
       const res = await fetch('/.netlify/functions/job-application', {
@@ -513,18 +527,51 @@ const CareersPage = () => {
                     </label>
                   </div>
 
-                  {serverError ? (
-                    <p role="alert" className="text-sm leading-snug text-destructive">
-                      {serverError}
-                    </p>
-                  ) : null}
-                  <Button
-                    type="submit"
-                    disabled={submitting}
-                    className="h-12 w-full cursor-pointer rounded-xl bg-sky-700 text-base font-semibold text-white hover:bg-sky-800"
-                  >
-                    {submitting ? 'Sending…' : 'Submit application'}
-                  </Button>
+                  {confirming ? (
+                    <div
+                      id="career-relocate"
+                      role="region"
+                      aria-label="Before you send"
+                      className="scroll-mt-28 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4"
+                    >
+                      <p className="text-base font-semibold text-foreground">This job is in Bengaluru</p>
+                      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                        You should be willing to relocate to Bengaluru. We will provide a place to stay.
+                      </p>
+                      {serverError ? (
+                        <p role="alert" className="mt-3 text-sm leading-snug text-destructive">
+                          {serverError}
+                        </p>
+                      ) : null}
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-12 cursor-pointer rounded-xl"
+                          onClick={() => setConfirming(false)}
+                          disabled={submitting}
+                        >
+                          Go back
+                        </Button>
+                        <Button
+                          type="button"
+                          className="h-12 cursor-pointer rounded-xl bg-sky-700 text-white hover:bg-sky-800"
+                          onClick={sendApplication}
+                          disabled={submitting}
+                        >
+                          {submitting ? 'Sending…' : 'Send application'}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      type="submit"
+                      disabled={submitting}
+                      className="h-12 w-full cursor-pointer rounded-xl bg-sky-700 text-base font-semibold text-white hover:bg-sky-800"
+                    >
+                      Submit application
+                    </Button>
+                  )}
                   {visibleErrors.length > 0 ? <span className="sr-only">{visibleErrors.length} fields need attention</span> : null}
                 </form>
               )}
