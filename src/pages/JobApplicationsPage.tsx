@@ -299,8 +299,6 @@ const JobApplicationsPage = ({ onBack }: Props) => {
                   2-wheeler {row.has_two_wheeler ? 'yes' : 'no'}
                   {' · '}
                   Licence {row.has_licence ? 'yes' : 'no'}
-                  {' · '}
-                  Field work {row.field_work_ok ? 'yes' : 'no'}
                 </p>
                 {row.note ? <p className="mt-2 text-sm leading-relaxed text-foreground">{row.note}</p> : null}
                 <label className="mt-3 block">

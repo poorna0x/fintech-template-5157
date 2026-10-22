@@ -21,22 +21,6 @@ const EDUCATION = [
 
 type LoadState = 'loading' | 'open' | 'closed' | 'error';
 
-const facts = [
-  ['Pay', '₹10,000 basic salary + 10% of the eligible customer bill'],
-  ['Minimum', '₹20,000 total after 25 working days. That figure is not the basic salary.'],
-  ['With more jobs', 'Earnings can reach about ₹40,000 a month, depending on the work'],
-  ['Training', '15 days paid training'],
-  ['Also included', 'Shared stay, fuel support, dinner, and 4 days off a month'],
-  ['Tools', 'We provide the service bag. It weighs about 5–10 kg'],
-];
-
-const fieldNotes = [
-  'Your own 2-wheeler and a valid driving licence',
-  'Regular travel to customer homes across Bengaluru',
-  'Comfortable carrying the service bag',
-  'Ready to start from 9:00 AM. Hours follow the day’s bookings',
-];
-
 function Field({
   label,
   children,
@@ -69,7 +53,6 @@ const CareersPage = () => {
   const [education, setEducation] = useState('');
   const [hasTwoWheeler, setHasTwoWheeler] = useState<boolean | null>(null);
   const [hasLicence, setHasLicence] = useState<boolean | null>(null);
-  const [fieldWorkOk, setFieldWorkOk] = useState(false);
   const [note, setNote] = useState('');
   const [companyWebsite, setCompanyWebsite] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -113,15 +96,11 @@ const CareersPage = () => {
     event.preventDefault();
     setError('');
     if (!fullName.trim() || !phone.trim() || !area.trim() || !experience || !education) {
-      setError('Fill in name, phone, area, experience, and background.');
+      setError('Fill in name, phone, where you live, experience, and background.');
       return;
     }
     if (hasTwoWheeler === null || hasLicence === null) {
       setError('Tell us if you have a 2-wheeler and a driving licence.');
-      return;
-    }
-    if (!fieldWorkOk) {
-      setError('Confirm you are comfortable with field work and the service bag.');
       return;
     }
     setSubmitting(true);
@@ -140,7 +119,6 @@ const CareersPage = () => {
           education,
           hasTwoWheeler,
           hasLicence,
-          fieldWorkOk,
           note,
           brand: applyBrand,
           company_website: companyWebsite,
@@ -168,10 +146,6 @@ const CareersPage = () => {
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             Service Technician
           </h1>
-          <p className="mt-3 text-base leading-relaxed text-muted-foreground">
-            RO and water purifier installation, service, and repair at customer homes in Bengaluru.
-            Freshers and experienced candidates can apply. Full-time.
-          </p>
 
           {loadState === 'loading' ? (
             <p className="mt-10 text-sm text-muted-foreground">Loading…</p>
@@ -218,38 +192,6 @@ const CareersPage = () => {
           {loadState === 'open' ? (
             <>
               <section className="mt-8 rounded-2xl border border-border bg-card p-4 sm:p-5">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  The role
-                </h2>
-                <dl className="mt-3 space-y-3">
-                  {facts.map(([label, value]) => (
-                    <div key={label}>
-                      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-                      <dd className="text-sm leading-relaxed text-foreground">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </section>
-
-              <section className="mt-4 rounded-2xl border border-border bg-card p-4 sm:p-5">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Before you apply
-                </h2>
-                <ul className="mt-3 space-y-2 text-sm leading-relaxed text-foreground">
-                  {fieldNotes.map((line) => (
-                    <li key={line} className="flex gap-2">
-                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
-                      <span>{line}</span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                  ITI, diploma, or another technical background is welcome. It is not required.
-                  A commitment of about a year is preferred.
-                </p>
-              </section>
-
-              <section className="mt-4 rounded-2xl border border-border bg-card p-4 sm:p-5">
                 {sent ? (
                   <div className="py-6 text-center">
                     <h2 className="text-xl font-semibold text-foreground">Application sent</h2>
@@ -292,12 +234,12 @@ const CareersPage = () => {
                         maxLength={120}
                       />
                     </Field>
-                    <Field label="Area in Bengaluru">
+                    <Field label="Where you live">
                       <Input
                         value={area}
                         onChange={(e) => setArea(e.target.value)}
                         className="h-12 rounded-xl text-base"
-                        placeholder="Where you live"
+                        placeholder="City or area"
                         maxLength={80}
                         required
                       />
@@ -349,18 +291,6 @@ const CareersPage = () => {
                       value={hasLicence}
                       onChange={setHasLicence}
                     />
-                    <label className="flex items-start gap-3 rounded-xl border border-border px-3 py-3">
-                      <input
-                        type="checkbox"
-                        checked={fieldWorkOk}
-                        onChange={(e) => setFieldWorkOk(e.target.checked)}
-                        className="mt-1 h-4 w-4 accent-primary"
-                      />
-                      <span className="text-sm leading-relaxed text-foreground">
-                        I understand this is field work in Bengaluru, and I am comfortable carrying a
-                        5–10 kg service bag.
-                      </span>
-                    </label>
                     <Field label="Anything else (optional)">
                       <textarea
                         value={note}

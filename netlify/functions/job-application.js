@@ -242,12 +242,9 @@ exports.handler = async (event) => {
   if (!fullName) return json(400, headers, { error: 'Enter your full name.' });
   if (!phone) return json(400, headers, { error: 'Enter a valid 10-digit mobile number.' });
   if (email === null) return json(400, headers, { error: 'Enter a valid email, or leave it blank.' });
-  if (area.length < 2) return json(400, headers, { error: 'Enter the area in Bengaluru where you live.' });
+  if (area.length < 2) return json(400, headers, { error: 'Enter where you live.' });
   if (!EXPERIENCE.has(experience)) return json(400, headers, { error: 'Choose fresher or experienced.' });
   if (!EDUCATION.has(education)) return json(400, headers, { error: 'Choose your background.' });
-  if (!asBool(body.fieldWorkOk)) {
-    return json(400, headers, { error: 'Confirm you are comfortable with field work and the service bag.' });
-  }
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { count, error: countError } = await db
@@ -276,7 +273,7 @@ exports.handler = async (event) => {
     education,
     has_two_wheeler: asBool(body.hasTwoWheeler),
     has_licence: asBool(body.hasLicence),
-    field_work_ok: true,
+    field_work_ok: false,
     note: note || null,
     status: 'new',
   };
