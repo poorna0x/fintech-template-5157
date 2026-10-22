@@ -78,8 +78,10 @@ public class MainActivity extends BridgeActivity {
 
                 @Override
                 public void onReceivedError(WebView webView) {
+                    if (showingOffline.get()) return;
                     dismissBootLoader();
                     webView.post(() -> {
+                        if (showingOffline.get()) return;
                         if (!isNetworkUsable() || looksLikeOfflineErrorPage(webView)) {
                             showOfflineView();
                         }
