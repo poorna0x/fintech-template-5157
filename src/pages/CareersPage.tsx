@@ -1,9 +1,14 @@
-import { FormEvent, useEffect, useState, type ReactNode } from 'react';
+import { FormEvent, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Bike, Check, Home, MapPin } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
+import AltchaWidget from '@/components/AltchaWidget';
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from '@/components/TurnstileWidget';
 import { Input } from '@/components/ui/input';
 import { markWebsiteBookDoor } from '@/lib/websiteBookingDoor';
 import { getBrandSeoProfile } from '@/lib/publicSiteSeo';
@@ -210,6 +215,10 @@ const CareersPage = () => {
   const [hasLicence, setHasLicence] = useState<boolean | null>(null);
   const [note, setNote] = useState('');
   const [companyWebsite, setCompanyWebsite] = useState('');
+  const [altchaToken, setAltchaToken] = useState('');
+  const [altchaPayload, setAltchaPayload] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
   const [sent, setSent] = useState(false);
@@ -295,6 +304,14 @@ const CareersPage = () => {
       setFocusKey(first);
       return;
     }
+    if (!altchaToken) {
+      setServerError('Security check is still running. Wait a moment, then try again.');
+      return;
+    }
+    if (isTurnstileEnabled() && !turnstileToken) {
+      setServerError('Complete the security check, then try again.');
+      return;
+    }
     setConfirming(true);
   };
 
@@ -319,10 +336,15 @@ const CareersPage = () => {
           note,
           brand: applyBrand,
           company_website: companyWebsite,
+          altchaLoginToken: altchaToken,
+          altchaPayload,
+          turnstileToken,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok !== true) {
+        setTurnstileToken('');
+        turnstileRef.current?.reset();
         setServerError(data.error || 'Could not send the application. Try again.');
         return;
       }
@@ -558,16 +580,44 @@ const CareersPage = () => {
                   </Field>
 
                   <div className="absolute -left-[9999px] h-0 w-0 overflow-hidden" aria-hidden="true">
-                    <label>
-                      Company website
-                      <input
-                        tabIndex={-1}
-                        autoComplete="off"
-                        value={companyWebsite}
-                        onChange={(e) => setCompanyWebsite(e.target.value)}
-                      />
-                    </label>
+                    <input
+                      tabIndex={-1}
+                      autoComplete="off"
+                      value={companyWebsite}
+                      onChange={(e) => setCompanyWebsite(e.target.value)}
+                    />
                   </div>
+
+                  <AltchaWidget
+                    hidden
+                    autoStart
+                    tokenPurpose="booking"
+                    onVerify={(ok, payload, loginToken) => {
+                      if (payload) setAltchaPayload(payload);
+                      if (loginToken) setAltchaToken(loginToken);
+                      if (!ok) {
+                        setAltchaToken('');
+                        setAltchaPayload('');
+                      }
+                    }}
+                  />
+                  {isTurnstileEnabled() ? (
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Security check</p>
+                      <div className="mt-2">
+                        <TurnstileWidget
+                          ref={turnstileRef}
+                          action="job_application"
+                          onToken={setTurnstileToken}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                  {serverError && !confirming ? (
+                    <p role="alert" className="text-sm leading-snug text-destructive">
+                      {serverError}
+                    </p>
+                  ) : null}
 
                   {confirming ? (
                     <div

@@ -7,7 +7,8 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { readBearerToken, verifyFullAdminBearerToken, authorizeAdminRequest } = require('./admin-auth-guard');
-const { checkRateLimit } = require('./rate-limiter');
+const { checkRateLimit, isRateLimitEnabled } = require('./rate-limiter');
+const { verifyLoginToken, tryReserveLoginToken, releaseLoginTokenReservation, consumeLoginToken } = require('./altcha-guard');
 const { notifyAdminsJobApplication } = require('./job-application-notify');
 
 const EXPERIENCE = new Set(['fresher', 'experienced']);
@@ -46,6 +47,46 @@ function missingTable(error) {
 
 function cleanLine(value, max) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function turnstileConfigured() {
+  return String(process.env.TURNSTILE_SECRET_KEY || '').trim().length > 0;
+}
+
+function clientIp(event) {
+  const headers = event.headers || {};
+  return String(
+    headers['x-nf-client-connection-ip'] ||
+      headers['x-forwarded-for'] ||
+      headers['X-Forwarded-For'] ||
+      headers['client-ip'] ||
+      ''
+  )
+    .split(',')[0]
+    .trim();
+}
+
+async function verifyTurnstileToken(token, remoteIp) {
+  const secret = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
+  if (!secret) return true;
+  const response = String(token || '').trim();
+  if (!response || response.length > 4096) return false;
+  try {
+    const body = new URLSearchParams();
+    body.set('secret', secret);
+    body.set('response', response);
+    if (remoteIp) body.set('remoteip', remoteIp);
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    const data = await res.json().catch(() => null);
+    return Boolean(data && data.success === true);
+  } catch (err) {
+    console.warn('[job-application] turnstile verify failed', err?.message || err);
+    return false;
+  }
 }
 
 function normalizePhone(raw) {
@@ -208,17 +249,19 @@ exports.handler = async (event) => {
     return json(400, headers, { error: 'Unknown action' });
   }
 
-  const rl = checkRateLimit(event, {
-    maxRequests: 5,
-    windowMs: 60 * 60 * 1000,
-    endpoint: 'job-application',
-  });
-  if (!rl.allowed) {
-    return json(429, headers, { error: 'Too many applications from this connection. Try again later.' });
+  if (String(body.company_website || body.hp_field || '').trim()) {
+    return json(200, headers, { ok: true });
   }
 
-  if (String(body.company_website || '').trim()) {
-    return json(200, headers, { ok: true });
+  if (isRateLimitEnabled()) {
+    const rl = checkRateLimit(event, {
+      maxRequests: 5,
+      windowMs: 60 * 60 * 1000,
+      endpoint: 'job-application',
+    });
+    if (!rl.allowed) {
+      return json(429, headers, { error: 'Too many applications from this connection. Try again later.' });
+    }
   }
 
   let hiring;
@@ -248,6 +291,23 @@ exports.handler = async (event) => {
   if (!EXPERIENCE.has(experience)) return json(400, headers, { error: 'Choose fresher or experienced.' });
   if (!EDUCATION.has(education)) return json(400, headers, { error: 'Choose your background.' });
 
+  const altcha = verifyLoginToken(body.altchaLoginToken, body.altchaPayload);
+  if (!altcha.ok) {
+    return json(400, headers, { error: 'Security check failed. Refresh the page and try again.' });
+  }
+  const reserved = tryReserveLoginToken(altcha.consumeKey);
+  if (!reserved.ok) {
+    return json(400, headers, { error: 'Security check failed. Refresh the page and try again.' });
+  }
+
+  if (turnstileConfigured()) {
+    const human = await verifyTurnstileToken(body.turnstileToken, clientIp(event));
+    if (!human) {
+      releaseLoginTokenReservation(altcha.consumeKey);
+      return json(400, headers, { error: 'Security check failed. Refresh the page and try again.' });
+    }
+  }
+
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { count, error: countError } = await db
     .from('elevenro_job_applications')
@@ -256,9 +316,11 @@ exports.handler = async (event) => {
     .gte('created_at', since);
   if (countError) {
     console.warn('[job-application] duplicate check failed', countError.message);
+    releaseLoginTokenReservation(altcha.consumeKey);
     return json(503, headers, { error: 'Could not submit right now. Try again.' });
   }
   if ((count || 0) >= 2) {
+    releaseLoginTokenReservation(altcha.consumeKey);
     return json(429, headers, { error: 'An application from this number was already sent today.' });
   }
 
@@ -287,8 +349,10 @@ exports.handler = async (event) => {
     .maybeSingle();
   if (error || !data) {
     console.warn('[job-application] insert failed', error?.message || error);
+    releaseLoginTokenReservation(altcha.consumeKey);
     return json(500, headers, { error: 'Could not submit the application. Try again.' });
   }
+  consumeLoginToken(altcha.consumeKey, altcha.exp);
 
   try {
     await notifyAdminsJobApplication(db, {
