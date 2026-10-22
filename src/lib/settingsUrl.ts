@@ -34,6 +34,7 @@ export const SETTINGS_PANELS = [
   'add-tracker',
   'lead-catalog',
   'job-reviews',
+  'job-applications',
   'service-hubs',
 ] as const;
 

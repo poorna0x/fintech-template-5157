@@ -759,6 +759,11 @@ const AdminDashboard = () => {
           return;
         }
 
+        if (payload.kind === 'settings' && payload.panel === 'job-applications') {
+          navigate(settingsPanelPath('job-applications'));
+          return;
+        }
+
         if (payload.kind === 'settings' && payload.panel === 'privacy-center') {
           navigate(settingsPanelPath('privacy-center'));
           return;

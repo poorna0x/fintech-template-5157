@@ -141,6 +141,8 @@ const server = http.createServer((req, res) => {
     handler = loadFn('privacy-customer-anonymize');
   } else if (req.url.startsWith('/.netlify/functions/privacy-request')) {
     handler = loadFn('privacy-request');
+  } else if (req.url.startsWith('/.netlify/functions/job-application')) {
+    handler = loadFn('job-application');
   } else if (req.url.startsWith('/.netlify/functions/booking-customer-mutate')) {
     handler = bookingCustomerMutate;
   } else if (req.url.startsWith('/.netlify/functions/booking-customer-lookup')) {

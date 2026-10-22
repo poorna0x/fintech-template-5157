@@ -141,6 +141,10 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
       },
       // DPDP privacy intake / export — local until this branch is deployed.
+      '/.netlify/functions/job-application': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       '/.netlify/functions/privacy-request': {
         target: 'http://localhost:8888',
         changeOrigin: true,

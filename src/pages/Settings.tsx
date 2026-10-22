@@ -45,7 +45,8 @@ import {
   Sparkles,
   ChevronDown,
   Megaphone,
-  UserPlus
+  UserPlus,
+  Briefcase
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -145,6 +146,7 @@ import { SettingsSearch } from '@/components/admin/SettingsSearch';
 import { SettingsTechnicianLocations } from '@/components/admin/SettingsTechnicianLocations';
 import PdfAuthenticityVerifyPage from '@/pages/PdfAuthenticityVerifyPage';
 import JobReviewsPage from '@/pages/JobReviewsPage';
+import JobApplicationsPage from '@/pages/JobApplicationsPage';
 import DbStorageStatsPage from '@/pages/DbStorageStatsPage';
 import AiUsagePage from '@/pages/AiUsagePage';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
@@ -425,6 +427,9 @@ const Settings = () => {
   const [showJobReviewsPage, setShowJobReviewsPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'job-reviews'
   );
+  const [showJobApplicationsPage, setShowJobApplicationsPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'job-applications'
+  );
   const [showDbStoragePage, setShowDbStoragePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'db-storage'
   );
@@ -494,6 +499,11 @@ const Settings = () => {
             return;
           }
 
+          if (payload.kind === 'settings' && payload.panel === 'job-applications') {
+            navigate(settingsPanelPath('job-applications'));
+            return;
+          }
+
           if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
             navigate(
               settingsPanelPath(payload.panel, {
@@ -549,6 +559,7 @@ const Settings = () => {
     setShowPrivacyCenterPage(panel === 'privacy-center' && !isManager);
     setShowPdfAuthenticityPage(panel === 'pdf-authenticity' && !isManager);
     setShowJobReviewsPage(panel === 'job-reviews');
+    setShowJobApplicationsPage(panel === 'job-applications' && !isManager);
     setShowDbStoragePage(panel === 'db-storage' && !isManager);
     setShowAiUsagePage(panel === 'ai-usage' && !isManager);
     setShowRecurringServicePage(panel === 'recurring-service');
@@ -2145,6 +2156,7 @@ const Settings = () => {
       showWhatsAppSettingsPage ||
       showPdfAuthenticityPage ||
       showJobReviewsPage ||
+      showJobApplicationsPage ||
       showDbStoragePage ||
       showAiUsagePage ||
       showRecurringServicePage ||
@@ -2191,6 +2203,7 @@ const Settings = () => {
     showWhatsAppSettingsPage,
     showPdfAuthenticityPage,
     showJobReviewsPage,
+    showJobApplicationsPage,
     showDbStoragePage,
     showAiUsagePage,
     showRecurringServicePage,
@@ -2518,6 +2531,14 @@ const Settings = () => {
         <div className="container mx-auto px-4 py-5 sm:py-8 pb-10 max-w-3xl">
           <AiUsagePage hideHeader onBack={closeSettingsPanel} />
         </div>
+      </div>
+    );
+  }
+
+  if (showJobApplicationsPage) {
+    return (
+      <div className="admin-page min-h-[100dvh] bg-background">
+        <JobApplicationsPage onBack={closeSettingsPanel} />
       </div>
     );
   }
@@ -3190,6 +3211,25 @@ const Settings = () => {
               </Button>
             }
           />
+
+          {!isManager ? (
+          <SettingsActionCard
+            title="Job applications"
+            description="Eleven RO careers page. Turn hiring on or off, and see who applied."
+            icon={<Briefcase />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('job-applications')}
+              >
+                <Briefcase className="w-4 h-4 shrink-0" />
+                Open applications
+              </Button>
+            }
+          />
+          ) : null}
 
           <SettingsActionCard
             title="Customer reviews"

@@ -17,6 +17,7 @@ const ADMIN_PUSH_CATEGORIES = [
   'new_booking',
   'parts_reminder',
   'privacy_request',
+  'job_application',
 ];
 
 const TECH_PUSH_CATEGORIES = [

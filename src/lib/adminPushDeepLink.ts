@@ -81,6 +81,15 @@ export function parseAdminPushDeepLinkData(
     };
   }
 
+  if (String(raw.type || '').trim() === 'job_application') {
+    return {
+      kind: 'settings',
+      jobId: '',
+      event: 'job_application',
+      panel: 'job-applications',
+    };
+  }
+
   if (String(raw.type || '').trim() === 'privacy_request') {
     return {
       kind: 'settings',
