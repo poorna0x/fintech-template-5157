@@ -24,8 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Cold open: splash logo → same-size boot overlay + bounce → login/dashboard.
- * Offline chrome-error pages stay stuck after data returns — we watch the
- * network and reload https://…/admin automatically.
+ * If the phone is offline, show the saved-customer search instead of the
+ * browser error page, and ask before opening the live admin.
  */
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "HroAdminMain";
@@ -39,7 +39,10 @@ public class MainActivity extends BridgeActivity {
     private final AtomicBoolean watchingReady = new AtomicBoolean(false);
     private final AtomicBoolean bootUiReady = new AtomicBoolean(false);
     private final AtomicBoolean needsReloadWhenOnline = new AtomicBoolean(false);
+    private final AtomicBoolean showingOffline = new AtomicBoolean(false);
     private volatile long lastAutoReloadAtMs = 0L;
+    private int offlineAttempts = 0;
+    private String offlineHtml;
     private ConnectivityManager.NetworkCallback networkCallback;
     private static volatile boolean inForeground = false;
 
@@ -76,7 +79,11 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public void onReceivedError(WebView webView) {
                     dismissBootLoader();
-                    webView.post(() -> maybeArmOfflineReload(webView));
+                    webView.post(() -> {
+                        if (!isNetworkUsable() || looksLikeOfflineErrorPage(webView)) {
+                            showOfflineView();
+                        }
+                    });
                 }
             }
         );
@@ -93,6 +100,9 @@ public class MainActivity extends BridgeActivity {
         getWindow()
             .getDecorView()
             .postDelayed(this::dismissBootLoader, BOOT_LOADER_MAX_MS);
+        getWindow().getDecorView().post(() -> {
+            if (!isNetworkUsable()) showOfflineView();
+        });
         getWindow().getDecorView().postDelayed(this::maybePromptCallerOverlay, 3_500L);
     }
 
@@ -334,6 +344,16 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void tryReloadIfOnline() {
+        if (showingOffline.get()) {
+            if (!isNetworkUsable()) return;
+            runOnUiThread(() -> {
+                WebView wv = webViewOrNull();
+                if (wv != null) {
+                    wv.evaluateJavascript("window.__hroNet&&window.__hroNet(true)", null);
+                }
+            });
+            return;
+        }
         if (!needsReloadWhenOnline.get()) return;
         if (!isNetworkUsable()) return;
         long now = SystemClock.elapsedRealtime();
@@ -573,8 +593,92 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void beginReadyWatch() {
+        if (showingOffline.get()) return;
         if (pageReady.get() || !watchingReady.compareAndSet(false, true)) return;
         pollUntilPageReady(0);
+    }
+
+    private String offlineHtml() {
+        if (offlineHtml != null) return offlineHtml;
+        try (java.io.InputStream in = getAssets().open("offline-admin.html")) {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) >= 0) out.write(buf, 0, n);
+            offlineHtml = out.toString("UTF-8");
+        } catch (Exception e) {
+            android.util.Log.w(TAG, "Offline page missing: " + e.getMessage());
+            offlineHtml = "<html><body><p>Offline search is unavailable.</p></body></html>";
+        }
+        return offlineHtml;
+    }
+
+    /** Saved-customer search. Does not open the live site until the admin confirms. */
+    private void showOfflineView() {
+        WebView wv = webViewOrNull();
+        if (wv == null) {
+            if (offlineAttempts++ < 20) {
+                getWindow().getDecorView().postDelayed(this::showOfflineView, 200);
+            }
+            return;
+        }
+        String url = wv.getUrl();
+        if (showingOffline.get() && url != null && url.startsWith("https://offline.local")) return;
+        showingOffline.set(true);
+        needsReloadWhenOnline.set(false);
+        wv.post(() -> {
+            try {
+                wv.stopLoading();
+                wv.getSettings().setJavaScriptEnabled(true);
+                wv.addJavascriptInterface(new OfflineBridge(), "HroOffline");
+                wv.loadDataWithBaseURL(
+                    "https://offline.local/",
+                    offlineHtml(),
+                    "text/html",
+                    "utf-8",
+                    null
+                );
+            } catch (Exception e) {
+                android.util.Log.w(TAG, "Offline view failed: " + e.getMessage());
+            }
+            dismissBootLoader();
+        });
+    }
+
+    public final class OfflineBridge {
+        @android.webkit.JavascriptInterface
+        public String search(String query) {
+            CallerDirectoryDb db = new CallerDirectoryDb(MainActivity.this);
+            try {
+                return db.searchJson(query);
+            } finally {
+                db.close();
+            }
+        }
+
+        @android.webkit.JavascriptInterface
+        public boolean online() {
+            return isNetworkUsable();
+        }
+
+        @android.webkit.JavascriptInterface
+        public void openLive() {
+            runOnUiThread(() -> {
+                showingOffline.set(false);
+                needsReloadWhenOnline.set(false);
+                WebView webView = webViewOrNull();
+                if (webView == null) return;
+                String appUrl = "https://hydrogenro.com/admin";
+                try {
+                    if (getBridge() != null && getBridge().getAppUrl() != null && !getBridge().getAppUrl().isEmpty()) {
+                        appUrl = getBridge().getAppUrl();
+                    }
+                } catch (Exception ignored) {
+                    /* keep the default admin url */
+                }
+                webView.loadUrl(appUrl);
+            });
+        }
     }
 
     private WebView webViewOrNull() {

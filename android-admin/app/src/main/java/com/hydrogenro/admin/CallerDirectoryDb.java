@@ -127,6 +127,41 @@ public final class CallerDirectoryDb extends SQLiteOpenHelper {
         }
     }
 
+    /** Name or phone search for the offline admin screen. */
+    public String searchJson(String raw) {
+        if (raw == null) return "[]";
+        String query = raw.trim();
+        if (query.length() < 2) return "[]";
+        StringBuilder digits = new StringBuilder();
+        for (int i = 0; i < query.length(); i++) {
+            char c = query.charAt(i);
+            if (c >= '0' && c <= '9') digits.append(c);
+        }
+        String nameLike = "%" + query.replace("%", "").replace("_", "") + "%";
+        String digitLike = digits.length() >= 4 ? "%" + digits + "%" : "";
+        String sql =
+            "SELECT name, phone_key, alt_key FROM callers WHERE name LIKE ? COLLATE NOCASE"
+                + (digitLike.isEmpty() ? "" : " OR phone_key LIKE ? OR alt_key LIKE ?")
+                + " ORDER BY name COLLATE NOCASE LIMIT 40";
+        String[] args = digitLike.isEmpty()
+            ? new String[] { nameLike }
+            : new String[] { nameLike, digitLike, digitLike };
+        JSONArray out = new JSONArray();
+        SQLiteDatabase db = getReadableDatabase();
+        try (Cursor cursor = db.rawQuery(sql, args)) {
+            while (cursor.moveToNext()) {
+                JSONObject row = new JSONObject();
+                row.put("name", cursor.getString(0) == null ? "Customer" : cursor.getString(0));
+                row.put("phone", cursor.isNull(1) ? "" : cursor.getString(1));
+                row.put("alt", cursor.isNull(2) ? "" : cursor.getString(2));
+                out.put(row);
+            }
+        } catch (Exception ignored) {
+            return "[]";
+        }
+        return out.toString();
+    }
+
     /** Replace the whole list. Called only after a full download succeeds. */
     public int replaceAll(JSONArray rows, String syncedDay, long syncedAt, String cursorIso) {
         SQLiteDatabase db = getWritableDatabase();
