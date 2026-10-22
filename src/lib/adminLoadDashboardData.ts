@@ -177,13 +177,17 @@ export async function loadAdminDashboardData(
       ctx.setTechnicians(transformedTechnicians);
     } else if (techniciansResult.error) {
       console.error('Failed to load technicians:', techniciansResult.error);
-      ctx.techniciansRef.current = [];
-      ctx.setTechnicians([]);
+      if (!ctx.techniciansRef.current.length) {
+        ctx.techniciansRef.current = [];
+        ctx.setTechnicians([]);
+      }
     }
 
     if (!skipOngoingFetch && ctx.statusFilter === 'ONGOING' && ongoingResult) {
       if (ongoingResult.error) {
-        ctx.setJobs([]);
+        console.warn('[admin] kept the ongoing list because the refresh failed', ongoingResult.error);
+        const keep = ctx.ongoingJobsSnapshotRef.current;
+        if (keep.length) ctx.setJobs(keep);
       } else {
         const list = ongoingResult.data || [];
         ctx.setJobs(list);

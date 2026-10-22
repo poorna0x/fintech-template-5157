@@ -72,7 +72,7 @@ export async function loadFilteredJobsForAdmin(
       const { data, error } = await db.jobs.getOngoing();
       if (requestId !== deps.loadJobsRequestRef.current) return;
       if (error) {
-        if (!cacheOnly) deps.setJobs([]);
+        console.warn('[admin] kept the job list because the refresh failed', error);
       } else if (!cacheOnly) {
         deps.setJobs(data || []);
       }
@@ -80,7 +80,7 @@ export async function loadFilteredJobsForAdmin(
       const { data, error } = await db.jobs.getOngoing();
       if (requestId !== deps.loadJobsRequestRef.current) return;
       if (error) {
-        if (!cacheOnly) deps.setJobs([]);
+        console.warn('[admin] kept the ongoing list because the refresh failed', error);
       } else {
         commitJobs(data || []);
         if (!cacheOnly) {
@@ -161,7 +161,7 @@ export async function loadFilteredJobsForAdmin(
       }
       if (requestId !== deps.loadJobsRequestRef.current) return;
       if (error) {
-        if (!cacheOnly) deps.setJobs([]);
+        console.warn('[admin] kept the job list because the refresh failed', error);
       } else {
         let finalData = data || [];
         if ((filter === 'COMPLETED' || filter === 'CANCELLED') && finalData.length > 0) {
@@ -255,7 +255,7 @@ export async function loadFilteredJobsForAdmin(
       }
       if (requestId !== deps.loadJobsRequestRef.current) return;
       if (error) {
-        if (!cacheOnly) deps.setJobs([]);
+        console.warn('[admin] kept the follow-up list because the refresh failed', error);
       } else {
         commitJobs(data || []);
         if (!cacheOnly) {
@@ -264,9 +264,9 @@ export async function loadFilteredJobsForAdmin(
         }
       }
     }
-  } catch {
+  } catch (error) {
     if (requestId === deps.loadJobsRequestRef.current && !cacheOnly) {
-      deps.setJobs([]);
+      console.warn('[admin] kept the job list because the refresh failed', error);
     }
   } finally {
     if (!silent && requestId === deps.loadJobsRequestRef.current) {

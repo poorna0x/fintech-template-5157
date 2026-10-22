@@ -86,6 +86,15 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 let searchIndex: Array<{ row: Record<string, unknown>; hay: string }> | null = null;
 let syncing = false;
 let techNamesCache: Map<string, string> | null = null;
+let syncPauseCount = 0;
+
+const JOB_PAGE_SIZE = 40;
+
+/** Hold the background copy while a report is open so it does not freeze the screen. */
+export function setAdminOfflineReportSyncPaused(paused: boolean): void {
+  syncPauseCount += paused ? 1 : -1;
+  if (syncPauseCount < 0) syncPauseCount = 0;
+}
 
 function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
@@ -156,12 +165,23 @@ function parseRequirements(value: unknown): unknown {
   }
 }
 
+function slimRequirements(value: unknown): unknown {
+  if (value == null || value === '') return value;
+  try {
+    const text = typeof value === 'string' ? value : JSON.stringify(value);
+    const trimmed = text.replace(/https?:\\?\/\\?\/[^"'\\\s]{12,}/gi, '');
+    return JSON.parse(trimmed);
+  } catch {
+    return stripPhotoFields(parseRequirements(value));
+  }
+}
+
 function slimJob(row: Record<string, unknown>, techNames: Map<string, string>): Record<string, unknown> {
   const completedBy = String(row.completed_by || '');
   const name = techNames.get(completedBy);
   return {
     ...row,
-    requirements: stripPhotoFields(parseRequirements(row.requirements)),
+    requirements: slimRequirements(row.requirements),
     before_photos: [],
     after_photos: [],
     images: [],
@@ -303,7 +323,7 @@ async function pageById(
   cols: string,
   afterId: string
 ): Promise<{ rows: Record<string, unknown>[]; afterId: string; more: boolean }> {
-  const pageSize = table === 'jobs' ? 80 : 200;
+  const pageSize = table === 'jobs' ? JOB_PAGE_SIZE : 200;
   let query = supabase.from(table).select(cols).order('id', { ascending: true }).limit(pageSize);
   if (table === 'jobs') query = query.eq('status', 'COMPLETED');
   if (afterId) query = query.gt('id', afterId);
@@ -328,7 +348,7 @@ async function pageChangedSince(
     .select(cols)
     .gt('updated_at', since)
     .order('updated_at', { ascending: true })
-    .limit(table === 'jobs' ? 80 : 200);
+    .limit(table === 'jobs' ? JOB_PAGE_SIZE : 200);
   if (table === 'jobs') query = query.eq('status', 'COMPLETED');
   const { data, error } = await query;
   if (error) throw error;
@@ -420,7 +440,7 @@ async function syncOneRound(refreshTechs: boolean): Promise<boolean> {
     );
   }
   const customerCursor = advanceCursor(customers, customers.length >= 200, customerSince);
-  const jobCursor = advanceCursor(jobs, jobs.length >= 80, jobSince);
+  const jobCursor = advanceCursor(jobs, jobs.length >= JOB_PAGE_SIZE, jobSince);
   next.customerSyncedAt = customerCursor.cursor;
   next.jobSyncedAt = jobCursor.cursor;
   next.syncedAt = next.customerSyncedAt;
@@ -443,10 +463,14 @@ export function startAdminOfflineReportSync(): void {
       let rounds = 0;
       let refreshTechs = meta.customersDone && meta.jobsDone;
       while (more && rounds < 25 && navigator.onLine !== false) {
+        if (syncPauseCount > 0) {
+          await new Promise((r) => setTimeout(r, 400));
+          continue;
+        }
         more = await syncOneRound(refreshTechs);
         refreshTechs = false;
         rounds += 1;
-        await new Promise((r) => setTimeout(r, 250));
+        await new Promise((r) => setTimeout(r, 1200));
       }
       resume = more;
     } catch (err) {

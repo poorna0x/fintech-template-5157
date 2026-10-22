@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Customer, Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
-import { readOfflineReportJobs, saveOfflineReportJobs } from '@/lib/adminOfflineReports';
+import { readOfflineReportJobs, saveOfflineReportJobs, setAdminOfflineReportSyncPaused } from '@/lib/adminOfflineReports';
 import { getCustomerGstNumber } from '@/lib/customerGst';
 import { CheckCircle, Star, Trash2 } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
@@ -80,96 +80,86 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     if (loadedCustomerIdRef.current === customerId) return;
 
     let cancelled = false;
-    let liveSettled = false;
-    const slowTimer = window.setTimeout(() => {
-      void (async () => {
-        if (cancelled || liveSettled) return;
-        const cached = await readOfflineReportJobs(customerId);
-        if (cancelled || liveSettled || !cached.length) return;
+    const loadCustomerReportJobs = async () => {
+      const cached = await readOfflineReportJobs(customerId);
+      if (cancelled) return;
+      if (cached.length) {
         setCustomerReportJobs(cached);
         setReportFromPhone(true);
         setLoadingCustomerReportJobs(false);
-      })();
-    }, 2000);
-    const loadCustomerReportJobs = async () => {
-      setLoadingCustomerReportJobs(true);
-      setReportFromPhone(false);
-      try {
-        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-        if (offline) {
-          liveSettled = true;
-          window.clearTimeout(slowTimer);
-        }
-        const [reportRes, deletedRes] = offline
-          ? [
-              { data: await readOfflineReportJobs(customerId), error: null },
-              { data: [], error: null },
-            ]
-          : await Promise.all([
-              db.jobs.getByCustomerIdForReportEnriched(customerId),
-              db.customerJobDeleteEvents.listByCustomerId(customerId),
-            ]);
-        liveSettled = true;
-        window.clearTimeout(slowTimer);
-        if (cancelled) return;
+      } else {
+        setLoadingCustomerReportJobs(true);
+        setReportFromPhone(false);
+      }
 
-        let jobs = reportRes.error ? [] : reportRes.data || [];
-        let fromPhone = offline;
-        if (reportRes.error || (offline && jobs.length === 0)) {
-          jobs = await readOfflineReportJobs(customerId);
-          fromPhone = true;
-        } else if (!offline && !reportRes.error) {
-          void saveOfflineReportJobs(jobs as Record<string, unknown>[]);
-        }
-        if (cancelled) return;
-
-        setCustomerReportJobs(jobs);
-        setReportFromPhone(fromPhone);
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      if (offline) {
+        if (!cached.length) setCustomerReportJobs([]);
+        setReportFromPhone(true);
         loadedCustomerIdRef.current = customerId;
-        if (!fromPhone) {
-          const ids = jobs.map((j: { id?: string }) => String(j.id || '')).filter(Boolean);
+        setLoadingCustomerReportJobs(false);
+        return;
+      }
+
+      try {
+        const [reportRes, deletedRes] = await Promise.all([
+          db.jobs.getByCustomerIdForReportEnriched(customerId),
+          db.customerJobDeleteEvents.listByCustomerId(customerId),
+        ]);
+        if (cancelled) return;
+
+        const liveJobs = reportRes.error ? [] : reportRes.data || [];
+        if (liveJobs.length) {
+          setCustomerReportJobs(liveJobs);
+          setReportFromPhone(false);
+          loadedCustomerIdRef.current = customerId;
+          void saveOfflineReportJobs(liveJobs as Record<string, unknown>[]);
+          const ids = liveJobs.map((j: { id?: string }) => String(j.id || '')).filter(Boolean);
           if (ids.length) {
             const ratings = await fetchSubmittedJobReviewRatingsByJobIds(ids);
             if (!cancelled) setReviewRatings(ratings);
           } else if (!cancelled) {
             setReviewRatings({});
           }
-        } else if (!cancelled) {
-          setReviewRatings({});
+        } else {
+          if (!cached.length) setCustomerReportJobs([]);
+          setReportFromPhone(cached.length > 0);
+          loadedCustomerIdRef.current = customerId;
+          if (!cancelled) setReviewRatings({});
         }
 
-        if (!offline && deletedRes.error) {
+        if (deletedRes.error) {
           console.warn('Error loading deleted job events:', deletedRes.error);
           setDeletedJobEvents([]);
-        } else if (!offline) {
+        } else {
           setDeletedJobEvents((deletedRes.data || []) as CustomerJobDeleteEvent[]);
         }
       } catch (error) {
-        liveSettled = true;
-        window.clearTimeout(slowTimer);
         if (!cancelled) {
           console.error('Error loading customer report jobs:', error);
-          const cached = await readOfflineReportJobs(customerId);
-          if (!cancelled) {
-            setCustomerReportJobs(cached);
-            setReportFromPhone(true);
-            loadedCustomerIdRef.current = customerId;
+          if (!cached.length) {
+            const again = await readOfflineReportJobs(customerId);
+            if (!cancelled) setCustomerReportJobs(again);
           }
+          setReportFromPhone(true);
+          loadedCustomerIdRef.current = customerId;
         }
       } finally {
-        if (!cancelled) {
-          setLoadingCustomerReportJobs(false);
-        }
+        if (!cancelled) setLoadingCustomerReportJobs(false);
       }
     };
 
     void loadCustomerReportJobs();
     return () => {
       cancelled = true;
-      liveSettled = true;
-      window.clearTimeout(slowTimer);
     };
   }, [open, customerId, preserveDataRef]);
+
+  useEffect(() => {
+    if (!open) return;
+    setAdminOfflineReportSyncPaused(true);
+    return () => setAdminOfflineReportSyncPaused(false);
+  }, [open]);
 
   if (!customer) return null;
 

@@ -4915,11 +4915,13 @@ const AdminDashboard = () => {
       const runJobSearch = shouldRunAdminJobNumberSearch(trimmedQuery);
       let liveSettled = false;
       if (adminSearchSlowTimerRef.current) window.clearTimeout(adminSearchSlowTimerRef.current);
+      let showedSaved = false;
       adminSearchSlowTimerRef.current = window.setTimeout(() => {
         void (async () => {
           if (liveSettled || searchGen !== adminSearchGenRef.current) return;
           const saved = await searchOfflineCustomers(trimmedQuery, 50);
           if (liveSettled || searchGen !== adminSearchGenRef.current || !saved.length) return;
+          showedSaved = true;
           setSearchResults(saved.map((row) => transformCustomerData(row)));
           setIsSearching(false);
           if (!opts?.silent) toast.message('Showing customers saved on this phone');
@@ -5001,6 +5003,10 @@ const AdminDashboard = () => {
         const resultRows = Array.from(customerMap.values());
         void saveOfflineCustomers(resultRows);
         const results = resultRows.map((row) => transformCustomerData(row));
+        if (!results.length && showedSaved) {
+          setIsSearching(false);
+          return [];
+        }
         setSearchResults(results);
         void (async () => {
           const fromRow: Record<string, boolean> = {};
