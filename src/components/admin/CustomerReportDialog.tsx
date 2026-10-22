@@ -80,11 +80,26 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     if (loadedCustomerIdRef.current === customerId) return;
 
     let cancelled = false;
+    let liveSettled = false;
+    const slowTimer = window.setTimeout(() => {
+      void (async () => {
+        if (cancelled || liveSettled) return;
+        const cached = await readOfflineReportJobs(customerId);
+        if (cancelled || liveSettled || !cached.length) return;
+        setCustomerReportJobs(cached);
+        setReportFromPhone(true);
+        setLoadingCustomerReportJobs(false);
+      })();
+    }, 2000);
     const loadCustomerReportJobs = async () => {
       setLoadingCustomerReportJobs(true);
       setReportFromPhone(false);
       try {
         const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        if (offline) {
+          liveSettled = true;
+          window.clearTimeout(slowTimer);
+        }
         const [reportRes, deletedRes] = offline
           ? [
               { data: await readOfflineReportJobs(customerId), error: null },
@@ -94,6 +109,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
               db.jobs.getByCustomerIdForReportEnriched(customerId),
               db.customerJobDeleteEvents.listByCustomerId(customerId),
             ]);
+        liveSettled = true;
+        window.clearTimeout(slowTimer);
         if (cancelled) return;
 
         let jobs = reportRes.error ? [] : reportRes.data || [];
@@ -128,6 +145,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
           setDeletedJobEvents((deletedRes.data || []) as CustomerJobDeleteEvent[]);
         }
       } catch (error) {
+        liveSettled = true;
+        window.clearTimeout(slowTimer);
         if (!cancelled) {
           console.error('Error loading customer report jobs:', error);
           const cached = await readOfflineReportJobs(customerId);
@@ -147,6 +166,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
     void loadCustomerReportJobs();
     return () => {
       cancelled = true;
+      liveSettled = true;
+      window.clearTimeout(slowTimer);
     };
   }, [open, customerId, preserveDataRef]);
 
