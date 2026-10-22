@@ -697,16 +697,13 @@ function jobLocalDayBounds(dateStr: string): { startISO: string; nextISO: string
 
 type AdminCompletedListFilters = {
   completedByUserId?: string;
-  completedByIn?: string[];
   serviceSubTypeIn?: string[];
   leadRequirementsContainVariants?: string[];
 };
 
 function applyAdminCompletedListFilters(query: any, listFilters?: AdminCompletedListFilters) {
   if (!listFilters) return query;
-  if (listFilters.completedByIn?.length) {
-    query = query.in('completed_by', listFilters.completedByIn);
-  } else if (listFilters.completedByUserId) {
+  if (listFilters.completedByUserId) {
     query = query.eq('completed_by', listFilters.completedByUserId);
   }
   if (listFilters.serviceSubTypeIn?.length) {
@@ -3175,7 +3172,6 @@ export const db = {
       dateFilter?: string | { startDate: string; endDate: string },
       listFilters?: {
         completedByUserId?: string;
-        completedByIn?: string[];
         /** DB values for `in('service_sub_type', …)` — include casing/legacy aliases. */
         serviceSubTypeIn?: string[];
         /** `lead_source` values for jsonb `requirements` contains (see adminUtils). */
@@ -3341,7 +3337,6 @@ export const db = {
       opts?: {
         includePhotoFields?: boolean;
         completedByUserId?: string;
-        completedByIn?: string[];
         serviceSubTypeIn?: string[];
         leadRequirementsContainVariants?: string[];
         /** When true, drop `requirements` jsonb from rows (admin “minimal” list; details on demand). */
@@ -3503,7 +3498,6 @@ export const db = {
 
       query = applyAdminCompletedListFilters(query, {
         completedByUserId: opts?.completedByUserId,
-        completedByIn: opts?.completedByIn,
         serviceSubTypeIn: opts?.serviceSubTypeIn,
         leadRequirementsContainVariants: opts?.leadRequirementsContainVariants,
       });

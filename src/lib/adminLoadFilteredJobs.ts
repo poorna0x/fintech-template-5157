@@ -1,11 +1,8 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import { setModuleJobsListCache, setModuleOngoingJobsSnapshot } from '@/lib/adminDashboardCache';
-import {
-  completedByDbMatchValues,
-  normalizeLeadType,
-  serviceSubTypeDbMatchValues,
-} from '@/lib/adminUtils';
+import { completedJobMatchesDashboardClientFilters } from '@/lib/adminUtils';
+import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import { CUSTOMER_ADMIN_LIST_PATCH_COLUMNS, db, supabase } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -36,30 +33,6 @@ export type LoadFilteredJobsDeps = {
   setTotalPages: Dispatch<SetStateAction<number>>;
   setCurrentPage: Dispatch<SetStateAction<number>>;
 };
-
-function completedListServerFilters(deps: LoadFilteredJobsDeps) {
-  const filters: {
-    completedByIn?: string[];
-    serviceSubTypeIn?: string[];
-    leadRequirementsContainVariants?: string[];
-  } = {};
-  if (deps.completedServiceSubTypeFilter !== 'all') {
-    const values = serviceSubTypeDbMatchValues(deps.completedServiceSubTypeFilter);
-    if (values.length) filters.serviceSubTypeIn = values;
-  }
-  if (deps.completedLeadTypeFilter !== 'all') {
-    const canon = normalizeLeadType(deps.completedLeadTypeFilter);
-    if (canon) filters.leadRequirementsContainVariants = [canon];
-  }
-  if (deps.completedByFilter !== 'all') {
-    const values = completedByDbMatchValues(
-      deps.completedByFilter,
-      deps.techniciansRef.current
-    );
-    if (values.length) filters.completedByIn = values;
-  }
-  return filters;
-}
 
 export async function loadFilteredJobsForAdmin(
   filter: AdminStatusFilter,
@@ -141,29 +114,45 @@ export async function loadFilteredJobsForAdmin(
       let count = 0;
       let pages = 0;
 
-      const listFilters =
-        filter === 'COMPLETED' ? completedListServerFilters(deps) : undefined;
+      const completedClientFiltersActive =
+        filter === 'COMPLETED' &&
+        (deps.completedLeadTypeFilter !== 'all' ||
+          deps.completedServiceSubTypeFilter !== 'all' ||
+          deps.completedByFilter !== 'all');
+
+      const COMPLETED_CLIENT_FILTER_BATCH = 5000;
 
       let slimResult: Awaited<ReturnType<typeof db.jobs.getByStatusPaginatedSlim>>;
-      slimResult = await db.jobs.getByStatusPaginatedSlim(
-        statuses,
-        page,
-        deps.pageSize,
-        dateFilter,
-        listFilters
-      );
+      if (completedClientFiltersActive) {
+        slimResult = await db.jobs.getByStatusPaginatedSlim(
+          statuses,
+          1,
+          COMPLETED_CLIENT_FILTER_BATCH,
+          dateFilter
+        );
+      } else {
+        slimResult = await db.jobs.getByStatusPaginatedSlim(
+          statuses,
+          page,
+          deps.pageSize,
+          dateFilter
+        );
+      }
       data = slimResult.data || [];
       error = slimResult.error;
       count = slimResult.count || 0;
       pages = slimResult.totalPages || 0;
 
       if (error) {
+        const fallbackPage = completedClientFiltersActive ? 1 : page;
+        const fallbackSize = completedClientFiltersActive
+          ? COMPLETED_CLIENT_FILTER_BATCH
+          : deps.pageSize;
         const fallback = await db.jobs.getByStatusPaginated(
           statuses,
-          page,
-          deps.pageSize,
-          dateFilter,
-          listFilters
+          fallbackPage,
+          fallbackSize,
+          dateFilter
         );
         data = fallback.data || [];
         error = fallback.error;
@@ -195,6 +184,40 @@ export async function loadFilteredJobsForAdmin(
                 : { ...j, customer: byId.get(j.customer_id) ?? null }
             );
           }
+        }
+
+        if (completedClientFiltersActive) {
+          const filterPayload = {
+            leadType: deps.completedLeadTypeFilter,
+            serviceSubType: deps.completedServiceSubTypeFilter,
+            completedBy: deps.completedByFilter,
+          };
+          const filtered = finalData.filter((j: any) =>
+            completedJobMatchesDashboardClientFilters(
+              j,
+              filterPayload,
+              deps.techniciansRef.current as any
+            )
+          );
+          const filteredCount = filtered.length;
+          const filteredPages =
+            filteredCount > 0 ? Math.ceil(filteredCount / deps.pageSize) : 0;
+          let effectivePage = page;
+          if (filteredPages > 0 && page > filteredPages) effectivePage = filteredPages;
+          if (filteredPages === 0) effectivePage = 1;
+          finalData = filtered.slice(
+            (effectivePage - 1) * deps.pageSize,
+            effectivePage * deps.pageSize
+          );
+          count = filteredCount;
+          pages = filteredPages;
+          if (effectivePage !== page && !cacheOnly) {
+            deps.setCurrentPage(effectivePage);
+          }
+        }
+
+        if (filter === 'COMPLETED' && finalData.length > 0) {
+          finalData = await enrichJobsWithAfterPhotosIfNeeded(finalData);
         }
 
         commitJobs(finalData);

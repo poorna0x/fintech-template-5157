@@ -1011,27 +1011,6 @@ export function completedJobMatchesDashboardClientFilters(
  * Values for PostgREST `in('service_sub_type', …)` so DB casing / legacy labels still match
  * the same normalization used client-side in `doesCompletedJobMatchFilters`.
  */
-/** `completed_by` values that match a Completed-tab technician name (id and the name itself). */
-export function completedByDbMatchValues(
-  uiFilterChoice: string,
-  technicians: CompletedJobTechnicianLike[]
-): string[] {
-  const trimmed = (uiFilterChoice || '').trim();
-  if (!trimmed) return [];
-  const key = trimmed.toLowerCase();
-  const values = new Set<string>([trimmed]);
-  for (const tech of technicians) {
-    const name = (tech.fullName || tech.full_name || '').trim();
-    if (name.toLowerCase() === key && tech.id) values.add(String(tech.id));
-  }
-  if (key === 'admin' || key === 'office') {
-    values.add('admin');
-    values.add('Admin');
-    values.add('Office');
-  }
-  return [...values];
-}
-
 export function serviceSubTypeDbMatchValues(uiFilterChoice: string): string[] {
   const trimmed = (uiFilterChoice || '').trim();
   if (!trimmed) return [];

@@ -315,6 +315,10 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                 <p className="text-sm">No jobs match the current filter</p>
               </div>
             ) : jobsToShow.map((job) => {
+            const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];               
+            const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];                    
+            
+            const allPhotos = [...extractPhotoUrls(beforePhotos), ...extractPhotoUrls(afterPhotos)];                                                
             const followUpDate = (job as any).follow_up_date || job.followUpDate || null;
             const followUpTime = (job as any).follow_up_time || job.followUpTime || null;
             const followUpNotes = (job as any).follow_up_notes || job.followUpNotes || '';
@@ -423,16 +427,6 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                   return out;
                 })()
               : job;
-            const beforePhotos = Array.isArray(fullJob.before_photos || fullJob.beforePhotos)
-              ? fullJob.before_photos || fullJob.beforePhotos
-              : [];
-            const afterPhotos = Array.isArray(fullJob.after_photos || fullJob.afterPhotos)
-              ? fullJob.after_photos || fullJob.afterPhotos
-              : [];
-            const allPhotos = [
-              ...extractPhotoUrls(beforePhotos),
-              ...extractPhotoUrls(afterPhotos),
-            ];
             const detailsLoaded = Boolean(loadedCompletedJobDetails[job.id]);
             const isLoadingDetails = Boolean(loadingCompletedJobDetails[job.id]);
 
@@ -715,21 +709,12 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                           <StatusBadge status={job.status} />
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          {statusFilter === 'COMPLETED' && !detailsLoaded ? (
-                            <button
-                              type="button"
-                              className="flex items-center gap-1 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-md"
-                              onClick={() => a.loadCompletedJobDetails(job.id)}
-                            >
-                              <Camera className="w-3 h-3" />
-                              {isLoadingDetails ? 'Loading photos…' : 'Photos'}
-                            </button>
-                          ) : allPhotos.length > 0 ? (
+                          {allPhotos.length > 0 && (
                             <div className="flex items-center gap-1 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
                               <Camera className="w-3 h-3" />
                               {allPhotos.length} photos
                             </div>
-                          ) : null}
+                          )}
                         </div>
                       </div>
                       
