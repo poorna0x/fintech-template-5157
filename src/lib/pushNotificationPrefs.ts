@@ -4,6 +4,7 @@ export const ADMIN_PUSH_CATEGORIES = [
   'customer_calls',
   'wrong_line',
   'tech_search',
+  'mock_location',
   'tech_messages',
   'tech_dismiss_acks',
   'reminders',
@@ -61,6 +62,10 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
   tech_search: {
     label: 'Technician customer search',
     description: 'When a technician searches customers in the app. Separate from customer call alerts.',
+  },
+  mock_location: {
+    label: 'Mock location',
+    description: 'When a technician phone reports a mock location. The live map keeps the last genuine pin.',
   },
   tech_messages: {
     label: 'Technician message replies & opens',

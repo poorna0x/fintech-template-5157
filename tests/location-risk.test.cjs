@@ -6,6 +6,7 @@ const {
   decideLocationWrite,
   isMissingRiskColumn,
 } = require('../netlify/functions/location-risk');
+const { isFirstMockReport } = require('../netlify/functions/mock-location-admin-push');
 
 const NOW = Date.parse('2026-10-23T12:00:00.000Z');
 const HERE = { latitude: 12.9716, longitude: 77.5946, accuracyMeters: 15, fixTimeMs: NOW - 60_000 };
@@ -264,6 +265,20 @@ function at(lat, lng, fixTimeMs, extra = {}) {
   assert.match(adminMain, /registerPlugin\(LocationRiskPlugin\.class\)/);
   assert.match(geo, /assertNativeLocationUsable/);
   assert.match(geo, /location_unavailable/);
+}
+
+{
+  assert.equal(isFirstMockReport(true, false), true);
+  assert.equal(isFirstMockReport(true, undefined), true);
+  assert.equal(isFirstMockReport(true, true), false);
+  assert.equal(isFirstMockReport(false, false), false);
+}
+
+{
+  const root = path.join(__dirname, '..');
+  const upload = fs.readFileSync(path.join(root, 'netlify/functions/upload-tech-location.js'), 'utf8');
+  assert.match(upload, /if \(decision\.assessment\.isMockLocation\)/);
+  assert.match(upload, /notifyAdminsOfMockLocation/);
 }
 
 console.log('location-risk tests passed');

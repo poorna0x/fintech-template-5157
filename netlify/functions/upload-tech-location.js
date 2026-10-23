@@ -6,6 +6,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { decideLocationWrite, previousFromRow, isMissingRiskColumn } = require('./location-risk');
+const { notifyAdminsOfMockLocation } = require('./mock-location-admin-push');
 
 // The native app sends no Origin header, so no CORS/origin checks here;
 // the nonce is the authentication.
@@ -73,6 +74,13 @@ exports.handler = async (event) => {
   // Recomputed here. body.riskScore / body.reasons are ignored on purpose.
   const decision = decideLocationWrite(body, previousFromRow(row), Date.now());
   if (!decision.accepted) {
+    if (decision.assessment.isMockLocation) {
+      try {
+        await notifyAdminsOfMockLocation(db, technicianId);
+      } catch (err) {
+        console.warn('[upload-tech-location] mock alert failed', err?.message || err);
+      }
+    }
     console.warn('[upload-tech-location] reading not used', {
       technician: technicianId.slice(0, 8),
       level: decision.assessment.riskLevel,

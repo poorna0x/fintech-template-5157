@@ -108,6 +108,22 @@ export async function nativeLocationIsMock(): Promise<boolean> {
 }
 
 async function markLiveLocationMock(technicianId: string): Promise<void> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (token) {
+      const res = await fetch('/.netlify/functions/report-tech-mock-location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: '{}',
+        keepalive: true,
+      });
+      if (res.ok) return;
+    }
+  } catch {
+    /* office alert is best-effort; still record the flag below */
+  }
+
   const checkedAt = new Date().toISOString();
   const { error } = await supabase
     .from('technician_live_locations')
