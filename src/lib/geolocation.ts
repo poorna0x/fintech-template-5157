@@ -1,7 +1,58 @@
+import { Capacitor, registerPlugin } from '@capacitor/core';
+
 export interface DeviceLocation {
   lat: number;
   lng: number;
   accuracyMeters?: number;
+}
+
+interface LocationRiskResult {
+  isMockLocation?: boolean;
+  riskLevel?: string;
+  reasons?: string[];
+  locationUsable?: boolean;
+}
+
+const LocationRisk = registerPlugin<{
+  assessCurrent(): Promise<LocationRiskResult>;
+}>('LocationRisk');
+
+/** Shown when the admin (or booking) phone is using a mock location. */
+export const MOCK_DEVICE_LOCATION_MESSAGE =
+  'This phone is using a mock location, so it was not used. Turn off the mock-location app, then in Developer options set “Select mock location app” to Nothing, and try again.';
+
+const UNSTEADY_DEVICE_LOCATION_MESSAGE =
+  'This reading moved too far from the previous one to use. Wait for a steady GPS fix and try again.';
+
+class UnusableDeviceLocationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnusableDeviceLocationError';
+  }
+}
+
+/**
+ * Native admin and technician apps only. A missing plugin, a missing fix,
+ * or a desktop browser is not treated as spoofing.
+ */
+async function assertNativeLocationUsable(): Promise<void> {
+  if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('LocationRisk')) return;
+  let result: LocationRiskResult | undefined;
+  try {
+    result = await LocationRisk.assessCurrent();
+  } catch {
+    return;
+  }
+  if (!result || result.reasons?.includes('location_unavailable')) return;
+  if (result.isMockLocation) {
+    throw new UnusableDeviceLocationError(MOCK_DEVICE_LOCATION_MESSAGE);
+  }
+  if (
+    result.locationUsable === false &&
+    (result.riskLevel === 'high' || result.riskLevel === 'confirmed')
+  ) {
+    throw new UnusableDeviceLocationError(UNSTEADY_DEVICE_LOCATION_MESSAGE);
+  }
 }
 
 export function isGeolocationPositionError(error: unknown): error is GeolocationPositionError {
@@ -56,11 +107,13 @@ export async function getDeviceLocation(): Promise<DeviceLocation> {
       timeout: 25000,
       maximumAge: 300000,
     });
+    await assertNativeLocationUsable();
     return readPosition(position);
   } catch (firstError) {
     if (isGeolocationPositionError(firstError) && firstError.code === firstError.PERMISSION_DENIED) {
       throw firstError;
     }
+    if (firstError instanceof UnusableDeviceLocationError) throw firstError;
   }
 
   // GPS fallback — slower but more precise on phones.
@@ -69,5 +122,6 @@ export async function getDeviceLocation(): Promise<DeviceLocation> {
     timeout: 45000,
     maximumAge: 300000,
   });
+  await assertNativeLocationUsable();
   return readPosition(position);
 }

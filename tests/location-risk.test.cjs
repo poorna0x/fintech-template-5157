@@ -243,6 +243,27 @@ function at(lat, lng, fixTimeMs, extra = {}) {
   assert.match(signals, /location\.isMock\(\)/);
   assert.match(signals, /isFromMockProvider\(\)/);
   assert.match(signals, /SDK_INT >= 31/);
+
+  const adminPlugin = fs.readFileSync(
+    path.join(root, 'android-admin/app/src/main/java/com/hydrogenro/admin/LocationRiskPlugin.java'),
+    'utf8'
+  );
+  const adminSignals = fs.readFileSync(
+    path.join(root, 'android-admin/app/src/main/java/com/hydrogenro/admin/MockLocationSignals.java'),
+    'utf8'
+  );
+  const adminMain = fs.readFileSync(
+    path.join(root, 'android-admin/app/src/main/java/com/hydrogenro/admin/MainActivity.java'),
+    'utf8'
+  );
+  const geo = fs.readFileSync(path.join(root, 'src/lib/geolocation.ts'), 'utf8');
+  assert.match(adminPlugin, /assessCurrent/);
+  assert.match(adminPlugin, /LocationRiskEvaluator\.assess/);
+  assert.match(adminSignals, /location\.isMock\(\)/);
+  assert.match(adminSignals, /isFromMockProvider\(\)/);
+  assert.match(adminMain, /registerPlugin\(LocationRiskPlugin\.class\)/);
+  assert.match(geo, /assertNativeLocationUsable/);
+  assert.match(geo, /location_unavailable/);
 }
 
 console.log('location-risk tests passed');

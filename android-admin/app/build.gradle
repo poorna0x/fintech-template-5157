@@ -46,6 +46,8 @@ dependencies {
     implementation project(':capacitor-cordova-android-plugins')
     // RemoteMessage for the native cash-check push handler (HroMessagingService)
     implementation "com.google.firebase:firebase-messaging:25.0.1"
+    // Mock-location check for distance / current-location (same library as the technician app).
+    implementation "com.google.android.gms:play-services-location:21.3.0"
 }
 
 apply from: 'capacitor.build.gradle'
