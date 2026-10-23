@@ -24,7 +24,7 @@ final class LocationUploader {
         if (location == null || uploadUrl == null || technicianId == null || nonce == null) return;
         boolean mockReported = false;
         try {
-            LocationRiskResult risk = LocationRiskGate.evaluate(context, location, true);
+            LocationRiskResult risk = LocationRiskGate.evaluate(context, location);
             mockReported = risk.isMockLocation;
             if (risk.reasons.contains("invalid_coordinates") || risk.reasons.contains("location_unavailable")) {
                 return;

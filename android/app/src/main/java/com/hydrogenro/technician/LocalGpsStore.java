@@ -20,7 +20,7 @@ final class LocalGpsStore {
 
     static void save(Context context, Location location) {
         if (context == null || location == null) return;
-        LocationRiskResult risk = LocationRiskGate.evaluate(context, location, true);
+        LocationRiskResult risk = LocationRiskGate.evaluate(context, location);
         if (!risk.locationUsable) return;
         Location existing = load(context);
         long time = location.getTime() > 0 ? location.getTime() : System.currentTimeMillis();

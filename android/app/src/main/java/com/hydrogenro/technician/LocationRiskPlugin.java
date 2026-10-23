@@ -44,7 +44,7 @@ public class LocationRiskPlugin extends Plugin {
                 .getLastLocation()
                 .addOnCompleteListener(task -> {
                     Location loc = task.isSuccessful() ? task.getResult() : null;
-                    call.resolve(toJs(LocationRiskGate.evaluate(context, loc, false)));
+                    call.resolve(toJs(LocationRiskGate.evaluate(context, loc)));
                 });
         } catch (Throwable ignored) {
             call.resolve(toJs(LocationRiskEvaluator.unavailable(now)));

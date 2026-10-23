@@ -14,7 +14,7 @@ final class LocationRiskGate {
 
     private LocationRiskGate() {}
 
-    static LocationRiskResult evaluate(Context context, Location location, boolean notify) {
+    static LocationRiskResult evaluate(Context context, Location location) {
         long now = System.currentTimeMillis();
         if (location == null) return LocationRiskEvaluator.unavailable(now);
         LocationFix previous = null;
@@ -33,9 +33,6 @@ final class LocationRiskGate {
         );
         if (!result.locationUsable) {
             Log.w(TAG, "reading not used " + result.diagnostic());
-        }
-        if (notify && result.isMockLocation && context != null) {
-            LocationRiskNotice.show(context);
         }
         return result;
     }

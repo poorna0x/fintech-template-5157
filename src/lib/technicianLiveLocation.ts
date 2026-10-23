@@ -16,12 +16,7 @@
  * On the plain website/PWA `isNativeApp()` is false and none of this runs.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
-
-/** Shown when Android reports a mock location. Not used for a weak GPS fix. */
-export const MOCK_LOCATION_MESSAGE =
-  'This phone is using a mock location, so your position was not saved. Turn off the mock-location app, then in Developer options set “Select mock location app” to Nothing, and try again.';
 
 interface LocationRiskPlugin {
   assessCurrent(): Promise<{
@@ -35,9 +30,6 @@ interface LocationRiskPlugin {
 }
 
 const LocationRisk = registerPlugin<LocationRiskPlugin>('LocationRisk');
-
-let lastMockWarningAt = 0;
-const MOCK_WARNING_GAP_MS = 12 * 60 * 60 * 1000;
 
 interface Location {
   latitude: number;
@@ -88,20 +80,12 @@ export function isNativeApp(): boolean {
  * A missing fix, denied permission, or an older APK without this plugin
  * returns false — that is not evidence of spoofing.
  */
+/** True only when Android marked the latest fix as mock. No message is shown. */
 export async function nativeLocationIsMock(): Promise<boolean> {
   if (!isNativeApp()) return false;
   try {
     const result = await LocationRisk.assessCurrent();
-    if (!result?.isMockLocation) return false;
-    const now = Date.now();
-    if (now - lastMockWarningAt > MOCK_WARNING_GAP_MS) {
-      lastMockWarningAt = now;
-      toast.warning('Location not shared', {
-        description: MOCK_LOCATION_MESSAGE,
-        duration: 12000,
-      });
-    }
-    return true;
+    return result?.isMockLocation === true;
   } catch {
     return false;
   }

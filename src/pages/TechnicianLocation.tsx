@@ -16,7 +16,7 @@ import {
   generateGoogleMapsDirections,
   generateGoogleMapsDirectionsBetween,
 } from '@/lib/maps';
-import { MOCK_LOCATION_MESSAGE, nativeLocationIsMock } from '@/lib/technicianLiveLocation';
+import { nativeLocationIsMock } from '@/lib/technicianLiveLocation';
 
 interface LocationData {
   latitude: number;
@@ -191,8 +191,6 @@ const TechnicianLocation = () => {
             }
 
             if (await nativeLocationIsMock()) {
-              setError(MOCK_LOCATION_MESSAGE);
-              setErrorType('location');
               setIsLoading(false);
               return;
             }
