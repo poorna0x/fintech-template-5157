@@ -20,7 +20,12 @@ final class LocalGpsStore {
 
     static void save(Context context, Location location) {
         if (context == null || location == null) return;
+        LocationRiskResult risk = LocationRiskGate.evaluate(context, location, true);
+        if (!risk.locationUsable) return;
+        Location existing = load(context);
         long time = location.getTime() > 0 ? location.getTime() : System.currentTimeMillis();
+        // A late cached fix must not wipe a newer genuine sample.
+        if (existing != null && location.getTime() > 0 && existing.getTime() > time + 1_000L) return;
         context.getApplicationContext()
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()

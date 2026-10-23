@@ -78,6 +78,7 @@ import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supaba
 import { buildCustomerAmcIndicatorMaps } from '@/lib/customerAmcIndicator';
 import { getTodayLocalDate } from '@/lib/adminDashboardDateHelpers';
 import { isActiveTechnicianAccount, isSuspendedTechnicianAccount } from '@/lib/technicianAccountStatus';
+import { MOCK_LOCATION_MESSAGE, nativeLocationIsMock } from '@/lib/technicianLiveLocation';
 import { rawWaterTdsForJobComplete, jobVisitRawWaterTdsPpm } from '@/lib/jobRawWaterTds';
 import { applyOtherEnRouteResetLocal, revertOtherEnRouteJobsToAssigned } from '@/lib/revertOtherEnRouteJobs';
 import { mapCustomerGstFields } from '@/lib/customerGst';
@@ -2694,9 +2695,16 @@ const TechnicianDashboard = () => {
               accuracy: position.coords.accuracy || null
             };
 
+            const mockLocation = await nativeLocationIsMock();
+            if (mockLocation) {
+              setLocationError(MOCK_LOCATION_MESSAGE);
+              setLocationErrorType('location');
+            }
+
             console.log('💾 [TechnicianDashboard] Updating database with location data:', locationData);
             const { error, data } = await db.technicians.update(user.technicianId, {
-              current_location: locationData,
+              // Keep them available, but do not replace the saved pin with a mock fix.
+              ...(mockLocation ? {} : { current_location: locationData }),
               status: 'AVAILABLE' // Automatically set to AVAILABLE when location is updated
             });
 

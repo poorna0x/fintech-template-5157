@@ -5,6 +5,7 @@
 // included in the FCM push — only that technician's device has it.
 
 const { createClient } = require('@supabase/supabase-js');
+const { decideLocationWrite, previousFromRow, isMissingRiskColumn } = require('./location-risk');
 
 // The native app sends no Origin header, so no CORS/origin checks here;
 // the nonce is the authentication.
@@ -48,7 +49,7 @@ exports.handler = async (event) => {
 
   const { data: row, error: rowErr } = await db
     .from('technician_live_locations')
-    .select('ping_nonce,ping_requested_at,is_tracking')
+    .select('ping_nonce,ping_requested_at,is_tracking,latitude,longitude,accuracy,fix_time,updated_at')
     .eq('technician_id', technicianId)
     .maybeSingle();
 
@@ -69,17 +70,44 @@ exports.handler = async (event) => {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
   }
 
-  const fixIso = Number.isFinite(fixTime) && fixTime > 0 ? new Date(fixTime).toISOString() : null;
+  // Recomputed here. body.riskScore / body.reasons are ignored on purpose.
+  const decision = decideLocationWrite(body, previousFromRow(row), Date.now());
+  if (!decision.accepted) {
+    console.warn('[upload-tech-location] reading not used', {
+      technician: technicianId.slice(0, 8),
+      level: decision.assessment.riskLevel,
+      mock: decision.assessment.isMockLocation,
+      reasons: decision.assessment.reasons,
+    });
+    const { error: riskErr } = await db
+      .from('technician_live_locations')
+      .update(decision.riskPatch)
+      .eq('technician_id', technicianId);
+    if (riskErr && isMissingRiskColumn(riskErr)) {
+      console.warn(
+        '[upload-tech-location] location risk columns missing; run scripts/add-technician-location-risk.sql'
+      );
+    } else if (riskErr) {
+      console.error('[upload-tech-location] risk update failed', riskErr.message);
+      return { statusCode: 500, headers, body: JSON.stringify({ error: 'Update failed' }) };
+    }
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        ok: true,
+        accepted: false,
+        riskLevel: decision.assessment.riskLevel,
+        reasons: decision.assessment.reasons,
+      }),
+    };
+  }
+
+  const fixIso = decision.fixIso;
 
   let update = db
     .from('technician_live_locations')
-    .update({
-      latitude,
-      longitude,
-      accuracy: Number.isFinite(accuracy) ? accuracy : null,
-      ...(fixIso ? { fix_time: fixIso } : {}),
-      updated_at: new Date().toISOString(),
-    })
+    .update(decision.coordinatePatch)
     .eq('technician_id', technicianId);
   if (fixIso) {
     // The cached last-known and the fresh fix race over the network; never
@@ -89,7 +117,22 @@ exports.handler = async (event) => {
   // Do NOT chain .select().maybeSingle() here: when the older-fix guard
   // matches 0 rows, object-mode Accept headers can surface as an error and
   // the phone treats the upload as failed (breaks exact live location).
-  const { error: updErr } = await update;
+  let { error: updErr } = await update;
+  if (updErr && isMissingRiskColumn(updErr)) {
+    console.warn(
+      '[upload-tech-location] location risk columns missing; run scripts/add-technician-location-risk.sql'
+    );
+    const slim = { ...decision.coordinatePatch };
+    delete slim.location_mock;
+    delete slim.location_risk_score;
+    delete slim.location_risk_level;
+    delete slim.location_risk_reasons;
+    delete slim.location_risk_checked_at;
+    let retry = db.from('technician_live_locations').update(slim).eq('technician_id', technicianId);
+    if (fixIso) retry = retry.or(`fix_time.is.null,fix_time.lte.${fixIso}`);
+    const second = await retry;
+    updErr = second.error;
+  }
 
   if (updErr) {
     console.error('[upload-tech-location] update failed', updErr.message);

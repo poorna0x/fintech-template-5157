@@ -16,7 +16,28 @@
  * On the plain website/PWA `isNativeApp()` is false and none of this runs.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+
+/** Shown when Android reports a mock location. Not used for a weak GPS fix. */
+export const MOCK_LOCATION_MESSAGE =
+  'This phone is using a mock location, so your position was not saved. Turn off the mock-location app, then in Developer options set “Select mock location app” to Nothing, and try again.';
+
+interface LocationRiskPlugin {
+  assessCurrent(): Promise<{
+    isMockLocation?: boolean;
+    riskScore?: number;
+    riskLevel?: string;
+    reasons?: string[];
+    locationUsable?: boolean;
+    checkedAt?: string;
+  }>;
+}
+
+const LocationRisk = registerPlugin<LocationRiskPlugin>('LocationRisk');
+
+let lastMockWarningAt = 0;
+const MOCK_WARNING_GAP_MS = 12 * 60 * 60 * 1000;
 
 interface Location {
   latitude: number;
@@ -60,6 +81,48 @@ const MARK_MIN_INTERVAL_MS = 3 * 60 * 1000;
 
 export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
+}
+
+/**
+ * True only when the phone's latest fused fix is marked mock.
+ * A missing fix, denied permission, or an older APK without this plugin
+ * returns false — that is not evidence of spoofing.
+ */
+export async function nativeLocationIsMock(): Promise<boolean> {
+  if (!isNativeApp()) return false;
+  try {
+    const result = await LocationRisk.assessCurrent();
+    if (!result?.isMockLocation) return false;
+    const now = Date.now();
+    if (now - lastMockWarningAt > MOCK_WARNING_GAP_MS) {
+      lastMockWarningAt = now;
+      toast.warning('Location not shared', {
+        description: MOCK_LOCATION_MESSAGE,
+        duration: 12000,
+      });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function markLiveLocationMock(technicianId: string): Promise<void> {
+  const checkedAt = new Date().toISOString();
+  const { error } = await supabase
+    .from('technician_live_locations')
+    .update({
+      location_mock: true,
+      location_risk_score: 80,
+      location_risk_level: 'confirmed',
+      location_risk_reasons: 'mock_provider',
+      location_risk_checked_at: checkedAt,
+      updated_at: checkedAt,
+    })
+    .eq('technician_id', technicianId);
+  if (error && !/column|schema cache/i.test(error.message)) {
+    console.warn('[live-location] mock flag not saved');
+  }
 }
 
 async function stopWatcherOnly(): Promise<void> {
@@ -123,19 +186,37 @@ async function runBootstrapFix(technicianId: string): Promise<boolean> {
           return;
         }
         if (!position) return;
-        void supabase.from('technician_live_locations').upsert(
-          {
-            technician_id: technicianId,
-            latitude: position.latitude,
-            longitude: position.longitude,
-            accuracy: position.accuracy,
-            fix_time: position.time ? new Date(position.time).toISOString() : null,
-            is_tracking: true,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'technician_id' }
-        );
-        void stopWatcherOnly();
+        void (async () => {
+          if (await nativeLocationIsMock()) {
+            await markLiveLocationMock(technicianId);
+            await stopWatcherOnly();
+            return;
+          }
+          await supabase.from('technician_live_locations').upsert(
+            {
+              technician_id: technicianId,
+              latitude: position.latitude,
+              longitude: position.longitude,
+              accuracy: position.accuracy,
+              fix_time: position.time ? new Date(position.time).toISOString() : null,
+              is_tracking: true,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'technician_id' }
+          );
+          // Clears a previous mock warning. Ignored when the columns are not installed yet.
+          void supabase
+            .from('technician_live_locations')
+            .update({
+              location_mock: false,
+              location_risk_score: 0,
+              location_risk_level: 'none',
+              location_risk_reasons: '',
+              location_risk_checked_at: new Date().toISOString(),
+            })
+            .eq('technician_id', technicianId);
+          await stopWatcherOnly();
+        })();
       }
     );
     watcherTimeout = setTimeout(() => void stopWatcherOnly(), BOOTSTRAP_TIMEOUT_MS);

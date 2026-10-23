@@ -713,6 +713,6 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
     }
 
     private void upload(String uploadUrl, String technicianId, String nonce, Location location) {
-        LocationUploader.upload(uploadUrl, technicianId, nonce, location);
+        LocationUploader.upload(getApplicationContext(), uploadUrl, technicianId, nonce, location);
     }
 }

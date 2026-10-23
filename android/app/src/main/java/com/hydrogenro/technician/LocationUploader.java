@@ -1,5 +1,6 @@
 package com.hydrogenro.technician;
 
+import android.content.Context;
 import android.location.Location;
 import android.util.Log;
 import java.io.OutputStream;
@@ -19,7 +20,19 @@ final class LocationUploader {
 
     private LocationUploader() {}
 
-    static void upload(String uploadUrl, String technicianId, String nonce, Location location) {
+    static void upload(Context context, String uploadUrl, String technicianId, String nonce, Location location) {
+        if (location == null || uploadUrl == null || technicianId == null || nonce == null) return;
+        boolean mockReported = false;
+        try {
+            LocationRiskResult risk = LocationRiskGate.evaluate(context, location, true);
+            mockReported = risk.isMockLocation;
+            if (risk.reasons.contains("invalid_coordinates") || risk.reasons.contains("location_unavailable")) {
+                return;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "risk check failed; uploading for the server to judge");
+        }
+        final boolean mockFlag = mockReported;
         new Thread(() -> {
             HttpURLConnection conn = null;
             try {
@@ -28,6 +41,9 @@ final class LocationUploader {
                     "\"latitude\":" + location.getLatitude() + "," +
                     "\"longitude\":" + location.getLongitude() + "," +
                     "\"accuracy\":" + (location.hasAccuracy() ? location.getAccuracy() : "null") + "," +
+                    "\"speed\":" + (location.hasSpeed() ? location.getSpeed() : "null") + "," +
+                    // OS mock bit. The server recomputes; a patched app can omit this.
+                    "\"mockReported\":" + (mockFlag ? "true" : "false") + "," +
                     // When the fix was measured — lets the admin view tell a cached
                     // last-known position apart from a genuinely fresh one.
                     "\"fixTime\":" + location.getTime() + "}";

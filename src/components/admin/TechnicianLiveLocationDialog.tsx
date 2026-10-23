@@ -32,7 +32,21 @@ type LiveLocationRow = {
   updated_at: string;
   /** When the GPS fix was measured (null on rows from older app builds). */
   fix_time: string | null;
+  location_mock?: boolean | null;
+  location_risk_level?: string | null;
 };
+
+const LIVE_LOCATION_COLUMNS =
+  'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time,location_mock,location_risk_score,location_risk_level,location_risk_reasons,location_risk_checked_at';
+const LIVE_LOCATION_COLUMNS_BASE =
+  'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time';
+
+/** Mock or an impossible jump. Poor accuracy alone does not count. */
+function readingRejected(row: LiveLocationRow): 'mock' | 'jump' | null {
+  if (row.location_mock) return 'mock';
+  if (row.location_risk_level === 'high' || row.location_risk_level === 'confirmed') return 'jump';
+  return null;
+}
 
 type TechnicianLiveLocationDialogProps = {
   open: boolean;
@@ -182,11 +196,23 @@ const TechnicianLiveLocationDialog = ({
       setExactFix(false);
       setTimedOut(false);
 
-      const { data } = await supabase
+      let { data, error } = await supabase
         .from('technician_live_locations')
-        .select('technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time')
+        .select(LIVE_LOCATION_COLUMNS)
         .eq('technician_id', techId)
         .maybeSingle();
+      if (
+        error &&
+        /column/i.test(error.message) &&
+        /schema cache|does not exist/i.test(error.message)
+      ) {
+        const retry = await supabase
+          .from('technician_live_locations')
+          .select(LIVE_LOCATION_COLUMNS_BASE)
+          .eq('technician_id', techId)
+          .maybeSingle();
+        data = retry.data;
+      }
 
       setLoading(false);
       if (!data) {
@@ -196,10 +222,11 @@ const TechnicianLiveLocationDialog = ({
       setRow(data as LiveLocationRow);
 
       const existing = data as LiveLocationRow;
+      const rejected = readingRejected(existing);
       const alreadyFresh =
         existing.latitude != null &&
         Date.now() - new Date(fixTimeOf(existing)).getTime() < FRESH_FIX_MAX_AGE_MS;
-      if (alreadyFresh && !force) {
+      if (alreadyFresh && !force && !rejected) {
         setExactFix(true);
         // No ping this time — still push the fresh pin into current_location
         // so measure-distance / assign see it without waiting for another open.
@@ -364,6 +391,21 @@ const TechnicianLiveLocationDialog = ({
               <Loader2 className="h-5 w-5 animate-spin" />
               {loading ? 'Checking…' : "Getting the technician's current location…"}
             </div>
+          )}
+
+          {!loading && row && readingRejected(row) === 'mock' && (
+            <p className="text-sm text-amber-800">
+              This phone reported a mock location, so the map was not moved. Ask them to turn
+              off any mock-location app, then in Developer options set “Select mock location
+              app” to Nothing, and reopen the app.
+            </p>
+          )}
+          {!loading && row && readingRejected(row) === 'jump' && (
+            <p className="text-sm text-amber-800">
+              The latest reading was skipped because it moved too far from the previous one
+              to be reliable. The map still shows the last accepted position. A GPS jump can
+              cause this, and it clears on the next steady reading.
+            </p>
           )}
 
           {!loading && noRow && technicianId && (
