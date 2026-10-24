@@ -443,7 +443,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           />
           <ToggleRow
             label="Auto-send on unassign (instant)"
-            description="When Dashboard job WhatsApp is ON: send via Cloud API immediately after unassign. OFF = open manual wa.me dialog."
+            description="When Dashboard job WhatsApp is ON: send on the business WhatsApp line after unassign. OFF sends nothing. Unassign never opens phone WhatsApp (wa.me)."
             checked={settings.auto_send_job_unassign_whatsapp}
             onCheckedChange={(v) => patch('auto_send_job_unassign_whatsapp', v)}
           />

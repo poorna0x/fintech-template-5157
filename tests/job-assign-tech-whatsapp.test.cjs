@@ -45,6 +45,8 @@ function testColdTemplateIsWired() {
   assert.match(fallback, /job_assigned_tech\|job_unassigned_tech\|tech_customer_photo/);
   assert.match(cold, /svc_job_unassigned_tech_v1/);
   assert.match(send, /job_unassigned_tech/);
+  assert.match(send, /Unassign must not open the phone WhatsApp/);
+  assert.match(send, /opts\.mode === 'unassign' && !prefs\.autoUnassign/);
   assert.match(submit, /svc_job_unassigned_tech_v1/);
 
   const payQr = fs.readFileSync(

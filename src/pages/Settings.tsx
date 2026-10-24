@@ -4151,10 +4151,10 @@ const Settings = () => {
                     Job assign / unassign WhatsApp
                   </h3>
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
-                    Same setting as WhatsApp Settings (phone and laptop). OFF = no WhatsApp popup
-                    when assigning or unassigning. ON = show the manual dialog, or send the short
-                    template in the background with the push for technicians who have Assign with
-                    push turned on in Edit technician.
+                    Same setting as WhatsApp Settings (phone and laptop). OFF = no WhatsApp
+                    when assigning or unassigning. ON = assign can show the manual dialog, or send
+                    the short template in the background with the push for technicians who have
+                    Assign with push turned on. Unassign never opens phone WhatsApp.
                   </p>
                 </div>
                 <Switch

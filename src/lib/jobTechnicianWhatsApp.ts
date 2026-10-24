@@ -228,9 +228,10 @@ function shouldToastJobWhatsAppSkip(reason?: string): boolean {
  * - Dashboard master OFF → skipped (no popup)
  * - Per-tech job_assigned / job_unassigned OFF → skipped silently (no dialog, no toast)
  * - Auto-send ON → return immediately; Cloud API runs in background (no dialog, no wa.me)
+ * - Unassign never opens phone WhatsApp. Auto-send ON uses the business line; OFF sends nothing.
  * - Assign with push ON for this technician → cold template in the background with the app notification (no WhatsApp window)
  * - Cold assign ON but this technician is not selected → skip (push only, WhatsApp stays closed)
- * - Else if ctx → manual dialog (wa.me only on Send)
+ * - Assign only: else if ctx → manual dialog (wa.me only on Send)
  * - Else → skipped
  */
 export async function notifyTechnicianJobWhatsApp(opts: {
@@ -276,9 +277,13 @@ export async function notifyTechnicianJobWhatsApp(opts: {
   ) {
     return 'skipped';
   }
+  // Unassign must not open the phone WhatsApp (wa.me) dialog. OFF = no message.
+  if (opts.mode === 'unassign' && !prefs.autoUnassign) {
+    return 'skipped';
+  }
   const autoSend =
     opts.mode === 'unassign'
-      ? prefs.autoUnassign
+      ? true
       : prefs.autoAssign || backgroundAssign;
   const payload = buildJobTechnicianWhatsAppPayload(opts.job, opts.mode);
 

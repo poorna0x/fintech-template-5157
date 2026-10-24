@@ -3,7 +3,7 @@
  * - Dashboard master `enabled`: OFF = no popup / no auto-send at all
  * - WhatsApp Settings `autoAssign` / `autoUnassign`: when master ON, send instantly via API
  * - `autoAssignCold`: assign also sends Meta cold template in the background
- * Manual dialog path is always wa.me (not Cloud API).
+ * Assign manual dialog is wa.me. Unassign never opens wa.me.
  */
 import { supabase } from '@/lib/supabaseClient';
 
