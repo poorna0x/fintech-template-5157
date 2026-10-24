@@ -78,6 +78,11 @@ export type WhatsAppCrmSettings = {
   /** Auto-send booking confirmation WhatsApp after public /book submit. */
   auto_send_online_booking_whatsapp: boolean;
   /**
+   * When true, photos/videos/files we did not ask for get the Eleven RO redirect.
+   * When false, the upload stays in the inbox and the customer is not redirected.
+   */
+  redirect_unsolicited_media: boolean;
+  /**
    * Mirror technician FCM categories → WhatsApp (same keys as TECH_PUSH_CATEGORIES).
    * Missing key = enabled. Assign/unassign still also gated by Dashboard master.
    */
@@ -170,6 +175,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
   auto_send_missed_call_whatsapp: false,
   allow_online_booking_whatsapp: true,
   auto_send_online_booking_whatsapp: true,
+  redirect_unsolicited_media: true,
   tech_push_whatsapp: defaultTechPushWhatsAppGlobal(),
   rate_utility_inr: 0.115,
   rate_marketing_inr: 0.8631,
@@ -181,7 +187,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
 };
 
 const SETTINGS_COLUMNS =
-  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, auto_send_pending_payment_whatsapp, pending_payment_qr_mode, auto_send_payment_received_whatsapp, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_assign_cold_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, allow_salary_slip_whatsapp, auto_send_salary_slip_whatsapp, auto_send_missed_call_whatsapp, allow_online_booking_whatsapp, auto_send_online_booking_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
+  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, auto_send_pending_payment_whatsapp, pending_payment_qr_mode, auto_send_payment_received_whatsapp, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_assign_cold_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, allow_salary_slip_whatsapp, auto_send_salary_slip_whatsapp, auto_send_missed_call_whatsapp, allow_online_booking_whatsapp, auto_send_online_booking_whatsapp, tech_push_whatsapp, redirect_unsolicited_media, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
 
 function num(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v);
@@ -229,6 +235,7 @@ export function normalizeWhatsAppCrmSettings(
     auto_send_missed_call_whatsapp: row.auto_send_missed_call_whatsapp === true,
     allow_online_booking_whatsapp: bool(row.allow_online_booking_whatsapp, true),
     auto_send_online_booking_whatsapp: bool(row.auto_send_online_booking_whatsapp, true),
+    redirect_unsolicited_media: row.redirect_unsolicited_media !== false,
     tech_push_whatsapp: normalizeTechPushWhatsAppGlobal(row.tech_push_whatsapp),
     rate_utility_inr: num(row.rate_utility_inr, d.rate_utility_inr),
     rate_marketing_inr: num(row.rate_marketing_inr, d.rate_marketing_inr),
@@ -556,6 +563,7 @@ export async function saveWhatsAppCrmSettings(
     auto_send_missed_call_whatsapp: patch.auto_send_missed_call_whatsapp === true,
     allow_online_booking_whatsapp: bool(patch.allow_online_booking_whatsapp, true),
     auto_send_online_booking_whatsapp: bool(patch.auto_send_online_booking_whatsapp, true),
+    redirect_unsolicited_media: patch.redirect_unsolicited_media !== false,
     tech_push_whatsapp: normalizeTechPushWhatsAppGlobal(patch.tech_push_whatsapp),
     rate_utility_inr: num(patch.rate_utility_inr, DEFAULT_WHATSAPP_CRM_SETTINGS.rate_utility_inr),
     rate_marketing_inr: num(
@@ -641,6 +649,29 @@ export async function saveWhatsAppCrmSettings(
         ok: false,
         settings,
         error: 'Job-assign cold WhatsApp column is missing — run scripts/add-whatsapp-job-assign-cold.sql',
+      };
+    }
+    if (/redirect_unsolicited_media/i.test(error.message)) {
+      const { redirect_unsolicited_media: _redirect, ...legacyPayload } = payload;
+      const retry = await supabase
+        .from('whatsapp_crm_settings')
+        .update(legacyPayload)
+        .eq('id', 1)
+        .select(SETTINGS_COLUMNS.replace(', redirect_unsolicited_media', ''))
+        .single();
+      if (retry.error) return { ok: false, error: retry.error.message };
+      const settings = normalizeWhatsAppCrmSettings(retry.data as WhatsAppCrmSettings);
+      const { syncJobWhatsAppNotifyCacheFromCrmSettings } = await import(
+        '@/lib/jobAssignWhatsAppSettingsCache'
+      );
+      syncJobWhatsAppNotifyCacheFromCrmSettings(settings);
+      const cached = { ok: true as const, settings, at: Date.now() };
+      settingsCacheMem = cached;
+      return {
+        ok: false,
+        settings,
+        error:
+          'Unsolicited-media column is missing — run scripts/add-whatsapp-redirect-unsolicited-media.sql',
       };
     }
     if (/allow_salary_slip|auto_send_salary_slip/i.test(error.message)) {

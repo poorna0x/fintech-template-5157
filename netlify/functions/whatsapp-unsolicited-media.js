@@ -138,10 +138,30 @@ async function recentlySentRedirect(db, phoneE164) {
 /**
  * @returns {{ handled: boolean, redirected?: boolean, reason?: string }}
  */
+/** Default on. Missing column keeps the current redirect. */
+async function unsolicitedMediaRedirectEnabled(db) {
+  if (!db) return true;
+  try {
+    const { data, error } = await db
+      .from('whatsapp_crm_settings')
+      .select('redirect_unsolicited_media')
+      .eq('id', 1)
+      .maybeSingle();
+    if (error) return true;
+    return data?.redirect_unsolicited_media !== false;
+  } catch {
+    return true;
+  }
+}
+
 async function handleUnsolicitedInboundMedia({ db, accessToken, phoneNumberId, msg }) {
   const msgType = String(msg?.type || '');
   if (!isInboundMediaType(msgType)) {
     return { handled: false, reason: 'not_media' };
+  }
+
+  if (!(await unsolicitedMediaRedirectEnabled(db))) {
+    return { handled: false, reason: 'redirect_disabled' };
   }
 
   const phone = normalizePhoneE164(msg.from);

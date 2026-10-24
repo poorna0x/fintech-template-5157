@@ -430,7 +430,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           />
           <ToggleRow
             label="Auto-send on assign (instant)"
-            description="When Dashboard job WhatsApp is ON: send via Cloud API immediately after assign (no dialog). OFF = open manual wa.me dialog. Free-form only works inside 24h unless the cold template below is on."
+            description="When Dashboard job WhatsApp is ON: send via Cloud API immediately after assign (no dialog). OFF = open manual wa.me dialog. If the technician has not messaged in 24 hours, this uses the approved job template so it still delivers."
             checked={settings.auto_send_job_assign_whatsapp}
             onCheckedChange={(v) => patch('auto_send_job_assign_whatsapp', v)}
           />
@@ -467,6 +467,13 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
             checked={settings.allow_booking_bot}
             disabled={!settings.enabled}
             onCheckedChange={(v) => patch('allow_booking_bot', v)}
+          />
+          <ToggleRow
+            label="Redirect unsolicited photos and files"
+            description="On: a photo, video, or file we did not ask for gets a reply pointing the customer to the Eleven RO WhatsApp. Off: the customer can send anything, and it stays in the inbox with no redirect."
+            checked={settings.redirect_unsolicited_media}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('redirect_unsolicited_media', v)}
           />
         </CardContent>
       </Card>
