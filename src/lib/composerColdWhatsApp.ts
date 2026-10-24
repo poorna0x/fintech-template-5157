@@ -36,8 +36,10 @@ export function resolveComposerColdTemplate(
 
   if (templateType === 'booking_cancelled') {
     const form = opts.bookingForm;
-    const serviceDate = form?.scheduledDate ? formatServiceDate(form.scheduledDate) : '';
-    const timeSlot = form?.scheduledTimeSlot ? formatBookingTimeSlot(form.scheduledTimeSlot) : '';
+    const dateRaw = String(form?.scheduledDate || '').trim();
+    const serviceDate = dateRaw ? formatServiceDate(dateRaw) : '';
+    const timeSlot =
+      dateRaw && form?.scheduledTimeSlot ? formatBookingTimeSlot(form.scheduledTimeSlot) : '';
     const when =
       [serviceDate, timeSlot].filter((part) => part && part !== '—').join(', ') ||
       'your scheduled visit';

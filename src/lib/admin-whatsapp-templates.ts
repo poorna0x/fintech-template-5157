@@ -93,8 +93,9 @@ function buildBookingCancelledWhatsApp(data: BookingConfirmationEmailData): Admi
   const brand = resolveBookingEmailDocumentBrand(data);
   const brandName = getDocumentBrandLabel(brand);
   const customerName = data.customerName.trim() || 'there';
-  const serviceDate = data.scheduledDate ? formatServiceDate(data.scheduledDate) : '';
-  const timeSlot = data.scheduledTimeSlot ? formatBookingTimeSlot(data.scheduledTimeSlot) : '';
+  const dateRaw = data.scheduledDate.trim();
+  const serviceDate = dateRaw ? formatServiceDate(dateRaw) : '';
+  const timeSlot = dateRaw && data.scheduledTimeSlot ? formatBookingTimeSlot(data.scheduledTimeSlot) : '';
   const when =
     [serviceDate, timeSlot].filter((part) => part && part !== '—').join(', ') ||
     'your scheduled visit';
