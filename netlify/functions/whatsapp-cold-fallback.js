@@ -103,7 +103,7 @@ function isUnsafeColdFallback(primaryName, fallbackName) {
   if (!fb || fb === primary) return false;
 
   const primaryPayment =
-    /balance_due|payment_overdue|svc_balance_due|svc_payment_received/i.test(primary);
+    /balance_due|payment_overdue|payment_refused|svc_balance_due|svc_payment_received/i.test(primary);
   const primaryDoc = /^svc_doc_/i.test(primary) || /^svc_doc_direct_/i.test(primary);
   const primaryJobDone = /job_done|svc_completed/i.test(primary);
   const primaryBooking =
@@ -117,7 +117,7 @@ function isUnsafeColdFallback(primaryName, fallbackName) {
   const fbServiceDue =
     /service_due|existing_service_schedule|visit_reminder|amc_expiry/i.test(fb);
   const fbPayment =
-    /balance_due|payment_overdue|svc_balance_due|svc_payment_received/i.test(fb);
+    /balance_due|payment_overdue|payment_refused|svc_balance_due|svc_payment_received/i.test(fb);
   const fbDoc = /^svc_doc_/i.test(fb) || /^svc_doc_direct_/i.test(fb);
   const fbSmoke = fb === SMOKE;
 
@@ -266,10 +266,27 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(MISSED_CALL, [name]);
   }
 
-  // Payment-received letter → plain svc_payment_received (same {{1}} name, {{2}} amount)
+  // Payment-received letter v2 → v1 → plain svc_payment_received (same {{1}} name, {{2}} amount)
+  if (/^svc_payment_received_letter_(ero|hro)_v2$/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
+    push(`svc_payment_received_letter_${suffix}_v1`, [name, amount]);
+    push('svc_payment_received', [name, amount]);
+  }
   if (/^svc_payment_received_letter_(ero|hro)_v1$/i.test(primaryName)) {
     const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
     push('svc_payment_received', [name, amount]);
+  }
+
+  // Customer refused to pay. Until the notice is APPROVED, fall back to overdue
+  // (same warranty-void meaning, 4 body params + Pay now).
+  if (/^svc_payment_refused_notice_(ero|hro)_v1$/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
+    const ref = String(bodyParams?.[2] || '').trim() || 'your service visit';
+    push(`svc_payment_overdue_notice_${suffix}_v3`, [name, amount, 'as agreed', ref]);
+    push(`svc_payment_overdue_notice_${suffix}_v2`, [name, amount, 'as agreed', ref]);
+    push(`svc_payment_overdue_notice_${suffix}_v1`, [name, amount, 'as agreed', ref]);
   }
 
   // Job-done letter v5 (Review us) → v4 → v3 → v2 → v1 → short svc_job_done
@@ -736,7 +753,7 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName);
   if (
     !isDocumentFamily &&
-    !/balance_due|payment_overdue|svc_balance_due/i.test(primaryName)
+    !/balance_due|payment_overdue|payment_refused|svc_balance_due|svc_payment_received/i.test(primaryName)
   ) {
     push(SMOKE, [name]);
   }

@@ -1370,6 +1370,33 @@ function buildPaymentReceivedLetterV1Templates() {
 
 const PAYMENT_RECEIVED_LETTER_V1_TEMPLATES = buildPaymentReceivedLetterV1Templates();
 
+/**
+ * Payment received letter v2 — receipt confirmation, no contact footer in the body.
+ * Call us + Website buttons. v1 stays as cold fallback.
+ */
+function buildPaymentReceivedLetterV2Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      name: `svc_payment_received_letter_${suffix}_v2`,
+      body: [
+        `Hi {{1}},`,
+        ``,
+        `Thank you. ${b.label} has received your payment of INR {{2}} for your water purifier service.`,
+        ``,
+        `This payment is recorded on your service account. Reply on this chat if you need a receipt or any help with this visit.`,
+      ].join('\n'),
+      examples: ['Rahul', '1500'],
+    });
+  }
+  return out;
+}
+
+const PAYMENT_RECEIVED_LETTER_V2_TEMPLATES = buildPaymentReceivedLetterV2Templates();
+
 /** Balance-due letter v4 — Call us + Pay now (UPI short link /p/{{1}}). */
 function buildBalanceDueLetterV4Templates() {
   const out = [];
@@ -1820,6 +1847,38 @@ function buildPaymentOverdueNoticeV3Templates() {
 }
 
 const PAYMENT_OVERDUE_NOTICE_V1_TEMPLATES = buildPaymentOverdueNoticeV3Templates();
+
+/**
+ * Customer refused the balance — warranty, guarantee, AMC / agreement void.
+ * Call us + Website. Cold fallback is the approved overdue notice until Meta approves this.
+ */
+function buildPaymentRefusedNoticeV1Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      lockCategory: true,
+      name: `svc_payment_refused_notice_${suffix}_v1`,
+      body: [
+        `Hi {{1}},`,
+        ``,
+        `This is a formal notice from ${b.label} regarding your water purifier service.`,
+        ``,
+        `The outstanding balance of INR {{2}} (Invoice / Job: {{3}}) has not been agreed for payment.`,
+        ``,
+        `Because this amount remains unpaid, the warranty, service guarantee, AMC or service agreement, and any extension linked to this visit stand void. Any advance or part payment already received is non-refundable and will not be returned. The unpaid balance remains payable.`,
+        ``,
+        `Reply on this chat if you need any clarification.`,
+      ].join('\n'),
+      examples: ['Rahul', '1500', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const PAYMENT_REFUSED_NOTICE_V1_TEMPLATES = buildPaymentRefusedNoticeV1Templates();
 
 /**
  * Technician-only: forward a customer payment photo when the 24h session is closed.
@@ -2305,7 +2364,7 @@ function letterPayload(t) {
     name: t.name,
     language: 'en',
     category: 'UTILITY',
-    allow_category_change: true,
+    allow_category_change: t.lockCategory === true ? false : true,
     components: [
       {
         type: 'BODY',
@@ -2669,6 +2728,12 @@ function collectAllTemplatePreviewEntries() {
   }
   for (const t of PAYMENT_RECEIVED_LETTER_V1_TEMPLATES) {
     push('Payment received letter v1 (Call + Website)', t, letterPayload);
+  }
+  for (const t of PAYMENT_RECEIVED_LETTER_V2_TEMPLATES) {
+    push('Payment received letter v2 (receipt)', t, letterPayload);
+  }
+  for (const t of PAYMENT_REFUSED_NOTICE_V1_TEMPLATES) {
+    push('Payment refused notice v1 (warranty void)', t, letterPayload);
   }
   for (const t of BALANCE_DUE_LETTER_V4_TEMPLATES) push('Balance due letter v4 (Pay now)', t, balanceDueLetterPayload);
   for (const t of BALANCE_DUE_LETTER_V5_TEMPLATES) {
@@ -3097,6 +3162,22 @@ async function main() {
     queue.push({ label: t.name, payload: bodyOnlyPayload(t) });
   }
   for (const t of PAYMENT_RECEIVED_LETTER_V1_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
+  for (const t of PAYMENT_RECEIVED_LETTER_V2_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
+  for (const t of PAYMENT_REFUSED_NOTICE_V1_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
       console.log(`SKIP ${t.name} — ${skip}`);
@@ -3607,7 +3688,24 @@ async function main() {
     const keep = new Set([
       'svc_payment_received',
       ...PAYMENT_RECEIVED_LETTER_V1_TEMPLATES.map((t) => t.name),
+      ...PAYMENT_RECEIVED_LETTER_V2_TEMPLATES.map((t) => t.name),
     ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyPaymentReceivedV2 = process.argv.includes('--only-payment-received-v2');
+  if (onlyPaymentReceivedV2) {
+    const keep = new Set(PAYMENT_RECEIVED_LETTER_V2_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyPaymentRefused = process.argv.includes('--only-payment-refused');
+  if (onlyPaymentRefused) {
+    const keep = new Set(PAYMENT_REFUSED_NOTICE_V1_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

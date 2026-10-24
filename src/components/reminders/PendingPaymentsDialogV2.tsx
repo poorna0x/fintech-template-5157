@@ -31,6 +31,7 @@ import { Ban, Check, ChevronsUpDown, Edit3, FileText, ImagePlus, Loader2, PhoneC
 import { toast } from 'sonner';
 import type { Customer, Reminder, Technician } from '@/types';
 import { db, supabase, REMINDER_ROW_COLUMNS } from '@/lib/supabase';
+import { fetchLastInboundAt, isCustomerServiceWindowClosed } from '@/lib/whatsappInbox';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import {
   openWhatsAppMeDeepLink,
@@ -56,11 +57,14 @@ import {
   buildPendingPaymentWhatsAppMessage,
   buildPendingPaymentOverdueWhatsAppMessage,
   buildPendingPaymentReceivedWhatsAppMessage,
+  buildPendingPaymentRefusedWhatsAppMessage,
+  buildPendingPaymentRefusedBodyParams,
   buildPendingPaymentLetterBodyParams,
   buildPendingPaymentLetterButtonUrlParams,
   resolvePendingPaymentLetterTemplateName,
   resolvePendingPaymentLetterImageTemplateName,
   resolvePendingPaymentOverdueTemplateName,
+  resolvePendingPaymentRefusedTemplateName,
   isPendingPaymentPastDueForOverdueNotice,
   parsePendingPaymentReminderNotes,
   formatPendingPaymentDueLabel,
@@ -524,6 +528,7 @@ export function SettingsPendingPaymentsDialogV2({
   const [denyLoading, setDenyLoading] = useState(false);
   const [denyTarget, setDenyTarget] = useState<PendingPaymentReminder | null>(null);
   const [denyPlan, setDenyPlan] = useState<DeniedPaymentPlan | null>(null);
+  const [sendDenyNotice, setSendDenyNotice] = useState(true);
 
   const [postCompleteWhatsappOpen, setPostCompleteWhatsappOpen] = useState(false);
   const [postCompleteWhatsappTarget, setPostCompleteWhatsappTarget] = useState<PendingPaymentReminder | null>(null);
@@ -570,7 +575,7 @@ export function SettingsPendingPaymentsDialogV2({
       /** Use pending_payment Meta template when 24h window is closed (default true). */
       coldPendingTemplate?: boolean;
       /** Cold Meta template when 24h window is closed (default pending_payment). */
-      coldTemplateKind?: 'pending_payment' | 'payment_overdue' | 'payment_received';
+      coldTemplateKind?: 'pending_payment' | 'payment_overdue' | 'payment_received' | 'payment_refused';
       /** When true, keep the pay link in the message (wa.me fallback if window closed). */
       includePayLink?: boolean;
       /** UPI pay HTTPS link — used for cold Pay now button (v4 template). */
@@ -631,11 +636,98 @@ export function SettingsPendingPaymentsDialogV2({
         opts?.dueDateYmd,
         opts?.invoiceRef
       );
+      const isRefused = opts?.coldTemplateKind === 'payment_refused';
       const overdueTemplateName = resolvePendingPaymentOverdueTemplateName(brand);
       const balanceDueTemplateName = resolvePendingPaymentLetterTemplateName(brand, {
         withPayButton: payButtonParams.length > 0,
       });
-      const coldTextTemplateName = isOverdue ? overdueTemplateName : balanceDueTemplateName;
+      const refusedTemplateName = resolvePendingPaymentRefusedTemplateName(brand);
+      const refusedBodyParams = buildPendingPaymentRefusedBodyParams(
+        opts?.customerName || 'Customer',
+        opts?.amount ?? 0,
+        opts?.invoiceRef
+      );
+      const coldTextTemplateName = isRefused
+        ? refusedTemplateName
+        : isOverdue
+          ? overdueTemplateName
+          : balanceDueTemplateName;
+
+      const inboundAt = await fetchLastInboundAt(phone, supabase);
+      const windowClosed = isCustomerServiceWindowClosed(inboundAt);
+      // Meta often returns HTTP 200 for free-form / Pay now outside 24h, then fails
+      // delivery with "Re-engagement message". Send the approved template directly.
+      if (windowClosed && opts?.coldPendingTemplate !== false) {
+        if (headerImage && !isPaymentReceived && !isRefused && !isOverdue) {
+          const coldImage = await sendAdminWhatsAppTemplate({
+            to: phone,
+            templateName: resolvePendingPaymentLetterImageTemplateName(brand),
+            languageCode: 'en',
+            bodyParams: letterBodyParams,
+            buttonUrlParams: payButtonParams,
+            headerImage,
+            customerId: opts?.customerId,
+            source: 'pending_payment',
+          });
+          if (coldImage.ok) {
+            toast.success(
+              payButtonParams.length > 0
+                ? 'Sent with UPI QR and Pay now button'
+                : 'Sent with UPI QR'
+            );
+            return true;
+          }
+          if (coldImage.featureDisabled) {
+            toast.error(coldImage.error || 'WhatsApp pending payment is disabled in Settings');
+            return false;
+          }
+        }
+
+        const coldTemplate = isPaymentReceived
+          ? resolveColdPaymentReceived(opts?.customerName || 'Customer', opts?.amount ?? 0, brand)
+          : isRefused
+            ? {
+                name: refusedTemplateName,
+                languageCode: 'en',
+                bodyParams: refusedBodyParams,
+              }
+            : {
+                name: coldTextTemplateName,
+                languageCode: 'en',
+                bodyParams: letterBodyParams,
+                buttonUrlParams: payButtonParams,
+              };
+        const coldResult = await sendAdminWhatsAppTemplate({
+          to: phone,
+          templateName: coldTemplate.name,
+          languageCode: coldTemplate.languageCode || 'en',
+          bodyParams: coldTemplate.bodyParams,
+          buttonUrlParams:
+            'buttonUrlParams' in coldTemplate ? coldTemplate.buttonUrlParams : undefined,
+          customerId: opts?.customerId,
+          source: 'pending_payment',
+        });
+        if (coldResult.ok) {
+          toast.success(
+            isPaymentReceived
+              ? 'Payment confirmation sent'
+              : isRefused
+                ? 'Warranty notice sent'
+                : isOverdue
+                  ? 'Overdue notice sent'
+                  : payButtonParams.length > 0
+                    ? 'Pending payment sent with Pay now'
+                    : 'Pending payment reminder sent'
+          );
+          return true;
+        }
+        if (coldResult.featureDisabled) {
+          toast.error(coldResult.error || 'WhatsApp pending payment is disabled in Settings');
+          return false;
+        }
+        toast.error(coldResult.error || 'WhatsApp template could not send');
+        return false;
+      }
 
       // Overdue + Pay now: prefer cold overdue template (Call us + Pay now) whenever we have a /p/ code.
       if (
@@ -915,12 +1007,18 @@ export function SettingsPendingPaymentsDialogV2({
       const coldTemplate = allowColdTpl
         ? coldKind === 'payment_received'
           ? resolveColdPaymentReceived(opts?.customerName || 'Customer', opts?.amount ?? 0, brand)
-          : {
-              name: coldTextTemplateName,
-              languageCode: 'en',
-              bodyParams: letterBodyParams,
-              buttonUrlParams: payButtonParams,
-            }
+          : coldKind === 'payment_refused'
+            ? {
+                name: refusedTemplateName,
+                languageCode: 'en',
+                bodyParams: refusedBodyParams,
+              }
+            : {
+                name: coldTextTemplateName,
+                languageCode: 'en',
+                bodyParams: letterBodyParams,
+                buttonUrlParams: payButtonParams,
+              }
         : null;
 
       const result = await sendAdminWhatsAppTextWithOptionalTemplate({
@@ -936,20 +1034,24 @@ export function SettingsPendingPaymentsDialogV2({
         if (result.usedTemplate) {
           toast.success(
             isPaymentReceived
-              ? 'Payment thanks sent (cold template — 24h window was closed)'
-              : isOverdue
-                ? 'Cold overdue notice sent (24h window was closed)'
-                : 'Cold balance-due template sent (24h window was closed)'
+              ? 'Payment confirmation sent'
+              : isRefused
+                ? 'Warranty notice sent'
+                : isOverdue
+                  ? 'Cold overdue notice sent (24h window was closed)'
+                  : 'Cold balance-due template sent (24h window was closed)'
           );
         } else if (result.via === 'wa_me') {
           toast.message('Opened phone WhatsApp');
         } else {
           toast.success(
             isPaymentReceived
-              ? 'Payment thanks sent'
-              : isOverdue
-                ? 'Overdue payment notice sent'
-                : 'WhatsApp reminder sent'
+              ? 'Payment confirmation sent'
+              : isRefused
+                ? 'Warranty notice sent'
+                : isOverdue
+                  ? 'Overdue payment notice sent'
+                  : 'WhatsApp reminder sent'
           );
         }
         return true;
@@ -1447,6 +1549,7 @@ export function SettingsPendingPaymentsDialogV2({
     const marked = r as PendingPaymentReminder;
     setDenyTarget(marked);
     setDenyPlan(null);
+    setSendDenyNotice(true);
     setDenyOpen(true);
     setDenyLoading(true);
     const jobId = marked.job_id || parsePendingPaymentReminderNotes(marked.notes).job_id;
@@ -1482,6 +1585,38 @@ export function SettingsPendingPaymentsDialogV2({
       } else {
         toast.success(`Bill is now ₹${plan.kept.toLocaleString('en-IN')}.`);
       }
+
+      if (sendDenyNotice) {
+        const entityId = denyTarget.entity_id as string | undefined;
+        let customer = entityId ? customerLabels[entityId] : undefined;
+        if (!customer && entityId) {
+          const { data, error: custErr } = await db.customers.getById(entityId);
+          if (!custErr && data) customer = getCustomerLabelFromRow(data);
+        }
+        const phone = customer?.phone?.trim() || customer?.alternatePhone?.trim();
+        const noticeAmount = plan.denied > 0 ? plan.denied : Number(denyTarget.amount_pending) || 0;
+        const invoiceRef = plan.jobNumber || denyTarget.job_number || denyTarget.job_id || null;
+        const brand = brandForCustomer(entityId);
+        if (!phone) {
+          toast.message('Bill updated. No phone on file, so the warranty notice was not sent.');
+        } else if (customer) {
+          const notice = buildPendingPaymentRefusedWhatsAppMessage(
+            customer.name,
+            noticeAmount,
+            brand,
+            invoiceRef
+          );
+          await openWhatsApp(phone, notice, {
+            customerName: customer.name,
+            amount: noticeAmount,
+            customerId: entityId,
+            invoiceRef,
+            brand,
+            coldTemplateKind: 'payment_refused',
+          });
+        }
+      }
+
       setDenyOpen(false);
       setDenyTarget(null);
       setDenyPlan(null);
@@ -2080,6 +2215,32 @@ export function SettingsPendingPaymentsDialogV2({
                 The unpaid balance is removed. The bill keeps only what was already received. Technician commission on the denied amount is deducted from next month’s salary, not this month.
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {denyTarget && !denyLoading && denyPlan && !denyPlan.alreadyDenied ? (
+              <div className="space-y-2 px-1">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="send-deny-warranty-notice"
+                    checked={sendDenyNotice}
+                    disabled={denyBusy}
+                    onCheckedChange={(v) => setSendDenyNotice(v === true)}
+                    className="mt-0.5"
+                  />
+                  <label htmlFor="send-deny-warranty-notice" className="text-sm leading-snug cursor-pointer">
+                    Send a WhatsApp notice that the warranty, service guarantee, and any AMC or agreement for this visit are void, and any advance will not be returned.
+                  </label>
+                </div>
+                {sendDenyNotice ? (
+                  <div className="p-3 bg-white border border-gray-200 rounded text-sm text-gray-700 whitespace-pre-wrap max-h-36 overflow-y-auto">
+                    {buildPendingPaymentRefusedWhatsAppMessage(
+                      (denyTarget.entity_id && customerLabels[denyTarget.entity_id as string]?.name) || 'there',
+                      denyPlan.denied > 0 ? denyPlan.denied : Number(denyTarget.amount_pending) || 0,
+                      brandForCustomer(denyTarget.entity_id as string | undefined),
+                      denyPlan.jobNumber || denyTarget.job_number || denyTarget.job_id
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="space-y-1.5 px-1 text-sm text-muted-foreground">
               {denyLoading || !denyPlan ? (
                 <div className="flex items-center gap-2 py-2">
@@ -2182,7 +2343,7 @@ export function SettingsPendingPaymentsDialogV2({
                 Payment received — WhatsApp
               </DialogTitle>
               <DialogDescription>
-                Send a short thank-you message confirming the received amount.
+                Confirm that the payment is recorded on their service account.
               </DialogDescription>
             </DialogHeader>
 

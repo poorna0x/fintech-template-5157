@@ -200,6 +200,8 @@ const server = http.createServer((req, res) => {
     delete require.cache[require.resolve('./admin-auth-guard')];
     delete require.cache[require.resolve('./whatsapp-unsolicited-media')];
     delete require.cache[require.resolve('./whatsapp-pay-qr-helper')];
+    delete require.cache[require.resolve('./whatsapp-cold-fallback')];
+    delete require.cache[require.resolve('./whatsapp-template-resolve')];
     handler = loadFn('whatsapp-send');
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-webhook')) {
     delete require.cache[require.resolve('./whatsapp-unsolicited-media')];

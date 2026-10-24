@@ -26,7 +26,7 @@ function resolveBrand(value) {
   const b = String(value || '')
     .trim()
     .toLowerCase();
-  return b === 'elevenro' ? 'elevenro' : 'hydrogenro';
+  return b === 'hydrogenro' ? 'hydrogenro' : 'elevenro';
 }
 
 function formatDueLabel(dueDateYmd) {

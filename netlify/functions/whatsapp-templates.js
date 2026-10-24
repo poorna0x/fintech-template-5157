@@ -129,6 +129,26 @@ const RECOMMENDED = [
     hint: 'Payment received letter Eleven RO ({{1}} name, {{2}} amount + Call/Website)',
   },
   {
+    name: 'svc_payment_received_letter_hro_v2',
+    language: 'en',
+    hint: 'Payment received receipt Hydrogen RO ({{1}} name, {{2}} amount)',
+  },
+  {
+    name: 'svc_payment_received_letter_ero_v2',
+    language: 'en',
+    hint: 'Payment received receipt Eleven RO ({{1}} name, {{2}} amount)',
+  },
+  {
+    name: 'svc_payment_refused_notice_hro_v1',
+    language: 'en',
+    hint: 'Customer refused payment — warranty void (Hydrogen RO)',
+  },
+  {
+    name: 'svc_payment_refused_notice_ero_v1',
+    language: 'en',
+    hint: 'Customer refused payment — warranty void (Eleven RO)',
+  },
+  {
     name: 'svc_doc_pdf_v2',
     language: 'en',
     hint: 'Cold PDF (DOCUMENT header · {{1}} name, {{2}} label)',

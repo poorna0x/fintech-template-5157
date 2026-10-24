@@ -1,7 +1,7 @@
 import { addMonths, format } from 'date-fns';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
-import { brandContactLines, brandLetterClosingLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { brandContactLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import { extractUpiPayShortCode } from '@/lib/upiPaymentAccounts';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
@@ -73,13 +73,9 @@ export function formatPendingPaymentDueLabel(dueDateYmd: string | null | undefin
   }
 }
 
-/** Resolve brand for pending-payment WhatsApp (defaults to Eleven RO; never Hydrogen RO). */
+/** Last completed job brand. Unknown or missing → Eleven RO. */
 export function resolvePendingPaymentMessageBrand(value: unknown): DocumentBrand {
-  const brand = normalizeDocumentBrand(value);
-  if (!brand || brand === 'hydrogenro') {
-    return 'elevenro';
-  }
-  return brand;
+  return normalizeDocumentBrand(value) || 'elevenro';
 }
 
 export type PendingPaymentWhatsAppUpiOptions = {
@@ -251,12 +247,60 @@ export function buildPendingPaymentReceivedWhatsAppMessage(
 
   return [
     `Hi ${whatsappGreetingName(customerName, 'there')},`,
-    `This is an update from ${contact.brandLabel} regarding your payment.`,
     '',
-    `We have received your payment of ₹${formattedAmount}. Thank you.`,
+    `Thank you. ${contact.brandLabel} has received your payment of ₹${formattedAmount} for your water purifier service.`,
     '',
-    ...brandLetterClosingLines(resolved, { includeTextUs: true }),
+    'This payment is recorded on your service account. Reply on this chat if you need a receipt or any help with this visit.',
   ].join('\n');
+}
+
+/** Cold template when the customer will not pay — warranty / AMC / agreement void. */
+export function resolvePendingPaymentRefusedTemplateName(brand: DocumentBrand): string {
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  const suffix = resolved === 'elevenro' ? 'ero' : 'hro';
+  return `svc_payment_refused_notice_${suffix}_v1`;
+}
+
+/** Refused-payment cold params: name, amount, invoice/job. */
+export function buildPendingPaymentRefusedBodyParams(
+  customerName: string,
+  amountPending: number | string,
+  invoiceRef?: string | null
+): [string, string, string] {
+  return [
+    whatsappGreetingName(customerName, 'there'),
+    cleanAmountDigits(amountPending),
+    String(invoiceRef || '').trim() || 'your service visit',
+  ];
+}
+
+/**
+ * Formal notice when the customer does not agree to pay the balance.
+ * Warranty, service guarantee, AMC / agreement, and any extension for the visit are void.
+ */
+export function buildPendingPaymentRefusedWhatsAppMessage(
+  customerName: string,
+  amountPending: number,
+  brand?: DocumentBrand | string | null,
+  invoiceRef?: string | null
+): string {
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  const contact = brandContactLines(resolved);
+  const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  const ref = String(invoiceRef || '').trim();
+
+  const lines = [
+    `Hi ${whatsappGreetingName(customerName, 'there')},`,
+    '',
+    `This is a formal notice from ${contact.brandLabel} regarding your water purifier service.`,
+    '',
+    `The outstanding balance of ₹${formattedAmount}${ref ? ` (Invoice / Job: ${ref})` : ''} has not been agreed for payment.`,
+    '',
+    'Because this amount remains unpaid, the warranty, service guarantee, AMC or service agreement, and any extension linked to this visit stand void. Any advance or part payment already received is non-refundable and will not be returned. The unpaid balance remains payable.',
+    '',
+    'Reply on this chat if you need any clarification.',
+  ];
+  return lines.join('\n');
 }
 
 /**

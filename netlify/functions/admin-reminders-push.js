@@ -117,7 +117,7 @@ async function sendCustomerPendingReminder(db, opts) {
     .maybeSingle();
   if (recent?.id) return { sent: false, reason: 'deduped' };
 
-  const brand = String(opts.serviceBrand || '').toLowerCase() === 'elevenro' ? 'elevenro' : 'hydrogenro';
+  const brand = String(opts.serviceBrand || '').toLowerCase() === 'hydrogenro' ? 'hydrogenro' : 'elevenro';
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
   const account = pickUpiForQrMode(opts.upiAccounts, opts.qrMode);
   const name = String(opts.customerName || 'Customer').trim().split(/\s+/)[0] || 'Customer';
@@ -283,7 +283,7 @@ exports.handler = async (event) => {
         const cid = row.customer_id;
         if (!cid || brandByCustomerId.has(cid)) continue;
         const b = String(row.service_brand || '').trim().toLowerCase();
-        brandByCustomerId.set(cid, b === 'elevenro' ? 'elevenro' : 'hydrogenro');
+        if (b === 'elevenro' || b === 'hydrogenro') brandByCustomerId.set(cid, b);
       }
     }
   }
@@ -317,7 +317,7 @@ exports.handler = async (event) => {
       const amountStr = String(Math.round(amount * 100) / 100);
       const dueDate = String(r.reminder_at || '').slice(0, 10);
       const serviceBrand =
-        (r.entity_id && brandByCustomerId.get(r.entity_id)) || 'hydrogenro';
+        (r.entity_id && brandByCustomerId.get(r.entity_id)) || 'elevenro';
       const title = `Pending ₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} — ${customerName}`;
       const body = phone
         ? `Due ${dueDate || 'today'} — tap Open or WhatsApp from the notification`
