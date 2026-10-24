@@ -94,9 +94,9 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         NotificationChannels.ensureJobAlerts(this);
         try {
-            LocalGpsSampler.ensureScheduled(this);
+            LocalGpsSampler.cancel(this);
         } catch (Throwable t) {
-            Log.w(TAG, "local gps schedule failed", t);
+            Log.w(TAG, "local gps cancel failed", t);
         }
         deliverCallerSearchIfNeeded(getIntent());
 

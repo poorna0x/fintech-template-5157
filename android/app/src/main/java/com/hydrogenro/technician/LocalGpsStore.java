@@ -5,8 +5,8 @@ import android.content.SharedPreferences;
 import android.location.Location;
 
 /**
- * Newest background GPS sample, kept on this phone only. Live-location clicks
- * upload it immediately, then a fresh measurement replaces it.
+ * Last genuine GPS fix from a live-location click, kept on this phone only
+ * so the next click can be checked against it.
  */
 final class LocalGpsStore {
 

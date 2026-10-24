@@ -84,12 +84,7 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
-        <!-- 7:00–21:00 IST: one GPS point about every 5 minutes, stored on the
-             phone. Live location sends that point first, then a fresh fix. -->
-        <service
-            android:name=".LocalGpsSampleService"
-            android:exported="false"
-            android:foregroundServiceType="location" />
+        <!-- Cancels the old 5-minute GPS alarm after an update or reboot. -->
         <receiver
             android:name=".LocalGpsSampleReceiver"
             android:exported="false">

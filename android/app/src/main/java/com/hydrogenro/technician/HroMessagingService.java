@@ -197,31 +197,11 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             return;
         }
 
-        // Saved background sample first (about every 5 minutes, 7:00–21:00).
-        // It is already on the phone, so the office map updates before the
-        // fresh GPS lock, which can take about a minute when the app is closed.
-        long storedTime = 0L;
-        try {
-            Location stored = LocalGpsStore.load(context);
-            if (stored != null) {
-                storedTime = stored.getTime();
-                long age = System.currentTimeMillis() - storedTime;
-                if (age >= 0 && age <= 15 * 60 * 1000L) {
-                    upload(uploadUrl, technicianId, nonce, stored);
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "Saved GPS upload failed", t);
-        }
-
-        final long savedAt = storedTime;
+        // Last known fix first: instant, so the admin sees something right away
+        // even if the fresh fix below takes a while or the process dies.
         try {
             fused.getLastLocation().addOnSuccessListener(location -> {
-                if (location == null) return;
-                long t = location.getTime();
-                if (savedAt > 0 && Math.abs(t - savedAt) < 1_000L) return;
-                if (savedAt > 0 && t + 1_000L < savedAt) return;
-                upload(uploadUrl, technicianId, nonce, location);
+                if (location != null) upload(uploadUrl, technicianId, nonce, location);
             });
         } catch (Throwable t) {
             Log.w(TAG, "getLastLocation failed", t);

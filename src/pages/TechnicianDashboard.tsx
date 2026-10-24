@@ -2881,7 +2881,8 @@ const TechnicianDashboard = () => {
     loadAssignedJobs();
   }, [realtimeConnected, user?.technicianId, loadAssignedJobs]);
 
-  // Periodic location update (every 5 minutes) - ONLY when app is open and visible
+  // Location when the technician opens or returns to the app. Live location
+  // clicks still request a fresh fix. No repeating timer.
   useEffect(() => {
     if (!user?.technicianId) return;
 
@@ -2904,11 +2905,6 @@ const TechnicianDashboard = () => {
       lastResumeLocationAt = Date.now();
       getCurrentLocation(true);
     }
-
-    const locationInterval = setInterval(() => {
-      const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
-      if (stillEnabled && !document.hidden) getCurrentLocation(true);
-    }, 5 * 60 * 1000);
 
     // WebView signal — works on browser + most APK resumes
     const handleVisibilityChange = () => {
@@ -2968,7 +2964,6 @@ const TechnicianDashboard = () => {
     window.addEventListener('locationTrackingChanged', handleLocationTrackingChanged as EventListener);
 
     return () => {
-      clearInterval(locationInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('locationTrackingChanged', handleLocationTrackingChanged as EventListener);
