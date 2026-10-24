@@ -102,6 +102,11 @@ const RECOMMENDED = [
     language: 'en',
     hint: 'Job assigned to technician ({{1}} customer, {{2}} location, {{3}} time)',
   },
+  {
+    name: 'svc_job_unassigned_tech_v1',
+    language: 'en',
+    hint: 'Job unassigned from technician ({{1}} customer, {{2}} location)',
+  },
   { name: 'svc_job_done', language: 'en', hint: 'Service done ({{1}} name, {{2}} amount)' },
   {
     name: 'svc_ask_review_hro_v1',

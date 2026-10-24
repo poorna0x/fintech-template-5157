@@ -295,16 +295,25 @@ export async function notifyTechnicianJobWhatsApp(opts: {
         payload.customTime || 'Flexible'
       ),
     };
+    const unassignCold = {
+      name: WA_COLD.job_unassigned_tech.name,
+      bodyParams: WA_COLD.job_unassigned_tech.bodyParams(
+        payload.customerName,
+        oneWordLocation(payload.location)
+      ),
+    };
     void (async () => {
       let cold: { name: string; bodyParams: string[] } | null = backgroundAssign
         ? assignCold
         : null;
-      if (!cold && opts.mode === 'assign') {
+      if (!cold && (opts.mode === 'assign' || opts.mode === 'unassign')) {
         try {
           const lastInbound = await fetchLastInboundAt(phone, supabase);
-          if (isCustomerServiceWindowClosed(lastInbound)) cold = assignCold;
+          if (isCustomerServiceWindowClosed(lastInbound)) {
+            cold = opts.mode === 'unassign' ? unassignCold : assignCold;
+          }
         } catch {
-          cold = assignCold;
+          cold = opts.mode === 'unassign' ? unassignCold : assignCold;
         }
       }
       await autoSendJobTechWhatsApp(phone, payload.message, opts.mode, cold, { silent: true });
@@ -397,24 +406,39 @@ export function queueTechnicianJobWhatsAppAutoMessage(opts: {
 
       const mode = category === 'job_unassigned' ? 'unassign' : 'assign';
       let cold: { name: string; bodyParams: string[] } | null = null;
-      if (mode === 'assign') {
+      if (mode === 'assign' || mode === 'unassign') {
         try {
           const lastInbound = await fetchLastInboundAt(phone, supabase);
           if (isCustomerServiceWindowClosed(lastInbound)) {
-            cold = {
-              name: WA_COLD.job_assigned_tech.name,
-              bodyParams: WA_COLD.job_assigned_tech.bodyParams(
-                title || 'Customer',
-                'Update',
-                'Now'
-              ),
-            };
+            cold =
+              mode === 'unassign'
+                ? {
+                    name: WA_COLD.job_unassigned_tech.name,
+                    bodyParams: WA_COLD.job_unassigned_tech.bodyParams(
+                      title || 'Customer',
+                      'Area'
+                    ),
+                  }
+                : {
+                    name: WA_COLD.job_assigned_tech.name,
+                    bodyParams: WA_COLD.job_assigned_tech.bodyParams(
+                      title || 'Customer',
+                      'Update',
+                      'Now'
+                    ),
+                  };
           }
         } catch {
-          cold = {
-            name: 'svc_job_assigned_tech_v2',
-            bodyParams: [],
-          };
+          cold =
+            mode === 'unassign'
+              ? {
+                  name: WA_COLD.job_unassigned_tech.name,
+                  bodyParams: WA_COLD.job_unassigned_tech.bodyParams('Customer', 'Area'),
+                }
+              : {
+                  name: 'svc_job_assigned_tech_v2',
+                  bodyParams: [],
+                };
         }
       }
       await autoSendJobTechWhatsApp(phone, text, mode, cold);

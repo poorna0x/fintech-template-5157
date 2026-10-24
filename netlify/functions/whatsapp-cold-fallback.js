@@ -123,7 +123,7 @@ function isUnsafeColdFallback(primaryName, fallbackName) {
 
   // Technician dispatch / payment-photo templates must not become a customer
   // "water purifier service request" (svc_smoke_update).
-  if (/job_assigned_tech|tech_customer_photo/i.test(primary) && fbSmoke) return true;
+  if (/job_assigned_tech|job_unassigned_tech|tech_customer_photo/i.test(primary) && fbSmoke) return true;
 
   if (primaryPayment) {
     // Payment may fall to older balance-due / overdue only — never booking/visit/job/smoke.
@@ -766,7 +766,7 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName);
   if (
     !isDocumentFamily &&
-    !/balance_due|payment_overdue|payment_refused|svc_balance_due|svc_payment_received|job_assigned_tech|tech_customer_photo/i.test(
+    !/balance_due|payment_overdue|payment_refused|svc_balance_due|svc_payment_received|job_assigned_tech|job_unassigned_tech|tech_customer_photo/i.test(
       primaryName
     )
   ) {

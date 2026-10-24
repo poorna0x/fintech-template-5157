@@ -1915,6 +1915,27 @@ const JOB_ASSIGNED_TECH_TEMPLATES = [
   },
 ];
 
+/**
+ * Job removed FROM the technician (cold, outside 24h). No buttons — internal dispatch.
+ * {{1}} customer, {{2}} one-word location.
+ */
+const JOB_UNASSIGNED_TECH_TEMPLATES = [
+  {
+    name: 'svc_job_unassigned_tech_v1',
+    body: [
+      'Job unassigned.',
+      '',
+      'Customer: {{1}}',
+      'Location: {{2}}',
+      '',
+      'This job is no longer assigned to you. Please check the technician app.',
+    ].join('\n'),
+    examples: ['Rahul', 'Gunjur'],
+    noButtons: true,
+    lockCategory: true,
+  },
+];
+
 /** Existing-customer schedule — Book online button only (no Call). */
 const EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES = [
   {
@@ -2792,6 +2813,7 @@ function collectAllTemplatePreviewEntries() {
     );
   }
   for (const t of JOB_ASSIGNED_TECH_TEMPLATES) push('Job assigned to technician', t, corePayload);
+  for (const t of JOB_UNASSIGNED_TECH_TEMPLATES) push('Job unassigned from technician', t, corePayload);
   for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) push('Existing customer book', t, bookOnlyPayload);
   for (const t of SERVICE_DUE_BOOK_CTA_TEMPLATES) push('Service due book CTA', t, bookOnlyPayload);
   for (const t of WFS_HELLO_TEMPLATES) push('WFS hello', t, corePayload);
@@ -3007,6 +3029,35 @@ async function main() {
     }
     if (!doSubmit) {
       console.log('Dry-run. Submit with: node scripts/submit-whatsapp-full-utility.mjs --submit --only-job-assign-tech');
+    } else {
+      console.log('Done. Recheck: node scripts/submit-whatsapp-full-utility.mjs --status');
+    }
+    return;
+  }
+  if (process.argv.includes('--only-job-unassign-tech')) {
+    for (const t of JOB_UNASSIGNED_TECH_TEMPLATES) {
+      const skip = shouldSkip(t.name, byName);
+      if (skip) {
+        console.log(`SKIP ${t.name} — ${skip}`);
+        continue;
+      }
+      queue.push({ label: t.name, payload: corePayload(t) });
+    }
+    console.log(`\n${doSubmit ? 'Submitting' : 'Would submit'} ${queue.length} template(s)\n`);
+    for (const item of queue) {
+      console.log(`• ${item.label} → ${item.payload.name}`);
+      console.log(`  ${item.payload.components.find((c) => c.type === 'BODY')?.text || ''}`);
+      if (!doSubmit) {
+        console.log('');
+        continue;
+      }
+      const result = await submitOne(token, item.payload);
+      console.log(result.ok ? '  OK' : '  FAIL', result.status, JSON.stringify(result.data));
+      console.log('');
+      await new Promise((r) => setTimeout(r, 700));
+    }
+    if (!doSubmit) {
+      console.log('Dry-run. Submit with: node scripts/submit-whatsapp-full-utility.mjs --submit --only-job-unassign-tech');
     } else {
       console.log('Done. Recheck: node scripts/submit-whatsapp-full-utility.mjs --status');
     }
@@ -3318,6 +3369,14 @@ async function main() {
     });
   }
   for (const t of JOB_ASSIGNED_TECH_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: corePayload(t) });
+  }
+  for (const t of JOB_UNASSIGNED_TECH_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
       console.log(`SKIP ${t.name} — ${skip}`);

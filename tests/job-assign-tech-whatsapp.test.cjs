@@ -42,7 +42,10 @@ function testColdTemplateIsWired() {
     'utf8'
   );
   assert.match(fallback, /svc_job_assigned_tech_v2/);
-  assert.match(fallback, /job_assigned_tech\|tech_customer_photo/);
+  assert.match(fallback, /job_assigned_tech\|job_unassigned_tech\|tech_customer_photo/);
+  assert.match(cold, /svc_job_unassigned_tech_v1/);
+  assert.match(send, /job_unassigned_tech/);
+  assert.match(submit, /svc_job_unassigned_tech_v1/);
 
   const payQr = fs.readFileSync(
     path.join(root, 'netlify/functions/whatsapp-pay-qr-helper.js'),
