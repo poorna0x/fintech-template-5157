@@ -20,6 +20,29 @@ const SKIP_CATEGORIES = new Set(['job_assigned', 'job_unassigned', 'location_pin
  */
 const MIRROR_CATEGORIES = new Set(['pay_qr_screenshot']);
 
+async function technicianWindowOpen(db, phoneE164) {
+  if (!db || !phoneE164) return false;
+  const { digitsOnly } = require('./whatsapp-helper');
+  const phone = normalizePhoneE164(phoneE164);
+  const last10 = digitsOnly(phoneE164).slice(-10);
+  const candidates = [...new Set([phone, last10, last10 ? `91${last10}` : ''].filter(Boolean))];
+  if (!candidates.length) return false;
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await db
+      .from('whatsapp_messages')
+      .select('id')
+      .in('phone_e164', candidates)
+      .eq('direction', 'inbound')
+      .gte('created_at', since)
+      .limit(1)
+      .maybeSingle();
+    return Boolean(data?.id);
+  } catch {
+    return false;
+  }
+}
+
 function isCategoryOn(prefs, category) {
   if (!category) return false;
   if (!prefs || typeof prefs !== 'object') return true;
@@ -77,33 +100,72 @@ async function maybeSendTechnicianPushWhatsApp(db, opts) {
     }
 
     const text = title && body ? `*${title}*\n\n${body}` : title || body;
-    const result = await callWhatsAppApi(phoneNumberId, accessToken, {
-      messaging_product: 'whatsapp',
-      to: phone,
-      type: 'text',
-      text: { preview_url: false, body: text.slice(0, 4096) },
-    });
+    const windowOpen = await technicianWindowOpen(db, phone);
+    if (windowOpen) {
+      const result = await callWhatsAppApi(phoneNumberId, accessToken, {
+        messaging_product: 'whatsapp',
+        to: phone,
+        type: 'text',
+        text: { preview_url: false, body: text.slice(0, 4096) },
+      });
 
-    const waId = result?.data?.messages?.[0]?.id || null;
+      const waId = result?.data?.messages?.[0]?.id || null;
+      await insertWhatsAppMessage(db, {
+        wa_message_id: waId,
+        direction: 'outbound',
+        phone_e164: phone,
+        msg_type: 'text',
+        body: text,
+        status: result.ok ? 'sent' : 'failed',
+        error_message: result.ok
+          ? null
+          : JSON.stringify(result.data?.error || result.data || {}).slice(0, 500),
+      });
+
+      if (!result.ok) {
+        console.warn(
+          '[tech-push-whatsapp]',
+          category,
+          'send failed',
+          result.data?.error?.message || result.status
+        );
+        return { sent: false, reason: 'api_failed' };
+      }
+      return { sent: true, waId };
+    }
+
+    // Outside 24h, free-form text is accepted by Meta then fails with
+    // Re-engagement. Use the approved technician template so it still arrives.
+    const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
+    const who =
+      String(title || 'Customer')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80) || 'Customer';
+    const cold = await sendTemplateWithColdFallbacks({
+      phoneNumberId,
+      accessToken,
+      to: phone,
+      templateName: 'svc_job_assigned_tech_v3',
+      languageCode: 'en',
+      bodyParams: [who, 'Payment photo', 'Now'],
+      enableFallback: true,
+    });
+    const waId = cold?.result?.data?.messages?.[0]?.id || null;
     await insertWhatsAppMessage(db, {
       wa_message_id: waId,
       direction: 'outbound',
       phone_e164: phone,
-      msg_type: 'text',
+      msg_type: 'template',
       body: text,
-      status: result.ok ? 'sent' : 'failed',
-      error_message: result.ok
+      template_name: cold.templateName || 'svc_job_assigned_tech_v3',
+      status: cold.ok ? 'sent' : 'failed',
+      error_message: cold.ok
         ? null
-        : JSON.stringify(result.data?.error || result.data || {}).slice(0, 500),
+        : JSON.stringify(cold.result?.data?.error || {}).slice(0, 500),
     });
-
-    if (!result.ok) {
-      console.warn(
-        '[tech-push-whatsapp]',
-        category,
-        'send failed',
-        result.data?.error?.message || result.status
-      );
+    if (!cold.ok) {
+      console.warn('[tech-push-whatsapp]', category, 'cold template failed');
       return { sent: false, reason: 'api_failed' };
     }
     return { sent: true, waId };

@@ -121,6 +121,10 @@ function isUnsafeColdFallback(primaryName, fallbackName) {
   const fbDoc = /^svc_doc_/i.test(fb) || /^svc_doc_direct_/i.test(fb);
   const fbSmoke = fb === SMOKE;
 
+  // Technician dispatch / payment-photo templates must not become a customer
+  // "water purifier service request" (svc_smoke_update).
+  if (/job_assigned_tech|tech_customer_photo/i.test(primary) && fbSmoke) return true;
+
   if (primaryPayment) {
     // Payment may fall to older balance-due / overdue only — never booking/visit/job/smoke.
     if (fbBooking || fbJobDone || fbServiceDue || fbDoc) return true;
@@ -747,13 +751,24 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComp
     push(SMOKE, [name || 'there']);
   }
 
-  // Last-resort smoke only for non-payment, non-document families.
+  // Job assigned to the technician. v3 is 3 params; v2 is body-only (no params);
+  // v1 is 4 params. Never drop through to the customer smoke template.
+  if (/^svc_job_assigned_tech_v3$/i.test(primaryName)) {
+    const customer = String(bodyParams?.[0] || 'Customer').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Customer';
+    const location = String(bodyParams?.[1] || 'Area').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Area';
+    push('svc_job_assigned_tech_v2', []);
+    push('svc_job_assigned_tech_v1', [customer, 'service', customer, location]);
+  }
+
+  // Last-resort smoke only for non-payment, non-document, non-technician families.
   // A PDF flow must never report success after silently dropping its attachment.
   const isDocumentFamily =
     hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName);
   if (
     !isDocumentFamily &&
-    !/balance_due|payment_overdue|payment_refused|svc_balance_due|svc_payment_received/i.test(primaryName)
+    !/balance_due|payment_overdue|payment_refused|svc_balance_due|svc_payment_received|job_assigned_tech|tech_customer_photo/i.test(
+      primaryName
+    )
   ) {
     push(SMOKE, [name]);
   }

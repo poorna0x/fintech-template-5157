@@ -206,6 +206,7 @@ const server = http.createServer((req, res) => {
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-webhook')) {
     delete require.cache[require.resolve('./whatsapp-unsolicited-media')];
     delete require.cache[require.resolve('./whatsapp-pay-qr-helper')];
+    delete require.cache[require.resolve('./whatsapp-cold-fallback')];
     delete require.cache[require.resolve('./whatsapp-booking-bot')];
     delete require.cache[require.resolve('./whatsapp-eleven-support')];
     delete require.cache[require.resolve('./whatsapp-ai-auto-reply')];

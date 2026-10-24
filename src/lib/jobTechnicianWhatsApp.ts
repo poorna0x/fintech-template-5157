@@ -8,6 +8,7 @@ import { sendAdminWhatsAppText, sendAdminWhatsAppTextWithOptionalTemplate } from
 import { ensureJobWhatsAppNotifyPrefs } from '@/lib/jobAssignWhatsAppSettingsCache';
 import { isWhatsAppJobNotifyAllowed, loadTechnicianWhatsAppPrefs } from '@/lib/whatsappCrmSettings';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
+import { fetchLastInboundAt, isCustomerServiceWindowClosed } from '@/lib/whatsappInbox';
 import { isTechJobAssignBackgroundOn } from '@/lib/techWhatsAppPrefs';
 import { supabase } from '@/lib/supabaseClient';
 import type { Job } from '@/types';
@@ -283,18 +284,31 @@ export async function notifyTechnicianJobWhatsApp(opts: {
 
   if (autoSend) {
     // Fire-and-forget: do not block assign/unassign dialogs on API latency.
-    // Cold template only for technicians with Assign with push turned on. Never opens WhatsApp.
-    const cold = backgroundAssign
-      ? {
-          name: WA_COLD.job_assigned_tech.name,
-          bodyParams: WA_COLD.job_assigned_tech.bodyParams(
-            payload.customerName,
-            oneWordLocation(payload.location),
-            payload.customTime || 'Flexible'
-          ),
+    // Never opens WhatsApp. Assign uses the approved template whenever the
+    // technician has not messaged in 24h — free-form text is accepted by Meta
+    // then fails delivery (Re-engagement) and never reaches the phone.
+    const assignCold = {
+      name: WA_COLD.job_assigned_tech.name,
+      bodyParams: WA_COLD.job_assigned_tech.bodyParams(
+        payload.customerName,
+        oneWordLocation(payload.location),
+        payload.customTime || 'Flexible'
+      ),
+    };
+    void (async () => {
+      let cold: { name: string; bodyParams: string[] } | null = backgroundAssign
+        ? assignCold
+        : null;
+      if (!cold && opts.mode === 'assign') {
+        try {
+          const lastInbound = await fetchLastInboundAt(phone, supabase);
+          if (isCustomerServiceWindowClosed(lastInbound)) cold = assignCold;
+        } catch {
+          cold = assignCold;
         }
-      : null;
-    void autoSendJobTechWhatsApp(phone, payload.message, opts.mode, cold, { silent: true });
+      }
+      await autoSendJobTechWhatsApp(phone, payload.message, opts.mode, cold, { silent: true });
+    })();
     return 'auto';
   }
 
@@ -381,11 +395,29 @@ export function queueTechnicianJobWhatsAppAutoMessage(opts: {
       const text = title && body ? `*${title}*\n\n${body}` : title || body;
       if (!text.trim()) return;
 
-      await autoSendJobTechWhatsApp(
-        phone,
-        text,
-        category === 'job_unassigned' ? 'unassign' : 'assign'
-      );
+      const mode = category === 'job_unassigned' ? 'unassign' : 'assign';
+      let cold: { name: string; bodyParams: string[] } | null = null;
+      if (mode === 'assign') {
+        try {
+          const lastInbound = await fetchLastInboundAt(phone, supabase);
+          if (isCustomerServiceWindowClosed(lastInbound)) {
+            cold = {
+              name: WA_COLD.job_assigned_tech.name,
+              bodyParams: WA_COLD.job_assigned_tech.bodyParams(
+                title || 'Customer',
+                'Update',
+                'Now'
+              ),
+            };
+          }
+        } catch {
+          cold = {
+            name: 'svc_job_assigned_tech_v2',
+            bodyParams: [],
+          };
+        }
+      }
+      await autoSendJobTechWhatsApp(phone, text, mode, cold);
     } catch (err) {
       console.warn('[job-wa] edit/update notify failed', err);
       if (notify) toast.message('WhatsApp notify failed');

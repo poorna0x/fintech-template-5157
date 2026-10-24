@@ -16,8 +16,12 @@ const WATCH_MINUTES = 30;
 const CATEGORY = 'pay_qr_screenshot';
 /** IMAGE-header UTILITY — customer photo to technician when the 24h window is closed. */
 const TECH_PHOTO_TEMPLATE = 'svc_tech_customer_photo_v1';
-/** Cold text when IMAGE template + session image both fail (24h closed on business line). */
-const TECH_PAY_QR_TEXT_TEMPLATE = 'svc_smoke_update';
+/**
+ * Cold text when the payment photo cannot be delivered.
+ * Approved technician template (3 params). Do not use svc_smoke_update —
+ * that is a customer "service request" and reads as the wrong message.
+ */
+const TECH_PAY_QR_TEXT_TEMPLATE = 'svc_job_assigned_tech_v3';
 
 function isHttps(url) {
   return /^https:\/\//i.test(String(url || '').trim());
@@ -334,6 +338,7 @@ async function sendPayQrTextFallbackToTechnician({
   technicianId,
   title,
   body,
+  customerName,
 }) {
   if (!db || !accessToken || !phoneNumberId || !technicianId) {
     return { sent: false, reason: 'bad_args' };
@@ -347,39 +352,16 @@ async function sendPayQrTextFallbackToTechnician({
     const to = normalizePhoneE164(tech?.whatsapp_phone || tech?.phone);
     if (!to) return { sent: false, reason: 'no_phone' };
 
-    const { whatsappGreetingName } = require('./whatsapp-greeting-name');
-    const techName = whatsappGreetingName(tech?.full_name, 'there');
-
-    const cold = await callWhatsAppApi(phoneNumberId, accessToken, {
-      messaging_product: 'whatsapp',
-      to,
-      type: 'template',
-      template: {
-        name: TECH_PAY_QR_TEXT_TEMPLATE,
-        language: { code: 'en' },
-        components: [
-          {
-            type: 'body',
-            parameters: [{ type: 'text', text: techName }],
-          },
-        ],
-      },
-    });
-    const coldWaId = cold?.data?.messages?.[0]?.id || null;
     const notice = [title, body].filter(Boolean).join('\n\n').slice(0, 4096);
-    if (cold.ok) {
-      await insertWhatsAppMessage(db, {
-        wa_message_id: coldWaId,
-        direction: 'outbound',
-        phone_e164: to,
-        msg_type: 'template',
-        body: notice || title || body,
-        status: 'sent',
-        template_name: TECH_PAY_QR_TEXT_TEMPLATE,
-      });
-      return { sent: true, via: 'template', waId: coldWaId };
-    }
+    const who =
+      String(customerName || 'Customer')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80) || 'Customer';
 
+    // Inside 24h the real notice can go as free-form text. Outside it, Meta
+    // accepts free-form then fails delivery (Re-engagement), so use the
+    // approved technician template instead of the customer smoke template.
     if (await hasInboundWindow(db, to)) {
       const text = title && body ? `*${title}*\n\n${body}` : title || body;
       const session = await callWhatsAppApi(phoneNumberId, accessToken, {
@@ -401,6 +383,30 @@ async function sendPayQrTextFallbackToTechnician({
           : JSON.stringify(session.data?.error || {}).slice(0, 500),
       });
       if (session.ok) return { sent: true, via: 'session', waId };
+    }
+
+    const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
+    const cold = await sendTemplateWithColdFallbacks({
+      phoneNumberId,
+      accessToken,
+      to,
+      templateName: TECH_PAY_QR_TEXT_TEMPLATE,
+      languageCode: 'en',
+      bodyParams: [who, 'Payment photo', 'Now'],
+      enableFallback: true,
+    });
+    const coldWaId = cold?.result?.data?.messages?.[0]?.id || null;
+    if (cold.ok) {
+      await insertWhatsAppMessage(db, {
+        wa_message_id: coldWaId,
+        direction: 'outbound',
+        phone_e164: to,
+        msg_type: 'template',
+        body: notice || title || body,
+        status: 'sent',
+        template_name: cold.templateName || TECH_PAY_QR_TEXT_TEMPLATE,
+      });
+      return { sent: true, via: 'template', waId: coldWaId };
     }
 
     return { sent: false, reason: 'template_and_session_failed' };
@@ -671,6 +677,7 @@ async function notifyTechnicianPayQrPhoto({
       technicianId,
       title,
       body,
+      customerName,
     });
     console.log('[pay-qr-watch] WhatsApp text fallback', {
       technicianId,
