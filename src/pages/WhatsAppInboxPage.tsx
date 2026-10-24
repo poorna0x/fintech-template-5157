@@ -159,6 +159,8 @@ import {
   WHATSAPP_ATTACH_ACCEPT,
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
+import { saveBytesToNativeDownloads } from '@/lib/nativeDownloadsSave';
+import { isNativeRuntime, openBytesNatively } from '@/lib/nativeFileOpen';
 import {
   buildQuickHelloTemplate,
   quickReplyBookingUrl,
@@ -416,6 +418,119 @@ function isImageMessage(row: WhatsAppMessageRow): boolean {
   return Boolean(
     row.media_url &&
       (row.msg_type === 'image' || String(row.media_mime || '').startsWith('image/'))
+  );
+}
+
+function isVideoMessage(row: WhatsAppMessageRow): boolean {
+  return Boolean(
+    row.media_url &&
+      (row.msg_type === 'video' || String(row.media_mime || '').startsWith('video/'))
+  );
+}
+
+function attachmentFilename(row: WhatsAppMessageRow): string {
+  const name = (row.filename || '').trim();
+  if (name) return name;
+  if (isVideoMessage(row)) return 'video.mp4';
+  if (isImageMessage(row)) return 'photo.jpg';
+  return 'document.pdf';
+}
+
+function attachmentMime(row: WhatsAppMessageRow): string {
+  if (row.media_mime) return row.media_mime;
+  if (isVideoMessage(row)) return 'video/mp4';
+  if (isImageMessage(row)) return 'image/jpeg';
+  return 'application/pdf';
+}
+
+async function loadAttachmentBytes(
+  row: WhatsAppMessageRow,
+  resolveMediaHref: (row: WhatsAppMessageRow) => Promise<string | null>
+): Promise<{ bytes: ArrayBuffer; mime: string } | null> {
+  const ref = String(row.media_url || '');
+  const mimeHint = attachmentMime(row);
+  if (isR2MediaRef(ref) || ref.startsWith('whatsapp-media:')) {
+    const fetched = await getWhatsAppMediaBytesCached({
+      mediaUrl: ref,
+      messageId: row.id,
+      mimeHint,
+    });
+    if (fetched.ok && fetched.bytes) return { bytes: fetched.bytes, mime: mimeHint };
+    if (fetched.ok && fetched.url) {
+      const res = await fetch(fetched.url);
+      if (!res.ok) return null;
+      return {
+        bytes: await res.arrayBuffer(),
+        mime: res.headers.get('content-type') || mimeHint,
+      };
+    }
+    return null;
+  }
+  const href = (await resolveMediaHref(row)) || directInboxMediaUrl(ref);
+  if (!href) return null;
+  const res = await fetch(href);
+  if (!res.ok) return null;
+  return {
+    bytes: await res.arrayBuffer(),
+    mime: res.headers.get('content-type') || mimeHint,
+  };
+}
+
+function InboxChatVideo({
+  row,
+  onResolve,
+  onDownload,
+  onOpen,
+}: {
+  row: WhatsAppMessageRow;
+  onResolve: (row: WhatsAppMessageRow, opts?: { bustCache?: boolean }) => Promise<string | null>;
+  onDownload: () => void;
+  onOpen: () => void;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFailed(false);
+    setSrc(null);
+    void onResolve(row).then((url) => {
+      if (cancelled) return;
+      if (!url) setFailed(true);
+      else setSrc(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [row, onResolve]);
+
+  if (!src) {
+    return (
+      <WhatsAppDocumentFileCard
+        filename={row.filename || 'Video'}
+        mediaMime={row.media_mime || 'video/mp4'}
+        loading={!failed}
+        tone="dark"
+        onOpen={onOpen}
+        onDownload={failed ? onDownload : undefined}
+      />
+    );
+  }
+
+  return (
+    <div className="mb-1 overflow-hidden rounded-md bg-black">
+      <video
+        src={src}
+        controls
+        playsInline
+        preload="metadata"
+        className="max-h-64 w-full"
+        onError={() => {
+          setSrc(null);
+          setFailed(true);
+        }}
+      />
+    </div>
   );
 }
 
@@ -1171,7 +1286,32 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         await openImageViewer(row);
         return;
       }
-      // Prefer already-resolved / public URL — no loading toast
+      // Android WebView has no PDF viewer and drops window.open, which left
+      // the "Opening…" toast stuck. Hand the bytes to the system viewer.
+      if (isNativeRuntime()) {
+        const toastId = toast.loading('Opening…', { duration: 12_000 });
+        try {
+          const loaded = await loadAttachmentBytes(row, resolveMediaHref);
+          toast.dismiss(toastId);
+          if (!loaded) {
+            toast.error('Could not open attachment');
+            return;
+          }
+          const result = await openBytesNatively(
+            loaded.bytes,
+            attachmentFilename(row),
+            loaded.mime
+          );
+          if (result === 'shared') toast.message('Choose an app to open this file');
+          else if (result !== 'opened') toast.error('Could not open attachment — use Download');
+        } catch (err) {
+          toast.dismiss(toastId);
+          toast.error(err instanceof Error ? err.message : 'Could not open attachment');
+        }
+        return;
+      }
+      if (isVideoMessage(row)) return;
+
       const ready =
         mediaUrlCacheRef.current[row.id] ||
         (!isR2MediaRef(row.media_url) &&
@@ -1184,33 +1324,24 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         return;
       }
 
-      // Finite duration so a stuck loading toast can never block the UI forever
-      // (blob new-tab open can race dismiss; sonner loading is otherwise Infinity).
-      const toastId = toast.loading('Opening…', { duration: 20_000 });
+      const toastId = toast.loading('Opening…', { duration: 12_000 });
       try {
         const href = await Promise.race([
           resolveMediaHref(row),
           new Promise<null>((resolve) => {
-            window.setTimeout(() => resolve(null), 20000);
+            window.setTimeout(() => resolve(null), 12000);
           }),
         ]);
+        toast.dismiss(toastId);
         if (!href) {
-          toast.error('Could not open attachment', { id: toastId });
+          toast.error('Could not open attachment');
           return;
         }
-        // Clear loading BEFORE window.open — blob tabs can steal focus and leave
-        // an undismissable loading toast on the main tab.
-        toast.dismiss(toastId);
         const opened = window.open(href, '_blank', 'noopener,noreferrer');
-        if (!opened) {
-          toast.message('Popup blocked — use Download instead');
-        }
+        if (!opened) toast.message('Popup blocked — use Download instead');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Could not open attachment', {
-          id: toastId,
-        });
-      } finally {
         toast.dismiss(toastId);
+        toast.error(err instanceof Error ? err.message : 'Could not open attachment');
       }
     },
     [resolveMediaHref, openImageViewer]
@@ -1219,42 +1350,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const downloadMedia = useCallback(
     async (row: WhatsAppMessageRow) => {
       if (!row.media_url) return;
-      const name =
-        (row.filename || '').trim() ||
-        (row.msg_type === 'image' || row.media_mime?.startsWith('image/')
-          ? 'photo.jpg'
-          : 'document.pdf');
-      const toastId = toast.loading('Downloading…');
+      const name = attachmentFilename(row);
+      const toastId = toast.loading('Downloading…', { duration: 20_000 });
       try {
-        const ref = row.media_url;
-        if (isR2MediaRef(ref) || ref.startsWith('whatsapp-media:')) {
-          const fetched = await getWhatsAppMediaBytesCached({
-            mediaUrl: ref,
-            messageId: row.id,
-            mimeHint: row.media_mime,
-          });
-          if (fetched.ok && fetched.bytes) {
-            const mime =
-              row.media_mime ||
-              (/\.pdf$/i.test(name) ? 'application/pdf' : 'application/octet-stream');
-            triggerBlobDownload(new Blob([fetched.bytes], { type: mime }), name);
-            toast.success('Downloaded', { id: toastId });
-            return;
-          }
-          if (fetched.ok && fetched.url) {
-            const res = await fetch(fetched.url);
-            if (!res.ok) throw new Error('Download failed');
-            triggerBlobDownload(await res.blob(), name);
-            toast.success('Downloaded', { id: toastId });
-            return;
-          }
-          throw new Error(fetched.error || 'Download failed');
+        const loaded = await loadAttachmentBytes(row, resolveMediaHref);
+        if (!loaded) throw new Error('Download failed');
+        const saved = await saveBytesToNativeDownloads(loaded.bytes, name, loaded.mime);
+        if (saved) {
+          toast.success('Saved to Downloads', { id: toastId });
+          return;
         }
-        const href = await resolveMediaHref(row);
-        if (!href) throw new Error('Could not download');
-        const res = await fetch(href);
-        if (!res.ok) throw new Error('Download failed');
-        triggerBlobDownload(await res.blob(), name);
+        triggerBlobDownload(new Blob([loaded.bytes], { type: loaded.mime }), name);
         toast.success('Downloaded', { id: toastId });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Download failed', { id: toastId });
@@ -3163,6 +3269,19 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                     onForward={() => openMessageActions(m)}
                                   />
                                 </div>
+                              ) : isVideoMessage(m) ? (
+                                <InboxChatVideo
+                                  row={m}
+                                  onResolve={resolveMediaHref}
+                                  onDownload={() => void downloadMedia(m)}
+                                  onOpen={() => {
+                                    if (skipMessageClickRef.current) {
+                                      skipMessageClickRef.current = false;
+                                      return;
+                                    }
+                                    void openMedia(m);
+                                  }}
+                                />
                               ) : isWhatsAppPdfAttachment(m.filename, m.media_mime, m.msg_type) ? (
                                 <WhatsAppPdfThumbnail
                                   messageId={m.id}
@@ -3217,7 +3336,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                                 !m.body?.trim() &&
                                 (m.msg_type === 'document' ||
                                   m.msg_type === 'pdf' ||
-                                  m.msg_type === 'image')
+                                  m.msg_type === 'image' ||
+                                  m.msg_type === 'video')
                               ) {
                                 return null;
                               }

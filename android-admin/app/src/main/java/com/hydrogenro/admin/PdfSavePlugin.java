@@ -2,12 +2,14 @@ package com.hydrogenro.admin;
 
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Intent;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Base64;
+import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -69,6 +71,67 @@ public class PdfSavePlugin extends Plugin {
             call.resolve(result);
         } catch (Exception e) {
             call.reject(e.getMessage() != null ? e.getMessage() : "save_failed");
+        }
+    }
+
+    /** Open a file with the phone's own viewer. WebView cannot render PDFs. */
+    @PluginMethod
+    public void openFile(PluginCall call) {
+        String filename = call.getString("filename");
+        String data = call.getString("data");
+        String mimeType = call.getString("mimeType");
+        if (filename == null || filename.trim().isEmpty()) {
+            call.reject("filename_required");
+            return;
+        }
+        if (data == null || data.isEmpty()) {
+            call.reject("data_required");
+            return;
+        }
+
+        String resolvedMime = (mimeType != null && !mimeType.trim().isEmpty())
+            ? mimeType.trim()
+            : "application/octet-stream";
+        String safeName = sanitizeFilename(filename.trim(), resolvedMime);
+        byte[] bytes;
+        try {
+            bytes = Base64.decode(data, Base64.DEFAULT);
+        } catch (IllegalArgumentException e) {
+            call.reject("invalid_base64");
+            return;
+        }
+        if (bytes.length == 0) {
+            call.reject("empty_file");
+            return;
+        }
+
+        try {
+            File dir = new File(getContext().getCacheDir(), "hro-open");
+            if (!dir.exists() && !dir.mkdirs()) {
+                call.reject("cache_dir_failed");
+                return;
+            }
+            File file = new File(dir, safeName);
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                out.write(bytes);
+                out.flush();
+            }
+
+            Uri uri = FileProvider.getUriForFile(
+                getContext(),
+                getContext().getPackageName() + ".fileprovider",
+                file
+            );
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, resolvedMime);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+
+            JSObject result = new JSObject();
+            result.put("opened", true);
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject(e.getMessage() != null ? e.getMessage() : "open_failed");
         }
     }
 
@@ -153,9 +216,17 @@ public class PdfSavePlugin extends Plugin {
                 return "webp";
             case "image/gif":
                 return "gif";
+            case "video/mp4":
+                return "mp4";
+            case "video/webm":
+                return "webm";
+            case "video/3gpp":
+                return "3gp";
+            case "video/quicktime":
+                return "mov";
             default:
-                if (mimeType.startsWith("image/")) {
-                    String sub = mimeType.substring("image/".length());
+                if (mimeType.startsWith("image/") || mimeType.startsWith("video/") || mimeType.startsWith("audio/")) {
+                    String sub = mimeType.substring(mimeType.indexOf('/') + 1);
                     if (!sub.isEmpty()) return sub.split("[+;]")[0];
                 }
                 return null;

@@ -14,7 +14,7 @@ type PdfSavePlugin = {
 
 const PdfSave = registerPlugin<PdfSavePlugin>('PdfSave');
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
+export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   const chunkSize = 0x8000;
@@ -24,7 +24,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function sanitizeFilename(raw: string): string {
+export function sanitizeFilename(raw: string): string {
   return raw
     .replace(/[/\\?%*:|"<>]/g, '_')
     .replace(/\s+/g, '_')
