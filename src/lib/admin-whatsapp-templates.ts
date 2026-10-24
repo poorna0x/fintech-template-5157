@@ -15,6 +15,7 @@ import {
 import {
   buildJobCompletionWhatsAppMessage,
 } from '@/lib/job-completion-message';
+import { buildVisitCancelledWhatsAppMessage } from '@/lib/whatsappUtilityTemplates';
 import {
   waBrandWebsiteUrl,
   waLabeledLink,
@@ -85,6 +86,24 @@ function buildBookingWhatsApp(data: BookingConfirmationEmailData): AdminWhatsApp
   return {
     text,
     previewTitle: `Booking confirmed · ${brandName}`,
+  };
+}
+
+function buildBookingCancelledWhatsApp(data: BookingConfirmationEmailData): AdminWhatsAppMessageResult {
+  const brand = resolveBookingEmailDocumentBrand(data);
+  const brandName = getDocumentBrandLabel(brand);
+  const customerName = data.customerName.trim() || 'there';
+  const serviceDate = data.scheduledDate ? formatServiceDate(data.scheduledDate) : '';
+  const timeSlot = data.scheduledTimeSlot ? formatBookingTimeSlot(data.scheduledTimeSlot) : '';
+  const when =
+    [serviceDate, timeSlot].filter((part) => part && part !== '—').join(', ') ||
+    'your scheduled visit';
+  const ref = data.jobNumber.trim();
+  const whenLabel = ref && ref !== 'N/A' ? `${when} (Ref: ${ref})` : when;
+
+  return {
+    text: buildVisitCancelledWhatsAppMessage(customerName, whenLabel, brand),
+    previewTitle: `Booking cancelled · ${brandName}`,
   };
 }
 
@@ -217,6 +236,9 @@ export function buildAdminWhatsAppMessage(
 ): AdminWhatsAppMessageResult {
   if (templateType === 'booking_confirmation') {
     return buildBookingWhatsApp(bookingData);
+  }
+  if (templateType === 'booking_cancelled') {
+    return buildBookingCancelledWhatsApp(bookingData);
   }
   return buildDocumentWhatsApp(templateType, documentData);
 }

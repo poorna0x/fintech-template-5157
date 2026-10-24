@@ -2,8 +2,13 @@ import type {
   AdminDocumentEmailData,
   AdminEmailTemplateType,
 } from '@/lib/admin-email-templates';
-import type { BookingConfirmationEmailData } from '@/lib/booking-confirmation-email';
+import {
+  formatBookingTimeSlot,
+  formatServiceDate,
+  type BookingConfirmationEmailData,
+} from '@/lib/booking-confirmation-email';
 import { resolveBookingConfirmationColdTemplate } from '@/lib/bookingConfirmationWhatsApp';
+import { resolveColdVisitCancelled } from '@/lib/whatsappUtilityTemplates';
 import {
   callingColdTemplateFor,
   type CallingWhatsAppTemplate,
@@ -27,6 +32,19 @@ export function resolveComposerColdTemplate(
   if (templateType === 'booking_confirmation' && opts.bookingForm) {
     const tpl = resolveBookingConfirmationColdTemplate(brand, opts.bookingForm);
     return { name: tpl.name, languageCode: tpl.language, bodyParams: tpl.bodyParams };
+  }
+
+  if (templateType === 'booking_cancelled') {
+    const form = opts.bookingForm;
+    const serviceDate = form?.scheduledDate ? formatServiceDate(form.scheduledDate) : '';
+    const timeSlot = form?.scheduledTimeSlot ? formatBookingTimeSlot(form.scheduledTimeSlot) : '';
+    const when =
+      [serviceDate, timeSlot].filter((part) => part && part !== '—').join(', ') ||
+      'your scheduled visit';
+    const ref = String(form?.jobNumber || '').trim();
+    const whenLabel = ref && ref !== 'N/A' ? `${when} (Ref: ${ref})` : when;
+    const cold = resolveColdVisitCancelled(brand, name, whenLabel);
+    return { name: cold.name, languageCode: cold.languageCode, bodyParams: cold.bodyParams };
   }
 
   if (templateType === 'service_reminder') {

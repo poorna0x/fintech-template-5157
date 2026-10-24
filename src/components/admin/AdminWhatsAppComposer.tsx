@@ -70,8 +70,13 @@ interface SentWhatsAppSummary {
   via?: 'api' | 'wa_me';
 }
 
+function composerUsesBookingForm(type: AdminEmailTemplateType): boolean {
+  return type === 'booking_confirmation' || type === 'booking_cancelled';
+}
+
 const TEMPLATE_ORDER: AdminEmailTemplateType[] = [
   'general',
+  'booking_cancelled',
   'booking_confirmation',
   'service_bill',
   'invoice',
@@ -191,7 +196,7 @@ export function AdminWhatsAppComposerPanel({
     if (templateType === 'general') {
       return !documentForm.message.trim() && !documentForm.customerName.trim();
     }
-    if (templateType === 'booking_confirmation') {
+    if (composerUsesBookingForm(templateType)) {
       return (
         !bookingForm.customerName.trim() &&
         !bookingForm.jobNumber.trim() &&
@@ -317,7 +322,7 @@ export function AdminWhatsAppComposerPanel({
           return;
         }
 
-        if (tpl === 'booking_confirmation') {
+        if (composerUsesBookingForm(tpl)) {
           const hasJob = Boolean(result.bookingForm?.jobNumber?.trim());
           if (hasJob) {
             toast.success('Loaded ongoing job details');
@@ -334,7 +339,7 @@ export function AdminWhatsAppComposerPanel({
 
   const handleTemplateChange = (value: AdminEmailTemplateType) => {
     const sharedCustomerName =
-      templateType === 'booking_confirmation'
+      composerUsesBookingForm(templateType)
         ? bookingForm.customerName.trim()
         : documentForm.customerName.trim();
 
@@ -344,7 +349,7 @@ export function AdminWhatsAppComposerPanel({
     setCrmDataLoaded(false);
     setSourceMode('crm');
 
-    if (value === 'booking_confirmation') {
+    if (composerUsesBookingForm(value)) {
       setBookingForm({
         ...createEmptyBookingForm(sendBrand),
         ...(sharedCustomerName ? { customerName: sharedCustomerName } : {}),
@@ -530,7 +535,7 @@ export function AdminWhatsAppComposerPanel({
           return;
         }
         const customerName =
-          (templateType === 'booking_confirmation'
+          (composerUsesBookingForm(templateType)
             ? bookingForm.customerName
             : documentForm.customerName
           ).trim() || 'Customer';
@@ -594,13 +599,13 @@ export function AdminWhatsAppComposerPanel({
 
       const coldTpl = resolveComposerColdTemplate(templateType, activeBrand, {
         customerName:
-          (templateType === 'booking_confirmation'
+          (composerUsesBookingForm(templateType)
             ? bookingForm.customerName
             : documentForm.customerName
           ).trim() || 'Customer',
         freeformMessage: whatsappPreview.text,
-        bookingForm: templateType === 'booking_confirmation' ? bookingForm : undefined,
-        documentForm: templateType !== 'booking_confirmation' ? documentForm : undefined,
+        bookingForm: composerUsesBookingForm(templateType) ? bookingForm : undefined,
+        documentForm: composerUsesBookingForm(templateType) ? undefined : documentForm,
       });
       const inboundAt = await fetchLastInboundAt(phone.trim(), supabase);
       const windowClosed = isCustomerServiceWindowClosed(inboundAt);
@@ -928,7 +933,7 @@ export function AdminWhatsAppComposerPanel({
               </div>
             </div>
 
-            {deliveryMode === 'api' && templateType !== 'booking_confirmation' ? (
+            {deliveryMode === 'api' && !composerUsesBookingForm(templateType) ? (
               <div className="space-y-1.5">
                 <Label htmlFor="admin-whatsapp-freeform" className="text-sm">
                   Message
@@ -1114,7 +1119,7 @@ export function AdminWhatsAppComposerPanel({
           <div className="shrink-0 flex items-center gap-2 bg-[#075e54] px-3 py-2.5 text-white">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-xs font-semibold">
               {(
-                (templateType === 'booking_confirmation'
+                (composerUsesBookingForm(templateType)
                   ? bookingForm.customerName
                   : documentForm.customerName
                 ).trim() || 'C'
@@ -1124,7 +1129,7 @@ export function AdminWhatsAppComposerPanel({
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">
-                {(templateType === 'booking_confirmation'
+                {(composerUsesBookingForm(templateType)
                   ? bookingForm.customerName
                   : documentForm.customerName
                 ).trim() || sendTo.trim() || 'Customer'}
@@ -1277,13 +1282,13 @@ export function AdminWhatsAppComposerPanel({
                 <Input
                   placeholder="Customer name"
                   value={
-                    templateType === 'booking_confirmation'
+                    composerUsesBookingForm(templateType)
                       ? bookingForm.customerName
                       : documentForm.customerName
                   }
                   onChange={(e) => {
                     const value = e.target.value;
-                    if (templateType === 'booking_confirmation') {
+                    if (composerUsesBookingForm(templateType)) {
                       updateBookingField('customerName', value);
                     } else {
                       updateDocumentField('customerName', value);
@@ -1292,7 +1297,7 @@ export function AdminWhatsAppComposerPanel({
                 />
               </div>
 
-              {templateType === 'booking_confirmation' ? (
+              {composerUsesBookingForm(templateType) ? (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">

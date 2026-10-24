@@ -23,6 +23,7 @@ import {
 
 export type AdminEmailTemplateType =
   | 'booking_confirmation'
+  | 'booking_cancelled'
   | 'amc_document'
   | 'warranty_document'
   | 'invoice'
@@ -72,6 +73,14 @@ export const ADMIN_EMAIL_TEMPLATE_META: Record<AdminEmailTemplateType, AdminEmai
   booking_confirmation: {
     label: 'Booking confirmation',
     description: 'Sent automatically after a customer books online.',
+    showDocumentRef: false,
+    showAmount: false,
+    showDueDate: false,
+    showCustomSubject: false,
+  },
+  booking_cancelled: {
+    label: 'Booking cancelled',
+    description: 'Tell the customer their service booking is cancelled.',
     showDocumentRef: false,
     showAmount: false,
     showDueDate: false,
@@ -850,6 +859,8 @@ export function getDefaultDocumentMessage(type: AdminEmailTemplateType): string 
       return 'Your service has been completed successfully.\n\nThank you for choosing us. We appreciate your trust.';
     case 'tech_running_late':
       return 'Sorry — our technician is facing an issue and will be a bit late. We will inform you shortly about the arrival time.';
+    case 'booking_cancelled':
+      return 'Your booking has been cancelled. Reply on this chat if you need any help.';
     case 'general':
       return 'Thank you for choosing us for your RO water purifier needs.';
     default:

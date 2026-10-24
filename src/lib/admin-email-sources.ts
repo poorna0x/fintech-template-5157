@@ -215,6 +215,7 @@ export function supportsCrmSource(templateType: AdminEmailTemplateType): boolean
 export function getCrmSourceLabel(templateType: AdminEmailTemplateType): string {
   switch (templateType) {
     case 'booking_confirmation':
+    case 'booking_cancelled':
       return 'Ongoing job';
     case 'amc_document':
       return 'Active AMC';
@@ -238,6 +239,7 @@ export function getCrmSourceLabel(templateType: AdminEmailTemplateType): string 
 export function getEmailSourceSearchHint(templateType: AdminEmailTemplateType): string {
   switch (templateType) {
     case 'booking_confirmation':
+    case 'booking_cancelled':
       return 'Enter customer name, phone, or ID, then click Search to find their ongoing job.';
     case 'amc_document':
     case 'service_reminder':
@@ -302,6 +304,7 @@ export async function fetchEmailSourceOptions(
 
   switch (templateType) {
     case 'booking_confirmation':
+    case 'booking_cancelled':
       return searchOngoingJobsByCustomer(q);
     case 'amc_document':
     case 'service_reminder':
@@ -566,7 +569,8 @@ export async function applyEmailSourceForCustomer(
   customerId: string
 ): Promise<EmailSourceApplyResult | null> {
   switch (templateType) {
-    case 'booking_confirmation': {
+    case 'booking_confirmation':
+    case 'booking_cancelled': {
       const jobId = await findLatestOngoingJobIdForCustomer(customerId);
       if (jobId) {
         const result = await applyJobRecord(jobId);
@@ -626,6 +630,7 @@ export async function applyEmailSourceRecord(
 ): Promise<EmailSourceApplyResult | null> {
   switch (templateType) {
     case 'booking_confirmation':
+    case 'booking_cancelled':
       return applyJobRecord(recordId);
     case 'amc_document':
       return applyAmcRecord('amc_document', recordId);
