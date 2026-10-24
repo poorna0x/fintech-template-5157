@@ -12,8 +12,6 @@ import { supabase } from '@/lib/supabaseClient';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 import { jobHasSkipReview, jobReviewColdUrlButtonParam, jobReviewTokenFromUrl } from '@/lib/jobReviews';
-import { getLeadSourceFromJob } from '@/lib/adminUtils';
-import { ensureLeadCatalogLoaded, isDirectCallOrCustomLeadSource } from '@/lib/leadCatalog';
 import { getCompletedJobMissingMedia } from '@/lib/jobReportPhotos';
 import {
   buildJobCompletionColdBodyParams,
@@ -266,14 +264,22 @@ export async function sendJobCompletionWhatsApp(opts: {
     ? resolvePendingPaymentLetterTemplateLegacyName(opts.documentBrand)
     : resolveJobCompletionLetterTemplateLegacyName(opts.documentBrand);
   for (const templateName of [letterName, letterFallbackName, letterLegacyName]) {
+    const reviewOnThisTemplate = Boolean(reviewButton) && /_v5$/i.test(templateName);
+    const payOnThisTemplate = /_v10$/i.test(templateName)
+      ? payButtonParams
+      : /_v9$/i.test(templateName)
+        ? payButtonParams.filter((button) => button.index === 1)
+        : [];
     const letter = await sendAdminWhatsAppTemplate({
       to: opts.to,
       templateName,
       languageCode: 'en',
       bodyParams: letterParams,
       buttonUrlParams: useBalanceDueCold
-        ? payButtonParams
-        : reviewButton
+        ? payOnThisTemplate.length
+          ? payOnThisTemplate
+          : undefined
+        : reviewOnThisTemplate && reviewButton
           ? [reviewButton]
           : undefined,
       customerId: opts.customerId,
@@ -422,8 +428,8 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
   const notify = opts.notify !== false;
 
   try {
+    const { settings } = await fetchWhatsAppCrmSettings();
     if (!opts.force) {
-      const { settings } = await fetchWhatsAppCrmSettings();
       if (!settings.enabled || settings.allow_job_completion_whatsapp === false) {
         return 'skipped';
       }
@@ -432,7 +438,10 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       }
     }
 
-    if (jobHasDontSendCompletionMessage(job)) {
+    if (
+      settings.completion_skip_dont_send !== false &&
+      jobHasDontSendCompletionMessage(job)
+    ) {
       if (notify) {
         toast.message('Completion WhatsApp skipped — technician asked not to message customer');
       }
@@ -446,24 +455,13 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       return 'skipped';
     }
 
-    if (!opts.force) {
-      const leadSource = getLeadSourceFromJob(job);
-      let catalog = null;
-      try {
-        catalog = await ensureLeadCatalogLoaded();
-      } catch {
-        catalog = null;
-      }
-      if (isDirectCallOrCustomLeadSource(leadSource, catalog)) {
-        const { missingBill } = getCompletedJobMissingMedia(job);
-        if (missingBill) {
-          if (notify) {
-            toast.message(
-              'Completion WhatsApp skipped — Direct call / custom lead needs a bill photo first'
-            );
-          }
-          return 'skipped';
+    if (!opts.force && settings.completion_skip_missing_bill !== false) {
+      const { missingBill } = getCompletedJobMissingMedia(job);
+      if (missingBill) {
+        if (notify) {
+          toast.message('Completion WhatsApp skipped — bill photo is missing');
         }
+        return 'skipped';
       }
     }
 
@@ -471,7 +469,12 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       return 'skipped';
     }
 
-    if (!jobHasSkipReview(job)) {
+    const completionBrand =
+      normalizeDocumentBrand(job.service_brand) ||
+      normalizeDocumentBrand(job.serviceBrand) ||
+      'elevenro';
+
+    if (settings.completion_include_review !== false && !jobHasSkipReview(job)) {
       try {
         const { createJobReviewInvite } = await import('@/lib/jobReviews');
         const technicianId =
@@ -483,7 +486,7 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
         const invite = await createJobReviewInvite({
           jobId,
           technicianId,
-          brand: normalizeDocumentBrand(job.service_brand) || normalizeDocumentBrand(job.serviceBrand),
+          brand: completionBrand,
           skipCache: true,
         });
         if (invite?.url) {

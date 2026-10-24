@@ -409,10 +409,31 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           />
           <ToggleRow
             label="Auto-send completion message"
-            description="After a job is completed, send the brand completion WhatsApp via Cloud API when the 24h window is open. Skips jobs where the tech added AMC info or marked “Don’t send”. Cold template later when Meta-approved."
+            description="After a job is completed, send WhatsApp in the completed job’s brand. If the job has no brand, it sends as Eleven RO."
             checked={settings.auto_send_job_completion_whatsapp}
             disabled={!settings.enabled || !settings.allow_job_completion_whatsapp}
             onCheckedChange={(v) => patch('auto_send_job_completion_whatsapp', v)}
+          />
+          <ToggleRow
+            label="Skip when technician said don’t send"
+            description="If the technician turned on Don’t send message, the completion WhatsApp is not sent."
+            checked={settings.completion_skip_dont_send !== false}
+            disabled={!settings.enabled || !settings.allow_job_completion_whatsapp}
+            onCheckedChange={(v) => patch('completion_skip_dont_send', v)}
+          />
+          <ToggleRow
+            label="Skip when bill photo is missing"
+            description="Do not send the completion WhatsApp until the job has a bill photo."
+            checked={settings.completion_skip_missing_bill !== false}
+            disabled={!settings.enabled || !settings.allow_job_completion_whatsapp}
+            onCheckedChange={(v) => patch('completion_skip_missing_bill', v)}
+          />
+          <ToggleRow
+            label="Include Review us"
+            description="Add the review link in the message. Outside the 24h window the Review us button is on the approved completion template."
+            checked={settings.completion_include_review !== false}
+            disabled={!settings.enabled || !settings.allow_job_completion_whatsapp}
+            onCheckedChange={(v) => patch('completion_include_review', v)}
           />
           <ToggleRow
             label="Salary slip → technician"

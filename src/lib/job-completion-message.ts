@@ -325,7 +325,7 @@ export function buildJobCompletionMessageFromJob(job: Record<string, unknown>): 
   const documentBrand =
     normalizeDocumentBrand(job.service_brand) ||
     normalizeDocumentBrand((job as Record<string, unknown>).serviceBrand) ||
-    'hydrogenro';
+    'elevenro';
 
   const jobNumber = String(job.job_number || job.jobNumber || '');
   const input: JobCompletionMessageInput = {
