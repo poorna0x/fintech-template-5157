@@ -25,6 +25,16 @@
 [functions."ilovepdf-compress"]
   timeout = 26
 
+# PDF sends may compress a Chromium file with iLovePDF before the R2 copy.
+[functions."whatsapp-send"]
+  timeout = 26
+
+[functions."document-accept-send"]
+  timeout = 26
+
+[functions."document-accept-email-send"]
+  timeout = 26
+
 # Nightly cash check: 9:00 PM IST = 15:30 UTC. Asks admins (via push with
 # Yes/No buttons) whether each technician handed over today's cash.
 [functions."daily-cash-check"]

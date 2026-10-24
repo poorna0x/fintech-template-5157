@@ -22,6 +22,7 @@ const {
   fileBase64ToBuffer,
   pdfBase64ToBuffer,
 } = require('./whatsapp-helper');
+const { compressChromiumPdfForStorage } = require('./ilovepdf-compress-helper');
 const {
   normalizeDocType,
   previewAuthenticitySourceKey,
@@ -268,14 +269,19 @@ async function createAndSendEmailAcceptInvite(opts) {
   const email = normalizeEmail(opts.to || opts.email);
   if (!email) return { ok: false, error: 'Invalid recipient email' };
 
-  const originalBuffer = decodePdfBuffer(opts.originalPdfBase64);
-  const previewBuffer = decodePdfBuffer(opts.previewPdfBase64);
+  let originalBuffer = decodePdfBuffer(opts.originalPdfBase64);
+  let previewBuffer = decodePdfBuffer(opts.previewPdfBase64);
   if (!originalBuffer || originalBuffer.length < 32) {
     return { ok: false, error: 'Invalid original PDF' };
   }
   if (!previewBuffer || previewBuffer.length < 32) {
     return { ok: false, error: 'Invalid preview PDF' };
   }
+  const storedName = String(opts.filename || 'document.pdf');
+  [originalBuffer, previewBuffer] = await Promise.all([
+    compressChromiumPdfForStorage(originalBuffer, storedName),
+    compressChromiumPdfForStorage(previewBuffer, `PREVIEW_${storedName}`),
+  ]);
   if (originalBuffer.length > MAX_PDF_BYTES || previewBuffer.length > MAX_PDF_BYTES) {
     return { ok: false, error: 'PDF too large (max ~4.5MB)' };
   }

@@ -7,6 +7,7 @@ const {
 } = require('../netlify/functions/pdf-compression-setting');
 const {
   maybeCompressPdfBuffer,
+  compressChromiumPdfForStorage,
   fetchILovePdfAccountUsage,
   clearILovePdfConfigCache,
 } = require('../netlify/functions/ilovepdf-compress-helper');
@@ -161,6 +162,25 @@ async function testUsageLookup() {
   }
 }
 
+async function testStorageCompressLeavesFinishedPdfs() {
+  const originalFetch = global.fetch;
+  global.fetch = async () => {
+    throw new Error('storage compress should not call iLovePDF');
+  };
+  try {
+    const done = Buffer.concat([
+      Buffer.from('%PDF-1.4\n/Producer (iLovePDF)\n'),
+      Buffer.from('Skia/PDF'),
+      Buffer.alloc(1100, 1),
+    ]);
+    assert.strictEqual(await compressChromiumPdfForStorage(done, 'done.pdf'), done);
+    const other = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(1100, 2)]);
+    assert.strictEqual(await compressChromiumPdfForStorage(other, 'scan.pdf'), other);
+  } finally {
+    global.fetch = originalFetch;
+  }
+}
+
 function testGeneratePdfGuardsAndGlobalGate() {
   const source = fs.readFileSync(
     path.join(__dirname, '../netlify/functions/generate-pdf.js'),
@@ -170,6 +190,11 @@ function testGeneratePdfGuardsAndGlobalGate() {
   assert.doesNotMatch(source, /body\.compression/);
   assert.match(source, /iframe\|frame\|object\|embed/);
   assert.match(source, /compressPending: shouldCompress === true/);
+  const send = fs.readFileSync(
+    path.join(__dirname, '../netlify/functions/whatsapp-send.js'),
+    'utf8'
+  );
+  assert.match(send, /compressChromiumPdfForStorage/);
   assert.doesNotMatch(source, /maybeCompressPdfBuffer/);
   assert.match(
     source,
@@ -183,6 +208,7 @@ async function run() {
   await testCreditFallback();
   await testDeadlineFallback();
   await testUsageLookup();
+  await testStorageCompressLeavesFinishedPdfs();
   console.log('PDF compression tests passed');
 }
 

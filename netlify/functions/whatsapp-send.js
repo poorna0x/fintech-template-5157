@@ -32,9 +32,19 @@ const {
   resolveWaTemplateName,
 } = require('./whatsapp-template-resolve');
 const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
+const { compressChromiumPdfForStorage } = require('./ilovepdf-compress-helper');
 const { seedAdminPendingAction } = require('./whatsapp-booking-bot');
 
 const MAX_OUTBOUND_BYTES = 4.5 * 1024 * 1024;
+
+async function shrinkPdfBeforeStore(buf, filename) {
+  try {
+    return await compressChromiumPdfForStorage(buf, filename);
+  } catch (err) {
+    console.warn('[whatsapp-send] pdf compress skipped', err?.message || err);
+    return buf;
+  }
+}
 
 function isImageMime(mime) {
   return /^image\/(jpeg|jpg|png|webp)$/i.test(String(mime || ''));
@@ -477,6 +487,13 @@ exports.handler = async (event) => {
       if (!buf || buf.length < 32) {
         return json(400, headers, { error: 'Invalid file base64' });
       }
+      const looksPdf =
+        mimeHint === 'application/pdf' ||
+        /\.pdf$/i.test(filename) ||
+        buf.slice(0, 5).toString('latin1') === '%PDF-';
+      if (looksPdf && !isImageMime(mimeHint)) {
+        buf = await shrinkPdfBeforeStore(buf, filename);
+      }
       if (buf.length > MAX_OUTBOUND_BYTES) {
         return json(413, headers, { error: 'File too large (max ~4.5MB for WhatsApp send)' });
       }
@@ -628,10 +645,11 @@ exports.handler = async (event) => {
         String(headerDoc?.filename || body.filename || 'document.pdf').trim() || 'document.pdf';
 
       if (!mediaId && headerPdfB64) {
-        const buf = fileBase64ToBuffer(headerPdfB64) || pdfBase64ToBuffer(headerPdfB64);
+        let buf = fileBase64ToBuffer(headerPdfB64) || pdfBase64ToBuffer(headerPdfB64);
         if (!buf || buf.length < 32) {
           return json(400, headers, { error: 'Invalid header PDF base64' });
         }
+        buf = await shrinkPdfBeforeStore(buf, filename);
         if (buf.length > MAX_OUTBOUND_BYTES) {
           return json(413, headers, { error: 'File too large (max ~4.5MB for WhatsApp send)' });
         }

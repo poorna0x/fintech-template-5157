@@ -22,7 +22,9 @@
  *   ILOVEPDF_COMPRESS=0 to disable even when keys are set
  */
 
+const crypto = require('crypto');
 const { getServiceSupabase } = require('./whatsapp-helper');
+const { isPdfCompressionEnabled } = require('./pdf-compression-setting');
 
 const API_BASE = 'https://api.ilovepdf.com/v1';
 const APP_SECRET_KEY = 'ilovepdf';
@@ -459,6 +461,78 @@ async function maybeCompressPdfBuffer(pdfBuffer, opts = {}) {
   }
 }
 
+function isIlovePdfOutput(buffer) {
+  return Buffer.isBuffer(buffer) && buffer.includes(Buffer.from('iLovePDF'));
+}
+
+/** Chromium / Skia PDFs are the ones iLovePDF is meant to shrink before R2. */
+function isChromiumPdf(buffer) {
+  if (!Buffer.isBuffer(buffer)) return false;
+  return (
+    buffer.includes(Buffer.from('Skia/PDF')) ||
+    buffer.includes(Buffer.from('/Creator (Chromium'))
+  );
+}
+
+/**
+ * The client fingerprints the Chromium bytes, then a follow-up compress can
+ * time out and the original is what WhatsApp and R2 store. Point the existing
+ * fingerprint at the compressed bytes so authenticity still matches the file
+ * the customer receives.
+ */
+async function retargetAuthenticityHash(oldBuffer, newBuffer) {
+  const db = getServiceSupabase();
+  if (!db) return;
+  const oldHex = crypto.createHash('sha256').update(oldBuffer).digest('hex');
+  const newHex = crypto.createHash('sha256').update(newBuffer).digest('hex');
+  if (oldHex === newHex) return;
+  const patch = {
+    sha256_hex: newHex,
+    pdf_byte_length: newBuffer.length,
+    updated_at: new Date().toISOString(),
+  };
+  const doc = await db.from('document_pdf_authenticity').update(patch).eq('sha256_hex', oldHex);
+  if (doc.error) {
+    console.warn('[ilovepdf-compress] authenticity hash update failed', doc.error.message);
+  }
+  const amc = await db.from('amc_pdf_authenticity').update(patch).eq('sha256_hex', oldHex);
+  if (amc.error && !/does not exist|schema cache|could not find/i.test(amc.error.message || '')) {
+    console.warn('[ilovepdf-compress] amc authenticity hash update failed', amc.error.message);
+  }
+}
+
+/**
+ * Shrink a Chromium PDF before it is stored on R2 or sent. Already-compressed
+ * iLovePDF files and other people's PDFs are left unchanged. Soft-fails to the
+ * original buffer.
+ */
+async function compressChromiumPdfForStorage(pdfBuffer, filename) {
+  if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length < 1024) return pdfBuffer;
+  if (pdfBuffer.slice(0, 5).toString('latin1') !== '%PDF-') return pdfBuffer;
+  if (isIlovePdfOutput(pdfBuffer) || !isChromiumPdf(pdfBuffer)) return pdfBuffer;
+
+  try {
+    const enabled = await isPdfCompressionEnabled();
+    if (!enabled) return pdfBuffer;
+    const result = await maybeCompressPdfBuffer(pdfBuffer, {
+      filename: filename || 'document.pdf',
+      deadlineAt: Date.now() + 18_000,
+    });
+    if (
+      result?.compressed === true &&
+      Buffer.isBuffer(result.buffer) &&
+      result.buffer.length > 0 &&
+      result.buffer.length < pdfBuffer.length
+    ) {
+      await retargetAuthenticityHash(pdfBuffer, result.buffer);
+      return result.buffer;
+    }
+  } catch (error) {
+    console.warn('[ilovepdf-compress] storage compress skipped', error?.message || error);
+  }
+  return pdfBuffer;
+}
+
 /** Test helper: clear in-memory config cache. */
 function clearILovePdfConfigCache() {
   cachedConfig = null;
@@ -467,6 +541,7 @@ function clearILovePdfConfigCache() {
 
 module.exports = {
   maybeCompressPdfBuffer,
+  compressChromiumPdfForStorage,
   fetchILovePdfAccountUsage,
   getILovePdfConfig,
   isEnabled,

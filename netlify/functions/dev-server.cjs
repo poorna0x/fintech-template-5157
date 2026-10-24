@@ -198,6 +198,7 @@ const server = http.createServer((req, res) => {
     handler = sendLocationPing;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-send')) {
     delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ilovepdf-compress-helper')];
     delete require.cache[require.resolve('./whatsapp-unsolicited-media')];
     delete require.cache[require.resolve('./whatsapp-pay-qr-helper')];
     delete require.cache[require.resolve('./whatsapp-cold-fallback')];
@@ -237,9 +238,14 @@ const server = http.createServer((req, res) => {
     handler = pdfAuthenticityCheck;
   } else if (req.url.startsWith('/.netlify/functions/document-accept-send')) {
     delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ilovepdf-compress-helper')];
+    delete require.cache[require.resolve('./document-accept-helper')];
     handler = loadFn('document-accept-send');
   } else if (req.url.startsWith('/.netlify/functions/document-accept-email-send')) {
     delete require.cache[require.resolve('./admin-auth-guard')];
+    delete require.cache[require.resolve('./ilovepdf-compress-helper')];
+    delete require.cache[require.resolve('./document-accept-helper')];
+    delete require.cache[require.resolve('./document-accept-email-helper')];
     handler = loadFn('document-accept-email-send');
   } else if (req.url.startsWith('/.netlify/functions/document-accept-public')) {
     handler = loadFn('document-accept-public');
