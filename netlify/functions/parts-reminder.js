@@ -6,7 +6,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens, sendToTechnicianDevices } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
-const { loadNightRoutine, techNightRoutineOn } = require('./night-routine-settings');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -48,20 +47,16 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no_completed_jobs' }) };
   }
 
-  const night = await loadNightRoutine(db);
-
   // Every device of every technician who worked today — honor per-device prefs.
   const messaging = await getMessaging(db);
   let sent = 0;
   for (const technicianId of technicianIds) {
-    if (!night.technician) continue;
     const { data: techRow } = await db
       .from('technicians')
-      .select('push_notifications_enabled,push_prefs')
+      .select('push_notifications_enabled')
       .eq('id', technicianId)
       .maybeSingle();
     if (techRow?.push_notifications_enabled === false) continue;
-    if (!techNightRoutineOn(techRow?.push_prefs)) continue;
 
     const result = await sendToTechnicianDevices(
       db,
@@ -103,7 +98,7 @@ exports.handler = async (event) => {
   // Companion push to every admin phone: how many jobs finished today, so
   // they know to verify the parts were actually logged.
   let adminSent = 0;
-  const adminTokens = night.admin ? await getAdminFcmTokens(db, 'parts_reminder') : [];
+  const adminTokens = await getAdminFcmTokens(db, 'parts_reminder');
   if (adminTokens.length > 0) {
     const jobCount = (doneToday || []).length;
     const res = await sendAdminMulticast(db, messaging, {

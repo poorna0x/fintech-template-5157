@@ -6,7 +6,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
-const { loadNightRoutine, techNightRoutineOn } = require('./night-routine-settings');
 const { collectTechFieldDay } = require('./tech-field-day-helper');
 
 exports.handler = async (event) => {
@@ -37,22 +36,6 @@ exports.handler = async (event) => {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no_jobs' }) };
   }
 
-  const night = await loadNightRoutine(db);
-  if (!night.technician) {
-    return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'night_routine_off' }) };
-  }
-
-  const { data: prefRows } = await db
-    .from('technicians')
-    .select('id,push_prefs')
-    .in(
-      'id',
-      day.rows.map((row) => row.technicianId)
-    );
-  const nightOff = new Set(
-    (prefRows || []).filter((row) => !techNightRoutineOn(row.push_prefs)).map((row) => row.id)
-  );
-
   const messaging = await getMessaging(db);
   let sent = 0;
   let skipped = 0;
@@ -62,7 +45,7 @@ exports.handler = async (event) => {
       skipped += 1;
       continue;
     }
-    if (row.pushEnabled === false || nightOff.has(row.technicianId)) {
+    if (row.pushEnabled === false) {
       skipped += 1;
       continue;
     }

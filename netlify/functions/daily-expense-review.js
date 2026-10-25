@@ -5,7 +5,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, isStaleTokenError, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
-const { loadNightRoutine } = require('./night-routine-settings');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -48,13 +47,6 @@ exports.handler = async (event) => {
   });
 
   const dateLabel = istTodayLabel();
-  const night = await loadNightRoutine(db);
-  const reviews = REVIEWS.filter((review) =>
-    review.kind === 'business' ? night.business : night.admin
-  );
-  if (reviews.length === 0) {
-    return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'night_routine_off', date: dateLabel }) };
-  }
   const tokens = await getAdminFcmTokens(db, 'cash_check');
   if (tokens.length === 0) {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no_admin_tokens', date: dateLabel }) };
@@ -71,7 +63,7 @@ exports.handler = async (event) => {
   let sent = 0;
   const staleTokens = new Set();
 
-  for (const review of reviews) {
+  for (const review of REVIEWS) {
     const res = await sendAdminMulticast(db, messaging, {
       tokens,
       data: {
@@ -94,9 +86,9 @@ exports.handler = async (event) => {
     await pruneAdminFcmTokens(db, [...staleTokens]);
   }
 
-  console.log(`[daily-expense-review] ${dateLabel}: ${reviews.length} review(s), ${sent} push(es)`);
+  console.log(`[daily-expense-review] ${dateLabel}: ${REVIEWS.length} review(s), ${sent} push(es)`);
   return {
     statusCode: 200,
-    body: JSON.stringify({ date: dateLabel, reviews: reviews.length, sent }),
+    body: JSON.stringify({ date: dateLabel, reviews: REVIEWS.length, sent }),
   };
 };

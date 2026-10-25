@@ -10,7 +10,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, isStaleTokenError, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
-const { loadNightRoutine } = require('./night-routine-settings');
 const { requireCashCheckSignSecret, signCashCheck } = require('./cash-check-hmac');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -86,11 +85,6 @@ exports.handler = async (event) => {
   const db = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-
-  const night = await loadNightRoutine(db);
-  if (!night.admin) {
-    return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'night_routine_off' }) };
-  }
 
   const { startUtc, dateLabel } = istToday();
 

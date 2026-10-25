@@ -130,17 +130,6 @@ import {
 } from '@/lib/addCustomerUniversalResumeSettings';
 import { fetchOfficeLocation, saveOfficeLocation } from '@/lib/officeLocationSettings';
 import {
-  ensureAdminDirectionsPrefs,
-  fetchDirectionsFromOffice,
-  saveDirectionsFromOffice,
-} from '@/lib/directionsFromOffice';
-import {
-  fetchNightRoutine,
-  readTechNightRoutine,
-  saveNightRoutine,
-  type NightRoutineSettings,
-} from '@/lib/nightRoutineSettings';
-import {
   extractCoordinatesFromGoogleMapsLink,
   extractMapsUrlFromText,
   resolveGoogleMapsLinkViaApi,
@@ -350,7 +339,6 @@ const Settings = () => {
     salaryEffectiveFromMonth: getCurrentMonthKey(),
     accountStatus: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED',
     pushNotificationsEnabled: true,
-    nightRoutine: true,
     pushPrefs: defaultTechPushPrefs() as TechPushPrefs,
     whatsappPrefs: defaultTechWhatsAppPrefs() as TechWhatsAppPrefs,
     salarySlipAutoSend: false,
@@ -382,14 +370,6 @@ const Settings = () => {
   );
   const [jobWaNotifySaving, setJobWaNotifySaving] = useState(false);
   const [pdfCompressionEnabled, setPdfCompressionEnabled] = useState(true);
-  const [directionsFromOffice, setDirectionsFromOffice] = useState(false);
-  const [directionsFromOfficeSaving, setDirectionsFromOfficeSaving] = useState(false);
-  const [nightRoutine, setNightRoutine] = useState<NightRoutineSettings>({
-    admin: true,
-    technician: true,
-    business: true,
-  });
-  const [nightRoutineSaving, setNightRoutineSaving] = useState(false);
   const [pdfCompressionSaving, setPdfCompressionSaving] = useState(false);
   const [liveBookingBannerEnabled, setLiveBookingBannerEnabled] = useState(true);
   const [liveBookingBannerSaving, setLiveBookingBannerSaving] = useState(false);
@@ -644,7 +624,6 @@ const Settings = () => {
           commonQrCodeIds: (tech as any).commonQrCodeIds || [],
           accountStatus: (tech.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
           pushNotificationsEnabled: tech.push_notifications_enabled !== false,
-          nightRoutine: readTechNightRoutine((tech as any).push_prefs),
           pushPrefs: normalizeTechPushPrefs((tech as any).push_prefs),
           whatsappPrefs: normalizeTechWhatsAppPrefs((tech as any).whatsapp_prefs),
           salarySlipAutoSend: (tech as any).salary_slip_auto_send === true,
@@ -767,12 +746,6 @@ const Settings = () => {
       if (cancelled || !office) return;
       setOfficeLatLng({ lat: office.lat, lng: office.lng });
       setOfficeMapsUrl(office.mapsUrl || '');
-    });
-    void fetchDirectionsFromOffice().then(({ enabled }) => {
-      if (!cancelled) setDirectionsFromOffice(enabled);
-    });
-    void fetchNightRoutine().then(({ settings }) => {
-      if (!cancelled) setNightRoutine(settings);
     });
     return () => {
       cancelled = true;
@@ -938,46 +911,8 @@ const Settings = () => {
         return;
       }
       toast.success('Office location saved — used for technician km at 9 PM');
-      void ensureAdminDirectionsPrefs();
     } finally {
       setOfficeSaving(false);
-    }
-  };
-
-  const handleDirectionsFromOfficeToggle = async (enabled: boolean) => {
-    const previous = directionsFromOffice;
-    setDirectionsFromOffice(enabled);
-    setDirectionsFromOfficeSaving(true);
-    try {
-      const result = await saveDirectionsFromOffice(enabled);
-      if (!result.ok) {
-        setDirectionsFromOffice(previous);
-        toast.error(result.error || 'Could not save the directions setting');
-        return;
-      }
-      toast.success(
-        enabled
-          ? 'Customer pin opens directions from the office'
-          : 'Customer pin opens the location only'
-      );
-    } finally {
-      setDirectionsFromOfficeSaving(false);
-    }
-  };
-
-  const handleNightRoutineToggle = async (key: keyof NightRoutineSettings, enabled: boolean) => {
-    const previous = nightRoutine;
-    const next = { ...nightRoutine, [key]: enabled };
-    setNightRoutine(next);
-    setNightRoutineSaving(true);
-    try {
-      const result = await saveNightRoutine(next);
-      if (!result.ok) {
-        setNightRoutine(previous);
-        toast.error(result.error || 'Could not save the night routine');
-      }
-    } finally {
-      setNightRoutineSaving(false);
     }
   };
 
@@ -1116,7 +1051,6 @@ const Settings = () => {
       commonQrCodeIds: [],
       accountStatus: 'ACTIVE',
       pushNotificationsEnabled: true,
-      nightRoutine: true,
       pushPrefs: defaultTechPushPrefs(),
       whatsappPrefs: defaultTechWhatsAppPrefs(),
       salarySlipAutoSend: false,
@@ -1154,7 +1088,6 @@ const Settings = () => {
       commonQrCodeIds: (technician as any).commonQrCodeIds || [],
       accountStatus: (technician.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
       pushNotificationsEnabled: technician.push_notifications_enabled !== false,
-      nightRoutine: readTechNightRoutine((technician as any).push_prefs),
       pushPrefs: normalizeTechPushPrefs((technician as any).push_prefs),
       whatsappPrefs: normalizeTechWhatsAppPrefs((technician as any).whatsapp_prefs),
       salarySlipAutoSend: (technician as any).salary_slip_auto_send === true,
@@ -1259,10 +1192,7 @@ const Settings = () => {
         technicianData.account_status = technicianFormData.accountStatus || 'ACTIVE';
         technicianData.push_notifications_enabled =
           technicianFormData.pushNotificationsEnabled !== false;
-        technicianData.push_prefs = {
-          ...normalizeTechPushPrefs(technicianFormData.pushPrefs),
-          night_routine: technicianFormData.nightRoutine !== false,
-        };
+        technicianData.push_prefs = normalizeTechPushPrefs(technicianFormData.pushPrefs);
         technicianData.whatsapp_prefs = normalizeTechWhatsAppPrefs(technicianFormData.whatsappPrefs);
         technicianData.salary_slip_auto_send = technicianFormData.salarySlipAutoSend === true;
         technicianData.brand_sticker_required = technicianFormData.brandStickerRequired === true;
@@ -1281,10 +1211,7 @@ const Settings = () => {
         technicianData.created_at = new Date().toISOString();
         technicianData.account_status = 'ACTIVE';
         technicianData.push_notifications_enabled = true;
-        technicianData.push_prefs = {
-          ...defaultTechPushPrefs(),
-          night_routine: technicianFormData.nightRoutine !== false,
-        };
+        technicianData.push_prefs = defaultTechPushPrefs();
         technicianData.whatsapp_prefs = defaultTechWhatsAppPrefs();
         technicianData.salary_slip_auto_send = technicianFormData.salarySlipAutoSend === true;
         technicianData.brand_sticker_required = technicianFormData.brandStickerRequired === true;
@@ -4214,73 +4141,6 @@ const Settings = () => {
                 >
                   {officeSaving ? 'Saving…' : 'Save office location'}
                 </Button>
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
-                  <div className="min-w-0 space-y-0.5">
-                    <h4 className="text-sm font-medium text-foreground">Directions from office</h4>
-                    <p className="text-xs text-muted-foreground leading-snug">
-                      When this is on, tapping a customer location pin opens driving directions
-                      with the office as the start. When it is off, the pin opens that location only.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={directionsFromOffice}
-                    disabled={directionsFromOfficeSaving}
-                    onCheckedChange={(v) => void handleDirectionsFromOfficeToggle(v)}
-                  />
-                </div>
-              </div>
-              ) : null}
-
-              {!isManager ? (
-              <div id="night-routine" className="p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700 space-y-3">
-                <div>
-                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
-                    Night routine
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Scheduled evening and morning messages. Each technician can also be turned off
-                    individually in Edit technician.
-                  </p>
-                </div>
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="text-sm font-medium">Admin</p>
-                    <p className="text-xs text-muted-foreground leading-snug">
-                      Evening summary, cash handover questions, parts check, and the technician expense check.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={nightRoutine.admin}
-                    disabled={nightRoutineSaving}
-                    onCheckedChange={(v) => void handleNightRoutineToggle('admin', v)}
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="text-sm font-medium">Technician</p>
-                    <p className="text-xs text-muted-foreground leading-snug">
-                      Worked hours, parts reminder, and cash handover reminder sent to technicians.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={nightRoutine.technician}
-                    disabled={nightRoutineSaving}
-                    onCheckedChange={(v) => void handleNightRoutineToggle('technician', v)}
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="text-sm font-medium">Business</p>
-                    <p className="text-xs text-muted-foreground leading-snug">
-                      Business expense check at 9:15 PM.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={nightRoutine.business}
-                    disabled={nightRoutineSaving}
-                    onCheckedChange={(v) => void handleNightRoutineToggle('business', v)}
-                  />
-                </div>
               </div>
               ) : null}
 
@@ -4682,29 +4542,6 @@ const Settings = () => {
                       }
                     />
                   </div>
-                  {technicianFormData.pushNotificationsEnabled ? (
-                    <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
-                      <div className="min-w-0 space-y-0.5">
-                        <Label htmlFor="techNightRoutine" className="text-sm font-medium">
-                          Night routine
-                        </Label>
-                        <p className="text-xs text-muted-foreground leading-snug">
-                          Worked hours, parts reminder, and cash handover for this technician.
-                          The Settings night-routine switches still apply to everyone.
-                        </p>
-                      </div>
-                      <Switch
-                        id="techNightRoutine"
-                        checked={technicianFormData.nightRoutine !== false}
-                        onCheckedChange={(checked) =>
-                          setTechnicianFormData((prev) => ({
-                            ...prev,
-                            nightRoutine: checked,
-                          }))
-                        }
-                      />
-                    </div>
-                  ) : null}
                   {technicianFormData.pushNotificationsEnabled ? (
                     <div className="space-y-2 rounded-md border border-border bg-card px-3 py-2.5">
                       <p className="text-sm font-medium">App push types (FCM) for this technician</p>

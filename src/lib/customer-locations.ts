@@ -1,7 +1,5 @@
 import { Customer } from '@/types';
-import { extractCoordinates, openGoogleMapsDirectionsBetween, readLocationLatLng } from '@/lib/maps';
-import { extractCoordinatesFromGoogleMapsLink } from '@/lib/googleMapsLink';
-import { readCachedOfficePin } from '@/lib/officeLocationSettings';
+import { extractCoordinates } from '@/lib/maps';
 import {
   getLocationLinkFromObject,
   getMapsSearchLinkFromAddress,
@@ -186,30 +184,12 @@ export const mergeCustomerMapPinIntoJobLocation = (
   };
 };
 
-function destinationFromLocation(location: unknown, pinLink: string): { lat: number; lng: number } | null {
-  const direct = readLocationLatLng(location);
-  if (direct) return direct;
-  if (!pinLink) return null;
-  const fromLink = extractCoordinatesFromGoogleMapsLink(pinLink);
-  if (!fromLink) return null;
-  return { lat: fromLink.latitude, lng: fromLink.longitude };
-}
-
 /** Open a location slice the same way admin does — compact pin URL, no short-link hop. */
 const openLocationSliceInMaps = (
   location: JobLocationDisplay['location'],
-  address?: Customer['address'],
-  fromOffice = false
+  address?: Customer['address']
 ): boolean => {
   const pinLink = getLocationLinkFromObject(location);
-  if (fromOffice) {
-    const dest = destinationFromLocation(location, pinLink);
-    const office = readCachedOfficePin();
-    if (dest && office) {
-      openGoogleMapsDirectionsBetween(office, dest);
-      return true;
-    }
-  }
   if (pinLink) {
     window.open(pinLink, '_blank', 'noopener,noreferrer');
     return true;
@@ -224,11 +204,10 @@ const openLocationSliceInMaps = (
 
 export const openCustomerLocationInMaps = (
   customer: Customer,
-  variant: CustomerLocationVariant,
-  opts?: { fromOffice?: boolean }
+  variant: CustomerLocationVariant
 ): boolean => {
   const slice = getCustomerLocationSlice(customer, variant);
-  return openLocationSliceInMaps(slice.location, slice.address, opts?.fromOffice === true);
+  return openLocationSliceInMaps(slice.location, slice.address);
 };
 
 export const getPrimaryLocationLabel = (customer: Customer): string => {
