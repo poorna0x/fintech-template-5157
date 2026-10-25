@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 export const OFFICE_LOCATION_KEY = 'office_location';
+const OFFICE_PIN_CACHE_KEY = 'hro_office_pin_v1';
 
 export type OfficeLocation = {
   lat: number;
@@ -23,6 +24,25 @@ function parseOffice(value: unknown): OfficeLocation | null {
   };
 }
 
+export function readCachedOfficePin(): OfficeLocation | null {
+  try {
+    const raw = localStorage.getItem(OFFICE_PIN_CACHE_KEY);
+    if (!raw) return null;
+    return parseOffice(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedOfficePin(office: OfficeLocation | null): void {
+  try {
+    if (!office) localStorage.removeItem(OFFICE_PIN_CACHE_KEY);
+    else localStorage.setItem(OFFICE_PIN_CACHE_KEY, JSON.stringify(office));
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function fetchOfficeLocation(): Promise<{
   office: OfficeLocation | null;
   error: string | null;
@@ -32,8 +52,10 @@ export async function fetchOfficeLocation(): Promise<{
     .select('value')
     .eq('key', OFFICE_LOCATION_KEY)
     .maybeSingle();
-  if (error) return { office: null, error: error.message };
-  return { office: parseOffice(data?.value), error: null };
+  if (error) return { office: readCachedOfficePin(), error: error.message };
+  const office = parseOffice(data?.value);
+  writeCachedOfficePin(office);
+  return { office, error: null };
 }
 
 export async function saveOfficeLocation(
@@ -52,5 +74,6 @@ export async function saveOfficeLocation(
     },
     { onConflict: 'key' }
   );
+  if (!error) writeCachedOfficePin(office);
   return { ok: !error, error: error?.message || null };
 }

@@ -17,6 +17,10 @@ import {
   openCustomerLocationInMaps,
 } from '@/lib/customer-locations';
 import {
+  ensureAdminDirectionsPrefs,
+  readDirectionsFromOffice,
+} from '@/lib/directionsFromOffice';
+import {
   geolocationFailureMessage,
   getDeviceLocation,
   isGeolocationPositionError,
@@ -196,7 +200,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         return;
       }
 
-      if (openCustomerLocationInMaps(c, 'primary')) return;
+      await ensureAdminDirectionsPrefs();
+      if (openCustomerLocationInMaps(c, 'primary', { fromOffice: readDirectionsFromOffice() })) return;
       toast.error('Location data not available');
     } catch {
       toast.error('Location data not available');

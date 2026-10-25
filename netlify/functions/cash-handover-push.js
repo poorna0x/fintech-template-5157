@@ -1,5 +1,6 @@
 // Shared: push "hand over cash" to a technician's devices.
 const { sendToTechnicianDevices } = require('./fcm-helper');
+const { loadNightRoutine, techNightRoutineOn } = require('./night-routine-settings');
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} db
@@ -9,6 +10,16 @@ const { sendToTechnicianDevices } = require('./fcm-helper');
  * @param {{ forYesterday?: boolean }} [opts]
  */
 async function sendCashHandoverReminder(db, messaging, technicianId, amountInr, opts = {}) {
+  const night = await loadNightRoutine(db);
+  if (!night.technician) return { sent: 0, tokens: 0, skipped: 'night_routine_off' };
+  const { data: techRow } = await db
+    .from('technicians')
+    .select('push_prefs')
+    .eq('id', technicianId)
+    .maybeSingle();
+  if (!techNightRoutineOn(techRow?.push_prefs)) {
+    return { sent: 0, tokens: 0, skipped: 'tech_night_off' };
+  }
   const amount = Number(amountInr);
   const rupees = `₹${(Number.isFinite(amount) ? amount : 0).toLocaleString('en-IN')}`;
   const whose = opts.forYesterday ? "yesterday's" : "today's";

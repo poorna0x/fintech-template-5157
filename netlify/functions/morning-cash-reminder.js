@@ -13,6 +13,7 @@ const {
 } = require('./fcm-helper');
 const { sendCashHandoverReminder } = require('./cash-handover-push');
 const { assertScheduledInvoke } = require('./schedule-guard');
+const { loadNightRoutine } = require('./night-routine-settings');
 const { requireCashCheckSignSecret, signCashCheck } = require('./cash-check-hmac');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -76,6 +77,8 @@ exports.handler = async (event) => {
     getAdminFcmTokens(db, 'cash_check'),
     getMessaging(db),
   ]);
+  const night = await loadNightRoutine(db);
+  const adminAskTokens = night.admin ? adminTokens : [];
   const nameById = new Map((techs || []).map((t) => [t.id, t.full_name || 'Technician']));
 
   const siteUrl = (process.env.URL || 'https://hydrogenro.com').replace(/\/$/, '');
@@ -96,14 +99,16 @@ exports.handler = async (event) => {
 
     // 1) Remind the technician.
     try {
-      const { sent, tokens } = await sendCashHandoverReminder(
+      const { sent, tokens, skipped } = await sendCashHandoverReminder(
         db,
         messaging,
         row.technician_id,
         amountInr,
         { forYesterday: true }
       );
-      if (tokens === 0) {
+      if (skipped) {
+        /* night routine off for this technician */
+      } else if (tokens === 0) {
         console.warn('[morning-cash-reminder] no token for', row.technician_id);
       } else if (sent === 0) {
         console.warn('[morning-cash-reminder] stale tokens for', row.technician_id);
@@ -119,13 +124,13 @@ exports.handler = async (event) => {
     }
 
     // 2) Ask admins Yes/No about remaining cash (signed for that cash_date).
-    if (adminTokens.length > 0) {
+    if (adminAskTokens.length > 0) {
       try {
         const sig = signCashCheck(row.technician_id, cashDate, amount, hmac.secret);
         const rupees = amount.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
         const whenLabel = isYesterday ? 'yesterday' : cashDate;
         const res = await sendAdminMulticast(db, messaging, {
-          tokens: adminTokens,
+          tokens: adminAskTokens,
           data: {
             type: 'cash_check',
             technicianId: row.technician_id,
@@ -141,7 +146,7 @@ exports.handler = async (event) => {
         });
         adminPushed += res.successCount;
         res.responses.forEach((r, i) => {
-          if (!r.success && isStaleTokenError(r.error)) staleTokens.add(adminTokens[i]);
+          if (!r.success && isStaleTokenError(r.error)) staleTokens.add(adminAskTokens[i]);
         });
       } catch (err) {
         console.warn(
