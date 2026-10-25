@@ -17,6 +17,7 @@ import {
   loginTechnician,
 } from '@/lib/auth';
 import { secureAuthLogin } from '@/lib/secureAuthLogin';
+import { isNativeApp } from '@/lib/isNativeApp';
 import { secureAuthPasskeyLogin } from '@/lib/secureAuthPasskeyLogin';
 import type { AuthLoginResult } from '@/lib/loginResult';
 import {
@@ -154,8 +155,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       /Chrome/i.test(navigator.userAgent) &&
       /Mobile|Android/i.test(navigator.userAgent);
 
-    const sessionTimeoutMs = pwa ? 25_000 : isChromeMobile ? 12_000 : 12_000;
-    const overallTimeoutMs = pwa ? 30_000 : isChromeMobile ? 14_000 : 15_000;
+    // Admin APK is an Android WebView, so it used to share the short technician
+    // phone timeout and the session check gave up before login finished.
+    const native = isNativeApp();
+    const sessionTimeoutMs = native || pwa ? 30_000 : isChromeMobile ? 12_000 : 12_000;
+    const overallTimeoutMs = native || pwa ? 40_000 : isChromeMobile ? 14_000 : 15_000;
 
     let cancelled = false;
     let authInitSettled = false;

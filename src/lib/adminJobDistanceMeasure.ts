@@ -19,6 +19,7 @@ import {
   requestTechnicianFreshLocation,
 } from '@/lib/adminTechLiveLocationRefresh';
 import { db } from '@/lib/supabase';
+import { isNativeApp } from '@/lib/isNativeApp';
 import type { Job, Technician } from '@/types';
 import type {
   JobCustomDistanceResult,
@@ -547,7 +548,10 @@ export async function refreshAdminJobDistanceLiveLocation(ctx: AdminJobDistanceM
   );
 
   try {
-    const fix = await requestTechnicianFreshLocation(techId);
+    // Admin APK uses the last saved pin. It does not sit through the technician GPS timeout.
+    const fix = isNativeApp()
+      ? await requestTechnicianFreshLocation(techId, { lastKnownOnly: true })
+      : await requestTechnicianFreshLocation(techId);
     if (fix) {
       await mirrorLiveFixToTechnicianCurrentLocation(
         techId,

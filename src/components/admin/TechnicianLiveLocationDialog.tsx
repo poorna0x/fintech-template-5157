@@ -22,6 +22,7 @@ import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Technician } from '@/types';
 import { isActiveTechnicianAccount } from '@/lib/technicianAccountStatus';
+import { isNativeApp } from '@/lib/isNativeApp';
 
 type LiveLocationRow = {
   technician_id: string;
@@ -152,6 +153,8 @@ const TechnicianLiveLocationDialog = ({
   const [exactFix, setExactFix] = useState(false);
   // The phone didn't respond in time — we're showing the last known location.
   const [timedOut, setTimedOut] = useState(false);
+  /** Admin APK: stop the “still measuring” line without showing a timeout. */
+  const [holdLastPin, setHoldLastPin] = useState(false);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const freshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -195,6 +198,7 @@ const TechnicianLiveLocationDialog = ({
       setWaitingFresh(false);
       setExactFix(false);
       setTimedOut(false);
+      setHoldLastPin(false);
 
       let { data, error } = await supabase
         .from('technician_live_locations')
@@ -244,12 +248,14 @@ const TechnicianLiveLocationDialog = ({
       // current (saves the push, the GPS wake-up and the uploads). An explicit
       // Refresh click (force) always asks the phone for a new measurement.
       const shouldPing = existing.is_tracking && (force || !alreadyFresh);
+      const nativeAdmin = isNativeApp();
       if (shouldPing) {
         requestedAtRef.current = Date.now();
         // Full loader until the phone's FIRST answer — except on a forced
         // Refresh with a position already on screen: keep the map visible and
         // let the inline "getting the exact location" note show instead.
-        setWaitingFresh(!(force && existing.latitude != null));
+        // Admin APK always keeps a pin that is already on screen.
+        setWaitingFresh(!(nativeAdmin && existing.latitude != null) && !(force && existing.latitude != null));
       }
 
       // Two attempts: GPS often fails to lock in the phone's first 30s window
@@ -266,7 +272,9 @@ const TechnicianLiveLocationDialog = ({
             requestFix();
           } else {
             setWaitingFresh(false);
-            setTimedOut(true);
+            // Admin APK keeps the last pin. It does not announce a technician timeout.
+            if (isNativeApp()) setHoldLastPin(true);
+            else setTimedOut(true);
           }
         }, FRESH_FIX_TIMEOUT_MS);
       };
@@ -303,6 +311,7 @@ const TechnicianLiveLocationDialog = ({
             if (answered) {
               setWaitingFresh(false);
               setTimedOut(false);
+              setHoldLastPin(false);
             }
             // Only a fix MEASURED after our request counts as the exact
             // current position (fix_time is when GPS took the measurement;
@@ -342,6 +351,7 @@ const TechnicianLiveLocationDialog = ({
       setWaitingFresh(false);
       setExactFix(false);
       setTimedOut(false);
+      setHoldLastPin(false);
       return;
     }
     if (technicianId) void startWatching(technicianId);
@@ -463,7 +473,7 @@ const TechnicianLiveLocationDialog = ({
               )}
 
               {/* Approximate answer shown, phone still measuring the exact fix */}
-              {!timedOut && !exactFix && hasCoords && row.is_tracking && (
+              {!timedOut && !holdLastPin && !exactFix && hasCoords && row.is_tracking && (
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   Approximate position shown — getting the exact location, updates
