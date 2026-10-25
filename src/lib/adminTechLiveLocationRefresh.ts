@@ -64,33 +64,10 @@ async function sendLocationPing(techId: string): Promise<void> {
  */
 export function requestTechnicianFreshLocation(
   technicianId: string,
-  opts?: { timeoutMs?: number; signal?: AbortSignal; lastKnownOnly?: boolean }
+  opts?: { timeoutMs?: number; signal?: AbortSignal }
 ): Promise<FreshTechLocation | null> {
   const techId = String(technicianId || '').trim();
   const timeoutMs = opts?.timeoutMs ?? FRESH_FIX_TIMEOUT_MS;
-
-  if (opts?.lastKnownOnly) {
-    if (!techId) return Promise.resolve(null);
-    return (async () => {
-      try {
-        const { data } = await supabase
-          .from('technician_live_locations')
-          .select('technician_id,latitude,longitude,accuracy,updated_at,fix_time')
-          .eq('technician_id', techId)
-          .maybeSingle();
-        const row = data as LiveLocationRow | null;
-        if (!row || row.latitude == null || row.longitude == null) return null;
-        return {
-          latitude: Number(row.latitude),
-          longitude: Number(row.longitude),
-          accuracy: row.accuracy != null ? Number(row.accuracy) : null,
-          fixTime: row.fix_time || row.updated_at,
-        };
-      } catch {
-        return null;
-      }
-    })();
-  }
 
   return new Promise(async (resolve) => {
     if (!techId) {
