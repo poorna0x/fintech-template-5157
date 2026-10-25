@@ -1,4 +1,3 @@
-import { supabase } from '@/lib/supabase';
 import {
   fetchOfficeLocation,
   readCachedOfficePin,
@@ -6,8 +5,7 @@ import {
   type OfficeLocation,
 } from '@/lib/officeLocationSettings';
 
-export const DIRECTIONS_FROM_OFFICE_KEY = 'directions_from_office';
-
+/** This browser / phone only. Not shared with other admin devices. */
 const CACHE_KEY = 'hro_directions_from_office_v1';
 
 export function readDirectionsFromOffice(): boolean {
@@ -26,48 +24,15 @@ export function writeDirectionsFromOffice(on: boolean): void {
   }
 }
 
-export async function fetchDirectionsFromOffice(): Promise<{
-  enabled: boolean;
-  error: string | null;
-}> {
-  const { data, error } = await supabase
-    .from('crm_settings')
-    .select('value')
-    .eq('key', DIRECTIONS_FROM_OFFICE_KEY)
-    .maybeSingle();
-  if (error) return { enabled: readDirectionsFromOffice(), error: error.message };
-  const enabled = data?.value === true;
-  writeDirectionsFromOffice(enabled);
-  return { enabled, error: null };
-}
-
-export async function saveDirectionsFromOffice(
-  enabled: boolean
-): Promise<{ ok: boolean; error: string | null }> {
-  const { error } = await supabase.from('crm_settings').upsert(
-    {
-      key: DIRECTIONS_FROM_OFFICE_KEY,
-      value: enabled,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'key' }
-  );
-  if (!error) writeDirectionsFromOffice(enabled);
-  return { ok: !error, error: error?.message || null };
-}
-
-/** Load the pin-click preference and the office pin before opening Maps. */
+/** Load this phone's pin-click preference and the shared office pin before opening Maps. */
 export async function ensureAdminDirectionsPrefs(): Promise<{
   fromOffice: boolean;
   office: OfficeLocation | null;
 }> {
-  const [flag, officeResult] = await Promise.all([
-    fetchDirectionsFromOffice(),
-    fetchOfficeLocation(),
-  ]);
+  const officeResult = await fetchOfficeLocation();
   if (!officeResult.error) writeCachedOfficePin(officeResult.office);
   return {
-    fromOffice: flag.enabled,
+    fromOffice: readDirectionsFromOffice(),
     office: officeResult.error ? readCachedOfficePin() : officeResult.office,
   };
 }

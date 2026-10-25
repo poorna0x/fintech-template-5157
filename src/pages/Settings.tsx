@@ -130,8 +130,8 @@ import {
 } from '@/lib/addCustomerUniversalResumeSettings';
 import { fetchOfficeLocation, saveOfficeLocation } from '@/lib/officeLocationSettings';
 import {
-  fetchDirectionsFromOffice,
-  saveDirectionsFromOffice,
+  readDirectionsFromOffice,
+  writeDirectionsFromOffice,
 } from '@/lib/directionsFromOffice';
 import {
   extractCoordinatesFromGoogleMapsLink,
@@ -375,8 +375,7 @@ const Settings = () => {
   const [jobWaNotifySaving, setJobWaNotifySaving] = useState(false);
   const [pdfCompressionEnabled, setPdfCompressionEnabled] = useState(true);
   const [pdfCompressionSaving, setPdfCompressionSaving] = useState(false);
-  const [directionsFromOffice, setDirectionsFromOffice] = useState(false);
-  const [directionsFromOfficeSaving, setDirectionsFromOfficeSaving] = useState(false);
+  const [directionsFromOffice, setDirectionsFromOffice] = useState(readDirectionsFromOffice);
   const [liveBookingBannerEnabled, setLiveBookingBannerEnabled] = useState(true);
   const [liveBookingBannerSaving, setLiveBookingBannerSaving] = useState(false);
   const [addCustomerUniversalResume, setAddCustomerUniversalResume] = useState(
@@ -753,9 +752,6 @@ const Settings = () => {
       setOfficeLatLng({ lat: office.lat, lng: office.lng });
       setOfficeMapsUrl(office.mapsUrl || '');
     });
-    void fetchDirectionsFromOffice().then(({ enabled }) => {
-      if (!cancelled) setDirectionsFromOffice(enabled);
-    });
     return () => {
       cancelled = true;
     };
@@ -925,25 +921,14 @@ const Settings = () => {
     }
   };
 
-  const handleDirectionsFromOfficeToggle = async (enabled: boolean) => {
-    const previous = directionsFromOffice;
+  const handleDirectionsFromOfficeToggle = (enabled: boolean) => {
+    writeDirectionsFromOffice(enabled);
     setDirectionsFromOffice(enabled);
-    setDirectionsFromOfficeSaving(true);
-    try {
-      const result = await saveDirectionsFromOffice(enabled);
-      if (!result.ok) {
-        setDirectionsFromOffice(previous);
-        toast.error(result.error || 'Could not save the directions setting');
-        return;
-      }
-      toast.success(
-        enabled
-          ? 'Customer pin opens directions from the office to that job'
-          : 'Customer pin opens the location only'
-      );
-    } finally {
-      setDirectionsFromOfficeSaving(false);
-    }
+    toast.success(
+      enabled
+        ? 'On this phone, a customer pin opens directions from the office'
+        : 'On this phone, a customer pin opens the location only'
+    );
   };
 
   // Transform technician data from database format to frontend format
@@ -4175,16 +4160,16 @@ const Settings = () => {
                   <div className="min-w-0 space-y-0.5">
                     <h4 className="text-sm font-medium text-foreground">Directions from office</h4>
                     <p className="text-xs text-muted-foreground leading-snug">
-                      Admin only. When this is on, tapping a customer location pin in the admin
-                      app opens driving directions with the office as the start and that job as
-                      the end. Technician phones always open the job location only.
+                      This phone only. When this is on, tapping a customer location pin here
+                      opens driving directions with the office as the start and that job as the
+                      end. Other admin phones keep their own switch. Technician phones always
+                      open the job location only.
                     </p>
                   </div>
                   <Switch
                     checked={directionsFromOffice}
-                    disabled={directionsFromOfficeSaving}
-                    onCheckedChange={(v) => void handleDirectionsFromOfficeToggle(v)}
-                    aria-label="Directions from office"
+                    onCheckedChange={handleDirectionsFromOfficeToggle}
+                    aria-label="Directions from office on this phone"
                   />
                 </div>
               </div>
