@@ -4175,9 +4175,9 @@ const Settings = () => {
                   <div className="min-w-0 space-y-0.5">
                     <h4 className="text-sm font-medium text-foreground">Directions from office</h4>
                     <p className="text-xs text-muted-foreground leading-snug">
-                      When this is on, tapping a customer location pin opens driving directions
-                      with the office as the start and that job location as the end. When it is
-                      off, the pin opens that location only.
+                      Admin only. When this is on, tapping a customer location pin in the admin
+                      app opens driving directions with the office as the start and that job as
+                      the end. Technician phones always open the job location only.
                     </p>
                   </div>
                   <Switch

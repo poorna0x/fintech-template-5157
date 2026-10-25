@@ -198,14 +198,23 @@ function destinationFromLocation(
   return { lat: fromLink.latitude, lng: fromLink.longitude };
 }
 
-/** Open a location slice the same way admin does — compact pin URL, no short-link hop. */
+/** Office-start directions are an admin pin click only. Technician /technician never uses that pin. */
+function allowOfficeStart(): boolean {
+  try {
+    return !window.location.pathname.startsWith('/technician');
+  } catch {
+    return false;
+  }
+}
+
+/** Open a location slice — pin URL, unless an admin asked to start from the office. */
 const openLocationSliceInMaps = (
   location: JobLocationDisplay['location'],
   address?: Customer['address'],
   fromOffice = false
 ): boolean => {
   const pinLink = getLocationLinkFromObject(location);
-  if (fromOffice) {
+  if (fromOffice && allowOfficeStart()) {
     const dest = destinationFromLocation(location, pinLink);
     const office = readCachedOfficePin();
     if (dest && office) {
