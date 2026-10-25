@@ -4,8 +4,9 @@
 // they know to double-check the day's parts entries.
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens, sendToTechnicianDevices } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, sendAdminMulticast, pruneAdminFcmTokens, sendToTechnicianDevices } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
+const { requireCashCheckSignSecret, signPartsCheck } = require('./cash-check-hmac');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -19,6 +20,11 @@ exports.handler = async (event) => {
   const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   if (!supabaseUrl || !serviceKey) {
     console.error('[parts-reminder] missing Supabase env');
+    return { statusCode: 500, body: 'Server misconfigured' };
+  }
+  const hmac = requireCashCheckSignSecret();
+  if (!hmac.ok) {
+    console.error('[parts-reminder]', hmac.error);
     return { statusCode: 500, body: 'Server misconfigured' };
   }
   const db = createClient(supabaseUrl, serviceKey, {
@@ -95,28 +101,30 @@ exports.handler = async (event) => {
     }
   }
 
-  // Companion push to every admin phone: how many jobs finished today, so
-  // they know to verify the parts were actually logged.
+  // Admin Yes/No, same idea as the cash check. Data-only so the admin app
+  // draws the buttons. No queues one question for tomorrow morning.
   let adminSent = 0;
   const adminTokens = await getAdminFcmTokens(db, 'parts_reminder');
   if (adminTokens.length > 0) {
     const jobCount = (doneToday || []).length;
+    const istDay = new Date(Date.now() + IST_OFFSET_MS);
+    const dateLabel = `${istDay.getUTCFullYear()}-${String(istDay.getUTCMonth() + 1).padStart(2, '0')}-${String(istDay.getUTCDate()).padStart(2, '0')}`;
+    const siteUrl = (process.env.URL || 'https://hydrogenro.com').replace(/\/$/, '');
+    const replyUrl = `${siteUrl}/.netlify/functions/parts-check-response`;
+    const sig = signPartsCheck(dateLabel, 'evening', hmac.secret);
+    const jobLabel = `${jobCount} job${jobCount === 1 ? '' : 's'}`;
     const res = await sendAdminMulticast(db, messaging, {
       tokens: adminTokens,
-      notification: {
-        title: 'Check parts entries',
-        body: `${jobCount} job${jobCount === 1 ? '' : 's'} completed today by ${technicianIds.length} technician${technicianIds.length === 1 ? '' : 's'} — verify all used parts are logged.`,
+      data: {
+        type: 'parts_check',
+        ask: 'evening',
+        date: dateLabel,
+        sig,
+        replyUrl,
+        title: 'Parts check',
+        body: `${jobLabel} completed today. Were all used parts logged?`,
       },
-      data: { type: 'job_notification' },
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: 'job_alerts_v2',
-          defaultSound: true,
-          color: '#F59E0B',
-          tag: 'parts-reminder-admin',
-        },
-      },
+      android: { priority: 'high' },
     });
     adminSent = res.successCount;
     const staleAdmin = [];

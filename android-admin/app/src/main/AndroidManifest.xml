@@ -57,6 +57,11 @@
             android:name=".CashCheckReceiver"
             android:exported="false" />
 
+        <!-- Handles the Yes/No buttons on the parts-check notification -->
+        <receiver
+            android:name=".PartsCheckReceiver"
+            android:exported="false" />
+
         <!-- Nightly expense review Yes/No → Payments add expense -->
         <receiver
             android:name=".ExpenseReviewReceiver"

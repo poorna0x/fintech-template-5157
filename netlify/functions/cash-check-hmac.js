@@ -48,6 +48,30 @@ function signCashCheck(technicianId, date, amount, secret) {
     .digest('hex');
 }
 
+function signPartsCheck(date, ask, secret) {
+  const crypto = require('crypto');
+  return crypto
+    .createHmac('sha256', secret)
+    .update(`parts-check|${date}|${ask}`)
+    .digest('hex');
+}
+
+/** True if sig matches any current HMAC candidate for this parts-check ask. */
+function verifyPartsCheckSig(date, ask, sig) {
+  const crypto = require('crypto');
+  const provided = String(sig || '').trim();
+  if (!provided) return false;
+  const sigBuf = Buffer.from(provided);
+  for (const secret of hmacCandidates()) {
+    const expected = signPartsCheck(date, ask, secret);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** True if sig matches any current HMAC candidate (dedicated or legacy service-role). */
 function verifyCashCheckSig(technicianId, date, amount, sig) {
   const crypto = require('crypto');
@@ -69,5 +93,7 @@ module.exports = {
   requireCashCheckSignSecret,
   signCashCheck,
   verifyCashCheckSig,
+  signPartsCheck,
+  verifyPartsCheckSig,
   hmacCandidates,
 };

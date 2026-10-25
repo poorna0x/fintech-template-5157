@@ -24,6 +24,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             CashCheckReceiver.showCashCheckNotification(getApplicationContext(), data);
             return;
         }
+        if ("parts_check".equals(data.get("type"))) {
+            PartsCheckReceiver.showPartsCheckNotification(getApplicationContext(), data);
+            return;
+        }
         if ("expense_review".equals(data.get("type"))) {
             ExpenseReviewReceiver.showExpenseReviewNotification(getApplicationContext(), data);
             return;

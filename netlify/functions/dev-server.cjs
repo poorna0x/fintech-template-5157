@@ -171,6 +171,11 @@ const server = http.createServer((req, res) => {
     handler = submitTechMessageReply;
   } else if (req.url.startsWith('/.netlify/functions/submit-admin-message-reply')) {
     handler = submitAdminMessageReply;
+  } else if (req.url.startsWith('/.netlify/functions/parts-check-response')) {
+    delete require.cache[require.resolve('./parts-check-response')];
+    delete require.cache[require.resolve('./parts-check-pending')];
+    delete require.cache[require.resolve('./cash-check-hmac')];
+    handler = require('./parts-check-response');
   } else if (req.url.startsWith('/.netlify/functions/notify-admins')) {
     delete require.cache[require.resolve('./notify-admins')];
     delete require.cache[require.resolve('./admin-auth-guard')];

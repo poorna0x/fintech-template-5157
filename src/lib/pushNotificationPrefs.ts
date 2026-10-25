@@ -121,7 +121,7 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
   },
   parts_reminder: {
     label: 'Parts check',
-    description: '10:10 PM reminder to verify parts logged for completed jobs.',
+    description: '10:10 PM Yes/No: were today\'s parts logged? No asks once more the next morning.',
   },
   job_application: {
     label: 'Job applications',

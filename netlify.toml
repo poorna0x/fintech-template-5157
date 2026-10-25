@@ -69,9 +69,14 @@
   schedule = "30 15 * * *"
 
 # Parts reminder: 10:10 PM IST = 16:40 UTC. Reminds technicians who worked
-# today to log all the parts they used.
+# today to log all the parts they used, and asks admins Yes/No.
 [functions."parts-reminder"]
   schedule = "40 16 * * *"
+
+# Morning parts check: 8:35 AM IST = 03:05 UTC. One follow-up if an admin
+# tapped No last night. The answer is not saved after this ask.
+[functions."morning-parts-check"]
+  schedule = "5 3 * * *"
 
 # Morning reminders: 9:00 AM IST = 03:30 UTC. General reminders + pending
 # payments due today → admin phones (WhatsApp action on pending payments).
