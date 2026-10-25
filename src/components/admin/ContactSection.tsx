@@ -16,6 +16,7 @@ import {
   hasMultipleCustomerLocations,
   openCustomerLocationInMaps,
 } from '@/lib/customer-locations';
+import { ensureAdminDirectionsPrefs } from '@/lib/directionsFromOffice';
 import {
   geolocationFailureMessage,
   getDeviceLocation,
@@ -196,7 +197,13 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         return;
       }
 
-      if (openCustomerLocationInMaps(c, 'primary')) return;
+      const prefs = await ensureAdminDirectionsPrefs();
+      if (prefs.fromOffice && !prefs.office) {
+        toast.error('Save the office pin in Settings to start directions from the office.');
+      }
+      if (openCustomerLocationInMaps(c, 'primary', { fromOffice: prefs.fromOffice && !!prefs.office })) {
+        return;
+      }
       toast.error('Location data not available');
     } catch {
       toast.error('Location data not available');

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ExternalLink, MapPin } from 'lucide-react';
@@ -13,6 +13,7 @@ import {
   openCustomerLocationInMaps,
 } from '@/lib/customer-locations';
 import { formatAddressForDisplay } from '@/lib/maps';
+import { ensureAdminDirectionsPrefs } from '@/lib/directionsFromOffice';
 import { toast } from 'sonner';
 
 type LocationMode = 'maps' | 'address' | 'both';
@@ -35,6 +36,11 @@ const LocationsDialog: React.FC<LocationsDialogProps> = ({
   mode = 'both',
   onViewAddress,
 }) => {
+  useEffect(() => {
+    if (!open) return;
+    void ensureAdminDirectionsPrefs();
+  }, [open]);
+
   if (!customer) return null;
 
   const mapsOnly = mode === 'maps';
@@ -54,12 +60,19 @@ const LocationsDialog: React.FC<LocationsDialogProps> = ({
   };
 
   const openMaps = (variant: CustomerLocationVariant) => {
-    const opened = openCustomerLocationInMaps(customer, variant);
-    if (opened) {
-      onOpenChange(false);
-    } else {
-      toast.error('Location data not available');
-    }
+    void ensureAdminDirectionsPrefs().then((prefs) => {
+      if (prefs.fromOffice && !prefs.office) {
+        toast.error('Save the office pin in Settings to start directions from the office.');
+      }
+      const opened = openCustomerLocationInMaps(customer, variant, {
+        fromOffice: prefs.fromOffice && !!prefs.office,
+      });
+      if (opened) {
+        onOpenChange(false);
+      } else {
+        toast.error('Location data not available');
+      }
+    });
   };
 
   const renderLocationCard = (

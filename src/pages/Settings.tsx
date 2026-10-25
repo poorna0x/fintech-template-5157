@@ -130,6 +130,10 @@ import {
 } from '@/lib/addCustomerUniversalResumeSettings';
 import { fetchOfficeLocation, saveOfficeLocation } from '@/lib/officeLocationSettings';
 import {
+  fetchDirectionsFromOffice,
+  saveDirectionsFromOffice,
+} from '@/lib/directionsFromOffice';
+import {
   extractCoordinatesFromGoogleMapsLink,
   extractMapsUrlFromText,
   resolveGoogleMapsLinkViaApi,
@@ -371,6 +375,8 @@ const Settings = () => {
   const [jobWaNotifySaving, setJobWaNotifySaving] = useState(false);
   const [pdfCompressionEnabled, setPdfCompressionEnabled] = useState(true);
   const [pdfCompressionSaving, setPdfCompressionSaving] = useState(false);
+  const [directionsFromOffice, setDirectionsFromOffice] = useState(false);
+  const [directionsFromOfficeSaving, setDirectionsFromOfficeSaving] = useState(false);
   const [liveBookingBannerEnabled, setLiveBookingBannerEnabled] = useState(true);
   const [liveBookingBannerSaving, setLiveBookingBannerSaving] = useState(false);
   const [addCustomerUniversalResume, setAddCustomerUniversalResume] = useState(
@@ -747,6 +753,9 @@ const Settings = () => {
       setOfficeLatLng({ lat: office.lat, lng: office.lng });
       setOfficeMapsUrl(office.mapsUrl || '');
     });
+    void fetchDirectionsFromOffice().then(({ enabled }) => {
+      if (!cancelled) setDirectionsFromOffice(enabled);
+    });
     return () => {
       cancelled = true;
     };
@@ -913,6 +922,27 @@ const Settings = () => {
       toast.success('Office location saved — used for technician km at 9 PM');
     } finally {
       setOfficeSaving(false);
+    }
+  };
+
+  const handleDirectionsFromOfficeToggle = async (enabled: boolean) => {
+    const previous = directionsFromOffice;
+    setDirectionsFromOffice(enabled);
+    setDirectionsFromOfficeSaving(true);
+    try {
+      const result = await saveDirectionsFromOffice(enabled);
+      if (!result.ok) {
+        setDirectionsFromOffice(previous);
+        toast.error(result.error || 'Could not save the directions setting');
+        return;
+      }
+      toast.success(
+        enabled
+          ? 'Customer pin opens directions from the office to that job'
+          : 'Customer pin opens the location only'
+      );
+    } finally {
+      setDirectionsFromOfficeSaving(false);
     }
   };
 
@@ -4141,6 +4171,22 @@ const Settings = () => {
                 >
                   {officeSaving ? 'Saving…' : 'Save office location'}
                 </Button>
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
+                  <div className="min-w-0 space-y-0.5">
+                    <h4 className="text-sm font-medium text-foreground">Directions from office</h4>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      When this is on, tapping a customer location pin opens driving directions
+                      with the office as the start and that job location as the end. When it is
+                      off, the pin opens that location only.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={directionsFromOffice}
+                    disabled={directionsFromOfficeSaving}
+                    onCheckedChange={(v) => void handleDirectionsFromOfficeToggle(v)}
+                    aria-label="Directions from office"
+                  />
+                </div>
               </div>
               ) : null}
 
