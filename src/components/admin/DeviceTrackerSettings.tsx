@@ -19,8 +19,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
+  ADMIN_NIGHT_ROUTINE_CATEGORIES,
   ADMIN_PUSH_CATEGORIES,
   ADMIN_PUSH_LABELS,
+  TECH_NIGHT_ROUTINE_CATEGORIES,
   TECH_PUSH_CATEGORIES,
   TECH_PUSH_LABELS,
   countEnabledPrefs,
@@ -73,6 +75,7 @@ interface DeviceCardProps {
   onTogglePush: (enabled: boolean) => void;
   onToggleCallAlerts: (enabled: boolean) => void;
   onTogglePref: (key: string, enabled: boolean) => void;
+  onToggleNightAll: (enabled: boolean) => void;
   onRemove: () => void;
 }
 
@@ -93,6 +96,7 @@ function DeviceCard({
   onTogglePush,
   onToggleCallAlerts,
   onTogglePref,
+  onToggleNightAll,
   onRemove,
 }: DeviceCardProps) {
   const [nameDraft, setNameDraft] = useState(displayName);
@@ -103,8 +107,13 @@ function DeviceCard({
   }, [displayName]);
 
   const categories = kind === 'admin' ? ADMIN_PUSH_CATEGORIES : TECH_PUSH_CATEGORIES;
+  const nightKeys = kind === 'admin' ? ADMIN_NIGHT_ROUTINE_CATEGORIES : TECH_NIGHT_ROUTINE_CATEGORIES;
   const labels = kind === 'admin' ? ADMIN_PUSH_LABELS : TECH_PUSH_LABELS;
-  const enabledCount = countEnabledPrefs(pushPrefs as Record<string, boolean>);
+  const nightKeySet = new Set<string>(nightKeys);
+  const otherCategories = categories.filter((key) => !nightKeySet.has(key));
+  const prefs = pushPrefs as Record<string, boolean>;
+  const nightAllOn = nightKeys.every((key) => prefs[key] !== false);
+  const enabledCount = countEnabledPrefs(prefs);
   const totalCount = categories.length;
 
   return (
@@ -214,6 +223,47 @@ function DeviceCard({
       </div>
 
       <div className="rounded-md border border-border">
+        <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+          <div className="min-w-0 space-y-0.5">
+            <p className="text-sm font-medium">Night routine</p>
+            <p className="text-xs text-muted-foreground leading-snug">
+              {kind === 'admin'
+                ? 'All scheduled evening and morning messages on this admin phone.'
+                : 'All scheduled evening and morning messages on this technician phone.'}
+            </p>
+          </div>
+          <Switch
+            checked={nightAllOn}
+            disabled={saving || !pushEnabled}
+            aria-label="All night routine notifications"
+            onCheckedChange={onToggleNightAll}
+          />
+        </div>
+        <div className="border-t border-border divide-y divide-border">
+          {nightKeys.map((key) => {
+            const meta = labels[key as AdminPushCategory & TechPushCategory];
+            return (
+              <div
+                key={key}
+                className="flex items-center justify-between gap-3 px-3 py-2.5 bg-card/50"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-sm font-medium">{meta.label}</p>
+                  <p className="text-xs text-muted-foreground leading-snug">{meta.description}</p>
+                </div>
+                <Switch
+                  checked={prefs[key] !== false}
+                  disabled={saving || !pushEnabled}
+                  aria-label={meta.label}
+                  onCheckedChange={(enabled) => onTogglePref(key, enabled)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rounded-md border border-border">
         <button
           type="button"
           className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-muted/40 transition-colors"
@@ -229,9 +279,9 @@ function DeviceCard({
         </button>
         {expanded ? (
           <div className="border-t border-border divide-y divide-border">
-            {categories.map((key) => {
+            {otherCategories.map((key) => {
               const meta = labels[key as AdminPushCategory & TechPushCategory];
-              const checked = (pushPrefs as Record<string, boolean>)[key] !== false;
+              const checked = prefs[key] !== false;
               return (
                 <div
                   key={key}
@@ -615,6 +665,20 @@ export function DeviceTrackerSettings() {
                       'Notification preference saved'
                     )
                   }
+                  onToggleNightAll={(enabled) =>
+                    void patchAdmin(
+                      device.token,
+                      {
+                        push_prefs: {
+                          ...device.push_prefs,
+                          ...Object.fromEntries(
+                            ADMIN_NIGHT_ROUTINE_CATEGORIES.map((key) => [key, enabled])
+                          ),
+                        },
+                      },
+                      enabled ? 'Night routine on for this phone' : 'Night routine off for this phone'
+                    )
+                  }
                   onRemove={() =>
                     setRemoveTarget({
                       kind: 'admin',
@@ -668,6 +732,20 @@ export function DeviceTrackerSettings() {
                           ? 'Wrong-line alerts on for this phone (tech + admins)'
                           : 'Wrong-line alerts off — this phone will not report to admins'
                         : 'Notification preference saved'
+                    )
+                  }
+                  onToggleNightAll={(enabled) =>
+                    void patchTech(
+                      device.token,
+                      {
+                        push_prefs: {
+                          ...device.push_prefs,
+                          ...Object.fromEntries(
+                            TECH_NIGHT_ROUTINE_CATEGORIES.map((key) => [key, enabled])
+                          ),
+                        },
+                      },
+                      enabled ? 'Night routine on for this phone' : 'Night routine off for this phone'
                     )
                   }
                   onRemove={() =>

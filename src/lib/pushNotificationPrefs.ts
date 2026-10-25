@@ -9,6 +9,8 @@ export const ADMIN_PUSH_CATEGORIES = [
   'tech_dismiss_acks',
   'reminders',
   'cash_check',
+  'expense_technician',
+  'expense_business',
   'day_summary',
   'new_booking',
   'parts_reminder',
@@ -31,6 +33,22 @@ export const TECH_PUSH_CATEGORIES = [
   'worked_hours',
   'job_reviews',
 ] as const;
+
+/** Scheduled evening / morning messages, per admin phone. */
+export const ADMIN_NIGHT_ROUTINE_CATEGORIES = [
+  'cash_check',
+  'expense_technician',
+  'expense_business',
+  'day_summary',
+  'parts_reminder',
+] as const satisfies readonly AdminPushCategory[];
+
+/** Scheduled evening / morning messages, per technician phone. */
+export const TECH_NIGHT_ROUTINE_CATEGORIES = [
+  'worked_hours',
+  'cash_handover',
+  'parts_reminder',
+] as const satisfies readonly TechPushCategory[];
 
 export type AdminPushCategory = (typeof ADMIN_PUSH_CATEGORIES)[number];
 export type TechPushCategory = (typeof TECH_PUSH_CATEGORIES)[number];
@@ -82,20 +100,28 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
     description: 'Daily reminder and pending payment due alerts.',
   },
   cash_check: {
-    label: 'Cash & expense evening checks',
-    description: 'Cash handover Yes/No, plus daily technician/business expense review.',
+    label: 'Cash handover questions',
+    description: '9:00 PM and next-morning Yes/No: has this technician handed over the cash?',
+  },
+  expense_technician: {
+    label: 'Technician expense check',
+    description: '9:15 PM: were all technician expenses for today added in Payments?',
+  },
+  expense_business: {
+    label: 'Business expense check',
+    description: '9:15 PM: were all business expenses for today added in Payments?',
   },
   day_summary: {
     label: 'Evening day summary',
-    description: 'Jobs completed, collections, and open jobs count.',
+    description: '10:00 PM: jobs completed, collections, and open jobs count.',
   },
   new_booking: {
     label: 'New booking',
     description: 'Instant alert when someone books on the website or WhatsApp.',
   },
   parts_reminder: {
-    label: 'Parts entry reminder',
-    description: 'Reminder to verify parts logged for completed jobs.',
+    label: 'Parts check',
+    description: '10:10 PM reminder to verify parts logged for completed jobs.',
   },
   job_application: {
     label: 'Job applications',
@@ -134,16 +160,16 @@ export const TECH_PUSH_LABELS: Record<TechPushCategory, { label: string; descrip
     description: 'When admin requests live location update.',
   },
   parts_reminder: {
-    label: 'Parts entry reminder',
-    description: 'Reminder to log parts after completing jobs.',
+    label: 'Parts reminder',
+    description: '10:10 PM reminder to log parts after completing jobs.',
   },
   bill_reminders: {
     label: 'Bill photo reminders',
     description: 'When bill photo is missing after job completion.',
   },
   cash_handover: {
-    label: 'Cash handover reminders',
-    description: 'Morning / evening cash handover nudges from office.',
+    label: 'Cash handover reminder',
+    description: 'Ask this phone to hand cash over to the office (evening No, and the morning reminder).',
   },
   wrong_line: {
     label: 'Wrong company-line reminder',

@@ -13,6 +13,8 @@ const ADMIN_PUSH_CATEGORIES = [
   'tech_dismiss_acks',
   'reminders',
   'cash_check',
+  'expense_technician',
+  'expense_business',
   'day_summary',
   'new_booking',
   'parts_reminder',
@@ -43,6 +45,15 @@ function isCategoryEnabled(pushPrefs, category) {
   if (!category) return true;
   const prefs = pushPrefs && typeof pushPrefs === 'object' ? pushPrefs : null;
   if (!prefs) return true;
+  // Expense checks used to share the cash-handover switch. A phone that never
+  // set the new keys still follows that older switch.
+  if (
+    (category === 'expense_technician' || category === 'expense_business') &&
+    prefs[category] !== true &&
+    prefs[category] !== false
+  ) {
+    return prefs.cash_check !== false;
+  }
   if (prefs[category] === false) return false;
   return true;
 }

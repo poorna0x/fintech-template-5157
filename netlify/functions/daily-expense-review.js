@@ -19,11 +19,13 @@ function istTodayLabel() {
 const REVIEWS = [
   {
     kind: 'technician',
+    category: 'expense_technician',
     title: 'Technician expenses — today',
     body: 'Were all technician expenses for today added in Payments?',
   },
   {
     kind: 'business',
+    category: 'expense_business',
     title: 'Business expenses — today',
     body: 'Were all business expenses for today added in Payments?',
   },
@@ -47,10 +49,6 @@ exports.handler = async (event) => {
   });
 
   const dateLabel = istTodayLabel();
-  const tokens = await getAdminFcmTokens(db, 'cash_check');
-  if (tokens.length === 0) {
-    return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no_admin_tokens', date: dateLabel }) };
-  }
 
   let messaging;
   try {
@@ -64,6 +62,8 @@ exports.handler = async (event) => {
   const staleTokens = new Set();
 
   for (const review of REVIEWS) {
+    const tokens = await getAdminFcmTokens(db, review.category);
+    if (tokens.length === 0) continue;
     const res = await sendAdminMulticast(db, messaging, {
       tokens,
       data: {
