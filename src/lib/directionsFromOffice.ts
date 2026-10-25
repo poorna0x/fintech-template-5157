@@ -5,8 +5,11 @@ import {
   type OfficeLocation,
 } from '@/lib/officeLocationSettings';
 
-/** This browser / phone only. Not shared with other admin devices. */
-const CACHE_KEY = 'hro_directions_from_office_v1';
+/**
+ * This browser / phone only. v2 ignores the old shared setting that had been
+ * copied onto the phone, so a phone that never chose stays off.
+ */
+const CACHE_KEY = 'hro_directions_from_office_v2';
 
 export function readDirectionsFromOffice(): boolean {
   try {
