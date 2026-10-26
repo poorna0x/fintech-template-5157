@@ -1,5 +1,6 @@
 package com.hydrogenro.technician;
 
+import android.content.Context;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -12,7 +13,12 @@ public class LocationNagPlugin extends Plugin {
     @PluginMethod
     public void setEnabled(PluginCall call) {
         boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
-        LocationNag.setEnabled(getContext(), enabled);
+        Context context = getContext();
+        LocationNag.setEnabled(context, enabled);
+        if (enabled && LocationNag.shouldNag(context)) {
+            android.app.Activity activity = getActivity();
+            LocationEnablePrompt.showImmediate(activity != null ? activity : context);
+        }
         call.resolve();
     }
 }

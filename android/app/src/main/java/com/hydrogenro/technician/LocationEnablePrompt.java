@@ -77,14 +77,14 @@ final class LocationEnablePrompt {
             /* older builds */
         }
 
-        if (!overlay) {
-            postFallbackNotification(context, activity);
+        if (!overlay || immediate) {
+            postFallbackNotification(context, activity, immediate);
         }
         try {
             context.startActivity(activity);
         } catch (Throwable t) {
             Log.w(TAG, "Could not open the system location dialog", t);
-            if (overlay) postFallbackNotification(context, activity);
+            if (overlay && !immediate) postFallbackNotification(context, activity, false);
         }
     }
 
@@ -170,7 +170,7 @@ final class LocationEnablePrompt {
         return app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
-    private static void postFallbackNotification(Context context, Intent activity) {
+    private static void postFallbackNotification(Context context, Intent activity, boolean fullScreen) {
         ensureTrayChannel(context);
         PendingIntent pending = PendingIntent.getActivity(
             context,
@@ -184,13 +184,16 @@ final class LocationEnablePrompt {
         )
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setContentTitle("Turn on location")
-            .setContentText("The office needs this phone's location for the current job.")
+            .setContentText("Location is off. Turn it on to keep working.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setSound(null)
             .setVibrate(null)
             .setAutoCancel(true)
             .setContentIntent(pending);
+        if (fullScreen) {
+            builder.setFullScreenIntent(pending, true);
+        }
         try {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build());
         } catch (SecurityException e) {

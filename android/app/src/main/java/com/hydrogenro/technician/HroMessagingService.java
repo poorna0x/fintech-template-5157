@@ -192,6 +192,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             if (keepAsking) {
                 LocationEnablePrompt.startKeepAsking(context, uploadUrl, technicianId, nonce);
             }
+            if (LocationNag.isEnabled(context)) {
+                LocationNag.sync(context);
+                LocationEnablePrompt.showImmediate(context);
+            }
             return;
         }
         LocationEnablePrompt.stopKeepAsking(context);

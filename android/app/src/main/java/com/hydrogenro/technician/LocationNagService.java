@@ -116,7 +116,20 @@ public class LocationNagService extends Service {
             .build();
         try {
             if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+                try {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    );
+                } catch (Throwable specialUseFailed) {
+                    Log.w(TAG, "Special-use foreground denied; using location type", specialUseFailed);
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                    );
+                }
             } else {
                 startForeground(NOTIFICATION_ID, notification);
             }
