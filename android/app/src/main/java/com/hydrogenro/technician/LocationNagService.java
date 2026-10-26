@@ -44,7 +44,7 @@ public class LocationNagService extends Service {
             } else if (!LocationNag.isDialogUp()) {
                 LocationEnablePrompt.showImmediate(LocationNagService.this);
             }
-            handler.postDelayed(this, LocationNag.shouldNag(LocationNagService.this) ? 2000L : 5000L);
+            handler.postDelayed(this, 2000L);
         }
     };
     private final BroadcastReceiver modeReceiver = new BroadcastReceiver() {
@@ -66,7 +66,7 @@ public class LocationNagService extends Service {
         filter.addAction(LocationManager.MODE_CHANGED_ACTION);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(modeReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+                registerReceiver(modeReceiver, filter, Context.RECEIVER_EXPORTED);
             } else {
                 registerReceiver(modeReceiver, filter);
             }

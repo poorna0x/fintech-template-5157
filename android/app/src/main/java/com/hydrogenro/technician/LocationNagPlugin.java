@@ -15,9 +15,13 @@ public class LocationNagPlugin extends Plugin {
         boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
         Context context = getContext();
         LocationNag.setEnabled(context, enabled);
-        if (enabled) LocationNag.requestExactAlarmsIfNeeded(getActivity() != null ? getActivity() : context);
+        android.app.Activity activity = getActivity();
+        if (enabled && LocationNag.ensureCanInterrupt(activity)) {
+            call.resolve();
+            return;
+        }
+        if (enabled) LocationNag.requestExactAlarmsIfNeeded(activity != null ? activity : context);
         if (enabled && LocationNag.shouldNag(context)) {
-            android.app.Activity activity = getActivity();
             LocationEnablePrompt.showImmediate(activity != null ? activity : context);
         }
         call.resolve();

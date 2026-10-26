@@ -1,5 +1,6 @@
 package com.hydrogenro.technician;
 
+import android.app.ActivityOptions;
 import android.app.AlarmManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -68,7 +69,12 @@ final class LocationEnablePrompt {
         activity.putExtra(LocationEnableActivity.EXTRA_UPLOAD_URL, uploadUrl);
         activity.putExtra(LocationEnableActivity.EXTRA_TECHNICIAN_ID, technicianId);
         activity.putExtra(LocationEnableActivity.EXTRA_NONCE, nonce);
-        activity.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+        activity.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+        );
 
         boolean overlay = false;
         try {
@@ -77,14 +83,20 @@ final class LocationEnablePrompt {
             /* older builds */
         }
 
-        if (!overlay || immediate) {
-            postFallbackNotification(context, activity, immediate);
-        }
+        postFallbackNotification(context, activity, true);
         try {
-            context.startActivity(activity);
+            if (Build.VERSION.SDK_INT >= 34) {
+                ActivityOptions options = ActivityOptions.makeBasic();
+                options.setPendingIntentBackgroundActivityStartMode(
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                );
+                context.startActivity(activity, options.toBundle());
+            } else {
+                context.startActivity(activity);
+            }
         } catch (Throwable t) {
             Log.w(TAG, "Could not open the system location dialog", t);
-            if (overlay && !immediate) postFallbackNotification(context, activity, false);
+            if (!overlay) postFallbackNotification(context, activity, true);
         }
     }
 
@@ -172,12 +184,20 @@ final class LocationEnablePrompt {
 
     private static void postFallbackNotification(Context context, Intent activity, boolean fullScreen) {
         ensureTrayChannel(context);
-        PendingIntent pending = PendingIntent.getActivity(
-            context,
-            NOTIFICATION_ID,
-            activity,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pending;
+        if (Build.VERSION.SDK_INT >= 34) {
+            ActivityOptions options = ActivityOptions.makeBasic();
+            options.setPendingIntentBackgroundActivityStartMode(
+                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+            );
+            options.setPendingIntentCreatorBackgroundActivityStartMode(
+                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+            );
+            pending = PendingIntent.getActivity(context, NOTIFICATION_ID, activity, flags, options.toBundle());
+        } else {
+            pending = PendingIntent.getActivity(context, NOTIFICATION_ID, activity, flags);
+        }
         NotificationCompat.Builder builder = new NotificationCompat.Builder(
             context,
             TRAY_CHANNEL

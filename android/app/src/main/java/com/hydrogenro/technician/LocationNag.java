@@ -1,13 +1,18 @@
 package com.hydrogenro.technician;
 
+import android.app.Activity;
 import android.app.AlarmManager;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.util.Log;
 import java.util.Calendar;
 import java.util.TimeZone;
@@ -22,6 +27,7 @@ final class LocationNag {
     private static final Handler HANDLER = new Handler(Looper.getMainLooper());
     private static boolean dialogUp;
     private static Runnable retry;
+    private static boolean askedPermissionThisProcess;
 
     private LocationNag() {}
 
@@ -86,6 +92,53 @@ final class LocationNag {
         } catch (Throwable t) {
             Log.w(TAG, "Could not restart the location watch", t);
         }
+    }
+
+    /**
+     * The prompt can cover WhatsApp only after the technician allows display
+     * over other apps. Ask for the first missing permission once per open.
+     * Returns true when a settings screen was opened.
+     */
+    static boolean ensureCanInterrupt(Activity activity) {
+        if (activity == null || askedPermissionThisProcess) return false;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(activity)) {
+                askedPermissionThisProcess = true;
+                Intent intent = new Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + activity.getPackageName())
+                );
+                activity.startActivity(intent);
+                return true;
+            }
+            if (Build.VERSION.SDK_INT >= 34) {
+                NotificationManager nm = activity.getSystemService(NotificationManager.class);
+                if (nm != null && !nm.canUseFullScreenIntent()) {
+                    askedPermissionThisProcess = true;
+                    Intent intent = new Intent(
+                        Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                        Uri.parse("package:" + activity.getPackageName())
+                    );
+                    activity.startActivity(intent);
+                    return true;
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PowerManager power = (PowerManager) activity.getSystemService(Context.POWER_SERVICE);
+                if (power != null && !power.isIgnoringBatteryOptimizations(activity.getPackageName())) {
+                    askedPermissionThisProcess = true;
+                    Intent intent = new Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:" + activity.getPackageName())
+                    );
+                    activity.startActivity(intent);
+                    return true;
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Could not open the permission needed to prompt over other apps", t);
+        }
+        return false;
     }
 
     /** Exact alarms are what let the prompt start again after the app is closed. */

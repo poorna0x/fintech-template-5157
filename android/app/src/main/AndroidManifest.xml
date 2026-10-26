@@ -33,7 +33,10 @@
             android:name=".LocationEnableActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity="com.hydrogenro.technician.location"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <service

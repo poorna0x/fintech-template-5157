@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.WindowManager;
 import androidx.core.app.NotificationManagerCompat;
@@ -25,6 +27,9 @@ public class LocationEnableActivity extends Activity {
     static final String EXTRA_TECHNICIAN_ID = "technicianId";
     static final String EXTRA_NONCE = "nonce";
     private static final int REQUEST_ENABLE = 4107;
+    private boolean resumed;
+    private boolean resolutionShown;
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -38,8 +43,9 @@ public class LocationEnableActivity extends Activity {
                     | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             );
         }
-        NotificationManagerCompat.from(this).cancel(LocationEnablePrompt.NOTIFICATION_ID);
-        LocationNag.markDialogUp();
+        handler.postDelayed(() -> {
+            if (!resumed && !resolutionShown && !isFinishing()) finish();
+        }, 1500L);
 
         if (LocationServicesStatus.isEnabled(this)) {
             PlaybackPause.resume(this);
@@ -59,8 +65,10 @@ public class LocationEnableActivity extends Activity {
             client.checkLocationSettings(settings)
                 .addOnSuccessListener(unused -> startFixAndFinish())
                 .addOnFailureListener(error -> {
-                    if (error instanceof ResolvableApiException) {
+                    if (!isFinishing() && error instanceof ResolvableApiException) {
                         try {
+                            resolutionShown = true;
+                            LocationNag.markDialogUp();
                             ((ResolvableApiException) error).startResolutionForResult(
                                 LocationEnableActivity.this,
                                 REQUEST_ENABLE
@@ -103,6 +111,13 @@ public class LocationEnableActivity extends Activity {
             }
         }
         finish();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        resumed = true;
+        NotificationManagerCompat.from(this).cancel(LocationEnablePrompt.NOTIFICATION_ID);
     }
 
     @Override
