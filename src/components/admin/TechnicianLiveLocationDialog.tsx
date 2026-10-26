@@ -468,9 +468,6 @@ const TechnicianLiveLocationDialog = ({
                     {nudging ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
                     Nudge to turn on location
                   </Button>
-                  <p className="text-xs text-amber-800">
-                    The phone shows Android's own turn-on-location prompt.
-                  </p>
                 </div>
               )}
 
