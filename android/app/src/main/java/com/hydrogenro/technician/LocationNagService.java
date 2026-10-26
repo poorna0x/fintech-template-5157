@@ -28,6 +28,7 @@ public class LocationNagService extends Service {
     private static final int NOTIFICATION_ID = 7404;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean receiverRegistered;
+    private boolean foregroundOk;
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
@@ -107,6 +108,9 @@ public class LocationNagService extends Service {
             }
             receiverRegistered = false;
         }
+        if (foregroundOk && LocationNag.shouldNag(this)) {
+            LocationNag.kickSoon(this);
+        }
         super.onDestroy();
     }
 
@@ -144,6 +148,7 @@ public class LocationNagService extends Service {
             } else {
                 startForeground(NOTIFICATION_ID, notification);
             }
+            foregroundOk = true;
             return true;
         } catch (Throwable t) {
             Log.w(TAG, "Foreground start failed", t);

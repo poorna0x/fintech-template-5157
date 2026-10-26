@@ -195,7 +195,9 @@ final class LocationEnablePrompt {
             builder.setFullScreenIntent(pending, true);
         }
         try {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build());
+            NotificationManagerCompat nm = NotificationManagerCompat.from(context);
+            if (fullScreen) nm.cancel(NOTIFICATION_ID);
+            nm.notify(NOTIFICATION_ID, builder.build());
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }

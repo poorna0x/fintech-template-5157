@@ -68,21 +68,38 @@ final class LocationNag {
         if (!isEnabled(app) || !inWindow()) return;
         AlarmManager alarms = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
         if (alarms == null) return;
-        PendingIntent pending = PendingIntent.getBroadcast(
-            app,
-            7411,
-            new Intent(app, LocationNagAlarmReceiver.class),
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
-        long at = android.os.SystemClock.elapsedRealtime() + 1500L;
+        Intent intent = new Intent(app, LocationNagService.class);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pending = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? PendingIntent.getForegroundService(app, 7411, intent, flags)
+            : PendingIntent.getService(app, 7411, intent, flags);
+        long at = android.os.SystemClock.elapsedRealtime() + 1000L;
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            boolean exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarms.canScheduleExactAlarms();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && exact) {
+                alarms.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending);
             } else {
-                alarms.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending);
+                alarms.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending);
             }
         } catch (Throwable t) {
             Log.w(TAG, "Could not restart the location watch", t);
+        }
+    }
+
+    /** Exact alarms are what let the prompt start again after the app is closed. */
+    static void requestExactAlarmsIfNeeded(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return;
+        AlarmManager alarms = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        if (alarms == null || alarms.canScheduleExactAlarms()) return;
+        try {
+            Intent intent = new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+            intent.setData(android.net.Uri.parse("package:" + context.getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+        } catch (Throwable t) {
+            Log.w(TAG, "Exact alarm permission screen failed", t);
         }
     }
 
