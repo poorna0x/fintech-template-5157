@@ -16,7 +16,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import { ExternalLink, Loader2, MapPin, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -161,8 +160,6 @@ const TechnicianLiveLocationDialog = ({
   const channelRef = useRef<RealtimeChannel | null>(null);
   const freshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestedAtRef = useRef(0);
-
-  const [nudging, setNudging] = useState(false);
 
   const sendPing = useCallback(async (techId: string, promptLocation = false, keepAsking?: boolean) => {
     // One call does everything: stamps the request, creates the one-time
@@ -462,36 +459,6 @@ const TechnicianLiveLocationDialog = ({
                     This phone's location is switched off, so a live fix cannot be taken.
                     {hasCoords ? ' The map is the last known position.' : ''}
                   </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11 w-full border-amber-400 bg-white"
-                    disabled={nudging}
-                    onClick={() => {
-                      if (!technicianId) return;
-                      setNudging(true);
-                      void sendPing(technicianId, true).finally(() => setNudging(false));
-                    }}
-                  >
-                    {nudging ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
-                    Nudge to turn on location
-                  </Button>
-                  <div className="flex items-center justify-between gap-3">
-                    <Label htmlFor="keep-location-nudge" className="text-sm font-normal text-amber-900">
-                      Keep asking until location is on
-                    </Label>
-                    <Switch
-                      id="keep-location-nudge"
-                      checked={Boolean(row.location_keep_asking)}
-                      disabled={nudging}
-                      onCheckedChange={(on) => {
-                        if (!technicianId) return;
-                        setNudging(true);
-                        setRow((current) => (current ? { ...current, location_keep_asking: on } : current));
-                        void sendPing(technicianId, on, on).finally(() => setNudging(false));
-                      }}
-                    />
-                  </div>
                 </div>
               )}
 

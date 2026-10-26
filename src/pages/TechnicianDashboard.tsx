@@ -1480,6 +1480,9 @@ const TechnicianDashboard = () => {
       void import('@/lib/technicianLiveLocation').then(({ startLiveTracking }) =>
         startLiveTracking(technicianId)
       );
+      void import('@/lib/locationNag').then(({ syncTechnicianLocationNag }) =>
+        syncTechnicianLocationNag(technicianId)
+      );
       // Also register FCM directly on open/resume so Message technician works
       // even if location bootstrap is slow or fails.
       void import('@/lib/technicianPush').then(({ registerTechnicianPushToken }) =>

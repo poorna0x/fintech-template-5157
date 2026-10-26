@@ -95,6 +95,24 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <service
+            android:name=".LocationNagService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Asks this technician to turn the phone location switch back on between 8 AM and 8 PM" />
+        </service>
+
+        <receiver
+            android:name=".LocationNagAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Cancels the old 5-minute GPS alarm after an update or reboot. -->
         <receiver
             android:name=".LocalGpsSampleReceiver"

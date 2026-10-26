@@ -34,6 +34,13 @@ final class LocationEnablePrompt {
 
     private LocationEnablePrompt() {}
 
+    /** Work-hours nag. Skips the quiet gap so a dismissed dialog comes straight back. */
+    static void showImmediate(Context context) {
+        if (LocationNag.isDialogUp()) return;
+        if (SystemClock.elapsedRealtime() - lastShownAt < 800L) return;
+        show(context, null, null, null, true, true);
+    }
+
     static void show(
         Context context,
         String uploadUrl,
@@ -41,9 +48,20 @@ final class LocationEnablePrompt {
         String nonce,
         boolean force
     ) {
+        show(context, uploadUrl, technicianId, nonce, force, false);
+    }
+
+    private static void show(
+        Context context,
+        String uploadUrl,
+        String technicianId,
+        String nonce,
+        boolean force,
+        boolean immediate
+    ) {
         long now = SystemClock.elapsedRealtime();
-        if (!force && now - lastShownAt < QUIET_MS) return;
-        if (force && now - lastShownAt < 20_000L) return;
+        if (!immediate && !force && now - lastShownAt < QUIET_MS) return;
+        if (!immediate && force && now - lastShownAt < 20_000L) return;
         lastShownAt = now;
 
         Intent activity = new Intent(context, LocationEnableActivity.class);

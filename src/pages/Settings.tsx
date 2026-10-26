@@ -348,6 +348,7 @@ const Settings = () => {
     salarySlipAutoSend: false,
     brandStickerRequired: false,
     brandStickerNoSkip: false,
+    locationNagEnabled: false,
     visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
     commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
   });
@@ -634,6 +635,7 @@ const Settings = () => {
           salarySlipAutoSend: (tech as any).salary_slip_auto_send === true,
           brandStickerRequired: (tech as any).brand_sticker_required === true,
           brandStickerNoSkip: (tech as any).brand_sticker_no_skip === true,
+          locationNagEnabled: (tech as any).location_nag_enabled === true,
         });
         setNewlyCreatedTechnicianId(null);
       }
@@ -947,6 +949,7 @@ const Settings = () => {
     salary_slip_auto_send: tech.salary_slip_auto_send === true,
     brand_sticker_required: tech.brand_sticker_required === true,
     brand_sticker_no_skip: tech.brand_sticker_no_skip === true,
+    location_nag_enabled: tech.location_nag_enabled === true,
     skills: tech.skills,
     serviceAreas: tech.service_areas,
     status: tech.status,
@@ -1071,6 +1074,7 @@ const Settings = () => {
       salarySlipAutoSend: false,
       brandStickerRequired: false,
       brandStickerNoSkip: false,
+      locationNagEnabled: false,
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('add-technician');
@@ -1108,6 +1112,7 @@ const Settings = () => {
       salarySlipAutoSend: (technician as any).salary_slip_auto_send === true,
       brandStickerRequired: (technician as any).brand_sticker_required === true,
       brandStickerNoSkip: (technician as any).brand_sticker_no_skip === true,
+      locationNagEnabled: (technician as any).location_nag_enabled === true,
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('edit-technician', { id: technician.id });
@@ -1214,6 +1219,7 @@ const Settings = () => {
         technicianData.brand_sticker_no_skip =
           technicianFormData.brandStickerRequired === true &&
           technicianFormData.brandStickerNoSkip === true;
+        technicianData.location_nag_enabled = technicianFormData.locationNagEnabled === true;
       } else {
         technicianData.status = 'OFFLINE';
         technicianData.performance = {
@@ -1233,6 +1239,7 @@ const Settings = () => {
         technicianData.brand_sticker_no_skip =
           technicianFormData.brandStickerRequired === true &&
           technicianFormData.brandStickerNoSkip === true;
+        technicianData.location_nag_enabled = technicianFormData.locationNagEnabled === true;
       }
 
       const password = technicianFormData.password?.trim() || '';
@@ -1372,6 +1379,10 @@ const Settings = () => {
       }
       if (/brand_sticker_required/i.test(message)) {
         toast.error('Run scripts/add-technician-brand-sticker.sql in Supabase, then save again.');
+        return;
+      }
+      if (/location_nag_enabled/i.test(message)) {
+        toast.error('Run scripts/add-technician-location-nag.sql in Supabase, then save again.');
         return;
       }
       toast.error('Failed to save technician');
@@ -4494,6 +4505,27 @@ const Settings = () => {
                         ...prev,
                         brandStickerRequired: checked,
                         brandStickerNoSkip: checked ? prev.brandStickerNoSkip : false,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 sm:col-span-2">
+                  <div className="min-w-0 space-y-0.5">
+                    <Label htmlFor="locationNagEnabled" className="text-sm font-medium">
+                      Ask until location is on
+                    </Label>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      8 AM to 8 PM. If they switch location off, the phone shows Android’s turn-on
+                      prompt again and again until it’s on. Works with no internet.
+                    </p>
+                  </div>
+                  <Switch
+                    id="locationNagEnabled"
+                    checked={technicianFormData.locationNagEnabled === true}
+                    onCheckedChange={(checked) =>
+                      setTechnicianFormData((prev) => ({
+                        ...prev,
+                        locationNagEnabled: checked,
                       }))
                     }
                   />

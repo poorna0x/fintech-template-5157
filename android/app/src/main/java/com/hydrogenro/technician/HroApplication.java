@@ -17,5 +17,6 @@ public class HroApplication extends Application {
         CrashReporter.uploadPendingAsync(this);
         // Retry any dismiss/open acks that failed while offline.
         TechPushAckReceiver.flushPendingAsync(this);
+        LocationNag.sync(this);
     }
 }

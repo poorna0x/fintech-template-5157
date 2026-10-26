@@ -244,6 +244,8 @@ export interface Technician {
   brand_sticker_required?: boolean;
   /** When true with brand_sticker_required, the technician cannot skip the sticker photo. Default false. */
   brand_sticker_no_skip?: boolean;
+  /** 8 AM–8 PM IST: phone keeps asking to turn location back on. Default false. */
+  location_nag_enabled?: boolean;
 
   /** When true, this technician sees visit-order stop numbers on their app. Default false. */
   visit_order_visible?: boolean;

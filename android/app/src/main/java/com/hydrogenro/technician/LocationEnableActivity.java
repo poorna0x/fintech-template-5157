@@ -39,6 +39,7 @@ public class LocationEnableActivity extends Activity {
             );
         }
         NotificationManagerCompat.from(this).cancel(LocationEnablePrompt.NOTIFICATION_ID);
+        LocationNag.markDialogUp();
 
         if (LocationServicesStatus.isEnabled(this)) {
             startFixAndFinish();
@@ -99,5 +100,11 @@ public class LocationEnableActivity extends Activity {
             }
         }
         finish();
+    }
+
+    @Override
+    protected void onDestroy() {
+        LocationNag.onDialogClosed(this);
+        super.onDestroy();
     }
 }
