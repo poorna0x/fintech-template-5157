@@ -177,8 +177,8 @@ async function runBootstrapFix(technicianId: string): Promise<boolean> {
             // toggle off) — just mark sharing off so admin pings pause; it
             // recovers automatically on the next open/resume once fixed.
             // No settings redirect, no toast: permission is granted manually
-            // in phone Settings, and the admin dialog already shows
-            // "Sharing off" with the last known location.
+            // in phone Settings. The admin live-location dialog can nudge
+            // the phone to turn location on.
             void stopLiveTracking(technicianId);
           } else {
             void stopWatcherOnly();

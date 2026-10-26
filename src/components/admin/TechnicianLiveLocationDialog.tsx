@@ -448,7 +448,7 @@ const TechnicianLiveLocationDialog = ({
                 </span>
               </div>
 
-              {row.location_services_off && (
+              {(!row.is_tracking || row.location_services_off) && (
                 <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
                   <p className="text-sm text-amber-900">
                     This phone's location is switched off, so a live fix cannot be taken.
@@ -458,7 +458,7 @@ const TechnicianLiveLocationDialog = ({
                     type="button"
                     variant="outline"
                     className="h-11 w-full border-amber-400 bg-white"
-                    disabled={nudging || !row.is_tracking}
+                    disabled={nudging}
                     onClick={() => {
                       if (!technicianId) return;
                       setNudging(true);
@@ -472,15 +472,6 @@ const TechnicianLiveLocationDialog = ({
                     The phone shows Android's own turn-on-location prompt.
                   </p>
                 </div>
-              )}
-
-              {!row.is_tracking && (
-                <p className="text-xs text-muted-foreground">
-                  Location sharing is off in the app record — ask them to open the
-                  HydrogenRO Tech APK (not the website), keep Location allowed for
-                  the app, then force-close and reopen once. Showing the last known
-                  location.
-                </p>
               )}
 
               {timedOut && (

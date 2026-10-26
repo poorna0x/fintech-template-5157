@@ -43,7 +43,9 @@ async function sendTechnicianLocationPing(db, technicianId, opts = {}) {
     row = data;
   }
   if (!row) return { sent: false, reason: 'no_row' };
-  if (!row.is_tracking) return { sent: false, reason: 'sharing_off' };
+  // A turn-on-location nudge still goes out when sharing is off. That flag is
+  // what the app writes when the phone location switch is off.
+  if (!row.is_tracking && !opts.promptLocation) return { sent: false, reason: 'sharing_off' };
 
   if (
     !opts.force &&

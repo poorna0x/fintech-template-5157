@@ -63,7 +63,6 @@ exports.handler = async (event) => {
   const requestedAt = row?.ping_requested_at ? new Date(row.ping_requested_at).getTime() : 0;
   const nonceValid =
     row != null &&
-    row.is_tracking &&
     row.ping_nonce != null &&
     row.ping_nonce === nonce &&
     Date.now() - requestedAt < NONCE_MAX_AGE_MS;
@@ -135,7 +134,11 @@ exports.handler = async (event) => {
 
   const fixIso = decision.fixIso;
 
-  const coordinatePatch = { ...decision.coordinatePatch, location_services_off: false };
+  const coordinatePatch = {
+    ...decision.coordinatePatch,
+    location_services_off: false,
+    is_tracking: true,
+  };
   let update = db
     .from('technician_live_locations')
     .update(coordinatePatch)
