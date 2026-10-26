@@ -2276,8 +2276,9 @@ export const db = {
     },
 
     /**
-     * Latest COMPLETED job `service_brand` per customer (batched `.in` query).
-     * Rows are ordered by completion time desc; first row per customer_id wins.
+     * Latest COMPLETED job `service_brand` per customer.
+     * Uses a definer RPC so a technician assigned to the customer still sees a
+     * previous visit done by someone else (plain job SELECT cannot).
      */
     async getLastServiceBrandByCustomerIds(customerIds: string[]) {
       const ids = [...new Set(customerIds.filter(Boolean))];
@@ -2287,9 +2288,28 @@ export const db = {
 
       const map: Record<string, string | null> = {};
       const CHUNK = 80;
+      let useJobSelect = false;
 
       for (let i = 0; i < ids.length; i += CHUNK) {
         const chunk = ids.slice(i, i + CHUNK);
+        if (!useJobSelect) {
+          const { data, error } = await supabase.rpc('get_last_service_brands_for_customers', {
+            p_customer_ids: chunk,
+          });
+          if (error && isRpcNotFoundError(error)) {
+            useJobSelect = true;
+          } else if (error) {
+            return { data: map, error };
+          } else {
+            for (const row of data || []) {
+              const cid = (row as { customer_id?: string | null }).customer_id;
+              if (!cid || cid in map) continue;
+              map[cid] = (row as { service_brand?: string | null }).service_brand ?? null;
+            }
+            continue;
+          }
+        }
+
         const { data, error } = await supabase
           .from('jobs')
           .select('customer_id, service_brand, completed_at, end_time, created_at')
@@ -4384,7 +4404,9 @@ export const db = {
               phone,
               email,
               address,
-              location
+              location,
+              last_service_date,
+              has_google_review
             )
           ),
           technician:technicians(
@@ -4447,7 +4469,9 @@ export const db = {
               phone,
               email,
               address,
-              location
+              location,
+              last_service_date,
+              has_google_review
             )
           )
         `)
@@ -4485,7 +4509,9 @@ export const db = {
               email,
               visible_address,
               address,
-              location
+              location,
+              last_service_date,
+              has_google_review
             )
           )
         `)
@@ -9068,70 +9094,59 @@ export async function fetchCompletedCustomerIdFlags(
   return map;
 }
 
-/** Customer UUID → true if they have at least one COMPLETED job (returning / prior service). */
+/**
+ * Customer UUID → true if they have at least one COMPLETED job (returning / prior service).
+ * PostgREST returns at most 1000 rows per request. A 2500-row page looked "short" and
+ * stopped after the first 1000 completed jobs, so later customers stayed unmarked
+ * until someone opened Reports.
+ */
 export async function fetchCustomerIdsWithCompletedJobsMap(): Promise<Record<string, boolean>> {
-  const cacheKey = 'completed_customers_map_v2';
+  const cacheKey = 'completed_customers_map_v3';
   const hit = cacheGet<Record<string, boolean>>(cacheKey);
   if (hit) return hit;
 
-  const POSTGREST_MAX_ROWS = 1000;
-
-  const { data: distinctRows, error: distinctError } = await supabase.rpc(
-    'get_distinct_completed_customer_ids'
-  );
-  // PostgREST caps RPC results at 1000. 1772+ serviced customers were truncated.
-  if (
-    !distinctError &&
-    Array.isArray(distinctRows) &&
-    distinctRows.length > 0 &&
-    distinctRows.length < POSTGREST_MAX_ROWS
-  ) {
-    const map = mapFromCustomerIdRows(distinctRows as { customer_id: string }[]);
-    cacheSet(cacheKey, map, 120_000);
-    return map;
-  }
-  if (distinctError && !isRpcNotFoundError(distinctError)) {
-    console.warn('[fetchCustomerIdsWithCompletedJobsMap] distinct RPC failed:', distinctError);
-  }
-
-  const { data: lastPerCustomer, error: lastError } = await supabase.rpc(
-    'get_last_completed_job_per_customer'
-  );
-  if (
-    !lastError &&
-    Array.isArray(lastPerCustomer) &&
-    lastPerCustomer.length > 0 &&
-    lastPerCustomer.length < POSTGREST_MAX_ROWS
-  ) {
-    const map = mapFromCustomerIdRows(lastPerCustomer as { customer_id: string }[]);
-    cacheSet(cacheKey, map, 120_000);
-    return map;
-  }
-  if (lastError && !isRpcNotFoundError(lastError) && import.meta.env.DEV) {
-    console.warn('[fetchCustomerIdsWithCompletedJobsMap] last-job RPC failed:', lastError);
-  }
-
+  const PAGE = 1000;
   const map: Record<string, boolean> = {};
-  const jobPageSize = 2500;
-  let from = 0;
+
+  let customerFrom = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('id')
+      .not('last_service_date', 'is', null)
+      .order('id', { ascending: true })
+      .range(customerFrom, customerFrom + PAGE - 1);
+    if (error) {
+      console.warn('[fetchCustomerIdsWithCompletedJobsMap] last-service page failed:', error);
+      break;
+    }
+    for (const row of data || []) {
+      const id = (row as { id?: string }).id;
+      if (id) map[id] = true;
+    }
+    if (!data || data.length < PAGE) break;
+    customerFrom += PAGE;
+  }
+
+  let jobFrom = 0;
   for (;;) {
     const { data, error } = await supabase
       .from('jobs')
       .select('customer_id')
       .eq('status', 'COMPLETED')
       .not('customer_id', 'is', null)
-      .range(from, from + jobPageSize - 1);
-
+      .order('id', { ascending: true })
+      .range(jobFrom, jobFrom + PAGE - 1);
     if (error) {
-      console.warn('[fetchCustomerIdsWithCompletedJobsMap] paginated fallback failed:', error);
+      console.warn('[fetchCustomerIdsWithCompletedJobsMap] completed-job page failed:', error);
       break;
     }
     if (!data?.length) break;
-
     Object.assign(map, mapFromCustomerIdRows(data as { customer_id: string | null }[]));
-    if (data.length < jobPageSize) break;
-    from += jobPageSize;
+    if (data.length < PAGE) break;
+    jobFrom += PAGE;
   }
+
   cacheSet(cacheKey, map, 120_000);
   return map;
 }

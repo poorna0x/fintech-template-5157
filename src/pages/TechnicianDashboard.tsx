@@ -1108,6 +1108,7 @@ const TechnicianDashboard = () => {
     try {
       const { data: brandByCustomer, error } = await db.jobs.getLastServiceBrandByCustomerIds(missingIds);
       if (error) {
+        missingIds.forEach((id) => loadedLastBrandCustomerIdsRef.current.delete(id));
         console.warn('[TechnicianDashboard] Failed to load last service brands:', error);
         return;
       }
@@ -1118,6 +1119,7 @@ const TechnicianDashboard = () => {
       }
       setCustomerLastServiceBrand((prev) => ({ ...prev, ...results }));
     } catch (err) {
+      missingIds.forEach((id) => loadedLastBrandCustomerIdsRef.current.delete(id));
       console.warn('[TechnicianDashboard] Error loading last service brands:', err);
     }
   }, []);
@@ -1604,20 +1606,26 @@ const TechnicianDashboard = () => {
   useEffect(() => {
     const idsToPrefetch = new Set<string>();
 
+    const rememberReturning = (cid: string | undefined, customer: any) => {
+      if (!cid || !String(cid).includes('-')) return;
+      if (
+        customerPriorServiceStatus[cid] ||
+        customer?.last_service_date ||
+        customer?.lastServiceDate
+      ) {
+        idsToPrefetch.add(cid);
+      }
+    };
+
     for (const j of jobs) {
-      const cid = (j as any)?.customer_id || (j.customer as any)?.id;
-      if (!cid) continue;
-      if (customerPriorServiceStatus[cid]) idsToPrefetch.add(cid);
+      const customer = (j as any)?.customer;
+      rememberReturning((j as any)?.customer_id || customer?.id, customer);
     }
 
     for (const req of assignmentRequests) {
       const job = req.job as any;
-      const cid =
-        job?.customer_id ||
-        job?.customer?.id ||
-        job?.customer?.customer_id;
-      if (!cid) continue;
-      if (customerPriorServiceStatus[cid]) idsToPrefetch.add(cid);
+      const customer = job?.customer;
+      rememberReturning(job?.customer_id || customer?.id, customer);
     }
 
     if (idsToPrefetch.size === 0) return;
@@ -2249,6 +2257,36 @@ const TechnicianDashboard = () => {
     []
   );
 
+  /** Reports can see another technician's completed visit. Paint the card tag from that, too. */
+  const applyReturningCustomerFromReportJobs = useCallback((customerUuid: string, rows: any[]) => {
+    const completed = (rows || []).filter(
+      (row) => String(row?.status || '').toUpperCase() === 'COMPLETED'
+    );
+    if (!customerUuid || completed.length === 0) return;
+    setCustomerPriorServiceStatus((prev) =>
+      prev[customerUuid] ? prev : { ...prev, [customerUuid]: true }
+    );
+    let bestMs = Number.NEGATIVE_INFINITY;
+    let bestBrand: string | null = null;
+    for (const row of completed) {
+      const brand = String(row?.service_brand || row?.serviceBrand || '').trim();
+      if (!brand) continue;
+      const raw = String(
+        row?.completed_at || row?.completedAt || row?.end_time || row?.endTime || row?.created_at || ''
+      );
+      const ms = new Date(raw).getTime();
+      const score = Number.isNaN(ms) ? 0 : ms;
+      if (score >= bestMs) {
+        bestMs = score;
+        bestBrand = brand;
+      }
+    }
+    const normalized = normalizeServiceBrand(bestBrand);
+    if (!normalized) return;
+    loadedLastBrandCustomerIdsRef.current.add(customerUuid);
+    setCustomerLastServiceBrand((prev) => ({ ...prev, [customerUuid]: normalized }));
+  }, []);
+
   // Fetch customer jobs when report dialog opens
   useEffect(() => {
     const fetchCustomerReportJobs = async () => {
@@ -2285,6 +2323,7 @@ const TechnicianDashboard = () => {
             setCustomerReportJobs(mergeCustomerReportJobsForUuid([], customerUuid));
           } else {
             const merged = mergeCustomerReportJobsForUuid(data || [], customerUuid);
+            applyReturningCustomerFromReportJobs(customerUuid, merged);
             try {
               const enriched = await enrichJobsWithAfterPhotosIfNeeded(merged);
               setCustomerReportJobs(enriched);
@@ -2305,7 +2344,12 @@ const TechnicianDashboard = () => {
     };
 
     fetchCustomerReportJobs();
-  }, [customerReportDialogOpen, selectedCustomerForReport, mergeCustomerReportJobsForUuid]);
+  }, [
+    customerReportDialogOpen,
+    selectedCustomerForReport,
+    mergeCustomerReportJobsForUuid,
+    applyReturningCustomerFromReportJobs,
+  ]);
 
   // Show notification if there are queued photos or job completions (less frequent)
   useEffect(() => {
