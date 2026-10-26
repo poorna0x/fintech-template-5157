@@ -33,11 +33,14 @@ public class LocationNagService extends Service {
         public void run() {
             handler.removeCallbacks(this);
             if (!LocationNag.isEnabled(LocationNagService.this) || !LocationNag.inWindow()) {
+                PlaybackPause.resume(LocationNagService.this);
                 LocationNag.sync(LocationNagService.this);
                 stopSelf();
                 return;
             }
-            if (LocationNag.shouldNag(LocationNagService.this) && !LocationNag.isDialogUp()) {
+            if (!LocationNag.shouldNag(LocationNagService.this)) {
+                PlaybackPause.resume(LocationNagService.this);
+            } else if (!LocationNag.isDialogUp()) {
                 LocationEnablePrompt.showImmediate(LocationNagService.this);
             }
             handler.postDelayed(this, LocationNag.shouldNag(LocationNagService.this) ? 2000L : 5000L);
@@ -83,6 +86,14 @@ public class LocationNagService extends Service {
         handler.removeCallbacks(tick);
         handler.post(tick);
         return START_STICKY;
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        if (LocationNag.isEnabled(this) && LocationNag.inWindow()) {
+            LocationNag.kickSoon(this);
+        }
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override

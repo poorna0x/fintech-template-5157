@@ -42,9 +42,11 @@ public class LocationEnableActivity extends Activity {
         LocationNag.markDialogUp();
 
         if (LocationServicesStatus.isEnabled(this)) {
+            PlaybackPause.resume(this);
             startFixAndFinish();
             return;
         }
+        PlaybackPause.pause(this);
 
         try {
             LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10_000L)
@@ -81,6 +83,7 @@ public class LocationEnableActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_ENABLE && resultCode == RESULT_OK) {
+            PlaybackPause.resume(this);
             startFixAndFinish();
             return;
         }

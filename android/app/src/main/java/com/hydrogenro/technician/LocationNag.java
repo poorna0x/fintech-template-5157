@@ -62,9 +62,34 @@ final class LocationNag {
         HANDLER.postDelayed(retry, 1000L);
     }
 
+    /** Bring the watcher back shortly after the app is swiped away. */
+    static void kickSoon(Context context) {
+        Context app = context.getApplicationContext();
+        if (!isEnabled(app) || !inWindow()) return;
+        AlarmManager alarms = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
+        if (alarms == null) return;
+        PendingIntent pending = PendingIntent.getBroadcast(
+            app,
+            7411,
+            new Intent(app, LocationNagAlarmReceiver.class),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+        long at = android.os.SystemClock.elapsedRealtime() + 1500L;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending);
+            } else {
+                alarms.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Could not restart the location watch", t);
+        }
+    }
+
     static void sync(Context context) {
         Context app = context.getApplicationContext();
         if (!isEnabled(app)) {
+            PlaybackPause.resume(app);
             stopService(app);
             cancelStartAlarm(app);
             return;
