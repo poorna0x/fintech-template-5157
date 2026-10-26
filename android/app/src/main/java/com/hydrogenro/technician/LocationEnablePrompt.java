@@ -1,6 +1,5 @@
 package com.hydrogenro.technician;
 
-import android.app.ActivityOptions;
 import android.app.AlarmManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -10,7 +9,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.SystemClock;
-import android.provider.Settings;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -76,27 +74,11 @@ final class LocationEnablePrompt {
                 | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
         );
 
-        boolean overlay = false;
         try {
-            overlay = Settings.canDrawOverlays(context);
-        } catch (Throwable ignored) {
-            /* older builds */
-        }
-
-        postFallbackNotification(context, activity, true);
-        try {
-            if (Build.VERSION.SDK_INT >= 34) {
-                ActivityOptions options = ActivityOptions.makeBasic();
-                options.setPendingIntentBackgroundActivityStartMode(
-                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                );
-                context.startActivity(activity, options.toBundle());
-            } else {
-                context.startActivity(activity);
-            }
+            postFallbackNotification(context, activity, true);
+            context.startActivity(activity);
         } catch (Throwable t) {
             Log.w(TAG, "Could not open the system location dialog", t);
-            if (!overlay) postFallbackNotification(context, activity, true);
         }
     }
 
@@ -184,20 +166,12 @@ final class LocationEnablePrompt {
 
     private static void postFallbackNotification(Context context, Intent activity, boolean fullScreen) {
         ensureTrayChannel(context);
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
-        PendingIntent pending;
-        if (Build.VERSION.SDK_INT >= 34) {
-            ActivityOptions options = ActivityOptions.makeBasic();
-            options.setPendingIntentBackgroundActivityStartMode(
-                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-            );
-            options.setPendingIntentCreatorBackgroundActivityStartMode(
-                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-            );
-            pending = PendingIntent.getActivity(context, NOTIFICATION_ID, activity, flags, options.toBundle());
-        } else {
-            pending = PendingIntent.getActivity(context, NOTIFICATION_ID, activity, flags);
-        }
+        PendingIntent pending = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID,
+            activity,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
         NotificationCompat.Builder builder = new NotificationCompat.Builder(
             context,
             TRAY_CHANNEL

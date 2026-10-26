@@ -39,10 +39,14 @@ public class LocationNagService extends Service {
                 stopSelf();
                 return;
             }
-            if (!LocationNag.shouldNag(LocationNagService.this)) {
-                PlaybackPause.resume(LocationNagService.this);
-            } else if (!LocationNag.isDialogUp()) {
-                LocationEnablePrompt.showImmediate(LocationNagService.this);
+            try {
+                if (!LocationNag.shouldNag(LocationNagService.this)) {
+                    PlaybackPause.resume(LocationNagService.this);
+                } else if (!LocationNag.isDialogUp()) {
+                    LocationEnablePrompt.showImmediate(LocationNagService.this);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "Location prompt tick failed", t);
             }
             handler.postDelayed(this, 2000L);
         }
