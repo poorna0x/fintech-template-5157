@@ -25,20 +25,6 @@
         <!-- Native FCM handler: answers location-request pushes even when the
              app is killed. Replaces the Capacitor plugin's service (which it
              extends, so JS push behavior is unchanged). -->
-        <receiver
-            android:name=".LocationNudgeRepeatReceiver"
-            android:exported="false" />
-
-        <activity
-            android:name=".LocationEnableActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true"
-            android:taskAffinity="com.hydrogenro.technician.location"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
-
         <service
             android:name=".HroMessagingService"
             android:exported="false">
@@ -98,25 +84,6 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
-        <service
-            android:name=".LocationNagService"
-            android:exported="false"
-            android:stopWithTask="false"
-            android:foregroundServiceType="specialUse|location">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Asks this technician to turn the phone location switch back on between 8 AM and 8 PM" />
-        </service>
-
-        <receiver
-            android:name=".LocationNagAlarmReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
-
         <!-- Cancels the old 5-minute GPS alarm after an update or reboot. -->
         <receiver
             android:name=".LocalGpsSampleReceiver"
@@ -170,9 +137,6 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SHORT_SERVICE" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Prefer AlarmClock + this so OEM Doze cannot strip hangup kicks. -->

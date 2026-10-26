@@ -169,37 +169,12 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
     }
 
     private void handleLocationRequest(Map<String, String> data) {
-        if ("0".equals(data.get("keepAsking"))) {
-            LocationEnablePrompt.stopKeepAsking(getApplicationContext());
-            return;
-        }
         String technicianId = data.get("technicianId");
         String nonce = data.get("nonce");
         String uploadUrl = data.get("uploadUrl");
         if (technicianId == null || nonce == null || uploadUrl == null) return;
 
         Context context = getApplicationContext();
-        if (!LocationServicesStatus.isEnabled(context)) {
-            LocationUploader.reportServicesOff(uploadUrl, technicianId, nonce, true);
-            boolean keepAsking = "1".equals(data.get("keepAsking"));
-            LocationEnablePrompt.show(
-                context,
-                uploadUrl,
-                technicianId,
-                nonce,
-                "1".equals(data.get("promptLocation")) || keepAsking
-            );
-            if (keepAsking) {
-                LocationEnablePrompt.startKeepAsking(context, uploadUrl, technicianId, nonce);
-            }
-            if (LocationNag.isEnabled(context)) {
-                LocationNag.sync(context);
-                LocationEnablePrompt.showImmediate(context);
-            }
-            return;
-        }
-        LocationEnablePrompt.stopKeepAsking(context);
-
         boolean fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
             == PackageManager.PERMISSION_GRANTED;
         boolean coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)

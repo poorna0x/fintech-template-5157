@@ -17,7 +17,7 @@ function pingRequestedAgeMs(pingRequestedAt, nowMs) {
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} db
  * @param {string} technicianId
- * @param {{ force?: boolean, pingRequestedAt?: string | null, promptLocation?: boolean, keepAsking?: boolean, liveRow?: object }} [opts]
+ * @param {{ force?: boolean, pingRequestedAt?: string | null }} [opts]
  * @returns {Promise<{ sent: boolean, reason?: string, skipped?: boolean }>}
  */
 async function sendTechnicianLocationPing(db, technicianId, opts = {}) {
@@ -43,11 +43,7 @@ async function sendTechnicianLocationPing(db, technicianId, opts = {}) {
     row = data;
   }
   if (!row) return { sent: false, reason: 'no_row' };
-  // A turn-on-location nudge, and the message that stops a repeating one,
-  // still go out when sharing is off. That flag is what the app writes when
-  // the phone location switch is off.
-  const allowWhileOff = opts.promptLocation || opts.keepAsking === true || opts.keepAsking === false;
-  if (!row.is_tracking && !allowWhileOff) return { sent: false, reason: 'sharing_off' };
+  if (!row.is_tracking) return { sent: false, reason: 'sharing_off' };
 
   if (
     !opts.force &&
@@ -57,18 +53,10 @@ async function sendTechnicianLocationPing(db, technicianId, opts = {}) {
   }
 
   const nonce = crypto.randomUUID();
-  const stamp = { ping_nonce: nonce, ping_requested_at: new Date(now).toISOString() };
-  if (opts.keepAsking === true) stamp.location_keep_asking = true;
-  if (opts.keepAsking === false) stamp.location_keep_asking = false;
-  let { error: nonceErr } = await db
+  const { error: nonceErr } = await db
     .from('technician_live_locations')
-    .update(stamp)
+    .update({ ping_nonce: nonce, ping_requested_at: new Date(now).toISOString() })
     .eq('technician_id', id);
-  if (nonceErr && /location_keep_asking/i.test(String(nonceErr.message || ''))) {
-    delete stamp.location_keep_asking;
-    const retry = await db.from('technician_live_locations').update(stamp).eq('technician_id', id);
-    nonceErr = retry.error;
-  }
   if (nonceErr) {
     console.error('[location-ping-helper] nonce save failed', nonceErr.message);
   }
@@ -92,9 +80,6 @@ async function sendTechnicianLocationPing(db, technicianId, opts = {}) {
           type: 'location_request',
           technicianId: id,
           uploadUrl: `${siteUrl}/.netlify/functions/upload-tech-location`,
-          ...(opts.promptLocation ? { promptLocation: '1' } : {}),
-          ...(opts.keepAsking === true ? { keepAsking: '1' } : {}),
-          ...(opts.keepAsking === false ? { keepAsking: '0' } : {}),
           ...(nonceErr ? {} : { nonce }),
         },
         android: { priority: 'high' },

@@ -34,14 +34,10 @@ type LiveLocationRow = {
   fix_time: string | null;
   location_mock?: boolean | null;
   location_risk_level?: string | null;
-  /** Phone quick-settings location switch is off. */
-  location_services_off?: boolean | null;
-  /** Office asked the phone to keep showing the turn-on prompt. */
-  location_keep_asking?: boolean | null;
 };
 
 const LIVE_LOCATION_COLUMNS =
-  'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time,location_mock,location_risk_score,location_risk_level,location_risk_reasons,location_risk_checked_at,location_services_off,location_keep_asking';
+  'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time,location_mock,location_risk_score,location_risk_level,location_risk_reasons,location_risk_checked_at';
 const LIVE_LOCATION_COLUMNS_BASE =
   'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time';
 
@@ -161,12 +157,10 @@ const TechnicianLiveLocationDialog = ({
   const freshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestedAtRef = useRef(0);
 
-  const sendPing = useCallback(async (techId: string, promptLocation = false, keepAsking?: boolean) => {
+  const sendPing = useCallback(async (techId: string) => {
     // One call does everything: stamps the request, creates the one-time
     // nonce and sends the FCM push that the app's native handler answers
-    // (even when Android has killed the app). promptLocation asks again
-    // with Android's own turn-on-location dialog. keepAsking repeats that
-    // dialog on the phone until location is on.
+    // (even when Android has killed the app).
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
@@ -174,11 +168,7 @@ const TechnicianLiveLocationDialog = ({
       await fetch('/.netlify/functions/send-location-ping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          technicianId: techId,
-          promptLocation,
-          ...(keepAsking !== undefined ? { keepAsking } : {}),
-        }),
+        body: JSON.stringify({ technicianId: techId }),
       });
     } catch {
       // Best-effort; the timeout fallback shows the last known location.
@@ -301,10 +291,6 @@ const TechnicianLiveLocationDialog = ({
             const next = payload.new as LiveLocationRow;
             if (!next) return;
             setRow(next);
-            if (next.location_services_off) {
-              setWaitingFresh(false);
-              setTimedOut(false);
-            }
             // ANY upload that arrived after our request ends the loader —
             // show the phone's first answer right away (usually its cached
             // Google location, which is quite fresh) and let later fixes
@@ -453,13 +439,13 @@ const TechnicianLiveLocationDialog = ({
                 </span>
               </div>
 
-              {(!row.is_tracking || row.location_services_off) && (
-                <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
-                  <p className="text-sm text-amber-900">
-                    This phone's location is switched off, so a live fix cannot be taken.
-                    {hasCoords ? ' The map is the last known position.' : ''}
-                  </p>
-                </div>
+              {!row.is_tracking && (
+                <p className="text-xs text-muted-foreground">
+                  Location sharing is off in the app record — ask them to open the
+                  HydrogenRO Tech APK (not the website), keep Location allowed for
+                  the app, then force-close and reopen once. Showing the last known
+                  location.
+                </p>
               )}
 
               {timedOut && (
