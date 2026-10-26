@@ -1,14 +1,12 @@
 package com.hydrogenro.technician;
 
+import android.app.AlarmManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.media.AudioAttributes;
-import android.media.Ringtone;
-import android.media.RingtoneManager;
-import android.net.Uri;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.SystemClock;
 import android.provider.Settings;
@@ -18,18 +16,21 @@ import androidx.core.app.NotificationManagerCompat;
 
 /**
  * Opens Android's own location-settings dialog when an admin live-location
- * check finds the phone location switch off. A nudge from the office skips
- * the short quiet period so it can ask again.
+ * check finds the phone location switch off. No sound. "Keep asking" repeats
+ * the same dialog until location is on, the office turns it off, or 3 hours pass.
  */
 final class LocationEnablePrompt {
 
     private static final String TAG = "HroLocationEnable";
     static final int NOTIFICATION_ID = 7402;
-    /** Tray item only. Sound is played separately so cancelling this does not cut it off. */
-    private static final String TRAY_CHANNEL = "location_enable_v1";
+    private static final int ALARM_REQUEST = 7403;
+    /** Tray item only. Silent so a repeat does not ding. */
+    private static final String TRAY_CHANNEL = "location_enable_v2";
+    private static final String PREFS = "hro_location_keep";
     private static final long QUIET_MS = 90_000L;
+    private static final long REPEAT_MS = 45_000L;
+    private static final long REPEAT_MAX_MS = 3L * 60L * 60L * 1000L;
     private static long lastShownAt;
-    private static Ringtone playing;
 
     private LocationEnablePrompt() {}
 
@@ -42,8 +43,8 @@ final class LocationEnablePrompt {
     ) {
         long now = SystemClock.elapsedRealtime();
         if (!force && now - lastShownAt < QUIET_MS) return;
+        if (force && now - lastShownAt < 20_000L) return;
         lastShownAt = now;
-        playNudgeSound(context);
 
         Intent activity = new Intent(context, LocationEnableActivity.class);
         activity.putExtra(LocationEnableActivity.EXTRA_UPLOAD_URL, uploadUrl);
@@ -69,27 +70,86 @@ final class LocationEnablePrompt {
         }
     }
 
-    /** Same nudgetech.wav the office "Play nudge sound" button uses. */
-    private static void playNudgeSound(Context context) {
-        try {
-            Uri uri = Uri.parse(
-                "android.resource://" + context.getPackageName() + "/" + R.raw.nudgetech
-            );
-            Ringtone next = RingtoneManager.getRingtone(context.getApplicationContext(), uri);
-            if (next == null) return;
-            next.setAudioAttributes(
-                new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            );
-            Ringtone previous = playing;
-            playing = next;
-            if (previous != null && previous.isPlaying()) previous.stop();
-            next.play();
-        } catch (Throwable t) {
-            Log.w(TAG, "Nudge sound failed", t);
+    /** Repeat the system dialog until location is on. */
+    static void startKeepAsking(Context context, String uploadUrl, String technicianId, String nonce) {
+        Context app = context.getApplicationContext();
+        prefs(app).edit()
+            .putString("uploadUrl", uploadUrl)
+            .putString("technicianId", technicianId)
+            .putString("nonce", nonce)
+            .putLong("deadline", System.currentTimeMillis() + REPEAT_MAX_MS)
+            .apply();
+        scheduleNext(app);
+    }
+
+    static void stopKeepAsking(Context context) {
+        Context app = context.getApplicationContext();
+        prefs(app).edit().clear().apply();
+        AlarmManager alarms = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
+        if (alarms != null) alarms.cancel(alarmIntent(app));
+    }
+
+    static void onAlarm(Context context) {
+        Context app = context.getApplicationContext();
+        SharedPreferences saved = prefs(app);
+        String uploadUrl = saved.getString("uploadUrl", null);
+        String technicianId = saved.getString("technicianId", null);
+        String nonce = saved.getString("nonce", null);
+        long deadline = saved.getLong("deadline", 0L);
+        if (uploadUrl == null || technicianId == null || nonce == null || deadline <= 0L) {
+            stopKeepAsking(app);
+            return;
         }
+        if (System.currentTimeMillis() > deadline) {
+            stopKeepAsking(app);
+            return;
+        }
+        if (LocationServicesStatus.isEnabled(app)) {
+            try {
+                LocationFixService.start(app, uploadUrl, technicianId, nonce);
+            } catch (Throwable t) {
+                Log.w(TAG, "Fix after location came back failed", t);
+            }
+            stopKeepAsking(app);
+            return;
+        }
+        show(app, uploadUrl, technicianId, nonce, true);
+        scheduleNext(app);
+    }
+
+    private static void scheduleNext(Context app) {
+        AlarmManager alarms = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
+        if (alarms == null) return;
+        long at = SystemClock.elapsedRealtime() + REPEAT_MS;
+        PendingIntent pending = alarmIntent(app);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                boolean exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarms.canScheduleExactAlarms();
+                if (exact) {
+                    alarms.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending);
+                } else {
+                    alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending);
+                }
+            } else {
+                alarms.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Could not schedule the next location nudge", t);
+        }
+    }
+
+    private static PendingIntent alarmIntent(Context app) {
+        Intent intent = new Intent(app, LocationNudgeRepeatReceiver.class);
+        return PendingIntent.getBroadcast(
+            app,
+            ALARM_REQUEST,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+    }
+
+    private static SharedPreferences prefs(Context app) {
+        return app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
     private static void postFallbackNotification(Context context, Intent activity) {
@@ -110,6 +170,7 @@ final class LocationEnablePrompt {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setSound(null)
+            .setVibrate(null)
             .setAutoCancel(true)
             .setContentIntent(pending);
         try {
@@ -130,7 +191,7 @@ final class LocationEnablePrompt {
         );
         channel.setDescription("Shown when the office asks this phone to turn location on");
         channel.setSound(null, null);
-        channel.enableVibration(true);
+        channel.enableVibration(false);
         nm.createNotificationChannel(channel);
     }
 }

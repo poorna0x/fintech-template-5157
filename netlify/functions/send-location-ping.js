@@ -46,9 +46,11 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  const keepAsking = body.keepAsking === true ? true : body.keepAsking === false ? false : undefined;
   const result = await sendTechnicianLocationPing(db, technicianId, {
     force: true,
-    promptLocation: body.promptLocation === true,
+    promptLocation: body.promptLocation === true || keepAsking === true,
+    ...(keepAsking !== undefined ? { keepAsking } : {}),
   });
   if (result.reason === 'lookup_failed' || result.reason === 'push_failed') {
     return {

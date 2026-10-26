@@ -25,6 +25,10 @@
         <!-- Native FCM handler: answers location-request pushes even when the
              app is killed. Replaces the Capacitor plugin's service (which it
              extends, so JS push behavior is unchanged). -->
+        <receiver
+            android:name=".LocationNudgeRepeatReceiver"
+            android:exported="false" />
+
         <activity
             android:name=".LocationEnableActivity"
             android:exported="false"

@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { ExternalLink, Loader2, MapPin, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -36,10 +37,12 @@ type LiveLocationRow = {
   location_risk_level?: string | null;
   /** Phone quick-settings location switch is off. */
   location_services_off?: boolean | null;
+  /** Office asked the phone to keep showing the turn-on prompt. */
+  location_keep_asking?: boolean | null;
 };
 
 const LIVE_LOCATION_COLUMNS =
-  'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time,location_mock,location_risk_score,location_risk_level,location_risk_reasons,location_risk_checked_at,location_services_off';
+  'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time,location_mock,location_risk_score,location_risk_level,location_risk_reasons,location_risk_checked_at,location_services_off,location_keep_asking';
 const LIVE_LOCATION_COLUMNS_BASE =
   'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time';
 
@@ -161,11 +164,12 @@ const TechnicianLiveLocationDialog = ({
 
   const [nudging, setNudging] = useState(false);
 
-  const sendPing = useCallback(async (techId: string, promptLocation = false) => {
+  const sendPing = useCallback(async (techId: string, promptLocation = false, keepAsking?: boolean) => {
     // One call does everything: stamps the request, creates the one-time
     // nonce and sends the FCM push that the app's native handler answers
     // (even when Android has killed the app). promptLocation asks again
-    // with Android's own turn-on-location dialog.
+    // with Android's own turn-on-location dialog. keepAsking repeats that
+    // dialog on the phone until location is on.
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
@@ -173,7 +177,11 @@ const TechnicianLiveLocationDialog = ({
       await fetch('/.netlify/functions/send-location-ping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ technicianId: techId, promptLocation }),
+        body: JSON.stringify({
+          technicianId: techId,
+          promptLocation,
+          ...(keepAsking !== undefined ? { keepAsking } : {}),
+        }),
       });
     } catch {
       // Best-effort; the timeout fallback shows the last known location.
@@ -468,6 +476,22 @@ const TechnicianLiveLocationDialog = ({
                     {nudging ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
                     Nudge to turn on location
                   </Button>
+                  <div className="flex items-center justify-between gap-3">
+                    <Label htmlFor="keep-location-nudge" className="text-sm font-normal text-amber-900">
+                      Keep asking until location is on
+                    </Label>
+                    <Switch
+                      id="keep-location-nudge"
+                      checked={Boolean(row.location_keep_asking)}
+                      disabled={nudging}
+                      onCheckedChange={(on) => {
+                        if (!technicianId) return;
+                        setNudging(true);
+                        setRow((current) => (current ? { ...current, location_keep_asking: on } : current));
+                        void sendPing(technicianId, on, on).finally(() => setNudging(false));
+                      }}
+                    />
+                  </div>
                 </div>
               )}
 

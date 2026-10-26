@@ -49,11 +49,20 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: row, error: rowErr } = await db
+  let { data: row, error: rowErr } = await db
     .from('technician_live_locations')
-    .select('ping_nonce,ping_requested_at,is_tracking,latitude,longitude,accuracy,fix_time,updated_at')
+    .select('ping_nonce,ping_requested_at,is_tracking,latitude,longitude,accuracy,fix_time,updated_at,location_keep_asking')
     .eq('technician_id', technicianId)
     .maybeSingle();
+  if (rowErr && /location_keep_asking/i.test(String(rowErr.message || ''))) {
+    const retry = await db
+      .from('technician_live_locations')
+      .select('ping_nonce,ping_requested_at,is_tracking,latitude,longitude,accuracy,fix_time,updated_at')
+      .eq('technician_id', technicianId)
+      .maybeSingle();
+    row = retry.data;
+    rowErr = retry.error;
+  }
 
   if (rowErr) {
     console.error('[upload-tech-location] lookup failed', rowErr.message);
@@ -61,11 +70,12 @@ exports.handler = async (event) => {
   }
 
   const requestedAt = row?.ping_requested_at ? new Date(row.ping_requested_at).getTime() : 0;
+  const nonceMaxAge = row?.location_keep_asking === true ? 3 * 60 * 60 * 1000 : NONCE_MAX_AGE_MS;
   const nonceValid =
     row != null &&
     row.ping_nonce != null &&
     row.ping_nonce === nonce &&
-    Date.now() - requestedAt < NONCE_MAX_AGE_MS;
+    Date.now() - requestedAt < nonceMaxAge;
 
   if (!nonceValid) {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
@@ -137,6 +147,7 @@ exports.handler = async (event) => {
   const coordinatePatch = {
     ...decision.coordinatePatch,
     location_services_off: false,
+    location_keep_asking: false,
     is_tracking: true,
   };
   let update = db
@@ -158,6 +169,7 @@ exports.handler = async (event) => {
     );
     const slim = { ...coordinatePatch };
     delete slim.location_services_off;
+    delete slim.location_keep_asking;
     delete slim.location_mock;
     delete slim.location_risk_score;
     delete slim.location_risk_level;
