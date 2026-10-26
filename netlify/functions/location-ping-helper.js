@@ -17,7 +17,7 @@ function pingRequestedAgeMs(pingRequestedAt, nowMs) {
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} db
  * @param {string} technicianId
- * @param {{ force?: boolean, pingRequestedAt?: string | null }} [opts]
+ * @param {{ force?: boolean, pingRequestedAt?: string | null, promptLocation?: boolean, liveRow?: object }} [opts]
  * @returns {Promise<{ sent: boolean, reason?: string, skipped?: boolean }>}
  */
 async function sendTechnicianLocationPing(db, technicianId, opts = {}) {
@@ -80,6 +80,7 @@ async function sendTechnicianLocationPing(db, technicianId, opts = {}) {
           type: 'location_request',
           technicianId: id,
           uploadUrl: `${siteUrl}/.netlify/functions/upload-tech-location`,
+          ...(opts.promptLocation ? { promptLocation: '1' } : {}),
           ...(nonceErr ? {} : { nonce }),
         },
         android: { priority: 'high' },

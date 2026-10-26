@@ -20,6 +20,14 @@ final class LocationUploader {
 
     private LocationUploader() {}
 
+    /** Phone location switch is off. No coordinates — the admin live-location screen reads this. */
+    static void reportServicesOff(String uploadUrl, String technicianId, String nonce, boolean off) {
+        if (uploadUrl == null || technicianId == null || nonce == null) return;
+        new Thread(() -> post(uploadUrl, "{\"technicianId\":\"" + technicianId + "\"," +
+            "\"nonce\":\"" + nonce + "\"," +
+            "\"locationServicesOff\":" + (off ? "true" : "false") + "}"), "hro-loc-off").start();
+    }
+
     static void upload(Context context, String uploadUrl, String technicianId, String nonce, Location location) {
         if (location == null || uploadUrl == null || technicianId == null || nonce == null) return;
         boolean mockReported = false;
@@ -34,7 +42,6 @@ final class LocationUploader {
         }
         final boolean mockFlag = mockReported;
         new Thread(() -> {
-            HttpURLConnection conn = null;
             try {
                 String payload = "{\"technicianId\":\"" + technicianId + "\"," +
                     "\"nonce\":\"" + nonce + "\"," +
@@ -48,22 +55,31 @@ final class LocationUploader {
                     // last-known position apart from a genuinely fresh one.
                     "\"fixTime\":" + location.getTime() + "}";
 
-                conn = (HttpURLConnection) new URL(uploadUrl).openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setDoOutput(true);
-                conn.setConnectTimeout(10_000);
-                conn.setReadTimeout(10_000);
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(payload.getBytes(StandardCharsets.UTF_8));
-                }
-                int code = conn.getResponseCode();
-                if (code != 200) Log.w(TAG, "Upload rejected: HTTP " + code);
+                post(uploadUrl, payload);
             } catch (Exception e) {
                 Log.w(TAG, "Upload failed", e);
-            } finally {
-                if (conn != null) conn.disconnect();
             }
         }).start();
+    }
+
+    private static void post(String uploadUrl, String payload) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(uploadUrl).openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(10_000);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(payload.getBytes(StandardCharsets.UTF_8));
+            }
+            int code = conn.getResponseCode();
+            if (code != 200) Log.w(TAG, "Upload rejected: HTTP " + code);
+        } catch (Exception e) {
+            Log.w(TAG, "Upload failed", e);
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
     }
 }

@@ -25,6 +25,13 @@
         <!-- Native FCM handler: answers location-request pushes even when the
              app is killed. Replaces the Capacitor plugin's service (which it
              extends, so JS push behavior is unchanged). -->
+        <activity
+            android:name=".LocationEnableActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <service
             android:name=".HroMessagingService"
             android:exported="false">

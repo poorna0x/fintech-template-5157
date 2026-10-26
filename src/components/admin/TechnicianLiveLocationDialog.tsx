@@ -34,10 +34,12 @@ type LiveLocationRow = {
   fix_time: string | null;
   location_mock?: boolean | null;
   location_risk_level?: string | null;
+  /** Phone quick-settings location switch is off. */
+  location_services_off?: boolean | null;
 };
 
 const LIVE_LOCATION_COLUMNS =
-  'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time,location_mock,location_risk_score,location_risk_level,location_risk_reasons,location_risk_checked_at';
+  'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time,location_mock,location_risk_score,location_risk_level,location_risk_reasons,location_risk_checked_at,location_services_off';
 const LIVE_LOCATION_COLUMNS_BASE =
   'technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time';
 
@@ -157,10 +159,13 @@ const TechnicianLiveLocationDialog = ({
   const freshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestedAtRef = useRef(0);
 
-  const sendPing = useCallback(async (techId: string) => {
+  const [nudging, setNudging] = useState(false);
+
+  const sendPing = useCallback(async (techId: string, promptLocation = false) => {
     // One call does everything: stamps the request, creates the one-time
     // nonce and sends the FCM push that the app's native handler answers
-    // (even when Android has killed the app).
+    // (even when Android has killed the app). promptLocation asks again
+    // with Android's own turn-on-location dialog.
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
@@ -168,7 +173,7 @@ const TechnicianLiveLocationDialog = ({
       await fetch('/.netlify/functions/send-location-ping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ technicianId: techId }),
+        body: JSON.stringify({ technicianId: techId, promptLocation }),
       });
     } catch {
       // Best-effort; the timeout fallback shows the last known location.
@@ -291,6 +296,10 @@ const TechnicianLiveLocationDialog = ({
             const next = payload.new as LiveLocationRow;
             if (!next) return;
             setRow(next);
+            if (next.location_services_off) {
+              setWaitingFresh(false);
+              setTimedOut(false);
+            }
             // ANY upload that arrived after our request ends the loader —
             // show the phone's first answer right away (usually its cached
             // Google location, which is quite fresh) and let later fixes
@@ -438,6 +447,32 @@ const TechnicianLiveLocationDialog = ({
                   {row.accuracy != null ? ` · ±${Math.round(row.accuracy)} m` : ''}
                 </span>
               </div>
+
+              {row.location_services_off && (
+                <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                  <p className="text-sm text-amber-900">
+                    This phone's location is switched off, so a live fix cannot be taken.
+                    {hasCoords ? ' The map is the last known position.' : ''}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 w-full border-amber-400 bg-white"
+                    disabled={nudging || !row.is_tracking}
+                    onClick={() => {
+                      if (!technicianId) return;
+                      setNudging(true);
+                      void sendPing(technicianId, true).finally(() => setNudging(false));
+                    }}
+                  >
+                    {nudging ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
+                    Nudge to turn on location
+                  </Button>
+                  <p className="text-xs text-amber-800">
+                    The phone shows Android's own turn-on-location prompt.
+                  </p>
+                </div>
+              )}
 
               {!row.is_tracking && (
                 <p className="text-xs text-muted-foreground">

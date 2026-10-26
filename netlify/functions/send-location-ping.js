@@ -46,7 +46,10 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const result = await sendTechnicianLocationPing(db, technicianId, { force: true });
+  const result = await sendTechnicianLocationPing(db, technicianId, {
+    force: true,
+    promptLocation: body.promptLocation === true,
+  });
   if (result.reason === 'lookup_failed' || result.reason === 'push_failed') {
     return {
       statusCode: 500,

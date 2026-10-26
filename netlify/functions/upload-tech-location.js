@@ -28,13 +28,14 @@ exports.handler = async (event) => {
 
   const technicianId = String(body.technicianId || '').trim();
   const nonce = String(body.nonce || '').trim();
+  const servicesOff = body.locationServicesOff === true;
   const latitude = Number(body.latitude);
   const longitude = Number(body.longitude);
   const accuracy = body.accuracy != null ? Number(body.accuracy) : null;
   // Epoch ms of when the GPS fix was measured (may predate the upload).
   const fixTime = Number(body.fixTime);
 
-  if (!technicianId || !nonce || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+  if (!technicianId || !nonce || (!servicesOff && (!Number.isFinite(latitude) || !Number.isFinite(longitude)))) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing fields' }) };
   }
 
@@ -69,6 +70,27 @@ exports.handler = async (event) => {
 
   if (!nonceValid) {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
+  }
+
+  if (servicesOff) {
+    const { error: offErr } = await db
+      .from('technician_live_locations')
+      .update({
+        location_services_off: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('technician_id', technicianId);
+    if (offErr && isMissingRiskColumn(offErr)) {
+      console.warn(
+        '[upload-tech-location] location_services_off missing; run scripts/add-technician-location-services-off.sql'
+      );
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, locationServicesOff: true }) };
+    }
+    if (offErr) {
+      console.error('[upload-tech-location] location-off update failed', offErr.message);
+      return { statusCode: 500, headers, body: JSON.stringify({ error: 'Update failed' }) };
+    }
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, locationServicesOff: true }) };
   }
 
   // Recomputed here. body.riskScore / body.reasons are ignored on purpose.
@@ -113,9 +135,10 @@ exports.handler = async (event) => {
 
   const fixIso = decision.fixIso;
 
+  const coordinatePatch = { ...decision.coordinatePatch, location_services_off: false };
   let update = db
     .from('technician_live_locations')
-    .update(decision.coordinatePatch)
+    .update(coordinatePatch)
     .eq('technician_id', technicianId);
   if (fixIso) {
     // The cached last-known and the fresh fix race over the network; never
@@ -130,7 +153,8 @@ exports.handler = async (event) => {
     console.warn(
       '[upload-tech-location] location risk columns missing; run scripts/add-technician-location-risk.sql'
     );
-    const slim = { ...decision.coordinatePatch };
+    const slim = { ...coordinatePatch };
+    delete slim.location_services_off;
     delete slim.location_mock;
     delete slim.location_risk_score;
     delete slim.location_risk_level;

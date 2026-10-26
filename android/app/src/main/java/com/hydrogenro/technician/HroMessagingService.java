@@ -175,6 +175,18 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         if (technicianId == null || nonce == null || uploadUrl == null) return;
 
         Context context = getApplicationContext();
+        if (!LocationServicesStatus.isEnabled(context)) {
+            LocationUploader.reportServicesOff(uploadUrl, technicianId, nonce, true);
+            LocationEnablePrompt.show(
+                context,
+                uploadUrl,
+                technicianId,
+                nonce,
+                "1".equals(data.get("promptLocation"))
+            );
+            return;
+        }
+
         boolean fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
             == PackageManager.PERMISSION_GRANTED;
         boolean coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
