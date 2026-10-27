@@ -140,6 +140,8 @@ export interface TechnicianQrSnapshotV1 {
   technicians: TechnicianQrPickerRow[];
   commonQrCodesForTechnician: CommonQrCode[];
   technicianVisibleQrCodes: string[];
+  /** Payment QR ids (`common_…` / `technician_…`) held back until a scan fails. */
+  backupQrCodeIds?: string[];
   allTechniciansForReports: TechnicianForReportRef[];
 }
 
@@ -447,6 +449,39 @@ export const saveTechnicianQrSnapshot = (
  * Handles: real array, JSON string, legacy `common_qr_code_id` single uuid.
  * Mismatched shapes were causing only one assigned Common QR to match.
  */
+/** `technicians.backup_qr_code_ids`: common_<uuid> or technician_<uuid>. */
+export function normalizeBackupQrCodeIds(raw: unknown): string[] {
+  const list = Array.isArray(raw) ? raw : [];
+  const out: string[] = [];
+  for (const item of list) {
+    const id = String(item ?? '').trim();
+    if (!/^(common|technician)_[0-9a-f-]{8,}$/i.test(id)) continue;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * Payment QRs for the first screen. "all" means every QR except backups.
+ * An explicit empty visibility list means none.
+ */
+export function filterPrimaryPaymentQrs<T extends { id: string }>(
+  items: T[],
+  idPrefix: 'common_' | 'technician_',
+  visibleIds: string[],
+  rawVisible: unknown,
+  backupIds: string[]
+): T[] {
+  const visible = visibleIds.map((id) => String(id));
+  const explicitNone = visible.length === 0 && rawVisible !== null && rawVisible !== undefined;
+  if (explicitNone) return [];
+  const backup = new Set(backupIds.map(String));
+  const pool = visible.includes('all')
+    ? items
+    : items.filter((item) => visible.includes(`${idPrefix}${item.id}`));
+  return pool.filter((item) => !backup.has(`${idPrefix}${item.id}`));
+}
+
 export function normalizeTechnicianAssignedCommonQrIds(row: {
   common_qr_code_ids?: unknown;
   common_qr_code_id?: string | null;

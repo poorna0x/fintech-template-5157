@@ -348,7 +348,8 @@ const Settings = () => {
     salarySlipAutoSend: false,
     brandStickerRequired: false,
     brandStickerNoSkip: false,
-    visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
+    visibleQrCodes: [] as string[], // Primary payment QRs. Empty = none, ["all"] = all, or specific IDs
+    backupQrCodeIds: [] as string[], // Shown only after the technician says the primary QR failed
     commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
   });
   const [newlyCreatedTechnicianId, setNewlyCreatedTechnicianId] = useState<string | null>(null);
@@ -626,6 +627,7 @@ const Settings = () => {
           baseSalary: tech.salary?.baseSalary || 0,
           salaryEffectiveFromMonth: getCurrentMonthKey(),
           visibleQrCodes: tech.visibleQrCodes || [],
+          backupQrCodeIds: (tech as any).backupQrCodeIds || [],
           commonQrCodeIds: (tech as any).commonQrCodeIds || [],
           accountStatus: (tech.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
           pushNotificationsEnabled: tech.push_notifications_enabled !== false,
@@ -962,6 +964,11 @@ const Settings = () => {
     upiPhone: tech.upi_phone || tech.upiPhone || '',
     dynamicUpiEnabled: !!(tech.dynamic_upi_enabled ?? tech.dynamicUpiEnabled),
     visibleQrCodes: tech.visible_qr_codes || [],
+    backupQrCodeIds: Array.isArray(tech.backup_qr_code_ids)
+      ? tech.backup_qr_code_ids.map((id: unknown) => String(id))
+      : Array.isArray(tech.backupQrCodeIds)
+        ? tech.backupQrCodeIds
+        : [],
     commonQrCodeIds: normalizeTechnicianAssignedCommonQrIds({
       common_qr_code_ids: tech.common_qr_code_ids,
       common_qr_code_id: (tech as any).common_qr_code_id,
@@ -1063,6 +1070,7 @@ const Settings = () => {
       baseSalary: 0,
       salaryEffectiveFromMonth: getCurrentMonthKey(),
       visibleQrCodes: [],
+      backupQrCodeIds: [],
       commonQrCodeIds: [],
       accountStatus: 'ACTIVE',
       pushNotificationsEnabled: true,
@@ -1100,6 +1108,7 @@ const Settings = () => {
       baseSalary: technician.salary?.baseSalary || 0,
       salaryEffectiveFromMonth: getCurrentMonthKey(),
       visibleQrCodes: technician.visibleQrCodes || [],
+      backupQrCodeIds: (technician as any).backupQrCodeIds || [],
       commonQrCodeIds: (technician as any).commonQrCodeIds || [],
       accountStatus: (technician.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
       pushNotificationsEnabled: technician.push_notifications_enabled !== false,
@@ -1176,6 +1185,7 @@ const Settings = () => {
         upi_phone: normalizePaymentPhone(technicianFormData.upiPhone || ''),
         dynamic_upi_enabled: dynamicOn,
         visible_qr_codes: technicianFormData.visibleQrCodes || [],
+        backup_qr_code_ids: technicianFormData.backupQrCodeIds || [],
         common_qr_code_ids: technicianFormData.commonQrCodeIds || [],
         skills: {
           serviceTypes: ['RO', 'SOFTENER', 'AC', 'APPLIANCE'],
@@ -1372,6 +1382,10 @@ const Settings = () => {
       }
       if (/brand_sticker_required/i.test(message)) {
         toast.error('Run scripts/add-technician-brand-sticker.sql in Supabase, then save again.');
+        return;
+      }
+      if (/backup_qr_code_ids/i.test(message)) {
+        toast.error('Run scripts/add-technician-backup-qr.sql in Supabase, then save again.');
         return;
       }
       toast.error('Failed to save technician');
@@ -4792,10 +4806,10 @@ const Settings = () => {
             
             {/* QR Code Visibility Settings */}
             <div className="space-y-3 sm:space-y-4">
-              <h3 className="text-base sm:text-lg font-semibold text-foreground">QR Code Visibility</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-foreground">Primary QR</h3>
               <div>
-                <Label className="text-sm sm:text-base">Select which QR codes this technician can see</Label>
-                <p className="text-xs sm:text-sm text-muted-foreground mb-3">Control which payment QR codes are available to this technician</p>
+                <Label className="text-sm sm:text-base">QRs shown first on the payment screen</Label>
+                <p className="text-xs sm:text-sm text-muted-foreground mb-3">Select any number. These are the codes the technician shows the customer first.</p>
                 
                 <div className="space-y-2 sm:space-y-3">
                   {/* Show All Option */}
@@ -4824,20 +4838,24 @@ const Settings = () => {
                         const qrId = `common_${qr.id}`;
                         const isChecked = technicianFormData.visibleQrCodes.includes(qrId);
                         const isAllSelected = technicianFormData.visibleQrCodes.includes('all');
+                        const isBackup = technicianFormData.backupQrCodeIds.includes(qrId);
                         
                         return (
                           <div key={qr.id} className="flex items-center space-x-2 p-2 border rounded-lg">
                             <Checkbox
                               id={qrId}
-                              checked={isChecked || isAllSelected}
-                              disabled={isAllSelected}
+                              checked={(isChecked || isAllSelected) && !isBackup}
+                              disabled={isAllSelected && !isBackup}
                               onCheckedChange={(checked) => {
-                                if (isAllSelected) return;
+                                if (isAllSelected && !isBackup) return;
                                 
                                 if (checked) {
                                   setTechnicianFormData(prev => ({
                                     ...prev,
-                                    visibleQrCodes: [...prev.visibleQrCodes.filter(id => id !== 'all'), qrId]
+                                    visibleQrCodes: prev.visibleQrCodes.includes('all')
+                                      ? prev.visibleQrCodes
+                                      : [...prev.visibleQrCodes.filter(id => id !== 'all'), qrId],
+                                    backupQrCodeIds: prev.backupQrCodeIds.filter(id => id !== qrId),
                                   }));
                                 } else {
                                   setTechnicianFormData(prev => ({
@@ -4866,20 +4884,24 @@ const Settings = () => {
                           const qrId = `technician_${tech.id}`;
                           const isChecked = technicianFormData.visibleQrCodes.includes(qrId);
                           const isAllSelected = technicianFormData.visibleQrCodes.includes('all');
+                          const isBackup = technicianFormData.backupQrCodeIds.includes(qrId);
                           
                           return (
                             <div key={tech.id} className="flex items-center space-x-2 p-2 border rounded-lg">
                               <Checkbox
                                 id={qrId}
-                                checked={isChecked || isAllSelected}
-                                disabled={isAllSelected}
+                                checked={(isChecked || isAllSelected) && !isBackup}
+                                disabled={isAllSelected && !isBackup}
                                 onCheckedChange={(checked) => {
-                                  if (isAllSelected) return;
+                                  if (isAllSelected && !isBackup) return;
                                   
                                   if (checked) {
                                     setTechnicianFormData(prev => ({
                                       ...prev,
-                                      visibleQrCodes: [...prev.visibleQrCodes.filter(id => id !== 'all'), qrId]
+                                      visibleQrCodes: prev.visibleQrCodes.includes('all')
+                                        ? prev.visibleQrCodes
+                                        : [...prev.visibleQrCodes.filter(id => id !== 'all'), qrId],
+                                      backupQrCodeIds: prev.backupQrCodeIds.filter(id => id !== qrId),
                                     }));
                                   } else {
                                     setTechnicianFormData(prev => ({
@@ -4900,6 +4922,72 @@ const Settings = () => {
                   
                   {commonQrCodes.length === 0 && technicians.filter((t) => technicianQrIsListed(t)).length === 0 && (
                     <p className="text-xs sm:text-sm text-muted-foreground italic">No QR codes available. Add common QR codes or upload QR codes for technicians.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <h3 className="text-base sm:text-lg font-semibold text-foreground">Backup QR</h3>
+                <p className="text-xs sm:text-sm text-muted-foreground mb-3">
+                  If the customer still cannot pay after 30 seconds, the technician is asked. A yes swaps the screen to the first backup QR, and that QR is the one saved on the job.
+                </p>
+                <div className="space-y-2">
+                  {commonQrCodes.map((qr) => {
+                    const qrId = `common_${qr.id}`;
+                    const isChecked = technicianFormData.backupQrCodeIds.includes(qrId);
+                    return (
+                      <div key={`backup-${qr.id}`} className="flex items-center space-x-2 p-2 border rounded-lg">
+                        <Checkbox
+                          id={`backup-${qrId}`}
+                          checked={isChecked}
+                          onCheckedChange={(checked) => {
+                            setTechnicianFormData((prev) => ({
+                              ...prev,
+                              backupQrCodeIds: checked
+                                ? [...prev.backupQrCodeIds.filter((id) => id !== qrId), qrId]
+                                : prev.backupQrCodeIds.filter((id) => id !== qrId),
+                              visibleQrCodes: checked
+                                ? prev.visibleQrCodes.filter((id) => id !== qrId)
+                                : prev.visibleQrCodes,
+                            }));
+                          }}
+                        />
+                        <Label htmlFor={`backup-${qrId}`} className="cursor-pointer flex-1 text-xs sm:text-sm">
+                          {qr.name}
+                        </Label>
+                      </div>
+                    );
+                  })}
+                  {technicians
+                    .filter((t) => technicianQrIsListed(t))
+                    .map((tech) => {
+                      const qrId = `technician_${tech.id}`;
+                      const isChecked = technicianFormData.backupQrCodeIds.includes(qrId);
+                      return (
+                        <div key={`backup-${tech.id}`} className="flex items-center space-x-2 p-2 border rounded-lg">
+                          <Checkbox
+                            id={`backup-${qrId}`}
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              setTechnicianFormData((prev) => ({
+                                ...prev,
+                                backupQrCodeIds: checked
+                                  ? [...prev.backupQrCodeIds.filter((id) => id !== qrId), qrId]
+                                  : prev.backupQrCodeIds.filter((id) => id !== qrId),
+                                visibleQrCodes: checked
+                                  ? prev.visibleQrCodes.filter((id) => id !== qrId)
+                                  : prev.visibleQrCodes,
+                              }));
+                            }}
+                          />
+                          <Label htmlFor={`backup-${qrId}`} className="cursor-pointer flex-1 text-xs sm:text-sm">
+                            {tech.fullName}&apos;s QR Code
+                          </Label>
+                        </div>
+                      );
+                    })}
+                  {commonQrCodes.length === 0 && technicians.filter((t) => technicianQrIsListed(t)).length === 0 && (
+                    <p className="text-xs sm:text-sm text-muted-foreground italic">No QR codes available.</p>
                   )}
                 </div>
               </div>

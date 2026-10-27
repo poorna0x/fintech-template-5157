@@ -104,10 +104,12 @@ import {
   commonQrDisplaySrc,
   CommonQrCode,
   getTechnicianCommonQrImageCache,
+  filterPrimaryPaymentQrs,
   getTechnicianQrSnapshot,
   isDynamicUpiQr,
   isDynamicUpiTechnician,
   mapCommonQrRow,
+  normalizeBackupQrCodeIds,
   normalizeTechnicianAssignedCommonQrIds,
   prefetchTechnicianCommonQrImages,
   QR_NETWORK_MIN_INTERVAL_MS,
@@ -436,10 +438,15 @@ type TechnicianQrLiveRef = {
   visibleForPicker: string[];
   rawVisibleQrCodes: string[] | null | undefined;
   assignedCommonIds: string[];
+  backupQrCodeIds: string[];
   allTechForReports: TechnicianQrSnapshotV1['allTechniciansForReports'];
   /** True after first successful loadQrCodes — skip merge until then to avoid partial state. */
   hydrated: boolean;
 };
+
+function sameQrIdList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
 
 function emptyTechnicianQrLiveRef(): TechnicianQrLiveRef {
   return {
@@ -450,6 +457,7 @@ function emptyTechnicianQrLiveRef(): TechnicianQrLiveRef {
     visibleForPicker: ['all'],
     rawVisibleQrCodes: undefined,
     assignedCommonIds: [],
+    backupQrCodeIds: [],
     allTechForReports: [],
     hydrated: false,
   };
@@ -795,6 +803,9 @@ const TechnicianDashboard = () => {
   const [allTechnicians, setAllTechnicians] = useState<any[]>([]); // Store all technicians (filtered for QR codes)
   const [allTechniciansForReports, setAllTechniciansForReports] = useState<any[]>([]); // Store ALL technicians for reports lookup
   const [technicianVisibleQrCodes, setTechnicianVisibleQrCodes] = useState<string[]>([]); // Current technician's visibility settings
+  const [backupQrCodeIds, setBackupQrCodeIds] = useState<string[]>([]);
+  const [paymentFailAskOpen, setPaymentFailAskOpen] = useState(false);
+  const [paymentFailAskDismissed, setPaymentFailAskDismissed] = useState(false);
   const [selectedQrCodeName, setSelectedQrCodeName] = useState<string>('');
   const [selectedQrCodeUrlState, setSelectedQrCodeUrlState] = useState<string>('');
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
@@ -1684,6 +1695,10 @@ const TechnicianDashboard = () => {
         setTechnicians(snap.technicians);
         setCommonQrCodesForTechnician(snap.commonQrCodesForTechnician);
         setTechnicianVisibleQrCodes(snap.technicianVisibleQrCodes);
+        setBackupQrCodeIds((prev) => {
+          const next = normalizeBackupQrCodeIds(snap.backupQrCodeIds);
+          return sameQrIdList(prev, next) ? prev : next;
+        });
         setAllTechniciansForReports(snap.allTechniciansForReports);
         setCommonQrImageDataById(getTechnicianCommonQrImageCache(technicianId));
       };
@@ -1728,6 +1743,7 @@ const TechnicianDashboard = () => {
         let assignedCommonQrs: CommonQrCode[] = [];
         let technicianCommonQrCatalog: CommonQrCode[] = [];
         let assignedCommonIdsForRef: string[] = [];
+        let backupIdsForRef: string[] = [];
 
         const roster = allTechniciansResult.data || [];
         const me = meResult.data;
@@ -1776,6 +1792,8 @@ const TechnicianDashboard = () => {
             common_qr_code_id: (currentTech as any).common_qr_code_id,
           });
           assignedCommonIdsForRef = commonQrIds.map((x) => String(x));
+          backupIdsForRef = normalizeBackupQrCodeIds(currentTech.backup_qr_code_ids);
+          setBackupQrCodeIds((prev) => (sameQrIdList(prev, backupIdsForRef) ? prev : backupIdsForRef));
           const idSet = new Set(assignedCommonIdsForRef);
           technicianCommonQrCatalog = (technicianCommonQrResult.data || []).map((q: any) => ({
             id: q.id,
@@ -1802,38 +1820,22 @@ const TechnicianDashboard = () => {
         let snapshotCommon: CommonQrCode[] = [];
         let snapshotTechs: TechnicianQrPickerRow[] = [];
 
-        if (
-          currentTechnicianVisibleQrCodes.length === 0 &&
-          rawVisibleQrCodes !== null &&
-          rawVisibleQrCodes !== undefined
-        ) {
-          setCommonQrCodes([]);
-          setTechnicians([]);
-          snapshotCommon = [];
-          snapshotTechs = [];
-        } else if (currentTechnicianVisibleQrCodes.includes('all')) {
-          setCommonQrCodes(allCommonQrCodesData);
-          setTechnicians(allTechniciansData);
-          snapshotCommon = allCommonQrCodesData;
-          snapshotTechs = allTechniciansData;
-        } else {
-          const visibleQrCodesStr = currentTechnicianVisibleQrCodes.map((id) => String(id));
-
-          const filteredCommon = allCommonQrCodesData.filter((qr) => {
-            const formattedId = `common_${String(qr.id)}`;
-            return visibleQrCodesStr.includes(formattedId);
-          });
-
-          const filteredTechnicians = allTechniciansData.filter((tech) => {
-            const formattedId = `technician_${String(tech.id)}`;
-            return visibleQrCodesStr.includes(formattedId);
-          });
-
-          setCommonQrCodes(filteredCommon);
-          setTechnicians(filteredTechnicians);
-          snapshotCommon = filteredCommon;
-          snapshotTechs = filteredTechnicians;
-        }
+        snapshotCommon = filterPrimaryPaymentQrs(
+          allCommonQrCodesData,
+          'common_',
+          currentTechnicianVisibleQrCodes,
+          rawVisibleQrCodes,
+          backupIdsForRef
+        );
+        snapshotTechs = filterPrimaryPaymentQrs(
+          allTechniciansData,
+          'technician_',
+          currentTechnicianVisibleQrCodes,
+          rawVisibleQrCodes,
+          backupIdsForRef
+        );
+        setCommonQrCodes(snapshotCommon);
+        setTechnicians(snapshotTechs);
 
         qrLiveRef.current = {
           technicianId,
@@ -1843,6 +1845,7 @@ const TechnicianDashboard = () => {
           visibleForPicker: currentTechnicianVisibleQrCodes,
           rawVisibleQrCodes,
           assignedCommonIds: assignedCommonIdsForRef,
+          backupQrCodeIds: backupIdsForRef,
           allTechForReports: allTechniciansForReportsData,
           hydrated: true,
         };
@@ -1855,6 +1858,7 @@ const TechnicianDashboard = () => {
           technicians: snapshotTechs,
           commonQrCodesForTechnician: assignedCommonQrs,
           technicianVisibleQrCodes: currentTechnicianVisibleQrCodes,
+          backupQrCodeIds: backupIdsForRef,
           allTechniciansForReports: allTechniciansForReportsData,
         });
 
@@ -1881,6 +1885,7 @@ const TechnicianDashboard = () => {
       visibleForPicker,
       rawVisibleQrCodes,
       assignedCommonIds,
+      backupQrCodeIds: backupIds,
       allTechForReports,
     } = qrLiveRef.current;
 
@@ -1890,39 +1895,24 @@ const TechnicianDashboard = () => {
     const assignedCommonQrs = technicianCommonFull.filter((q) => idSet.has(String(q.id)));
     setCommonQrCodesForTechnician(assignedCommonQrs);
     setTechnicianVisibleQrCodes(visibleForPicker);
+    setBackupQrCodeIds((prev) => (sameQrIdList(prev, backupIds) ? prev : backupIds));
 
-    let snapshotCommon: CommonQrCode[] = [];
-    let snapshotTechs: TechnicianQrPickerRow[] = [];
-
-    if (
-      visibleForPicker.length === 0 &&
-      rawVisibleQrCodes !== null &&
-      rawVisibleQrCodes !== undefined
-    ) {
-      setCommonQrCodes([]);
-      setTechnicians([]);
-      snapshotCommon = [];
-      snapshotTechs = [];
-    } else if (visibleForPicker.includes('all')) {
-      setCommonQrCodes(allCommon);
-      setTechnicians(allTechPicker);
-      snapshotCommon = allCommon;
-      snapshotTechs = allTechPicker;
-    } else {
-      const visibleQrCodesStr = visibleForPicker.map((id) => String(id));
-      const filteredCommon = allCommon.filter((qr) => {
-        const formattedId = `common_${String(qr.id)}`;
-        return visibleQrCodesStr.includes(formattedId);
-      });
-      const filteredTechnicians = allTechPicker.filter((tech) => {
-        const formattedId = `technician_${String(tech.id)}`;
-        return visibleQrCodesStr.includes(formattedId);
-      });
-      setCommonQrCodes(filteredCommon);
-      setTechnicians(filteredTechnicians);
-      snapshotCommon = filteredCommon;
-      snapshotTechs = filteredTechnicians;
-    }
+    const snapshotCommon = filterPrimaryPaymentQrs(
+      allCommon,
+      'common_',
+      visibleForPicker,
+      rawVisibleQrCodes,
+      backupIds
+    );
+    const snapshotTechs = filterPrimaryPaymentQrs(
+      allTechPicker,
+      'technician_',
+      visibleForPicker,
+      rawVisibleQrCodes,
+      backupIds
+    );
+    setCommonQrCodes(snapshotCommon);
+    setTechnicians(snapshotTechs);
 
     const paymentQr = allTechPicker.find((t) => t.id === technicianId)?.qrCode;
     if (paymentQr && String(paymentQr).trim()) {
@@ -1941,6 +1931,7 @@ const TechnicianDashboard = () => {
       technicians: snapshotTechs,
       commonQrCodesForTechnician: assignedCommonQrs,
       technicianVisibleQrCodes: visibleForPicker,
+      backupQrCodeIds: backupIds,
       allTechniciansForReports: allTechForReports,
     });
 
@@ -2029,6 +2020,9 @@ const TechnicianDashboard = () => {
             common_qr_code_ids: row.common_qr_code_ids,
             common_qr_code_id: row.common_qr_code_id,
           }).map(String);
+          if (row.backup_qr_code_ids !== undefined) {
+            qrLiveRef.current.backupQrCodeIds = normalizeBackupQrCodeIds(row.backup_qr_code_ids);
+          }
 
           const qr = String(row.qr_code || '').trim();
           const prevPicker = qrLiveRef.current.allTechPicker;
@@ -2115,15 +2109,16 @@ const TechnicianDashboard = () => {
     if (!listsPopulated && !catalogReady) return;
 
     if (listsPopulated || catalogReady) {
+      const keptAsBackup = backupQrCodeIds.includes(selectedQrCodeId);
       if (selectedQrCodeId.startsWith('common_')) {
         const id = selectedQrCodeId.replace('common_', '');
-        if (!commonQrCodes.some((q) => String(q.id) === id)) {
+        if (!keptAsBackup && !commonQrCodes.some((q) => String(q.id) === id)) {
           setSelectedQrCodeId('');
           setQrCodeType('');
         }
       } else if (selectedQrCodeId.startsWith('technician_')) {
         const id = selectedQrCodeId.replace('technician_', '');
-        if (!technicians.some((t) => String(t.id) === id)) {
+        if (!keptAsBackup && !technicians.some((t) => String(t.id) === id)) {
           setSelectedQrCodeId('');
           setQrCodeType('');
         }
@@ -2135,8 +2130,81 @@ const TechnicianDashboard = () => {
     selectedQrCodeId,
     commonQrCodes,
     technicians,
+    backupQrCodeIds,
     qrAssetsVersion,
     user,
+  ]);
+
+  const selectPaymentQr = (value: string) => {
+    setSelectedQrCodeId(value);
+    setPaymentFailAskOpen(false);
+    let qrType = '';
+    let qrUrl = '';
+    let qrName = '';
+
+    if (value === SHARE_QR_LINK_VALUE) {
+      qrType = 'share_link';
+      setShareLinkUpiQrId('');
+      setSelectedQrCodeUrlState('');
+      setSelectedQrCodeName('');
+      setQrCodeType(qrType);
+      return;
+    }
+
+    setShareLinkUpiQrId('');
+    if (value.startsWith('common_')) {
+      qrType = 'common';
+      const qrId = value.replace('common_', '');
+      const selectedQr =
+        commonQrCodes.find((qr) => qr.id === qrId) ||
+        allCommonQrCodes.find((qr) => qr.id === qrId) ||
+        commonQrCodesForTechnician.find((qr) => qr.id === qrId);
+      if (selectedQr) {
+        qrUrl = selectedQr.qrCodeUrl;
+        qrName = selectedQr.name;
+      }
+    } else if (value.startsWith('technician_')) {
+      qrType = 'technician';
+      const techId = value.replace('technician_', '');
+      const selectedTech =
+        technicians.find((t) => t.id === techId) ||
+        allTechnicians.find((t) => t.id === techId);
+      if (selectedTech) {
+        qrUrl = String((selectedTech as any).qrCode || '');
+        qrName = (selectedTech as any).fullName || 'Technician';
+      }
+    }
+
+    setQrCodeType(qrType);
+    setSelectedQrCodeName(qrName);
+    setSelectedQrCodeUrlState(qrUrl);
+  };
+
+  useEffect(() => {
+    if (!completeDialogOpen || completeJobStep !== 4) {
+      setPaymentFailAskOpen(false);
+      setPaymentFailAskDismissed(false);
+      return;
+    }
+    const showingPrimary =
+      selectedQrCodeId.startsWith('common_') || selectedQrCodeId.startsWith('technician_');
+    if (
+      paymentFailAskDismissed ||
+      !showingPrimary ||
+      backupQrCodeIds.length === 0 ||
+      backupQrCodeIds.includes(selectedQrCodeId)
+    ) {
+      setPaymentFailAskOpen(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setPaymentFailAskOpen(true), 30_000);
+    return () => window.clearTimeout(timer);
+  }, [
+    completeDialogOpen,
+    completeJobStep,
+    selectedQrCodeId,
+    backupQrCodeIds,
+    paymentFailAskDismissed,
   ]);
 
   // Load QR codes on mount and when user changes
@@ -4105,6 +4173,8 @@ const TechnicianDashboard = () => {
     setQrCodeType('');
     setSelectedQrCodeId('');
     setShareLinkUpiQrId('');
+    setPaymentFailAskOpen(false);
+    setPaymentFailAskDismissed(false);
     setSelectedQrCodeName('');
     setSelectedQrCodeUrlState('');
     setOtpInput(['', '', '', '']);
@@ -10028,48 +10098,9 @@ const TechnicianDashboard = () => {
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200">
                       <div>
                         <Label htmlFor="qr-code-type">Select QR Code *</Label>
-                        <Select 
-                          value={selectedQrCodeId} 
-                          onValueChange={(value) => {
-                            setSelectedQrCodeId(value);
-                            let qrType = '';
-                            let qrUrl = '';
-                            let qrName = '';
-
-                            if (value === SHARE_QR_LINK_VALUE) {
-                              qrType = 'share_link';
-                              setShareLinkUpiQrId('');
-                              setSelectedQrCodeUrlState('');
-                              setSelectedQrCodeName('');
-                            } else if (value.startsWith('common_')) {
-                              setShareLinkUpiQrId('');
-                              qrType = 'common';
-                              const qrId = value.replace('common_', '');
-                              const selectedQr =
-                                commonQrCodes.find(qr => qr.id === qrId) ||
-                                allCommonQrCodes.find(qr => qr.id === qrId) ||
-                                commonQrCodesForTechnician.find(qr => qr.id === qrId);
-                              if (selectedQr) {
-                                qrUrl = selectedQr.qrCodeUrl;
-                                qrName = selectedQr.name;
-                              }
-                            } else if (value.startsWith('technician_')) {
-                              setShareLinkUpiQrId('');
-                              qrType = 'technician';
-                              const techId = value.replace('technician_', '');
-                              const selectedTech =
-                                technicians.find(t => t.id === techId) ||
-                                allTechnicians.find(t => t.id === techId);
-                              if (selectedTech) {
-                                qrUrl = String((selectedTech as any).qrCode || '');
-                                qrName = (selectedTech as any).fullName || 'Technician';
-                              }
-                            }
-
-                            setQrCodeType(qrType);
-                            setSelectedQrCodeName(qrName);
-                            setSelectedQrCodeUrlState(qrUrl);
-                          }}
+                        <Select
+                          value={selectedQrCodeId}
+                          onValueChange={selectPaymentQr}
                         >
                           <SelectTrigger className="mt-1">
                             <SelectValue placeholder="Select QR code" />
@@ -10102,6 +10133,22 @@ const TechnicianDashboard = () => {
                                       {tech.fullName}'s QR Code
                             </SelectItem>
                                   ))}
+                                {backupQrCodeIds.includes(selectedQrCodeId) &&
+                                  backupQrCodeIds.map((id) => {
+                                    let label = 'Backup QR';
+                                    if (id.startsWith('common_')) {
+                                      const qr = allCommonQrCodes.find((q) => `common_${q.id}` === id);
+                                      label = qr?.name || label;
+                                    } else if (id.startsWith('technician_')) {
+                                      const tech = allTechnicians.find((t) => `technician_${t.id}` === id);
+                                      label = tech?.fullName ? `${tech.fullName}'s QR Code` : label;
+                                    }
+                                    return (
+                                      <SelectItem key={`backup_${id}`} value={id}>
+                                        {label} (backup)
+                                      </SelectItem>
+                                    );
+                                  })}
                                 <SelectItem value={SHARE_QR_LINK_VALUE}>
                                   Send pay QR on WhatsApp
                                 </SelectItem>
@@ -10110,6 +10157,41 @@ const TechnicianDashboard = () => {
                           </SelectContent>
                         </Select>
                       </div>
+
+                      {paymentFailAskOpen ? (
+                        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+                          <p className="text-sm font-medium text-amber-950">Did this payment fail?</p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              className="flex-1 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm"
+                              onClick={() => {
+                                setPaymentFailAskDismissed(true);
+                                setPaymentFailAskOpen(false);
+                              }}
+                            >
+                              No, still paying
+                            </button>
+                            <button
+                              type="button"
+                              className="flex-1 rounded-md bg-amber-800 px-3 py-2 text-sm text-white"
+                              onClick={() => {
+                                const next = backupQrCodeIds[0];
+                                setPaymentFailAskDismissed(true);
+                                setPaymentFailAskOpen(false);
+                                if (next) selectPaymentQr(next);
+                              }}
+                            >
+                              Yes, it failed
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {backupQrCodeIds.includes(selectedQrCodeId) ? (
+                        <p className="text-sm font-medium text-sky-950 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
+                          QR code changed. Please show this one again.
+                        </p>
+                      ) : null}
 
                       {selectedQrCodeId === SHARE_QR_LINK_VALUE ? (
                         <ShareQrLinkPanel

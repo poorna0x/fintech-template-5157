@@ -307,6 +307,8 @@ export interface Technician {
   
   // QR Code Visibility
   visibleQrCodes?: string[]; // Array of QR code IDs visible to this technician. Empty = none, ["all"] = all, or specific IDs
+  /** Payment QRs held back until the technician says the primary QR failed. */
+  backupQrCodeIds?: string[];
   
   // Timestamps
   createdAt: string;

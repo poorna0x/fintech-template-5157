@@ -434,6 +434,7 @@ const TECHNICIAN_ROW_COLUMNS = [
   'dynamic_upi_enabled',
   'photo',
   'visible_qr_codes',
+  'backup_qr_code_ids',
   'common_qr_code_ids',
   'account_status',
   'push_notifications_enabled',
