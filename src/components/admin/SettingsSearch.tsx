@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentType } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -150,6 +150,10 @@ const GROUPS: SettingsSearchItem['group'][] = [
   'App & data',
 ];
 
+function itemCommandValue(item: SettingsSearchItem) {
+  return `${item.label} ${item.description} ${item.keywords} ${item.id}`;
+}
+
 function ResultIcon({ icon }: { icon: SearchIcon }) {
   if (icon === 'whatsapp') {
     return (
@@ -196,6 +200,8 @@ export function SettingsCommandPalette() {
   const { isManager } = useAdminRole();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [commandValue, setCommandValue] = useState('');
+  const listRef = useRef<HTMLDivElement>(null);
   const items = useMemo(
     () => SEARCH_ITEMS.filter((item) => !isManager || !item.adminOnly),
     [isManager]
@@ -218,6 +224,17 @@ export function SettingsCommandPalette() {
   useEffect(() => {
     if (!open) setQuery('');
   }, [open]);
+
+  useEffect(() => {
+    const first = query.trim()
+      ? rankedItems[0]
+      : items.find((item) => item.group === 'Communication') ?? items[0];
+    setCommandValue(first ? itemCommandValue(first) : '');
+  }, [query, rankedItems, items]);
+
+  useLayoutEffect(() => {
+    listRef.current?.scrollTo({ top: 0 });
+  }, [query, rankedItems]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -263,7 +280,7 @@ export function SettingsCommandPalette() {
   const renderItem = (item: SettingsSearchItem) => (
     <CommandItem
       key={item.id}
-      value={`${item.label} ${item.description} ${item.keywords} ${item.id}`}
+      value={itemCommandValue(item)}
       onSelect={() => selectItem(item)}
       className="cursor-pointer gap-3 rounded-lg px-3 py-2.5"
     >
@@ -283,6 +300,8 @@ export function SettingsCommandPalette() {
       open={open}
       onOpenChange={setOpen}
       shouldFilter={false}
+      commandValue={commandValue}
+      onCommandValueChange={setCommandValue}
       title="Search settings"
       description="Type to find any settings panel, tool or section, then press Enter to open it."
     >
@@ -301,7 +320,7 @@ export function SettingsCommandPalette() {
         placeholder="Typos are ok — try WhatsApp, technician…"
         aria-label="Search all settings"
       />
-      <CommandList className="max-h-[min(60vh,480px)] p-1">
+      <CommandList ref={listRef} className="max-h-[min(60vh,480px)] p-1">
         <CommandEmpty>
           <div className="px-4 py-3">
             <Search className="mx-auto mb-2 h-6 w-6 text-muted-foreground/60" />
