@@ -16,6 +16,7 @@ import {
   generateGoogleMapsDirections,
   generateGoogleMapsDirectionsBetween,
 } from '@/lib/maps';
+import { resolveGoogleMapsInputToCoords } from '@/lib/googleMapsLink';
 import { nativeLocationIsMock } from '@/lib/technicianLiveLocation';
 
 interface LocationData {
@@ -515,7 +516,7 @@ const TechnicianLocation = () => {
     }
   };
 
-  // Handle Google Maps link
+  // Handle Google Maps link (full URLs + maps.app.goo.gl short links via server resolve)
   const handleGoogleMapsLink = async () => {
     if (!googleMapsLink.trim()) {
       toast.error('Please enter a Google Maps link');
@@ -526,70 +527,34 @@ const TechnicianLocation = () => {
     setError(null);
 
     try {
-      // Extract coordinates from various Google Maps URL formats
-      let extractedLocation: { lat: number; lng: number } | null = null;
+      const resolved = await resolveGoogleMapsInputToCoords(googleMapsLink.trim(), {
+        shareText: googleMapsLink.trim(),
+      });
 
-      // Pattern 1: Standard Google Maps URL with @lat,lng (most common)
-      // Example: https://www.google.com/maps/@12.9716,77.5946,15z
-      const atMatch = googleMapsLink.match(/@([+-]?[\d.]+),([+-]?[\d.]+)/);
-      if (atMatch) {
-        extractedLocation = {
-          lat: parseFloat(atMatch[1]),
-          lng: parseFloat(atMatch[2])
-        };
-      }
-
-      // Pattern 2: URL with /place/ and !3d!4d coordinates
-      // Example: https://www.google.com/maps/place/.../@12.9716,77.5946,15z/data=!3d...
-      const placeMatch = googleMapsLink.match(/!3d([+-]?[\d.]+)!4d([+-]?[\d.]+)/);
-      if (placeMatch && !extractedLocation) {
-        extractedLocation = {
-          lat: parseFloat(placeMatch[1]),
-          lng: parseFloat(placeMatch[2])
-        };
-      }
-
-      // Pattern 3: URL with ?q=coordinates
-      // Example: https://www.google.com/maps/search/?api=1&query=12.9716,77.5946
-      if (!extractedLocation) {
-        const queryMatch = googleMapsLink.match(/[?&]query=([+-]?[\d.]+),([+-]?[\d.]+)/);
-        if (queryMatch) {
-          extractedLocation = {
-            lat: parseFloat(queryMatch[1]),
-            lng: parseFloat(queryMatch[2])
-          };
-        }
-      }
-
-      // Pattern 4: Short link - show helpful message
-      if ((googleMapsLink.includes('maps.app.goo.gl') || googleMapsLink.includes('goo.gl/maps')) && !extractedLocation) {
-        toast.error(
-          'Short links cannot be processed. Open the link in your browser, copy the full URL with @lat,lng, or use the search box above.',
-          { duration: 6000 }
-        );
-        setIsProcessingLink(false);
+      if (!resolved.ok) {
+        toast.error(resolved.error || 'Could not read that Maps link. Try the search box above.', {
+          duration: 6000,
+        });
         return;
       }
 
-      if (extractedLocation && extractedLocation.lat && extractedLocation.lng && 
-          !isNaN(extractedLocation.lat) && !isNaN(extractedLocation.lng) &&
-          extractedLocation.lat >= -90 && extractedLocation.lat <= 90 &&
-          extractedLocation.lng >= -180 && extractedLocation.lng <= 180) {
-        setSearchedLocation(extractedLocation);
-        setMapCenter(extractedLocation);
-        toast.success('Location extracted from Google Maps link!');
-        
-        // Automatically calculate distance if current location is available
-        if (location) {
-          calculateDistanceAndTime(
-            { lat: location.latitude, lng: location.longitude },
-            extractedLocation
-          );
-        }
-      } else {
-        toast.error(
-          'Could not extract coordinates. Use full Google Maps URL with @lat,lng (e.g., maps.google.com/@12.9716,77.5946) or use the search box.',
-          { duration: 6000 }
+      const extractedLocation = {
+        lat: resolved.coords.latitude,
+        lng: resolved.coords.longitude,
+      };
+
+      setSearchedLocation(extractedLocation);
+      setMapCenter(extractedLocation);
+      toast.success(
+        resolved.didExpandShortLink
+          ? 'Short link resolved — location set on map'
+          : 'Location extracted from Google Maps link!'
+      );
+
+      if (location) {
+        calculateDistanceAndTime(
+          { lat: location.latitude, lng: location.longitude },
+          extractedLocation
         );
       }
     } catch (error) {
@@ -825,7 +790,7 @@ const TechnicianLocation = () => {
                       Paste a Google Maps link with coordinates (e.g., maps.google.com/@12.9716,77.5946)
                       <br />
                       <span className="text-xs text-muted-foreground mt-1 block">
-                        💡 For short links (maps.app.goo.gl): Open in browser, then copy the full URL from address bar
+                        Tip: maps.app.goo.gl short links work — paste and tap Extract Location
                       </span>
                     </CardDescription>
                   </CardHeader>
