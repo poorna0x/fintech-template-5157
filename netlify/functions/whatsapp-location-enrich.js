@@ -2,6 +2,8 @@
  * Reverse-geocode WhatsApp pins → short area for CRM visible_address / admin.
  * Prefer Google (server key) → Nominatim → BigDataCloud.
  */
+const { getGoogleMapsServerKey } = require('./google-maps-server-key');
+
 const VISIBLE_ADDRESS_MAX_LEN = 40;
 
 const GENERIC = new Set(
@@ -111,13 +113,8 @@ function pickShortFromCandidates(candidates) {
   return null;
 }
 
-function getGoogleMapsKey() {
-  const k = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
-  return String(k).trim() || null;
-}
-
 async function reverseGeocodeGoogle(lat, lng) {
-  const apiKey = getGoogleMapsKey();
+  const apiKey = await getGoogleMapsServerKey();
   if (!apiKey) return null;
   const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
   url.searchParams.set('latlng', `${lat},${lng}`);
@@ -126,7 +123,6 @@ async function reverseGeocodeGoogle(lat, lng) {
   url.searchParams.set('key', apiKey);
   const res = await fetch(url.toString(), {
     headers: {
-      Referer: 'https://hydrogenro.com/',
       'User-Agent': 'HydrogenRO-CRM/1.0',
     },
   });

@@ -7,15 +7,10 @@ const { addSecurityHeaders } = require('./security-headers');
 const { authorizeStaffRequest } = require('./admin-auth-guard');
 
 const trim = (s) => (s && typeof s === 'string' ? s.trim() : '');
-
-/** Prefer server-only Maps key; VITE_ fallback is last resort for older deploys. */
-function getGoogleMapsServerKey() {
-  return (
-    trim(process.env.GOOGLE_MAPS_API_KEY) ||
-    trim(process.env.VITE_GOOGLE_MAPS_API_KEY) ||
-    null
-  );
-}
+const {
+  getGoogleMapsServerKey,
+  getGoogleMapsServerKeySync,
+} = require('./google-maps-server-key');
 
 // Simple in-memory cache (in production, use Redis or similar)
 const distanceCache = new Map();
@@ -88,7 +83,7 @@ exports.handler = async (event, context) => {
     };
   }
 
-  const apiKey = getGoogleMapsServerKey();
+  const apiKey = (await getGoogleMapsServerKey()) || getGoogleMapsServerKeySync();
   if (!apiKey) {
     return {
       statusCode: 503,
@@ -97,7 +92,8 @@ exports.handler = async (event, context) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        error: 'Distance Matrix is not configured (set GOOGLE_MAPS_API_KEY on Netlify)',
+        error:
+          'Distance Matrix is not configured (set GOOGLE_MAPS_API_KEY or app_secrets.google_maps_api_key — not the VITE browser key)',
       }),
     };
   }

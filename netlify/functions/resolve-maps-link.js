@@ -2,14 +2,28 @@
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { checkRateLimit } = require('./rate-limiter');
 const { addSecurityHeaders } = require('./security-headers');
+const { getGoogleMapsServerKey } = require('./google-maps-server-key');
 
 const MAX_URL_LEN = 2048;
-const MAX_REDIRECTS = 12;
+const MAX_REDIRECTS = 10;
+const FETCH_TIMEOUT_MS = 8000;
 
 const trim = (s) => (s && typeof s === 'string' ? s.trim() : '');
 
-function getGoogleMapsServerKey() {
-  return trim(process.env.GOOGLE_MAPS_API_KEY) || trim(process.env.VITE_GOOGLE_MAPS_API_KEY) || null;
+async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+  const ctrl = new AbortController();
+  let ms = timeoutMs;
+  try {
+    if (isLegacyGooGlMapsUrl(url)) ms = Math.min(ms, 4000);
+  } catch {
+    /* ignore */
+  }
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function validLatLng(lat, lng) {
@@ -81,7 +95,14 @@ function preferIndiaPair(pairs) {
   const india = pairs.filter(
     (p) => p.latitude >= 6 && p.latitude <= 37 && p.longitude >= 68 && p.longitude <= 98
   );
-  return (india.length ? india : pairs)[india.length ? india.length - 1 : pairs.length - 1];
+  const pool = india.length ? india : pairs;
+  // HTML embeds many nearby/viewport pins — prefer highest-precision (real place pins),
+  // not the last match (was jumping to different spots on each resolve).
+  const precision = (n) => String(n).split('.')[1]?.length || 0;
+  return [...pool].sort(
+    (a, b) =>
+      precision(b.latitude) + precision(b.longitude) - (precision(a.latitude) + precision(a.longitude))
+  )[0];
 }
 
 async function geocodePlaceNameNominatim(placeName) {
@@ -198,7 +219,7 @@ function googleApiDenied(status) {
 /** Geocode a named place when the short link has no !3d/!4d coordinates. */
 async function geocodePlaceNameWithGoogle(placeName) {
   if (!placeName) return null;
-  const apiKey = getGoogleMapsServerKey();
+  const apiKey = await getGoogleMapsServerKey();
   const queries = placeNameGeocodeQueries(placeName);
   let googleDenied = false;
   if (apiKey) {
@@ -208,15 +229,19 @@ async function geocodePlaceNameWithGoogle(placeName) {
         url.searchParams.set('address', query);
         url.searchParams.set('region', 'in');
         url.searchParams.set('key', apiKey);
-        const response = await fetch(url.toString(), {
+        const response = await fetchWithTimeout(url.toString(), {
           headers: {
-            Referer: 'https://hydrogenro.com/',
             'User-Agent': 'HydrogenRO-CRM/1.0',
           },
         });
         if (response.ok) {
           const data = await response.json();
           if (googleApiDenied(data.status)) {
+            console.warn(
+              '[resolve-maps-link] Google Geocode denied — use GOOGLE_MAPS_API_KEY (server key, not VITE referrer key):',
+              data.status,
+              data.error_message || ''
+            );
             googleDenied = true;
             break;
           }
@@ -244,15 +269,19 @@ async function geocodePlaceNameWithGoogle(placeName) {
         url.searchParams.set('fields', 'geometry,name');
         url.searchParams.set('region', 'in');
         url.searchParams.set('key', apiKey);
-        const response = await fetch(url.toString(), {
+        const response = await fetchWithTimeout(url.toString(), {
           headers: {
-            Referer: 'https://hydrogenro.com/',
             'User-Agent': 'HydrogenRO-CRM/1.0',
           },
         });
         if (response.ok) {
           const data = await response.json();
           if (googleApiDenied(data.status)) {
+            console.warn(
+              '[resolve-maps-link] Google Places denied — use GOOGLE_MAPS_API_KEY (server key):',
+              data.status,
+              data.error_message || ''
+            );
             googleDenied = true;
             break;
           }
@@ -272,21 +301,22 @@ async function geocodePlaceNameWithGoogle(placeName) {
         /* next query */
       }
     }
+  } else {
+    console.warn(
+      '[resolve-maps-link] No GOOGLE_MAPS_API_KEY / app_secrets.google_maps_api_key — place geocode uses Nominatim only'
+    );
   }
-  if (!googleDenied) {
-    for (const query of queries) {
-      const nominatim = await geocodePlaceNameNominatim(query);
-      if (nominatim) return nominatim;
-    }
+  // India-filtered Nominatim when server Google key is missing or denied.
+  for (const query of queries) {
+    const nominatim = await geocodePlaceNameNominatim(query);
+    if (nominatim) return nominatim;
   }
   return null;
 }
 
 const USER_AGENTS = [
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
 ];
 
 function jsonResponse(statusCode, corsHeaders, body) {
@@ -644,12 +674,17 @@ function extractMapsUrlFromHtml(html) {
   return named || candidates[0] || null;
 }
 
-let lastFollowMeta = { placeName: null, coords: null };
+let lastFollowMeta = { placeName: null, coords: null, coordsFromUrl: false };
 
 function noteFollowMeta(html, url) {
-  const coords = extractCoordinatesFromUrl(url) || extractCoordinatesFromHtml(html);
+  const fromUrl = extractCoordinatesFromUrl(url);
+  const fromHtml = fromUrl ? null : extractCoordinatesFromHtml(html);
+  const coords = fromUrl || fromHtml;
   const placeName = extractPlaceNameFromUrl(url) || extractPlaceNameFromHtml(html);
-  if (coords) lastFollowMeta.coords = coords;
+  if (coords) {
+    lastFollowMeta.coords = coords;
+    lastFollowMeta.coordsFromUrl = Boolean(fromUrl);
+  }
   if (placeName) lastFollowMeta.placeName = placeName;
 }
 
@@ -659,11 +694,16 @@ async function fetchWithManualRedirects(startUrl, userAgent) {
   for (let i = 0; i < MAX_REDIRECTS; i++) {
     current = unwrapGoogleUrlWrapper(current);
 
-    const response = await fetch(current, {
-      method: 'GET',
-      redirect: 'manual',
-      headers: requestHeaders(userAgent),
-    });
+    let response;
+    try {
+      response = await fetchWithTimeout(current, {
+        method: 'GET',
+        redirect: 'manual',
+        headers: requestHeaders(userAgent),
+      });
+    } catch {
+      break;
+    }
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
@@ -678,6 +718,7 @@ async function fetchWithManualRedirects(startUrl, userAgent) {
       const finalUrl = unwrapGoogleUrlWrapper(response.url || current);
       if (extractCoordinatesFromUrl(finalUrl)) {
         lastFollowMeta.coords = extractCoordinatesFromUrl(finalUrl);
+        lastFollowMeta.coordsFromUrl = true;
         lastFollowMeta.placeName = extractPlaceNameFromUrl(finalUrl) || lastFollowMeta.placeName;
         return finalUrl;
       }
@@ -701,7 +742,7 @@ async function fetchWithManualRedirects(startUrl, userAgent) {
 
 async function fetchWithAutoRedirects(startUrl, userAgent) {
   try {
-    const response = await fetch(startUrl, {
+    const response = await fetchWithTimeout(startUrl, {
       method: 'GET',
       redirect: 'follow',
       headers: requestHeaders(userAgent),
@@ -710,6 +751,7 @@ async function fetchWithAutoRedirects(startUrl, userAgent) {
     const finalUrl = unwrapGoogleUrlWrapper(response.url || startUrl);
     if (extractCoordinatesFromUrl(finalUrl)) {
       lastFollowMeta.coords = extractCoordinatesFromUrl(finalUrl);
+      lastFollowMeta.coordsFromUrl = true;
       lastFollowMeta.placeName = extractPlaceNameFromUrl(finalUrl) || lastFollowMeta.placeName;
       return finalUrl;
     }
@@ -724,41 +766,55 @@ async function fetchWithAutoRedirects(startUrl, userAgent) {
   }
 }
 
+function isLegacyGooGlMapsUrl(url) {
+  try {
+    const host = new URL(sanitizeUrl(url)).hostname.toLowerCase();
+    // Old goo.gl/maps shortener is largely dead; maps.app.goo.gl still works.
+    return host === 'goo.gl' || host === 'www.goo.gl';
+  } catch {
+    return false;
+  }
+}
+
 async function followRedirects(startUrl) {
   const cleaned = sanitizeUrl(startUrl);
   const hasQuery = cleaned.includes('?');
-  const variants = [
-    cleaned,
-    `${cleaned}${hasQuery ? '&' : '?'}_imcp=1`,
-    `${cleaned}${hasQuery ? '&' : '?'}g_st=ic`,
-  ];
-  lastFollowMeta = { placeName: null, coords: null };
+  const legacyGooGl = isLegacyGooGlMapsUrl(cleaned);
+  // Prefer the bare short link first; extra query variants only if needed.
+  // Legacy goo.gl: one quick attempt — those hosts often hang forever.
+  const variants = legacyGooGl
+    ? [cleaned]
+    : [cleaned, `${cleaned}${hasQuery ? '&' : '?'}_imcp=1`];
+  const agents = legacyGooGl ? USER_AGENTS.slice(0, 1) : USER_AGENTS;
+  lastFollowMeta = { placeName: null, coords: null, coordsFromUrl: false };
   let best = unwrapGoogleUrlWrapper(cleaned);
 
   for (const variant of variants) {
-    for (const userAgent of USER_AGENTS) {
+    for (const userAgent of agents) {
       try {
         const automatic = await fetchWithAutoRedirects(variant, userAgent);
         best = pickBetterExpandedUrl(best, automatic);
-        if (extractCoordinatesFromUrl(automatic) || lastFollowMeta.coords) {
-          return lastFollowMeta.coords
-            ? `https://www.google.com/maps?q=${lastFollowMeta.coords.latitude},${lastFollowMeta.coords.longitude}`
-            : automatic;
+        // Stop once we have a named /place/ page or URL-embedded coords.
+        // Do not early-return on HTML-scraped coords alone (those are flaky).
+        if (extractCoordinatesFromUrl(automatic) || lastFollowMeta.coordsFromUrl) {
+          return automatic;
         }
         if (!isShortMapsUrl(automatic) && /\/maps\/place\//i.test(automatic)) return automatic;
+        if (lastFollowMeta.placeName && !isShortMapsUrl(automatic)) return automatic;
       } catch {
         // try next strategy
       }
 
+      if (legacyGooGl) break;
+
       try {
         const manual = await fetchWithManualRedirects(variant, userAgent);
         best = pickBetterExpandedUrl(best, manual);
-        if (extractCoordinatesFromUrl(manual) || lastFollowMeta.coords) {
-          return lastFollowMeta.coords
-            ? `https://www.google.com/maps?q=${lastFollowMeta.coords.latitude},${lastFollowMeta.coords.longitude}`
-            : manual;
+        if (extractCoordinatesFromUrl(manual) || lastFollowMeta.coordsFromUrl) {
+          return manual;
         }
         if (!isShortMapsUrl(manual) && /\/maps\/place\//i.test(manual)) return manual;
+        if (lastFollowMeta.placeName && !isShortMapsUrl(manual)) return manual;
       } catch {
         // try next strategy
       }
@@ -807,11 +863,21 @@ function extractPlaceNameFromUrl(url) {
 
 async function resolveMapsUrl(inputUrl) {
   const expandedUrl = await followRedirects(inputUrl);
-  const coords =
-    lastFollowMeta.coords || extractCoordinatesFromUrl(expandedUrl);
+  const urlCoords = extractCoordinatesFromUrl(expandedUrl);
   const stillShort = isShortMapsUrl(expandedUrl);
   const placeName =
     lastFollowMeta.placeName || extractPlaceNameFromUrl(expandedUrl);
+
+  let coords = urlCoords || (lastFollowMeta.coordsFromUrl ? lastFollowMeta.coords : null);
+
+  // Named share without lat/lng in the URL: geocode the place name.
+  // Do not trust HTML-scraped pins first — Google's page lists many nearby coords.
+  if (!coords && placeName) {
+    coords = await geocodePlaceNameWithGoogle(placeName);
+  }
+  if (!coords && lastFollowMeta.coords) {
+    coords = lastFollowMeta.coords;
+  }
 
   return { expandedUrl, coords, stillShort, placeName };
 }

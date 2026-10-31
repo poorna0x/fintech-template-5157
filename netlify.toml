@@ -388,7 +388,10 @@
   AWS_LAMBDA_JS_RUNTIME = "nodejs22.x"
 
 # Environment variables are set in Netlify dashboard to avoid exposing API keys in git
-# Add VITE_GOOGLE_MAPS_API_KEY in Netlify → Site settings → Environment variables
+# VITE_GOOGLE_MAPS_API_KEY = browser Maps JS (HTTP referrer restricted)
+# GOOGLE_MAPS_API_KEY = server Geocoding / Distance Matrix / short-link place geocode
+#   (separate key; Application restriction None — do not reuse the VITE referrer key)
+# Or app_secrets.google_maps_api_key in Supabase
 
 # Headers for caching and security
 # CSP must match scripts/csp-config.mjs (PRODUCTION_CSP)

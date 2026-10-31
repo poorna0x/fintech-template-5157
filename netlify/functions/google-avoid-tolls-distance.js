@@ -3,13 +3,10 @@
  * Browser/referrer-restricted VITE keys cannot call this web service.
  */
 
-function trim(s) {
-  return s && typeof s === 'string' ? s.trim() : '';
-}
-
-function getGoogleMapsServerKey() {
-  return trim(process.env.GOOGLE_MAPS_API_KEY) || trim(process.env.VITE_GOOGLE_MAPS_API_KEY) || null;
-}
+const {
+  getGoogleMapsServerKey,
+  getGoogleMapsServerKeySync,
+} = require('./google-maps-server-key');
 
 const cache = new Map();
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
@@ -47,7 +44,7 @@ async function drivingRouteAvoidTollsOnce(origin, dest, traffic) {
 
   if (Date.now() < googleUnusableUntil) return null;
 
-  const apiKey = getGoogleMapsServerKey();
+  const apiKey = (await getGoogleMapsServerKey()) || getGoogleMapsServerKeySync();
   if (!apiKey) return null;
 
   try {
@@ -123,6 +120,7 @@ async function drivingDistanceMetersAvoidTolls(origin, dest) {
 
 module.exports = {
   getGoogleMapsServerKey,
+  getGoogleMapsServerKeySync,
   drivingDistanceMetersAvoidTolls,
   drivingRouteAvoidTolls,
 };

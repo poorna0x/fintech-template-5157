@@ -3,14 +3,11 @@ const { getCorsHeaders, isOriginAllowed, shouldRejectMissingOrigin } = require('
 const { checkRateLimit } = require('./rate-limiter');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-auth-guard');
+const { getGoogleMapsServerKey } = require('./google-maps-server-key');
 
 const MAX_QUERY_LEN = 300;
 
 const trim = (s) => (s && typeof s === 'string' ? s.trim() : '');
-
-function getGoogleMapsServerKey() {
-  return trim(process.env.GOOGLE_MAPS_API_KEY) || trim(process.env.VITE_GOOGLE_MAPS_API_KEY) || null;
-}
 
 function jsonResponse(statusCode, corsHeaders, body) {
   return {
@@ -49,9 +46,11 @@ function mapGoogleResults(results) {
 }
 
 async function googleGeocodeRequest(params) {
-  const apiKey = getGoogleMapsServerKey();
+  const apiKey = await getGoogleMapsServerKey();
   if (!apiKey) {
-    throw new Error('Geocoding is not configured (set GOOGLE_MAPS_API_KEY on Netlify)');
+    throw new Error(
+      'Geocoding is not configured (set GOOGLE_MAPS_API_KEY or app_secrets.google_maps_api_key — not the VITE browser key)'
+    );
   }
 
   const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
@@ -62,7 +61,6 @@ async function googleGeocodeRequest(params) {
 
   const response = await fetch(url.toString(), {
     headers: {
-      Referer: 'https://hydrogenro.com/',
       'User-Agent': 'HydrogenRO-CRM/1.0',
     },
   });
