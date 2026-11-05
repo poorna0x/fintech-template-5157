@@ -604,7 +604,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     loadWhatsAppInboxListRange()
   );
   /** Filter messages inside the open chat by local calendar day (`all` = full loaded thread). */
-  const [threadDayFilter, setThreadDayFilter] = useState<'all' | string>('all');
+  const [threadDayFilter, setThreadDayFilter] = useState<'all' | string>(() => localDayKey());
   const [customRangeOpen, setCustomRangeOpen] = useState(false);
   const [customRangeDate, setCustomRangeDate] = useState(() => {
     const d = new Date();
@@ -1683,7 +1683,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, [loadInbox]);
 
   useEffect(() => {
-    setThreadDayFilter('all');
+    // Default each opened chat to Today; tap the active day chip again for full history.
+    setThreadDayFilter(localDayKey());
     if (!selectedPhone) {
       setThreadMessages([]);
       setThreadHasMoreOlder(false);
@@ -1937,8 +1938,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       if (!Number.isFinite(t)) continue;
       keys.add(localDayKey(new Date(t)));
     }
+    // Keep the active filter chip visible even when that day has no rows yet.
+    if (threadDayFilter !== 'all') keys.add(threadDayFilter);
     return [...keys].sort((a, b) => b.localeCompare(a));
-  }, [threadMessages]);
+  }, [threadMessages, threadDayFilter]);
 
   const visibleThreadMessages = useMemo(() => {
     if (threadDayFilter === 'all') return threadMessages;
@@ -3226,7 +3229,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 </DropdownMenu>
               </div>
 
-              {threadDayOptions.length > 1 ? (
+              {threadDayOptions.length > 1 || threadDayFilter !== 'all' ? (
                 <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-white/5 bg-[#0b141a] px-3 py-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {threadDayOptions.slice(0, 8).map((day) => {
                     const active = threadDayFilter === day;
