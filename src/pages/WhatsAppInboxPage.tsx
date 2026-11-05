@@ -3343,7 +3343,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               <WhatsAppInboxLocationCard body={m.body} />
                             ) : (
                             (() => {
-                              const text = formatAdminWhatsAppBody(m.body, { compact: false });
+                              const text = formatAdminWhatsAppBody(m.body, {
+                                compact: false,
+                                templateName: m.template_name,
+                              });
                               const preview = previewMessageBody(m);
                               const file = (m.filename || '').trim();
                               if (

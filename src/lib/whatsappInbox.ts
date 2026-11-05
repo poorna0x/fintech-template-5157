@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { escapeForLike, normalizePhoneForSearch } from '@/lib/utils';
 import { waPlainLabelValue } from '@/lib/whatsappMessageFormat';
 import { whatsappPhoneLookupKeys } from '@/lib/whatsappPhoneTarget';
+import { expandWhatsAppTemplateInboxBody } from '@/lib/whatsappTemplateCustomerBody';
 
 export const WHATSAPP_INBOX_COLUMNS =
   'id, wa_message_id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
@@ -1997,7 +1998,10 @@ export function previewMessageBody(
   }
 
   if (row.body?.trim()) {
-    const formatted = formatAdminWhatsAppBody(row.body, { compact: true });
+    const formatted = formatAdminWhatsAppBody(row.body, {
+      compact: true,
+      templateName: row.template_name,
+    });
     if (row.media_url && (isDoc || isImage) && !String(row.media_url).startsWith('local:')) {
       const snippet =
         formatted.length > 72 ? `${formatted.slice(0, 69).trim()}…` : formatted;
@@ -2133,10 +2137,11 @@ function formatBookingBotState(
 
 /**
  * Make CRM inbox text human-readable (booking-bot JSON, button footers, *bold*).
+ * Prefer the exact customer WhatsApp wording for stored Meta template previews.
  */
 export function formatAdminWhatsAppBody(
   body: string | null | undefined,
-  opts?: { compact?: boolean }
+  opts?: { compact?: boolean; templateName?: string | null }
 ): string {
   let text = String(body || '');
   if (!text.trim()) return '';
@@ -2151,6 +2156,12 @@ export function formatAdminWhatsAppBody(
     .replace(POST_BOOKING_REDIRECT_MARKER, '')
     .replace(NEEDS_HUMAN_MARKER, 'Needs human reply —')
     .trim();
+
+  // Expand `svc_…: name · amount` into the same copy the customer received.
+  const expanded = expandWhatsAppTemplateInboxBody(text, opts?.templateName);
+  if (expanded) {
+    text = expanded;
+  }
 
   // WhatsApp interactive button footer: [Yes | No | …]
   text = text.replace(/\[([^\]]+)\]/g, (_m, inner: string) => {
@@ -2167,15 +2178,19 @@ export function formatAdminWhatsAppBody(
   // WhatsApp bold *like this*
   text = text.replace(/\*([^*]+)\*/g, '$1');
 
-  // Meta template / bot slug stored as body (e.g. svc_wfs_ask_name_ero_v2)
+  // Unknown Meta template / bot slug — short human label (not the raw svc_ id)
   if (/^svc_[a-z0-9_]+$/i.test(text.trim())) {
     text = humanizeWhatsAppTemplateSlug(text.trim());
   } else {
-    // Template slug + params: "svc_balance_due_letter_hro_v6: Poorna · 1500 · …"
-    const tplWithParams = text.trim().match(/^(svc_[a-z0-9_]+)\s*:\s*(.+)$/i);
+    // Template slug + params we couldn't expand fully
+    const tplWithParams = text.trim().match(/^(svc_[a-z0-9_]+)\s*:\s*(.+)$/is);
     if (tplWithParams) {
       const label = humanizeWhatsAppTemplateSlug(tplWithParams[1]);
-      text = `${label}\n${tplWithParams[2].trim()}`;
+      const rest = tplWithParams[2]
+        .trim()
+        .replace(/\n*Please send a photo of the payment screenshot\.?\s*/gi, '')
+        .trim();
+      text = rest ? `${label}\n${rest}` : label;
     }
   }
 

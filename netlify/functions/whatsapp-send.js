@@ -116,13 +116,58 @@ function inboxBodyForOutboundMedia(caption, filename, kind) {
   return 'Document';
 }
 
-/** Human-readable inbox body for Meta templates (especially pending payment). */
+function brandLabelFromTemplateName(name) {
+  if (/_ero(?:_|$)/i.test(name) || /_ero_v\d+/i.test(name)) return 'Eleven RO';
+  return 'Hydrogen RO';
+}
+
+function fillTemplateSlots(template, params) {
+  return String(template).replace(/\{\{(\d+)\}\}/g, (_m, n) => {
+    const idx = Math.max(0, Number(n) - 1);
+    return params[idx] ?? '';
+  });
+}
+
+/** Customer-facing inbox body for Meta templates (same wording as WhatsApp). */
 function inboxBodyForTemplate(templateName, bodyParams, opts = {}) {
   const name = String(templateName || '').trim();
   const params = Array.isArray(bodyParams) ? bodyParams.map((p) => String(p ?? '').trim()) : [];
   const payCode = String(opts.payCode || '').trim();
   const msgType = String(opts.msgType || 'template');
   const filename = String(opts.filename || '').trim();
+  const brand = brandLabelFromTemplateName(name);
+
+  if (/^svc_payment_received_letter_(ero|hro)_v2$/i.test(name)) {
+    return fillTemplateSlots(
+      [
+        'Hi {{1}},',
+        '',
+        `Thank you. ${brand} has received your payment of INR {{2}} for your water purifier service.`,
+        '',
+        'This payment is recorded on your service account. Reply on this chat if you need a receipt or any help with this visit.',
+      ].join('\n'),
+      params
+    );
+  }
+  if (/^svc_payment_received_letter_(ero|hro)_v1$/i.test(name)) {
+    return fillTemplateSlots(
+      [
+        'Hi {{1}}, 👋',
+        `This is an update from ${brand} regarding your payment.`,
+        '',
+        'We have received your payment of INR {{2}}. Thank you. ✅',
+        '',
+        '💬 Reply on this chat if you need any help.',
+      ].join('\n'),
+      params
+    );
+  }
+  if (/^svc_payment_received$/i.test(name)) {
+    return fillTemplateSlots(
+      'Hi {{1}}, we have received payment of INR {{2}} for your service. Reply on this chat for any questions.',
+      params
+    );
+  }
 
   if (/balance_due/i.test(name)) {
     const [customer, amount, due, invoice] = params;
@@ -130,12 +175,16 @@ function inboxBodyForTemplate(templateName, bodyParams, opts = {}) {
     if (msgType === 'image' || /_img_/i.test(name)) {
       lines.push(filename ? `UPI QR · ${filename}` : 'UPI QR');
     }
-    lines.push('Pending payment reminder');
-    if (customer) lines.push(`Hi ${customer}`);
-    if (amount) lines.push(`Amount pending: ₹${amount.replace(/[^\d.]/g, '') || amount}`);
-    if (due) lines.push(`Due: ${due}`);
+    lines.push(`Hi ${customer || 'there'},`);
+    lines.push(
+      `This is an update from ${brand} regarding your pending payment for water purifier service.`
+    );
+    lines.push('');
+    if (amount) lines.push(`Amount pending: INR ${amount.replace(/[^\d.]/g, '') || amount}`);
+    if (due) lines.push(`Due date: ${due}`);
     if (invoice) lines.push(`Invoice / Job: ${invoice}`);
-    lines.push(payCode ? `Pay now: /p/${payCode}` : 'Pay now');
+    lines.push('');
+    lines.push(payCode ? `Pay now: /p/${payCode}` : 'Tap Pay now below or reply on this chat if you have already paid.');
     return lines.join('\n');
   }
 
@@ -143,6 +192,7 @@ function inboxBodyForTemplate(templateName, bodyParams, opts = {}) {
     return String(opts.preservedBody);
   }
 
+  // Prefer plain params only as last resort — UI expands known svc_ bodies on read.
   if (params.length) return `${name}: ${params.join(' · ')}`;
   return name || 'Template';
 }
