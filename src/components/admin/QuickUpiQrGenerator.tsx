@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, IndianRupee, Loader2, QrCode, Search, X } from 'lucide-react';
+import { Download, IndianRupee, Loader2, QrCode, Search, Smartphone, X } from 'lucide-react';
 import { toast } from 'sonner';
 import DynamicUpiQrDisplay from '@/components/DynamicUpiQrDisplay';
+import {
+  UpiAppOpenGrid,
+  UpiOpenAppCta,
+} from '@/components/UpiAppOpenButtons';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,9 +21,14 @@ import {
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/supabase';
 import {
+  buildUpiAppDeepLinks,
+  buildUpiPayDeepLink,
+  detectPayPlatform,
   fetchUpiPaymentAccounts,
   getLastSelectedUpiAccountId,
+  isValidUpiId,
   loadUpiPaymentAccounts,
+  normalizeUpiId,
   resolvePreferredUpiAccount,
   setLastSelectedUpiAccountId,
   type UpiPaymentAccount,
@@ -131,6 +140,30 @@ export default function QuickUpiQrGenerator() {
   );
   const qrAmount = parseAmount(amount);
   const paymentNote = useMemo(() => `Payment to ${getDocumentBrandLabel(brand)}`, [brand]);
+  const payPlatform = useMemo(() => detectPayPlatform(), []);
+  const upiPayInput = useMemo(() => {
+    if (!selectedAccount || !qrAmount) return null;
+    const upiId = normalizeUpiId(selectedAccount.upiId || '');
+    if (!isValidUpiId(upiId)) return null;
+    return {
+      upiId,
+      payeeName: selectedAccount.payeeName || selectedAccount.label,
+      phone: selectedAccount.phone,
+      amount: qrAmount,
+      note: selectedCustomer?.name
+        ? `Payment for ${selectedCustomer.name}`
+        : paymentNote,
+      brand,
+    };
+  }, [selectedAccount, qrAmount, selectedCustomer?.name, paymentNote, brand]);
+  const upiIntentHref = useMemo(
+    () => (upiPayInput ? buildUpiPayDeepLink(upiPayInput) : null),
+    [upiPayInput]
+  );
+  const upiAppLinks = useMemo(
+    () => (upiPayInput ? buildUpiAppDeepLinks(upiPayInput) : []),
+    [upiPayInput]
+  );
 
   const selectAccount = (id: string) => {
     setSelectedId(id);
@@ -503,6 +536,38 @@ export default function QuickUpiQrGenerator() {
               </Button>
             ) : null}
           </div>
+
+          {upiIntentHref || upiAppLinks.length ? (
+            <div className="space-y-2 rounded-xl border border-emerald-200/80 bg-emerald-50/50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+              <div className="flex items-start gap-2">
+                <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">Pay through UPI app</p>
+                  <p className="text-xs text-muted-foreground">
+                    Opens GPay / PhonePe / Paytm on this phone with the amount filled (same as the QR).
+                    Use when you collect payment yourself — customer WhatsApp share still uses the QR image.
+                  </p>
+                </div>
+              </div>
+              {payPlatform === 'android' && upiIntentHref ? (
+                <UpiOpenAppCta href={upiIntentHref} />
+              ) : null}
+              {payPlatform === 'ios' && upiAppLinks.length ? (
+                <UpiAppOpenGrid apps={upiAppLinks} />
+              ) : null}
+              {payPlatform === 'other' ? (
+                <div className="space-y-2">
+                  {upiIntentHref ? <UpiOpenAppCta href={upiIntentHref} /> : null}
+                  {upiAppLinks.length ? <UpiAppOpenGrid apps={upiAppLinks} /> : null}
+                </div>
+              ) : null}
+            </div>
+          ) : selectedAccount && qrAmount && !isValidUpiId(normalizeUpiId(selectedAccount.upiId || '')) ? (
+            <p className="text-xs text-amber-700">
+              Add a valid UPI ID on this account to enable Pay through UPI app (static QR photo alone
+              cannot open a payment intent).
+            </p>
+          ) : null}
         </div>
 
         <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-3">

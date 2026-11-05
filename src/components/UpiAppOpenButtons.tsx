@@ -1,0 +1,118 @@
+/** UPI app open buttons using real brand logos from /public/upi-apps. */
+
+type UpiAppId = 'gpay' | 'phonepe' | 'paytm' | 'bhim';
+
+type UpiAppButtonProps = {
+  id: string;
+  name: string;
+  href: string;
+};
+
+const LOGO_SRC: Record<UpiAppId, string> = {
+  gpay: '/upi-apps/gpay.svg',
+  phonepe: '/upi-apps/phonepe.svg',
+  paytm: '/upi-apps/paytm.png',
+  bhim: '/upi-apps/bhim.svg',
+};
+
+const ICON_SRC: Record<UpiAppId, string> = {
+  gpay: '/upi-apps/icons/gpay.png',
+  phonepe: '/upi-apps/icons/phonepe.png',
+  paytm: '/upi-apps/icons/paytm.png',
+  bhim: '/upi-apps/icons/bhim.svg',
+};
+
+const MINI_APPS: { id: UpiAppId; name: string }[] = [
+  { id: 'gpay', name: 'GPay' },
+  { id: 'phonepe', name: 'PhonePe' },
+  { id: 'paytm', name: 'Paytm' },
+  { id: 'bhim', name: 'BHIM' },
+];
+
+const STYLES: Record<UpiAppId, { bg: string; border: string }> = {
+  gpay: { bg: '#FFFFFF', border: '#DADCE0' },
+  phonepe: { bg: '#FFFFFF', border: '#E8DFF3' },
+  paytm: { bg: '#FFFFFF', border: '#B3E9FA' },
+  bhim: { bg: '#FFFFFF', border: '#E5E7EB' },
+};
+
+function isKnownApp(id: string): id is UpiAppId {
+  return id === 'gpay' || id === 'phonepe' || id === 'paytm' || id === 'bhim';
+}
+
+export function UpiAppMiniLogoRow({ className = '' }: { className?: string }) {
+  return (
+    <span className={`inline-flex items-center -space-x-1.5 ${className}`} aria-hidden>
+      {MINI_APPS.map((app) => (
+        <span
+          key={app.id}
+          className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-slate-200/80 bg-slate-50"
+          title={app.name}
+        >
+          <img
+            src={ICON_SRC[app.id]}
+            alt=""
+            className="h-[15px] w-[15px] object-contain opacity-90"
+            loading="lazy"
+            decoding="async"
+          />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+export function UpiOpenAppCta({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-base font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.99]"
+    >
+      <UpiAppMiniLogoRow />
+      <span>Open UPI app</span>
+    </a>
+  );
+}
+
+export function UpiAppOpenButton({ id, name, href }: UpiAppButtonProps) {
+  const style = isKnownApp(id) ? STYLES[id] : { bg: '#FFFFFF', border: '#E5E7EB' };
+  const logoSrc = isKnownApp(id) ? LOGO_SRC[id] : null;
+
+  return (
+    <a
+      href={href}
+      aria-label={`Open ${name}`}
+      className="flex h-[52px] items-center justify-center rounded-xl border px-4 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
+      style={{
+        backgroundColor: style.bg,
+        borderColor: style.border,
+      }}
+    >
+      {logoSrc ? (
+        <img
+          src={logoSrc}
+          alt={name}
+          className="h-7 w-auto max-w-[140px] object-contain"
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <span className="text-sm font-semibold text-slate-800">{name}</span>
+      )}
+    </a>
+  );
+}
+
+export function UpiAppOpenGrid({
+  apps,
+}: {
+  apps: { id: string; name: string; href: string }[];
+}) {
+  return (
+    <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {apps.map((app) => (
+        <UpiAppOpenButton key={app.id} id={app.id} name={app.name} href={app.href} />
+      ))}
+    </div>
+  );
+}
