@@ -696,6 +696,15 @@ function jobLocalDayBounds(dateStr: string): { startISO: string; nextISO: string
   return { startISO: localStart.toISOString(), nextISO: localNext.toISOString() };
 }
 
+/**
+ * PostgREST OR filter for “completed on this day”.
+ * Prefer `completed_at` when set; only fall back to `end_time` when `completed_at` is null.
+ * Matching either field independently double-counted jobs whose timestamps fell on different days.
+ */
+function jobCompletedInBoundsOrFilter(startISO: string, nextISO: string): string {
+  return `and(completed_at.gte.${startISO},completed_at.lt.${nextISO}),and(completed_at.is.null,end_time.gte.${startISO},end_time.lt.${nextISO})`;
+}
+
 type AdminCompletedListFilters = {
   completedByUserId?: string;
   serviceSubTypeIn?: string[];
@@ -3153,14 +3162,12 @@ export const db = {
             .in('status', ['DENIED', 'CANCELLED'])
             .gte('denied_at', todayStart)
             .lt('denied_at', todayStartNextDay),
-          // Completed: Only TODAY's jobs with status COMPLETED (using completed_at OR end_time field)
-          // Check both completed_at and end_time fields - use whichever is set
-          // Format: (completed_at >= start AND completed_at < nextDay) OR (end_time >= start AND end_time < nextDay)
+          // Completed: TODAY via completed_at, or end_time only when completed_at is null
           supabase
             .from('jobs')
             .select('id', { count: 'exact', head: true })
             .eq('status', 'COMPLETED')
-            .or(`and(completed_at.gte.${todayStart},completed_at.lt.${todayStartNextDay}),and(end_time.gte.${todayStart},end_time.lt.${todayStartNextDay})`)
+            .or(jobCompletedInBoundsOrFilter(todayStart, todayStartNextDay))
         ]);
 
         const countsData = {
@@ -3294,15 +3301,10 @@ export const db = {
             });
           }
           
-          // Check both completed_at and end_time using OR condition
-          // PostgREST OR syntax: condition1,condition2
-          // We want jobs where either completed_at OR end_time is in the date range
-          // Use .lt() with start of next day to ensure we capture all jobs within the day
-          // Simplified: Just check if either field is in the date range (nulls will be excluded by .gte/.lt)
           if (startISO && nextDayISO) {
             query = query
               .eq('status', 'COMPLETED')
-              .or(`and(completed_at.gte.${startISO},completed_at.lt.${nextDayISO}),and(end_time.gte.${startISO},end_time.lt.${nextDayISO})`);
+              .or(jobCompletedInBoundsOrFilter(startISO, nextDayISO));
           } else {
             query = query.eq('status', 'COMPLETED');
           }
@@ -3362,7 +3364,7 @@ export const db = {
         leadRequirementsContainVariants?: string[];
         /** When true, drop `requirements` jsonb from rows (admin “minimal” list; details on demand). */
         omitRequirements?: boolean;
-        /** Prefer Postgres `estimated` count for faster pagination metadata (slight variance vs `exact` on huge tables). */
+        /** Prefer `exact` for admin day lists (estimated can over-count small filtered sets). */
         countMode?: 'exact' | 'estimated' | 'planned';
       }
     ) {
@@ -3371,7 +3373,7 @@ export const db = {
 
       const isCompletedOnly = statuses.length === 1 && statuses[0] === 'COMPLETED';
       const needsDenialCols = statuses.includes('DENIED') || statuses.includes('CANCELLED');
-      const countPref = opts?.countMode ?? 'estimated';
+      const countPref = opts?.countMode ?? 'exact';
 
       const jobColList: string[] = [
         'id',
@@ -3506,7 +3508,7 @@ export const db = {
           if (startISO && nextDayISO) {
             query = query
               .eq('status', 'COMPLETED')
-              .or(`and(completed_at.gte.${startISO},completed_at.lt.${nextDayISO}),and(end_time.gte.${startISO},end_time.lt.${nextDayISO})`);
+              .or(jobCompletedInBoundsOrFilter(startISO, nextDayISO));
           } else {
             query = query.eq('status', 'COMPLETED');
           }
@@ -4123,7 +4125,7 @@ export const db = {
           nextDayISO = endBounds.nextISO;
         }
         if (startISO && nextDayISO) {
-          query = query.or(`and(completed_at.gte.${startISO},completed_at.lt.${nextDayISO}),and(end_time.gte.${startISO},end_time.lt.${nextDayISO})`);
+          query = query.or(jobCompletedInBoundsOrFilter(startISO, nextDayISO));
         }
       }
 

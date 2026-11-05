@@ -81,11 +81,18 @@ export function buildCustomersWithJobs(
   jobs: Job[]
 ): CustomerJobGroup[] {
   return baseCustomers.map((customer) => {
+    const seenJobIds = new Set<string>();
     const customerJobs = jobs
       .filter((job) => {
         const jobCustomerId =
           (job as any).customer_id || job.customerId || (job as any).customerId;
-        return jobCustomerId === customer.id;
+        if (jobCustomerId !== customer.id) return false;
+        // Guard against duplicate job rows in local state inflating Service History counts.
+        if (job.id) {
+          if (seenJobIds.has(job.id)) return false;
+          seenJobIds.add(job.id);
+        }
+        return true;
       })
       .sort((a, b) => {
         const aDate = new Date(
@@ -179,7 +186,9 @@ export function getFilteredCustomersForDashboard({
           todayJobs: [],
         });
       }
-      customerMap.get(customerId)!.todayJobs.push(job);
+      const bucket = customerMap.get(customerId)!;
+      if (job.id && bucket.todayJobs.some((existing) => existing.id === job.id)) return;
+      bucket.todayJobs.push(job);
     });
 
     if (import.meta.env.DEV && statusFilter === 'COMPLETED') {
@@ -286,7 +295,9 @@ export function getFilteredCustomersForDashboard({
             allJobs: [],
           });
         }
-        customerMap.get(customerId)!.allJobs.push(job);
+        const bucket = customerMap.get(customerId)!;
+        if (job.id && bucket.allJobs.some((existing) => existing.id === job.id)) return;
+        bucket.allJobs.push(job);
       });
 
       let customersList = Array.from(customerMap.values()).map(

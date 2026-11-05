@@ -1383,38 +1383,43 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         roModelChanged = newModel !== originalRoModel;
       }
 
-      // Update all jobs for this customer if RO brand or model changed
+      // Update open primary-site RO jobs if brand/model changed (skip history / closed jobs)
+      let updatedRoJobsCount = 0;
       if ((roBrandChanged || roModelChanged) && roServiceIndex >= 0) {
         const roEquipment = form.equipment['RO'];
         const newBrand = roEquipment?.brand?.trim() || '';
         const newModel = roEquipment?.model?.trim() || '';
 
         try {
-          // Get all jobs for this customer
           const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
           
           if (!jobsError && customerJobs && customerJobs.length > 0) {
-            // Only primary-site RO jobs — secondary sites use alternate_brand/model
             const roJobs = customerJobs.filter((job: any) => {
               if (job.service_type !== 'RO') return false;
-              return getJobServiceSite(job) !== 'secondary';
+              if (getJobServiceSite(job) === 'secondary') return false;
+              const st = String(job.status || '').toUpperCase();
+              return (
+                VISIT_ORDER_STATUSES.has(st) ||
+                st === 'FOLLOW_UP' ||
+                st === 'RESCHEDULED'
+              );
             });
             
             if (roJobs.length > 0) {
-              const updatePromises = roJobs.map(async (job: any) => {
-                return db.jobs.update(job.id, {
-                  brand: newBrand,
-                  model: newModel
-                });
-              });
-
-              await Promise.all(updatePromises);
-              console.log(`Updated ${updatePromises.length} primary-site RO job(s) with new brand/model`);
+              await Promise.all(
+                roJobs.map((job: any) =>
+                  db.jobs.update(job.id, {
+                    brand: newBrand,
+                    model: newModel,
+                  })
+                )
+              );
+              updatedRoJobsCount = roJobs.length;
+              console.log(`Updated ${updatedRoJobsCount} open primary-site RO job(s) with new brand/model`);
             }
           }
         } catch (jobsUpdateError) {
           console.error('Error updating jobs:', jobsUpdateError);
-          // Don't fail the customer update if job update fails, but log it
           toast.warning('Customer updated, but some jobs may not have been updated');
         }
       }
@@ -1435,9 +1440,15 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         try {
           const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
           if (!jobsError && customerJobs?.length) {
-            const secondaryJobs = customerJobs.filter(
-              (job: any) => getJobServiceSite(job) === 'secondary'
-            );
+            const secondaryJobs = customerJobs.filter((job: any) => {
+              if (getJobServiceSite(job) !== 'secondary') return false;
+              const st = String(job.status || '').toUpperCase();
+              return (
+                VISIT_ORDER_STATUSES.has(st) ||
+                st === 'FOLLOW_UP' ||
+                st === 'RESCHEDULED'
+              );
+            });
             if (secondaryJobs.length > 0) {
               await Promise.all(
                 secondaryJobs.map((job: any) =>
@@ -1448,7 +1459,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 )
               );
               console.log(
-                `Updated ${secondaryJobs.length} secondary-site job(s) with alternate brand/model`
+                `Updated ${secondaryJobs.length} open secondary-site job(s) with alternate brand/model`
               );
             }
           }
@@ -1467,23 +1478,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       
       lastSavedFormDataRef.current = JSON.stringify(form);
       
-      // Show success message
-      if ((roBrandChanged || roModelChanged) && roServiceIndex >= 0) {
-        // Get job count for message
-        try {
-          const { data: customerJobs } = await db.jobs.getByCustomerId(customer.id);
-          const roJobsCount = customerJobs?.filter((job: any) => {
-            if (job.service_type !== 'RO') return false;
-            return getJobServiceSite(job) !== 'secondary';
-          }).length || 0;
-          if (roJobsCount > 0) {
-            toast.success(`Customer and ${roJobsCount} job(s) updated successfully!`);
-          } else {
-            toast.success('Customer updated successfully!');
-          }
-        } catch {
-          toast.success('Customer updated successfully!');
-        }
+      if (updatedRoJobsCount > 0) {
+        toast.success(`Customer and ${updatedRoJobsCount} job(s) updated successfully!`);
       } else {
         toast.success('Customer updated successfully!');
       }

@@ -88,6 +88,7 @@ export function useAdminJobsRealtime({
     };
     const seedTimeout = setTimeout(seedCompletedIds, 2000);
 
+    const seenInsertIds = new Set<string>();
     let channel = supabase.channel('admin-jobs-realtime');
     if (isPollingEnabled) {
       channel = channel.on(
@@ -97,8 +98,11 @@ export function useAdminJobsRealtime({
           const row = payload.new as { id: string; status?: string };
           if (row.id) setLastCheckedJobIdRef.current(row.id);
           const status = (row.status || 'PENDING') as string;
-          if (ONGOING_STATUSES.includes(status)) {
+          // Dedupe duplicate INSERT events; then reconcile from DB so we never stick at +1 too high.
+          if (ONGOING_STATUSES.includes(status) && row.id && !seenInsertIds.has(row.id)) {
+            seenInsertIds.add(row.id);
             setJobCountsRef.current((prev) => ({ ...prev, ongoing: (prev.ongoing || 0) + 1 }));
+            void loadJobCountsRef.current({ bypassCache: true });
           }
           void loadFilteredJobsRef.current(statusFilterRef.current, 1);
         }
