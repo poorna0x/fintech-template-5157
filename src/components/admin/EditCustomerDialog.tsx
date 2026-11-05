@@ -33,6 +33,7 @@ import {
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
 import { beginWebClipboardRead, readClipboardText } from '@/lib/nativeClipboard';
+import { isValidEmailFormat } from '@/lib/email-recipients';
 
 /** Persist a coords URL so assign/distance never depends on short-link expand again. */
 function mapsLinkFromCoords(latitude: number, longitude: number): string {
@@ -216,6 +217,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     cost_agreed: false
   });
   const [isUpdating, setIsUpdating] = useState(false);
+  const [emailError, setEmailError] = useState('');
   const [isFetchingAddress, setIsFetchingAddress] = useState(false);
   const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
   const [brandSuggestions, setBrandSuggestions] = useState<string[]>([]);
@@ -458,6 +460,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     field: string,
     value: string | string[] | boolean | number | null | 'PREMIUM' | 'WORST'
   ) => {
+    if (field === 'email' && emailError) setEmailError('');
     setEditFormData(prev => ({
       ...prev,
       [field]: value
@@ -1103,6 +1106,14 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
     const form = editFormDataRef.current;
 
+    const trimmedEmail = (form.email || '').trim();
+    if (trimmedEmail && !isValidEmailFormat(trimmedEmail)) {
+      setEmailError('Please enter a valid email address');
+      toast.error('Please enter a valid email address');
+      return;
+    }
+    setEmailError('');
+
     if (form.has_gst && !normalizeCustomerGstNumber(form.gst_number)) {
       toast.error('Enter the customer GST number, or select No if they do not have GST');
       return;
@@ -1169,7 +1180,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         full_name: form.full_name,
         phone: form.phone,
         alternate_phone: form.alternate_phone,
-        email: form.email,
+        email: trimmedEmail,
         service_type: mapServiceTypesToDbValue(form.service_types),
         brand: brands.join(', '),
         model: models.join(', '),
@@ -1487,6 +1498,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   };
 
   const handleDialogOpenChange = (isOpen: boolean) => {
+    if (!isOpen) setEmailError('');
     onOpenChange(isOpen);
   };
 
@@ -1859,7 +1871,13 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   value={editFormData?.email ?? ''}
                   onChange={(e) => handleEditFormChange('email', e.target.value)}
                   placeholder="Enter email address"
+                  autoComplete="email"
+                  className={emailError ? 'border-red-500' : undefined}
+                  aria-invalid={Boolean(emailError)}
                 />
+                {emailError ? (
+                  <p className="text-xs text-red-500">{emailError}</p>
+                ) : null}
               </div>
 
               <div className="space-y-2 md:col-span-2">
