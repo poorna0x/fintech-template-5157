@@ -445,8 +445,7 @@ export function detectPayPlatform(): PayPlatform {
 
 /**
  * App-specific UPI openers (needed on iOS — generic upi:// has no chooser there).
- * Android usually prefers buildUpiPayDeepLink() instead.
- * Admin CRM only (Quick payment QR) — not the public /pay-upi page.
+ * Used on the public /p/{code} customer pay page (Android also shows Open UPI).
  */
 export function buildUpiAppDeepLinks(input: UpiPayLinkInput): {
   id: string;

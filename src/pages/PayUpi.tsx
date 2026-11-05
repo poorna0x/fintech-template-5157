@@ -548,7 +548,7 @@ const PayUpi = () => {
           </div>
         ) : null}
 
-        {!needsDevicePick && (showAndroidOpen || showIosApps) ? (
+        {!needsDevicePick && upiLink ? (
           <div className="mt-3 space-y-2.5">
             {detected === 'other' ? (
               <button
@@ -562,14 +562,16 @@ const PayUpi = () => {
 
             <UpiIntentFallbackNote hasPhone={Boolean(ph)} />
 
-            {showAndroidOpen && upiLink ? <UpiOpenAppCta href={upiLink} /> : null}
+            {/* Android: one-tap system chooser (auto-opens above) + named apps */}
+            {showAndroidOpen ? <UpiOpenAppCta href={upiLink} /> : null}
 
-            {showIosApps && iosAppLinks.length ? (
+            {(showIosApps || showAndroidOpen || platform === 'other') &&
+            (showIosApps ? iosAppLinks : appLinks).length ? (
               <div>
                 <p className="text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Open with
+                  Open with GPay / PhonePe / Paytm
                 </p>
-                <UpiAppOpenGrid apps={iosAppLinks} />
+                <UpiAppOpenGrid apps={showIosApps ? iosAppLinks : appLinks} />
               </div>
             ) : null}
           </div>
