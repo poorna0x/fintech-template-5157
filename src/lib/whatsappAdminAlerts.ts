@@ -12,6 +12,7 @@ import {
   displayPhone,
   fetchWhatsAppInboxUnreadSummary,
   applyWhatsAppUnreadSummary,
+  inboxListRangeKey,
   isBotFlowAdminAlertSkip,
   isWhatsAppThreadUnread,
   loadWhatsAppReadMap,
@@ -72,13 +73,13 @@ function inboxPathForPhone(phoneE164: string): string {
 }
 
 function bumpUnreadFromInbound(row: WhatsAppMessageRow): WhatsAppThreadNameHint {
-  const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
+  const cached = peekWhatsAppInboxThreadsCache({ rangeKey: inboxListRangeKey('today') });
   const prevThreads = cached?.threads ?? [];
   const phone = normalizePhone(row.phone_e164);
   const readMap = loadWhatsAppReadMap();
 
   const threads = patchThreadFromMessage(prevThreads, row);
-  writeWhatsAppInboxThreadsCache(threads, { rangeKey: 'today' });
+  writeWhatsAppInboxThreadsCache(threads, { rangeKey: inboxListRangeKey('today') });
 
   const thread = threads.find((t) => t.phone_e164 === phone);
   const isUnreadNow = thread ? isWhatsAppThreadUnread(thread, readMap) : true;
@@ -99,7 +100,7 @@ async function enrichInboundAlertHint(
   const name = await resolveWhatsAppCustomerNameForAlert(hint.phone, row.customer_id);
   if (!name) return hint;
 
-  const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
+  const cached = peekWhatsAppInboxThreadsCache({ rangeKey: inboxListRangeKey('today') });
   const prevThreads = cached?.threads ?? [];
   const threads = prevThreads.map((t) =>
     t.phone_e164 === hint.phone
@@ -110,7 +111,9 @@ async function enrichInboundAlertHint(
         }
       : t
   );
-  writeWhatsAppInboxThreadsCache(threads, { rangeKey: cached?.rangeKey || 'today' });
+  writeWhatsAppInboxThreadsCache(threads, {
+    rangeKey: cached?.rangeKey || inboxListRangeKey('today'),
+  });
 
   return { customerName: name, phone: hint.phone };
 }
@@ -226,16 +229,16 @@ function handleInboundInsert(row: Partial<WhatsAppMessageRow> | null): void {
   const phone = normalizePhone(row.phone_e164);
   if (shouldSuppressAlert(phone)) {
     dismissWhatsAppTrayForPhone(phone);
-    const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
+    const cached = peekWhatsAppInboxThreadsCache({ rangeKey: inboxListRangeKey('today') });
     const threads = patchThreadFromMessage(cached?.threads ?? [], row as WhatsAppMessageRow);
-    writeWhatsAppInboxThreadsCache(threads, { rangeKey: 'today' });
+    writeWhatsAppInboxThreadsCache(threads, { rangeKey: inboxListRangeKey('today') });
     return;
   }
 
   if (isBotFlowAdminAlertSkip(row as WhatsAppMessageRow)) {
-    const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
+    const cached = peekWhatsAppInboxThreadsCache({ rangeKey: inboxListRangeKey('today') });
     const threads = patchThreadFromMessage(cached?.threads ?? [], row as WhatsAppMessageRow);
-    writeWhatsAppInboxThreadsCache(threads, { rangeKey: 'today' });
+    writeWhatsAppInboxThreadsCache(threads, { rangeKey: inboxListRangeKey('today') });
     return;
   }
 

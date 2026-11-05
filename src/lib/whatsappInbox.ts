@@ -168,7 +168,9 @@ function emitWhatsAppReadSync(): void {
 export function shouldDismissWhatsAppTrayForRead(phoneE164: string, readAt: string): boolean {
   const phone = String(phoneE164 || '').replace(/\D/g, '');
   if (!phone || !readAt) return false;
-  const cached = peekWhatsAppInboxThreadsCache({ rangeKey: 'today' });
+  const cached = peekWhatsAppInboxThreadsCache({
+    rangeKey: inboxListRangeKey('today'),
+  });
   const thread = cached?.threads?.find((t) => {
     const p = String(t.phone_e164 || '').replace(/\D/g, '');
     return p === phone || (p.length >= 10 && phone.length >= 10 && p.slice(-10) === phone.slice(-10));
@@ -513,7 +515,8 @@ export function resolveWhatsAppHeaderUnreadCount(
   const list =
     threads && threads.length
       ? threads
-      : peekWhatsAppInboxThreadsCache({ rangeKey: 'today' })?.threads ?? [];
+      : peekWhatsAppInboxThreadsCache({ rangeKey: inboxListRangeKey('today') })
+          ?.threads ?? [];
   if (list.length) {
     return countUnreadWhatsAppMessages(list, map, counts);
   }
@@ -766,19 +769,38 @@ export const WHATSAPP_INBOX_PERSIST_PAINT_TTL_MS = Number.POSITIVE_INFINITY;
 const THREAD_CACHE_MAX_PHONES = 200;
 
 /** How far back the inbox thread list loads (sidebar). */
-export type WhatsAppInboxListRange = 'today' | '7d' | '30d' | 'all' | { custom: string };
+export type WhatsAppInboxListRange =
+  | 'today'
+  | 'yesterday'
+  | '7d'
+  | '30d'
+  | 'all'
+  | { custom: string };
 
 const INBOX_LIST_RANGE_STORAGE_KEY = 'wa_inbox_list_range_v1';
 
+/** Local calendar day key `YYYY-MM-DD` (not UTC). */
+export function localDayKey(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function inboxListRangeKey(range: WhatsAppInboxListRange): string {
   if (typeof range === 'object') return `custom:${range.custom}`;
+  // Include the calendar day so overnight “today” cache cannot paint yesterday’s chats.
+  if (range === 'today') return `today:${localDayKey()}`;
+  if (range === 'yesterday') {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    return `yesterday:${localDayKey(y)}`;
+  }
   return range;
 }
 
 export function loadWhatsAppInboxListRange(): WhatsAppInboxListRange {
   try {
     const raw = localStorage.getItem(INBOX_LIST_RANGE_STORAGE_KEY);
-    if (!raw || raw === 'today') return 'today';
+    if (!raw || raw === 'today' || raw.startsWith('today:')) return 'today';
+    if (raw === 'yesterday' || raw.startsWith('yesterday:')) return 'yesterday';
     if (raw === '7d' || raw === '30d' || raw === 'all') return raw;
     if (raw.startsWith('custom:')) {
       const date = raw.slice(7);
@@ -792,7 +814,14 @@ export function loadWhatsAppInboxListRange(): WhatsAppInboxListRange {
 
 export function saveWhatsAppInboxListRange(range: WhatsAppInboxListRange): void {
   try {
-    localStorage.setItem(INBOX_LIST_RANGE_STORAGE_KEY, inboxListRangeKey(range));
+    // Persist the logical range (not the dated cache key).
+    const stored =
+      typeof range === 'object'
+        ? `custom:${range.custom}`
+        : range === 'today' || range === 'yesterday' || range === '7d' || range === '30d' || range === 'all'
+          ? range
+          : 'today';
+    localStorage.setItem(INBOX_LIST_RANGE_STORAGE_KEY, stored);
   } catch {
     /* ignore */
   }
@@ -800,6 +829,7 @@ export function saveWhatsAppInboxListRange(range: WhatsAppInboxListRange): void 
 
 export function inboxListRangeLabel(range: WhatsAppInboxListRange): string {
   if (range === 'today') return "Today's chats";
+  if (range === 'yesterday') return "Yesterday's chats";
   if (range === '7d') return 'Last 7 days';
   if (range === '30d') return 'Last 30 days';
   if (range === 'all') return 'All chats';
@@ -814,6 +844,11 @@ export function sinceIsoForInboxListRange(range: WhatsAppInboxListRange): string
   const now = new Date();
   if (range === 'all') return null;
   if (range === 'today') return startOfLocalDayIso(now);
+  if (range === 'yesterday') {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 1);
+    return startOfLocalDayIso(d);
+  }
   if (range === '7d') {
     const d = new Date(now);
     d.setDate(d.getDate() - 7);
@@ -831,9 +866,18 @@ export function sinceIsoForInboxListRange(range: WhatsAppInboxListRange): string
 
 export function fetchOptsForInboxListRange(
   range: WhatsAppInboxListRange
-): { since: string | null; todayOnly: boolean } {
+): { since: string | null; todayOnly: boolean; dayKey?: string } {
   if (range === 'today') {
-    return { since: startOfLocalDayIso(), todayOnly: true };
+    return { since: startOfLocalDayIso(), todayOnly: true, dayKey: localDayKey() };
+  }
+  if (range === 'yesterday') {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    return {
+      since: startOfLocalDayIso(y),
+      todayOnly: false,
+      dayKey: localDayKey(y),
+    };
   }
   if (range === 'all') {
     return { since: null, todayOnly: false };
@@ -921,7 +965,8 @@ export function peekWhatsAppInboxThreadsCache(opts?: {
   todayOnly?: boolean;
 }): InboxListCacheEntry | null {
   const rangeKey =
-    opts?.rangeKey ?? (opts?.todayOnly === false ? 'all' : 'today');
+    opts?.rangeKey ??
+    (opts?.todayOnly === false ? 'all' : inboxListRangeKey('today'));
   if (inboxListCacheMem && inboxListCacheMem.rangeKey === rangeKey) {
     return inboxListCacheMem;
   }
@@ -930,7 +975,12 @@ export function peekWhatsAppInboxThreadsCache(opts?: {
   );
   if (stored && Array.isArray(stored.threads)) {
     const storedKey =
-      stored.rangeKey ?? (stored.todayOnly === false ? 'all' : 'today');
+      stored.rangeKey ??
+      (stored.todayOnly === false ? 'all' : inboxListRangeKey('today'));
+    // Drop undated legacy “today” keys so overnight opens never flash yesterday’s list.
+    if (storedKey === 'today' || storedKey === 'yesterday') {
+      return null;
+    }
     if (storedKey === rangeKey) {
       inboxListCacheMem = { ...stored, rangeKey: storedKey };
       // Promote localStorage hit into session for this WebView session.
@@ -961,7 +1011,8 @@ export function writeWhatsAppInboxThreadsCache(
   opts?: { rangeKey?: string; todayOnly?: boolean }
 ): void {
   const rangeKey =
-    opts?.rangeKey ?? (opts?.todayOnly === false ? 'all' : 'today');
+    opts?.rangeKey ??
+    (opts?.todayOnly === false ? 'all' : inboxListRangeKey('today'));
   const entry: InboxListCacheEntry = {
     rangeKey,
     threads,
@@ -1306,8 +1357,8 @@ export function clearAllWhatsAppLocalTextCache(): void {
 
 /** People list via RPC — not full message dump. */
 export const WHATSAPP_INBOX_LIST_LIMIT = 120;
-/** First paint for open chat (newest N, then “load older”). */
-export const WHATSAPP_THREAD_PAGE_SIZE = 40;
+/** First paint for open chat (newest N, then auto-paginate older). */
+export const WHATSAPP_THREAD_PAGE_SIZE = 50;
 /**
  * Max messages held in an open chat (after scroll-up history).
  * Must be high enough that “load older” is not immediately discarded —
@@ -1342,6 +1393,13 @@ export function isSameLocalDay(iso: string, now = new Date()): boolean {
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate()
   );
+}
+
+/** True when `iso` falls on the local calendar day `dayKey` (`YYYY-MM-DD`). */
+export function isLocalDayKey(iso: string, dayKey: string): boolean {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return false;
+  return localDayKey(d) === dayKey;
 }
 
 /** India-friendly WhatsApp phone digits (no +). */
@@ -1566,10 +1624,12 @@ export async function fetchWhatsAppInboxThreads(
   let since = opts?.since;
   let todayOnly = Boolean(opts?.todayOnly);
 
+  let dayKey: string | undefined;
   if (opts?.range) {
     const derived = fetchOptsForInboxListRange(opts.range);
     since = derived.since;
     todayOnly = derived.todayOnly;
+    dayKey = derived.dayKey;
   } else if (since === undefined) {
     since = todayOnly ? startOfLocalDayIso() : null;
   } else if (todayOnly && since === null) {
@@ -1606,6 +1666,8 @@ export async function fetchWhatsAppInboxThreads(
         });
         if (todayOnly) {
           data = data.filter((r: InboxThreadRow) => isSameLocalDay(r.last_at));
+        } else if (dayKey) {
+          data = data.filter((r: InboxThreadRow) => isLocalDayKey(r.last_at, dayKey));
         }
       }
     }
@@ -1624,6 +1686,8 @@ export async function fetchWhatsAppInboxThreads(
   let rows = (data || []) as InboxThreadRow[];
   if (todayOnly) {
     rows = rows.filter((r) => isSameLocalDay(r.last_at));
+  } else if (dayKey) {
+    rows = rows.filter((r) => isLocalDayKey(r.last_at, dayKey));
   }
 
   const threads =
@@ -2157,10 +2221,13 @@ export function formatAdminWhatsAppBody(
     .replace(NEEDS_HUMAN_MARKER, 'Needs human reply —')
     .trim();
 
-  // Expand `svc_…: name · amount` into the same copy the customer received.
+  // Expand `svc_…: name · amount` (or template_name + params) into customer WhatsApp copy.
   const expanded = expandWhatsAppTemplateInboxBody(text, opts?.templateName);
   if (expanded) {
     text = expanded;
+  } else if (opts?.templateName && /^svc_[a-z0-9_]+$/i.test(text.trim())) {
+    // Body stored as bare slug — show a short label, never the raw Meta id.
+    text = humanizeWhatsAppTemplateSlug(String(opts.templateName));
   }
 
   // WhatsApp interactive button footer: [Yes | No | …]

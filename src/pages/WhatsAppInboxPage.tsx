@@ -83,8 +83,10 @@ import {
   fetchWhatsAppUnreadMessageCounts,
   inboxListRangeKey,
   inboxListRangeLabel,
+  isLocalDayKey,
   loadWhatsAppInboxListRange,
   loadWhatsAppUnreadCounts,
+  localDayKey,
   saveWhatsAppInboxListRange,
   saveWhatsAppUnreadCounts,
   searchWhatsAppInboxThreads,
@@ -601,6 +603,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [listRange, setListRange] = useState<WhatsAppInboxListRange>(() =>
     loadWhatsAppInboxListRange()
   );
+  /** Filter messages inside the open chat by local calendar day (`all` = full loaded thread). */
+  const [threadDayFilter, setThreadDayFilter] = useState<'all' | string>('all');
   const [customRangeOpen, setCustomRangeOpen] = useState(false);
   const [customRangeDate, setCustomRangeDate] = useState(() => {
     const d = new Date();
@@ -1058,6 +1062,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   /** Opening/Downloading toasts — dismiss on leave so Home never keeps a stuck “Opening…”. */
   const mediaActionToastIdsRef = useRef<Set<string | number>>(new Set());
   const loadThreadSeqRef = useRef(0);
+  const drainOlderMessagesRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     return () => {
@@ -1146,19 +1151,28 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           return updated;
         });
       }
+      if (hasMore && seq === loadThreadSeqRef.current) {
+        void drainOlderMessagesRef.current();
+      }
     } finally {
       if (seq === loadThreadSeqRef.current && !opts?.soft) setThreadLoading(false);
     }
   }, []);
 
-  const loadOlderMessages = useCallback(async () => {
+  const loadOlderMessages = useCallback(async (opts?: { keepBottom?: boolean }) => {
     const phone = toWhatsAppPhoneDigits(selectedPhoneRef.current);
     if (!phone || threadLoadingOlderRef.current || !threadHasMoreOlderRef.current) return;
+    if (threadMessagesRef.current.length >= WHATSAPP_THREAD_LIMIT) {
+      threadHasMoreOlderRef.current = false;
+      setThreadHasMoreOlder(false);
+      return;
+    }
     const oldest = threadMessagesRef.current[0];
     if (!oldest?.created_at) return;
     const el = messagesScrollRef.current;
     const prevHeight = el?.scrollHeight ?? 0;
     const prevTop = el?.scrollTop ?? 0;
+    const keepBottom = Boolean(opts?.keepBottom) || stickToBottomRef.current;
     threadLoadingOlderRef.current = true;
     setThreadLoadingOlder(true);
     try {
@@ -1194,15 +1208,22 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       let merged = [...fresh, ...prev];
       if (merged.length > WHATSAPP_THREAD_LIMIT) {
         merged = merged.slice(0, WHATSAPP_THREAD_LIMIT);
+        threadHasMoreOlderRef.current = false;
+        setThreadHasMoreOlder(false);
+      } else {
+        threadHasMoreOlderRef.current = pageHasMore;
+        setThreadHasMoreOlder(pageHasMore);
       }
-      threadHasMoreOlderRef.current = pageHasMore;
-      setThreadHasMoreOlder(pageHasMore);
       setThreadMessages(merged);
-      writeWhatsAppThreadMessagesCache(phone, merged, pageHasMore);
+      writeWhatsAppThreadMessagesCache(phone, merged, threadHasMoreOlderRef.current);
       requestAnimationFrame(() => {
         const box = messagesScrollRef.current;
         if (!box) return;
-        box.scrollTop = box.scrollHeight - prevHeight + prevTop;
+        if (keepBottom) {
+          box.scrollTop = box.scrollHeight;
+        } else {
+          box.scrollTop = box.scrollHeight - prevHeight + prevTop;
+        }
       });
     } finally {
       threadLoadingOlderRef.current = false;
@@ -1212,6 +1233,27 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   const loadOlderMessagesRef = useRef(loadOlderMessages);
   loadOlderMessagesRef.current = loadOlderMessages;
+
+  /** After open: page through older history so date filters see the full thread. */
+  const drainOlderMessages = useCallback(async () => {
+    const phoneAtStart = toWhatsAppPhoneDigits(selectedPhoneRef.current);
+    if (!phoneAtStart) return;
+    let pages = 0;
+    while (
+      pages < 20 &&
+      threadHasMoreOlderRef.current &&
+      threadMessagesRef.current.length < WHATSAPP_THREAD_LIMIT &&
+      toWhatsAppPhoneDigits(selectedPhoneRef.current) === phoneAtStart
+    ) {
+      pages += 1;
+      const before = threadMessagesRef.current.length;
+      await loadOlderMessagesRef.current({ keepBottom: true });
+      if (threadMessagesRef.current.length <= before) break;
+      // Yield so React can paint and Realtime can land.
+      await new Promise((r) => window.setTimeout(r, 0));
+    }
+  }, []);
+  drainOlderMessagesRef.current = drainOlderMessages;
 
   const resolveMediaHref = useCallback(async (
     row: WhatsAppMessageRow,
@@ -1641,6 +1683,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, [loadInbox]);
 
   useEffect(() => {
+    setThreadDayFilter('all');
     if (!selectedPhone) {
       setThreadMessages([]);
       setThreadHasMoreOlder(false);
@@ -1651,10 +1694,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     setShowJumpToLatest(false);
     const cached = peekWhatsAppThreadMessagesCache(phoneDigits);
     if (cached?.messages?.length) {
-      // Paint cache immediately, then soft-fetch so sidebar preview can't drift from empty thread.
+      // Paint this phone's cache only — never leave the previous chat painted.
       setThreadMessages(cached.messages);
       setThreadHasMoreOlder(Boolean(cached.hasMoreOlder));
       setThreadLoading(false);
+      if (cached.hasMoreOlder) void drainOlderMessagesRef.current();
       void loadThread(phoneDigits, { soft: true });
       return;
     }
@@ -1689,9 +1733,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
         if (threadLoadingOlderRef.current) return;
-        // Only when the list can scroll (or user already scrolled up).
-        if (root.scrollHeight <= root.clientHeight + 24 && stickToBottomRef.current) return;
-        void loadOlderMessagesRef.current();
+        // Short threads still need older pages (date chips / full history).
+        void loadOlderMessagesRef.current({
+          keepBottom: stickToBottomRef.current,
+        });
       },
       { root, rootMargin: '120px 0px 0px 0px', threshold: 0 }
     );
@@ -1885,8 +1930,29 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     return threads;
   }, [threads, searchThreads, appliedSearch]);
 
+  const threadDayOptions = useMemo(() => {
+    const keys = new Set<string>();
+    for (const m of threadMessages) {
+      const t = new Date(m.created_at).getTime();
+      if (!Number.isFinite(t)) continue;
+      keys.add(localDayKey(new Date(t)));
+    }
+    return [...keys].sort((a, b) => b.localeCompare(a));
+  }, [threadMessages]);
+
+  const visibleThreadMessages = useMemo(() => {
+    if (threadDayFilter === 'all') return threadMessages;
+    return threadMessages.filter((m) => isLocalDayKey(m.created_at, threadDayFilter));
+  }, [threadMessages, threadDayFilter]);
+
   const listBusy = loading || searchLoading;
   const listRangeSubtitle = inboxListRangeLabel(listRange);
+
+  const quickListRanges: Array<{ label: string; range: WhatsAppInboxListRange }> = [
+    { label: 'Today', range: 'today' },
+    { label: 'Yesterday', range: 'yesterday' },
+    { label: '7 days', range: '7d' },
+  ];
 
   const isListRangeActive = useCallback(
     (candidate: WhatsAppInboxListRange): boolean => {
@@ -2515,10 +2581,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         Show chats
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="w-56 border-[#202c33] bg-[#202c33] text-[#e9edef]">
-                        {rangeMenuItem("Today", 'today')}
+                        {rangeMenuItem('Today', 'today')}
+                        {rangeMenuItem('Yesterday', 'yesterday')}
                         {rangeMenuItem('Last 7 days', '7d')}
                         {rangeMenuItem('Last 30 days', '30d')}
-                        {rangeMenuItem('All chats', 'all')}
                         <DropdownMenuItem
                           className="cursor-pointer focus:bg-[#202c33] focus:text-[#e9edef]"
                           onClick={() => setCustomRangeOpen(true)}
@@ -2665,7 +2731,40 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   {listRangeSubtitle}
                 </button>
               </p>
-            ) : null}
+            ) : (
+              <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {quickListRanges.map(({ label, range }) => {
+                  const active = isListRangeActive(range);
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      className={cn(
+                        'shrink-0 cursor-pointer rounded-full px-2.5 py-1 text-[11px] font-semibold transition',
+                        active
+                          ? 'bg-[#00a884] text-[#111b21]'
+                          : 'bg-[#202c33] text-[#8696a0] hover:bg-[#2a3942] hover:text-[#e9edef]'
+                      )}
+                      onClick={() => applyListRange(range)}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  className={cn(
+                    'shrink-0 cursor-pointer rounded-full px-2.5 py-1 text-[11px] font-semibold transition',
+                    typeof listRange === 'object'
+                      ? 'bg-[#00a884] text-[#111b21]'
+                      : 'bg-[#202c33] text-[#8696a0] hover:bg-[#2a3942] hover:text-[#e9edef]'
+                  )}
+                  onClick={() => setCustomRangeOpen(true)}
+                >
+                  Date…
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 py-1.5 md:px-2">
@@ -2680,8 +2779,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   {appliedSearch.trim()
                     ? 'No matching customers or chats'
                     : listRange === 'today'
-                      ? 'No chats today — search by name, phone, email, or ID'
-                      : `No chats in ${listRangeSubtitle.toLowerCase()} — try a wider range or search`}
+                      ? 'No chats today — try Yesterday / 7 days, or search by name, phone, email, or ID'
+                      : listRange === 'yesterday'
+                        ? 'No chats yesterday — try Today / All, or search'
+                        : `No chats in ${listRangeSubtitle.toLowerCase()} — try a wider range or search`}
                 </p>
                 {!appliedSearch.trim() ? (
                   <Button
@@ -3125,6 +3226,32 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 </DropdownMenu>
               </div>
 
+              {threadDayOptions.length > 1 ? (
+                <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-white/5 bg-[#0b141a] px-3 py-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {threadDayOptions.slice(0, 8).map((day) => {
+                    const active = threadDayFilter === day;
+                    const label = formatDaySeparator(`${day}T12:00:00`);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        className={cn(
+                          'shrink-0 cursor-pointer rounded-full px-2.5 py-1 text-[11px] font-semibold transition',
+                          active
+                            ? 'bg-[#00a884] text-[#111b21]'
+                            : 'bg-[#202c33] text-[#8696a0] hover:bg-[#2a3942] hover:text-[#e9edef]'
+                        )}
+                        onClick={() =>
+                          setThreadDayFilter((prev) => (prev === day ? 'all' : day))
+                        }
+                      >
+                        {label || day}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
               <div className="relative min-h-0 flex-1">
                 {/* Mobile: WhatsApp dark wallpaper · Desktop: light wash */}
                 <div
@@ -3133,7 +3260,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   className="absolute inset-0 overflow-y-auto overscroll-contain px-3 py-3 sm:px-8 md:px-12"
                   style={CHAT_THREAD_BG_DARK}
                 >
-                <div ref={threadContentRef} className="space-y-1.5">
+                <div ref={threadContentRef} className="space-y-1.5" key={selectedPhone || 'none'}>
                 {threadLoading ? (
                   <div className="flex justify-center py-10 text-sm text-[#667781]">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -3143,9 +3270,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <p className="py-10 text-center text-sm text-[#667781]">
                     No messages in this chat
                   </p>
+                ) : visibleThreadMessages.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-[#667781]">
+                    No messages on this day — tap the day chip again to clear, or scroll up to load older
+                  </p>
                 ) : (
                   <>
-                    {(threadHasMoreOlder || threadLoadingOlder) ? (
+                    {(threadHasMoreOlder || threadLoadingOlder) && threadDayFilter === 'all' ? (
                       <div
                         ref={loadOlderSentinelRef}
                         className="mb-1 flex min-h-8 items-center justify-center py-1"
@@ -3161,7 +3292,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         )}
                       </div>
                     ) : null}
-                  {threadMessages.map((m, i) => {
+                  {visibleThreadMessages.map((m, i) => {
                     if (String(m.msg_type || '').toLowerCase() === 'reaction') {
                       const target = whatsAppReactionTargetWaId(m);
                       const emoji = whatsAppReactionEmoji(m.body);
@@ -3181,10 +3312,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     const failed =
                       outbound &&
                       (isFailedDeliveryStatus(m.status) || Boolean(m.error_message?.trim()));
-                    let prev = threadMessages[i - 1];
+                    let prev = visibleThreadMessages[i - 1];
                     while (prev && String(prev.msg_type || '').toLowerCase() === 'reaction') {
-                      const prevIndex = threadMessages.indexOf(prev);
-                      prev = prevIndex > 0 ? threadMessages[prevIndex - 1] : undefined;
+                      const prevIndex = visibleThreadMessages.indexOf(prev);
+                      prev = prevIndex > 0 ? visibleThreadMessages[prevIndex - 1] : undefined;
                     }
                     const showDay = !prev || dayKey(prev.created_at) !== dayKey(m.created_at);
                     const botState = isBookingBotStateMessage(m.body);
@@ -3245,28 +3376,61 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         >
                         <div
                           className={cn(
-                            'relative max-w-[88%] select-none rounded-lg px-2.5 pb-1 pt-1.5 shadow-[0_1px_0.5px_rgba(11,20,26,0.35)]',
+                            'relative max-w-[88%] select-text rounded-lg px-2.5 pb-1 pt-1.5 shadow-[0_1px_0.5px_rgba(11,20,26,0.35)]',
                             failed
                               ? 'rounded-br-sm border border-red-500/40 bg-[#3b1818] text-[#fecaca]'
                               : outbound
                                 ? 'rounded-br-sm bg-[#005c4b] text-[#e9edef]'
                                 : 'rounded-bl-sm bg-[#202c33] text-[#e9edef]'
                           )}
-                          style={{ WebkitTouchCallout: 'none' }}
                           onContextMenu={(e) => {
+                            // Right-click / long-press menu → actions. Left-drag still selects text.
                             e.preventDefault();
                             openMessageActions(m);
                           }}
                           onPointerDown={(e) => {
-                            if (e.pointerType === 'mouse' && e.button !== 0) return;
+                            // Mouse drag-select must not open delete/forward.
+                            if (e.pointerType === 'mouse') return;
+                            if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
                             clearMessageLongPress();
+                            const startX = e.clientX;
+                            const startY = e.clientY;
+                            const pointerId = e.pointerId;
+                            const onMove = (ev: PointerEvent) => {
+                              if (ev.pointerId !== pointerId) return;
+                              if (
+                                Math.hypot(ev.clientX - startX, ev.clientY - startY) > 10
+                              ) {
+                                clearMessageLongPress();
+                              }
+                            };
+                            const onEnd = (ev: PointerEvent) => {
+                              if (ev.pointerId !== pointerId) return;
+                              clearMessageLongPress();
+                              window.removeEventListener('pointermove', onMove);
+                              window.removeEventListener('pointerup', onEnd);
+                              window.removeEventListener('pointercancel', onEnd);
+                            };
+                            window.addEventListener('pointermove', onMove);
+                            window.addEventListener('pointerup', onEnd);
+                            window.addEventListener('pointercancel', onEnd);
                             messageLongPressTimerRef.current = window.setTimeout(() => {
+                              window.removeEventListener('pointermove', onMove);
+                              window.removeEventListener('pointerup', onEnd);
+                              window.removeEventListener('pointercancel', onEnd);
+                              // Don't steal an in-progress text selection.
+                              const sel = typeof window.getSelection === 'function'
+                                ? window.getSelection()
+                                : null;
+                              if (sel && String(sel.toString() || '').trim()) {
+                                clearMessageLongPress();
+                                return;
+                              }
                               openMessageActions(m);
-                            }, 480);
+                            }, 550);
                           }}
                           onPointerUp={clearMessageLongPress}
                           onPointerCancel={clearMessageLongPress}
-                          onPointerLeave={clearMessageLongPress}
                         >
                             {failed ? (
                               <p className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-red-400">
@@ -3372,7 +3536,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                               }
                               if (!text?.trim()) return null;
                               return (
-                                <p className="whitespace-pre-wrap break-words px-1 text-[14.2px] leading-[19px] text-[#e9edef]">
+                                <p className="cursor-text select-text whitespace-pre-wrap break-words px-1 text-[14.2px] leading-[19px] text-[#e9edef]">
                                   {text}
                                 </p>
                               );
