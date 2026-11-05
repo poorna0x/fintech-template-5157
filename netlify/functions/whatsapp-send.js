@@ -137,6 +137,18 @@ function inboxBodyForTemplate(templateName, bodyParams, opts = {}) {
   const filename = String(opts.filename || '').trim();
   const brand = brandLabelFromTemplateName(name);
 
+  if (/^svc_payment_received_letter_(ero|hro)_v3$/i.test(name)) {
+    return fillTemplateSlots(
+      [
+        'Hi {{1}},',
+        '',
+        `Thank you. ${brand} has received your payment of INR {{2}}.`,
+        '',
+        'This payment is recorded on your service account. Reply on this chat if you need a receipt or any help.',
+      ].join('\n'),
+      params
+    );
+  }
   if (/^svc_payment_received_letter_(ero|hro)_v2$/i.test(name)) {
     return fillTemplateSlots(
       [
@@ -192,9 +204,34 @@ function inboxBodyForTemplate(templateName, bodyParams, opts = {}) {
     return String(opts.preservedBody);
   }
 
-  // Prefer plain params only as last resort — UI expands known svc_ bodies on read.
-  if (params.length) return `${name}: ${params.join(' · ')}`;
-  return name || 'Template';
+  // Prefer customer-facing wording — never store a raw Meta slug as the inbox body.
+  const label = humanizeWhatsAppTemplateSlug(name);
+  if (params.length) return [label, ...params.filter(Boolean)].join('\n');
+  return label || 'Message';
+}
+
+function humanizeWhatsAppTemplateSlug(slug) {
+  const raw = String(slug || '').trim();
+  if (!raw) return 'Message';
+  let s = raw
+    .replace(/^svc_/i, '')
+    .replace(/_(ero|hro)_v\d+$/i, '')
+    .replace(/_v\d+$/i, '')
+    .replace(/_img$/i, '')
+    .replace(/_/g, ' ')
+    .trim();
+  if (/payment.?received/i.test(raw)) return 'Payment received';
+  if (/balance.?due/i.test(raw)) return /_img/i.test(raw) ? 'Pending payment (UPI QR)' : 'Pending payment';
+  if (/job.?done|completed/i.test(raw)) return 'Job completed';
+  if (/tech.?assigned/i.test(raw)) return 'Technician assigned';
+  if (/missed.?call/i.test(raw)) return 'Missed call';
+  if (/booking.?confirm/i.test(raw)) return 'Booking confirmed';
+  if (/booking.?cancel|visit.?cancel/i.test(raw)) return 'Visit cancelled';
+  if (/hello|^hi\b/i.test(s)) return 'Hello';
+  if (/ask.?location/i.test(raw)) return 'Ask location';
+  if (/document|doc_/i.test(raw)) return 'Document';
+  if (!s) return 'Message';
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function json(statusCode, headers, payload) {

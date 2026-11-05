@@ -35,9 +35,9 @@ export function resolveColdPaymentReceived(
   amount: number | string,
   brand: DocumentBrand = 'hydrogenro'
 ): ColdTemplatePayload {
-  // v2 is the receipt letter. Cold-fallback → v1 → plain svc_payment_received.
+  // v3 generic receipt (no “water purifier”). Cold-fallback → v2 → v1 → plain.
   return {
-    name: resolveBrandLetterTemplateName('payment_received', brand, 'v2'),
+    name: resolveBrandLetterTemplateName('payment_received', brand, 'v3'),
     languageCode: WA_COLD.payment_received.language,
     bodyParams: WA_COLD.payment_received.bodyParams(customerName, amount),
   };
