@@ -163,17 +163,20 @@ export default function VisitOrderPlanMap({ tech, stops, legs }: Props) {
   }, [tech, stops, legs]);
 
   return (
-    <div className="relative min-h-[220px] h-full w-full overflow-hidden bg-muted">
+    <div className="relative h-full min-h-[200px] w-full overflow-hidden bg-muted touch-pan-y">
       <DraggableMap
         center={BENGALURU}
         zoom={13}
         height="100%"
         hideMarker
         syncCamera={false}
-        gestureHandling="greedy"
+        // Cooperative: one-finger scroll keeps working in the dialog; two-finger pans the map.
+        // Greedy was trapping touch and making mobile Arrange visit order feel stuck.
+        gestureHandling="cooperative"
         mapTypeControl={false}
         streetViewControl={false}
         fullscreenControl={false}
+        zoomControl={false}
         onMapReady={(map) => {
           mapRef.current = map;
           if (map) paint();

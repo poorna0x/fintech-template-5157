@@ -629,6 +629,7 @@ export default function ArrangeTechnicianVisitOrderDialog({
       setTechStart(null);
       setPlanLegs([]);
       setReachByJobId({});
+      setPlanning(false);
       return;
     }
     const gen = ++planGenRef.current;
@@ -638,10 +639,17 @@ export default function ArrangeTechnicianVisitOrderDialog({
       if (planGenRef.current !== gen) return;
       setTechStart(start);
       const nextPins: Record<string, VisitOrderLatLng> = { ...pinsRef.current, ...pinSeed };
-      for (const job of jobRows) {
-        if (nextPins[job.id]) continue;
-        const pin = await resolveJobPin(job, nextPins);
-        if (pin) nextPins[job.id] = pin;
+      const missing = jobRows.filter((job) => !nextPins[job.id]);
+      if (missing.length) {
+        const resolved = await Promise.all(
+          missing.map(async (job) => {
+            const pin = await resolveJobPin(job, nextPins);
+            return pin ? ([job.id, pin] as const) : null;
+          })
+        );
+        for (const row of resolved) {
+          if (row) nextPins[row[0]] = row[1];
+        }
       }
       if (planGenRef.current !== gen) return;
       setPins(nextPins);
@@ -669,6 +677,7 @@ export default function ArrangeTechnicianVisitOrderDialog({
       }> = [];
       let from = origin;
       for (let i = 0; i < orderedPins.length; i++) {
+        if (planGenRef.current !== gen) return;
         const stop = orderedPins[i];
         const route = await fetchDrivingRoute(from, stop.pin);
         if (route?.path.length) {
@@ -705,7 +714,6 @@ export default function ArrangeTechnicianVisitOrderDialog({
   const handleSuggestNearest = async () => {
     if (!technicianId || rows.length < 2) return;
     setPlanning(true);
-    let handoffToMap = false;
     try {
       const start = techStart || (await resolveTechStart());
       if (!start) {
@@ -714,24 +722,34 @@ export default function ArrangeTechnicianVisitOrderDialog({
       }
       setTechStart(start);
       const nextPins: Record<string, VisitOrderLatLng> = { ...pinsRef.current };
-      for (const job of rows) {
-        if (nextPins[job.id]) continue;
-        const pin = await resolveJobPin(job, nextPins);
-        if (pin) nextPins[job.id] = pin;
+      const missing = rows.filter((job) => !nextPins[job.id]);
+      if (missing.length) {
+        const resolved = await Promise.all(
+          missing.map(async (job) => {
+            const pin = await resolveJobPin(job, nextPins);
+            return pin ? ([job.id, pin] as const) : null;
+          })
+        );
+        for (const row of resolved) {
+          if (row) nextPins[row[0]] = row[1];
+        }
       }
       setPins(nextPins);
       const next = suggestVisitOrderByNearest(start, rows, (job) => nextPins[job.id] || null);
       const changed = next.some((job, index) => job.id !== rows[index]?.id);
       if (!changed) {
         toast.message('This order is already the nearest route');
+        if (showMap) await loadPlan(next, nextPins);
         return;
       }
       setRows(next);
       setDirty(true);
       toast.success('Suggested nearest route — Save order to keep it');
-      handoffToMap = showMap;
+      if (showMap) await loadPlan(next, nextPins);
     } finally {
-      if (!handoffToMap) setPlanning(false);
+      // Always clear here. loadPlan toggles its own flag while awaited above;
+      // previously leaving planning=true when the map was open left the UI stuck.
+      setPlanning(false);
     }
   };
 
@@ -794,16 +812,13 @@ export default function ArrangeTechnicianVisitOrderDialog({
 
         <div
           className={cn(
-            'flex min-h-0 flex-1',
-            showMap ? 'flex-col overflow-y-auto md:flex-row md:overflow-hidden' : 'flex-col overflow-hidden'
+            'flex min-h-0 flex-1 overflow-hidden',
+            showMap ? 'flex-col md:flex-row' : 'flex-col'
           )}
         >
           <div
             className={cn(
-              'flex min-w-0 flex-col gap-3 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4',
-              showMap
-                ? 'flex-none md:min-h-0 md:flex-1 md:overflow-hidden'
-                : 'min-h-0 flex-1 overflow-hidden'
+              'flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3 sm:gap-4 sm:px-6 sm:py-4'
             )}
           >
           <div className="shrink-0 space-y-1.5">
@@ -907,10 +922,7 @@ export default function ArrangeTechnicianVisitOrderDialog({
 
           <div
             ref={scrollContainerRef}
-            className={cn(
-              'overflow-y-auto overscroll-contain rounded-lg border border-gray-100 bg-slate-50/60 -mx-0 px-1.5 py-1.5 sm:px-2 sm:py-2',
-              showMap ? 'max-md:flex-none md:min-h-0 md:flex-1' : 'min-h-0 flex-1'
-            )}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-gray-100 bg-slate-50/60 -mx-0 px-1.5 py-1.5 touch-pan-y sm:px-2 sm:py-2"
             onDragOver={(event) => {
               if (dragIndex === null) return;
               event.preventDefault();
@@ -1049,11 +1061,18 @@ export default function ArrangeTechnicianVisitOrderDialog({
           </div>
           </div>
           {showMap ? (
-            <div className="relative h-[240px] min-h-[200px] w-full shrink-0 overflow-hidden border-t md:h-auto md:min-h-0 md:w-[48%] md:flex-none md:border-l md:border-t-0">
+            <div
+              className={cn(
+                'relative w-full shrink-0 overflow-hidden border-t bg-muted',
+                // Fixed height on phone so the job list stays scrollable above the map.
+                'h-[min(38dvh,280px)] min-h-[180px]',
+                'md:h-auto md:min-h-0 md:w-[48%] md:flex-none md:border-l md:border-t-0'
+              )}
+            >
               <VisitOrderPlanMap tech={techStart} stops={mapStops} legs={planLegs} />
               {planning ? (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/50 text-sm text-muted-foreground">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-2 bg-background/85 px-3 py-2 text-xs text-muted-foreground shadow-sm sm:text-sm">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading reach times…
                 </div>
               ) : null}
