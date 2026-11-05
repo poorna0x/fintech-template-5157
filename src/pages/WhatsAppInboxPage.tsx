@@ -1055,7 +1055,16 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, []);
 
   const mediaUrlCacheRef = useRef<Record<string, string>>({});
+  /** Opening/Downloading toasts — dismiss on leave so Home never keeps a stuck “Opening…”. */
+  const mediaActionToastIdsRef = useRef<Set<string | number>>(new Set());
   const loadThreadSeqRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      for (const id of mediaActionToastIdsRef.current) toast.dismiss(id);
+      mediaActionToastIdsRef.current.clear();
+    };
+  }, []);
 
   const loadThread = useCallback(async (phone: string, opts?: { soft?: boolean; force?: boolean }) => {
     const seq = ++loadThreadSeqRef.current;
@@ -1279,6 +1288,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     [resolveMediaHref]
   );
 
+  const beginMediaActionToast = useCallback((label: string) => {
+    const toastId = toast.loading(label);
+    mediaActionToastIdsRef.current.add(toastId);
+    return toastId;
+  }, []);
+
+  const endMediaActionToast = useCallback((toastId: string | number) => {
+    mediaActionToastIdsRef.current.delete(toastId);
+    toast.dismiss(toastId);
+  }, []);
+
   const openMedia = useCallback(
     async (row: WhatsAppMessageRow) => {
       if (!row.media_url) return;
@@ -1289,14 +1309,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       // Android WebView has no PDF viewer and drops window.open, which left
       // the "Opening…" toast stuck. Hand the bytes to the system viewer.
       if (isNativeRuntime()) {
-        const toastId = toast.loading('Opening…', { duration: 12_000 });
+        const toastId = beginMediaActionToast('Opening…');
         try {
           const loaded = await loadAttachmentBytes(row, resolveMediaHref);
-          toast.dismiss(toastId);
           if (!loaded) {
+            endMediaActionToast(toastId);
             toast.error('Could not open attachment');
             return;
           }
+          // Dismiss before handing off to the system viewer — navigating Home
+          // while the viewer is open must not leave Opening… on the CRM.
+          endMediaActionToast(toastId);
           const result = await openBytesNatively(
             loaded.bytes,
             attachmentFilename(row),
@@ -1305,7 +1328,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           if (result === 'shared') toast.message('Choose an app to open this file');
           else if (result !== 'opened') toast.error('Could not open attachment — use Download');
         } catch (err) {
-          toast.dismiss(toastId);
+          endMediaActionToast(toastId);
           toast.error(err instanceof Error ? err.message : 'Could not open attachment');
         }
         return;
@@ -1324,7 +1347,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         return;
       }
 
-      const toastId = toast.loading('Opening…', { duration: 12_000 });
+      const toastId = beginMediaActionToast('Opening…');
       try {
         const href = await Promise.race([
           resolveMediaHref(row),
@@ -1332,30 +1355,32 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             window.setTimeout(() => resolve(null), 12000);
           }),
         ]);
-        toast.dismiss(toastId);
         if (!href) {
+          endMediaActionToast(toastId);
           toast.error('Could not open attachment');
           return;
         }
+        endMediaActionToast(toastId);
         const opened = window.open(href, '_blank', 'noopener,noreferrer');
         if (!opened) toast.message('Popup blocked — use Download instead');
       } catch (err) {
-        toast.dismiss(toastId);
+        endMediaActionToast(toastId);
         toast.error(err instanceof Error ? err.message : 'Could not open attachment');
       }
     },
-    [resolveMediaHref, openImageViewer]
+    [resolveMediaHref, openImageViewer, beginMediaActionToast, endMediaActionToast]
   );
 
   const downloadMedia = useCallback(
     async (row: WhatsAppMessageRow) => {
       if (!row.media_url) return;
       const name = attachmentFilename(row);
-      const toastId = toast.loading('Downloading…', { duration: 20_000 });
+      const toastId = beginMediaActionToast('Downloading…');
       try {
         const loaded = await loadAttachmentBytes(row, resolveMediaHref);
         if (!loaded) throw new Error('Download failed');
         const saved = await saveBytesToNativeDownloads(loaded.bytes, name, loaded.mime);
+        mediaActionToastIdsRef.current.delete(toastId);
         if (saved) {
           toast.success('Saved to Downloads', { id: toastId });
           return;
@@ -1363,10 +1388,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         triggerBlobDownload(new Blob([loaded.bytes], { type: loaded.mime }), name);
         toast.success('Downloaded', { id: toastId });
       } catch (err) {
+        mediaActionToastIdsRef.current.delete(toastId);
         toast.error(err instanceof Error ? err.message : 'Download failed', { id: toastId });
       }
     },
-    [resolveMediaHref]
+    [resolveMediaHref, beginMediaActionToast]
   );
 
   // Prefetch recent image signed URLs in parallel (ref cache → fewer re-renders)
