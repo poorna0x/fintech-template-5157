@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Check, Copy, Download, Droplets, Phone, Share2 } from 'lucide-react';
+import { Check, Copy, Download, Droplets, Phone, Share2 } from 'lucide-react';
 import { buildTechSharePayMessage } from '@/components/job/ShareQrLinkPanel';
-import { UpiAppOpenGrid, UpiOpenAppCta } from '@/components/UpiAppOpenButtons';
 import { getDocumentBrandLabel, normalizeDocumentBrand, type DocumentBrand } from '@/lib/service-brands';
 import {
-  buildUpiAppDeepLinks,
   buildUpiPayDeepLink,
-  detectPayPlatform,
   fetchUpiPayShortLink,
   isValidUpiId,
   normalizePaymentPhone,
@@ -82,36 +79,12 @@ function PayBrandMark({ brand }: { brand: DocumentBrand }) {
   );
 }
 
-function UpiIntentFallbackNote({
-  hasPhone,
-  hasStaticQr,
-}: {
-  hasPhone: boolean;
-  hasStaticQr: boolean;
-}) {
-  return (
-    <div className="rounded-xl border border-amber-200/90 bg-amber-50 px-3 py-2.5 text-left">
-      <div className="flex gap-2">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />
-        <div className="min-w-0 text-xs leading-relaxed text-amber-950">
-          <p className="font-semibold">If the app says UPI ID / VPA not available</p>
-          <p className="mt-0.5">
-            {hasStaticQr
-              ? 'Skip Open app and scan the QR below instead — that uses the shop QR photo.'
-              : 'Scan the QR below, or copy the UPI ID'}
-            {hasPhone && !hasStaticQr ? ' / phone number' : ''}
-            {!hasStaticQr ? ' above and paste it in your UPI app.' : ''}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Public HTTPS landing for WhatsApp UPI pay links.
  * Supports short /p/:code and legacy /pay-upi?... query links.
- * Customers can open GPay / PhonePe / Paytm with amount filled, or scan the QR.
+ *
+ * UPI app deep-links are intentionally omitted — NPCI / store policy blocks
+ * third-party “Open in GPay/PhonePe” from web. Customers scan or save the QR.
  */
 const PayUpi = () => {
   const { code: codeParam } = useParams<{ code?: string }>();
@@ -120,7 +93,6 @@ const PayUpi = () => {
   const qrInstanceRef = useRef<QrCodeInstance | null>(null);
   const [copiedField, setCopiedField] = useState<'upi' | 'phone' | null>(null);
   const [copyError, setCopyError] = useState(false);
-  const [pickedDevice, setPickedDevice] = useState<'android' | 'ios' | null>(null);
   const [qrReady, setQrReady] = useState(false);
   const [actionBusy, setActionBusy] = useState<'download' | 'share' | null>(null);
   const [actionHint, setActionHint] = useState<string | null>(null);
@@ -192,36 +164,17 @@ const PayUpi = () => {
     [pa, pn, am, tn, ph, brand]
   );
 
-  // Lean intent for Open-app buttons (pa+amount) — matches copy-paste reliability.
   const upiLink = useMemo(
-    () => (isDynamicUpi && validUpi ? buildUpiPayDeepLink(payInput, { lean: true }) : null),
-    [isDynamicUpi, validUpi, payInput]
-  );
-  // Full payload for on-page QR (includes payee name / note).
-  const upiQrLink = useMemo(
     () => (isDynamicUpi && validUpi ? buildUpiPayDeepLink(payInput) : null),
     [isDynamicUpi, validUpi, payInput]
   );
-  const appLinks = useMemo(
-    () => (isDynamicUpi && validUpi ? buildUpiAppDeepLinks(payInput) : []),
-    [isDynamicUpi, validUpi, payInput]
-  );
-  const iosAppLinks = useMemo(() => appLinks.filter((app) => app.id !== 'bhim'), [appLinks]);
-  const detected = useMemo(() => detectPayPlatform(), []);
-  const platform = detected === 'other' ? pickedDevice ?? 'other' : detected;
-  const needsDevicePick = Boolean(upiLink) && detected === 'other' && !pickedDevice;
-  const showAndroidOpen = Boolean(upiLink) && platform === 'android';
-  const showIosApps = Boolean(upiLink) && platform === 'ios';
 
   useEffect(() => {
     document.title = `Pay via UPI | ${brandLabel}`;
   }, [brandLabel]);
 
-  // Do NOT auto-redirect to upi:// — WhatsApp’s in-app browser blocks it and
-  // looks like a broken Pay button. Customer must tap Open UPI / GPay / Paytm.
-
   useEffect(() => {
-    if (!upiQrLink || !qrRef.current) return;
+    if (!upiLink || !qrRef.current) return;
     let cancelled = false;
     setQrReady(false);
     qrInstanceRef.current = null;
@@ -237,7 +190,7 @@ const PayUpi = () => {
           width: 176,
           height: 176,
           type: 'canvas',
-          data: upiQrLink,
+          data: upiLink,
           margin: 6,
           qrOptions: { errorCorrectionLevel: 'M' },
           dotsOptions: { color: '#000000', type: 'square' },
@@ -259,7 +212,7 @@ const PayUpi = () => {
       qrInstanceRef.current = null;
       host.innerHTML = '';
     };
-  }, [upiQrLink]);
+  }, [upiLink]);
 
   const amountLabel =
     Number.isFinite(am) && am > 0
@@ -528,119 +481,43 @@ const PayUpi = () => {
           </p>
         ) : null}
 
-        {needsDevicePick ? (
-          <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-            <p className="text-center text-sm font-semibold text-slate-900">
-              Are you using Android or iPhone?
-            </p>
-            <p className="mt-0.5 text-center text-xs text-slate-500">
-              We’ll show the right payment buttons for your phone.
-            </p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setPickedDevice('android')}
-                className="rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-100"
-              >
-                Android
-              </button>
-              <button
-                type="button"
-                onClick={() => setPickedDevice('ios')}
-                className="rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-100"
-              >
-                iPhone
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {!needsDevicePick && upiLink ? (
-          <div className="mt-3 space-y-2.5">
-            {detected === 'other' ? (
-              <button
-                type="button"
-                onClick={() => setPickedDevice(null)}
-                className="w-full text-center text-xs font-medium text-sky-700 hover:underline"
-              >
-                Change device
-              </button>
-            ) : null}
-
-            <UpiIntentFallbackNote hasPhone={Boolean(ph)} hasStaticQr={Boolean(qrCodeUrl)} />
-
-            {/* Android: system chooser + named apps (tap required — WA WebView blocks auto-open) */}
-            {showAndroidOpen ? <UpiOpenAppCta href={upiLink} /> : null}
-
-            {(showIosApps || showAndroidOpen || platform === 'other') &&
-            (showIosApps ? iosAppLinks : appLinks).length ? (
-              <div>
-                <p className="text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Open with GPay / PhonePe / Paytm
-                </p>
-                <UpiAppOpenGrid apps={showIosApps ? iosAppLinks : appLinks} />
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
         <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 text-center shadow-sm shadow-slate-200/60 sm:mt-4 sm:p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            {upiLink ? 'Or scan QR to pay' : 'Scan to pay'}
-          </p>
-          <div className="mt-2.5 flex flex-col items-center gap-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scan to pay</p>
+          <div className="mt-2.5 flex justify-center">
             {isDynamicUpi ? (
               <div
                 ref={qrRef}
                 className="flex h-[176px] w-[176px] items-center justify-center bg-white"
                 aria-label="UPI payment QR code"
               />
-            ) : null}
-            {/* Shop QR photo — often works when typed VPA deep-links say “VPA not available”. */}
-            {qrCodeUrl ? (
-              <div className="w-full">
-                {isDynamicUpi ? (
-                  <p className="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Or scan shop QR
-                  </p>
-                ) : null}
-                <div className="flex justify-center">
-                  <img
-                    ref={staticImgRef}
-                    crossOrigin="anonymous"
-                    src={qrCodeUrl}
-                    alt="UPI payment QR"
-                    className="max-h-[240px] max-w-[240px] object-contain rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm"
-                    onLoad={() => {
-                      if (!isDynamicUpi) setQrReady(true);
-                    }}
-                    onError={() => {
-                      if (!isDynamicUpi) setQrReady(false);
-                    }}
-                  />
-                </div>
-              </div>
-            ) : null}
-            {!isDynamicUpi && !qrCodeUrl ? (
+            ) : qrCodeUrl ? (
+              <img
+                ref={staticImgRef}
+                crossOrigin="anonymous"
+                src={qrCodeUrl}
+                alt="UPI payment QR"
+                className="max-h-[240px] max-w-[240px] object-contain rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm"
+                onLoad={() => setQrReady(true)}
+                onError={() => setQrReady(false)}
+              />
+            ) : (
               <div className="flex h-[120px] w-full max-w-[260px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center">
                 <p className="text-xs font-medium text-slate-700">QR code image not attached</p>
                 <p className="mt-1 text-[11px] text-slate-500">
                   Please pay directly using the UPI ID or phone number above.
                 </p>
               </div>
-            ) : null}
+            )}
           </div>
           {!qrReady && (isDynamicUpi || qrCodeUrl) ? (
             <p className="mt-1.5 text-xs text-slate-400">Loading QR…</p>
           ) : null}
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
             {isDynamicUpi
-              ? amountLabel
-                ? `Amount ${amountLabel} is in the top QR. If Open app fails, scan the shop QR and enter the amount.`
-                : 'Open any UPI app and scan this QR — amount and payee fill in automatically.'
+              ? 'Open any UPI app and scan this QR — amount and payee fill in automatically.'
               : qrCodeUrl
                 ? amountLabel
-                  ? `Open any UPI app, scan this QR, and enter ${amountLabel} to complete the payment.`
+                  ? `Open any UPI app (GPay, PhonePe, Paytm, etc.), scan this QR, and enter ${amountLabel} to complete the payment.`
                   : 'Open any UPI app (GPay, PhonePe, Paytm, etc.) and scan this QR to complete the payment.'
                 : 'Copy the UPI ID or phone number above to complete the payment in your UPI app.'}
           </p>

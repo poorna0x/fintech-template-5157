@@ -144,16 +144,6 @@ const RECOMMENDED = [
     hint: 'Payment received receipt Eleven RO ({{1}} name, {{2}} amount)',
   },
   {
-    name: 'svc_payment_received_letter_hro_v3',
-    language: 'en',
-    hint: 'Payment received generic Hydrogen RO ({{1}} name, {{2}} amount)',
-  },
-  {
-    name: 'svc_payment_received_letter_ero_v3',
-    language: 'en',
-    hint: 'Payment received generic Eleven RO ({{1}} name, {{2}} amount)',
-  },
-  {
     name: 'svc_payment_refused_notice_hro_v1',
     language: 'en',
     hint: 'Customer refused payment — warranty void (Hydrogen RO)',

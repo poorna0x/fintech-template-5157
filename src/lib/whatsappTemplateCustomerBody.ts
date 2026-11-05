@@ -53,19 +53,6 @@ export function renderWhatsAppTemplateCustomerBody(
   const p = params.map((x) => String(x ?? '').trim());
   const brand = brandLabelFromTemplateName(name);
 
-  if (/^svc_payment_received_letter_(ero|hro)_v3$/i.test(name)) {
-    return fillSlots(
-      [
-        'Hi {{1}},',
-        '',
-        `Thank you. ${brand} has received your payment of INR {{2}}.`,
-        '',
-        'This payment is recorded on your service account. Reply on this chat if you need a receipt or any help.',
-      ].join('\n'),
-      p
-    );
-  }
-
   if (/^svc_payment_received_letter_(ero|hro)_v2$/i.test(name)) {
     return fillSlots(
       [
@@ -112,102 +99,6 @@ export function renderWhatsAppTemplateCustomerBody(
     if (invoice) lines.push(`Invoice / Job: ${invoice}`);
     lines.push('');
     lines.push('Tap Pay now below or reply on this chat if you have already paid.');
-    return lines.join('\n');
-  }
-
-  if (/^svc_tech_assigned$/i.test(name) && p.length >= 2) {
-    return fillSlots(
-      'Hi {{1}}, technician {{2}} has been assigned for your service visit. Reply on this chat for assistance.',
-      p
-    );
-  }
-
-  if (/^svc_hello$/i.test(name) && p.length >= 1) {
-    return fillSlots(
-      'Hi {{1}}, hello — this is regarding your water purifier service account. Please reply on this chat if you need any assistance.',
-      p
-    );
-  }
-
-  if (/^svc_completed$|^svc_job_done$/i.test(name) && p.length >= 2) {
-    return fillSlots(
-      'Hi {{1}}, your water purifier service has been completed. Amount collected: INR {{2}}. Reply on this chat if you need support.',
-      p
-    );
-  }
-
-  if (/job_done_letter/i.test(name) && p.length >= 1) {
-    const lines = [`Hi ${p[0] || 'there'},`, `This is an update from ${brand} regarding your completed service.`];
-    if (p[1]) lines.push('', p[1]);
-    if (p[2]) lines.push(p[2]);
-    lines.push('', 'Reply on this chat if you need any help.');
-    return lines.join('\n');
-  }
-
-  if (/booking_confirmed/i.test(name) && p.length >= 2) {
-    if (p.length >= 3) {
-      return fillSlots(
-        `Hi {{1}}, your ${brand} service booking {{2}} is confirmed for {{3}}. Reply on this chat if you need to change the date or time.`,
-        p
-      );
-    }
-    return fillSlots(
-      `Hi {{1}}, your ${brand} service booking is confirmed for {{2}}. Reply on this chat if you need to change it.`,
-      p
-    );
-  }
-
-  if (/missed_call/i.test(name) && p.length >= 1) {
-    return fillSlots(
-      'Hi {{1}}, we received your incoming call and could not answer. We will return your call shortly. Reply on this chat if you need to add any details.',
-      p
-    );
-  }
-
-  if (/^svc_document_pdf$|^svc_doc_pdf|^svc_doc_direct|^svc_document_ready$/i.test(name) && p.length >= 1) {
-    const label = p[1] || 'document';
-    return fillSlots(`Hi {{1}}, your ${label} is attached. Reply on this chat if you need any help.`, [
-      p[0],
-      label,
-    ]);
-  }
-
-  if (/^svc_amc_expiry/i.test(name) && p.length >= 2) {
-    return fillSlots(
-      'Hi {{1}}, your AMC is due to end on {{2}}. Reply on this chat to renew or schedule a visit.',
-      p
-    );
-  }
-
-  if (/^svc_parts_ready$/i.test(name) && p.length >= 1) {
-    return fillSlots(
-      'Hi {{1}}, the spare parts required for your service have arrived. Reply on this chat and we will schedule the technician visit.',
-      p
-    );
-  }
-
-  if (/^svc_visit_reminder$|^svc_appointment_reminder$/i.test(name) && p.length >= 2) {
-    return fillSlots(
-      'Hi {{1}}, reminder: your service visit is scheduled for {{2}}. Reply on this chat to confirm or reschedule.',
-      p
-    );
-  }
-
-  if (/ask_location/i.test(name) && p.length >= 1) {
-    const from = p[1] || brand;
-    return fillSlots(
-      'Hi {{1}}, this is {{2}}. Please share your Google Maps location pin on this chat so we can continue your service request.',
-      [p[0], from]
-    );
-  }
-
-  // Generic letter / notice with name (+ optional extra lines as params)
-  if (/_letter_|_notice_|_cta/i.test(name) && p.length >= 1) {
-    const lines = [`Hi ${p[0] || 'there'},`, `This is an update from ${brand}.`];
-    for (const extra of p.slice(1)) {
-      if (extra) lines.push(extra);
-    }
-    lines.push('', 'Reply on this chat if you need any help.');
     return lines.join('\n');
   }
 

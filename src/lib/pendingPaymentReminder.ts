@@ -248,9 +248,9 @@ export function buildPendingPaymentReceivedWhatsAppMessage(
   return [
     `Hi ${whatsappGreetingName(customerName, 'there')},`,
     '',
-    `Thank you. ${contact.brandLabel} has received your payment of ₹${formattedAmount}.`,
+    `Thank you. ${contact.brandLabel} has received your payment of ₹${formattedAmount} for your water purifier service.`,
     '',
-    'This payment is recorded on your service account. Reply on this chat if you need a receipt or any help.',
+    'This payment is recorded on your service account. Reply on this chat if you need a receipt or any help with this visit.',
   ].join('\n');
 }
 
