@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Check, Copy, Download, Droplets, Phone, Share2 } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Download, Droplets, Phone, Share2 } from 'lucide-react';
 import { buildTechSharePayMessage } from '@/components/job/ShareQrLinkPanel';
+import { UpiAppOpenGrid, UpiOpenAppCta } from '@/components/UpiAppOpenButtons';
 import { getDocumentBrandLabel, normalizeDocumentBrand, type DocumentBrand } from '@/lib/service-brands';
 import {
+  buildUpiAppDeepLinks,
   buildUpiPayDeepLink,
+  detectPayPlatform,
   fetchUpiPayShortLink,
   isValidUpiId,
   normalizePaymentPhone,
@@ -79,12 +82,27 @@ function PayBrandMark({ brand }: { brand: DocumentBrand }) {
   );
 }
 
+function UpiIntentFallbackNote({ hasPhone }: { hasPhone: boolean }) {
+  return (
+    <div className="rounded-xl border border-amber-200/90 bg-amber-50 px-3 py-2.5 text-left">
+      <div className="flex gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+        <div className="min-w-0 text-xs leading-relaxed text-amber-950">
+          <p className="font-semibold">If your phone shows a warning</p>
+          <p className="mt-0.5">
+            You can ignore it and continue. If payment still fails, scan the QR below or pay using
+            the UPI ID{hasPhone ? ' / phone number' : ''} above.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Public HTTPS landing for WhatsApp UPI pay links.
  * Supports short /p/:code and legacy /pay-upi?... query links.
- *
- * UPI app deep-links are intentionally omitted — NPCI / store policy blocks
- * third-party “Open in GPay/PhonePe” from web. Customers scan or save the QR.
+ * Customers can open GPay / PhonePe / Paytm with amount filled, or scan the QR.
  */
 const PayUpi = () => {
   const { code: codeParam } = useParams<{ code?: string }>();
@@ -93,6 +111,8 @@ const PayUpi = () => {
   const qrInstanceRef = useRef<QrCodeInstance | null>(null);
   const [copiedField, setCopiedField] = useState<'upi' | 'phone' | null>(null);
   const [copyError, setCopyError] = useState(false);
+  const [launchTried, setLaunchTried] = useState(false);
+  const [pickedDevice, setPickedDevice] = useState<'android' | 'ios' | null>(null);
   const [qrReady, setQrReady] = useState(false);
   const [actionBusy, setActionBusy] = useState<'download' | 'share' | null>(null);
   const [actionHint, setActionHint] = useState<string | null>(null);
@@ -168,10 +188,30 @@ const PayUpi = () => {
     () => (isDynamicUpi && validUpi ? buildUpiPayDeepLink(payInput) : null),
     [isDynamicUpi, validUpi, payInput]
   );
+  const appLinks = useMemo(
+    () => (isDynamicUpi && validUpi ? buildUpiAppDeepLinks(payInput) : []),
+    [isDynamicUpi, validUpi, payInput]
+  );
+  const iosAppLinks = useMemo(() => appLinks.filter((app) => app.id !== 'bhim'), [appLinks]);
+  const detected = useMemo(() => detectPayPlatform(), []);
+  const platform = detected === 'other' ? pickedDevice ?? 'other' : detected;
+  const needsDevicePick = Boolean(upiLink) && detected === 'other' && !pickedDevice;
+  const showAndroidOpen = Boolean(upiLink) && platform === 'android';
+  const showIosApps = Boolean(upiLink) && platform === 'ios';
 
   useEffect(() => {
     document.title = `Pay via UPI | ${brandLabel}`;
   }, [brandLabel]);
+
+  // Android: soft-open system UPI chooser once (WhatsApp / Chrome in-app).
+  useEffect(() => {
+    if (!upiLink || platform !== 'android' || launchTried) return;
+    setLaunchTried(true);
+    const t = window.setTimeout(() => {
+      window.location.href = upiLink;
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [upiLink, platform, launchTried]);
 
   useEffect(() => {
     if (!upiLink || !qrRef.current) return;
@@ -481,8 +521,64 @@ const PayUpi = () => {
           </p>
         ) : null}
 
+        {needsDevicePick ? (
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <p className="text-center text-sm font-semibold text-slate-900">
+              Are you using Android or iPhone?
+            </p>
+            <p className="mt-0.5 text-center text-xs text-slate-500">
+              We’ll show the right payment buttons for your phone.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPickedDevice('android')}
+                className="rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-100"
+              >
+                Android
+              </button>
+              <button
+                type="button"
+                onClick={() => setPickedDevice('ios')}
+                className="rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-100"
+              >
+                iPhone
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {!needsDevicePick && (showAndroidOpen || showIosApps) ? (
+          <div className="mt-3 space-y-2.5">
+            {detected === 'other' ? (
+              <button
+                type="button"
+                onClick={() => setPickedDevice(null)}
+                className="w-full text-center text-xs font-medium text-sky-700 hover:underline"
+              >
+                Change device
+              </button>
+            ) : null}
+
+            <UpiIntentFallbackNote hasPhone={Boolean(ph)} />
+
+            {showAndroidOpen && upiLink ? <UpiOpenAppCta href={upiLink} /> : null}
+
+            {showIosApps && iosAppLinks.length ? (
+              <div>
+                <p className="text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Open with
+                </p>
+                <UpiAppOpenGrid apps={iosAppLinks} />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 text-center shadow-sm shadow-slate-200/60 sm:mt-4 sm:p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scan to pay</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {upiLink ? 'Or scan QR to pay' : 'Scan to pay'}
+          </p>
           <div className="mt-2.5 flex justify-center">
             {isDynamicUpi ? (
               <div
