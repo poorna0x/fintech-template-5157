@@ -1,5 +1,8 @@
 /** UPI app open buttons using real brand logos from /public/upi-apps. */
 
+import type { MouseEvent } from 'react';
+import { openUpiDeepLink } from '@/lib/upiPaymentAccounts';
+
 type UpiAppId = 'gpay' | 'phonepe' | 'paytm' | 'bhim';
 
 type UpiAppButtonProps = {
@@ -40,6 +43,12 @@ function isKnownApp(id: string): id is UpiAppId {
   return id === 'gpay' || id === 'phonepe' || id === 'paytm' || id === 'bhim';
 }
 
+function launchUpi(e: MouseEvent, href: string) {
+  e.preventDefault();
+  e.stopPropagation();
+  openUpiDeepLink(href);
+}
+
 export function UpiAppMiniLogoRow({ className = '' }: { className?: string }) {
   return (
     <span className={`inline-flex items-center -space-x-1.5 ${className}`} aria-hidden>
@@ -66,6 +75,7 @@ export function UpiOpenAppCta({ href }: { href: string }) {
   return (
     <a
       href={href}
+      onClick={(e) => launchUpi(e, href)}
       className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-base font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.99]"
     >
       <UpiAppMiniLogoRow />
@@ -81,6 +91,7 @@ export function UpiAppOpenButton({ id, name, href }: UpiAppButtonProps) {
   return (
     <a
       href={href}
+      onClick={(e) => launchUpi(e, href)}
       aria-label={`Open ${name}`}
       className="flex h-[52px] items-center justify-center rounded-xl border px-4 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
       style={{

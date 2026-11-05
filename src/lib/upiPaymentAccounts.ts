@@ -397,22 +397,33 @@ export type UpiPayLinkInput = {
   dynamicUpiEnabled?: boolean;
 };
 
-/** Query string for upi://pay (QR payload; pa unencoded). */
-export function buildUpiPayQuery(input: UpiPayLinkInput): string | null {
+/**
+ * Query string for upi://pay.
+ * `pa` must stay unencoded (`user@bank`) — encoding `@` as `%40` makes apps say
+ * “VPA not available” even when the same ID works via copy-paste.
+ */
+export function buildUpiPayQuery(
+  input: UpiPayLinkInput,
+  opts?: { lean?: boolean }
+): string | null {
   const pa = normalizeUpiId(input.upiId);
   if (!isValidUpiId(pa)) return null;
   const parts = [`pa=${pa}`, 'cu=INR'];
-  const pn = String(input.payeeName || '').trim().slice(0, 100);
-  if (pn) parts.push(`pn=${encodeURIComponent(pn)}`);
   const am = Number(input.amount);
   if (Number.isFinite(am) && am > 0) {
     parts.push(`am=${am.toFixed(2)}`);
   }
-  const tn = String(input.note || '')
-    .trim()
-    .replace(/\s+/g, ' ')
-    .slice(0, 80);
-  if (tn) parts.push(`tn=${encodeURIComponent(tn)}`);
+  // Lean intents (Open GPay/Paytm): VPA + amount only — closest to copy-paste pay.
+  // Extra pn/tn often makes Paytm/PhonePe reject a valid VPA.
+  if (!opts?.lean) {
+    const pn = String(input.payeeName || '').trim().slice(0, 100);
+    if (pn) parts.push(`pn=${encodeURIComponent(pn)}`);
+    const tn = String(input.note || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .slice(0, 80);
+    if (tn) parts.push(`tn=${encodeURIComponent(tn)}`);
+  }
   return parts.join('&');
 }
 
@@ -420,9 +431,27 @@ export function buildUpiPayQuery(input: UpiPayLinkInput): string | null {
  * Build a standard UPI intent deep link (Android system chooser).
  * `pa` is left unencoded (NPCI / app convention); other fields are URI-encoded.
  */
-export function buildUpiPayDeepLink(input: UpiPayLinkInput): string | null {
-  const q = buildUpiPayQuery(input);
+export function buildUpiPayDeepLink(
+  input: UpiPayLinkInput,
+  opts?: { lean?: boolean }
+): string | null {
+  const q = buildUpiPayQuery(input, opts);
   return q ? `upi://pay?${q}` : null;
+}
+
+/**
+ * Open a UPI deep link without letting the browser rewrite `@` → `%40`
+ * (WhatsApp in-app browser does that on plain &lt;a href&gt;).
+ */
+export function openUpiDeepLink(href: string): void {
+  const url = String(href || '').trim();
+  if (!url) return;
+  try {
+    // Prefer assign so history stays usable if the app handoff fails.
+    window.location.assign(url);
+  } catch {
+    window.location.href = url;
+  }
 }
 
 export type PayPlatform = 'android' | 'ios' | 'other';
@@ -454,13 +483,12 @@ export function buildUpiAppDeepLinks(input: UpiPayLinkInput): {
   href: string;
   color: string;
 }[] {
-  const q = buildUpiPayQuery(input);
+  // Lean query (pa+am+cu) — copy-paste works with VPA alone; apps choke on pn/tn mismatches.
+  const q = buildUpiPayQuery(input, { lean: true });
   if (!q) return [];
   return [
-    // tez:// is the reliable GPay intent; gpay:// is a secondary alias on some devices.
     { id: 'gpay', name: 'GPay', href: `tez://upi/pay?${q}`, color: '#4285F4' },
     { id: 'phonepe', name: 'PhonePe', href: `phonepe://upi/pay?${q}`, color: '#5F259F' },
-    // paytmmp://pay (not …/upi/pay) is what Paytm opens for merchant VPAs.
     { id: 'paytm', name: 'Paytm', href: `paytmmp://pay?${q}`, color: '#00BAF2' },
     { id: 'bhim', name: 'BHIM', href: `bhim://upi/pay?${q}`, color: '#007272' },
   ];
