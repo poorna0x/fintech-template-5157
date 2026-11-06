@@ -53,6 +53,22 @@ export function renderWhatsAppTemplateCustomerBody(
   const p = params.map((x) => String(x ?? '').trim());
   const brand = brandLabelFromTemplateName(name);
 
+  if (/^svc_payment_received_letter_(ero|hro)_v4$/i.test(name)) {
+    return fillSlots(
+      [
+        'Hi {{1}}, 👋',
+        `Thank you. ${brand} has received your payment of INR {{2}} for your water purifier service. ✅`,
+        '',
+        '🧾 This payment is recorded on your service account.',
+        '',
+        `Thank you for choosing ${brand}.`,
+        '',
+        '💬 Reply on this chat if you need any help.',
+      ].join('\n'),
+      p
+    );
+  }
+
   if (/^svc_payment_received_letter_(ero|hro)_v2$/i.test(name)) {
     return fillSlots(
       [

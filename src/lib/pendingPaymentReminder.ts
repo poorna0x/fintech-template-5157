@@ -1,7 +1,11 @@
 import { addMonths, format } from 'date-fns';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
-import { brandContactLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import {
+  brandContactLines,
+  brandLetterClosingLines,
+  resolveBrandLetterTemplateName,
+} from '@/lib/whatsappBrandContact';
 import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import { extractUpiPayShortCode } from '@/lib/upiPaymentAccounts';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
@@ -246,11 +250,17 @@ export function buildPendingPaymentReceivedWhatsAppMessage(
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
   return [
-    `Hi ${whatsappGreetingName(customerName, 'there')},`,
+    `Hi ${whatsappGreetingName(customerName, 'there')}, 👋`,
+    `Thank you. ${contact.brandLabel} has received your payment of ₹${formattedAmount} for your water purifier service. ✅`,
     '',
-    `Thank you. ${contact.brandLabel} has received your payment of ₹${formattedAmount} for your water purifier service.`,
+    '🧾 This payment is recorded on your service account.',
     '',
-    'This payment is recorded on your service account. Reply on this chat if you need a receipt or any help with this visit.',
+    ...brandLetterClosingLines(resolved, {
+      skipChatHint: true,
+      includeTextUs: false,
+    }),
+    '',
+    '💬 Reply on this chat if you need any help.',
   ].join('\n');
 }
 

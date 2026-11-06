@@ -189,9 +189,9 @@ export const WA_COLD = {
       cleanAmount(amount),
     ],
   },
-  /** Brand letter cold (Call us + Website) — Meta: svc_payment_received_letter_{hro|ero}_v2 */
+  /** Brand letter cold (Call us + Website) — Meta: svc_payment_received_letter_{hro|ero}_v4 */
   payment_received_letter: {
-    name: 'svc_payment_received_letter_hro_v2',
+    name: 'svc_payment_received_letter_hro_v4',
     language: 'en',
     bodyParams: (customerName: string, amount: number | string) => [
       cleanName(customerName),

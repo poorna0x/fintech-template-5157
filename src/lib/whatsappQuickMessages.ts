@@ -799,7 +799,7 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_payment_received',
     label: 'Payment thanks',
     group: 'payment',
-    templateName: 'svc_payment_received_letter_ero_v2',
+    templateName: 'svc_payment_received_letter_ero_v4',
     language: 'en',
     resolveTemplateName: (ctx) =>
       resolveColdPaymentReceived(cleanName(ctx), cleanAmount(ctx) || '0', resolvePendingPaymentMessageBrand(ctx.brand))
