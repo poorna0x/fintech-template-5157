@@ -409,7 +409,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           />
           <ToggleRow
             label="Auto-send completion message"
-            description="After a job is completed, send WhatsApp in the completed job’s brand. If the job has no brand, it sends as Eleven RO."
+            description="After a job is completed, send WhatsApp in the completed job’s brand. If the job has no brand, it sends as Eleven RO. Never auto-sends when the bill photo is missing (manual Send Message still can)."
             checked={settings.auto_send_job_completion_whatsapp}
             disabled={!settings.enabled || !settings.allow_job_completion_whatsapp}
             onCheckedChange={(v) => patch('auto_send_job_completion_whatsapp', v)}
@@ -423,10 +423,10 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack }: Props) {
           />
           <ToggleRow
             label="Skip when bill photo is missing"
-            description="Do not send the completion WhatsApp until the job has a bill photo."
-            checked={settings.completion_skip_missing_bill !== false}
-            disabled={!settings.enabled || !settings.allow_job_completion_whatsapp}
-            onCheckedChange={(v) => patch('completion_skip_missing_bill', v)}
+            description="Always on for auto-send: no bill photo in the job means no automatic completion WhatsApp. Payment or extra photos do not count as a bill."
+            checked={true}
+            disabled
+            onCheckedChange={() => {}}
           />
           <ToggleRow
             label="Include Review us"

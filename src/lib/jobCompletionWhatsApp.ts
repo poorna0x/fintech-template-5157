@@ -2,6 +2,7 @@
  * Auto / manual job-completion WhatsApp to the customer.
  * - Honors allow_job_completion_whatsapp + auto_send_job_completion_whatsapp
  * - Skips when technician set dont_send_message
+ * - Auto-send always skips when bill photo is missing (explicit requirements.bill_photos only)
  * - Skips when this job has technician AMC info (amc_info) — not DB active AMC
  * - Uses brand-correct copy from buildJobCompletionWhatsAppMessage
  * - Free-form Cloud API in 24h window; cold `svc_completed` when window closed
@@ -11,8 +12,8 @@ import { db } from '@/lib/supabase';
 import { supabase } from '@/lib/supabaseClient';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { parseRequirements } from '@/lib/followUpToOngoing';
+import { extractPhotoUrls } from '@/lib/adminUtils';
 import { jobHasSkipReview, jobReviewColdUrlButtonParam, jobReviewTokenFromUrl } from '@/lib/jobReviews';
-import { getCompletedJobMissingMedia } from '@/lib/jobReportPhotos';
 import {
   buildJobCompletionColdBodyParams,
   buildJobCompletionLetterBodyParams,
@@ -27,6 +28,7 @@ import {
 } from '@/lib/job-completion-message';
 import {
   openWhatsAppMeDeepLink,
+  sendAdminWhatsAppCtaUrl,
   sendAdminWhatsAppMedia,
   sendAdminWhatsAppTemplate,
   sendAdminWhatsAppText,
@@ -87,15 +89,16 @@ export async function sendJobCompletionWhatsApp(opts: {
     filename?: string;
     mimeType?: string;
   } | null;
-  /** Public /review/{token} — 24h free-form + cold Review us button. */
+  /** Public /review/{token} — 24h Review us CTA button + cold Review us button. */
   reviewUrl?: string | null;
   reviewToken?: string | null;
   fallbackWaMe?: boolean;
   forceWaMe?: boolean;
 }): Promise<JobCompletionWhatsAppSendResult> {
   const pending = Math.max(0, Number(opts.amountPending) || 0);
+  const reviewUrl = String(opts.reviewUrl || '').trim();
   const reviewToken =
-    String(opts.reviewToken || '').trim() || jobReviewTokenFromUrl(opts.reviewUrl) || '';
+    String(opts.reviewToken || '').trim() || jobReviewTokenFromUrl(reviewUrl) || '';
   const reviewButton = jobReviewColdUrlButtonParam(reviewToken, pending > 0 ? 2 : 1);
   const payButtonParams = buildPendingPaymentLetterButtonUrlParams(opts.payHttpsLink, {
     reviewToken: pending > 0 ? reviewToken : null,
@@ -109,6 +112,15 @@ export async function sendJobCompletionWhatsApp(opts: {
         mimeType: opts.headerImage.mimeType || 'image/png',
       }
     : null;
+  // Body may say "Tap Review us below…" without the URL (button path). Plain / wa.me /
+  // image-caption fallbacks must still carry the https link (and drop the tap-line tease).
+  const plainBodyForReviewLink = opts.text
+    .replace(/\n*Tap Review us below if you have a minute\.?\s*$/i, '')
+    .trimEnd();
+  const waMeText =
+    reviewUrl && !opts.text.includes(reviewUrl)
+      ? `${plainBodyForReviewLink}\n\nReview us:\n${reviewUrl}`
+      : opts.text;
 
   const letterName = useBalanceDueCold
     ? resolvePendingPaymentLetterTemplateName(opts.documentBrand, {
@@ -145,7 +157,7 @@ export async function sendJobCompletionWhatsApp(opts: {
   });
 
   if (opts.forceWaMe) {
-    openWhatsAppMeDeepLink(opts.to, opts.text);
+    openWhatsAppMeDeepLink(opts.to, waMeText);
     return { ok: true, via: 'wa_me' };
   }
   const windowClosed = isCustomerServiceWindowClosed(
@@ -183,7 +195,7 @@ export async function sendJobCompletionWhatsApp(opts: {
         fileBase64: headerImage.imageBase64,
         filename: headerImage.filename,
         mimeType: headerImage.mimeType,
-        caption: opts.text,
+        caption: waMeText.slice(0, 1024),
         customerId: opts.customerId,
         source: 'job_completion',
       });
@@ -195,7 +207,7 @@ export async function sendJobCompletionWhatsApp(opts: {
       }
       if (!mediaResult.needsWindowOrTemplate) {
         if (opts.fallbackWaMe !== false) {
-          openWhatsAppMeDeepLink(opts.to, opts.text);
+          openWhatsAppMeDeepLink(opts.to, waMeText);
           return { ok: true, via: 'wa_me', error: mediaResult.error };
         }
         return mediaResult;
@@ -203,14 +215,14 @@ export async function sendJobCompletionWhatsApp(opts: {
     }
   }
 
-  // Pending + review: still attach QR in-window (caption has the review link).
+  // Pending + review + QR: image captions cannot carry a CTA button — put the review URL in the caption.
   if (!windowClosed && useBalanceDueCold && headerImage && withReview) {
     const mediaResult = await sendAdminWhatsAppMedia({
       to: opts.to,
       fileBase64: headerImage.imageBase64,
       filename: headerImage.filename,
       mimeType: headerImage.mimeType,
-      caption: opts.text,
+      caption: waMeText.slice(0, 1024),
       customerId: opts.customerId,
       source: 'job_completion',
     });
@@ -222,10 +234,31 @@ export async function sendJobCompletionWhatsApp(opts: {
     }
     if (!mediaResult.needsWindowOrTemplate) {
       if (opts.fallbackWaMe !== false) {
-        openWhatsAppMeDeepLink(opts.to, opts.text);
+        openWhatsAppMeDeepLink(opts.to, waMeText);
         return { ok: true, via: 'wa_me', error: mediaResult.error };
       }
       return mediaResult;
+    }
+  }
+
+  // In-window: Review us as CTA button only (same as cold letter v5) — no URL in body.
+  // Also used for pending-balance text (Pay link stays in body; Review us is the button).
+  // Skip when a QR image was already preferred above (caption holds the review URL).
+  if (!windowClosed && reviewUrl && /^https:\/\//i.test(reviewUrl)) {
+    const ctaResult = await sendAdminWhatsAppCtaUrl({
+      to: opts.to,
+      text: opts.text.slice(0, 1024),
+      url: reviewUrl,
+      displayText: 'Review us',
+      customerId: opts.customerId,
+      source: 'job_completion',
+      fallbackWaMe: false,
+    });
+    if (ctaResult.ok) {
+      return ctaResult;
+    }
+    if (ctaResult.featureDisabled) {
+      return ctaResult;
     }
   }
 
@@ -237,7 +270,7 @@ export async function sendJobCompletionWhatsApp(opts: {
       }
     : await sendAdminWhatsAppText({
         to: opts.to,
-        text: opts.text,
+        text: waMeText,
         customerId: opts.customerId,
         source: 'job_completion',
         fallbackWaMe: false,
@@ -253,7 +286,7 @@ export async function sendJobCompletionWhatsApp(opts: {
 
   if (!textResult.needsWindowOrTemplate) {
     if (opts.fallbackWaMe !== false) {
-      openWhatsAppMeDeepLink(opts.to, opts.text);
+      openWhatsAppMeDeepLink(opts.to, waMeText);
       return { ok: true, via: 'wa_me', error: textResult.error };
     }
     return textResult;
@@ -324,7 +357,7 @@ export async function sendJobCompletionWhatsApp(opts: {
   }
 
   if (opts.fallbackWaMe !== false) {
-    openWhatsAppMeDeepLink(opts.to, opts.text);
+    openWhatsAppMeDeepLink(opts.to, waMeText);
     return {
       ok: true,
       via: 'wa_me',
@@ -346,6 +379,15 @@ function requirementsList(job: Record<string, unknown>): Record<string, unknown>
 
 export function jobHasDontSendCompletionMessage(job: Record<string, unknown>): boolean {
   return requirementsList(job).some((r) => r?.dont_send_message === true);
+}
+
+/**
+ * True only when requirements has real bill photo URLs.
+ * Do not use after_photos heuristics here — payment / extra / sticker photos must not count as a bill.
+ */
+export function jobHasExplicitBillPhoto(job: Record<string, unknown>): boolean {
+  const billPhotos = requirementsList(job).find((r) => r?.bill_photos)?.bill_photos;
+  return Array.isArray(billPhotos) && extractPhotoUrls(billPhotos).length > 0;
 }
 
 export function jobHasCompletionMessageSent(job: Record<string, unknown>): boolean {
@@ -455,14 +497,13 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       return 'skipped';
     }
 
-    if (!opts.force && settings.completion_skip_missing_bill !== false) {
-      const { missingBill } = getCompletedJobMissingMedia(job);
-      if (missingBill) {
-        if (notify) {
-          toast.message('Completion WhatsApp skipped — bill photo is missing');
-        }
-        return 'skipped';
+    // Auto-send never goes out without an explicit bill photo, even when auto-send is ON.
+    // Manual Send Message can still force-send (force: true).
+    if (!opts.force && !jobHasExplicitBillPhoto(job)) {
+      if (notify) {
+        toast.message('Completion WhatsApp skipped — bill photo is missing');
       }
+      return 'skipped';
     }
 
     if (jobHasCompletionMessageSent(job)) {
@@ -638,7 +679,8 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
     if (result.needsWindowOrTemplate) {
       if (notify && toastId != null) {
         toast.message(
-          'Completion WhatsApp not sent — 24h window closed and svc_completed not approved yet. Use Send Message manually if needed.',
+          result.error ||
+            'Completion WhatsApp not sent — 24h window closed and cold template failed. Use Send Message manually if needed.',
           { id: toastId, duration: 6000 }
         );
       }

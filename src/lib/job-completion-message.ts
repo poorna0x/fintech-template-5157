@@ -132,6 +132,10 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
   const due = pendingDueLabel(input.pendingDueDate);
   const contact = brandContactLines(input.documentBrand);
   const jobRef = String(input.jobRef || '').trim();
+  const serviceTypeUpper = String(input.serviceType || '').toUpperCase();
+  const completedProduct = serviceTypeUpper.includes('SOFTENER')
+    ? 'water softener service'
+    : 'water purifier service';
 
   const amountLines: string[] = [];
   if (pending > 0) {
@@ -156,9 +160,12 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
     amountLines.push(waLabeledLink('💳', 'Pay now', payLink));
   }
 
-  return [
+  const reviewUrl = String(input.reviewUrl || '').trim();
+  // 24h Cloud API uses a Review us CTA button — keep the URL out of the body.
+  // wa.me / plain fallback can still append the link separately.
+  const lines = [
     `Hi ${customerName}, 👋`,
-    `This is an update from ${contact.brandLabel} regarding your completed water purifier service. ✅`,
+    `This is an update from ${contact.brandLabel} regarding your completed ${completedProduct}. ✅`,
     '',
     ...amountLines.map((line) => {
       if (/^Amount collected today/i.test(line)) return `💰 ${line}`;
@@ -171,13 +178,17 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
     ...brandLetterClosingLines(input.documentBrand, {
       skipChatHint: true,
       includeTextUs: false,
-      reviewUrl: input.reviewUrl,
+      reviewUrl: null,
     }),
     '',
     pending > 0 && (payLink || Boolean(input.upi?.upiId))
       ? '💬 Reply on this chat if you need any help or if you have already paid.'
       : '💬 Reply on this chat if you need any help.',
-  ].join('\n');
+  ];
+  if (reviewUrl) {
+    lines.push('', 'Tap Review us below if you have a minute.');
+  }
+  return lines.join('\n');
 }
 
 /** Plain payment line for Meta cold template {{3}} (no emoji — UTILITY-safe). Always has amount. */
@@ -239,10 +250,13 @@ export function formatJobCompletionColdTemplatePreview(
     '',
     ...brandLetterClosingLines(input.documentBrand, {
       includeTextUs: false,
-      reviewUrl: input.reviewUrl,
+      reviewUrl: null,
     }),
     '',
     '💬 Reply on this chat if you need any help.',
+    ...(String(input.reviewUrl || '').trim()
+      ? ['', 'Tap Review us below if you have a minute.']
+      : []),
   ].join('\n');
 }
 

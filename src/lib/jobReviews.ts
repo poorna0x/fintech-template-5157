@@ -3,7 +3,11 @@ import { isSupabaseConfigured, supabaseAnonKey, supabaseUrl } from '@/lib/supaba
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
-import { sendAdminWhatsAppTemplate, sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
+import {
+  sendAdminWhatsAppCtaUrl,
+  sendAdminWhatsAppTemplate,
+  sendAdminWhatsAppText,
+} from '@/lib/sendAdminWhatsAppApi';
 import { waLabeledLink } from '@/lib/whatsappMessageFormat';
 import { whatsappGreetingName } from '@/lib/whatsappGreetingName';
 import {
@@ -157,15 +161,21 @@ export function buildAskReviewWhatsAppMessage(opts: {
   customerName?: string | null;
   brand: DocumentBrand;
   reviewUrl: string;
+  /** When true, omit the URL (24h Cloud API uses a Review us CTA button). */
+  reviewAsButton?: boolean;
 }): string {
   const name = whatsappGreetingName(opts.customerName, 'there');
-  return [
+  const lines = [
     `Hi ${name}, 👋`,
     '',
     'Please take a minute to review us.',
-    '',
-    waLabeledLink('⭐', 'Review us', opts.reviewUrl),
-  ].join('\n');
+  ];
+  if (opts.reviewAsButton) {
+    lines.push('', 'Tap Review us below if you have a minute.');
+  } else {
+    lines.push('', waLabeledLink('⭐', 'Review us', opts.reviewUrl));
+  }
+  return lines.join('\n');
 }
 
 export type LastCompletedJobForReview = {
@@ -233,15 +243,64 @@ export async function sendAskReviewForJob(opts: {
     brand = invite.brand || brand;
   }
 
-  const text = buildAskReviewWhatsAppMessage({
+  const buttonText = buildAskReviewWhatsAppMessage({
     customerName: opts.customerName,
     brand,
     reviewUrl: url,
+    reviewAsButton: true,
+  });
+  const linkText = buildAskReviewWhatsAppMessage({
+    customerName: opts.customerName,
+    brand,
+    reviewUrl: url,
+    reviewAsButton: false,
   });
   const source = opts.source || 'job_completion';
   const windowClosed =
     opts.forceWaMe !== true &&
     isCustomerServiceWindowClosed(await fetchLastInboundAt(to, supabase));
+
+  if (opts.forceWaMe) {
+    const textResult = await sendAdminWhatsAppText({
+      to,
+      text: linkText,
+      customerId,
+      source,
+      forceWaMe: true,
+      fallbackWaMe: false,
+    });
+    return textResult.ok
+      ? {
+          ok: true,
+          via: 'wa_me',
+          usedTemplate: false,
+          jobNumber: String(opts.jobNumber || ''),
+        }
+      : { ok: false, error: textResult.error || 'Could not send review request' };
+  }
+
+  if (!windowClosed && /^https:\/\//i.test(url)) {
+    const cta = await sendAdminWhatsAppCtaUrl({
+      to,
+      text: buttonText.slice(0, 1024),
+      url,
+      displayText: 'Review us',
+      customerId,
+      source,
+      fallbackWaMe: false,
+    });
+    if (cta.ok) {
+      return {
+        ok: true,
+        via: 'api',
+        usedTemplate: false,
+        jobNumber: String(opts.jobNumber || ''),
+      };
+    }
+    if (cta.featureDisabled) {
+      return { ok: false, error: cta.error || 'Could not send review request' };
+    }
+  }
 
   const textResult: Awaited<ReturnType<typeof sendAdminWhatsAppText>> = windowClosed
     ? {
@@ -251,21 +310,20 @@ export async function sendAskReviewForJob(opts: {
       }
     : await sendAdminWhatsAppText({
         to,
-        text,
+        text: linkText,
         customerId,
         source,
-        forceWaMe: opts.forceWaMe === true,
         fallbackWaMe: false,
       });
   if (textResult.ok) {
     return {
       ok: true,
-      via: opts.forceWaMe ? 'wa_me' : 'api',
+      via: 'api',
       usedTemplate: false,
       jobNumber: String(opts.jobNumber || ''),
     };
   }
-  if (opts.forceWaMe || textResult.featureDisabled) {
+  if (textResult.featureDisabled) {
     return { ok: false, error: textResult.error || 'Could not send review request' };
   }
   if (!textResult.needsWindowOrTemplate) {

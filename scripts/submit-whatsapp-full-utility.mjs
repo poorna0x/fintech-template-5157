@@ -10,11 +10,13 @@
  *   node scripts/submit-whatsapp-full-utility.mjs --status     # list all on WABA
  *   node scripts/submit-whatsapp-full-utility.mjs --preview-md  # write docs/whatsapp-cold-template-previews.md
  *   node scripts/submit-whatsapp-full-utility.mjs --submit       # submit missing only
-   *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-tech-customer-photo
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-job-done-letter-v5
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-tech-customer-photo
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-job-assign-tech
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-ask-location-v3
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-overdue
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-received
+ *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-payment-received-v4
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-missed-call-v5
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-missed-call-v6
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --only-missed-call-v7
@@ -1397,6 +1399,38 @@ function buildPaymentReceivedLetterV2Templates() {
 
 const PAYMENT_RECEIVED_LETTER_V2_TEMPLATES = buildPaymentReceivedLetterV2Templates();
 
+/**
+ * Payment received letter v4 — letter footer (Thank you / Call / Email / Website) + emoji.
+ * Matches 24h free-form. Call us + Website buttons. Falls back → v2 → v1.
+ * (v3 is a shorter PENDING variant — do not reuse.)
+ */
+function buildPaymentReceivedLetterV4Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      name: `svc_payment_received_letter_${suffix}_v4`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `Thank you. ${b.label} has received your payment of INR {{2}} for your water purifier service. ✅`,
+        ``,
+        `🧾 This payment is recorded on your service account.`,
+        ``,
+        footer,
+        ``,
+        `💬 Reply on this chat if you need any help.`,
+      ].join('\n'),
+      examples: ['Rahul', '1500'],
+    });
+  }
+  return out;
+}
+
+const PAYMENT_RECEIVED_LETTER_V4_TEMPLATES = buildPaymentReceivedLetterV4Templates();
+
 /** Balance-due letter v4 — Call us + Pay now (UPI short link /p/{{1}}). */
 function buildBalanceDueLetterV4Templates() {
   const out = [];
@@ -2753,6 +2787,9 @@ function collectAllTemplatePreviewEntries() {
   for (const t of PAYMENT_RECEIVED_LETTER_V2_TEMPLATES) {
     push('Payment received letter v2 (receipt)', t, letterPayload);
   }
+  for (const t of PAYMENT_RECEIVED_LETTER_V4_TEMPLATES) {
+    push('Payment received letter v4 (letter footer + emoji)', t, letterPayload);
+  }
   for (const t of PAYMENT_REFUSED_NOTICE_V1_TEMPLATES) {
     push('Payment refused notice v1 (warranty void)', t, letterPayload);
   }
@@ -3228,6 +3265,14 @@ async function main() {
     }
     queue.push({ label: t.name, payload: letterPayload(t) });
   }
+  for (const t of PAYMENT_RECEIVED_LETTER_V4_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
   for (const t of PAYMENT_REFUSED_NOTICE_V1_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
@@ -3647,6 +3692,14 @@ async function main() {
     }
   }
 
+  const onlyJobDoneLetterV5 = process.argv.includes('--only-job-done-letter-v5');
+  if (onlyJobDoneLetterV5) {
+    const keep = new Set(JOB_DONE_LETTER_V5_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
   const onlyJobReviewCta = process.argv.includes('--only-job-review-cta');
   if (onlyJobReviewCta) {
     const keep = new Set([
@@ -3748,6 +3801,7 @@ async function main() {
       'svc_payment_received',
       ...PAYMENT_RECEIVED_LETTER_V1_TEMPLATES.map((t) => t.name),
       ...PAYMENT_RECEIVED_LETTER_V2_TEMPLATES.map((t) => t.name),
+      ...PAYMENT_RECEIVED_LETTER_V4_TEMPLATES.map((t) => t.name),
     ]);
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
@@ -3757,6 +3811,14 @@ async function main() {
   const onlyPaymentReceivedV2 = process.argv.includes('--only-payment-received-v2');
   if (onlyPaymentReceivedV2) {
     const keep = new Set(PAYMENT_RECEIVED_LETTER_V2_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyPaymentReceivedV4 = process.argv.includes('--only-payment-received-v4');
+  if (onlyPaymentReceivedV4) {
+    const keep = new Set(PAYMENT_RECEIVED_LETTER_V4_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

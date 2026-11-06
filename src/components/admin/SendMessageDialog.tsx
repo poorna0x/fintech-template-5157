@@ -534,9 +534,9 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                       })}
                     </MessagePreviewScroll>
                     <p className="mt-1.5 text-[11px] text-muted-foreground">
-                      Cold send uses a Review us button (opens the same link) once Meta approves the
-                      new template. Until then, fallback is the older job-done letter without the
-                      button.
+                      In the 24h window, Cloud API sends a Review us button (no link in the text).
+                      Cold send uses the same button on letter v5 once Meta approves it; until then
+                      it falls back to the older job-done letter.
                     </p>
                   </div>
                 ) : null}
