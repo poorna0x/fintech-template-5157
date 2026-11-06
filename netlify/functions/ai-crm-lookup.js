@@ -277,6 +277,10 @@ function extractPlaceHint(message) {
   if (/\b\d+\s*(?:to|-)?\s*\d*\s*(?:months?|days?|weeks?|years?)\b/i.test(place)) return null;
   if (/\b(?:last|past|next|previous)\s+\d+/i.test(place)) return null;
   if (/^\d/.test(place)) return null;
+  // Brand / product words are not localities.
+  if (/\b(?:hydrogen|aquasmart|aqua\s*smart|finpure|purosis|kent|aquaguard)\b/i.test(place)) {
+    return null;
+  }
   return place;
 }
 
@@ -4224,23 +4228,32 @@ function resolveCustomerRosterAnalytics(message) {
 
   const mentionsNpi =
     /\bnew\s+purif\w*\s+install/.test(lower) ||
+    /\binstall\w*\s+new\s+purif\w*/.test(lower) ||
+    /\bnew\s+purif\w*\b/.test(lower) ||
+    /\bnew\s+ro\s+install/.test(lower) ||
     /\bnpi\b/.test(lower) ||
     (/\bpurif\w*\s+install/.test(lower) && /\bnew\b/.test(lower));
   const wantsIdle =
-    /\b(?:no service|without service|haven'?t|havent|have not|has not|didn'?t|didnt|not (?:been )?serviced|not done(?: any)? service|no visit|no job|idle)\b/.test(
+    /\b(?:no service|without service|haven'?t|havent|have not|has not|didn'?t|didnt|not (?:been )?serviced|not done(?: any)? service|no visit|no job|idle|overdue)\b/.test(
       lower
     ) ||
-    (/\blast\s+\d+\s*(?:to|-)\s*\d+\s*months?\b/.test(lower) &&
+    /\bsince\s+\d+\s*months?\b/.test(lower) ||
+    (/\b(?:last|between)\s+\d+\s*(?:to|and|-)\s*\d+\s*months?\b/.test(lower) &&
       /\b(?:service|visit|job|install)\b/.test(lower));
+  const rosterAudience = /\b(?:customers?|clients?|brand|model|list|show|find|who)\b/.test(lower);
   const wantsBrandRoster =
-    /\b(?:hydrogen\s*ro|hydrogenro|aqua\s*smart|aquasmart|finpure)\b/.test(lower) &&
-    /\b(?:customer|clients?|brand|model|list|show|find|who)\b/.test(lower);
+    /\b(?:hydrogen\s*ro|hydrogenro|aqua\s*smart|aquasmart|finpure)\b/.test(lower) && rosterAudience;
 
-  // Idle window: "6 to 9 months" → between; "last 6 months" → at least 6 months.
+  // Idle window: "6 to 9 months" / "between 6 and 9 months" → between; "last 6 months" → ≥6.
   let idleMinMonths = null;
   let idleMaxMonths = null;
-  const rangeMatch = lower.match(/\b(\d{1,2})\s*(?:to|-)\s*(\d{1,2})\s*months?\b/);
-  const singleMatch = lower.match(/\blast\s+(\d{1,2})\s*months?\b/) || lower.match(/\b(\d{1,2})\s*months?\s*(?:ago|idle|without)?\b/);
+  const rangeMatch =
+    lower.match(/\bbetween\s+(\d{1,2})\s+and\s+(\d{1,2})\s*months?\b/) ||
+    lower.match(/\b(\d{1,2})\s*(?:to|-)\s*(\d{1,2})\s*months?\b/);
+  const singleMatch =
+    lower.match(/\blast\s+(\d{1,2})\s*months?\b/) ||
+    lower.match(/\bsince\s+(\d{1,2})\s*months?\b/) ||
+    lower.match(/\b(\d{1,2})\s*months?\s*(?:ago|idle|without|overdue)?\b/);
   if (rangeMatch) {
     idleMinMonths = Math.min(Number(rangeMatch[1]), Number(rangeMatch[2]));
     idleMaxMonths = Math.max(Number(rangeMatch[1]), Number(rangeMatch[2]));
@@ -4250,7 +4263,10 @@ function resolveCustomerRosterAnalytics(message) {
     idleMinMonths = 6;
   }
 
-  if ((mentionsNpi && wantsIdle) || (wantsIdle && idleMinMonths != null && /\b(?:install|purif|customer|npi)\b/.test(lower))) {
+  if (
+    (mentionsNpi && wantsIdle) ||
+    (wantsIdle && idleMinMonths != null && /\b(?:install|purif|customers?|npi)\b/.test(lower))
+  ) {
     const minM = Number.isFinite(idleMinMonths) ? idleMinMonths : 6;
     const maxClause =
       idleMaxMonths != null
@@ -4301,10 +4317,7 @@ LIMIT 100`.trim(),
     };
   }
 
-  if (
-    mentionsNpi &&
-    /\b(?:customer|clients?|list|show|find|who|with|location|area)\b/.test(lower)
-  ) {
+  if (mentionsNpi && (rosterAudience || /\b(?:location|area)\b/.test(lower))) {
     return {
       label: 'New Purifier Installation customers',
       sql: `

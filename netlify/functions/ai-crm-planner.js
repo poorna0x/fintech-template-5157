@@ -292,16 +292,19 @@ function looksLikeCustomerRosterSqlQuestion(lower) {
   const text = String(lower || '');
   const mentionsNpi =
     /\bnew\s+purif\w*\s+install/.test(text) ||
+    /\binstall\w*\s+new\s+purif\w*/.test(text) ||
+    /\bnew\s+purif\w*\b/.test(text) ||
+    /\bnew\s+ro\s+install/.test(text) ||
     /\bnpi\b/.test(text) ||
     (/\bpurif\w*\s+install/.test(text) && /\bnew\b/.test(text));
   const wantsIdle =
-    /\b(?:no service|without service|haven'?t|havent|have not|has not|didn'?t|didnt|not (?:been )?serviced|not done(?: any)? service|no visit|idle)\b/.test(
+    /\b(?:no service|without service|haven'?t|havent|have not|has not|didn'?t|didnt|not (?:been )?serviced|not done(?: any)? service|no visit|idle|overdue)\b/.test(
       text
-    );
+    ) || /\bsince\s+\d+\s*months?\b/.test(text);
+  const rosterAudience = /\b(?:customers?|clients?|brand|model|list|show|find|who)\b/.test(text);
   const wantsBrand =
-    /\b(?:hydrogen\s*ro|hydrogenro|aqua\s*smart|aquasmart|finpure)\b/.test(text) &&
-    /\b(?:customer|clients?|brand|model|list|show|find|who)\b/.test(text);
-  if (mentionsNpi && (/\b(?:customer|list|show|find|who|location|area)\b/.test(text) || wantsIdle)) {
+    /\b(?:hydrogen\s*ro|hydrogenro|aqua\s*smart|aquasmart|finpure)\b/.test(text) && rosterAudience;
+  if (mentionsNpi && (rosterAudience || /\b(?:location|area)\b/.test(text) || wantsIdle)) {
     return true;
   }
   if (wantsIdle && mentionsNpi) return true;
@@ -749,6 +752,17 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
+  // NPI / idle-service / brand rosters before payment "overdue" (service overdue ≠ payment overdue).
+  if (looksLikeCustomerRosterSqlQuestion(lower)) {
+    return {
+      route: 'crm',
+      tools: ['sql_query'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
   if (
     /\bpending payments?\b|\bpayments? pending\b|\bpayment dues?\b|\bpayments?\s+reminders?\b|\bpayments?[\s-]+due\b|\boverdue\b|\bwho (?:owes|owe)\b|\bcustomers? (?:owes|owe)\b|\bowe us\b|\boutstanding (?:amount|payments?)\b|\bwho has not paid\b|\bnot (?:yet )?paid\b|\blist customers with dues\b|\bstill outstanding\b|\bhow much is (?:still )?(?:due|owed)\b|\bpaise\b|\bwhen will we get paid\b|\bunpaid invoices?\b/.test(
       lower
@@ -861,18 +875,7 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
-  // NPI / idle-service / Hydrogen RO brand lists — before sale or area guesses
-  // so "last 6 months" / "installation" do not become a sale or place lookup.
-  if (looksLikeCustomerRosterSqlQuestion(lower)) {
-    return {
-      route: 'crm',
-      tools: ['sql_query'],
-      rewrittenQuery: text,
-      directAnswer: '',
-      strategy: 'deterministic',
-    };
-  }
-
+  // Sale / area guesses (roster already handled above).
   if (looksLikeSaleLookup(text, lower)) {
     return {
       route: 'crm',

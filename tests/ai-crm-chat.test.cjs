@@ -1441,6 +1441,25 @@ function testNearbyRadiusParsesMetres() {
   assert.ok(npiIdleRange?.sql);
   assert.match(npiIdleRange.label, /6–9 months/i);
   assert.match(npiIdleRange.sql, /INTERVAL '9 months'/i);
+  const npiBetween = resolveCannedAnalytics(
+    'new purifier installation customers no service between 6 and 9 months'
+  );
+  assert.ok(npiBetween?.sql);
+  assert.match(npiBetween.label, /6–9 months/i);
+  assert.deepEqual(
+    inferDeterministicPlan(
+      'which new purifier install customers are overdue for service 6 months'
+    ).tools,
+    ['sql_query']
+  );
+  assert.deepEqual(
+    inferDeterministicPlan('customers with Hydrogen RO Finpure').tools,
+    ['sql_query']
+  );
+  assert.deepEqual(
+    inferDeterministicPlan('new RO installation customers one word location').tools,
+    ['sql_query']
+  );
   const brandRoster = resolveCannedAnalytics(
     'find all customers with brand hydrogenro aquasmart and hydrogen ro finpure'
   );
