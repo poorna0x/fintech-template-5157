@@ -82,6 +82,7 @@ function plannerSystemInstruction() {
     'For WhatsApp/email draft or compose requests about an existing customer, choose action_draft plus customer_search. The CRM only opens the composer and never sends automatically.',
     'Use location_search when the user pastes a Google Maps URL or coordinates and asks for nearby customers.',
     'Use sql_query for complex analytics questions that cannot be answered by other tools — e.g. busiest day of week, month-by-month trend, service type breakdown, cross-table aggregations.',
+    'Also use sql_query for customer roster lists: New Purifier Installation customers (with location), NPI customers with no service in N months, and Hydrogen RO / AquaSmart / Finpure brand or model lists.',
     'directAnswer must be empty for route=crm.',
   ].join(' ');
 }
@@ -272,15 +273,40 @@ function looksLikeCrmQuestion(text) {
 
 function looksLikeSaleLookup(text, lower) {
   const value = String(lower || '');
+  // Idle / overdue roster questions are not sale lookups.
+  if (looksLikeCustomerRosterSqlQuestion(value)) return false;
   const hasAmount = /\b(?:₹|rs\.?|inr)?\s*\d{1,2}(?:,\d{2}){2,}\b|\b\d{4,6}\b|\b\d+(?:\.\d+)?\s*k\b/i.test(text);
   const hasProduct = /\b(?:softeners?|\bro\b|installation|filter)\b/.test(value);
   const hasSale =
     /\b(?:sold|sale|billed|charged|invoiced|which customer|whose|who (?:bought|purchased|took))\b/.test(value);
+  // "last 6 months" is a time window, not "last installation".
   const hasLastProduct =
     /\b(?:last|latest|most recent)\b/.test(value) &&
+    !/\blast\s+\d+\s*(?:to\s+\d+\s*)?months?\b/.test(value) &&
     hasProduct &&
     /\b(?:install|job|we did|sold|sale|completed|done)\b/.test(value);
   return (hasSale && (hasAmount || hasProduct)) || hasLastProduct;
+}
+
+function looksLikeCustomerRosterSqlQuestion(lower) {
+  const text = String(lower || '');
+  const mentionsNpi =
+    /\bnew\s+purif\w*\s+install/.test(text) ||
+    /\bnpi\b/.test(text) ||
+    (/\bpurif\w*\s+install/.test(text) && /\bnew\b/.test(text));
+  const wantsIdle =
+    /\b(?:no service|without service|haven'?t|havent|have not|has not|didn'?t|didnt|not (?:been )?serviced|not done(?: any)? service|no visit|idle)\b/.test(
+      text
+    );
+  const wantsBrand =
+    /\b(?:hydrogen\s*ro|hydrogenro|aqua\s*smart|aquasmart|finpure)\b/.test(text) &&
+    /\b(?:customer|clients?|brand|model|list|show|find|who)\b/.test(text);
+  if (mentionsNpi && (/\b(?:customer|list|show|find|who|location|area)\b/.test(text) || wantsIdle)) {
+    return true;
+  }
+  if (wantsIdle && mentionsNpi) return true;
+  if (wantsBrand) return true;
+  return false;
 }
 
 function looksLikeSqlAnalyticsQuestion(lower) {
@@ -292,6 +318,7 @@ function looksLikeSqlAnalyticsQuestion(lower) {
   ) {
     return false;
   }
+  if (looksLikeCustomerRosterSqlQuestion(text)) return true;
   return (
     /\b(?:busiest|slowest|quietest|peak|off[\s-]?peak)\b/.test(text) ||
     (/\b(?:average|avg|mean|median)\b/.test(text) &&
@@ -834,6 +861,18 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
+  // NPI / idle-service / Hydrogen RO brand lists — before sale or area guesses
+  // so "last 6 months" / "installation" do not become a sale or place lookup.
+  if (looksLikeCustomerRosterSqlQuestion(lower)) {
+    return {
+      route: 'crm',
+      tools: ['sql_query'],
+      rewrittenQuery: text,
+      directAnswer: '',
+      strategy: 'deterministic',
+    };
+  }
+
   if (looksLikeSaleLookup(text, lower)) {
     return {
       route: 'crm',
@@ -903,8 +942,8 @@ function inferDeterministicPlan(message, history = []) {
     };
   }
 
-  // Analytics questions needing SQL GROUP BY / aggregation — route to sql_query
-  if (looksLikeSqlAnalyticsQuestion(lower)) {
+  // Customer roster lists (NPI / idle service / Hydrogen RO brand) + other analytics → sql_query
+  if (looksLikeSqlAnalyticsQuestion(lower) || looksLikeCustomerRosterSqlQuestion(lower)) {
     return { route: 'crm', tools: ['sql_query'], rewrittenQuery: text, directAnswer: '', strategy: 'deterministic' };
   }
   if (

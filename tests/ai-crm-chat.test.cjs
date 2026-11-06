@@ -44,6 +44,7 @@ const {
   formatRadiusLabel,
   formatDistanceLabel,
   formatSqlRows,
+  resolveCannedAnalytics,
 } = require('../netlify/functions/ai-crm-lookup');
 const { generateWithMock } = require('../netlify/functions/ai-provider-mock');
 const {
@@ -1397,6 +1398,56 @@ function testNearbyRadiusParsesMetres() {
   assert.deepEqual(inferDeterministicPlan('average job duration').tools, ['sql_query']);
   assert.deepEqual(inferDeterministicPlan('which brand has the most jobs').tools, ['sql_query']);
   assert.deepEqual(inferDeterministicPlan('cancelled vs completed jobs').tools, ['sql_query']);
+  assert.deepEqual(
+    inferDeterministicPlan(
+      'list all new purifier installation customers with one word location'
+    ).tools,
+    ['sql_query']
+  );
+  assert.deepEqual(
+    inferDeterministicPlan(
+      'customers with new purifier installation who have not done any service in last 6 months'
+    ).tools,
+    ['sql_query']
+  );
+  assert.deepEqual(
+    inferDeterministicPlan(
+      'new purifier installation customers with no service in last 6 to 9 months'
+    ).tools,
+    ['sql_query']
+  );
+  assert.deepEqual(
+    inferDeterministicPlan(
+      'find all customers with brand hydrogenro aquasmart and hydrogen ro finpure'
+    ).tools,
+    ['sql_query']
+  );
+  const npiList = resolveCannedAnalytics(
+    'list all new purifier installation customers with one word location'
+  );
+  assert.ok(npiList?.sql);
+  assert.match(npiList.label, /New Purifier Installation customers/i);
+  assert.match(npiList.sql, /New Purifier Installation/i);
+  assert.match(npiList.sql, /visible_address/i);
+  const npiIdle = resolveCannedAnalytics(
+    'new purifier installation customers who have not done any service in last 6 months'
+  );
+  assert.ok(npiIdle?.sql);
+  assert.match(npiIdle.label, /no service in last 6 months/i);
+  assert.match(npiIdle.sql, /INTERVAL '6 months'/i);
+  const npiIdleRange = resolveCannedAnalytics(
+    'new purifier installation customers with no service in last 6 to 9 months'
+  );
+  assert.ok(npiIdleRange?.sql);
+  assert.match(npiIdleRange.label, /6–9 months/i);
+  assert.match(npiIdleRange.sql, /INTERVAL '9 months'/i);
+  const brandRoster = resolveCannedAnalytics(
+    'find all customers with brand hydrogenro aquasmart and hydrogen ro finpure'
+  );
+  assert.ok(brandRoster?.sql);
+  assert.match(brandRoster.label, /AquaSmart|Finpure|Hydrogen RO/i);
+  assert.match(brandRoster.sql, /finpure/i);
+  assert.match(brandRoster.sql, /aquasmart/i);
   assert.equal(inferDeterministicPlan('customers within 100m').route, 'conversation');
   assert.deepEqual(inferDeterministicPlan('how many jobs last year').tools, ['jobs_overview']);
   const sale = extractSaleLookup('for which customer we sold the softener around 35000');

@@ -273,6 +273,10 @@ function extractPlaceHint(message) {
   if (words.every((w) => PLACE_PERIOD_WORDS.has(w.toLowerCase()))) return null;
   const place = words.slice(0, 4).join(' ');
   if (place.length < 4) return null;
+  // "in last 6 to 9 months" is a time window, not an area name.
+  if (/\b\d+\s*(?:to|-)?\s*\d*\s*(?:months?|days?|weeks?|years?)\b/i.test(place)) return null;
+  if (/\b(?:last|past|next|previous)\s+\d+/i.test(place)) return null;
+  if (/^\d/.test(place)) return null;
   return place;
 }
 
@@ -4060,6 +4064,11 @@ Notes:
 - Do NOT filter to today unless the user said today / this week / this month
 - Day of week: TO_CHAR(scheduled_date, 'FMDay') plus EXTRACT(DOW FROM scheduled_date)
 - Hour of day (IST): EXTRACT(HOUR FROM (start_time AT TIME ZONE 'Asia/Kolkata'))
+- One-word location / area label = customers.visible_address
+- New Purifier Installation jobs: service_sub_type ILIKE 'New Purifier Installation'
+- Hydrogen RO / AquaSmart / Finpure customers: brand ILIKE '%hydrogen%ro%' OR brand ILIKE '%aqua%smart%'
+  OR model ILIKE '%aquasmart%' OR model ILIKE '%aqua smart%' OR model ILIKE '%finpure%'
+- Last completed service time: MAX(COALESCE(completed_at, scheduled_date::timestamptz, created_at)) for status='COMPLETED'
 `.trim();
 
 /**
@@ -4205,8 +4214,160 @@ ORDER BY duration_minutes ${order}
 LIMIT 5`.trim();
 }
 
+/** New Purifier Installation / brand / idle-service roster prompts → fixed SQL. */
+function resolveCustomerRosterAnalytics(message) {
+  const lower = String(message || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!lower) return null;
+
+  const mentionsNpi =
+    /\bnew\s+purif\w*\s+install/.test(lower) ||
+    /\bnpi\b/.test(lower) ||
+    (/\bpurif\w*\s+install/.test(lower) && /\bnew\b/.test(lower));
+  const wantsIdle =
+    /\b(?:no service|without service|haven'?t|havent|have not|has not|didn'?t|didnt|not (?:been )?serviced|not done(?: any)? service|no visit|no job|idle)\b/.test(
+      lower
+    ) ||
+    (/\blast\s+\d+\s*(?:to|-)\s*\d+\s*months?\b/.test(lower) &&
+      /\b(?:service|visit|job|install)\b/.test(lower));
+  const wantsBrandRoster =
+    /\b(?:hydrogen\s*ro|hydrogenro|aqua\s*smart|aquasmart|finpure)\b/.test(lower) &&
+    /\b(?:customer|clients?|brand|model|list|show|find|who)\b/.test(lower);
+
+  // Idle window: "6 to 9 months" → between; "last 6 months" → at least 6 months.
+  let idleMinMonths = null;
+  let idleMaxMonths = null;
+  const rangeMatch = lower.match(/\b(\d{1,2})\s*(?:to|-)\s*(\d{1,2})\s*months?\b/);
+  const singleMatch = lower.match(/\blast\s+(\d{1,2})\s*months?\b/) || lower.match(/\b(\d{1,2})\s*months?\s*(?:ago|idle|without)?\b/);
+  if (rangeMatch) {
+    idleMinMonths = Math.min(Number(rangeMatch[1]), Number(rangeMatch[2]));
+    idleMaxMonths = Math.max(Number(rangeMatch[1]), Number(rangeMatch[2]));
+  } else if (wantsIdle && singleMatch) {
+    idleMinMonths = Number(singleMatch[1]);
+  } else if (wantsIdle && mentionsNpi) {
+    idleMinMonths = 6;
+  }
+
+  if ((mentionsNpi && wantsIdle) || (wantsIdle && idleMinMonths != null && /\b(?:install|purif|customer|npi)\b/.test(lower))) {
+    const minM = Number.isFinite(idleMinMonths) ? idleMinMonths : 6;
+    const maxClause =
+      idleMaxMonths != null
+        ? `AND ls.last_at >= ((NOW() AT TIME ZONE 'Asia/Kolkata') - INTERVAL '${idleMaxMonths} months')`
+        : '';
+    const label =
+      idleMaxMonths != null
+        ? `New Purifier Installation · no service for ${minM}–${idleMaxMonths} months`
+        : `New Purifier Installation · no service in last ${minM} months`;
+    return {
+      label,
+      sql: `
+SELECT
+  c.full_name AS name,
+  c.phone,
+  COALESCE(NULLIF(c.visible_address, ''), '—') AS location,
+  n.job_number AS install_job,
+  (n.install_at AT TIME ZONE 'Asia/Kolkata')::date AS install_date,
+  ls.last_type AS last_service,
+  (ls.last_at AT TIME ZONE 'Asia/Kolkata')::date AS last_service_date,
+  ls.last_job
+FROM (
+  SELECT DISTINCT ON (customer_id)
+    customer_id,
+    job_number,
+    COALESCE(completed_at, scheduled_date::timestamptz, created_at) AS install_at
+  FROM jobs
+  WHERE service_sub_type ILIKE 'New Purifier Installation'
+    AND customer_id IS NOT NULL
+  ORDER BY customer_id, COALESCE(completed_at, scheduled_date::timestamptz, created_at) DESC
+) n
+JOIN customers c ON c.id = n.customer_id
+JOIN (
+  SELECT
+    customer_id,
+    MAX(COALESCE(completed_at, scheduled_date::timestamptz, created_at)) AS last_at,
+    (ARRAY_AGG(service_sub_type ORDER BY COALESCE(completed_at, scheduled_date::timestamptz, created_at) DESC))[1] AS last_type,
+    (ARRAY_AGG(job_number ORDER BY COALESCE(completed_at, scheduled_date::timestamptz, created_at) DESC))[1] AS last_job
+  FROM jobs
+  WHERE status = 'COMPLETED'
+    AND customer_id IS NOT NULL
+  GROUP BY customer_id
+) ls ON ls.customer_id = n.customer_id
+WHERE ls.last_at <= ((NOW() AT TIME ZONE 'Asia/Kolkata') - INTERVAL '${minM} months')
+  ${maxClause}
+ORDER BY ls.last_at ASC, c.full_name ASC
+LIMIT 100`.trim(),
+    };
+  }
+
+  if (
+    mentionsNpi &&
+    /\b(?:customer|clients?|list|show|find|who|with|location|area)\b/.test(lower)
+  ) {
+    return {
+      label: 'New Purifier Installation customers',
+      sql: `
+SELECT
+  c.full_name AS name,
+  c.phone,
+  COALESCE(NULLIF(c.visible_address, ''), '—') AS location,
+  j.job_number AS install_job,
+  (COALESCE(j.completed_at, j.scheduled_date::timestamptz, j.created_at) AT TIME ZONE 'Asia/Kolkata')::date AS install_date,
+  COALESCE(NULLIF(c.brand, ''), j.service_brand, '—') AS brand
+FROM (
+  SELECT DISTINCT ON (customer_id)
+    customer_id, job_number, completed_at, scheduled_date, created_at, service_brand
+  FROM jobs
+  WHERE service_sub_type ILIKE 'New Purifier Installation'
+    AND customer_id IS NOT NULL
+  ORDER BY customer_id, COALESCE(completed_at, scheduled_date::timestamptz, created_at) DESC
+) j
+JOIN customers c ON c.id = j.customer_id
+ORDER BY c.visible_address NULLS LAST, c.full_name ASC
+LIMIT 100`.trim(),
+    };
+  }
+
+  if (wantsBrandRoster) {
+    return {
+      label: 'Hydrogen RO / AquaSmart / Finpure customers',
+      sql: `
+SELECT
+  c.full_name AS name,
+  c.phone,
+  COALESCE(NULLIF(c.visible_address, ''), '—') AS location,
+  COALESCE(NULLIF(c.brand, ''), '—') AS brand,
+  COALESCE(NULLIF(c.model, ''), '—') AS model,
+  c.customer_id
+FROM customers c
+WHERE
+  c.brand ILIKE '%hydrogen%ro%'
+  OR c.brand ILIKE '%hydrogenro%'
+  OR c.brand ILIKE '%aqua%smart%'
+  OR c.brand ILIKE '%aquasmart%'
+  OR c.model ILIKE '%aqua%smart%'
+  OR c.model ILIKE '%aquasmart%'
+  OR c.model ILIKE '%finpure%'
+ORDER BY
+  CASE
+    WHEN c.model ILIKE '%finpure%' THEN 1
+    WHEN c.brand ILIKE '%aqua%smart%' OR c.model ILIKE '%aqua%smart%' OR c.model ILIKE '%aquasmart%' THEN 2
+    ELSE 3
+  END,
+  c.visible_address NULLS LAST,
+  c.full_name ASC
+LIMIT 100`.trim(),
+    };
+  }
+
+  return null;
+}
+
 function resolveCannedAnalytics(message) {
   const lower = String(message || '').toLowerCase();
+  const roster = resolveCustomerRosterAnalytics(message);
+  if (roster) return roster;
   const durationDir = detectJobDurationRanking(message);
   if (durationDir) {
     return {
@@ -4433,6 +4594,8 @@ module.exports = {
   AI_READONLY_SCHEMA,
   runReadonlyQuery,
   formatSqlRows,
+  resolveCannedAnalytics,
+  resolveCustomerRosterAnalytics,
   // Location search
   extractLocationFromMessage,
   extractRadiusKm,
